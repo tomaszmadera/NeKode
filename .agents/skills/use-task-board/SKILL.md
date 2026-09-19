@@ -1,28 +1,11 @@
 ---
 name: use-task-board
-description: Use when finding, starting, or registering a repository with the global read-only task progress board, or when inspecting task progress.
+description: Use when reporting task progress snapshots to Personal Data Hub (Agent Tasks API) or configuring task reporting.
 ---
 
-# Use the global task board
+# Report tasks to Personal Data Hub
 
-The board is a separate local app. It does not live in this repository. `.agents/tasks/*/task.md` remains the source of truth.
-
-## Locate the installation
-
-1. Read `board_root` from `%USERPROFILE%/.task-board/config.yaml` (or `~/.task-board/config.yaml`).
-2. If that key is missing, use the sibling directory `../task-board` when it contains `app/server.py`.
-3. If still missing, stop and tell the user the board is not installed.
-
-## Register and open
-
-```text
-python <board_root>/app/server.py register .
-python <board_root>/app/server.py --open
-```
-
-- Register only a directory that has `.agents/project-profile.yaml` or `.agents/tasks`.
-- Do not copy the board into this repository.
-- Do not write `task.md` through the board; it is read-only.
+Task progress reporting is centralized in Personal Data Hub via the Agent Tasks API (`/api/v1/agent-tasks/snapshot`). Local `.agents/tasks/*/task.md` records remain the canonical source of truth.
 
 ## Report tasks to Personal Data Hub (Agent Tasks API)
 
