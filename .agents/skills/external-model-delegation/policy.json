@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "adapter": {
+    "name": "agy",
+    "provider": "AGY",
+    "default_executable": "agy"
+  },
+  "roles": {
+    "scout": {
+      "risk": "green",
+      "model": "gemini-3.8-flash-low",
+      "effort": "low",
+      "input_mode": "tracked-list",
+      "contract": "Identify the smallest evidence-bearing repository source and test surface. Do not claim that uninspected content proves a conclusion."
+    },
+    "triage": {
+      "risk": "green",
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "input_mode": "supplied-file",
+      "contract": "Classify the supplied failures and identify the smallest next inspection area. Do not decide a difficult root cause."
+    },
+    "summarize": {
+      "risk": "green",
+      "model": "gemini-3.8-flash-low",
+      "effort": "low",
+      "input_mode": "supplied-file",
+      "contract": "Compress only the explicitly supplied non-authoritative material into decision-relevant facts."
+    },
+    "review-prescreen": {
+      "risk": "yellow",
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "input_mode": "git-diff",
+      "contract": "Identify candidate defects in the supplied diff for Main to verify. This never satisfies canonical code review."
+    },
+    "test-proposal": {
+      "risk": "yellow",
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "input_mode": "repository-files",
+      "contract": "Propose bounded tests as text. Do not edit files, execute commands, or redesign production architecture."
+    },
+    "change-proposal": {
+      "risk": "yellow",
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "input_mode": "repository-files",
+      "contract": "Propose a small bounded change as text. Do not edit files or execute commands. Escalate ambiguous or red decisions."
+    },
+    "handoff-summary": {
+      "risk": "green",
+      "model": "gemini-3.8-flash-low",
+      "effort": "low",
+      "input_mode": "supplied-file",
+      "contract": "Compress explicitly supplied work notes. Do not create or replace the canonical handoff."
+    }
+  },
+  "limits": {
+    "max_files": 1000,
+    "max_file_bytes": 131072,
+    "max_input_bytes": 524288,
+    "max_output_bytes": 65536,
+    "max_stderr_bytes": 32768,
+    "max_timeout_seconds": 300,
+    "max_task_bytes": 16384,
+    "max_array_items": 50,
+    "max_text_bytes": 8192
+  },
+  "sensitive_path_globs": [
+    ".\u0065nv",
+    ".\u0065nv.*",
+    "**/.\u0065nv",
+    "**/.\u0065nv.*",
+    ".agents/.\u0065nv",
+    ".agents/.\u0065nv.*",
+    ".git",
+    ".git/**",
+    "**/.git/**",
+    ".ssh/**",
+    "**/.ssh/**",
+    "id_rsa*",
+    "**/id_rsa*",
+    "id_ed25519*",
+    "**/id_ed25519*",
+    "*.pem",
+    "**/*.pem",
+    "*.key",
+    "**/*.key",
+    "*.p12",
+    "**/*.p12",
+    "*.pfx",
+    "**/*.pfx",
+    "*credential*",
+    "**/*credential*",
+    "*secr\u0065t*",
+    "**/*secr\u0065t*",
+    "*tok\u0065n*.json",
+    "**/*tok\u0065n*.json",
+    ".\u006epmrc",
+    "**/.\u006epmrc",
+    ".\u0070ypirc",
+    "**/.\u0070ypirc",
+    ".\u006eetrc",
+    "**/.\u006eetrc",
+    "_\u006eetrc",
+    "**/_\u006eetrc",
+    ".dock\u0065r/config.json",
+    "**/.dock\u0065r/config.json",
+    ".aws/cred\u0065ntials",
+    "**/.aws/cred\u0065ntials",
+    ".config/gcloud/**",
+    "**/.config/gcloud/**",
+    ".kube/config",
+    "**/.kube/config"
+  ],
+  "audit": {
+    "enabled_by_default": true,
+    "directory_name": "project-template/external-model-delegation",
+    "file_name": "audit.jsonl"
+  },
+  "result_schema_version": 1
+}

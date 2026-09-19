@@ -1,0 +1,55 @@
+{
+  "safety-gate": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/dispatch.py --event pretool --agent agy || py -3 hooks/dispatch.py --event pretool --agent agy || python hooks/dispatch.py --event pretool --agent agy",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "session-init": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python3 hooks/dispatch.py --event preinvocation --agent agy || py -3 hooks/dispatch.py --event preinvocation --agent agy || python hooks/dispatch.py --event preinvocation --agent agy",
+        "timeout": 15
+      }
+    ]
+  },
+  "session-end": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 hooks/dispatch.py --event session-end --agent agy || py -3 hooks/dispatch.py --event session-end --agent agy || python hooks/dispatch.py --event session-end --agent agy",
+        "timeout": 10
+      }
+    ]
+  },
+  "task-report": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/dispatch.py --event task-report --agent agy || py -3 hooks/dispatch.py --event task-report --agent agy || python hooks/dispatch.py --event task-report --agent agy",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 hooks/dispatch.py --event task-report --agent agy --force || py -3 hooks/dispatch.py --event task-report --agent agy --force || python hooks/dispatch.py --event task-report --agent agy --force",
+        "timeout": 3
+      }
+    ]
+  }
+}

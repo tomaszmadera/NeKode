@@ -1,0 +1,10 @@
+# Project-local Codex configuration loads only after the repository is trusted.
+# Permission and sandbox defaults remain user-controlled.
+
+[features]
+hooks = true
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+startup_timeout_sec = 30

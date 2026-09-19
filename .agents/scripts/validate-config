@@ -1,0 +1,811 @@
+#!/usr/bin/env python3
+"""Validate the minimal, behavior-oriented agent configuration contract."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # A clear validation error is reported below.
+    tomllib = None
+
+from common import ROOT, is_valid_semver, profile_values, render_skill_wrapper, skill_metadata
+from package_manifest import PackageManifestError, load_package_manifest
+from sync_policy import SyncPolicy, SyncPolicyError, policy_from_values, validate_policy_values
+
+
+BASE_REQUIRED_FILES = {
+    "AGENTS.md",
+    "CLAUDE.md",
+    "BACKLOG.md",
+    ".agents/README.md",
+    ".agents/project-profile.yaml",
+    ".agents/project-profile.md",
+    ".agents/engineering.md",
+    ".agents/safety.md",
+    ".agents/lessons/index.json",
+    ".agents/workflows/small-development.md",
+    ".agents/workflows/spec-driven-development.md",
+    ".agents/workflows/investigation.md",
+    ".agents/workflows/references/extra-session.md",
+    ".agents/workflows/references/context-succession.md",
+    ".agents/tasks/README.md",
+    ".agents/handoffs/README.md",
+    ".agents/templates/task-record.md",
+    ".agents/templates/feature-spec.md",
+    ".agents/templates/plan.md",
+    ".agents/templates/handoff.md",
+    ".agents/hooks/policy.json",
+    ".agents/hooks/dispatch.py",
+    ".agents/hooks.json",
+    ".agents/rules/agy.md",
+    ".agents/scripts/common.py",
+    ".agents/scripts/lessons_store.py",
+    ".agents/scripts/preflight",
+    ".agents/scripts/task-status",
+    ".agents/scripts/handoff-status",
+    ".agents/scripts/verify-targeted",
+    ".agents/scripts/verify-changed",
+    ".agents/scripts/verify-full",
+    ".claude/settings.json",
+    ".codex/config.toml",
+    ".codex/hooks.json",
+    ".grok/README.md",
+    "opencode.json",
+    ".opencode/plugins/safety.js",
+    ".opencode/plugins/quota.js",
+    ".opencode/plugins/task-report.js",
+    ".gitattributes",
+}
+TEMPLATE_ONLY_FILES = {
+    "docs/harness/harness-architecture.md",
+    ".agents/skills/bootstrap-project/references/bootstrap-workflow.md",
+    ".agents/templates/project-AGENTS.md",
+    ".agents/templates/project-BACKLOG.md",
+    ".agents/templates/project-README.md",
+}
+REQUIRED_FILES = BASE_REQUIRED_FILES | TEMPLATE_ONLY_FILES
+# Required regardless of the sync policy: without them no agent can enter the repository.
+POLICY_INDEPENDENT_FILES = {
+    "AGENTS.md",
+    "CLAUDE.md",
+    "BACKLOG.md",
+    ".agents/project-profile.yaml",
+}
+
+BASE_REQUIRED_SKILLS = {
+    "context7", "implement", "systematic-debugging",
+    "code-review", "handoff", "preflight",
+}
+TEMPLATE_ONLY_SKILLS = {
+    "bootstrap-project",
+    "export-llm-review-pack",
+}
+DEPRECATED_HARNESS_SKILLS = {"bump", "release"}
+REQUIRED_SKILLS = BASE_REQUIRED_SKILLS | TEMPLATE_ONLY_SKILLS
+COPY_VERBATIM = re.compile(r"\{\{COPY VERBATIM FROM AGENTS\.md:\s*##\s*(.+?)\s*\}\}")
+AGENTS_SECTION = re.compile(r"(?m)^##\s+(.+?)\s*$")
+REQUIRED_PROFILE_KEYS = {
+    "harness:", "project:", "tooling:", "runtime:", "database:", "local_environment:",
+    "quality:", "verification:", "publication:", "commands:",
+}
+# Required regardless of the sync policy: they identify the project and the harness version it runs.
+POLICY_INDEPENDENT_PROFILE_KEYS = {"harness:", "project:", "publication:"}
+SEMVER_TAG = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+PUBLICATION_STRATEGIES = {"not-configured", "linear", "git-flow"}
+PUBLICATION_VERSIONING = {"not-configured", "none", "semver"}
+FORBIDDEN_PROFILE_SECTIONS = {"notes", "rules"}
+REQUIRED_COMMANDS = {
+    "preflight", "validate_agent_config", "task_status", "handoff_status",
+    "ci", "bump", "release", "harness_config_update",
+    "verify_targeted", "verify_changed", "verify_full",
+}
+UNSELECTED_TEMPLATE_FIELDS = {
+    "runtime": {"language", "language_version", "framework", "framework_version"},
+    "database": {"engine", "version"},
+    "local_environment": {"provider"},
+    "quality": {"test_runner", "formatter", "static_analysis", "architecture_tests"},
+    "verification": {"changed_command", "full_command"},
+}
+
+EXCLUDED_SKILL_REGEX = re.compile(r"^[a-z0-9][a-z0-9-]{1,29}$")
+
+
+def validate_excluded_skills(profile: dict) -> list[str]:
+    """Validate harness.excluded_skills: kebab-case, no duplicates, no bootstrap-project, must be list."""
+    errors: list[str] = []
+    harness = profile.get("harness", {})
+    if "excluded_skills" not in harness:
+        return []
+    raw = harness.get("excluded_skills")
+    if not isinstance(raw, list):
+        return ["excluded_skills must be a list"]
+    for name in raw:
+        if not isinstance(name, str) or not EXCLUDED_SKILL_REGEX.fullmatch(name):
+            errors.append(f"invalid excluded skill name '{name}': must match kebab-case")
+    seen: set[str] = set()
+    dupes: set[str] = set()
+    for name in raw:
+        if name in seen:
+            dupes.add(name)
+        seen.add(name)
+    for d in sorted(dupes):
+        errors.append(f"duplicate excluded skill: '{d}'")
+    if "bootstrap-project" in raw:
+        errors.append("bootstrap-project cannot be excluded")
+        # Ensure the template-only phrasing is also detectable for spec compliance
+        # The primary message above is sufficient; alternative phrasing would be:
+        # "bootstrap-project is template-only and cannot be excluded"
+    return errors
+
+
+def validate_excluded_skills_sorted(profile: dict) -> list[str]:
+    """Return suggestion if excluded_skills is not sorted."""
+    harness = profile.get("harness", {})
+    raw = harness.get("excluded_skills")
+    if not isinstance(raw, list) or not raw:
+        return []
+    if raw != sorted(raw):
+        return [f"excluded_skills should be sorted: expected {sorted(raw)}"]
+    return []
+
+
+def validate_template_package_membership(root: Path, required_files: set[str]) -> list[str]:
+    """Prove semantic runtime requirements are covered by the package owner."""
+    try:
+        package = load_package_manifest(root)
+    except PackageManifestError as error:
+        return [str(error)]
+    errors: list[str] = []
+    for raw in sorted(required_files):
+        relative = Path(raw)
+        delivered = (
+            relative in package.ship_files
+            or relative in package.render_files
+            or any(directory == relative or directory in relative.parents for directory in package.ship_directories)
+            or any(output == relative or output in relative.parents for output in package.adapter_outputs)
+        )
+        if not delivered or package.is_template_only(relative):
+            errors.append(f"required delivered path is absent from package manifest: {raw}")
+    return errors
+
+
+def validate_generated_skill_adapters(
+    canonical_skills: dict[str, Path],
+    adapter_root: Path,
+    host: str,
+) -> list[str]:
+    """Require one exact generated wrapper for every canonical skill."""
+    errors: list[str] = []
+    if not adapter_root.is_dir() or adapter_root.is_symlink():
+        return [f"{host} skill adapter root must be a real directory: {adapter_root}"]
+    expected_names = set(canonical_skills)
+    actual_names = {path.name for path in adapter_root.iterdir()}
+    for name in sorted(expected_names - actual_names):
+        errors.append(f"missing {host} skill adapter: {name}")
+    for name in sorted(actual_names - expected_names):
+        errors.append(f"extra {host} skill adapter: {name}")
+    for name in sorted(expected_names & actual_names):
+        skill_dir = adapter_root / name
+        if skill_dir.is_symlink() or not skill_dir.is_dir():
+            errors.append(f"{host} skill adapter directory must be a real directory: {name}")
+            continue
+        adapter = skill_dir / "SKILL.md"
+        if adapter.is_symlink() or not adapter.is_file():
+            errors.append(f"{host} skill adapter wrapper must be a real file: {name}")
+            continue
+        try:
+            expected = render_skill_wrapper(
+                canonical_skills[name],
+                Path(".agents") / "skills" / name / "SKILL.md",
+            )
+            if adapter.read_text(encoding="utf-8") != expected:
+                errors.append(f"stale {host} skill adapter: {name}")
+        except (OSError, UnicodeError, ValueError) as error:
+            errors.append(f"invalid {host} skill adapter {name}: {error}")
+    return errors
+
+
+def adapter_skill_inventory(
+    canonical_skills: dict[str, Path],
+    excluded_skills: set[str],
+    is_template: bool,
+) -> dict[str, Path]:
+    """Select canonical skills that must have generated host wrappers."""
+    return {
+        name: path
+        for name, path in canonical_skills.items()
+        if name not in excluded_skills
+        and name not in DEPRECATED_HARNESS_SKILLS
+        and (is_template or name not in TEMPLATE_ONLY_SKILLS)
+    }
+
+
+def load_json(relative: str, errors: list[str]) -> dict:
+    path = ROOT / relative
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError("top-level value must be an object")
+        return value
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+        errors.append(f"invalid JSON {relative}: {error}")
+        return {}
+
+
+def validate_harness_version(profile: dict[str, dict[str, str]]) -> list[str]:
+    """Require the recorded harness release as a semver tag with no v prefix."""
+    version = profile.get("harness", {}).get("version", "")
+    if not version:
+        return ["project profile missing harness.version"]
+    if not SEMVER_TAG.fullmatch(version):
+        return [f"project profile harness.version must be a semver tag: {version}"]
+    return []
+
+
+def supported_product_version_sources(root: Path, profile: dict) -> list[str]:
+    """Return semver sources the existing bump command can update."""
+    sources: list[str] = []
+
+    package_json = root / "package.json"
+    if package_json.is_file():
+        try:
+            package = json.loads(package_json.read_text(encoding="utf-8"))
+            if isinstance(package, dict) and is_valid_semver(str(package.get("version", ""))):
+                sources.append("package.json")
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            pass
+
+    text_candidates: list[tuple[Path, tuple[re.Pattern[str], ...]]] = [
+        (
+            root / "pyproject.toml",
+            (re.compile(r'(?m)^version\s*=\s*["\']([^"\']+)["\']'),),
+        ),
+        (
+            root / "Cargo.toml",
+            (re.compile(r'(?m)^version\s*=\s*["\']([^"\']+)["\']'),),
+        ),
+        (
+            root / "pom.xml",
+            (re.compile(r"<version>([^<]+)</version>"),),
+        ),
+        (
+            root / "build.gradle",
+            (re.compile(r'(?m)^version\s*=\s*["\']([^"\']+)["\']'),),
+        ),
+        (
+            root / "build.gradle.kts",
+            (re.compile(r'(?m)^version\s*=\s*["\']([^"\']+)["\']'),),
+        ),
+    ]
+    dotnet_patterns = (
+        re.compile(r"<Version>([^<]+)</Version>"),
+        re.compile(r"<PackageVersion>([^<]+)</PackageVersion>"),
+    )
+    dotnet_candidates = [
+        root / "Directory.Build.props",
+        root / "Directory.Build.targets",
+        root / "Directory.Packages.props",
+        *root.glob("*.csproj"),
+        *root.glob("*.fsproj"),
+        *root.glob("*.props"),
+        *root.glob("src/*/*.csproj"),
+        *root.glob("src/*/*.fsproj"),
+        *root.glob("src/*/*.props"),
+    ]
+    text_candidates.extend((path, dotnet_patterns) for path in dotnet_candidates)
+
+    for path, patterns in text_candidates:
+        if not path.is_file():
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        for pattern in patterns:
+            match = pattern.search(content)
+            if match and is_valid_semver(match.group(1).strip()):
+                sources.append(path.relative_to(root).as_posix())
+                break
+
+    for path in (root / "VERSION", root / "version.txt"):
+        if not path.is_file():
+            continue
+        try:
+            if is_valid_semver(path.read_text(encoding="utf-8").strip()):
+                sources.append(path.relative_to(root).as_posix())
+        except (OSError, UnicodeError):
+            pass
+
+    project_version = profile.get("project", {}).get("version", "")
+    profile_path = root / ".agents" / "project-profile.yaml"
+    if profile_path.is_file() and is_valid_semver(str(project_version)):
+        sources.append(".agents/project-profile.yaml:project.version")
+
+    harness_version = profile.get("harness", {}).get("version", "")
+    if (
+        profile_path.is_file()
+        and profile.get("project", {}).get("status") == "template"
+        and is_valid_semver(str(harness_version))
+    ):
+        sources.append(".agents/project-profile.yaml:harness.version")
+
+    return sorted(set(sources))
+
+
+def publication_field_value(value: object) -> object:
+    """Return a publication scalar without inline comments left by profile_values."""
+    if not isinstance(value, str):
+        return value
+    return re.split(r"\s+#", value.strip(), maxsplit=1)[0].strip().strip("\"'")
+
+
+def validate_publication_profile(profile: dict, root: Path = ROOT) -> list[str]:
+    """Require explicit, compatible publication facts and a real semver source when selected."""
+    errors: list[str] = []
+    publication = profile.get("publication", {})
+    if not isinstance(publication, dict):
+        publication = {}
+    strategy = publication_field_value(publication.get("strategy"))
+    versioning = publication_field_value(publication.get("versioning"))
+
+    if strategy is None:
+        errors.append("project profile missing publication.strategy")
+    elif not isinstance(strategy, str) or strategy not in PUBLICATION_STRATEGIES:
+        errors.append(
+            "project profile publication.strategy must be one of: "
+            + ", ".join(sorted(PUBLICATION_STRATEGIES))
+        )
+
+    if versioning is None:
+        errors.append("project profile missing publication.versioning")
+    elif not isinstance(versioning, str) or versioning not in PUBLICATION_VERSIONING:
+        errors.append(
+            "project profile publication.versioning must be one of: "
+            + ", ".join(sorted(PUBLICATION_VERSIONING))
+        )
+
+    if strategy == "git-flow" and versioning == "none":
+        errors.append("git-flow publication requires semver versioning")
+    if versioning == "semver" and not supported_product_version_sources(root, profile):
+        errors.append(
+            "semver publication requires a writable product-version source supported by ci bump"
+        )
+    return errors
+
+
+def validate_profile_sections(profile: dict) -> list[str]:
+    """Keep behavioral instructions out of the project facts file."""
+    return [
+        f"project profile must not contain behavioral section: {section}"
+        for section in sorted(FORBIDDEN_PROFILE_SECTIONS & set(profile))
+    ]
+
+
+def required_files_for_policy(required: set[str], policy: SyncPolicy) -> set[str]:
+    """Limit the required-file contract to the harness areas this project lets the update manage."""
+    if policy.validate != "managed-only":
+        return set(required)
+    kept: set[str] = set()
+    for relative in required:
+        if relative in POLICY_INDEPENDENT_FILES:
+            kept.add(relative)
+            continue
+        area = policy.area_of(relative)
+        if area is not None and policy.area_managed(area):
+            kept.add(relative)
+    return kept
+
+
+def validate_command_targets(
+    profile: dict[str, dict[str, str]],
+    root: Path = ROOT,
+    policy: SyncPolicy | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    commands = profile.get("commands", {})
+    policy = policy or SyncPolicy()
+    managed_only = policy.validate == "managed-only"
+    # Respect harness.excluded_skills: if ci is excluded, ci/bump/release are not required
+    excluded_skills_for_commands: set[str] = set()
+    raw_ex = profile.get("harness", {}).get("excluded_skills", [])
+    if isinstance(raw_ex, list):
+        excluded_skills_for_commands = {str(x).strip() for x in raw_ex if isinstance(x, str) and str(x).strip()}
+    command_to_skill = {"ci": "ci", "bump": "ci", "release": "ci"}
+    # Commands are provided by harness areas; managed-only validation requires only managed ones.
+    command_to_area = {
+        "ci": "skills", "bump": "skills", "release": "skills", "harness_config_update": "skills",
+        "preflight": "scripts", "validate_agent_config": "scripts", "task_status": "scripts",
+        "handoff_status": "scripts", "verify_targeted": "scripts", "verify_changed": "scripts",
+        "verify_full": "scripts",
+    }
+    for key in sorted(REQUIRED_COMMANDS):
+        if key in command_to_skill and command_to_skill[key] in excluded_skills_for_commands:
+            continue
+        if managed_only and not policy.area_managed(command_to_area.get(key, "scripts")):
+            continue
+        value = commands.get(key, "")
+        if not value:
+            errors.append(f"project profile missing command: {key}")
+            continue
+        match = re.search(r"(?:\{python\}|python(?:3)?)\s+([^\s]+)", value)
+        if not match:
+            errors.append(f"project profile command must use the Python launcher placeholder: {key}")
+            continue
+        target = match.group(1)
+        if not (root / target).is_file():
+            errors.append(f"project profile command target does not exist: {key} -> {target}")
+    return errors
+
+
+UNFINISHED_README_MARKERS = {
+    "Ten plik jest szkicem wejściowym",
+    "Wymień wyłącznie narzędzia i wersje rzeczywiście wymagane przez projekt.",
+    "Zainstaluj wymagane zależności środowiskowe.",
+    "Skonfiguruj zmienne środowiskowe na podstawie `.env.example`.",
+    "# Polecenie startowe zdefiniowane w project-profile.yaml",
+    "Opisz oczekiwany rezultat uruchomienia",
+    "Polecenia muszą odpowiadać rzeczywistej konfiguracji",
+    "Opisz tylko najważniejsze katalogi i ich odpowiedzialność.",
+}
+
+
+def validate_project_readme(readme: str, is_template: bool) -> list[str]:
+    """Reject unresolved or instructional scaffold prose in downstream README files."""
+    if is_template:
+        return []
+
+    errors: list[str] = []
+    if "{{" in readme or "}}" in readme:
+        errors.append("bootstrapped README must resolve every template placeholder")
+    for marker in sorted(UNFINISHED_README_MARKERS):
+        if marker in readme:
+            errors.append(f"bootstrapped README contains unfinished scaffold prose: {marker}")
+    return errors
+
+
+PROJECT_SPECIFIC_OR_OPTIONAL_SECTIONS = {
+    "Project rules",
+    "Terminal execution (for projects that have to run in Windows runtime)",
+}
+
+# Retired section titles: project rules live in the single `## Project rules` section, and the
+# harness update migrates a target that still carries one of these.
+RETIRED_AGENTS_SECTIONS = ("Project Constitution", "Project-specific rules")
+
+
+def validate_agents_sections(agents: str, policy: SyncPolicy | None = None) -> list[str]:
+    """Project rules live in one section; a retired slot means the harness update has not run.
+
+    A title the update is not allowed to migrate is not an error: `sync.agents_md: skip`, a
+    protected `AGENTS.md`, and `sync.keep_sections` all keep the target's section by design, so
+    flagging them would fail a project that is configured exactly as its profile asks.
+    """
+    if policy is not None and (policy.agents_md == "skip" or policy.is_protected("AGENTS.md")):
+        return []
+    kept = set(policy.keep_sections) if policy is not None and policy.agents_md == "keep-sections" else set()
+    errors: list[str] = []
+    for title in RETIRED_AGENTS_SECTIONS:
+        if title in kept:
+            continue
+        if re.search(rf"(?m)^##\s+{re.escape(title)}\s*$", agents):
+            errors.append(
+                f"AGENTS.md still carries the retired section ## {title}: run the recorded "
+                "harness_config_update command to migrate it into ## Project rules"
+            )
+    return errors
+
+
+def validate_agents_template(agents: str) -> list[str]:
+    """Keep the target-project AGENTS.md draft in sync with the sections it copies."""
+    errors: list[str] = []
+    template_path = ROOT / ".agents/templates/project-AGENTS.md"
+    if not template_path.is_file():
+        return errors
+    template = template_path.read_text(encoding="utf-8")
+    if "{{PROJECT_NAME}}" not in template:
+        errors.append("target project AGENTS.md template must contain {{PROJECT_NAME}}")
+    if "## Project rules" not in template:
+        errors.append("target project AGENTS.md template must contain ## Project rules")
+    sections = set(AGENTS_SECTION.findall(agents))
+    copied = set(COPY_VERBATIM.findall(template))
+    for title in sorted(copied - sections):
+        errors.append(f"target project AGENTS.md template copies a section missing from AGENTS.md: {title}")
+    for title in sorted((sections - copied) - PROJECT_SPECIFIC_OR_OPTIONAL_SECTIONS):
+        errors.append(f"target project AGENTS.md template drops the AGENTS.md section: {title}")
+    return errors
+
+
+def validate_claude_adapter(settings: dict) -> list[str]:
+    """The Claude Code adapter must wire the repository gate for every tool."""
+    errors: list[str] = []
+    events = settings.get("hooks")
+    if not isinstance(events, dict):
+        return ["invalid .claude/settings.json: hooks must be an object"]
+    for event in ("SessionStart", "PreToolUse"):
+        if event not in events:
+            errors.append(f"Claude Code hooks missing event: {event}")
+    groups = events.get("PreToolUse", [])
+    if not isinstance(groups, list):
+        return errors + ["invalid .claude/settings.json: PreToolUse must be a list of hook groups"]
+    matchers: list[str] = []
+    for group in groups:
+        if not isinstance(group, dict):
+            errors.append("invalid .claude/settings.json: each PreToolUse group must be an object")
+            continue
+        handlers = group.get("hooks", [])
+        if not isinstance(handlers, list):
+            errors.append("invalid .claude/settings.json: PreToolUse group hooks must be a list")
+            continue
+        for handler in handlers:
+            command = handler.get("command", "") if isinstance(handler, dict) else ""
+            if "--event pretool" in command and "--agent claude" in command:
+                matchers.append(str(group.get("matcher", "")).strip())
+    if not matchers:
+        errors.append("Claude Code PreToolUse must dispatch --event pretool --agent claude")
+    elif not any(matcher in ("", "*") for matcher in matchers):
+        errors.append("Claude Code PreToolUse gate must match every tool")
+    return errors
+
+
+def validate_opencode_instructions(opencode: dict, root: Path = ROOT) -> list[str]:
+    """Keep automatically discovered AGENTS.md as the router; validate extra paths."""
+    instructions = opencode.get("instructions", [])
+    if not isinstance(instructions, list) or not all(isinstance(item, str) for item in instructions):
+        return ["OpenCode instructions must be a list of paths"]
+
+    errors: list[str] = []
+    lazy_policies = {
+        ".agents/communication.md",
+        ".agents/engineering.md",
+        ".agents/safety.md",
+    }
+    for instruction in instructions:
+        if instruction in lazy_policies:
+            errors.append(f"OpenCode must let AGENTS.md select lazy policy {instruction}")
+    if len(instructions) != len(set(instructions)):
+        errors.append("OpenCode instruction paths must not be duplicated")
+    for instruction in instructions:
+        if not (root / instruction).is_file():
+            errors.append(f"OpenCode instruction path does not exist: {instruction}")
+    return errors
+
+
+def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--quiet", action="store_true")
+    args = parser.parse_args()
+    errors: list[str] = []
+
+    if sys.version_info < (3, 11):
+        errors.append(f"Python 3.11 or newer is required; found {sys.version.split()[0]}")
+
+    profile_path = ROOT / ".agents/project-profile.yaml"
+    profile_data = profile_values(profile_path) if profile_path.exists() else {}
+    # The validator reports a malformed policy through validate_policy_values below, so it reads the
+    # profile leniently instead of failing on the first bad value.
+    try:
+        policy = policy_from_values(profile_data, strict=False)
+    except SyncPolicyError:  # pragma: no cover - lenient parsing does not raise
+        policy = SyncPolicy()
+    managed_only = policy.validate == "managed-only"
+
+    def area_required(area: str) -> bool:
+        """True when this harness area is part of the validated contract for this project."""
+        return not managed_only or policy.area_managed(area)
+
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8") if (ROOT / "AGENTS.md").exists() else ""
+    canonical_links = (
+        ("engineering", ".agents/engineering.md", "the canonical engineering principles"),
+        ("safety", ".agents/safety.md", "the canonical safety principles"),
+        ("workflow", ".agents/workflows/spec-driven-development.md", "the canonical development workflow"),
+    )
+    for area, link, label in canonical_links:
+        if area_required(area) and link not in agents:
+            errors.append(f"AGENTS.md must link {label}")
+    claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8") if (ROOT / "CLAUDE.md").exists() else ""
+    if "@AGENTS.md" not in claude:
+        errors.append("CLAUDE.md must import AGENTS.md instead of duplicating guidance")
+
+    is_template = False
+    if profile_path.exists():
+        profile = profile_path.read_text(encoding="utf-8")
+        if not re.search(r"(?m)^schema_version:\s*2\s*$", profile):
+            errors.append("project profile schema_version must be 2")
+        # A partially adopting project records only the sections its adopted areas need; requiring the
+        # full stack contract there would report errors it cannot act on.
+        required_profile_keys = (
+            POLICY_INDEPENDENT_PROFILE_KEYS if managed_only else REQUIRED_PROFILE_KEYS
+        )
+        for key in sorted(required_profile_keys):
+            if not re.search(rf"(?m)^{re.escape(key)}\s*$", profile):
+                errors.append(f"project profile missing section: {key[:-1]}")
+        values = profile_data
+        is_template = (values.get("project", {}).get("status") == "template")
+        errors.extend(validate_harness_version(values))
+        errors.extend(validate_publication_profile(values, ROOT))
+        errors.extend(validate_profile_sections(values))
+        errors.extend(validate_command_targets(values, policy=policy))
+        errors.extend(validate_excluded_skills(values))
+        errors.extend(validate_policy_values(values))
+        if is_template and policy.is_selective:
+            errors.append("the template repository itself must keep sync.mode full")
+        # Sort suggestion is not a blocking error; print as suggestion but do not fail
+        suggestions = validate_excluded_skills_sorted(values)
+        if suggestions:
+            for s in suggestions:
+                print(f"SUGGESTION: {s}")
+        if is_template:
+            errors.extend(validate_template_package_membership(ROOT, BASE_REQUIRED_FILES))
+            root_readme = ROOT / "README.md"
+            project_readme_template = ROOT / ".agents/templates/project-README.md"
+            if root_readme.exists() and "{{PROJECT_NAME}}" in root_readme.read_text(encoding="utf-8"):
+                errors.append("template repository README must document Project Template, not the target project")
+            if (
+                project_readme_template.exists()
+                and "{{PROJECT_NAME}}" not in project_readme_template.read_text(encoding="utf-8")
+            ):
+                errors.append("target project README template must contain {{PROJECT_NAME}}")
+            for section, keys in UNSELECTED_TEMPLATE_FIELDS.items():
+                for key in sorted(keys):
+                    if values.get(section, {}).get(key) != "not-configured":
+                        errors.append(f"stack-neutral template must leave {section}.{key} not-configured")
+            if "{{PROJECT_NAME}}" in agents:
+                errors.append("template repository AGENTS.md must document Project Template, not the target project")
+            errors.extend(validate_agents_template(agents))
+        elif "{{" in agents:
+            errors.append("bootstrapped AGENTS.md must resolve every template placeholder")
+        errors.extend(validate_agents_sections(agents, policy=policy))
+        root_readme = ROOT / "README.md"
+        if root_readme.is_file():
+            errors.extend(validate_project_readme(
+                root_readme.read_text(encoding="utf-8"),
+                is_template=is_template,
+            ))
+        if values.get("tooling", {}).get("python_minimum") != "3.11":
+            errors.append("project profile tooling.python_minimum must be 3.11")
+
+    required_files = BASE_REQUIRED_FILES | (TEMPLATE_ONLY_FILES if is_template else set())
+    # Respect harness.excluded_skills: excluded skills are not required
+    excluded_for_validation: set[str] = set()
+    raw_excluded = values.get("harness", {}).get("excluded_skills", [])
+    if isinstance(raw_excluded, list):
+        excluded_for_validation = {str(x).strip() for x in raw_excluded if isinstance(x, str) and str(x).strip()}
+    required_skills = (BASE_REQUIRED_SKILLS - excluded_for_validation) | (TEMPLATE_ONLY_SKILLS if is_template else set())
+    required_files = required_files_for_policy(required_files, policy)
+    if managed_only:
+        if not policy.area_managed("skills"):
+            required_skills = TEMPLATE_ONLY_SKILLS if is_template else set()
+
+    for relative in sorted(required_files):
+        if not (ROOT / relative).is_file():
+            errors.append(f"missing required file: {relative}")
+
+    skill_names: set[str] = set()
+    canonical_skills: dict[str, Path] = {}
+    for path in sorted((ROOT / ".agents/skills").glob("*/SKILL.md")):
+        try:
+            name, _description = skill_metadata(path)
+            if name != path.parent.name:
+                errors.append(f"skill name differs from directory: {path}")
+            if name in skill_names:
+                errors.append(f"duplicate skill name: {name}")
+            skill_names.add(name)
+            canonical_skills[name] = path
+        except (OSError, UnicodeError, ValueError) as error:
+            errors.append(f"invalid skill {path.relative_to(ROOT)}: {error}")
+    for name in sorted(required_skills - skill_names):
+        errors.append(f"missing required skill: {name}")
+
+    if not is_template:
+        for relative in sorted(TEMPLATE_ONLY_FILES):
+            if (ROOT / relative).is_file():
+                errors.append(f"{relative} is template-only and must not exist in a bootstrapped project")
+
+    if (ROOT / ".agents/skills-available").is_dir():
+        errors.append(".agents/skills-available is obsolete and must not exist; optional skills live in tools/harness/skills-available")
+
+    if (ROOT / ".grok/skills-available").is_dir():
+        errors.append(".grok/skills-available is obsolete and must not exist; host adapters are generated on installation")
+
+    if (ROOT / "tools/harness/skills-available").is_dir():
+        if not is_template:
+            errors.append("tools/harness/skills-available is template-only and must not exist in a bootstrapped project")
+        else:
+            for path in sorted((ROOT / "tools/harness/skills-available").glob("*/SKILL.md")):
+                try:
+                    name, _description = skill_metadata(path)
+                    if name != path.parent.name:
+                        errors.append(f"available skill name differs from directory: {path}")
+                except (OSError, UnicodeError, ValueError) as error:
+                    errors.append(f"invalid available skill {path.relative_to(ROOT)}: {error}")
+
+    generated_adapter_roots = (
+        ("adapter-claude", "Claude", ROOT / ".claude" / "skills"),
+        ("adapter-grok", "Grok Build", ROOT / ".grok" / "skills"),
+    )
+    adapter_skills = adapter_skill_inventory(
+        canonical_skills,
+        excluded_for_validation,
+        is_template,
+    )
+    for area, host, adapter_root in generated_adapter_roots:
+        if not area_required(area):
+            continue
+        errors.extend(validate_generated_skill_adapters(adapter_skills, adapter_root, host))
+
+    hook_policy = load_json(".agents/hooks/policy.json", errors) if area_required("hooks") else {}
+    for item in hook_policy.get("blocked_command_patterns", []):
+        try:
+            re.compile(item["pattern"])
+        except (KeyError, TypeError, re.error) as error:
+            errors.append(f"invalid blocked command pattern: {error}")
+    for key in ("blocked_file_patterns", "safe_file_patterns"):
+        for pattern in hook_policy.get(key, []):
+            try:
+                re.compile(pattern)
+            except (TypeError, re.error) as error:
+                errors.append(f"invalid {key} entry: {error}")
+    if area_required("hooks"):
+        agy_hooks = load_json(".agents/hooks.json", errors)
+        for name, spec in agy_hooks.items():
+            if not isinstance(spec, dict):
+                errors.append(f"invalid hook spec in .agents/hooks.json: {name}")
+
+    if area_required("adapter-claude"):
+        errors.extend(validate_claude_adapter(load_json(".claude/settings.json", errors)))
+    if area_required("adapter-codex"):
+        hooks = load_json(".codex/hooks.json", errors)
+        events = hooks.get("hooks", {})
+        for event in ("SessionStart", "PreToolUse"):
+            if event not in events:
+                errors.append(f"Codex hooks missing event: {event}")
+        if "Stop" in events:
+            errors.append("Codex hooks must not use a Stop receipt check")
+    if area_required("adapter-opencode"):
+        opencode = load_json("opencode.json", errors)
+        errors.extend(validate_opencode_instructions(opencode))
+
+    config_path = ROOT / ".codex/config.toml"
+    if area_required("adapter-codex") and config_path.exists() and tomllib is not None:
+        try:
+            tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+            errors.append(f"invalid TOML .codex/config.toml: {error}")
+
+    validators = (
+        ("task progress records", ROOT / ".agents/scripts/task-status", ["--check"]),
+        ("handoff snapshots", ROOT / ".agents/scripts/handoff-status", ["--check"]),
+    )
+    for label, validator, arguments in validators:
+        if not validator.exists():
+            continue
+        completed = subprocess.run(
+            [sys.executable, str(validator), *arguments], cwd=ROOT,
+            text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+        )
+        if completed.returncode != 0:
+            errors.append(f"invalid {label}: {(completed.stdout + completed.stderr).strip()}")
+
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}")
+        print(f"validation failed: {len(errors)} error(s)")
+        return 1
+    if not args.quiet:
+        print(f"configuration valid: {len(skill_names)} skills, minimal orchestration, Claude Code/Codex/Grok Build/OpenCode adapters")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

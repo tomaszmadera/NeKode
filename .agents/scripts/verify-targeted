@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Run one explicit targeted check."""
+
+from __future__ import annotations
+
+import argparse
+
+from common import run
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = list(args.command)
+    if command and command[0] == "--":
+        command = command[1:]
+    if not command:
+        parser.error("provide the exact targeted command after --")
+    print("running targeted check:", " ".join(command))
+    result = run(command)
+    return result.returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

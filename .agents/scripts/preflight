@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""Check local prerequisites without mutating the project."""
+
+from __future__ import annotations
+
+import re
+import platform
+import sys
+from pathlib import Path
+
+from common import ROOT, command_exists, profile_value, resolve_command, run
+
+ARTIFACT_DIRECTORIES = ("__pycache__", ".venv", "node_modules", "dist", "build")
+
+
+def report(label: str, status: str, detail: str = "") -> None:
+    suffix = f": {detail}" if detail else ""
+    print(f"[{status}] {label}{suffix}")
+
+
+def version_tuple(value: str) -> tuple[int, int] | None:
+    match = re.fullmatch(r"(\d+)\.(\d+)", value.strip())
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def windows_launcher_hint(minimum: tuple[int, int], launcher_output: str) -> str | None:
+    compatible: list[tuple[int, int]] = []
+    for major, minor in re.findall(r"-V:(\d+)\.(\d+)", launcher_output):
+        candidate = int(major), int(minor)
+        if candidate >= minimum:
+            compatible.append(candidate)
+    if not compatible:
+        return None
+    selected = max(compatible)
+    return f"py -{selected[0]}.{selected[1]} .agents/scripts/preflight"
+
+
+def discover_compatible_launcher(minimum: tuple[int, int]) -> str | None:
+    if platform.system() != "Windows" or not command_exists("py"):
+        return None
+    result = run(["py", "-0p"], capture=True)
+    if result.returncode != 0:
+        return None
+    return windows_launcher_hint(minimum, (result.stdout or "") + (result.stderr or ""))
+
+
+def detect_system(*, system_name: str | None = None, proc_version: str | None = None) -> str:
+    name = platform.system() if system_name is None else system_name
+    if name == "Windows":
+        return "windows"
+    if proc_version is None:
+        try:
+            proc_version = Path("/proc/version").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            proc_version = ""
+    if "microsoft" in proc_version.lower():
+        return "wsl"
+    return "posix"
+
+
+def venv_active(
+    *,
+    prefix: str | None = None,
+    base_prefix: str | None = None,
+    has_real_prefix: bool | None = None,
+) -> bool:
+    current = sys.prefix if prefix is None else prefix
+    base = sys.base_prefix if base_prefix is None else base_prefix
+    real = hasattr(sys, "real_prefix") if has_real_prefix is None else has_real_prefix
+    return current != base or real
+
+
+def first_program_available(program: str) -> bool:
+    if "/" in program or "\\" in program or program[1:2] == ":":
+        return (ROOT / program).exists()
+    return command_exists(program)
+
+
+def git_line(*args: str) -> str | None:
+    result = run(["git", *args], capture=True)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def worktree_counts(root: Path) -> dict[str, int]:
+    counts = {"staged": 0, "unstaged": 0, "untracked": 0}
+    result = run(["git", "status", "--porcelain"], capture=True, cwd=root)
+    if result.returncode != 0:
+        return counts
+    for line in result.stdout.splitlines():
+        code = line[:2]
+        if code == "??":
+            counts["untracked"] += 1
+            continue
+        if code[0] not in (" ", "?"):
+            counts["staged"] += 1
+        if code[1] != " ":
+            counts["unstaged"] += 1
+    return counts
+
+
+def detected_artifacts(root: Path, names: tuple[str, ...] = ARTIFACT_DIRECTORIES) -> list[str]:
+    return [name for name in names if (root / name).is_dir()]
+
+
+def check_verification(key: str) -> bool:
+    value = profile_value("verification", key)
+    if value in {"", "none", "not-configured"}:
+        report(f"verification.{key}", "skip", "not configured in the project profile")
+        return True
+    try:
+        command = resolve_command(value)
+    except ValueError as error:
+        report(f"verification.{key}", "fail", f"{error} (verification.{key})")
+        return False
+    program = command[0]
+    if not first_program_available(program):
+        report(f"verification.{key}", "fail", f"program not found: {program} (verification.{key})")
+        return False
+    report(f"verification.{key}", "ok", program)
+    return True
+
+
+def report_branch_and_upstream(repository_ok: bool) -> None:
+    if not repository_ok:
+        report("branch", "skip", "requires a repository")
+        report("upstream", "skip", "requires a repository")
+        return
+    branch = git_line("rev-parse", "--abbrev-ref", "HEAD")
+    if branch == "HEAD":
+        report("branch", "info", "detached HEAD")
+        report("upstream", "info", "not evaluated in detached HEAD")
+        return
+    if not branch:
+        report("branch", "info", "unknown")
+        report("upstream", "skip", "requires a branch")
+        return
+    report("branch", "ok", branch)
+    upstream = git_line("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if upstream is None:
+        report("upstream", "info", "no upstream configured")
+        return
+    counts = git_line("rev-list", "--left-right", "--count", f"HEAD...{upstream}")
+    detail = upstream
+    if counts and "\t" in counts:
+        ahead, behind = counts.split("\t", 1)
+        detail = f"{upstream} (ahead {ahead}, behind {behind})"
+    report("upstream", "ok", detail)
+
+
+def main() -> int:
+    failures = 0
+    git_available = command_exists("git")
+    repository = run(["git", "rev-parse", "--is-inside-work-tree"], capture=True) if git_available else None
+    repository_ok = repository is not None and repository.returncode == 0 and repository.stdout.strip() == "true"
+    report("repository", "ok" if repository_ok else "fail", str(ROOT))
+    report("Git", "ok" if git_available else "fail")
+    if not repository_ok or not git_available:
+        failures += 1
+    report("system", "ok", detect_system())
+    minimum_text = profile_value("tooling", "python_minimum", "")
+    minimum = version_tuple(minimum_text)
+    if minimum is None:
+        shown = minimum_text or "missing"
+        report("Python", "fail", f"invalid tooling.python_minimum: {shown}; expected MAJOR.MINOR")
+        failures += 1
+    else:
+        supported_python = sys.version_info[:2] >= minimum
+        python_detail = f"{sys.executable} ({platform.python_version()}; requires >= {minimum[0]}.{minimum[1]})"
+        if not supported_python:
+            hint = discover_compatible_launcher(minimum)
+            if hint:
+                python_detail += f"; rerun with: {hint}"
+        report("Python", "ok" if supported_python else "fail", python_detail)
+        if not supported_python:
+            failures += 1
+
+    provider = profile_value("local_environment", "provider")
+    if provider == "not-configured":
+        report("local environment", "skip", "select it during project bootstrap")
+    else:
+        report("local environment", "ok", provider)
+    active = venv_active()
+    report("venv", "ok" if active else "info", f"active ({sys.executable})" if active else "not active")
+
+    if not check_verification("changed_command"):
+        failures += 1
+    if not check_verification("full_command"):
+        failures += 1
+
+    report_branch_and_upstream(repository_ok)
+
+    if repository_ok:
+        counts = worktree_counts(ROOT)
+        total = sum(counts.values())
+        if total:
+            report("worktree", "info", ", ".join(f"{name} {count}" for name, count in counts.items()))
+        else:
+            report("worktree", "ok", "clean")
+        artifacts = detected_artifacts(ROOT)
+        report("artifacts", "info" if artifacts else "ok", ", ".join(artifacts) if artifacts else "none")
+    else:
+        report("worktree", "skip", "requires a repository")
+        report("artifacts", "skip", "requires a repository")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

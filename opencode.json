@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [],
+  "permission": {
+    "skill": "allow",
+    "task": "allow",
+    "edit": "allow",
+    "external_directory": "ask",
+    "bash": {
+      "*": "ask",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "rg *": "allow",
+      "python .agents/scripts/validate-config*": "allow",
+      "python .agents/scripts/task-status*": "allow",
+      "python .agents/skills/ci/scripts/ci.py*": "allow"
+    }
+  }
+}

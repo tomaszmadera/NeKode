@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Validate the product invariant register."""
+
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_REGISTER = ROOT / "docs" / "product" / "invariants.md"
+REQUIRED_FIELDS = (
+    "statement", "source", "blocking_scope", "status",
+    "acceptance", "evidence", "related_specs", "decision",
+)
+ALLOWED_STATUSES = ("met", "unmet", "deferred-by-decision")
+FIELD_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9_]*):(.*)$")
+
+
+def parse_entries(lines: list[str], errors: list[str]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for line in lines:
+        if line.startswith("### "):
+            current = {"id": line[4:].strip(), "fields": {}}
+            entries.append(current)
+            continue
+        if current is None or not line.strip():
+            continue
+        match = FIELD_PATTERN.match(line.strip())
+        if match is None:
+            continue
+        field, value = match.group(1), match.group(2).strip()
+        if field == "id" or field not in REQUIRED_FIELDS:
+            errors.append(f"{current['id'] or '<missing id>'}: unknown field: {field}")
+        elif field in current["fields"]:
+            errors.append(f"{current['id']}: duplicate field: {field}")
+        else:
+            current["fields"][field] = value
+    for entry in entries:
+        if not entry["id"]:
+            errors.append("entry without an id")
+    return entries
+
+
+def validate_entry(entry: dict[str, Any], errors: list[str]) -> None:
+    entry_id = entry["id"]
+    fields = entry["fields"]
+    for field in REQUIRED_FIELDS:
+        if field not in fields:
+            errors.append(f"{entry_id}: missing required field: {field}")
+    status = fields.get("status")
+    evidence = fields.get("evidence", "")
+    decision = fields.get("decision", "")
+    if status is None:
+        return
+    if status not in ALLOWED_STATUSES:
+        errors.append(f"{entry_id}: invalid status: {status}")
+    elif status == "met" and not evidence:
+        errors.append(f"{entry_id}: status met requires non-empty evidence")
+    elif status == "deferred-by-decision":
+        if not decision:
+            errors.append(f"{entry_id}: status deferred-by-decision requires non-empty decision")
+        if not evidence:
+            errors.append(f"{entry_id}: empty evidence is allowed only for unmet")
+
+
+def validate_register(path: Path) -> dict[str, Any]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        return {"path": path, "count": 0, "errors": [f"cannot read register: {error}"]}
+    errors: list[str] = []
+    entries = parse_entries(lines, errors)
+    for entry in entries:
+        validate_entry(entry, errors)
+    seen: set[str] = set()
+    for entry in entries:
+        if not entry["id"]:
+            continue
+        if entry["id"] in seen:
+            errors.append(f"{entry['id']}: duplicate entry id")
+        seen.add(entry["id"])
+    return {"path": path, "count": len(entries), "errors": list(dict.fromkeys(errors))}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "path", nargs="?", type=Path, default=None,
+        help="invariant register file (default: docs/product/invariants.md)",
+    )
+    args = parser.parse_args(argv)
+    result = validate_register(args.path or DEFAULT_REGISTER)
+    for error in result["errors"]:
+        print(f"ERROR: {error}")
+    if result["errors"]:
+        return 1
+    print(f"invariants valid: {result['count']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

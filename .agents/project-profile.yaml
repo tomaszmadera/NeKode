@@ -1,0 +1,44 @@
+schema_version: 2
+harness:
+  version: "7.2.4"
+  excluded_skills: []
+project:
+  name: "NeKode"
+  kind: application
+  status: active
+  layout: not-configured
+tooling:
+  python_minimum: "3.11"
+runtime:
+  language: TypeScript
+  language_version: "not-configured"
+  framework: Electron
+  framework_version: "not-configured"
+database:
+  engine: SQLite
+  version: "not-configured"
+local_environment:
+  provider: not-configured
+quality:
+  test_runner: not-configured
+  formatter: not-configured
+  static_analysis: not-configured
+  architecture_tests: not-configured
+verification:
+  changed_command: not-configured
+  full_command: not-configured
+publication:
+  strategy: not-configured
+  versioning: not-configured
+commands:
+  preflight: "{python} .agents/scripts/preflight"
+  validate_agent_config: "{python} .agents/scripts/validate-config"
+  task_status: "{python} .agents/scripts/task-status"
+  handoff_status: "{python} .agents/scripts/handoff-status"
+  ci: "{python} .agents/skills/ci/scripts/ci.py"
+  bump: "{python} .agents/skills/ci/scripts/ci.py bump"
+  release: "{python} .agents/skills/ci/scripts/ci.py release"
+  harness_config_update: "{python} .agents/skills/harness-config-update/scripts/harness_config_update.py"
+  verify_targeted: "{python} .agents/scripts/verify-targeted --"
+  verify_changed: "{python} .agents/scripts/verify-changed"
+  verify_full: "{python} .agents/scripts/verify-full"
