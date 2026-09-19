@@ -1,0 +1,825 @@
+#!/usr/bin/env python3
+"""List and validate proportional Task-Phase-Step progress records."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+from common import profile_value
+
+_TASK_RECORD_SCRIPTS = _SCRIPTS.parent / "skills" / "task-record" / "scripts"
+if str(_TASK_RECORD_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_TASK_RECORD_SCRIPTS))
+
+from verification_subject import parse_subjects
+
+ROOT = Path(__file__).resolve().parents[2]
+ALLOWED_STATUSES = {"active", "blocked", "completed"}
+STATUS_SORT = {"active": 0, "blocked": 1, "completed": 2}
+REQUIRED_FIELDS = {
+    "id",
+    "status",
+    "intent",
+    "current_phase",
+    "current_step",
+    "updated",
+    "branch",
+    "worktree",
+    "next_action",
+    "blockers",
+}
+ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{2,79}$")
+DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+PHASE_PATTERN = re.compile(r"^## Phase (\d+)\s+[-\u2014]\s+(.+)$")
+STEP_PATTERN = re.compile(r"^- \[([ xX])\] Phase (\d+)\.(\d+)\s+[-\u2014]\s+(.+)$")
+CURRENT_PHASE_PATTERN = re.compile(r"^Phase (\d+)$")
+CURRENT_STEP_PATTERN = re.compile(r"^Phase (\d+)\.(\d+)$")
+ELEMENT_BASES = (
+    "intake",
+    "user-gate",
+    "preflight",
+    "approval",
+    "implement",
+    "correction",
+    "handoff",
+    "blocked",
+    "review",
+    "verify",
+    "close",
+    "retro",
+    "spec",
+    "plan",
+    "work",
+)
+STAGED_ELEMENT_BASES = {"implement", "review", "correction", "user-gate"}
+WAIT_ELEMENTS = {"approval", "user-gate", "handoff", "blocked"}
+TIMING_KINDS = {"work", "wait", "unmeasured"}
+ALLOWED_INTENTS = {
+    "bootstrap",
+    "greenfield",
+    "feature",
+    "refactor",
+    "debug",
+    "review",
+    "analysis",
+    "documentation",
+    "repository-operation",
+}
+ALLOWED_SIZES = {"trivial", "small", "standard", "large", "none"}
+SIZELESS_INTENTS = {"bootstrap", "review", "debug", "analysis", "repository-operation"}
+SIZED_INTENTS = {"greenfield", "feature", "refactor", "documentation"}
+ELEMENT_PATTERN = re.compile(
+    r"^(" + "|".join(ELEMENT_BASES) + r")(?::([a-z0-9]+(?:-[a-z0-9]+)*))?$"
+)
+TIMING_ROW_PATTERN = re.compile(r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*)\|\s*([^|]*)\|\s*$")
+REQUIRED_SECTIONS = {
+    "Objective",
+    "Scope",
+    "Decisions",
+    "Changed files",
+    "Verification",
+    "Timing",
+    "Risks and blockers",
+    "Resume instructions",
+}
+
+
+def append_error(errors: list[str], message: str) -> None:
+    if message not in errors:
+        errors.append(message)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def parse_timestamp(value: str) -> datetime | None:
+    if not TIMESTAMP_PATTERN.fullmatch(value):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def format_duration(seconds: int | None) -> str:
+    if seconds is None:
+        return "-"
+    if seconds < 0:
+        seconds = 0
+    hours, remainder = divmod(int(seconds), 3600)
+    minutes, _ = divmod(remainder, 60)
+    if hours and minutes:
+        return f"{hours}h {minutes}m"
+    if hours:
+        return f"{hours}h"
+    return f"{minutes}m"
+
+
+def element_base(name: str) -> str:
+    return name.split(":", 1)[0]
+
+
+def required_timing_bases(intent: str, size: str) -> set[str]:
+    if intent not in SIZED_INTENTS or size == "none":
+        return {"work"}
+    if size == "trivial":
+        return {"work", "verify"}
+    if size == "small":
+        return {"plan", "implement", "review", "verify"}
+    if size in {"standard", "large"}:
+        return {"spec", "plan", "approval", "preflight", "implement", "review", "retro", "verify"}
+    return {"work"}
+
+
+def parse_timing_rows(lines: list[str], errors: list[str], *, start_line: int = 1) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen_header = False
+    for offset, raw in enumerate(lines):
+        number = start_line + offset
+        line = raw.strip()
+        if not line:
+            continue
+        if not seen_header:
+            normalized = re.sub(r"\s+", " ", line).strip().lower()
+            if normalized in {"| element | kind | started | ended |", "element | kind | started | ended"}:
+                seen_header = True
+            elif line.startswith("|") and "element" in line.lower() and "kind" in line.lower():
+                seen_header = True
+            else:
+                append_error(errors, f"timing table is missing the Element/Kind/Started/Ended header at line {number}")
+                return []
+            continue
+        if re.fullmatch(r"\|?[-:| ]+\|?", line):
+            continue
+        if not line.startswith("|"):
+            continue
+        match = TIMING_ROW_PATTERN.fullmatch(line)
+        if not match:
+            append_error(errors, f"malformed timing row at line {number}: {line}")
+            continue
+        element, kind, started, ended = (item.strip() for item in match.groups())
+        rows.append(
+            {
+                "element": element,
+                "kind": kind,
+                "started": started,
+                "ended": ended,
+                "line": number,
+            }
+        )
+    if not seen_header and any(line.strip() for line in lines):
+        append_error(errors, "timing table is missing the Element/Kind/Started/Ended header")
+    return rows
+
+
+def validate_classification(metadata: dict[str, str], errors: list[str]) -> None:
+    intent = metadata.get("intent", "")
+    canonical = "complexity" in metadata or "durability" in metadata or "size" not in metadata
+    if canonical:
+        if "size" in metadata:
+            append_error(errors, "task record cannot mix canonical classification fields with legacy size")
+        for field in ("complexity", "durability"):
+            if field not in metadata:
+                append_error(errors, f"missing frontmatter field: {field}")
+        complexity = metadata.get("complexity", "")
+        if complexity and complexity not in ALLOWED_SIZES - {"none"}:
+            append_error(errors, f"unsupported complexity: {complexity}")
+        if "durability" in metadata and metadata["durability"] != "recorded":
+            append_error(errors, "task record durability must be recorded")
+        if intent and intent not in ALLOWED_INTENTS - {"greenfield"}:
+            append_error(errors, f"unsupported intent: {intent}")
+        return
+    # Historical records keep their original intent/size contract.
+    size = metadata.get("size", "")
+    if intent and intent not in ALLOWED_INTENTS:
+        append_error(errors, f"unsupported intent: {intent}")
+    if size and size not in ALLOWED_SIZES:
+        append_error(errors, f"unsupported size: {size}")
+    if intent in SIZELESS_INTENTS and size and size != "none":
+        append_error(errors, f"{intent} must use size: none")
+    if intent == "greenfield" and size and size != "large":
+        append_error(errors, "greenfield must use size: large")
+    if intent in SIZED_INTENTS and intent != "greenfield" and size == "none":
+        append_error(errors, f"{intent} requires a development size class")
+
+
+def summarize_timing(
+    entries: list[dict[str, Any]],
+    *,
+    status: str,
+    now: datetime,
+) -> dict[str, Any]:
+    closed_work = 0
+    closed_wait = 0
+    started_times: list[datetime] = []
+    ended_times: list[datetime] = []
+    json_entries: list[dict[str, Any]] = []
+    unmeasured = bool(entries) and all(item["kind"] == "unmeasured" for item in entries)
+    for item in entries:
+        started = parse_timestamp(item["started"]) if item["started"] else None
+        ended = parse_timestamp(item["ended"]) if item["ended"] else None
+        duration = int((ended - started).total_seconds()) if started and ended else None
+        if started:
+            started_times.append(started)
+        if ended:
+            ended_times.append(ended)
+        if duration is not None and item["kind"] == "work":
+            closed_work += duration
+        if duration is not None and item["kind"] == "wait":
+            closed_wait += duration
+        json_entries.append(
+            {
+                "element": item["element"],
+                "kind": item["kind"],
+                "started": item["started"] or None,
+                "ended": item["ended"] or None,
+                "duration_seconds": duration,
+            }
+        )
+    if unmeasured:
+        return {
+            "entries": json_entries,
+            "total_work_seconds": None,
+            "total_wait_seconds": None,
+            "total_elapsed_seconds": None,
+            "unaccounted_seconds": None,
+        }
+    elapsed = None
+    if started_times:
+        end_point = max(ended_times) if status == "completed" and ended_times else now
+        if status != "completed":
+            end_point = now
+        elif ended_times:
+            end_point = max(ended_times)
+        elapsed = int((end_point - min(started_times)).total_seconds())
+    unaccounted = None if elapsed is None else elapsed - closed_work - closed_wait
+    return {
+        "entries": json_entries,
+        "total_work_seconds": closed_work if started_times else None,
+        "total_wait_seconds": closed_wait if started_times else None,
+        "total_elapsed_seconds": elapsed,
+        "unaccounted_seconds": unaccounted,
+    }
+
+
+def derive_activity(status: str, timing: dict[str, Any] | None) -> str:
+    """Live occupancy from Timing plus status. Not a fourth frontmatter status."""
+    entries: list[Any] = []
+    if isinstance(timing, dict):
+        raw = timing.get("entries")
+        if isinstance(raw, list):
+            entries = raw
+    open_kinds: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        ended = entry.get("ended")
+        if ended is None or str(ended).strip() == "":
+            kind = str(entry.get("kind") or "").strip()
+            if kind:
+                open_kinds.append(kind)
+    if "work" in open_kinds:
+        return "working"
+    if status == "blocked" or "wait" in open_kinds:
+        return "waiting"
+    return "idle"
+
+
+def validate_timing(
+    rows: list[dict[str, Any]],
+    *,
+    status: str,
+    intent: str,
+    size: str,
+    errors: list[str],
+) -> list[dict[str, Any]]:
+    if not rows:
+        append_error(errors, "timing table has no rows")
+        return []
+
+    for row in rows:
+        if row["kind"] == "unmeasured":
+            if status != "completed":
+                append_error(errors, f"unmeasured timing is only valid on completed records at line {row['line']}")
+            if row["started"] or row["ended"]:
+                append_error(errors, f"unmeasured timing must leave Started and Ended empty at line {row['line']}")
+            if row["element"] and not ELEMENT_PATTERN.fullmatch(row["element"]):
+                append_error(errors, f"invalid timing element at line {row['line']}: {row['element']}")
+
+    if all(row["kind"] == "unmeasured" for row in rows):
+        return rows
+
+    work_intervals: list[tuple[datetime, datetime]] = []
+    previous_ended: datetime | None = None
+    previous_open = False
+    open_ids: set[str] = set()
+    for row in rows:
+        element = row["element"]
+        kind = row["kind"]
+        started_raw = row["started"]
+        ended_raw = row["ended"]
+        line_no = row["line"]
+        if kind not in TIMING_KINDS:
+            append_error(errors, f"unsupported timing kind at line {line_no}: {kind}")
+            continue
+        if kind == "unmeasured":
+            continue
+        match = ELEMENT_PATTERN.fullmatch(element)
+        if not match:
+            append_error(errors, f"invalid timing element at line {line_no}: {element}")
+            continue
+        base, suffix = match.group(1), match.group(2)
+        if suffix and base not in STAGED_ELEMENT_BASES:
+            append_error(errors, f"timing element does not allow a stage suffix at line {line_no}: {element}")
+        expected_kind = "wait" if base in WAIT_ELEMENTS else "work"
+        if kind != expected_kind:
+            append_error(errors, f"timing kind for {element} at line {line_no} must be {expected_kind}")
+        if previous_open:
+            append_error(errors, f"timing row starts while previous row is open at line {line_no}: {element}")
+        if not started_raw:
+            append_error(errors, f"timing row missing Started at line {line_no}: {element}")
+            continue
+        started = parse_timestamp(started_raw)
+        if started is None:
+            append_error(errors, f"invalid Started timestamp at line {line_no}: {started_raw}")
+            continue
+        if previous_ended is not None and started < previous_ended:
+            append_error(errors, f"timing row starts before previous row ended at line {line_no}: {element}")
+        ended = None
+        if ended_raw:
+            ended = parse_timestamp(ended_raw)
+            if ended is None:
+                append_error(errors, f"invalid Ended timestamp at line {line_no}: {ended_raw}")
+                continue
+            if ended < started:
+                append_error(errors, f"timing Ended is before Started at line {line_no}: {element}")
+            previous_ended = ended
+            previous_open = False
+            if kind == "work":
+                for other_start, other_end in work_intervals:
+                    if started < other_end and ended > other_start:
+                        append_error(errors, f"overlapping work timing at line {line_no}: {element}")
+                        break
+                work_intervals.append((started, ended))
+        else:
+            if status == "completed":
+                append_error(errors, f"completed task has open timing row at line {line_no}: {element}")
+            if element in open_ids:
+                append_error(errors, f"duplicate open timing row at line {line_no}: {element}")
+            open_ids.add(element)
+            previous_open = True
+            previous_ended = None
+
+    if status == "completed" and intent and size:
+        present = {element_base(row["element"]) for row in rows}
+        missing = sorted(required_timing_bases(intent, size) - present)
+        if missing:
+            append_error(errors, "completed task missing timing rows: " + ", ".join(missing))
+    return rows
+
+
+def frontmatter(lines: list[str], errors: list[str]) -> tuple[dict[str, str], int]:
+    if not lines or lines[0].strip() != "---":
+        append_error(errors, "missing frontmatter opening delimiter")
+        return {}, 0
+    try:
+        end = next(index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---")
+    except StopIteration:
+        append_error(errors, "missing frontmatter closing delimiter")
+        return {}, len(lines)
+
+    metadata: dict[str, str] = {}
+    for number, line in enumerate(lines[1:end], start=2):
+        key, separator, value = line.partition(":")
+        key = key.strip()
+        if not separator or not key or not value.strip():
+            append_error(errors, f"invalid frontmatter line {number}")
+            continue
+        if key in metadata:
+            append_error(errors, f"duplicate frontmatter field: {key}")
+            continue
+        metadata[key] = value.strip()
+    return metadata, end + 1
+
+
+def validate_record(path: Path) -> dict[str, Any]:
+    errors: list[str] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        return {
+            "path": path,
+            "metadata": {},
+            "steps": [],
+            "phases": [],
+            "title": "",
+            "objective": "",
+            "completed_steps": 0,
+            "total_steps": 0,
+            "errors": [f"cannot read record: {error}"],
+        }
+
+    metadata, body_start = frontmatter(lines, errors)
+    for field in sorted(REQUIRED_FIELDS - set(metadata)):
+        append_error(errors, f"missing frontmatter field: {field}")
+
+    task_id = metadata.get("id", "")
+    status = metadata.get("status", "")
+    if task_id and not ID_PATTERN.fullmatch(task_id):
+        append_error(errors, f"invalid task id: {task_id}")
+    if status and status not in ALLOWED_STATUSES:
+        append_error(errors, f"unsupported status: {status}")
+    if metadata.get("updated") and not DATE_PATTERN.fullmatch(metadata["updated"]):
+        append_error(errors, f"invalid updated date: {metadata['updated']}")
+    validate_classification(metadata, errors)
+    schema_version = metadata.get("schema_version")
+    if schema_version and schema_version != "2":
+        append_error(errors, f"unsupported task record schema_version: {schema_version}")
+
+    sections: dict[str, list[str]] = {}
+    current_section = ""
+    for line in lines[body_start:]:
+        if line.startswith("## "):
+            current_section = line[3:].strip()
+            sections.setdefault(current_section, [])
+        elif current_section:
+            sections[current_section].append(line)
+    for section in sorted(REQUIRED_SECTIONS - set(sections)):
+        append_error(errors, f"missing section: {section}")
+    heading_order = [line[3:].strip() for line in lines[body_start:] if line.startswith("## ")]
+    if "Verification" in heading_order and "Timing" in heading_order:
+        if heading_order.index("Timing") < heading_order.index("Verification"):
+            append_error(errors, "Timing section must come after Verification")
+        if "Risks and blockers" in heading_order and heading_order.index("Timing") > heading_order.index("Risks and blockers"):
+            append_error(errors, "Timing section must come before Risks and blockers")
+
+    timing_heading_line = next(
+        (index for index, line in enumerate(lines, start=1) if line.startswith("## Timing")),
+        1,
+    )
+    timing_rows = validate_timing(
+        parse_timing_rows(
+            sections.get("Timing", []),
+            errors,
+            start_line=timing_heading_line + 1,
+        ) if "Timing" in sections else [],
+        status=status,
+        intent=metadata.get("intent", ""),
+        size=metadata.get("complexity", metadata.get("size", "")),
+        errors=errors,
+    ) if "Timing" in sections else []
+
+    verification_subjects, subject_errors = parse_subjects("\n".join(lines))
+    for error in subject_errors:
+        append_error(errors, error)
+    if schema_version == "2":
+        verify_rows = [row for row in timing_rows if element_base(row["element"]) == "verify"]
+        if status == "completed" and verify_rows and not verification_subjects:
+            append_error(errors, "completed schema v2 task with verification requires a verification subject")
+        elif len(verification_subjects) != len(verify_rows):
+            append_error(
+                errors,
+                "schema v2 verification subject count must match verify timing row count",
+            )
+
+    phases: list[int] = []
+    phase_set: set[int] = set()
+    phase_entries: list[dict[str, Any]] = []
+    last_step_by_phase: dict[int, int] = {}
+    current_heading: int | None = None
+    steps: list[dict[str, Any]] = []
+    step_ids: set[str] = set()
+    title = ""
+    for line in lines[body_start:]:
+        if line.startswith("# "):
+            title = line[2:].strip()
+            break
+    objective = "\n".join(line.rstrip() for line in sections.get("Objective", [])).strip()
+
+    for number, line in enumerate(lines[body_start:], start=body_start + 1):
+        phase_match = PHASE_PATTERN.fullmatch(line)
+        if phase_match:
+            phase = int(phase_match.group(1))
+            name = phase_match.group(2).strip()
+            if phase in phase_set:
+                append_error(errors, f"duplicate phase heading: Phase {phase}")
+            elif phases and phase <= phases[-1]:
+                append_error(errors, f"phase headings are not increasing at Phase {phase}")
+            else:
+                phases.append(phase)
+                phase_set.add(phase)
+                phase_entries.append({"number": phase, "name": name})
+            current_heading = phase
+            continue
+
+        step_match = STEP_PATTERN.fullmatch(line)
+        if step_match:
+            checked = step_match.group(1).lower() == "x"
+            phase = int(step_match.group(2))
+            step = int(step_match.group(3))
+            label = step_match.group(4).strip()
+            identifier = f"Phase {phase}.{step}"
+            if current_heading is None:
+                append_error(errors, f"step {identifier} has no phase heading")
+            elif current_heading != phase:
+                append_error(errors, f"step {identifier} is nested under Phase {current_heading}")
+            if step < 1:
+                append_error(errors, f"step number must start at one: {identifier}")
+            if identifier in step_ids:
+                append_error(errors, f"duplicate step identifier: {identifier}")
+            else:
+                step_ids.add(identifier)
+            previous = last_step_by_phase.get(phase)
+            if previous is not None and step <= previous:
+                append_error(errors, f"step numbers are not increasing at {identifier}")
+            last_step_by_phase[phase] = step
+            steps.append(
+                {
+                    "id": identifier,
+                    "phase": phase,
+                    "step": step,
+                    "label": label,
+                    "checked": checked,
+                    "line": number,
+                }
+            )
+            continue
+
+        if re.match(r"^- \[[ xX]\]\s+Phase\b", line):
+            append_error(errors, f"malformed step at line {number}")
+
+    if phases and phases[0] != 0:
+        append_error(errors, "first phase must be Phase 0")
+    if not phases:
+        append_error(errors, "record has no phase headings")
+    if not steps:
+        append_error(errors, "record has no steps")
+
+    current_phase_value = metadata.get("current_phase", "")
+    current_phase_match = CURRENT_PHASE_PATTERN.fullmatch(current_phase_value)
+    current_phase = int(current_phase_match.group(1)) if current_phase_match else None
+    if current_phase_value and current_phase_match is None:
+        append_error(errors, f"invalid current phase: {current_phase_value}")
+    elif current_phase is not None and current_phase not in phase_set:
+        append_error(errors, f"current phase does not exist: {current_phase_value}")
+
+    current_step_value = metadata.get("current_step", "")
+    current_step = next((item for item in steps if item["id"] == current_step_value), None)
+    if current_step_value and current_step_value != "none" and not CURRENT_STEP_PATTERN.fullmatch(current_step_value):
+        append_error(errors, f"invalid current step: {current_step_value}")
+    elif current_step_value and current_step_value != "none" and current_step is None:
+        append_error(errors, f"current step does not exist: {current_step_value}")
+    elif current_step is not None and current_step["checked"]:
+        append_error(errors, f"current step is already checked: {current_step_value}")
+    if current_step is not None and current_phase is not None and current_step["phase"] != current_phase:
+        append_error(errors, "current step does not belong to current phase")
+
+    blockers = metadata.get("blockers", "").strip().lower()
+    next_action = metadata.get("next_action", "").strip().lower()
+    unchecked = [item for item in steps if not item["checked"]]
+
+    if status in {"active", "blocked"} and current_step_value == "none":
+        append_error(errors, f"{status} task requires a current step")
+    if status == "active" and blockers not in {"", "none"}:
+        append_error(errors, "active task must not declare blockers")
+    if status == "blocked" and blockers in {"", "none"}:
+        append_error(errors, "blocked task requires a concrete blocker")
+    if status in {"active", "blocked"} and next_action in {"", "none"}:
+        append_error(errors, f"{status} task requires a next action")
+    if status == "completed":
+        if current_step_value != "none":
+            append_error(errors, "completed task must use current_step: none")
+        if unchecked:
+            append_error(errors, "completed task has unchecked steps")
+        if blockers not in {"", "none"}:
+            append_error(errors, "completed task must not declare blockers")
+        if next_action not in {"", "none"}:
+            append_error(errors, "completed task must use next_action: none")
+        for section in ("Changed files", "Verification", "Resume instructions"):
+            content = [
+                line.strip() for line in sections.get(section, [])
+                if line.strip() and not re.fullmatch(r"\|?[-:| ]+\|?", line.strip())
+                and line.strip() not in {"| Check | Result | Notes |", "|---|---|---|"}
+            ]
+            if not content:
+                append_error(errors, f"completed task requires content in section: {section}")
+
+    completed_steps = sum(1 for item in steps if item["checked"])
+    timing = summarize_timing(timing_rows, status=status, now=utc_now())
+    return {
+        "path": path,
+        "metadata": metadata,
+        "steps": steps,
+        "phases": phase_entries,
+        "title": title,
+        "objective": objective,
+        "completed_steps": completed_steps,
+        "total_steps": len(steps),
+        "timing": timing,
+        "timing_rows": timing_rows,
+        "verification_subjects": verification_subjects,
+        "errors": errors,
+    }
+
+
+def approved_roots(root: Path = ROOT) -> tuple[Path, ...]:
+    return ((root / ".agents" / "tasks").resolve(),)
+
+
+def is_approved_path(path: Path, root: Path = ROOT) -> bool:
+    resolved = path.resolve()
+    return any(resolved.is_relative_to(base) for base in approved_roots(root))
+
+
+def discover_paths(root: Path = ROOT) -> list[Path]:
+    paths = set((root / ".agents" / "tasks").glob("*/task.md"))
+    return sorted(path.resolve() for path in paths if is_approved_path(path, root))
+
+
+def relative(path: Path, root: Path = ROOT) -> str:
+    try:
+        return str(path.resolve().relative_to(root.resolve())).replace("\\", "/")
+    except ValueError:
+        return str(path)
+
+
+def _task_payload(result: dict[str, Any], root: Path) -> dict[str, Any]:
+    metadata = result["metadata"]
+    steps_by_phase: dict[int, list[dict[str, Any]]] = {}
+    for step in result["steps"]:
+        steps_by_phase.setdefault(step["phase"], []).append(
+            {
+                "id": step["id"],
+                "label": step.get("label", ""),
+                "checked": step["checked"],
+            }
+        )
+    seen: set[int] = set()
+    phases: list[dict[str, Any]] = []
+    for phase in result.get("phases", []):
+        number = phase["number"]
+        seen.add(number)
+        phases.append(
+            {
+                "number": number,
+                "name": phase["name"],
+                "steps": steps_by_phase.get(number, []),
+            }
+        )
+    for number in sorted(set(steps_by_phase) - seen):
+        phases.append({"number": number, "name": "", "steps": steps_by_phase[number]})
+    timing = result.get("timing") or {
+        "entries": [],
+        "total_work_seconds": None,
+        "total_wait_seconds": None,
+        "total_elapsed_seconds": None,
+        "unaccounted_seconds": None,
+    }
+    status = metadata.get("status", "")
+    return {
+        "id": metadata.get("id", ""),
+        "title": result.get("title", ""),
+        "status": status,
+        "activity": derive_activity(status, timing),
+        "current_phase": metadata.get("current_phase", ""),
+        "current_step": metadata.get("current_step", ""),
+        "updated": metadata.get("updated", ""),
+        "branch": metadata.get("branch", ""),
+        "worktree": metadata.get("worktree", ""),
+        "next_action": metadata.get("next_action", ""),
+        "blockers": metadata.get("blockers", ""),
+        "path": relative(result["path"], root),
+        "objective": result.get("objective", ""),
+        "completed_steps": result["completed_steps"],
+        "total_steps": result["total_steps"],
+        "timing": timing,
+        "errors": list(result["errors"]),
+        "phases": phases,
+    }
+
+
+def snapshot_from_paths(paths: list[Path], root: Path = ROOT) -> dict[str, Any]:
+    results = [validate_record(path) for path in paths]
+    duplicate_ids: dict[str, list[Path]] = {}
+    for result in results:
+        task_id = result["metadata"].get("id")
+        if task_id:
+            duplicate_ids.setdefault(task_id, []).append(result["path"])
+    for task_id, matches in sorted(duplicate_ids.items()):
+        if len(matches) < 2:
+            continue
+        message = f"duplicate task id {task_id}: {', '.join(relative(path, root) for path in matches)}"
+        for result in results:
+            if result["metadata"].get("id") == task_id:
+                append_error(result["errors"], message)
+
+    tasks = [_task_payload(result, root) for result in results]
+    tasks.sort(key=lambda item: (STATUS_SORT.get(item["status"], 3), item["id"]))
+    return {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "project": profile_value("project", "name", ""),
+        "tasks": tasks,
+    }
+
+
+def snapshot(root: Path = ROOT) -> dict[str, Any]:
+    return snapshot_from_paths(discover_paths(root), root)
+
+
+def collect_errors(results: list[dict[str, Any]], root: Path = ROOT) -> list[str]:
+    duplicate_ids: dict[str, list[Path]] = {}
+    for result in results:
+        task_id = result["metadata"].get("id")
+        if task_id:
+            duplicate_ids.setdefault(task_id, []).append(result["path"])
+    errors = [
+        f"duplicate task id {task_id}: {', '.join(relative(path, root) for path in matches)}"
+        for task_id, matches in sorted(duplicate_ids.items())
+        if len(matches) > 1
+    ]
+    for result in results:
+        errors.extend(f"{relative(result['path'], root)}: {message}" for message in result["errors"])
+    return errors
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="List and validate task progress records.")
+    parser.add_argument("paths", nargs="*", help="Optional task record paths; defaults to local and tracked records.")
+    parser.add_argument("--check", action="store_true", help="Validate records and fail on any contract violation.")
+    parser.add_argument("--json", action="store_true", help="Print a JSON snapshot of discovered records.")
+    args = parser.parse_args()
+
+    paths = [Path(item).resolve() for item in args.paths] if args.paths else discover_paths()
+    if not paths:
+        if args.json:
+            print(json.dumps(snapshot_from_paths([], ROOT), indent=2, ensure_ascii=False))
+            return 0
+        print("No task records found.")
+        return 0
+
+    rejected = [path for path in paths if not is_approved_path(path)]
+    if rejected:
+        for _path in rejected:
+            print("ERROR: task record path is outside approved roots")
+        return 1
+
+    if args.json:
+        data = snapshot_from_paths(paths, ROOT)
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        if args.check and any(task["errors"] for task in data["tasks"]):
+            results = [validate_record(path) for path in paths]
+            for error in collect_errors(results):
+                print(f"ERROR: {error}", file=sys.stderr)
+            return 1
+        return 0
+
+    results = [validate_record(path) for path in paths]
+    errors = collect_errors(results)
+
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}")
+        return 1
+
+    if args.check:
+        print(f"task records valid: {len(results)}")
+        return 0
+
+    print("ID\tSTATUS\tCURRENT\tPROGRESS\tTIMING\tNEXT ACTION\tPATH")
+    for result in results:
+        metadata = result["metadata"]
+        timing = result.get("timing") or {}
+        entries = timing.get("entries") or []
+        if entries and all(item.get("kind") == "unmeasured" for item in entries):
+            timing_text = "unmeasured"
+        elif timing.get("total_elapsed_seconds") is None:
+            timing_text = "-"
+        else:
+            timing_text = (
+                f"{format_duration(timing.get('total_work_seconds'))}/"
+                f"{format_duration(timing.get('total_wait_seconds'))}/"
+                f"{format_duration(timing.get('total_elapsed_seconds'))}"
+            )
+        print(
+            f"{metadata['id']}\t{metadata['status']}\t{metadata['current_step']}\t"
+            f"{result['completed_steps']}/{result['total_steps']}\t{timing_text}\t"
+            f"{metadata['next_action']}\t{relative(result['path'])}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

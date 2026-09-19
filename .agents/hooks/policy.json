@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "allow_environment_variable": "AGENT_GUARD_ALLOW",
+  "blocked_command_patterns": [
+    {"pattern": "(^|[;&|]\\s*)rm\\s+-[^\\n]*r[^\\n]*f\\s+(?:/|~|\\$HOME)(?:\\s|$)", "reason": "recursive deletion of a broad system or home path"},
+    {"pattern": "\\bgit\\s+reset\\s+--hard\\b", "reason": "git reset --hard can discard user work"},
+    {"pattern": "\\bgit\\s+clean\\s+-[^\\s]*f", "reason": "git clean with force can delete untracked user files"},
+    {"pattern": "\\bgit\\s+push\\b[^\\n]*(?:--force|-f)(?:\\s|$)", "reason": "force push rewrites remote history"},
+    {"pattern": "\\b(?:php\\s+artisan\\s+)?migrate:(?:fresh|reset|refresh)\\b", "reason": "database reset/fresh migration is destructive"},
+    {"pattern": "\\bDROP\\s+(?:DATABASE|SCHEMA|TABLE)\\b", "reason": "destructive SQL is blocked"},
+    {"pattern": "\\bdocker\\s+(?:compose\\s+)?down\\b[^\\n]*(?:-v|--volumes)", "reason": "removing Docker volumes can destroy local data"},
+    {"pattern": "\\b(?:deploy-to-prod|--env(?:ironment)?[= ]prod(?:uction)?|APP_ENV=production)\\b", "reason": "production-affecting command requires a manual, deliberate path"}
+  ],
+  "blocked_file_patterns": [
+    "(^|[\\\\/])\\.env(?:$|\\.)",
+    "\\.(?:pem|key|p12|pfx)(?![\\w.-])",
+    "(^|[\\\\/])(?:credentials?|secrets?)(?:[._-]|$)"
+  ],
+  "safe_file_patterns": [
+    "(^|[\\\\/])\\.env\\.example(?![\\w.-])",
+    "(^|[\\\\/])(?:credentials?|secrets?)\\.example(?:\\.[^\\\\/]+)?(?![\\w.-])"
+  ]
+}

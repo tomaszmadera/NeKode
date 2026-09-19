@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Run checks appropriate to the current changed-file set."""
+
+from __future__ import annotations
+
+import sys
+
+from common import ROOT, changed_files, configured_command, run
+
+
+def execute(command: list[str], checks: list[dict[str, object]]) -> bool:
+    print("running:", " ".join(command))
+    result = run(command)
+    passed = result.returncode == 0
+    checks.append({"command": command, "status": "passed" if passed else "failed", "exit_code": result.returncode})
+    return passed
+
+
+def main() -> int:
+    files = changed_files()
+    checks: list[dict[str, object]] = []
+    passed = execute([sys.executable, str(ROOT / ".agents/scripts/validate-config")], checks)
+
+    if not files:
+        print("no changed files detected")
+    else:
+        command = configured_command("changed_command")
+        if command:
+            passed = execute(command, checks) and passed
+        else:
+            reason = "verification.changed_command is not configured in the project profile"
+            checks.append({"command": ["application changed-scope checks"], "status": "skipped", "reason": reason})
+            print(f"SKIP: application changed-scope checks; {reason}")
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

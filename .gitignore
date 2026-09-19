@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.eggs/
+
+# Environment
+.env
+.agents/.env
+.env.local
+.env.*.local
+
+# Build & cache
+dist/
+build/
+out/
+.next/
+.nuxt/
+.turbo/
+.cache/
+.pytest_cache/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+tmp/
+temp/
+_inbox/
+*.log
+
+# IDE & editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini

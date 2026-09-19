@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""CLI wrapper to report agent tasks to Personal Data Hub."""
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / ".agents" / "skills" / "use-task-board" / "scripts" / "report_tasks.py"
+
+if str(SCRIPT.parent) not in sys.path:
+    sys.path.insert(0, str(SCRIPT.parent))
+
+import report_tasks
+
+if __name__ == "__main__":
+    raise SystemExit(report_tasks.main())

@@ -1,0 +1,66 @@
+{
+  "description": "Repository safety and agent quota hooks.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event session --agent codex",
+            "commandWindows": "py -3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event session --agent codex",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event session-end --agent codex",
+            "commandWindows": "py -3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event session-end --agent codex",
+            "timeout": 3
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event task-report --agent codex --force",
+            "commandWindows": "py -3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event task-report --agent codex --force",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event task-report --agent codex",
+            "commandWindows": "py -3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event task-report --agent codex",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event pretool --agent codex",
+            "commandWindows": "py -3 \"$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py\" --event pretool --agent codex",
+            "timeout": 5,
+            "statusMessage": "Checking safety and agent quota"
+          }
+        ]
+      }
+    ]
+  }
+}

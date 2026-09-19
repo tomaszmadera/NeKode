@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Run the full available project quality gate and report skipped capabilities."""
+
+from __future__ import annotations
+
+import sys
+
+from common import ROOT, configured_command, profile_value, run
+
+
+def execute(command: list[str], checks: list[dict[str, object]]) -> bool:
+    print("running:", " ".join(command))
+    result = run(command)
+    passed = result.returncode == 0
+    checks.append({"command": command, "status": "passed" if passed else "failed", "exit_code": result.returncode})
+    return passed
+
+
+def main() -> int:
+    checks: list[dict[str, object]] = []
+    passed = execute([sys.executable, str(ROOT / ".agents/scripts/validate-config")], checks)
+    test_dir = ROOT / "tools/harness/tests"
+    is_template = profile_value("project", "status") == "template"
+    if is_template and test_dir.is_dir() and any(test_dir.glob("test_*.py")):
+        passed = execute([
+            sys.executable, "-m", "unittest", "discover",
+            "-s", str(test_dir), "-p", "test_*.py",
+        ], checks) and passed
+    elif not is_template:
+        reason = "the harness test suite is template-only"
+        checks.append({"command": ["harness tests"], "status": "skipped", "reason": reason})
+        print(f"SKIP: harness tests; {reason}")
+
+    command = configured_command("full_command")
+    if command:
+        passed = execute(command, checks) and passed
+    else:
+        reason = "verification.full_command is not configured in the project profile"
+        checks.append({"command": ["application full checks"], "status": "skipped", "reason": reason})
+        print(f"SKIP: application full checks; {reason}")
+
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
