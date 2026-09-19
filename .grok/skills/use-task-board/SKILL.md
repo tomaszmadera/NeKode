@@ -1,6 +1,6 @@
 ---
 name: use-task-board
-description: Use when finding, starting, or registering a repository with the global read-only task progress board, or when inspecting task progress.
+description: Use when reporting task progress snapshots to Personal Data Hub (Agent Tasks API) or configuring task reporting.
 ---
 
 # use-task-board
