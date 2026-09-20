@@ -81,7 +81,7 @@ The MVP SHALL provide:
    - Git worktree status.
 9. Auxiliary bottom terminal.
 10. Keyboard shortcut `Ctrl + `` for toggling the bottom terminal.
-11. Placeholder project Kanban view.
+11. Visual-only Project Kanban preview using static demonstration data. The preview SHALL show the intended future columns, representative Task cards, metadata and controls such as `Implement` and `Resume`, but those cards SHALL NOT be backed by real Task records and those Kanban controls SHALL NOT execute the future workflow.
 12. Application state persistence.
 13. Resizable primary layout regions.
 
@@ -99,6 +99,10 @@ The MVP SHALL NOT implement:
 - multi-agent orchestration,
 - browser panel functionality,
 - Git operations UI,
+- functional Kanban-to-Task binding,
+- Kanban card workflow execution (`Implement`, `Resume`, `Open`),
+- Kanban state persistence or state mutation,
+- Kanban-driven Workspace/Agent/Handoff execution,
 - automatic task-to-worktree creation,
 - remote agent host,
 - cloud sync.
@@ -185,7 +189,7 @@ The MVP should prefer simple synchronous persistence over unnecessary infrastruc
 │  │ ├── File tree / file preview                               │  │
 │  │ ├── Terminal views                                         │  │
 │  │ ├── Action Bar                                             │  │
-│  │ └── Kanban placeholder                                     │  │
+│  │ └── Kanban visual preview                                │  │
 │  └──────────────────────┬─────────────────────────────────────┘  │
 │                         │ IPC                                    │
 │  ┌──────────────────────▼─────────────────────────────────────┐  │
@@ -308,7 +312,7 @@ MVP project view contains:
 
 - project file tree,
 - file preview,
-- access to Kanban placeholder.
+- access to the Kanban visual preview.
 
 ---
 
@@ -614,16 +618,16 @@ Although `branch` and `worktreePath` do not need active management in the MVP, f
 
 # 15. Task and Kanban Relationship
 
-A Kanban card and a Task must refer to the same domain object.
+For the **functional post-MVP Kanban**, a Kanban card and a Task must refer to the same domain object.
 
-Do not create:
+Do not create separate production domain types such as:
 
 ```text
 TerminalTask
 KanbanTask
 ```
 
-Instead:
+Instead, the target model is:
 
 ```text
 Task
@@ -634,7 +638,13 @@ Task
 └── future agent
 ```
 
-This is a major architectural constraint.
+This is a major architectural constraint for the functional Kanban.
+
+### MVP exception: demonstration cards
+
+The MVP Kanban is intentionally **visual-only**. Its cards are static demonstration data used to validate layout, hierarchy, density and future controls. They are **not real Task records**, do not need database persistence, and do not need to reference Tasks from the Project task tree.
+
+This exception exists only for the MVP preview. Once Kanban becomes functional post-MVP, every real Kanban card MUST represent the same underlying `Task` entity used elsewhere in the application.
 
 ---
 
@@ -1116,12 +1126,19 @@ Repository configuration must not silently execute commands without user action.
 
 Kanban is intended to become one of the application's main features.
 
-In the MVP it is a visual placeholder designed to establish:
+In the MVP it is a **visual product preview**, not a functional workflow. It exists to establish and validate:
 
 - layout,
 - navigation,
-- domain relationships,
+- column structure,
+- card hierarchy and density,
+- representative metadata,
+- placement and visual treatment of future controls such as `Implement`, `Resume` and `Open`,
 - future product direction.
+
+The MVP Kanban SHALL use static demonstration data. It SHALL NOT read from or mutate the real Task collection, and its cards SHALL NOT trigger agent, Workspace, Terminal, Handoff or status-transition workflows.
+
+The purpose is that a user can open the Kanban page and accurately see how the future feature is intended to look before the functional process is implemented.
 
 ---
 
@@ -1149,6 +1166,8 @@ Example:
 │                                                                    │
 │ ┌─────────┐  ┌───────────┐  ┌──────────────┐  ┌──────────────┐   │
 │ │ SEO     │  │ Fix Pixel │  │ Auth cleanup │  │ Docker setup │   │
+│ │         │  │           │  │ Codex        │  │              │   │
+│ │Implement│  │Implement  │  │Resume        │  │ Open         │   │
 │ └─────────┘  └───────────┘  └──────────────┘  └──────────────┘   │
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
@@ -1156,23 +1175,37 @@ Example:
 
 ---
 
-# 29. MVP Kanban Functional Scope
+# 29. MVP Kanban Visual Scope
 
 Required:
 
-- display columns,
-- display placeholder cards,
-- visually match future task cards,
-- route to/from Kanban view.
+- route to/from the Kanban view,
+- display the intended project Kanban columns,
+- display realistic placeholder cards using static demonstration data,
+- visually match the intended future Task cards,
+- show representative future metadata where useful,
+- show the intended placement and styling of future primary controls such as `Implement`, `Resume` and `Open`,
+- provide hover/focus/disabled or preview states needed to evaluate the UX.
 
-Not required:
+The MVP Kanban is **not functionally connected to the Task system**. Placeholder cards may use realistic names and states, but they are not real Tasks.
 
+Explicitly not required in MVP:
+
+- binding Kanban cards to persisted Task records,
+- opening a real Task from a placeholder card,
+- executing `Implement`, `Resume` or `Open` from Kanban,
+- creating or restoring a Workspace from Kanban,
+- starting a Console Agent from Kanban,
+- Handoff resolution from Kanban,
 - drag and drop,
-- persistence,
-- editing,
+- Kanban persistence,
+- card editing,
 - card creation,
-- automatic state transitions,
-- agent integration.
+- automatic or manual Kanban state transitions,
+- agent integration,
+- live progress/checkpoint integration.
+
+If the UI renders `Implement`, `Resume`, `Open`, agent names, Handoff indicators or progress values in MVP, they are **demonstration UI only** and MUST NOT imply that the underlying process is implemented.
 
 Suggested initial columns:
 
@@ -1216,7 +1249,9 @@ They must use the same Task data model.
 
 ---
 
-# 31. Future Kanban + Agent Integration
+# 31. Post-MVP Functional Kanban + Agent Integration
+
+The complete Kanban workflow begins **post-MVP**. At that point, placeholder cards are replaced by real Task-backed cards and the controls shown in the MVP preview become functional.
 
 Future task cards may expose:
 
@@ -1253,7 +1288,7 @@ REVIEW
 DONE
 ```
 
-This is a future product direction and must not be implemented in the MVP.
+This complete Task/Kanban/agent workflow is a post-MVP product direction and must not be implemented in the MVP. The MVP may visually preview these states and controls using static demonstration data only.
 
 ---
 
@@ -2132,7 +2167,7 @@ Git status refreshes when command ends
 
 ---
 
-# 63. MVP User Flow: Kanban Placeholder
+# 63. MVP User Flow: Kanban Visual Preview
 
 ```text
 Select Project
@@ -2141,12 +2176,14 @@ Click Kanban tab
   ↓
 Project Kanban appears
   ↓
-placeholder columns/cards rendered
+static demo columns/cards rendered
+  ↓
+future controls such as Implement / Resume are visible for UX validation
   ↓
 return to Files tab
 ```
 
-No persistence or interaction is required beyond navigation.
+Only navigation into/out of the Kanban view is functional. The cards are not real Tasks, and Kanban card controls do not execute any workflow in the MVP.
 
 ---
 
@@ -2214,8 +2251,11 @@ The MVP is considered technically complete when all criteria below are met.
 ## Kanban
 
 - [ ] Project view contains Files/Kanban navigation.
-- [ ] Kanban view renders placeholder columns.
-- [ ] Kanban view renders placeholder cards.
+- [ ] Kanban view renders the intended project columns.
+- [ ] Kanban view renders realistic static demonstration cards.
+- [ ] Demonstration cards visibly preview the intended placement of future controls such as `Implement`, `Resume` and `Open`.
+- [ ] Demonstration cards are not backed by persisted Task records.
+- [ ] Kanban card controls do not start agents, create/restore Workspaces, resume Handoffs or mutate Task/Kanban state in the MVP.
 
 ## Persistence
 
@@ -2322,11 +2362,14 @@ If such functionality appears necessary, prefer leaving an extension point rathe
 4. bottom-terminal execution
 5. state display
 
-## Phase 9 — Kanban Placeholder
+## Phase 9 — Kanban Visual Preview
 
 1. Files/Kanban project tabs
-2. static columns
-3. static placeholder cards
+2. static target columns
+3. realistic static demonstration cards
+4. visual placement of future `Implement`, `Resume` and `Open` controls
+5. representative future metadata/states where useful
+6. no real Task binding and no Kanban workflow execution
 
 ## Phase 10 — Hardening
 
@@ -2432,7 +2475,7 @@ Task is the central domain object.
 
 ## Decision 5
 
-Task and Kanban card represent the same underlying entity.
+In the functional post-MVP Kanban, Task and Kanban card represent the same underlying entity. MVP Kanban cards are a deliberate static-demo exception and are not real Tasks.
 
 ## Decision 6
 
@@ -2470,7 +2513,7 @@ Ctrl + `
 
 ## Decision 11
 
-The MVP Project Kanban is only a placeholder.
+The MVP Project Kanban is a visual-only preview. It uses static demonstration cards to show the intended columns, card content, metadata and future controls, but it has no real Task binding and no functional `Implement`/`Resume` workflow. The complete Kanban process is post-MVP.
 
 ## Decision 12
 
