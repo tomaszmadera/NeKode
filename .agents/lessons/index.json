@@ -1,4 +1,11 @@
 {
   "schema_version": 1,
-  "lessons": []
+  "lessons": [
+    {
+      "id": "native-deps-prebuilt-binaries",
+      "scopes": ["product"],
+      "tags": ["pnpm", "better-sqlite3", "node-pty", "node-gyp", "windows"],
+      "path": ".agents/lessons/items/native-deps-prebuilt-binaries.md"
+    }
+  ]
 }
