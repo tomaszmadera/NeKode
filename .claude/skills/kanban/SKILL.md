@@ -1,6 +1,6 @@
 ---
 name: kanban
-description: Use when managing project backlog, work items, or kanban boards (CRUD work items, board view, states, transitions, search). Also use whenever the user mentions the backlog or pastes a backlog/work-item URL: the backlog is reachable only through this skill, never by fetching the Plane page.
+description: "Use when managing project backlog, work items, or kanban boards (CRUD work items, board view, states, transitions, search). Also use whenever the user mentions the backlog or pastes a backlog/work-item URL: the backlog is reachable only through this skill, never by fetching the Plane page."
 ---
 
 # kanban
