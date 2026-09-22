@@ -1,0 +1,440 @@
+Generate a **high-fidelity Windows desktop UI mockup** for an app named **NeKode** — a premium, dark, agent-first coding workspace built around **terminal-based AI coding agents**.
+
+## Visual style
+
+Dark near-black / deep navy UI, subtle cool-blue accents, faint borders, thin dividers, compact power-user spacing, sharp modern sans-serif UI font, monospace terminals, restrained rounded corners, low visual noise, subtle green success states. Serious, technical, calm, premium. Not a VS Code clone, not a SaaS dashboard, not a normal chat app.
+
+Use standard **Windows minimize / maximize / close controls**.
+
+At top-left show a small **cat icon** next to `NeKode`.
+
+Top-center:
+`Search files, symbols, commands...`
+
+Do **not** place Dictation or microphone controls in the global top bar.
+
+---
+
+## Top workflow strip
+
+Create a **full-width workflow strip spanning the entire application width**.
+
+It must contain **one continuous horizontal line** running across the workflow area, with the checkpoints placed on that line.
+
+The lifecycle is:
+
+`Intake ✓ — Planning ✓ — Implementation ● — Verification ○ — Hand-off ○`
+
+Each checkpoint must have its own **visible subtitle directly underneath it**.
+
+Required subtitles under the checkpoints:
+
+* `Requirements captured` under **Intake**
+* `Plan generated` under **Planning**
+* `Building the solution` under **Implementation**
+* `Running tests` under **Verification**
+* `Prepare for delivery` under **Hand-off**
+
+Important:
+
+* the checkpoint line must look continuous and whole
+* the checkpoint markers must sit on that same line
+* the subtitles must be clearly visible **under** each checkpoint, not omitted
+
+Implementation is active in blue.
+
+On the right side show:
+
+* `Current task`
+* `Step 3/6`
+* `Implementing chat UI components`
+* `Details ▾`
+* `All Tasks`
+
+`Details` must clearly look expandable through a downward chevron or equivalent disclosure icon.
+
+Do **not** show `All Active Tasks`.
+
+---
+
+## Left side
+
+Far-left narrow **vertical navigation rail**:
+
+* Projects — active
+* Git
+* Kanban
+
+Projects must remain vertical, not horizontal.
+
+Immediately to its right show the Projects panel with project-scoped chats.
+
+Project names must be **UPPERCASE**.
+
+For every project:
+
+* project title
+* visible `Chats` section label
+* chat bubble icon beside every chat thread
+* never use document/file icons for chats
+
+Example:
+
+`ACME-PLATFORM`
+
+`Chats`
+
+* chat icon `Build chat UI` — selected
+* chat icon `Add authentication`
+* chat icon `Fix streaming bug`
+* chat icon `Refactor agents`
+* chat icon `Deploy to staging`
+* `+ New chat`
+
+Also show:
+
+* `MARKETING-SITE`
+* `DATA-PIPELINE`
+* `INTERNAL-TOOLS`
+
+with several chats under each.
+
+---
+
+## Center tabs
+
+Top row:
+
+* `Agent: Build chat UI` — active
+* `agent-plan.md`
+* `route.ts`
+* `README.md`
+
+At the **far right of this exact tab row**, clearly show:
+
+`+ New Chat`
+
+Do not omit it.
+
+---
+
+## Agent controls
+
+Directly below the tabs.
+
+There are **exactly two segmented control groups**.
+
+### Group 1
+
+One connected segmented control:
+
+`[ handoff icon  Hand Off | resume/play icon  Resume ]`
+
+`Hand Off` and `Resume` must visibly belong to **one unified control**.
+
+### Group 2
+
+Immediately beside it, show another connected segmented control:
+
+`[ stop icon  Stop | continue icon  Continue ]`
+
+`Stop` and `Continue` must be styled **exactly like the Hand Off / Resume pair** — visually connected as one two-part segmented control.
+
+Use:
+
+* `Stop` → square/terminate command icon
+* `Continue` → play/forward/execute-command icon
+
+Do **not** show `Start`.
+
+Do **not** render Stop and Continue as unrelated standalone buttons.
+
+---
+
+## Utility controls
+
+Also include a compact utility group:
+
+* eye icon `Preview`
+* container icon `Docker Up`
+* container icon `Docker Down`
+* custom icon `My Button 1`
+* custom icon `My Button 2`
+
+The Preview button must **not create a visible preview pane**.
+
+---
+
+## Main center content — CRITICAL
+
+The center must be a **console coding agent**, NOT a conventional AI chat.
+
+No:
+
+* chat bubbles
+* user/assistant cards
+* conversational chat layout
+* large chat message cards
+
+Show a terminal-like autonomous coding session:
+
+```text id="dzupwr"
+> nekode run
+
+NeKode Agent
+--------------------------------
+Project: acme-platform
+Model: Claude 3.5 Sonnet
+Tools: filesystem, shell, search, edit
+
+> Implement a streaming chat UI for the coding agent
+
+○ Planning...
+  ✓ Analyze codebase structure
+  ✓ Identify relevant components
+  ✓ Create implementation plan
+
+✓ Plan ready (6 steps)
+
+> Step 1/6: Locate existing chat components
+○ Searching...
+
+Found:
+  apps/web/components/chat/ChatPanel.tsx
+  apps/web/components/chat/MessageList.tsx
+  apps/web/components/chat/PromptInput.tsx
+
+> Step 2/6: Implement streaming UI
+
+M ChatPanel.tsx       (+42 -6)
+M MessageList.tsx     (+28 -4)
+M PromptInput.tsx     (+18 -2)
+A useStreaming.ts     (+120)
+
+✓ Files updated successfully
+
+> Step 3/6: Update API integration
+M apps/web/lib/agent.ts (+35 -8)
+
+> Step 4/6: Test
+✓ 12/12 tests passed
+✓ Type check passed
+
+> Step 5/6: Verify
+> next dev
+✓ Ready at http://localhost:3000
+```
+
+Use cyan/blue headings, green success states, muted gray metadata and red only for deletion counts.
+
+### Agent prompt input
+
+At the **bottom of this same main agent console**, include a clear console-style prompt/input area where the user can type the next instruction to the coding agent.
+
+It must feel like a **terminal command prompt**, not a normal chat composer.
+
+Example appearance:
+
+`> Make the streaming handler reusable and add retry support...`
+
+or placeholder:
+
+`> Tell the agent what to do next...`
+
+Another acceptable placeholder:
+
+`> Do this, then update that...`
+
+Include a visible terminal cursor.
+
+This input belongs **inside the main agent console at its bottom**.
+
+---
+
+## Runtime telemetry strip
+
+Directly below the main agent console show a slim status line:
+
+* `Model: Claude 3.5 Sonnet`
+* `Effort: Medium`
+* `Tokens: 142k used`
+* `5h limit: 68%`
+* `Weekly: 41%`
+
+These telemetry values must use **different restrained accent colors** so they are quickly distinguishable.
+
+For example:
+
+* Model → cool blue / cyan
+* Effort → amber
+* Tokens → violet
+* 5h limit → teal or orange depending on usage
+* Weekly → green or another clearly distinct restrained accent
+
+Keep the colors subtle and premium — do not turn this into a colorful dashboard.
+
+---
+
+## Right column
+
+The right column is primarily the **Repository** panel.
+
+At the top of the right column include compact controls/status for:
+
+* `Whisper`
+* `Dictation`
+
+Use appropriate icons:
+
+* Whisper → waveform / audio-processing icon
+* Dictation → microphone icon
+
+These controls belong **here on the right**, not in the global top bar.
+
+Below them show **ONLY the repository tree**.
+
+Header:
+`Repository`
+
+Example:
+
+```text id="rjdl0q"
+acme-platform
+├── .github
+├── apps
+│   └── web
+│       ├── components
+│       │   └── chat
+│       │       ├── ChatPanel.tsx
+│       │       ├── MessageList.tsx
+│       │       └── PromptInput.tsx
+│       ├── lib
+│       └── hooks
+├── packages
+├── docs
+├── package.json
+├── README.md
+└── tsconfig.json
+```
+
+Highlight `ChatPanel.tsx`.
+
+Apart from the compact Whisper / Dictation controls, the right column must contain **only the repository tree**.
+
+Absolutely no:
+
+* preview panel
+* file preview
+* inspector
+* details pane
+* secondary content panel
+
+---
+
+## Bottom terminal
+
+Create a separate bottom terminal area aligned to the **center column only**.
+
+It must:
+
+* have exactly the width of the middle workspace column
+* stop at the boundary of the right Repository column
+* never extend underneath the right column
+
+If tabs are present, allow ONLY:
+
+* `Terminal 1`
+* `Terminal 2`
+* `Terminal 3`
+
+Never show:
+
+* Problems
+* Output
+* Debug Console
+
+Example:
+
+```text id="2r3f4y"
+> pnpm run dev
+> next dev
+▲ Next.js 14.2.3
+- Local: http://localhost:3000
+✓ Ready in 1.2s
+```
+
+---
+
+## Bottom status bar
+
+Show:
+
+`acme-platform | main | feature/streaming-chat-ui`
+
+On the right:
+
+`Agents working: 2`
+
+Beside it add two compact icon buttons:
+
+* toggle left panel
+* toggle right panel
+
+Do not show:
+
+* `Ln / Col`
+* UTF-8
+* LF / CRLF
+* editor mode
+* file type
+* generic editor metadata
+
+---
+
+## Non-negotiable
+
+Must visibly include:
+
+* cat icon + `NeKode`
+* full-width workflow strip
+* one continuous workflow line with checkpoints placed on it
+* visible subtitles under every checkpoint
+* vertical Projects / Git / Kanban
+* uppercase project names
+* `Chats` labels
+* chat bubble icons for chat threads
+* `+ New Chat` at far right of tab row
+* connected `Hand Off | Resume`
+* connected `Stop | Continue`
+* no `Start`
+* `Preview`
+* `Docker Up`
+* `Docker Down`
+* `My Button 1`
+* `My Button 2`
+* console coding agent in center
+* terminal-style prompt input at bottom of main agent console
+* differently colored runtime telemetry values
+* Whisper + Dictation controls on the right
+* no Dictation control in the top chrome
+* repository tree on right
+* Terminal 1 / 2 / 3 only
+* bottom terminal restricted to center-column width
+* `main`
+* `feature/streaming-chat-ui`
+* `Agents working: 2`
+* left/right panel toggle icons
+* `Details` with dropdown indicator
+* `All Tasks`
+
+Must NOT include:
+
+* `Start`
+* `All Active Tasks`
+* Preview pane
+* Problems / Output / Debug Console
+* editor metadata
+* ordinary chat UI in the center
+* global/top-bar Dictation control
+
+The final result should look like a **credible premium Windows application for supervising autonomous coding agents**, dense but calm, highly polished, and purpose-built for agentic software development.

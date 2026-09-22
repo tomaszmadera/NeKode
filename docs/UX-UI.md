@@ -2713,4 +2713,3 @@ Exactly how much time remains?
 unless reliable timing data exists.
 
 The feature is an **orientation and continuation tool**, not a productivity metric.
-
