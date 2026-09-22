@@ -6,30 +6,30 @@ project:
   name: "NeKode"
   kind: application
   status: active
-  layout: not-configured
+  layout: "single-package pnpm workspace (src/main, src/preload, src/renderer)"
 tooling:
   python_minimum: "3.11"
 runtime:
   language: TypeScript
-  language_version: "not-configured"
+  language_version: "5.9.3"
   framework: Electron
-  framework_version: "not-configured"
+  framework_version: "34.5.8"
 database:
   engine: SQLite
-  version: "not-configured"
+  version: "3.53.2"
 local_environment:
-  provider: not-configured
+  provider: "windows-native (Windows 11, Node 24.18.0, pnpm 12.5.1)"
 quality:
-  test_runner: not-configured
-  formatter: not-configured
-  static_analysis: not-configured
-  architecture_tests: not-configured
+  test_runner: vitest
+  formatter: biome
+  static_analysis: biome
+  architecture_tests: none
 verification:
-  changed_command: not-configured
-  full_command: not-configured
+  changed_command: "cmd /c pnpm run lint && cmd /c pnpm run typecheck"
+  full_command: "cmd /c pnpm run verify"
 publication:
-  strategy: not-configured
-  versioning: not-configured
+  strategy: linear
+  versioning: semver
 commands:
   preflight: "{python} .agents/scripts/preflight"
   validate_agent_config: "{python} .agents/scripts/validate-config"
