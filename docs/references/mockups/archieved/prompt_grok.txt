@@ -1,0 +1,21 @@
+High-fidelity Windows desktop UI mockup for "NeKode" — a premium dark agent-first coding workspace supervising terminal-based AI coding agents. Dense but calm, low visual noise, not a VS Code clone, not a SaaS dashboard, not a chat app.
+
+STYLE: near-black/deep navy UI, subtle cool-blue accents, faint borders, thin dividers, compact power-user spacing, modern sans-serif UI font, monospace terminals, slightly rounded corners, restrained green success states. Windows minimize/maximize/close buttons top-right. Small cat icon next to "NeKode" label top-left. Top-center search field: "Search files, symbols, commands...". No microphone or dictation controls in the top bar. The word "Whisper" must not appear anywhere.
+
+TOP WORKFLOW STRIP (full width): one continuous horizontal line with checkpoints sitting ON the line, each with a small subtitle under it: "Intake ✓ / Requirements captured", "Planning ✓ / Plan generated", "Implementation ● / Building the solution" (active, blue), "Verification ○ / Running tests", "Hand-off ○ / Prepare for delivery". Right side of strip: "Current task", "Step 3/6", "Implementing chat UI components", "Details ▾" (with chevron), "All Tasks".
+
+LEFT: narrow vertical nav rail with vertical items Projects (active), Git, Kanban. Next to it a Projects panel with UPPERCASE project names and a "Chats" label; every chat thread has a chat-bubble icon (never file icons). "ACME-PLATFORM" — Chats: "Build chat UI" (selected), "Add authentication", "Fix streaming bug", "Refactor agents", "Deploy to staging", "+ New chat". Also "MARKETING-SITE", "DATA-PIPELINE", "INTERNAL-TOOLS" with several chats each.
+
+CENTER TABS row: "Agent: Build chat UI" (active), "agent-plan.md", "route.ts", "README.md", and at the far right "+ New Chat". Below tabs two connected segmented controls side by side: [Hand Off | Resume] with handoff and play icons, and [Stop | Continue] with square stop and play icons — both styled as unified two-part segmented controls. Never a "Start" button. Plus a compact utility group: "Preview" (eye icon), "Docker Up", "Docker Down" (container icons), "My Button 1", "My Button 2".
+
+MAIN CENTER CONTENT: a console coding agent session (terminal-like, NO chat bubbles, NO assistant cards). Monospace log: "> nekode run", "NeKode Agent", "Project: acme-platform", "Model: GPT 6.9 Nice", "Tools: filesystem, shell, search, edit", planning checklist with check marks, steps 1/6..5/6, modified-file lines like "M ChatPanel.tsx (+42 -6)", "A useStreaming.ts (+120)", "12/12 tests passed", "Ready at http://localhost:3000". Cyan/blue headings, green success marks, muted gray metadata, red only for deletion counts. At the bottom of this same console a terminal-style prompt input line with visible blinking cursor and placeholder "> Tell the agent what to do next..." — feels like a shell prompt, not a chat composer. Inside this same input row, on its FAR RIGHT, a compact "Dictation" control with microphone icon — part of the console input controls, nowhere else.
+
+TELEMETRY STRIP directly under the console, slim single line with distinct restrained accent colors: "Model: Claude 3.5 Sonnet" (cyan), "Effort: Medium" (amber), "Tokens: 142k used" (violet), "5h limit: 68%" (orange), "Weekly: 41%" (green).
+
+RIGHT COLUMN: ONLY the "Repository" file tree: acme-platform root with .github, apps/web/components/chat/ChatPanel.tsx, MessageList.tsx, PromptInput.tsx, lib, hooks, packages, docs, package.json, README.md, tsconfig.json — ChatPanel.tsx highlighted. No Whisper, no Dictation, no microphone, no preview pane, no inspector, no details pane in this column.
+
+BOTTOM TERMINAL: separate terminal panel aligned exactly to the center column width (stops at the right column boundary). Tabs only "Terminal 1", "Terminal 2", "Terminal 3" (no Problems/Output/Debug Console). Content: "> pnpm run dev", "Next.js 14.2.3", "Local: http://localhost:3000", "Ready in 1.2s".
+
+BOTTOM STATUS BAR: left "acme-platform | main | feature/streaming-chat-ui", right "Agents working: 2" plus two compact icon buttons to toggle left and right panels. No Ln/Col, no UTF-8, no editor metadata.
+
+Overall: credible premium Windows app for supervising autonomous coding agents; sharp, technical, calm.
