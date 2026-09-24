@@ -4,8 +4,20 @@
     {
       "id": "native-deps-prebuilt-binaries",
       "scopes": ["product"],
-      "tags": ["pnpm", "better-sqlite3", "node-pty", "node-gyp", "windows"],
+      "tags": ["pnpm", "better-sqlite3", "node-pty", "node-gyp", "electron", "windows"],
       "path": ".agents/lessons/items/native-deps-prebuilt-binaries.md"
+    },
+    {
+      "id": "windows-gui-launchers-powershell",
+      "scopes": ["product"],
+      "tags": ["windows", "nsis", "installer", "powershell", "bash"],
+      "path": ".agents/lessons/items/windows-gui-launchers-powershell.md"
+    },
+    {
+      "id": "electron-userdata-not-appdata",
+      "scopes": ["product"],
+      "tags": ["electron", "windows", "smoke-test", "userData"],
+      "path": ".agents/lessons/items/electron-userdata-not-appdata.md"
     }
   ]
 }
