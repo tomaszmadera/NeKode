@@ -4,6 +4,11 @@ import type { ProjectInfo, TaskInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY, type AppApi } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
 
+// xterm.js needs a real canvas; mock it at the module boundary so App renders
+// the task workspace in jsdom (the wiring is asserted in TaskTerminal.test).
+vi.mock('@xterm/xterm', () => import('./test/xterm-mock'))
+vi.mock('@xterm/addon-fit', () => import('./test/fit-addon-mock'))
+
 function createAppApiStub(): AppApi {
   return {
     projects: {
@@ -422,5 +427,136 @@ describe('project and task data flow', () => {
 
     firePointer(handle, 'pointerup', { clientX: 350 })
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, '350')
+  })
+})
+
+describe('task workspace (Stage 3)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('task selection opens the task workspace with the primary terminal', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.taskRow('t1')))
+
+    const workspace = getByTestIdString(TEST_ID.taskWorkspace)
+    expect(workspace.textContent).toContain('First task')
+    expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
+    // Lazy spawn on first attach: one PTY, cwd = the project directory.
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+  })
+
+  it('switching tasks keeps both sessions (no respawn for the first task)', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.tasks.list).mockResolvedValue([taskOne, taskTwo])
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.taskRow('t1')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByTestId(testIdFor.taskRow('t2')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByTestId(testIdFor.taskRow('t1')))
+    // Back to task one: the same session is re-attached, not re-created.
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.taskWorkspace)).toBeTruthy())
+    expect(app.terminals.create).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows the git branch and worktree status in the context header', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.git.getStatus).mockResolvedValue({ branch: 'feature/meta-pixel', dirty: true })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('D:/code/demo'))
+    expect((await screen.findByTestId(TEST_ID.headerGitBranch)).textContent).toBe(
+      'feature/meta-pixel',
+    )
+    expect(screen.getByTestId(TEST_ID.headerGitStatus).textContent).toContain('dirty')
+  })
+
+  it('shows a clean worktree status', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.git.getStatus).mockResolvedValue({ branch: 'main', dirty: false })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+
+    expect((await screen.findByTestId(TEST_ID.headerGitBranch)).textContent).toBe('main')
+    expect(screen.getByTestId(TEST_ID.headerGitStatus).textContent).toContain('clean')
+  })
+
+  it('degrades the header to "no git" when git fails (spec Errors)', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.git.getStatus).mockRejectedValue(new Error('git missing'))
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+
+    expect(await screen.findByTestId(TEST_ID.headerGitNone)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.headerGitBranch)).toBeNull()
+    // The workspace still renders despite the git failure.
+    expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
+  })
+})
+
+describe('resize persistence refinements (Stage 3 carry-over)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('does not persist the size on a zero-move click', () => {
+    render(<App app={app} />)
+    const handle = screen.getByTestId(TEST_ID.leftResizeHandle)
+    firePointer(handle, 'pointerdown', { clientX: 280 })
+    firePointer(handle, 'pointerup', { clientX: 280 })
+    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, expect.anything())
+  })
+
+  it('supports keyboard resize via the separator handle (a11y)', () => {
+    render(<App app={app} />)
+    const handle = screen.getByTestId(TEST_ID.leftResizeHandle)
+    expect(handle.getAttribute('role')).toBe('separator')
+    expect(handle.getAttribute('aria-valuenow')).toBe('280')
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('296px')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, '296')
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('280px')
+  })
+
+  it('surfaces state.set rejections in the notice banner (spec Errors)', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.state.set).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'sqlite',
+      message: 'Database is locked.',
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toContain('Database is locked.')
   })
 })

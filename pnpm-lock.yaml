@@ -212,9 +212,6 @@ importers:
       '@biomejs/biome':
         specifier: 2.5.14
         version: 2.5.14
-      '@electron-toolkit/preload':
-        specifier: ^3.0.1
-        version: 3.0.2(electron@44.4.5(supports-color@7.2.0))
       '@electron-toolkit/utils':
         specifier: ^3.0.0
         version: 3.0.0(electron@44.4.5(supports-color@7.2.0))
@@ -477,11 +474,6 @@ packages:
   '@electron-internal/extract-zip@1.0.5':
     resolution: {integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==}
     engines: {node: '>=22.12.0'}
-
-  '@electron-toolkit/preload@3.0.2':
-    resolution: {integrity: sha512-TWWPToXd8qPRfSXwzf5KVhpXMfONaUuRAZJHsKthKgZR/+LqX1dZVSSClQ8OTAEduvLGdecljCsoT2jSshfoUg==}
-    peerDependencies:
-      electron: '>=13.0.0'
 
   '@electron-toolkit/utils@3.0.0':
     resolution: {integrity: sha512-GaXHDhiT7KCvMJjXdp/QqpYinq69T/Pdl49Z1XLf8mKGf63dnsODMWyrmIjEQ0z/vG7dO8qF3fvmI6Eb2lUNZA==}
@@ -3137,10 +3129,6 @@ snapshots:
       ajv-keywords: 3.5.2(ajv@6.15.0)
 
   '@electron-internal/extract-zip@1.0.5': {}
-
-  '@electron-toolkit/preload@3.0.2(electron@44.4.5(supports-color@7.2.0))':
-    dependencies:
-      electron: 44.4.5(supports-color@7.2.0)
 
   '@electron-toolkit/utils@3.0.0(electron@44.4.5(supports-color@7.2.0))':
     dependencies:

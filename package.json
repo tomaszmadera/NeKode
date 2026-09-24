@@ -42,7 +42,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
-    "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@tailwindcss/vite": "^4.0.8",
     "@testing-library/dom": "^10.4.2",

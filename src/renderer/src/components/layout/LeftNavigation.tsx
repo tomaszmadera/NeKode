@@ -1,8 +1,9 @@
 import type React from 'react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ProjectInfo, TaskInfo } from '../../../../shared/ipc-contract'
-import { TEST_ID, testIdFor } from '../../App'
+import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
+import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ResizeHandle } from './ResizeHandle'
 
 // Left navigation (UX-UI §9–10): project rows expand to their task lists,
@@ -12,6 +13,7 @@ import { ResizeHandle } from './ResizeHandle'
 interface LeftNavigationProps {
   width: number
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
+  onResizeNudge: (delta: number) => void
   projects: ProjectInfo[]
   tasksByProject: Record<string, TaskInfo[]>
   expandedProjectIds: ReadonlySet<string>
@@ -29,6 +31,7 @@ interface LeftNavigationProps {
 export function LeftNavigation({
   width,
   onResizeStart,
+  onResizeNudge,
   projects,
   tasksByProject,
   expandedProjectIds,
@@ -166,7 +169,15 @@ export function LeftNavigation({
           </ul>
         )}
       </div>
-      <ResizeHandle axis="x" onResizeStart={onResizeStart} testId={TEST_ID.leftResizeHandle} />
+      <ResizeHandle
+        axis="x"
+        size={width}
+        minSize={LEFT_REGION_SIZE.min}
+        maxSize={LEFT_REGION_SIZE.max}
+        onResizeStart={onResizeStart}
+        onResizeNudge={onResizeNudge}
+        testId={TEST_ID.leftResizeHandle}
+      />
     </aside>
   )
 }
@@ -179,11 +190,21 @@ function NewTaskForm({
   onCreateTask: (projectId: string, name: string) => Promise<boolean>
 }): React.JSX.Element {
   const [name, setName] = useState('')
+  const mountedRef = useRef(true)
+
+  // A create that resolves after unmount (task switch mid-submit) must not
+  // write state into a dead component.
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault()
     void onCreateTask(projectId, name).then((created) => {
-      if (created) {
+      if (created && mountedRef.current) {
         setName('')
       }
     })
