@@ -7,6 +7,8 @@ import { useCallback, useEffect, useRef } from 'react'
 
 export interface ResizableRegion {
   startResize: (event: ReactPointerEvent<HTMLElement>) => void
+  /** Keyboard resize (separator arrow keys): apply a signed delta in px. */
+  nudge: (delta: number) => void
 }
 
 export interface RegionSizeLimits {
@@ -31,7 +33,7 @@ export function useResizableRegion(options: {
   size: number
   /** Applied on every pointer move during an active drag. */
   onSizeChange: (size: number) => void
-  /** Applied once when an active drag ends; the caller persists here. */
+  /** Applied when an active drag ends with an actual size change; the caller persists here. */
   onResizeEnd: (size: number) => void
 }): ResizableRegion {
   const { axis, minSize, maxSize, size, onSizeChange, onResizeEnd } = options
@@ -50,6 +52,7 @@ export function useResizableRegion(options: {
 
       const handle = event.currentTarget
       const pointerId = event.pointerId
+      const startSize = size
       let currentSize = size
 
       // Pointer capture retargets every following pointer event to the
@@ -78,7 +81,12 @@ export function useResizableRegion(options: {
         handle.removeEventListener('pointercancel', endDrag)
         handle.removeEventListener('lostpointercapture', endDrag)
         endActiveDragRef.current = null
-        onResizeEnd(currentSize)
+        // Persistence only when the size actually changed: a zero-move click
+        // (or a multi-touch guard/unmount ending an untouched drag) must not
+        // write state.
+        if (currentSize !== startSize) {
+          onResizeEnd(currentSize)
+        }
       }
 
       // Listeners live on the handle element, not on window: with capture
@@ -94,6 +102,18 @@ export function useResizableRegion(options: {
     [axis, minSize, maxSize, size, onSizeChange, onResizeEnd],
   )
 
+  const nudge = useCallback(
+    (delta: number): void => {
+      const next = Math.min(maxSize, Math.max(minSize, Math.round(size + delta)))
+      if (next === size) {
+        return
+      }
+      onSizeChange(next)
+      onResizeEnd(next)
+    },
+    [maxSize, minSize, size, onSizeChange, onResizeEnd],
+  )
+
   // Unmount during an active drag must not leave listeners behind that
   // would call onSizeChange on a dead component.
   useEffect(() => {
@@ -102,5 +122,5 @@ export function useResizableRegion(options: {
     }
   }, [])
 
-  return { startResize }
+  return { startResize, nudge }
 }

@@ -5,18 +5,10 @@ import { type InvokeSenderInfo, isTrustedSender } from '../security/sender-guard
 import { buildValidatedChannels, type ValidatedChannel } from './ipc-validation'
 import type { AppServices } from './service-registry'
 
-// Channels served by real Stage 2 services (validated payloads) plus the
-// Stage 3 stub channels kept on fixed values. Terminal channels stay stubbed
-// here until Stage 3; git:status degrades to "no git" (branch: null) which is
-// the honest default before the real read-only parser lands.
-
-const STUB_CHANNELS: ReadonlySet<string> = new Set([
-  IPC_CHANNEL.terminalsCreate,
-  IPC_CHANNEL.terminalsWrite,
-  IPC_CHANNEL.terminalsResize,
-  IPC_CHANNEL.terminalsTerminate,
-  IPC_CHANNEL.gitStatus,
-])
+// All channels are served by real services behind validated payloads (Stage 2
+// persistence, Stage 3 terminals/git). Terminal data/exit events are pushed to
+// the renderer through the injectable broadcast hook (the real one targets
+// every BrowserWindow webContents).
 
 export interface RegisterHandlersOptions {
   /** Native directory picker; injectable for tests. */
@@ -26,6 +18,12 @@ export interface RegisterHandlersOptions {
    * server root). Fail closed: with an empty list every invoke is rejected.
    */
   trustedRendererUrls?: readonly string[]
+  /**
+   * Main → renderer event fan-out for terminals:data / terminals:exit
+   * (channel, taskId, payload). Injectable for tests; main/index.ts targets
+   * every BrowserWindow webContents.
+   */
+  broadcast?: (channel: string, taskId: string, payload: string | number) => void
 }
 
 export function registerAppIpcHandlers(
@@ -35,6 +33,7 @@ export function registerAppIpcHandlers(
 ): void {
   const trustedRendererUrls = options.trustedRendererUrls ?? []
   const showOpenDialog = options.showOpenDialog ?? dialog.showOpenDialog
+  const broadcast = options.broadcast ?? (() => undefined)
 
   const validated = new Map<string, ValidatedChannel>()
   for (const entry of buildValidatedChannels(services)) {
@@ -89,8 +88,26 @@ export function registerAppIpcHandlers(
     })
   })
 
+  // projects:remove also tears down the removed project's terminal sessions:
+  // the task ids are resolved before the cascade delete and each orphaned PTY
+  // is terminated here in main (the renderer only evicts its session views).
+  handle(IPC_CHANNEL.projectsRemove, (payload) => {
+    const entry = validated.get(IPC_CHANNEL.projectsRemove)
+    const args = entry !== undefined ? entry.parse(payload) : payload
+    const projectId = args[0]
+    if (typeof projectId !== 'string') {
+      throw new AppError('validation', 'projects:remove arg[0] must be a string')
+    }
+    const taskIds = services.tasks.list(projectId).map((task) => task.id)
+    const result = services.projects.remove(projectId)
+    for (const taskId of taskIds) {
+      services.terminals.terminate(taskId)
+    }
+    return result
+  })
+
   for (const [channel, entry] of validated) {
-    if (channel === IPC_CHANNEL.projectsAdd) {
+    if (channel === IPC_CHANNEL.projectsAdd || channel === IPC_CHANNEL.projectsRemove) {
       continue
     }
     handle(channel, (payload) => {
@@ -99,13 +116,14 @@ export function registerAppIpcHandlers(
     })
   }
 
-  // STUB_CHANNELS share the exact same validation path; the set documents
-  // which channels still return fixed Stage 3 placeholder values.
-  for (const channel of STUB_CHANNELS) {
-    if (!validated.has(channel)) {
-      console.error(`[ipc] stub channel ${channel} is missing from the validated registry`)
-    }
-  }
+  // Terminal session events (main → renderer), keyed by taskId so hidden
+  // task terminals keep receiving their own data (spec Edge cases).
+  services.terminals.onData((taskId, data) => {
+    broadcast(IPC_CHANNEL.terminalsData, taskId, data)
+  })
+  services.terminals.onExit((taskId, exitCode) => {
+    broadcast(IPC_CHANNEL.terminalsExit, taskId, exitCode)
+  })
 }
 
 export type { AppErrorPayload }

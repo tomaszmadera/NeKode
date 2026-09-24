@@ -67,7 +67,22 @@ app.whenReady().then(() => {
   })
 
   const services = createServices({ dbPath: join(app.getPath('userData'), 'nekode.db') })
-  registerAppIpcHandlers(ipcMain, services, { trustedRendererUrls: getTrustedRendererUrls() })
+  registerAppIpcHandlers(ipcMain, services, {
+    trustedRendererUrls: getTrustedRendererUrls(),
+    // Terminal data/exit events go to every window's webContents (single-window
+    // app today; the fan-out keeps the contract window-agnostic).
+    broadcast: (channel, taskId, payload) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(channel, taskId, payload)
+      }
+    },
+  })
+
+  // App-quit PTY teardown (spec Behaviour 8): terminate every task terminal
+  // so no orphaned pwsh/powershell processes outlive the app.
+  app.on('before-quit', () => {
+    services.terminals.terminateAll()
+  })
 
   createWindow()
 

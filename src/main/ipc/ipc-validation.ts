@@ -6,7 +6,8 @@ import type { AppServices } from './service-registry'
 // validation failures reject with a typed error, no silent fallback).
 // Each channel declares its payload shape; violations throw ValidationError
 // before any service is touched, and ipc-handlers transports it as
-// AppError('validation').
+// AppError('validation'). Validated args are sliced to the declared arity and
+// passed to the service — no stub values remain (Stage 3 wires terminals/git).
 
 /** Thrown by channel parsers; a typed AppError('validation') on the wire. */
 export class ValidationError extends AppError {
@@ -32,9 +33,8 @@ const assertFiniteNumber: Validator = (value, label) => {
 
 /**
  * Path-shaped arguments (project roots, terminal cwd) are renderer-supplied
- * strings that future stages turn into OS operations. Reject ambiguous input
- * up front: NUL bytes, relative paths and '..' segments (traversal). Symlink
- * escapes matter for project-relative file ops, which do not exist yet.
+ * strings that become OS operations. Reject ambiguous input up front: NUL
+ * bytes, relative paths and '..' segments (traversal).
  */
 const assertSafePath: Validator = (value, label) => {
   assertString(value, label)
@@ -68,36 +68,17 @@ export interface ValidatedChannel {
   invoke: (args: unknown[]) => unknown
 }
 
+/** Type list for each positional argument of a channel payload. */
+type ArgType = 'string' | 'number' | 'path'
+
 /**
- * Channel backed by a real Stage 2 service. Every argument the service takes
- * is a string; payloads must match that arity exactly.
+ * Channel backed by a real service. Payloads must match the declared arity
+ * exactly; validated args are sliced out and handed to the service as-is.
  */
 function serviceChannel(
   channel: string,
-  argCount: number,
-  invokeService: (args: string[]) => unknown,
-): ValidatedChannel {
-  return {
-    channel,
-    parse: (payload) => {
-      requireArgs(payload, argCount, channel)
-      for (let index = 0; index < argCount; index += 1) {
-        assertString(payload[index], `${channel} arg[${index}]`)
-      }
-      return payload.slice(0, argCount)
-    },
-    invoke: (args) => invokeService(args as string[]),
-  }
-}
-
-/** Type list for each positional argument of a stub channel payload. */
-type StubArgType = 'string' | 'number' | 'path'
-
-/** Stage 3 channel: payload validated, invocation returns a fixed value. */
-function stubChannel(
-  channel: string,
-  argTypes: readonly StubArgType[],
-  value: unknown,
+  argTypes: readonly ArgType[],
+  invokeService: (args: never[]) => unknown,
 ): ValidatedChannel {
   return {
     channel,
@@ -113,31 +94,41 @@ function stubChannel(
           assertFiniteNumber(payload[index], label)
         }
       })
-      return []
+      return payload.slice(0, argTypes.length)
     },
-    invoke: () => value,
+    invoke: (args) => invokeService(args as never[]),
   }
 }
 
 export function buildValidatedChannels(services: AppServices): ValidatedChannel[] {
   return [
-    serviceChannel('projects:list', 0, () => services.projects.list()),
+    serviceChannel('projects:list', [], () => services.projects.list()),
     // The Add Project flow opens the native dialog in main (ipc-handlers);
     // the channel payload is empty and the path comes from the dialog.
-    serviceChannel('projects:add', 0, () =>
+    serviceChannel('projects:add', [], () =>
       (services.projects.add as (path?: string) => ProjectInfoLike)(),
     ),
-    serviceChannel('projects:remove', 1, (args) => services.projects.remove(args[0])),
-    serviceChannel('tasks:list', 1, (args) => services.tasks.list(args[0])),
-    serviceChannel('tasks:create', 2, (args) => services.tasks.create(args[0], args[1])),
-    serviceChannel('state:get', 1, (args) => services.state.get(args[0])),
-    serviceChannel('state:set', 2, (args) => services.state.set(args[0], args[1])),
-    stubChannel('terminals:create', ['string', 'path'], 'stub-terminal-id'),
-    stubChannel('terminals:write', ['string', 'string'], undefined),
-    stubChannel('terminals:resize', ['string', 'number', 'number'], undefined),
-    stubChannel('terminals:terminate', ['string'], undefined),
-    // Degraded "no git" default until the real read-only parser lands (Stage 3).
-    stubChannel('git:status', ['path'], { branch: null, dirty: false }),
+    serviceChannel('projects:remove', ['string'], (args) => services.projects.remove(args[0])),
+    serviceChannel('tasks:list', ['string'], (args) => services.tasks.list(args[0])),
+    serviceChannel('tasks:create', ['string', 'string'], (args) =>
+      services.tasks.create(args[0], args[1]),
+    ),
+    serviceChannel('state:get', ['string'], (args) => services.state.get(args[0])),
+    serviceChannel('state:set', ['string', 'string'], (args) =>
+      services.state.set(args[0], args[1]),
+    ),
+    // Task terminals (Stage 3): one PTY per task, spawned lazily on create.
+    serviceChannel('terminals:create', ['string', 'path'], (args) =>
+      services.terminals.create(args[0], args[1]),
+    ),
+    serviceChannel('terminals:write', ['string', 'string'], (args) =>
+      services.terminals.write(args[0], args[1]),
+    ),
+    serviceChannel('terminals:resize', ['string', 'number', 'number'], (args) =>
+      services.terminals.resize(args[0], args[1], args[2]),
+    ),
+    // Read-only git status; failures degrade to "no git" inside the service.
+    serviceChannel('git:status', ['path'], (args) => services.git.getStatus(args[0])),
   ]
 }
 

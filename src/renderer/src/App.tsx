@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ProjectInfo, TaskInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
@@ -7,6 +7,7 @@ import { CenterHeader } from './components/layout/CenterHeader'
 import { LeftNavigation } from './components/layout/LeftNavigation'
 import { ResizeHandle } from './components/layout/ResizeHandle'
 import { TopBar } from './components/layout/TopBar'
+import { TaskWorkspace } from './components/workspace/TaskWorkspace'
 import {
   BOTTOM_REGION_SIZE,
   clampRegionSize,
@@ -14,39 +15,11 @@ import {
   type RegionSizeLimits,
   useResizableRegion,
 } from './hooks/useResizableRegion'
+import { TEST_ID } from './lib/test-ids'
 
-export const TEST_ID = {
-  appShell: 'app-shell',
-  topBar: 'region-top',
-  leftNav: 'region-left',
-  centerHeader: 'region-center-header',
-  centerSurface: 'region-center-surface',
-  rightRegion: 'region-right',
-  bottomRegion: 'region-bottom',
-  leftResizeHandle: 'resize-handle-left',
-  bottomResizeHandle: 'resize-handle-bottom',
-  projectList: 'project-list',
-  emptyProjectList: 'project-list-empty',
-  addProjectButton: 'add-project-button',
-  welcomeSurface: 'welcome-surface',
-  actionNotice: 'action-notice',
-  newTaskForm: 'new-task-form',
-  newTaskInput: 'new-task-input',
-  newTaskSubmit: 'new-task-submit',
-  headerProjectName: 'header-project-name',
-  headerProjectPath: 'header-project-path',
-  headerRuntimeLabel: 'header-runtime-label',
-} as const
-
-/** Test ids that depend on record ids (projects/tasks). */
-export const testIdFor = {
-  projectRow: (projectId: string): string => `project-row-${projectId}`,
-  projectSelect: (projectId: string): string => `project-select-${projectId}`,
-  projectToggle: (projectId: string): string => `project-toggle-${projectId}`,
-  projectTasks: (projectId: string): string => `project-tasks-${projectId}`,
-  removeProject: (projectId: string): string => `remove-project-${projectId}`,
-  taskRow: (taskId: string): string => `task-row-${taskId}`,
-}
+// Re-exported so existing imports keep working; the definitions live in
+// lib/test-ids.ts to break the App ↔ component import cycle.
+export { TEST_ID, testIdFor } from './lib/test-ids'
 
 /** Selection/state values are cleared by writing an empty string (A5). */
 function normalizeStoredId(value: string | null): string | null {
@@ -71,9 +44,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [expandedProjectIds, setExpandedProjectIds] = useState<ReadonlySet<string>>(new Set())
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [selectionNonce, setSelectionNonce] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   const [leftWidth, setLeftWidth] = useState(LEFT_REGION_SIZE.default)
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
+  // Projects removed in this session: pending task loads for them are stale.
+  const removedProjectIdsRef = useRef<Set<string>>(new Set())
 
   // Startup hydration: real project list, persisted selection (dropped when
   // it no longer matches existing records) and persisted region sizes.
@@ -113,7 +89,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
 
         const tasks = await app.tasks.list(projectId)
-        if (cancelled) {
+        if (cancelled || removedProjectIdsRef.current.has(projectId)) {
           return
         }
         setTasksByProject((previous) => ({ ...previous, [projectId]: tasks }))
@@ -137,24 +113,35 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   // Selection keys are written on every selection change (spec Business
   // rules); an empty string clears a key so no stale selection survives.
+  // Rejections surface to the notice banner (spec Errors: no silent fallback).
   const persistSelection = useCallback(
     (projectId: string | null, taskId: string | null): void => {
-      void app.state.set(APP_STATE_KEY.selectedProjectId, projectId ?? '').catch(() => undefined)
-      void app.state.set(APP_STATE_KEY.selectedTaskId, taskId ?? '').catch(() => undefined)
+      void app.state
+        .set(APP_STATE_KEY.selectedProjectId, projectId ?? '')
+        .catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to save the selected project.'))
+        })
+      void app.state.set(APP_STATE_KEY.selectedTaskId, taskId ?? '').catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to save the selected task.'))
+      })
     },
     [app],
   )
 
   const handleLeftResizeEnd = useCallback(
     (size: number): void => {
-      void app.state.set(APP_STATE_KEY.leftRegionWidth, String(size)).catch(() => undefined)
+      void app.state.set(APP_STATE_KEY.leftRegionWidth, String(size)).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to save the panel width.'))
+      })
     },
     [app],
   )
 
   const handleBottomResizeEnd = useCallback(
     (size: number): void => {
-      void app.state.set(APP_STATE_KEY.bottomRegionHeight, String(size)).catch(() => undefined)
+      void app.state.set(APP_STATE_KEY.bottomRegionHeight, String(size)).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to save the panel height.'))
+      })
     },
     [app],
   )
@@ -162,6 +149,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const loadTasks = useCallback(
     async (projectId: string): Promise<void> => {
       const tasks = await app.tasks.list(projectId)
+      // A load resolving after its project was removed must not re-populate
+      // tasksByProject with an orphaned entry.
+      if (removedProjectIdsRef.current.has(projectId)) {
+        return
+      }
       setTasksByProject((previous) => ({ ...previous, [projectId]: tasks }))
     },
     [app],
@@ -186,6 +178,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setNotice(null)
       setSelectedProjectId(projectId)
       setSelectedTaskId(taskId)
+      // Every explicit selection counts: re-selecting an ended session spawns
+      // a fresh terminal (spec Edge cases).
+      setSelectionNonce((previous) => previous + 1)
       setExpandedProjectIds((previous) => new Set(previous).add(projectId))
       persistSelection(projectId, taskId)
     },
@@ -222,6 +217,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           // Native dialog cancelled: no data change, no selection change.
           return
         }
+        removedProjectIdsRef.current.delete(project.id)
         setProjects(await app.projects.list())
         setTasksByProject((previous) => ({ ...previous, [project.id]: [] }))
         setExpandedProjectIds((previous) => new Set(previous).add(project.id))
@@ -246,7 +242,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
         // Drop the removed data (the main process cleans stale selection keys
         // on the next read) and fall back to the default empty state only when
-        // the removed project is the currently selected one.
+        // the removed project is the currently selected one. Pending task
+        // loads for this project become stale (see loadTasks).
+        removedProjectIdsRef.current.add(projectId)
         setProjects((previous) => previous.filter((project) => project.id !== projectId))
         setTasksByProject((previous) => {
           const next = { ...previous }
@@ -289,6 +287,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           })
           setSelectedProjectId(projectId)
           setSelectedTaskId(task.id)
+          setSelectionNonce((previous) => previous + 1)
           persistSelection(projectId, task.id)
           return true
         } catch (error) {
@@ -329,6 +328,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         <LeftNavigation
           width={leftWidth}
           onResizeStart={leftRegion.startResize}
+          onResizeNudge={leftRegion.nudge}
           projects={projects}
           tasksByProject={tasksByProject}
           expandedProjectIds={expandedProjectIds}
@@ -343,16 +343,21 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           notice={notice}
         />
         <div className="flex min-w-0 flex-1 flex-col">
-          <CenterHeader project={selectedProject} />
-          <main
-            className="flex min-h-0 flex-1 flex-col items-center justify-center px-6"
-            data-testid={TEST_ID.centerSurface}
-          >
-            <WelcomeSurface />
+          <CenterHeader app={app} project={selectedProject} />
+          <main className="flex min-h-0 flex-1 flex-col" data-testid={TEST_ID.centerSurface}>
+            <TaskWorkspace
+              app={app}
+              projects={projects}
+              tasksByProject={tasksByProject}
+              selectedProjectId={selectedProjectId}
+              selectedTaskId={selectedTaskId}
+              selectionNonce={selectionNonce}
+            />
           </main>
-          <div data-testid={TEST_ID.rightRegion} style={{ display: 'none' }}>
-            Right Panel
-          </div>
+        </div>
+        {/* Right region is a real five-region sibling (SDD §7), hidden by default. */}
+        <div data-testid={TEST_ID.rightRegion} style={{ display: 'none' }}>
+          Right Panel
         </div>
       </div>
       <div
@@ -363,26 +368,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         <div className="flex-1 px-4 py-2 text-xs text-neutral-500">Auxiliary Terminal</div>
         <ResizeHandle
           axis="y"
+          size={bottomHeight}
+          minSize={BOTTOM_REGION_SIZE.min}
+          maxSize={BOTTOM_REGION_SIZE.max}
           onResizeStart={bottomRegion.startResize}
+          onResizeNudge={bottomRegion.nudge}
           testId={TEST_ID.bottomResizeHandle}
         />
       </div>
     </div>
-  )
-}
-
-function WelcomeSurface(): React.JSX.Element {
-  return (
-    <section
-      className="flex max-w-md flex-col items-center gap-3 text-center"
-      data-testid={TEST_ID.welcomeSurface}
-    >
-      <h1 className="text-lg font-medium text-neutral-100">Welcome to NeKode</h1>
-      <p className="text-sm leading-relaxed text-neutral-400">
-        Add a local project to start working. Tasks you create will run in dedicated terminals
-        attached to the project directory.
-      </p>
-    </section>
   )
 }
 

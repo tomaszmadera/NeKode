@@ -1,6 +1,6 @@
 import type React from 'react'
-import { TEST_ID } from '../../App'
 import { cn } from '../../lib/cn'
+import { TEST_ID } from '../../lib/test-ids'
 
 export function TopBar(): React.JSX.Element {
   return (

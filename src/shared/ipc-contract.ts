@@ -1,7 +1,7 @@
 // Typed IPC contract shared by main, preload and renderer (SDD §6, §44).
-// Stage 2: projects/tasks/state channels are served by real persistence
-// services in main; terminals/git remain Stage 3 stubs behind the same
-// channel contract.
+// Every channel is served by a real service in main: projects/tasks/state by
+// the SQLite persistence services, terminals by real PTY sessions
+// (TerminalService) and git:status by the git service.
 
 export interface ProjectInfo {
   id: string
@@ -24,6 +24,9 @@ export interface GitStatus {
 
 export type Unsubscribe = () => void
 
+// Channel names mirror the spec Data/API bridge. terminals:terminate is
+// intentionally absent: app-quit PTY teardown runs in the main process
+// (TerminalService.terminateAll on app quit), never through the renderer.
 export const IPC_CHANNEL = {
   projectsList: 'projects:list',
   projectsAdd: 'projects:add',
@@ -35,7 +38,6 @@ export const IPC_CHANNEL = {
   terminalsCreate: 'terminals:create',
   terminalsWrite: 'terminals:write',
   terminalsResize: 'terminals:resize',
-  terminalsTerminate: 'terminals:terminate',
   terminalsData: 'terminals:data',
   terminalsExit: 'terminals:exit',
   gitStatus: 'git:status',
