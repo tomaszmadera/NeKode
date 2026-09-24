@@ -105,6 +105,8 @@ Recorded direct work uses `task-record` for state and `task-close` after its req
 
 Skills are discovered from harness metadata; do not read skill bodies to find one.
 
+NeKode domain skills live in `.agents/skills/` (electron-ipc, electron-native, terminal-lifecycle, database, electron-e2e, git-worktrees) together with vendored React/UI skills. Activate at most the one whose description matches the current domain; `docs/development/agent-skills.md` owns routing, provenance, and maintenance.
+
 ## Conditional policy and reference loading
 
 Load only the applicable item:
