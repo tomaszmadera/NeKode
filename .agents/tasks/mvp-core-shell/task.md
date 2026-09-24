@@ -10,7 +10,7 @@ current_step: Phase 2.4
 updated: 2026-09-24
 branch: main
 worktree: current
-next_action: Stage 3: dispatch implementer subagent (Task terminal with session preservation: node-pty PTY per task in main, xterm.js in renderer, session preservation on task switch, session-ended/spawn-error states, app-quit PTY teardown); then gates + independent review + task-close with full verification
+next_action: Handoff (snapshot .agents/handoffs/mvp-core-shell.md): user-gate acceptance AC1-6 (+ exit/quit checks) in pnpm dev / scripts/start.ps1 pending; after it task-close with full verification (multi-stage) + verification subject
 blockers: none
 ---
 
@@ -97,7 +97,8 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 | review:stage3 | work | 2026-09-24T19:37:51Z | 2026-09-24T19:53:09Z |
 | correction:stage3 | work | 2026-09-24T19:53:09Z | 2026-09-24T20:17:18Z |
 | review:stage3-rr1 | work | 2026-09-24T20:17:18Z | 2026-09-24T20:23:41Z |
-| user-gate:stage3 | wait | 2026-09-24T20:23:41Z | |
+| user-gate:stage3 | wait | 2026-09-24T20:23:41Z | 2026-09-24T21:51:28Z |
+| handoff | wait | 2026-09-24T21:51:28Z | |
 
 ## Risks and blockers
 
