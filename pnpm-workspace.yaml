@@ -1,12 +1,14 @@
+# pnpm 12 build-script policy (verified 2026-09-24, see docs/development/setup.md).
+# Only dependencies whose install scripts were reviewed and are required may run.
+# - @biomejs/biome: postinstall stages the platform CLI binary.
+# - esbuild: postinstall installs the platform binary.
+# - node-pty: install (scripts/prebuild.js stages bundled prebuilds) + postinstall.
+# - better-sqlite3: explicitly denied - 13.x ships N-API prebuilds (prebuilds/*.node,
+#   incl. win32-x64); the implicit node-gyp rebuild fails without VS C++ Build Tools
+#   and is not needed at runtime.
+# - electron: no install scripts in 44.x (binary downloaded lazily on first run).
 allowBuilds:
   '@biomejs/biome': true
-  better-sqlite3: true
-  electron: true
+  better-sqlite3: false
   esbuild: true
   node-pty: true
-onlyBuiltDependencies:
-  - '@biomejs/biome'
-  - better-sqlite3
-  - electron
-  - esbuild
-  - node-pty
