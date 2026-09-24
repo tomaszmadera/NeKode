@@ -1,9 +1,10 @@
 import { act, cleanup, render, screen } from '@testing-library/react'
 import type React from 'react'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../shared/ipc-contract'
 import { App, TEST_ID } from '../App'
-import { useResizableRegion } from './useResizableRegion'
+import { BOTTOM_REGION_SIZE, useResizableRegion } from './useResizableRegion'
 
 // jsdom (v30) ships a PointerEvent constructor but no
 // Element.setPointerCapture; the hook guards the latter, the tests
@@ -94,8 +95,8 @@ describe('useResizableRegion (via App shell)', () => {
     expect(region.style.height).toBe('220px')
 
     firePointer(handle, 'pointerdown', { clientY: 600 })
-    firePointer(handle, 'pointermove', { clientY: 548 }) // 768 - 548 = 220
-    expect(region.style.height).toBe('220px')
+    firePointer(handle, 'pointermove', { clientY: 528 }) // 768 - 528 = 240
+    expect(region.style.height).toBe('240px')
 
     firePointer(handle, 'pointermove', { clientY: 700 }) // 768 - 700 = 68 < 160
     expect(region.style.height).toBe('160px')
@@ -107,7 +108,6 @@ describe('useResizableRegion (via App shell)', () => {
   it('ignores pointermove before pointerdown', () => {
     render(<App app={app} />)
     const leftNav = screen.getByTestId(TEST_ID.leftNav)
-
     firePointer(getHandle(TEST_ID.leftResizeHandle), 'pointermove', { clientX: 400 })
     expect((leftNav as HTMLElement).style.width).toBe('280px')
   })
@@ -115,14 +115,12 @@ describe('useResizableRegion (via App shell)', () => {
   it('ends the drag on pointercancel (subsequent moves do not resize)', () => {
     render(<App app={app} />)
     const leftNav = screen.getByTestId(TEST_ID.leftNav)
-
     const handle = getHandle(TEST_ID.leftResizeHandle)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 320 })
     expect((leftNav as HTMLElement).style.width).toBe('320px')
 
     firePointer(handle, 'pointercancel', { clientX: 320 })
-
     firePointer(handle, 'pointermove', { clientX: 450 })
     firePointer(handle, 'pointermove', { clientX: 460 })
     expect((leftNav as HTMLElement).style.width).toBe('320px')
@@ -131,12 +129,10 @@ describe('useResizableRegion (via App shell)', () => {
   it('ends the drag on lostpointercapture', () => {
     render(<App app={app} />)
     const leftNav = screen.getByTestId(TEST_ID.leftNav)
-
     const handle = getHandle(TEST_ID.leftResizeHandle)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 330 })
     expect((leftNav as HTMLElement).style.width).toBe('330px')
-
     act(() => {
       handle.dispatchEvent(new Event('lostpointercapture'))
     })
@@ -147,7 +143,6 @@ describe('useResizableRegion (via App shell)', () => {
   it('stops dragging after pointerup (no resize on later moves)', () => {
     render(<App app={app} />)
     const leftNav = screen.getByTestId(TEST_ID.leftNav)
-
     const handle = getHandle(TEST_ID.leftResizeHandle)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 300 })
@@ -161,10 +156,8 @@ describe('useResizableRegion (via App shell)', () => {
   it('cleans up an active drag on unmount (moves after unmount are inert)', () => {
     const { unmount } = render(<App app={app} />)
     const handle = getHandle(TEST_ID.leftResizeHandle)
-
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 310 })
-
     unmount()
 
     // Dispatching on a detached node must not throw or re-enter React.
@@ -180,25 +173,23 @@ describe('useResizableRegion (via App shell)', () => {
   })
 })
 
-// App hides the bottom region in Stage 1, so the y-axis behaviour
+// App hides the bottom region in Stage 2, so the y-axis behaviour
 // (clientY measured against window.innerHeight) is exercised through a
-// minimal harness with the same wiring App uses.
+// minimal harness with the same controlled wiring App uses.
 function YAxisHarness(): React.JSX.Element {
+  const [size, setSize] = useState(BOTTOM_REGION_SIZE.default)
   const bottomRegion = useResizableRegion({
-    id: 'bottom',
     axis: 'y',
-    initialSize: 220,
-    minSize: 160,
+    minSize: BOTTOM_REGION_SIZE.min,
+    maxSize: BOTTOM_REGION_SIZE.max,
+    size,
+    onSizeChange: setSize,
+    onResizeEnd: () => undefined,
   })
 
   return (
-    <div data-testid="harness-bottom-region" style={{ height: bottomRegion.size }}>
-      <div
-        data-testid="harness-handle"
-        role="separator"
-        tabIndex={-1}
-        onPointerDown={bottomRegion.startResize}
-      />
+    <div data-testid="harness-bottom-region" style={{ height: size }}>
+      <div data-testid="harness-handle" onPointerDown={bottomRegion.startResize} />
     </div>
   )
 }
