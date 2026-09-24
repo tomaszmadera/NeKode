@@ -18,6 +18,12 @@
       "scopes": ["product"],
       "tags": ["electron", "windows", "smoke-test", "userData"],
       "path": ".agents/lessons/items/electron-userdata-not-appdata.md"
+    },
+    {
+      "id": "external-reviewer-usage-limit-fallback",
+      "scopes": ["product"],
+      "tags": ["codex", "review", "usage-limit", "fallback", "subagent"],
+      "path": ".agents/lessons/items/external-reviewer-usage-limit-fallback.md"
     }
   ]
 }
