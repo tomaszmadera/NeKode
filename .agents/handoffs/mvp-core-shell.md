@@ -1,12 +1,12 @@
 ---
 task_id: mvp-core-shell
-created: 2026-09-24T21:51:28Z
+created: 2026-09-24T22:56:31Z
 schema_version: 2
 from: Main (Hermes coordinator session)
 to: Main (next session)
 branch: main
 worktree: current
-checkpoint_subject: a18c3c2222da1f2473d8f7e2095f1d59f531ef97+sha256:e24f9e3f49f330cea1805aa0629e65417dbadfc85b3e23b7171e14e32c0ce98a
+checkpoint_subject: dbbc32b77ba5887bb5fdc7e54f3dc980335b614d+sha256:37faab5d94b5daedbb3b15ff1a06cc81af818587c1c868359fd996586db5a23f
 current_step: Phase 2.4
 next_action: Obtain the user's manual acceptance pass (spec Acceptance criteria 1-6 plus session-ended/quit-cleanup checks) in `pnpm dev` or scripts/start.ps1 and record per-criterion results in the task record; then task-close with full verification
 blockers: none
@@ -16,7 +16,7 @@ blockers: none
 
 ## Repository snapshot
 
-Linked task record: `.agents/tasks/mvp-core-shell/task.md` (current_step: Phase 2.4, plan `.agents/tasks/mvp-core-shell/plan.md` status approved). Spec: `docs/features/mvp-core-shell/spec.md`. Transferred role: Main to Main. Reason: planned session end at the user-gate — all three stages are implemented, independently reviewed and committed; what remains is the manual acceptance pass (needs the user at the GUI) and the final close.
+Linked task record: `.agents/tasks/mvp-core-shell/task.md` (current_step: Phase 2.4, plan `.agents/tasks/mvp-core-shell/plan.md` status approved). Spec: `docs/features/mvp-core-shell/spec.md`. Transferred role: Main to Main. Reason: user-requested pause at the acceptance user-gate — all three stages are implemented, independently reviewed and committed; what remains is the manual acceptance pass (needs the user at the GUI) and the final close. A short resume session (2026-09-24T22:16Z-22:56Z) only re-verified state (preflight + tests-before-edits) and touched no product code.
 
 ### Working
 
@@ -28,7 +28,7 @@ Linked task record: `.agents/tasks/mvp-core-shell/task.md` (current_step: Phase 
 
 ### Broken
 
-- Nothing known. All four gates green at handoff time (see Verification). The manual acceptance pass has NOT been run — that is the open user-gate, not a defect.
+- Nothing known. All gates green at handoff time (see Verification). The manual acceptance pass has NOT been run — that is the open user-gate, not a defect.
 
 ## Decisions
 
@@ -47,11 +47,12 @@ Linked task record: `.agents/tasks/mvp-core-shell/task.md` (current_step: Phase 
 
 - `pnpm run lint`: exit 0 (Biome 2; the old ResizeHandle a11y warnings were resolved by the Stage 3 keyboard/a11y work).
 - `pnpm run typecheck`: exit 0.
-- `pnpm run test`: exit 0 — 138/138 tests in 17 files (vitest 5 `test.projects`: node for main/preload/shared, jsdom for renderer).
+- `pnpm run test`: exit 0 — 138/138 tests in 17 files (vitest 5 `test.projects`: node for main/preload/shared, jsdom for renderer). Re-run at resume 2026-09-24T22:16Z: 138/138, identical baseline.
 - `pnpm run build`: exit 0; renderer bundle greps clean of `electron`/`node-pty`/`child_process` (SDD §6).
-- `python .agents/scripts/task-status --check .agents/tasks/mvp-core-shell/task.md`: pass.
+- `python .agents/scripts/task-status --check .agents/tasks/mvp-core-shell/task.md`: pass (re-validated after the resume and handoff record updates).
+- Resume preflight 2026-09-24T22:18Z: `python .agents/scripts/preflight` exit 0 (windows-native, Windows 11, Node 24.18.0, pnpm 12.5.1, branch main).
 - Manual acceptance (spec Acceptance criteria 1-6 + `exit` -> session-ended state + quit leaves no orphaned shells): NOT RUN — pending user-gate; nothing is claimed as passed.
-- Checkpoint subject hash = `git diff HEAD -- .agents/tasks/mvp-core-shell docs/features/mvp-core-shell | sha256sum` evaluated at snapshot creation (the snapshot itself is excluded from the scope).
+- Checkpoint subject hash = `git diff HEAD -- .agents/tasks/mvp-core-shell docs/features/mvp-core-shell | sha256sum` evaluated at snapshot creation (the snapshot itself is excluded from the scope); no untracked files in scope.
 
 ## Open product invariants
 

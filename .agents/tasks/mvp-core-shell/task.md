@@ -10,7 +10,7 @@ current_step: Phase 2.4
 updated: 2026-09-24
 branch: main
 worktree: current
-next_action: Handoff (snapshot .agents/handoffs/mvp-core-shell.md): user-gate acceptance AC1-6 (+ exit/quit checks) in pnpm dev / scripts/start.ps1 pending; after it task-close with full verification (multi-stage) + verification subject
+next_action: Handoff (snapshot .agents/handoffs/mvp-core-shell.md): user-gate acceptance AC1-6 (+ exit/quit checks) w pnpm dev / scripts/start.ps1 nadal pending; po niej task-close z pelna weryfikacja (multi-stage) + verification subject
 blockers: none
 ---
 
@@ -72,6 +72,7 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 | Independent review Stage 3 (subagent-reviewer deleg_4a4db566) | blocking | 2 blocking w TaskWorkspace.tsx (cykl zycia PTY): (1) respawn martwych/failed sesji przy odswiezaniu danych zamiast jawnego re-selekcjonowania (efekt zalazny od tozsamosci obiektow — fix: [selectedTaskId, selectionNonce] + cwd przez lookup); (2) brak ewikcji sesji usunietych zadan — ukryte widoki z zywymi PTY/xterm/listenerami do quit (fix: ewikcja w rendererze + terminate osieroconych PTY w main przy projects:remove). 5 non-blocking (komentarze, a11y min/max, raw error fallback, fit guard) -> korekta opcjonalnie lub carry-over. Checklist 1-3,5-6 pass (spec/izolacja/kontrakt/testy/boundary); decyzja o usunieciu terminals:terminate potwierdzona jako zgodna ze specem; bramki reviewera: lint 0, tc 0, test 134/134, build 0 |
 | Korekta Stage 3 (subagent-implementer deleg_e799eb0c) + bramki koordynatora | pass | (1) efekt sesji na [selectedTaskId, selectionNonce] + lookup przez ref — odswiezenie danych nigdy nie respawnuje, jawny re-selekcjonowanie tak (biome-ignore uzasadniony); (2a) ewikcja sesji bez istniejacego zadania (unmount dispose + unsubscribe); (2b) projects:remove w main terminuje PTY usunietego projektu (taskIds przed cascade), terminateAll nietkniete. Testy regresyjne: reload-resilience ended/spawn-error + respawn przy re-selekcji, ewikcja z dispose/unsubscribe, handler test (dokladnie PTY usunietego projektu, cudze sesje zyja). Caly polish (i)-(v) zrobiony. Bramki koordynatora: lint 0, tc 0, test 138/138 (17 plikow), build 0; bundler renderera czysty |
 | Re-review Stage 3 runda 1 (swiezy reviewer deleg_b0b4ae6f) | pass | 0 blocking; oba fixy zamkniete (respawn scisle na jawnej re-selekcji — testy odpornosc na reload; ewikcja + terminate w main po taskIds sprzed cascade — test handlera z FakePty na dokladnym zbiorze kill), brak nowych bledow (deps kompletne, sciezki bledow typowane, fit guard nie blokuje legalnych fitow); 1 non-blocking (ewikcja po nieobecnosci w tasksByProject moze zniszczyc widok przy przejsciowym zaniku zadania — waski wyscig w App.loadTasks) -> BACKLOG.md; bramki reviewera: lint 0, tc 0, test 138/138, build 0 |
+| Resume preflight 2026-09-24T22:16Z (resume z handoffu) | pass | preflight exit 0 (windows-native, branch main, Node 24.18.0, pnpm 12.5.1); tests-before-edits `pnpm run test` 138/138 (17 plikow) zgodnie z baseline snapshotu; git status: tylko niezadokumentowany `scripts/` (tooling uzytkownika, poza zakresem zadania, zgodnie ze snapshotem); roszczenia snapshotu potwierdzone przez evidence repo, sprzecznosci brak |
 
 ## Timing
 
@@ -98,7 +99,10 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 | correction:stage3 | work | 2026-09-24T19:53:09Z | 2026-09-24T20:17:18Z |
 | review:stage3-rr1 | work | 2026-09-24T20:17:18Z | 2026-09-24T20:23:41Z |
 | user-gate:stage3 | wait | 2026-09-24T20:23:41Z | 2026-09-24T21:51:28Z |
-| handoff | wait | 2026-09-24T21:51:28Z | |
+| handoff | wait | 2026-09-24T21:51:28Z | 2026-09-24T22:16:44Z |
+| preflight | work | 2026-09-24T22:16:44Z | 2026-09-24T22:18:21Z |
+| user-gate:acceptance | wait | 2026-09-24T22:18:21Z | 2026-09-24T22:56:31Z |
+| handoff | wait | 2026-09-24T22:56:31Z | |
 
 ## Risks and blockers
 
