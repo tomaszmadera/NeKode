@@ -38,123 +38,32 @@ function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
 }
 
-// Bracketed-paste markers (DECSET 200) frame pasted content; the content
-// between them is literal line input (newlines included), the markers are not.
-// A marker can be split across `onData` chunks, so the stream is scanned with a
-// tail carry: a trailing byte sequence that could still grow into a marker is
-// held for the next chunk instead of being misread as content.
-const PASTE_MARKER_BEGIN = '\x1b[200~'
-const PASTE_MARKER_END = '\x1b[201~'
-
 /**
- * Emptiness of the shell's current input line — a tri-state on purpose. The
- * stream cannot always account for what the shell does with a byte (`Ctrl+D`
- * deletes under a cursor of unknown position and deletes nothing at the end of
- * a non-empty line; escape sequences rewrite the whole line), and a
- * merely-wrong character counter can reach zero while the line is full —
- * exactly the state where closing the chat would destroy it. `unknown` is the
- * honest answer for anything unaccountable and blocks the close until the next
- * line reset (Enter, Ctrl+C — or Ctrl+U only when the cursor is known at the
- * end and unix-line-discard therefore empties the whole line).
+ * Emptiness of the shell's input line is judged VISUALLY, from the xterm
+ * buffer — never by accounting of the byte stream sent to the PTY. The line
+ * is empty exactly when the visible text before the cursor on the cursor row
+ * is identical to the prompt base (the row prefix collected while the line
+ * was clean) and nothing but blank space follows the cursor.
+ *
+ * Why visual: stream accounting is sticky — one unaccountable byte (`\x04`,
+ * any escape sequence) wedged the old tri-state tracker at `unknown` until
+ * Enter/Ctrl+C, so a line the user had visibly erased still refused to close
+ * the chat (user retest 2026-09-25). Comparison against the rendered buffer
+ * self-heals: whatever the stream did before, a row that visibly reads as
+ * the prompt base closes again. Paste, history recall, Tab completion and
+ * AltGr all edit the line without printable keydowns — the buffer is the
+ * only source that reflects the real line. Asynchronous output may shift the
+ * comparison in the safe direction (the gate stays shut); acceptable.
+ *
+ * The prompt base is collected on every xterm write parse while the line is
+ * clean (initially, and after a line reset: Enter or Ctrl+C, detected from
+ * keydown — a pasted newline is content, never a reset). The first input byte
+ * after a reset freezes the base: from then on the shell echoes typed/pasted
+ * text onto the same row and the base must stay the prompt, not absorb the
+ * input; the next reset thaws it (so e.g. a prompt changed by `cd` is
+ * re-collected). The cursor row alone is compared, so multi-line prompts
+ * (oh-my-posh) work: their last line is the row the cursor sits on.
  */
-type InputLineState =
-  /** Known empty: `Ctrl+D` may close the chat. */
-  | { kind: 'empty' }
-  /** Exactly `length` (> 0) characters on the line, cursor at the end. */
-  | { kind: 'counted'; length: number }
-  /** An unaccountable edit happened; emptiness cannot be told. Never closes. */
-  | { kind: 'unknown' }
-
-interface InputLine {
-  state: InputLineState
-  /** Inside bracketed paste every byte is literal content, never a keystroke. */
-  inPaste: boolean
-  /** Tail of the stream that may still grow into a paste marker. */
-  carry: string
-}
-
-function isPrintable(char: string): boolean {
-  return char !== '\x7f' && char.charCodeAt(0) >= 0x20
-}
-
-function appendChar(state: InputLineState): InputLineState {
-  return state.kind === 'counted'
-    ? { kind: 'counted', length: state.length + 1 }
-    : state.kind === 'empty'
-      ? { kind: 'counted', length: 1 }
-      : state
-}
-
-function stepInputLine(state: InputLineState, char: string, inPaste: boolean): InputLineState {
-  if (inPaste) {
-    // Bracketed paste inserts literally: a newline or control byte is content,
-    // not Enter/Ctrl+C — what it does to the line is unaccountable.
-    return isPrintable(char) ? appendChar(state) : { kind: 'unknown' }
-  }
-  // Enter submits the line, Ctrl+C aborts it: empty again.
-  if (char === '\r' || char === '\n' || char === '\x03') {
-    return { kind: 'empty' }
-  }
-  // Ctrl+U is readline's unix-line-discard: it kills only backward from the
-  // cursor. With a known cursor at the end ('counted'/'empty') that clears the
-  // whole line, but from 'unknown' the cursor may sit mid-line and text can
-  // survive behind it — so `unknown` stays until Enter or Ctrl+C.
-  if (char === '\x15') {
-    return state.kind === 'unknown' ? state : { kind: 'empty' }
-  }
-  // Backspace/Ctrl+H delete one character, counted only while the count is
-  // exact — after an unaccountable edit the cursor may sit where a delete
-  // removes nothing (or a different amount).
-  if (char === '\x7f' || char === '\x08') {
-    if (state.kind === 'counted') {
-      return state.length > 1 ? { kind: 'counted', length: state.length - 1 } : { kind: 'empty' }
-    }
-    return state
-  }
-  if (isPrintable(char)) {
-    return appendChar(state)
-  }
-  // Escape sequences and remaining control bytes (including `\x04`, which
-  // deletes under a cursor of unknown position and nothing at the end of a
-  // non-empty line) move the cursor or rewrite the line: unaccountable.
-  return { kind: 'unknown' }
-}
-
-/**
- * Track the input line from the data stream sent to the PTY — never from
- * keydown flags (spec Behaviour 11 / AC9 gates `Ctrl+D` on an empty input
- * line). Paste (Ctrl+V / context menu / Shift+Insert), history recall
- * (arrows), Tab completion and AltGr characters all edit the line without
- * printable keydowns, so only the stream reflects the real line.
- */
-function trackInputLine(input: InputLine, data: string): InputLine {
-  const combined = input.carry + data
-  let { state, inPaste } = input
-  let index = 0
-  while (index < combined.length) {
-    if (combined.startsWith(PASTE_MARKER_BEGIN, index)) {
-      inPaste = true
-      index += PASTE_MARKER_BEGIN.length
-      continue
-    }
-    if (combined.startsWith(PASTE_MARKER_END, index)) {
-      inPaste = false
-      index += PASTE_MARKER_END.length
-      continue
-    }
-    const tail = combined.slice(index)
-    if (
-      tail.length < PASTE_MARKER_BEGIN.length &&
-      (PASTE_MARKER_BEGIN.startsWith(tail) || PASTE_MARKER_END.startsWith(tail))
-    ) {
-      return { state, inPaste, carry: tail }
-    }
-    state = stepInputLine(state, combined.charAt(index), inPaste)
-    index += 1
-  }
-  return { state, inPaste, carry: '' }
-}
-
 export function ChatTerminal({
   app,
   chatId,
@@ -220,47 +129,108 @@ export function ChatTerminal({
     const unsubscribeExit = appRef.current.terminals.onExit(chatId, (exitCode) => {
       onExitRef.current(exitCode)
     })
-    // Input-line state for the Ctrl+D gate: tracked from the input stream
-    // actually sent to the PTY (the keydown stream cannot see pasted text,
-    // history recall, completion or AltGr characters).
-    let inputLine: InputLine = { state: { kind: 'empty' }, inPaste: false, carry: '' }
+
+    // --- Ctrl+D emptiness gate (spec Behaviour 11 / AC9) --------------------
+    // The cursor row as the user sees it: `before` is the visible text in
+    // columns [0, cursorX) — prompt plus typed input — and `after` is what
+    // survives behind the cursor.
+    function visibleLine(): { before: string; after: string } | null {
+      const buffer = terminal.buffer.active
+      const line = buffer.getLine(buffer.baseY + buffer.cursorY)
+      if (line === undefined) {
+        return null
+      }
+      return {
+        before: line.translateToString(false, 0, buffer.cursorX),
+        after: line.translateToString(true, buffer.cursorX),
+      }
+    }
+
+    // The prompt base: the cursor-row prefix captured while the line is
+    // clean. `null` until the first write after mount/reset — the gate then
+    // falls back to the input-freeze state (nothing drawn, nothing typed).
+    let promptBase: string | null = null
+    // Frozen once user input arrives after a reset: the shell echoes it onto
+    // the row and the base must not absorb it.
+    let baseFrozen = false
+    // A line-reset key was just pressed; the byte xterm sends for it (Enter →
+    // '\r', Ctrl+C → '\x03') must not re-freeze the base that reset thawed.
+    let resetBytePending = false
+
+    const collectPromptBase = (): void => {
+      if (baseFrozen) {
+        return
+      }
+      promptBase = visibleLine()?.before ?? ''
+    }
+    const writeParsedSubscription = terminal.onWriteParsed(collectPromptBase)
+
+    // Input bytes reach the PTY from here (and only from here): every one of
+    // them freezes the base until the next line reset.
     const inputSubscription = terminal.onData((data) => {
-      inputLine = trackInputLine(inputLine, data)
+      const isResetByte = data === '\r' || data === '\n' || data === '\x03'
+      if (!(resetBytePending && isResetByte)) {
+        baseFrozen = true
+      }
+      resetBytePending = false
       void appRef.current.terminals.write(chatId, data).catch(() => undefined)
     })
 
-    // `Ctrl+D` shortcut (spec Behaviour 11 / AC9): the shell (e.g. PowerShell
-    // with PSReadLine) does not end on Ctrl+D, so the app closes the chat —
-    // but only when the input line is known empty (tracked from the data
-    // stream, above) and no full-screen program owns the terminal (alternate
-    // buffer, e.g. vim/htop — there Ctrl+D scrolls). At an empty line the chat
-    // closes even while a normal-buffer program (e.g. a python REPL) runs:
-    // leaving such a program is `exit()`/Ctrl+Z+Enter, not this shortcut
-    // (contract decision). Otherwise the key is left to xterm and reaches the
-    // PTY as `\x04`, where on a non-empty line it deletes a character.
+    // The shell (e.g. PowerShell with PSReadLine) does not end on Ctrl+D, so
+    // the app closes the chat — but only when the input line is visibly
+    // empty (compared against the prompt base, above) and no full-screen
+    // program owns the terminal (alternate buffer, e.g. vim/htop — there
+    // Ctrl+D scrolls). At an empty line the chat closes even while a
+    // normal-buffer program (e.g. a python REPL) runs: leaving such a program
+    // is `exit()`/Ctrl+Z+Enter, not this shortcut (contract decision).
+    // Otherwise the key is left to xterm and reaches the PTY as `\x04`, where
+    // on a non-empty line it deletes a character.
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
       if (event.type !== 'keydown') {
         return true
       }
+      // AltGr characters (ctrlKey and altKey both true) are never a shortcut.
+      const ctrlOnly = event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+      // Line resets (keydown only — a pasted newline is content, never an
+      // Enter): Enter submits, Ctrl+C aborts. The base may move again and is
+      // re-collected from the next drawn prompt.
+      const isEnter = event.key === 'Enter'
+      const isCtrlC = (event.code === 'KeyC' || event.key === 'c' || event.key === 'C') && ctrlOnly
+      if (isEnter || isCtrlC) {
+        baseFrozen = false
+        resetBytePending = true
+        return true
+      }
       // Matched on the physical key (event.code) so the shortcut also works on
-      // non-Latin layouts where Ctrl+D reports a different event.key. AltGr
-      // characters (ctrlKey and altKey both true) are never the shortcut.
-      const isCtrlD =
-        (event.code === 'KeyD' || event.key === 'd' || event.key === 'D') &&
-        event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey &&
-        !event.shiftKey
-      if (
-        isCtrlD &&
-        inputLine.state.kind === 'empty' &&
-        terminal.buffer.active.type !== 'alternate'
-      ) {
+      // non-Latin layouts where Ctrl+D reports a different event.key.
+      const isCtrlD = (event.code === 'KeyD' || event.key === 'd' || event.key === 'D') && ctrlOnly
+      if (isCtrlD && terminal.buffer.active.type !== 'alternate' && isInputLineEmpty()) {
         onCloseRef.current()
         return false
       }
       return true
     })
+
+    function isInputLineEmpty(): boolean {
+      if (promptBase === null) {
+        // Nothing has been drawn since mount/reset: no write means no text on
+        // the row either (only writes render), so with no input since the
+        // reset the line is empty; input without a drawn base stays shut.
+        return !baseFrozen
+      }
+      const line = visibleLine()
+      if (line === null) {
+        return false
+      }
+      // The visible text before the cursor must read exactly as the prompt
+      // base …
+      if (line.before !== promptBase) {
+        return false
+      }
+      // … and nothing may survive behind the cursor (Ctrl+U mid-line leaves
+      // the rest of the input there — that line is not empty).
+      return line.after === ''
+    }
 
     // Lazy spawn: the main process creates the PTY on this first attach.
     void appRef.current.terminals
@@ -298,6 +268,7 @@ export function ChatTerminal({
       cleanupResize()
       unsubscribeData()
       unsubscribeExit()
+      writeParsedSubscription.dispose()
       inputSubscription.dispose()
       terminal.dispose()
     }
