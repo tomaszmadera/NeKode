@@ -142,7 +142,8 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 | correction:acceptance | work | 2026-09-25T18:57:58Z | 2026-09-25T19:01:58Z |
 | user-gate:acceptance-rr2 | wait | 2026-09-25T19:01:58Z | 2026-09-25T19:26:51Z |
 | correction:acceptance | work | 2026-09-25T19:26:51Z | 2026-09-25T20:00:36Z |
-| user-gate:acceptance-rr3 | wait | 2026-09-25T20:00:36Z | |
+| user-gate:acceptance-rr3 | wait | 2026-09-25T20:00:36Z | 2026-09-25T20:12:01Z |
+| handoff | wait | 2026-09-25T20:12:01Z | |
 
 ## Risks and blockers
 
