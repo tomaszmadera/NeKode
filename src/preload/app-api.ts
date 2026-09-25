@@ -1,4 +1,4 @@
-import type { AppApi, GitStatus, ProjectInfo, TaskInfo, Unsubscribe } from '../shared/ipc-contract'
+import type { AppApi, ChatInfo, GitStatus, ProjectInfo, Unsubscribe } from '../shared/ipc-contract'
 import { IPC_CHANNEL } from '../shared/ipc-contract'
 import { parseAppErrorPayload } from '../shared/ipc-error'
 import type { IpcRendererLike } from './bridge-types'
@@ -23,13 +23,13 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
 
   function subscribe<T>(
     channel: string,
-    taskId: string,
+    chatId: string,
     callback: (payload: T) => void,
     guard: (payload: unknown) => payload is T,
   ): Unsubscribe {
     const listener = (...args: unknown[]) => {
-      const [, eventTaskId, payload] = args // event, taskId, payload
-      if (eventTaskId === taskId && guard(payload)) {
+      const [, eventChatId, payload] = args // event, chatId, payload
+      if (eventChatId === chatId && guard(payload)) {
         callback(payload)
       }
     }
@@ -47,29 +47,30 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       add: () => invoke<ProjectInfo | null>(IPC_CHANNEL.projectsAdd),
       remove: (projectId) => invoke<void>(IPC_CHANNEL.projectsRemove, projectId),
     },
-    tasks: {
-      list: (projectId) => invoke<TaskInfo[]>(IPC_CHANNEL.tasksList, projectId),
-      create: (projectId, name) => invoke<TaskInfo>(IPC_CHANNEL.tasksCreate, projectId, name),
+    chats: {
+      list: (projectId) => invoke<ChatInfo[]>(IPC_CHANNEL.chatsList, projectId),
+      create: (projectId, name) => invoke<ChatInfo>(IPC_CHANNEL.chatsCreate, projectId, name),
+      remove: (chatId) => invoke<void>(IPC_CHANNEL.chatsRemove, chatId),
     },
     state: {
       get: (key) => invoke<string | null>(IPC_CHANNEL.stateGet, key),
       set: (key, value) => invoke<void>(IPC_CHANNEL.stateSet, key, value),
     },
     terminals: {
-      create: (taskId, cwd) => invoke<string>(IPC_CHANNEL.terminalsCreate, taskId, cwd),
-      write: (taskId, data) => invoke<void>(IPC_CHANNEL.terminalsWrite, taskId, data),
-      resize: (taskId, cols, rows) => invoke<void>(IPC_CHANNEL.terminalsResize, taskId, cols, rows),
-      onData: (taskId, callback) =>
+      create: (chatId, cwd) => invoke<string>(IPC_CHANNEL.terminalsCreate, chatId, cwd),
+      write: (chatId, data) => invoke<void>(IPC_CHANNEL.terminalsWrite, chatId, data),
+      resize: (chatId, cols, rows) => invoke<void>(IPC_CHANNEL.terminalsResize, chatId, cols, rows),
+      onData: (chatId, callback) =>
         subscribe<string>(
           IPC_CHANNEL.terminalsData,
-          taskId,
+          chatId,
           callback,
           (p): p is string => typeof p === 'string',
         ),
-      onExit: (taskId, callback) =>
+      onExit: (chatId, callback) =>
         subscribe<number>(
           IPC_CHANNEL.terminalsExit,
-          taskId,
+          chatId,
           callback,
           (p): p is number => typeof p === 'number',
         ),

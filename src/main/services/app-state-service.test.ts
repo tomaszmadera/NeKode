@@ -7,7 +7,7 @@ import { AppStateService } from './app-state-service'
 
 // AppStateService unit tests on an :memory: database (pattern: db.test.ts),
 // covering every cleanupSelection branch (spec Edge cases: a selection
-// pointing at a removed project/task falls back to the default empty state).
+// pointing at a removed project/chat falls back to the default empty state).
 
 const openDatabases: Array<{ close(): void }> = []
 
@@ -30,10 +30,13 @@ function insertProject(db: Database.Database, id: string): void {
   ).run(id, `project-${id}`, `D:/code/${id}`, null, '2026-01-01T00:00:00Z')
 }
 
-function insertTask(db: Database.Database, id: string, projectId: string): void {
-  db.prepare(
-    "INSERT INTO tasks (id, project_id, name, status, created_at) VALUES (?, ?, ?, 'idle', ?)",
-  ).run(id, projectId, `task-${id}`, '2026-01-01T00:00:00Z')
+function insertChat(db: Database.Database, id: string, projectId: string): void {
+  db.prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)').run(
+    id,
+    projectId,
+    `chat-${id}`,
+    '2026-01-01T00:00:00Z',
+  )
 }
 
 describe('AppStateService key–value store', () => {
@@ -55,62 +58,62 @@ describe('AppStateService key–value store', () => {
 describe('AppStateService.cleanupSelection', () => {
   it('returns an empty selection when nothing is stored', () => {
     const { state } = createService()
-    expect(state.cleanupSelection()).toEqual({ projectId: null, taskId: null })
+    expect(state.cleanupSelection()).toEqual({ projectId: null, chatId: null })
   })
 
   it('keeps a valid selection and its keys', () => {
     const { state, db } = createService()
     insertProject(db, 'p1')
-    insertTask(db, 't1', 'p1')
+    insertChat(db, 't1', 'p1')
     state.set(APP_STATE_KEY.selectedProjectId, 'p1')
-    state.set(APP_STATE_KEY.selectedTaskId, 't1')
+    state.set(APP_STATE_KEY.selectedChatId, 't1')
 
-    expect(state.cleanupSelection()).toEqual({ projectId: 'p1', taskId: 't1' })
+    expect(state.cleanupSelection()).toEqual({ projectId: 'p1', chatId: 't1' })
     expect(state.get(APP_STATE_KEY.selectedProjectId)).toBe('p1')
-    expect(state.get(APP_STATE_KEY.selectedTaskId)).toBe('t1')
+    expect(state.get(APP_STATE_KEY.selectedChatId)).toBe('t1')
   })
 
   it('clears both keys when the selected project was removed', () => {
     const { state } = createService()
     state.set(APP_STATE_KEY.selectedProjectId, 'p-ghost')
-    state.set(APP_STATE_KEY.selectedTaskId, 't-ghost')
+    state.set(APP_STATE_KEY.selectedChatId, 't-ghost')
 
-    expect(state.cleanupSelection()).toEqual({ projectId: null, taskId: null })
+    expect(state.cleanupSelection()).toEqual({ projectId: null, chatId: null })
     expect(state.get(APP_STATE_KEY.selectedProjectId)).toBeNull()
-    expect(state.get(APP_STATE_KEY.selectedTaskId)).toBeNull()
+    expect(state.get(APP_STATE_KEY.selectedChatId)).toBeNull()
   })
 
-  it('clears only the task key when the selected task was removed', () => {
+  it('clears only the chat key when the selected chat was removed', () => {
     const { state, db } = createService()
     insertProject(db, 'p1')
     state.set(APP_STATE_KEY.selectedProjectId, 'p1')
-    state.set(APP_STATE_KEY.selectedTaskId, 't-ghost')
+    state.set(APP_STATE_KEY.selectedChatId, 't-ghost')
 
-    expect(state.cleanupSelection()).toEqual({ projectId: 'p1', taskId: null })
+    expect(state.cleanupSelection()).toEqual({ projectId: 'p1', chatId: null })
     expect(state.get(APP_STATE_KEY.selectedProjectId)).toBe('p1')
-    expect(state.get(APP_STATE_KEY.selectedTaskId)).toBeNull()
+    expect(state.get(APP_STATE_KEY.selectedChatId)).toBeNull()
   })
 
-  it('clears the task key when the task belongs to a different project', () => {
+  it('clears the chat key when the chat belongs to a different project', () => {
     const { state, db } = createService()
     insertProject(db, 'p1')
     insertProject(db, 'p2')
-    insertTask(db, 't2', 'p2')
+    insertChat(db, 't2', 'p2')
     state.set(APP_STATE_KEY.selectedProjectId, 'p1')
-    state.set(APP_STATE_KEY.selectedTaskId, 't2')
+    state.set(APP_STATE_KEY.selectedChatId, 't2')
 
-    expect(state.cleanupSelection()).toEqual({ projectId: 'p1', taskId: null })
+    expect(state.cleanupSelection()).toEqual({ projectId: 'p1', chatId: null })
     expect(state.get(APP_STATE_KEY.selectedProjectId)).toBe('p1')
-    expect(state.get(APP_STATE_KEY.selectedTaskId)).toBeNull()
+    expect(state.get(APP_STATE_KEY.selectedChatId)).toBeNull()
   })
 
   it('is idempotent after cleaning', () => {
     const { state } = createService()
     state.set(APP_STATE_KEY.selectedProjectId, 'p-ghost')
-    state.set(APP_STATE_KEY.selectedTaskId, 't-ghost')
+    state.set(APP_STATE_KEY.selectedChatId, 't-ghost')
 
-    expect(state.cleanupSelection()).toEqual({ projectId: null, taskId: null })
-    expect(state.cleanupSelection()).toEqual({ projectId: null, taskId: null })
+    expect(state.cleanupSelection()).toEqual({ projectId: null, chatId: null })
+    expect(state.cleanupSelection()).toEqual({ projectId: null, chatId: null })
   })
 })
 

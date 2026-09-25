@@ -3,7 +3,7 @@ import type { ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY } from '../../shared/ipc-contract'
 
 // AppStateService: flat key–value store (spec Data/API) plus cleanup of
-// selection keys that point at removed projects/tasks (spec Edge cases:
+// selection keys that point at removed projects/chats (spec Edge cases:
 // stale selection falls back to the default empty state and is cleaned).
 
 export interface AppStateServiceDeps {
@@ -12,7 +12,7 @@ export interface AppStateServiceDeps {
 
 export interface SelectionRef {
   projectId: string | null
-  taskId: string | null
+  chatId: string | null
 }
 
 export class AppStateService {
@@ -47,26 +47,26 @@ export class AppStateService {
    */
   cleanupSelection(): SelectionRef {
     let projectId = this.get(APP_STATE_KEY.selectedProjectId)
-    let taskId = this.get(APP_STATE_KEY.selectedTaskId)
+    let chatId = this.get(APP_STATE_KEY.selectedChatId)
 
     if (projectId !== null && !this.projectExists(projectId)) {
       this.delete(APP_STATE_KEY.selectedProjectId)
-      this.delete(APP_STATE_KEY.selectedTaskId)
+      this.delete(APP_STATE_KEY.selectedChatId)
       projectId = null
-      taskId = null
+      chatId = null
     }
 
-    if (taskId !== null && !this.taskExists(taskId)) {
-      this.delete(APP_STATE_KEY.selectedTaskId)
-      taskId = null
+    if (chatId !== null && !this.chatExists(chatId)) {
+      this.delete(APP_STATE_KEY.selectedChatId)
+      chatId = null
     }
 
-    if (taskId !== null && projectId !== null && !this.taskBelongsToProject(taskId, projectId)) {
-      this.delete(APP_STATE_KEY.selectedTaskId)
-      taskId = null
+    if (chatId !== null && projectId !== null && !this.chatBelongsToProject(chatId, projectId)) {
+      this.delete(APP_STATE_KEY.selectedChatId)
+      chatId = null
     }
 
-    return { projectId, taskId }
+    return { projectId, chatId }
   }
 
   getSelectedProject(): ProjectInfo | null {
@@ -89,13 +89,13 @@ export class AppStateService {
     return !!this.db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId)
   }
 
-  private taskExists(taskId: string): boolean {
-    return !!this.db.prepare('SELECT 1 FROM tasks WHERE id = ?').get(taskId)
+  private chatExists(chatId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM chats WHERE id = ?').get(chatId)
   }
 
-  private taskBelongsToProject(taskId: string, projectId: string): boolean {
+  private chatBelongsToProject(chatId: string, projectId: string): boolean {
     return !!this.db
-      .prepare('SELECT 1 FROM tasks WHERE id = ? AND project_id = ?')
-      .get(taskId, projectId)
+      .prepare('SELECT 1 FROM chats WHERE id = ? AND project_id = ?')
+      .get(chatId, projectId)
   }
 }

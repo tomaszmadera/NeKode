@@ -11,6 +11,9 @@ export interface Migration {
 
 export const MIGRATIONS: readonly Migration[] = [
   {
+    // Historical schema (Stage 2): the tree entity was misnamed `tasks` here;
+    // version 2 renames it to `chats`. Kept byte-stable so databases created
+    // by earlier builds migrate cleanly (append, never rewrite).
     version: 1,
     up: (db) => {
       db.exec(`
@@ -35,6 +38,37 @@ export const MIGRATIONS: readonly Migration[] = [
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
+      `)
+    },
+  },
+  {
+    // Stage 4: the tree entity is the chat (spec Data/API). The old `tasks`
+    // table becomes `chats` without the dropped `status` column; rows are
+    // carried over and the old table is dropped. The selection key is renamed
+    // as well and the old key is always cleaned up. Literal key names on
+    // purpose: migrations must keep working even if APP_STATE_KEY changes.
+    version: 2,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE chats (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE (project_id, name)
+        );
+
+        INSERT INTO chats (id, project_id, name, created_at)
+          SELECT id, project_id, name, created_at FROM tasks;
+
+        DROP TABLE tasks;
+
+        INSERT INTO app_state (key, value)
+          SELECT 'selection.chatId', value FROM app_state
+          WHERE key = 'selection.taskId'
+            AND NOT EXISTS (SELECT 1 FROM app_state WHERE key = 'selection.chatId');
+
+        DELETE FROM app_state WHERE key = 'selection.taskId';
       `)
     },
   },

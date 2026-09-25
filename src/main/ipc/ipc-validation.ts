@@ -109,15 +109,18 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       (services.projects.add as (path?: string) => ProjectInfoLike)(),
     ),
     serviceChannel('projects:remove', ['string'], (args) => services.projects.remove(args[0])),
-    serviceChannel('tasks:list', ['string'], (args) => services.tasks.list(args[0])),
-    serviceChannel('tasks:create', ['string', 'string'], (args) =>
-      services.tasks.create(args[0], args[1]),
+    serviceChannel('chats:list', ['string'], (args) => services.chats.list(args[0])),
+    serviceChannel('chats:create', ['string', 'string'], (args) =>
+      services.chats.create(args[0], args[1]),
     ),
+    // Terminal-exit close flow (spec Behaviour 11): the renderer-driven chat
+    // removal; never invoked on application quit.
+    serviceChannel('chats:remove', ['string'], (args) => services.chats.remove(args[0])),
     serviceChannel('state:get', ['string'], (args) => services.state.get(args[0])),
     serviceChannel('state:set', ['string', 'string'], (args) =>
       services.state.set(args[0], args[1]),
     ),
-    // Task terminals (Stage 3): one PTY per task, spawned lazily on create.
+    // Chat terminals (Stage 3): one PTY per chat, spawned lazily on create.
     serviceChannel('terminals:create', ['string', 'path'], (args) =>
       services.terminals.create(args[0], args[1]),
     ),

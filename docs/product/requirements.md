@@ -1,7 +1,7 @@
 # Wymagania Produktu: NeKode MVP
 
 **Status:** Zaakceptowane wymagania produktu MVP  
-**Wersja:** 0.1  
+**Wersja:** 0.2  
 **Źródła nadrzędne:** [`SDD.md`](file:///mnt/f/projects/NeKode/docs/architecture/SDD.md), [`UX-UI.md`](file:///mnt/f/projects/NeKode/docs/UX-UI.md)
 
 ---
@@ -12,7 +12,7 @@ NeKode to desktopowe środowisko pracy typu **agent-first coding workspace** na 
 
 W MVP agenci traktowani są jako standardowe procesy terminalowe (PTY) bez konieczności implementowania dedykowanych protokołów (ACP/MCP).
 
-Centralnym pojęciem domeny jest **Task** (zadanie programistyczne), do którego przypisywane są zasoby: sesja terminala, katalog roboczy (workspace), stan Git oraz historia handoffów.
+Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do projektu, widoczna w drzewku po lewej (PROJEKT → CZATY). Z czatem powiązany jest kontekst pracy: katalog roboczy (workspace) oraz stan Git. Odrębną encją (post-MVP) jest **Task (zadanie)** — jednostka pracy z zapisem postępu, przypinana do czatu; jej śledzenie postępu ma być niezależne od konkretnego harnessa.
 
 ---
 
@@ -23,16 +23,16 @@ Centralnym pojęciem domeny jest **Task** (zadanie programistyczne), do którego
    - Przełączanie aktywnego projektu w pasku bocznym.
    - Odczyt kontekstu projektu: ścieżka, wykryte runtimy, stan gałęzi Git oraz status worktree.
 
-2. **Zarządzanie zadaniami (Tasks):**
-   - Tworzenie i organizacja zadań w ramach projektu.
-   - Przełączanie aktywnego zadania z zachowaniem stanu sesji roboczej.
-   - Tworzenie i przeglądanie migawek przekazania prac (handoff).
+2. **Zarządzanie czatami (Chats):**
+   - Drzewko w lewym panelu: PROJEKT → CZATY (czaty widoczne pod projektami).
+   - Tworzenie nowego czatu i przełączanie między czatami z zachowaniem stanu sesji roboczej.
+   - Zamykanie czatu wraz z zamknięciem jego terminala (`exit`, `Ctrl+D`): czat znika z drzewka, aplikacja przechodzi do kolejnego czatu w projekcie (gdy czatów nie zostanie — stan pusty z przyciskiem "Start new chat").
 
 3. **Sesje terminala (PTY):**
    - Uruchamianie agentów i narzędzi CLI w natywnych procesach terminalowych (node-pty) w procesie głównym.
-   - Renderowanie terminala w widoku głównym za pomocą xterm.js.
-   - Zachowanie aktywnych sesji terminala w czasie działania aplikacji przy przełączaniu zadań.
-   - Pomocniczy dolny terminal (Bottom Terminal) przełączany skrótem klawiszowym `Ctrl + \``.
+   - Renderowanie terminala w widoku głównym za pomocą xterm.js (jeden terminal główny na czat).
+   - Zachowanie aktywnych sesji terminala w czasie działania aplikacji przy przełączaniu czatów; restarcie aplikacji drzewko czatów wraca do stanu sprzed restartu (jak w Zed), a terminale startują świeżo po otwarciu czatu.
+   - Pomocniczy dolny panel terminali (możliwość otwierania wielu terminali/zakładek) — realizowany jako osobne zadanie.
 
 4. **Przeglądanie plików projektu:**
    - Drzewo plików projektu w lewym panelu z możliwością zwijania/rozwijania katalogów.
@@ -41,13 +41,10 @@ Centralnym pojęciem domeny jest **Task** (zadanie programistyczne), do którego
 5. **Pasek akcji projektu (Action Bar):**
    - Górny pasek z konfigurowalnymi przyciskami do uruchamiania zdefiniowanych poleceń projektu (np. dev server, testy, build, weryfikacja).
 
-6. **Wizualny podgląd tablicy Kanban:**
-   - Statyczny podgląd demonstracyjny tablicy Kanban z kolumnami stanu prac i kartami zadań (w MVP widok wyłącznie poglądowy, bez mechanizmu mutacji stanu).
+6. **Persystencja danych:**
+   - Zapisywanie konfiguracji projektów, czatów, historii i stanu layoutu w lokalnej bazie SQLite (`better-sqlite3`).
 
-7. **Persystencja danych:**
-   - Zapisywanie konfiguracji projektów, zadań, historii i stanu layoutu w lokalnej bazie SQLite (`better-sqlite3`).
-
-8. **Interfejs użytkownika:**
+7. **Interfejs użytkownika:**
    - Ergonomiczny, ciemny interfejs zgodny ze specyfikacją [`UX-UI.md`](file:///mnt/f/projects/NeKode/docs/UX-UI.md).
    - Skalowalne i resizowalne panele robocze.
    - Interfejs w całości w języku angielskim.
@@ -62,3 +59,6 @@ Centralnym pojęciem domeny jest **Task** (zadanie programistyczne), do którego
 - Brak silnika LSP (Language Server Protocol) i mechanizmów IntelliSense.
 - Brak automatycznego tworzenia i zarządzania Git worktrees per task.
 - Brak synchronizacji chmurowej i kont użytkowników (dane przechowywane wyłącznie lokalnie).
+- Post-MVP: encja **Task (zadanie)** — jednostka pracy przypinana do czatu, z panelem zapisu postępu prac (wzorzem mogą być rekordy `.agents/tasks/*/task.md` z project-template, ale bez uzależnienia aplikacji od konkretnego harnessa).
+- Post-MVP: migawki przekazania prac (handoff) powiązane z zadaniami.
+- Post-MVP: funkcjonalność tablicy **Kanban** (wcześniej planowana jako poglądowy podgląd w MVP — przeniesiona poza MVP w celu przemyślenia modelu razem z zadaniami).

@@ -1,13 +1,13 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ProjectInfo, TaskInfo } from '../../shared/ipc-contract'
+import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
 import { CenterHeader } from './components/layout/CenterHeader'
 import { LeftNavigation } from './components/layout/LeftNavigation'
 import { ResizeHandle } from './components/layout/ResizeHandle'
 import { TopBar } from './components/layout/TopBar'
-import { TaskWorkspace } from './components/workspace/TaskWorkspace'
+import { ChatWorkspace } from './components/workspace/ChatWorkspace'
 import {
   BOTTOM_REGION_SIZE,
   clampRegionSize,
@@ -38,18 +38,48 @@ function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
 }
 
+/** Whether a chat id still exists in any project's chat list. */
+function chatExistsIn(chatsByProject: Record<string, ChatInfo[]>, chatId: string): boolean {
+  return Object.values(chatsByProject).some((chats) => chats.some((chat) => chat.id === chatId))
+}
+
 export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
   const [projects, setProjects] = useState<ProjectInfo[]>([])
-  const [tasksByProject, setTasksByProject] = useState<Record<string, TaskInfo[]>>({})
+  const [chatsByProject, setChatsByProject] = useState<Record<string, ChatInfo[]>>({})
+  // Projects whose chat list finished loading. The "Start new chat" empty
+  // state renders only for those: a missing entry means "not loaded yet",
+  // never "no chats" (it must not flash before the load settles).
+  const [loadedChatProjectIds, setLoadedChatProjectIds] = useState<ReadonlySet<string>>(new Set())
   const [expandedProjectIds, setExpandedProjectIds] = useState<ReadonlySet<string>>(new Set())
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
   const [selectionNonce, setSelectionNonce] = useState(0)
+  const [newChatFocusNonce, setNewChatFocusNonce] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   const [leftWidth, setLeftWidth] = useState(LEFT_REGION_SIZE.default)
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
-  // Projects removed in this session: pending task loads for them are stale.
+  // Projects removed in this session: pending chat loads for them are stale.
   const removedProjectIdsRef = useRef<Set<string>>(new Set())
+  // Synchronous mirror of chatsByProject: every mutation goes through
+  // applyChatsUpdate (below), so near-simultaneous terminal-exit close flows
+  // compute their successor from live data, never from a stale render
+  // snapshot left over from before the other flow's removal landed.
+  const chatsByProjectRef = useRef<Record<string, ChatInfo[]>>({})
+  // Synchronous mirror of the selection for the same reason: a close flow
+  // must see the selection written by a close flow that landed a moment
+  // earlier in the same tick (render-time assignment syncs user selections).
+  const selectionRef = useRef({ projectId: selectedProjectId, chatId: selectedChatId })
+  selectionRef.current = { projectId: selectedProjectId, chatId: selectedChatId }
+
+  // Single write path for chatsByProject: the mirror and the state are
+  // mutated in lockstep so concurrent close flows never act on stale data.
+  const applyChatsUpdate = useCallback(
+    (updater: (previous: Record<string, ChatInfo[]>) => Record<string, ChatInfo[]>): void => {
+      chatsByProjectRef.current = updater(chatsByProjectRef.current)
+      setChatsByProject(chatsByProjectRef.current)
+    },
+    [],
+  )
 
   // Startup hydration: real project list, persisted selection (dropped when
   // it no longer matches existing records) and persisted region sizes.
@@ -58,11 +88,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
     async function hydrate(): Promise<void> {
       try {
-        const [loadedProjects, savedProjectId, savedTaskId, savedLeftWidth, savedBottomHeight] =
+        const [loadedProjects, savedProjectId, savedChatId, savedLeftWidth, savedBottomHeight] =
           await Promise.all([
             app.projects.list(),
             app.state.get(APP_STATE_KEY.selectedProjectId),
-            app.state.get(APP_STATE_KEY.selectedTaskId),
+            app.state.get(APP_STATE_KEY.selectedChatId),
             app.state.get(APP_STATE_KEY.leftRegionWidth),
             app.state.get(APP_STATE_KEY.bottomRegionHeight),
           ])
@@ -77,26 +107,27 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         // Stale selection falls back to the default empty state (spec Edge
         // cases); the main process deletes the stale keys (cleanupSelection).
         const savedProject = normalizeStoredId(savedProjectId)
-        const savedTask = normalizeStoredId(savedTaskId)
+        const savedChat = normalizeStoredId(savedChatId)
         const projectId =
           savedProject !== null && loadedProjects.some((project) => project.id === savedProject)
             ? savedProject
             : null
         if (projectId === null) {
           setSelectedProjectId(null)
-          setSelectedTaskId(null)
+          setSelectedChatId(null)
           return
         }
 
-        const tasks = await app.tasks.list(projectId)
+        const chats = await app.chats.list(projectId)
         if (cancelled || removedProjectIdsRef.current.has(projectId)) {
           return
         }
-        setTasksByProject((previous) => ({ ...previous, [projectId]: tasks }))
+        applyChatsUpdate((previous) => ({ ...previous, [projectId]: chats }))
+        setLoadedChatProjectIds((previous) => new Set(previous).add(projectId))
         setExpandedProjectIds((previous) => new Set(previous).add(projectId))
         setSelectedProjectId(projectId)
-        setSelectedTaskId(
-          savedTask !== null && tasks.some((task) => task.id === savedTask) ? savedTask : null,
+        setSelectedChatId(
+          savedChat !== null && chats.some((chat) => chat.id === savedChat) ? savedChat : null,
         )
       } catch (error) {
         if (!cancelled) {
@@ -109,20 +140,20 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     return () => {
       cancelled = true
     }
-  }, [app])
+  }, [app, applyChatsUpdate])
 
   // Selection keys are written on every selection change (spec Business
   // rules); an empty string clears a key so no stale selection survives.
   // Rejections surface to the notice banner (spec Errors: no silent fallback).
   const persistSelection = useCallback(
-    (projectId: string | null, taskId: string | null): void => {
+    (projectId: string | null, chatId: string | null): void => {
       void app.state
         .set(APP_STATE_KEY.selectedProjectId, projectId ?? '')
         .catch((error: unknown) => {
           setNotice(errorMessage(error, 'Failed to save the selected project.'))
         })
-      void app.state.set(APP_STATE_KEY.selectedTaskId, taskId ?? '').catch((error: unknown) => {
-        setNotice(errorMessage(error, 'Failed to save the selected task.'))
+      void app.state.set(APP_STATE_KEY.selectedChatId, chatId ?? '').catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to save the selected chat.'))
       })
     },
     [app],
@@ -146,43 +177,44 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app],
   )
 
-  const loadTasks = useCallback(
+  const loadChats = useCallback(
     async (projectId: string): Promise<void> => {
-      const tasks = await app.tasks.list(projectId)
+      const chats = await app.chats.list(projectId)
       // A load resolving after its project was removed must not re-populate
-      // tasksByProject with an orphaned entry.
+      // chatsByProject with an orphaned entry.
       if (removedProjectIdsRef.current.has(projectId)) {
         return
       }
-      setTasksByProject((previous) => ({ ...previous, [projectId]: tasks }))
+      applyChatsUpdate((previous) => ({ ...previous, [projectId]: chats }))
+      setLoadedChatProjectIds((previous) => new Set(previous).add(projectId))
     },
-    [app],
+    [app, applyChatsUpdate],
   )
 
   const handleSelectProject = useCallback(
     (projectId: string): void => {
       setNotice(null)
       setSelectedProjectId(projectId)
-      setSelectedTaskId(null)
+      setSelectedChatId(null)
       setExpandedProjectIds((previous) => new Set(previous).add(projectId))
       persistSelection(projectId, null)
-      void loadTasks(projectId).catch((error: unknown) => {
-        setNotice(errorMessage(error, 'Failed to load tasks.'))
+      void loadChats(projectId).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to load chats.'))
       })
     },
-    [loadTasks, persistSelection],
+    [loadChats, persistSelection],
   )
 
-  const handleSelectTask = useCallback(
-    (projectId: string, taskId: string): void => {
+  const handleSelectChat = useCallback(
+    (projectId: string, chatId: string): void => {
       setNotice(null)
       setSelectedProjectId(projectId)
-      setSelectedTaskId(taskId)
-      // Every explicit selection counts: re-selecting an ended session spawns
-      // a fresh terminal (spec Edge cases).
+      setSelectedChatId(chatId)
+      // Every explicit selection counts: re-selecting a failed session
+      // retries it (spec Edge cases).
       setSelectionNonce((previous) => previous + 1)
       setExpandedProjectIds((previous) => new Set(previous).add(projectId))
-      persistSelection(projectId, taskId)
+      persistSelection(projectId, chatId)
     },
     [persistSelection],
   )
@@ -200,12 +232,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         return next
       })
       if (!isExpanded) {
-        void loadTasks(projectId).catch((error: unknown) => {
-          setNotice(errorMessage(error, 'Failed to load tasks.'))
+        void loadChats(projectId).catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to load chats.'))
         })
       }
     },
-    [expandedProjectIds, loadTasks],
+    [expandedProjectIds, loadChats],
   )
 
   const handleAddProject = useCallback((): void => {
@@ -219,16 +251,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
         removedProjectIdsRef.current.delete(project.id)
         setProjects(await app.projects.list())
-        setTasksByProject((previous) => ({ ...previous, [project.id]: [] }))
+        applyChatsUpdate((previous) => ({ ...previous, [project.id]: [] }))
+        setLoadedChatProjectIds((previous) => new Set(previous).add(project.id))
         setExpandedProjectIds((previous) => new Set(previous).add(project.id))
         setSelectedProjectId(project.id)
-        setSelectedTaskId(null)
+        setSelectedChatId(null)
         persistSelection(project.id, null)
       } catch (error) {
         setNotice(errorMessage(error, 'Failed to add the project.'))
       }
     })()
-  }, [app, persistSelection])
+  }, [app, applyChatsUpdate, persistSelection])
 
   const handleRemoveProject = useCallback(
     (projectId: string): void => {
@@ -242,13 +275,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
         // Drop the removed data (the main process cleans stale selection keys
         // on the next read) and fall back to the default empty state only when
-        // the removed project is the currently selected one. Pending task
-        // loads for this project become stale (see loadTasks).
+        // the removed project is the currently selected one. Pending chat
+        // loads for this project become stale (see loadChats).
         removedProjectIdsRef.current.add(projectId)
         setProjects((previous) => previous.filter((project) => project.id !== projectId))
-        setTasksByProject((previous) => {
+        applyChatsUpdate((previous) => {
           const next = { ...previous }
           delete next[projectId]
+          return next
+        })
+        setLoadedChatProjectIds((previous) => {
+          const next = new Set(previous)
+          next.delete(projectId)
           return next
         })
         setExpandedProjectIds((previous) => {
@@ -258,7 +296,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         })
         if (projectId === selectedProjectId) {
           setSelectedProjectId(null)
-          setSelectedTaskId(null)
+          setSelectedChatId(null)
           persistSelection(null, null)
         }
         try {
@@ -269,35 +307,113 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
       })()
     },
-    [app, persistSelection, selectedProjectId],
+    [app, applyChatsUpdate, persistSelection, selectedProjectId],
   )
 
-  const handleCreateTask = useCallback(
+  const handleCreateChat = useCallback(
     (projectId: string, name: string): Promise<boolean> => {
       setNotice(null)
       return (async () => {
         try {
-          const task = await app.tasks.create(projectId, name)
-          setTasksByProject((previous) => {
+          const chat = await app.chats.create(projectId, name)
+          applyChatsUpdate((previous) => {
             const existing = previous[projectId] ?? []
             return {
               ...previous,
-              [projectId]: [...existing.filter((item) => item.id !== task.id), task],
+              [projectId]: [...existing.filter((item) => item.id !== chat.id), chat],
             }
           })
           setSelectedProjectId(projectId)
-          setSelectedTaskId(task.id)
+          setSelectedChatId(chat.id)
           setSelectionNonce((previous) => previous + 1)
-          persistSelection(projectId, task.id)
+          persistSelection(projectId, chat.id)
           return true
         } catch (error) {
-          setNotice(errorMessage(error, 'Failed to create the task.'))
+          setNotice(errorMessage(error, 'Failed to create the chat.'))
           return false
         }
       })()
     },
-    [app, persistSelection],
+    [app, applyChatsUpdate, persistSelection],
   )
+
+  // Terminal-exit close flow (spec Behaviour 11): remove the chat from the
+  // tree and the database, then continue on the next chat of the same project
+  // in tree order (the previous one when the closed chat was last). A project
+  // left without chats falls back to the "Start new chat" empty state.
+  // Application quit never runs this flow: quit teardown suppresses the
+  // terminals:exit events that start it (spec Behaviour 8).
+  // The successor and the selection rewrite are computed against the
+  // synchronous mirrors (chatsByProjectRef/selectionRef), so close flows
+  // landing in the same tick see each other's removals instead of a stale
+  // render snapshot — the selection can never end up pointing at a chat that
+  // another flow already removed.
+  const handleChatClosed = useCallback(
+    (chatId: string): void => {
+      setNotice(null)
+      void (async () => {
+        try {
+          await app.chats.remove(chatId)
+        } catch (error) {
+          setNotice(errorMessage(error, 'Failed to close the chat.'))
+          return
+        }
+        let successorChatId: string | null = null
+        for (const [projectId, chats] of Object.entries(chatsByProjectRef.current)) {
+          const index = chats.findIndex((chat) => chat.id === chatId)
+          if (index === -1) {
+            continue
+          }
+          const remaining = chats.filter((chat) => chat.id !== chatId)
+          // The successor rule applies to the currently viewed chat (the one
+          // whose terminal the user closed); a background chat that exits on
+          // its own is removed without stealing the current selection.
+          if (
+            projectId === selectionRef.current.projectId &&
+            chatId === selectionRef.current.chatId
+          ) {
+            successorChatId = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
+          }
+          applyChatsUpdate((previous) => ({
+            ...previous,
+            [projectId]: (previous[projectId] ?? []).filter((chat) => chat.id !== chatId),
+          }))
+          break
+        }
+        // The selection must never point at a removed chat: rewrite it to the
+        // successor, or fall back to the "Start new chat" empty state. This
+        // also covers a chat already filtered out by an earlier close in the
+        // same tick (its own flow computed no successor).
+        const selectedChatIdNow = selectionRef.current.chatId
+        if (
+          selectedChatIdNow !== null &&
+          !chatExistsIn(chatsByProjectRef.current, selectedChatIdNow)
+        ) {
+          const nextChatId =
+            successorChatId !== null && chatExistsIn(chatsByProjectRef.current, successorChatId)
+              ? successorChatId
+              : null
+          selectionRef.current = { ...selectionRef.current, chatId: nextChatId }
+          setSelectedChatId(nextChatId)
+          persistSelection(selectionRef.current.projectId, nextChatId)
+        }
+      })()
+    },
+    [app, applyChatsUpdate, persistSelection],
+  )
+
+  // "Start new chat" empty state (spec Behaviour 11): expand the selected
+  // project and hand the flow to the New Chat input in the left tree.
+  const handleStartNewChat = useCallback((): void => {
+    setExpandedProjectIds((previous) => {
+      const next = new Set(previous)
+      if (selectedProjectId !== null) {
+        next.add(selectedProjectId)
+      }
+      return next
+    })
+    setNewChatFocusNonce((previous) => previous + 1)
+  }, [selectedProjectId])
 
   const leftRegion = useResizableRegion({
     axis: 'x',
@@ -330,28 +446,34 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onResizeStart={leftRegion.startResize}
           onResizeNudge={leftRegion.nudge}
           projects={projects}
-          tasksByProject={tasksByProject}
+          chatsByProject={chatsByProject}
           expandedProjectIds={expandedProjectIds}
           selectedProjectId={selectedProjectId}
-          selectedTaskId={selectedTaskId}
+          selectedChatId={selectedChatId}
           onSelectProject={handleSelectProject}
           onToggleProject={handleToggleProject}
-          onSelectTask={handleSelectTask}
+          onSelectChat={handleSelectChat}
           onAddProject={handleAddProject}
           onRemoveProject={handleRemoveProject}
-          onCreateTask={handleCreateTask}
+          onCreateChat={handleCreateChat}
+          newChatFocusNonce={newChatFocusNonce}
           notice={notice}
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <CenterHeader app={app} project={selectedProject} />
           <main className="flex min-h-0 flex-1 flex-col" data-testid={TEST_ID.centerSurface}>
-            <TaskWorkspace
+            <ChatWorkspace
               app={app}
               projects={projects}
-              tasksByProject={tasksByProject}
+              chatsByProject={chatsByProject}
+              chatsLoaded={
+                selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
+              }
               selectedProjectId={selectedProjectId}
-              selectedTaskId={selectedTaskId}
+              selectedChatId={selectedChatId}
               selectionNonce={selectionNonce}
+              onChatClosed={handleChatClosed}
+              onStartNewChat={handleStartNewChat}
             />
           </main>
         </div>

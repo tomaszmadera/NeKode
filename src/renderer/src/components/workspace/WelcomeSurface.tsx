@@ -1,7 +1,7 @@
 import type React from 'react'
 import { TEST_ID } from '../../lib/test-ids'
 
-// Default/empty center surface (UX-UI §6): shown when no task is selected.
+// Default/empty center surface (UX-UI §6): shown when no chat is selected.
 
 export function WelcomeSurface(): React.JSX.Element {
   return (
@@ -11,7 +11,7 @@ export function WelcomeSurface(): React.JSX.Element {
     >
       <h1 className="text-lg font-medium text-neutral-100">Welcome to NeKode</h1>
       <p className="text-sm leading-relaxed text-neutral-400">
-        Add a local project to start working. Tasks you create will run in dedicated terminals
+        Add a local project to start working. Chats you create will run in dedicated terminals
         attached to the project directory.
       </p>
     </section>

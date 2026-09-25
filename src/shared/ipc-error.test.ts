@@ -20,10 +20,10 @@ describe('typed error transport', () => {
   })
 
   it('attaches the channel on AppError without one and keeps typed codes', () => {
-    const transport = toTransportError(new AppError('not_found', 'Missing.'), 'tasks:list')
+    const transport = toTransportError(new AppError('not_found', 'Missing.'), 'chats:list')
     const parsed = parseAppErrorPayload(transport)
     expect(parsed?.code).toBe('not_found')
-    expect(parsed?.channel).toBe('tasks:list')
+    expect(parsed?.channel).toBe('chats:list')
   })
 
   it('keeps the original channel when already set', () => {

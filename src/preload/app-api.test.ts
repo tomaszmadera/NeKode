@@ -32,20 +32,22 @@ describe('preload app api', () => {
     vi.unstubAllGlobals()
   })
 
-  it('routes project and task calls to explicit channels', async () => {
+  it('routes project and chat calls to explicit channels', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
     await api.projects.list()
     await api.projects.add()
     await api.projects.remove('p1')
-    await api.tasks.list('p1')
-    await api.tasks.create('p1', 'Fix bug')
+    await api.chats.list('p1')
+    await api.chats.create('p1', 'Fix bug')
+    await api.chats.remove('t1')
     expect(ipc.invocations.map((i) => i.channel)).toEqual([
       IPC_CHANNEL.projectsList,
       IPC_CHANNEL.projectsAdd,
       IPC_CHANNEL.projectsRemove,
-      IPC_CHANNEL.tasksList,
-      IPC_CHANNEL.tasksCreate,
+      IPC_CHANNEL.chatsList,
+      IPC_CHANNEL.chatsCreate,
+      IPC_CHANNEL.chatsRemove,
     ])
   })
 
@@ -68,7 +70,7 @@ describe('preload app api', () => {
     ])
   })
 
-  it('delivers terminal data events only for the matching task', () => {
+  it('delivers terminal data events only for the matching chat', () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
     const seen: string[] = []

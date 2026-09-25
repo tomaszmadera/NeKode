@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { mockFitAddonInstances, resetMockFitAddons } from '../../test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
-import { TaskTerminal } from './TaskTerminal'
+import { ChatTerminal } from './ChatTerminal'
 
 // xterm.js is mocked at the module boundary (no real canvas in jsdom); these
 // tests assert NeKode's wiring: mount → attach → lazy spawn, data/write/exit
@@ -32,9 +32,10 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       add: vi.fn().mockResolvedValue(null),
       remove: vi.fn().mockResolvedValue(undefined),
     },
-    tasks: {
+    chats: {
       list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({ id: 't1', projectId: 'p1', name: 'n', status: 'idle' }),
+      create: vi.fn().mockResolvedValue({ id: 't1', projectId: 'p1', name: 'n' }),
+      remove: vi.fn().mockResolvedValue(undefined),
     },
     state: {
       get: vi.fn().mockResolvedValue(null),
@@ -46,7 +47,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
         : vi.fn().mockResolvedValue('t1'),
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
-      onData: vi.fn((_taskId: string, cb: (data: string) => void) => {
+      onData: vi.fn((_chatId: string, cb: (data: string) => void) => {
         dataListeners.add(cb)
         const unsubscribe = () => {
           dataListeners.delete(cb)
@@ -54,7 +55,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
         }
         return unsubscribe
       }),
-      onExit: vi.fn((_taskId: string, cb: (exitCode: number) => void) => {
+      onExit: vi.fn((_chatId: string, cb: (exitCode: number) => void) => {
         exitListeners.add(cb)
         const unsubscribe = () => {
           exitListeners.delete(cb)
@@ -85,7 +86,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
   }
 }
 
-describe('TaskTerminal lifecycle', () => {
+describe('ChatTerminal lifecycle', () => {
   beforeEach(() => {
     resetMockTerminals()
     resetMockFitAddons()
@@ -107,9 +108,9 @@ describe('TaskTerminal lifecycle', () => {
   it('mounts xterm, attaches it and lazily spawns the session with the project cwd', async () => {
     const { app } = createAppMock()
     render(
-      <TaskTerminal
+      <ChatTerminal
         app={app}
-        taskId="t1"
+        chatId="t1"
         cwd="D:/code/demo"
         visible
         onExit={() => undefined}
@@ -130,9 +131,9 @@ describe('TaskTerminal lifecycle', () => {
   it('writes session data into xterm and sends user input to the PTY', async () => {
     const bundle = createAppMock()
     render(
-      <TaskTerminal
+      <ChatTerminal
         app={bundle.app}
-        taskId="t1"
+        chatId="t1"
         cwd="D:/code/demo"
         visible
         onExit={() => undefined}
@@ -163,9 +164,9 @@ describe('TaskTerminal lifecycle', () => {
       },
     })
     render(
-      <TaskTerminal
+      <ChatTerminal
         app={bundle.app}
-        taskId="t1"
+        chatId="t1"
         cwd="D:/gone"
         visible
         onExit={onExit}
@@ -179,9 +180,9 @@ describe('TaskTerminal lifecycle', () => {
 
     const exited = createAppMock()
     render(
-      <TaskTerminal
+      <ChatTerminal
         app={exited.app}
-        taskId="t2"
+        chatId="t2"
         cwd="D:/code/demo"
         visible
         onExit={onExit}
@@ -197,9 +198,9 @@ describe('TaskTerminal lifecycle', () => {
   it('fits on open and on window resize (ResizeObserver-free environments)', async () => {
     const { app } = createAppMock()
     render(
-      <TaskTerminal
+      <ChatTerminal
         app={app}
-        taskId="t1"
+        chatId="t1"
         cwd="D:/code/demo"
         visible
         onExit={() => undefined}
@@ -218,9 +219,9 @@ describe('TaskTerminal lifecycle', () => {
   it('detaches on unmount: unsubscribes, disposes xterm, never kills the session here', async () => {
     const bundle = createAppMock()
     const { unmount } = render(
-      <TaskTerminal
+      <ChatTerminal
         app={bundle.app}
-        taskId="t1"
+        chatId="t1"
         cwd="D:/code/demo"
         visible
         onExit={() => undefined}
@@ -245,9 +246,9 @@ describe('TaskTerminal lifecycle', () => {
   it('hides the view without touching the session (display driven by visibility)', async () => {
     const { app } = createAppMock()
     const { rerender } = render(
-      <TaskTerminal
+      <ChatTerminal
         app={app}
-        taskId="t1"
+        chatId="t1"
         cwd="D:/code/demo"
         visible
         onExit={() => undefined}
@@ -258,9 +259,9 @@ describe('TaskTerminal lifecycle', () => {
     expect(container.style.display).toBe('block')
 
     rerender(
-      <TaskTerminal
+      <ChatTerminal
         app={app}
-        taskId="t1"
+        chatId="t1"
         cwd="D:/code/demo"
         visible={false}
         onExit={() => undefined}

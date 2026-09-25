@@ -1,5 +1,5 @@
 // Typed IPC contract shared by main, preload and renderer (SDD §6, §44).
-// Every channel is served by a real service in main: projects/tasks/state by
+// Every channel is served by a real service in main: projects/chats/state by
 // the SQLite persistence services, terminals by real PTY sessions
 // (TerminalService) and git:status by the git service.
 
@@ -10,11 +10,13 @@ export interface ProjectInfo {
   runtimeLabel: string | null
 }
 
-export interface TaskInfo {
+// A chat is a terminal session listed under a project (spec Data/API). The
+// work-item "task" entity is post-MVP and deliberately has no representation
+// in this slice: no status column, no progress fields.
+export interface ChatInfo {
   id: string
   projectId: string
   name: string
-  status: 'idle'
 }
 
 export interface GitStatus {
@@ -31,8 +33,9 @@ export const IPC_CHANNEL = {
   projectsList: 'projects:list',
   projectsAdd: 'projects:add',
   projectsRemove: 'projects:remove',
-  tasksList: 'tasks:list',
-  tasksCreate: 'tasks:create',
+  chatsList: 'chats:list',
+  chatsCreate: 'chats:create',
+  chatsRemove: 'chats:remove',
   stateGet: 'state:get',
   stateSet: 'state:set',
   terminalsCreate: 'terminals:create',
@@ -47,7 +50,7 @@ export const IPC_CHANNEL = {
 // renderer persists with the same keys the main process cleans up.
 export const APP_STATE_KEY = {
   selectedProjectId: 'selection.projectId',
-  selectedTaskId: 'selection.taskId',
+  selectedChatId: 'selection.chatId',
   leftRegionWidth: 'region.left.width',
   bottomRegionHeight: 'region.bottom.height',
 } as const
@@ -59,20 +62,26 @@ export interface AppApi {
     add(): Promise<ProjectInfo | null>
     remove(projectId: string): Promise<void>
   }
-  tasks: {
-    list(projectId: string): Promise<TaskInfo[]>
-    create(projectId: string, name: string): Promise<TaskInfo>
+  chats: {
+    list(projectId: string): Promise<ChatInfo[]>
+    create(projectId: string, name: string): Promise<ChatInfo>
+    /**
+     * Removes a chat from the tree and the database (the terminal-exit close
+     * flow, spec Behaviour 11). Main also drops the chat's terminal session.
+     * Application quit never goes through this path.
+     */
+    remove(chatId: string): Promise<void>
   }
   state: {
     get(key: string): Promise<string | null>
     set(key: string, value: string): Promise<void>
   }
   terminals: {
-    create(taskId: string, cwd: string): Promise<string>
-    write(taskId: string, data: string): Promise<void>
-    resize(taskId: string, cols: number, rows: number): Promise<void>
-    onData(taskId: string, callback: (data: string) => void): Unsubscribe
-    onExit(taskId: string, callback: (exitCode: number) => void): Unsubscribe
+    create(chatId: string, cwd: string): Promise<string>
+    write(chatId: string, data: string): Promise<void>
+    resize(chatId: string, cols: number, rows: number): Promise<void>
+    onData(chatId: string, callback: (data: string) => void): Unsubscribe
+    onExit(chatId: string, callback: (exitCode: number) => void): Unsubscribe
   }
   git: {
     getStatus(projectPath: string): Promise<GitStatus>

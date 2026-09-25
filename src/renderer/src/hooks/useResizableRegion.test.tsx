@@ -6,7 +6,7 @@ import type { AppApi } from '../../../shared/ipc-contract'
 import { App, TEST_ID } from '../App'
 import { BOTTOM_REGION_SIZE, useResizableRegion } from './useResizableRegion'
 
-// App renders the task workspace (xterm) in Stage 3; keep jsdom free of the
+// App renders the chat workspace (xterm) in Stage 3; keep jsdom free of the
 // real xterm canvas here as well.
 vi.mock('@xterm/xterm', () => import('../test/xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('../test/fit-addon-mock'))
@@ -22,9 +22,10 @@ function createAppApiStub(): AppApi {
       add: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
     },
-    tasks: {
+    chats: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
     },
     state: {
       get: vi.fn().mockResolvedValue(null),
