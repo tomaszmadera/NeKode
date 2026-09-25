@@ -69,15 +69,15 @@ function createFakeIpcMain(): {
 
 interface Harness {
   services: AppServices
-  broadcasts: Array<{ channel: string; taskId: string; payload: string | number }>
+  broadcasts: Array<{ channel: string; chatId: string; payload: string | number }>
   invoke: ReturnType<typeof createFakeIpcMain>['invoke']
   showOpenDialog: ReturnType<typeof vi.fn>
 }
 
 function createHarness(): Harness {
   const terminalListeners: {
-    data: Array<(taskId: string, data: string) => void>
-    exit: Array<(taskId: string, exitCode: number) => void>
+    data: Array<(chatId: string, data: string) => void>
+    exit: Array<(chatId: string, exitCode: number) => void>
   } = { data: [], exit: [] }
 
   const services: AppServices = {
@@ -91,9 +91,10 @@ function createHarness(): Harness {
       })),
       remove: vi.fn(),
     },
-    tasks: {
+    chats: {
       list: vi.fn(() => []),
-      create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n', status: 'idle' as const })),
+      create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
+      remove: vi.fn(),
     },
     state: { get: vi.fn(() => null), set: vi.fn() },
     terminals: {
@@ -116,14 +117,14 @@ function createHarness(): Harness {
     },
   }
 
-  const broadcasts: Array<{ channel: string; taskId: string; payload: string | number }> = []
+  const broadcasts: Array<{ channel: string; chatId: string; payload: string | number }> = []
   const { ipcMain, invoke } = createFakeIpcMain()
   const showOpenDialog = vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] as string[] }))
   registerAppIpcHandlers(ipcMain, services, {
     showOpenDialog: showOpenDialog as never,
     trustedRendererUrls: ['file:///renderer/index.html'],
-    broadcast: (channel, taskId, payload) => {
-      broadcasts.push({ channel, taskId, payload })
+    broadcast: (channel, chatId, payload) => {
+      broadcasts.push({ channel, chatId, payload })
     },
   })
 
@@ -160,10 +161,10 @@ describe('registered ipc handlers', () => {
 
   it('rejects untrusted senders before touching services', () => {
     const { services, invoke } = createHarness()
-    expect(() => invoke(IPC_CHANNEL.tasksList, ['p1'], 'file:///untrusted/index.html')).toThrow(
+    expect(() => invoke(IPC_CHANNEL.chatsList, ['p1'], 'file:///untrusted/index.html')).toThrow(
       /untrusted/,
     )
-    expect(services.tasks.list).not.toHaveBeenCalled()
+    expect(services.chats.list).not.toHaveBeenCalled()
   })
 
   it('projects:add routes the dialog result and cancels to null', async () => {
@@ -193,10 +194,10 @@ describe('registered ipc handlers', () => {
       return pty
     }
     const terminals = new TerminalService({ createPty, isDirectory: () => true })
-    const tasks = [
-      { id: 't1', projectId: 'p1', name: 'a', status: 'idle' as const },
-      { id: 't2', projectId: 'p1', name: 'b', status: 'idle' as const },
-      { id: 't3', projectId: 'p2', name: 'c', status: 'idle' as const },
+    const chats = [
+      { id: 't1', projectId: 'p1', name: 'a' },
+      { id: 't2', projectId: 'p1', name: 'b' },
+      { id: 't3', projectId: 'p2', name: 'c' },
     ]
     const services: AppServices = {
       projects: {
@@ -204,9 +205,10 @@ describe('registered ipc handlers', () => {
         add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
         remove: vi.fn(),
       },
-      tasks: {
-        list: vi.fn((projectId: string) => tasks.filter((task) => task.projectId === projectId)),
-        create: vi.fn(() => tasks[0]),
+      chats: {
+        list: vi.fn((projectId: string) => chats.filter((chat) => chat.projectId === projectId)),
+        create: vi.fn(() => chats[0]),
+        remove: vi.fn(),
       },
       state: { get: vi.fn(() => null), set: vi.fn() },
       terminals,
@@ -218,7 +220,7 @@ describe('registered ipc handlers', () => {
       trustedRendererUrls: ['file:///renderer/index.html'],
     })
 
-    // Live sessions: two tasks of p1 and one task of another project.
+    // Live sessions: two chats of p1 and one chat of another project.
     terminals.create('t1', 'D:/a')
     terminals.create('t2', 'D:/a')
     terminals.create('t3', 'D:/b')
@@ -236,13 +238,68 @@ describe('registered ipc handlers', () => {
     expect(terminals.hasRunningSession('ghost')).toBe(false)
   })
 
-  it('forwards terminal data/exit events to the renderer broadcast by taskId', () => {
+  it('chats:remove deletes the chat row and terminates exactly its session (fake PTY)', () => {
+    const ptys: FakePty[] = []
+    const createPty: PtyFactory = (options) => {
+      const pty = new FakePty(1000 + ptys.length, options)
+      ptys.push(pty)
+      return pty
+    }
+    const terminals = new TerminalService({ createPty, isDirectory: () => true })
+    const services: AppServices = {
+      projects: {
+        list: vi.fn(() => []),
+        add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
+        remove: vi.fn(),
+      },
+      chats: {
+        list: vi.fn(() => []),
+        create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'a' })),
+        remove: vi.fn(),
+      },
+      state: { get: vi.fn(() => null), set: vi.fn() },
+      terminals,
+      git: { getStatus: vi.fn(() => Promise.resolve({ branch: null, dirty: false })) },
+    }
+    const { ipcMain, invoke } = createFakeIpcMain()
+    registerAppIpcHandlers(ipcMain, services, {
+      showOpenDialog: vi.fn() as never,
+      trustedRendererUrls: ['file:///renderer/index.html'],
+    })
+
+    terminals.create('t1', 'D:/a')
+    terminals.create('t2', 'D:/b')
+    expect(ptys.map((pty) => pty.killCount)).toEqual([0, 0])
+
+    // The terminal-exit close flow (spec Behaviour 11): only the closed chat
+    // is removed; other sessions keep running (session preservation).
+    invoke(IPC_CHANNEL.chatsRemove, ['t1'])
+
+    expect(services.chats.remove).toHaveBeenCalledWith('t1')
+    expect(ptys.map((pty) => pty.killCount)).toEqual([1, 0])
+    expect(terminals.hasRunningSession('t1')).toBe(false)
+    expect(terminals.hasRunningSession('t2')).toBe(true)
+  })
+
+  it('rejects a non-string chat id on chats:remove before touching services', () => {
+    const harness = createHarness()
+    try {
+      harness.invoke(IPC_CHANNEL.chatsRemove, [42])
+      expect.unreachable('validation must reject')
+    } catch (error) {
+      expect((error as Error).message).toContain(APP_ERROR_MARKER)
+      expect((error as Error).message).toContain('validation')
+    }
+    expect(harness.services.chats.remove).not.toHaveBeenCalled()
+  })
+
+  it('forwards terminal data/exit events to the renderer broadcast by chatId', () => {
     const harness = createHarness()
     const listeners = (
       harness.services as unknown as {
         __listeners: {
-          data: Array<(taskId: string, data: string) => void>
-          exit: Array<(taskId: string, exitCode: number) => void>
+          data: Array<(chatId: string, data: string) => void>
+          exit: Array<(chatId: string, exitCode: number) => void>
         }
       }
     ).__listeners
@@ -255,18 +312,18 @@ describe('registered ipc handlers', () => {
     }
 
     expect(harness.broadcasts).toEqual([
-      { channel: IPC_CHANNEL.terminalsData, taskId: 't1', payload: 'hello' },
-      { channel: IPC_CHANNEL.terminalsExit, taskId: 't1', payload: 7 },
+      { channel: IPC_CHANNEL.terminalsData, chatId: 't1', payload: 'hello' },
+      { channel: IPC_CHANNEL.terminalsExit, chatId: 't1', payload: 7 },
     ])
   })
 
   it('transports service failures as typed errors', () => {
     const harness = createHarness()
-    vi.mocked(harness.services.tasks.list).mockImplementation(() => {
+    vi.mocked(harness.services.chats.list).mockImplementation(() => {
       throw new Error('db exploded')
     })
     try {
-      harness.invoke(IPC_CHANNEL.tasksList, ['p1'])
+      harness.invoke(IPC_CHANNEL.chatsList, ['p1'])
       expect.unreachable('service failure must reject')
     } catch (error) {
       // Raw error details are sanitized to the generic typed payload.

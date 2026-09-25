@@ -1,11 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ProjectInfo, TaskInfo } from '../../shared/ipc-contract'
+import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY, type AppApi } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
+import { resetMockFitAddons } from './test/fit-addon-mock'
+import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 
 // xterm.js needs a real canvas; mock it at the module boundary so App renders
-// the task workspace in jsdom (the wiring is asserted in TaskTerminal.test).
+// the chat workspace in jsdom (the wiring is asserted in ChatTerminal.test).
 vi.mock('@xterm/xterm', () => import('./test/xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('./test/fit-addon-mock'))
 
@@ -21,14 +23,14 @@ function createAppApiStub(): AppApi {
       }),
       remove: vi.fn().mockResolvedValue(undefined),
     },
-    tasks: {
+    chats: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn().mockResolvedValue({
         id: 't1',
         projectId: 'p1',
-        name: 'Demo task',
-        status: 'idle',
+        name: 'Demo chat',
       }),
+      remove: vi.fn().mockResolvedValue(undefined),
     },
     state: {
       get: vi.fn().mockResolvedValue(null),
@@ -84,8 +86,8 @@ const projectNoRuntime: ProjectInfo = {
   path: 'D:/code/plain',
   runtimeLabel: null,
 }
-const taskOne: TaskInfo = { id: 't1', projectId: 'p1', name: 'First task', status: 'idle' }
-const taskTwo: TaskInfo = { id: 't2', projectId: 'p1', name: 'Second task', status: 'idle' }
+const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
+const chatTwo: ChatInfo = { id: 't2', projectId: 'p1', name: 'Second chat' }
 
 describe('application shell', () => {
   let app: AppApi
@@ -138,7 +140,7 @@ describe('application shell', () => {
   })
 })
 
-describe('project and task data flow', () => {
+describe('project and chat data flow', () => {
   let app: AppApi
 
   beforeEach(() => {
@@ -149,9 +151,9 @@ describe('project and task data flow', () => {
     cleanup()
   })
 
-  it('renders the real project list and expands a project to its tasks', async () => {
+  it('renders the real project list and expands a project to its chats', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
     render(<App app={app} />)
     const row = await screen.findByTestId(testIdFor.projectRow('p1'))
@@ -159,11 +161,11 @@ describe('project and task data flow', () => {
     expect(screen.queryByTestId(TEST_ID.emptyProjectList)).toBeNull()
 
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const taskRow = await screen.findByTestId(testIdFor.taskRow('t1'))
-    expect(taskRow.textContent).toBe('First task')
-    expect(app.tasks.list).toHaveBeenCalledWith('p1')
-    // The active project gets the New Task input (UX-UI §10).
-    expect(screen.getByTestId(TEST_ID.newTaskInput)).toBeTruthy()
+    const chatRow = await screen.findByTestId(testIdFor.chatRow('t1'))
+    expect(chatRow.textContent).toBe('First chat')
+    expect(app.chats.list).toHaveBeenCalledWith('p1')
+    // The active project gets the New Chat input (UX-UI §10).
+    expect(screen.getByTestId(TEST_ID.newChatInput)).toBeTruthy()
   })
 
   it('add-project: dialog result refreshes the list and selects the new project', async () => {
@@ -191,9 +193,9 @@ describe('project and task data flow', () => {
     const row = await screen.findByTestId(testIdFor.projectRow('p1'))
     expect(row.getAttribute('data-selected')).toBe('true')
     expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
-    expect(screen.getByTestId(TEST_ID.newTaskInput)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.newChatInput)).toBeTruthy()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedTaskId, '')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
   })
 
   it('add-project: cancelling the dialog (null) keeps the default empty state', async () => {
@@ -222,52 +224,52 @@ describe('project and task data flow', () => {
     expect(notice.textContent).toContain('already registered')
   })
 
-  it('new-task: creates the task under the active project and selects it', async () => {
+  it('new-chat: creates the chat under the active project and selects it', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
-    vi.mocked(app.tasks.create).mockResolvedValue(taskTwo)
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.chats.create).mockResolvedValue(chatTwo)
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const input = await screen.findByTestId(TEST_ID.newTaskInput)
-    fireEvent.change(input, { target: { value: 'Second task' } })
-    fireEvent.submit(screen.getByTestId(TEST_ID.newTaskForm))
+    const input = await screen.findByTestId(TEST_ID.newChatInput)
+    fireEvent.change(input, { target: { value: 'Second chat' } })
+    fireEvent.submit(screen.getByTestId(TEST_ID.newChatForm))
 
-    await screen.findByTestId(testIdFor.taskRow('t2'))
-    expect(app.tasks.create).toHaveBeenCalledWith('p1', 'Second task')
-    const taskRow = getByTestIdString(testIdFor.taskRow('t2'))
-    expect(taskRow.getAttribute('data-selected')).toBe('true')
+    await screen.findByTestId(testIdFor.chatRow('t2'))
+    expect(app.chats.create).toHaveBeenCalledWith('p1', 'Second chat')
+    const chatRow = getByTestIdString(testIdFor.chatRow('t2'))
+    expect(chatRow.getAttribute('data-selected')).toBe('true')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedTaskId, 't2')
-    expect((getByTestIdString(TEST_ID.newTaskInput) as HTMLInputElement).value).toBe('')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+    expect((getByTestIdString(TEST_ID.newChatInput) as HTMLInputElement).value).toBe('')
   })
 
-  it('new-task: failures surface the typed error message and keep the input', async () => {
+  it('new-chat: failures surface the typed error message and keep the input', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.tasks.create).mockRejectedValue({
+    vi.mocked(app.chats.create).mockRejectedValue({
       nekodeAppError: true,
       code: 'conflict',
-      message: 'A task named "Dup" already exists in this project.',
+      message: 'A chat named "Dup" already exists in this project.',
     })
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const input = await screen.findByTestId(TEST_ID.newTaskInput)
+    const input = await screen.findByTestId(TEST_ID.newChatInput)
     fireEvent.change(input, { target: { value: 'Dup' } })
-    fireEvent.submit(screen.getByTestId(TEST_ID.newTaskForm))
+    fireEvent.submit(screen.getByTestId(TEST_ID.newChatForm))
 
     const notice = await screen.findByTestId(TEST_ID.actionNotice)
     expect(notice.textContent).toContain('already exists')
-    expect((getByTestIdString(TEST_ID.newTaskInput) as HTMLInputElement).value).toBe('Dup')
+    expect((getByTestIdString(TEST_ID.newChatInput) as HTMLInputElement).value).toBe('Dup')
   })
 
   it('remove-project: falls back to the default empty state and drops removed data', async () => {
     vi.mocked(app.projects.list).mockResolvedValueOnce([projectA]).mockResolvedValue([])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    await screen.findByTestId(testIdFor.taskRow('t1'))
+    await screen.findByTestId(testIdFor.chatRow('t1'))
 
     fireEvent.click(screen.getByTestId(testIdFor.removeProject('p1')))
     await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
@@ -275,24 +277,24 @@ describe('project and task data flow', () => {
     expect(await screen.findByTestId(TEST_ID.emptyProjectList)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.headerProjectName)).toBeNull()
-    expect(screen.queryByTestId(testIdFor.taskRow('t1'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull()
     expect(app.projects.list).toHaveBeenCalledTimes(2)
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, '')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedTaskId, '')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
   })
 
   it('remove-project: keeps the current selection when a different project is removed', async () => {
     vi.mocked(app.projects.list)
       .mockResolvedValueOnce([projectA, projectNoRuntime])
       .mockResolvedValue([projectA])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    await screen.findByTestId(testIdFor.taskRow('t1'))
-    fireEvent.click(screen.getByTestId(testIdFor.taskRow('t1')))
+    await screen.findByTestId(testIdFor.chatRow('t1'))
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedTaskId, 't1')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't1')
 
     vi.mocked(app.state.set).mockClear()
     fireEvent.click(screen.getByTestId(testIdFor.removeProject('p2')))
@@ -301,37 +303,37 @@ describe('project and task data flow', () => {
 
     expect(screen.queryByTestId(testIdFor.projectRow('p2'))).toBeNull()
     expect(getByTestIdString(testIdFor.projectRow('p1')).getAttribute('data-selected')).toBe('true')
-    expect(getByTestIdString(testIdFor.taskRow('t1')).getAttribute('data-selected')).toBe('true')
+    expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
     expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, '')
-    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedTaskId, '')
+    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
   })
 
   it('writes the selection keys on every selection change', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedTaskId, '')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
 
-    fireEvent.click(await screen.findByTestId(testIdFor.taskRow('t1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedTaskId, 't1')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't1')
   })
 
   it('hydrates the persisted selection without rewriting it', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
-      if (key === APP_STATE_KEY.selectedTaskId) return 't1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
       return null
     })
 
     render(<App app={app} />)
-    const taskRow = await screen.findByTestId(testIdFor.taskRow('t1'))
-    expect(taskRow.getAttribute('data-selected')).toBe('true')
+    const chatRow = await screen.findByTestId(testIdFor.chatRow('t1'))
+    expect(chatRow.getAttribute('data-selected')).toBe('true')
     expect(getByTestIdString(testIdFor.projectRow('p1')).getAttribute('data-selected')).toBe('true')
     expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
     expect(app.state.set).not.toHaveBeenCalled()
@@ -341,7 +343,7 @@ describe('project and task data flow', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p-gone'
-      if (key === APP_STATE_KEY.selectedTaskId) return 't-gone'
+      if (key === APP_STATE_KEY.selectedChatId) return 't-gone'
       return null
     })
 
@@ -351,24 +353,24 @@ describe('project and task data flow', () => {
       'false',
     )
     expect(screen.queryByTestId(TEST_ID.headerProjectName)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.newTaskInput)).toBeNull()
-    expect(app.tasks.list).not.toHaveBeenCalled()
+    expect(screen.queryByTestId(TEST_ID.newChatInput)).toBeNull()
+    expect(app.chats.list).not.toHaveBeenCalled()
   })
 
-  it('drops a stale persisted task but keeps the valid project', async () => {
+  it('drops a stale persisted chat but keeps the valid project', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
-      if (key === APP_STATE_KEY.selectedTaskId) return 't-gone'
+      if (key === APP_STATE_KEY.selectedChatId) return 't-gone'
       return null
     })
 
     render(<App app={app} />)
     await screen.findByTestId(TEST_ID.headerProjectName)
     expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
-    expect(getByTestIdString(testIdFor.taskRow('t1')).getAttribute('data-selected')).toBe('false')
-    expect(screen.getByTestId(TEST_ID.newTaskInput)).toBeTruthy()
+    expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('false')
+    expect(screen.getByTestId(TEST_ID.newChatInput)).toBeTruthy()
   })
 
   it('renders the project name, absolute path and runtime label in the context header', async () => {
@@ -430,7 +432,7 @@ describe('project and task data flow', () => {
   })
 })
 
-describe('task workspace (Stage 3)', () => {
+describe('chat workspace (Stage 3)', () => {
   let app: AppApi
 
   beforeEach(() => {
@@ -441,35 +443,35 @@ describe('task workspace (Stage 3)', () => {
     cleanup()
   })
 
-  it('task selection opens the task workspace with the primary terminal', async () => {
+  it('chat selection opens the chat workspace with the primary terminal', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.taskRow('t1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
 
-    const workspace = getByTestIdString(TEST_ID.taskWorkspace)
-    expect(workspace.textContent).toContain('First task')
+    const workspace = getByTestIdString(TEST_ID.chatWorkspace)
+    expect(workspace.textContent).toContain('First chat')
     expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
     // Lazy spawn on first attach: one PTY, cwd = the project directory.
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
   })
 
-  it('switching tasks keeps both sessions (no respawn for the first task)', async () => {
+  it('switching chats keeps both sessions (no respawn for the first chat)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.tasks.list).mockResolvedValue([taskOne, taskTwo])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.taskRow('t1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
 
-    fireEvent.click(screen.getByTestId(testIdFor.taskRow('t2')))
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
-    fireEvent.click(screen.getByTestId(testIdFor.taskRow('t1')))
-    // Back to task one: the same session is re-attached, not re-created.
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.taskWorkspace)).toBeTruthy())
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
+    // Back to chat one: the same session is re-attached, not re-created.
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.chatWorkspace)).toBeTruthy())
     expect(app.terminals.create).toHaveBeenCalledTimes(2)
   })
 
@@ -555,8 +557,205 @@ describe('resize persistence refinements (Stage 3 carry-over)', () => {
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-
     const notice = await screen.findByTestId(TEST_ID.actionNotice)
     expect(notice.textContent).toContain('Database is locked.')
+  })
+})
+
+describe('chat closing on terminal exit (Stage 4)', () => {
+  let app: AppApi
+  let exitListenersByChat: Map<string, Set<(exitCode: number) => void>>
+
+  function emitExit(chatId: string, exitCode: number): void {
+    act(() => {
+      for (const listener of [...(exitListenersByChat.get(chatId) ?? [])]) {
+        listener(exitCode)
+      }
+    })
+  }
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    exitListenersByChat = new Map()
+    resetMockTerminals()
+    resetMockFitAddons()
+    vi.mocked(app.terminals.onExit).mockImplementation(
+      (chatId: string, callback: (exitCode: number) => void) => {
+        const listeners = exitListenersByChat.get(chatId) ?? new Set()
+        listeners.add(callback)
+        exitListenersByChat.set(chatId, listeners)
+        return () => {
+          listeners.delete(callback)
+        }
+      },
+    )
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  async function renderWithChats(chats: ChatInfo[], selectedChatId: string | null) {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue(chats)
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return selectedChatId
+      return null
+    })
+    const view = render(<App app={app} />)
+    await screen.findByTestId(testIdFor.projectRow('p1'))
+    return view
+  }
+
+  it('terminal exit disposes the view, removes the chat and selects the next chat', async () => {
+    const { unmount } = await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+    const firstTerminal = mockTerminalInstances[0]
+
+    // `exit` in the chat terminal: the chat closes (spec Behaviour 11).
+    emitExit('t1', 0)
+
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
+    // The terminal view is disposed with the close.
+    await waitFor(() => expect(firstTerminal.dispose).toHaveBeenCalledTimes(1))
+    // The chat disappears from the tree…
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull())
+    // …and the app continues on the next chat of the project in tree order.
+    await waitFor(() =>
+      expect(getByTestIdString(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe('true'),
+    )
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+    unmount()
+  })
+
+  it('closing the last chat selects the previous one, then the Start new chat state', async () => {
+    await renderWithChats([chatOne, chatTwo], 't2')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', 'D:/code/demo'))
+
+    // The closed chat was last in tree order: the previous chat is selected.
+    emitExit('t2', 0)
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t2'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t2'))).toBeNull())
+    await waitFor(() =>
+      expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true'),
+    )
+
+    // Closing that one too leaves the project without chats: the empty state
+    // offers "Start new chat" (spec Behaviour 11).
+    emitExit('t1', 0)
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
+    const emptyState = await screen.findByTestId(TEST_ID.startNewChatState)
+    expect(emptyState.textContent).toContain('No chats in this project')
+    expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
+
+    // The affordance hands the flow to the New Chat input in the tree.
+    fireEvent.click(screen.getByTestId(TEST_ID.startNewChatButton))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByTestId(TEST_ID.newChatInput)),
+    )
+  })
+
+  it('a background chat that exits is removed without stealing the selection', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
+
+    // Chat one's hidden terminal exits on its own: the chat closes (removed
+    // from the tree and the database) but the viewed chat stays selected.
+    emitExit('t1', 3)
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull())
+    expect(getByTestIdString(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe('true')
+    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't1')
+  })
+
+  it('closing a chat surfaces a typed error when the removal fails', async () => {
+    vi.mocked(app.chats.remove).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'sqlite',
+      message: 'Database error.',
+    })
+    await renderWithChats([chatOne], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
+
+    emitExit('t1', 0)
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toContain('Database error.')
+  })
+
+  it('quit does not remove chats: unmounting the app never calls chats.remove', async () => {
+    const { unmount } = await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+
+    // Application quit terminates PTYs in main and suppresses the exit events
+    // that would start this close flow (spec Behaviour 8). Window teardown in
+    // the renderer must not remove chats either — the tree and the database
+    // survive the restart unchanged (spec Behaviours 8, 10).
+    unmount()
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
+    expect(app.chats.remove).not.toHaveBeenCalled()
+  })
+
+  it('two chats exiting in the same tick leave no dead selection (Start new chat)', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
+    // Open a session for the second chat as well, then look at the first.
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
+
+    // Both chat shells end in the same tick (near-simultaneous exits).
+    act(() => {
+      for (const listener of [...(exitListenersByChat.get('t1') ?? [])]) {
+        listener(0)
+      }
+      for (const listener of [...(exitListenersByChat.get('t2') ?? [])]) {
+        listener(0)
+      }
+    })
+
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledTimes(2))
+    // The project is left without chats: the center surface shows the
+    // "Start new chat" empty state — never a dead area caused by a selection
+    // pointing at a chat that the other close flow already removed.
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull())
+    expect(screen.queryByTestId(testIdFor.chatRow('t2'))).toBeNull()
+    expect(await screen.findByTestId(TEST_ID.startNewChatState)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.chatWorkspace)).toBeNull()
+    // The persisted selection is cleared instead of keeping the dead id.
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
+  })
+
+  it('a failed removal leaves the chat closable: the next terminal exit closes it', async () => {
+    vi.mocked(app.chats.remove)
+      .mockRejectedValueOnce({
+        nekodeAppError: true,
+        code: 'sqlite',
+        message: 'Database error.',
+      })
+      .mockResolvedValue(undefined)
+    await renderWithChats([chatOne], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
+
+    // First exit: the removal fails, so the chat stays in the tree…
+    emitExit('t1', 0)
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toContain('Database error.')
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId(testIdFor.chatRow('t1'))).toBeTruthy()
+
+    // …but re-selecting it opens a fresh session whose exit must close it —
+    // the failed attempt must not leave the chat permanently un-closable.
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
+    emitExit('t1', 0)
+
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull())
+    expect(await screen.findByTestId(TEST_ID.startNewChatState)).toBeTruthy()
   })
 })

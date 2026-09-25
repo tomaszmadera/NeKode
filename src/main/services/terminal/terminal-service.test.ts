@@ -4,22 +4,24 @@ import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-ser
 import { TerminalService } from './terminal-service'
 
 // Terminal service unit tests with a fake PTY injected (plan Stage 3): no
-// real processes are spawned in vitest. Covers lazy spawn keyed by taskId,
+// real processes are spawned in vitest. Covers lazy spawn keyed by chatId,
 // write/resize/data/exit routing, terminate-all on quit, idempotent cleanup
 // and spawn-error handling.
 
 class FakePty implements PtyProcessLike {
   readonly pid: number
   readonly options: PtySpawnOptions
+  readonly killEmitsExit: boolean
   readonly writes: string[] = []
   readonly resizes: Array<{ cols: number; rows: number }> = []
   killCount = 0
   private dataListeners = new Set<(data: string) => void>()
   private exitListeners = new Set<(event: { exitCode: number; signal?: number }) => void>()
 
-  constructor(pid: number, options: PtySpawnOptions) {
+  constructor(pid: number, options: PtySpawnOptions, killEmitsExit = false) {
     this.pid = pid
     this.options = options
+    this.killEmitsExit = killEmitsExit
   }
 
   write(data: string): void {
@@ -32,6 +34,11 @@ class FakePty implements PtyProcessLike {
 
   kill(): void {
     this.killCount += 1
+    // ConPTY-style teardown: a kill can raise an exit event afterwards. The
+    // service must swallow it while quitting (no chat-close flow on quit).
+    if (this.killEmitsExit) {
+      this.emitExit(0)
+    }
   }
 
   onData(listener: (data: string) => void): { dispose(): void } {
@@ -72,14 +79,18 @@ interface Harness {
 }
 
 function createHarness(
-  options: { spawnError?: Error; isDirectory?: (path: string) => boolean } = {},
+  options: {
+    spawnError?: Error
+    isDirectory?: (path: string) => boolean
+    killEmitsExit?: boolean
+  } = {},
 ): Harness {
   const ptys: FakePty[] = []
   const spawn = vi.fn((spawnOptions: PtySpawnOptions) => {
     if (options.spawnError !== undefined) {
       throw options.spawnError
     }
-    const pty = new FakePty(1000 + ptys.length, spawnOptions)
+    const pty = new FakePty(1000 + ptys.length, spawnOptions, options.killEmitsExit ?? false)
     ptys.push(pty)
     return pty
   })
@@ -94,7 +105,7 @@ function createHarness(
 }
 
 describe('terminal service (fake PTY)', () => {
-  it('spawns lazily and keeps exactly one PTY per task', () => {
+  it('spawns lazily and keeps exactly one PTY per chat', () => {
     const { service, ptys, spawn } = createHarness()
     expect(spawn).not.toHaveBeenCalled()
 
@@ -104,18 +115,18 @@ describe('terminal service (fake PTY)', () => {
     expect(ptys[0].options.cwd).toBe('D:/code/demo')
     expect(ptys[0].options.file).toBe('powershell.exe')
 
-    // Idempotent while the session is alive (one PTY per task, spec rules).
+    // Idempotent while the session is alive (one PTY per chat, spec rules).
     service.create('t1', 'D:/code/demo')
     service.create('t1', 'D:/code/other')
     expect(spawn).toHaveBeenCalledTimes(1)
 
-    // A second task gets its own process.
+    // A second chat gets its own process.
     service.create('t2', 'D:/code/demo')
     expect(spawn).toHaveBeenCalledTimes(2)
     expect(ptys).toHaveLength(2)
   })
 
-  it("routes write and resize to the task's own PTY", () => {
+  it("routes write and resize to the chat's own PTY", () => {
     const { service, ptys } = createHarness()
     service.create('t1', 'D:/a')
     service.create('t2', 'D:/b')
@@ -130,12 +141,12 @@ describe('terminal service (fake PTY)', () => {
     expect(ptys[1].resizes).toEqual([{ cols: 120, rows: 40 }])
   })
 
-  it('routes PTY data and exit events by taskId (no cross-task bleed)', () => {
+  it('routes PTY data and exit events by chatId (no cross-chat bleed)', () => {
     const { service, ptys } = createHarness()
     const dataEvents: Array<[string, string]> = []
     const exitEvents: Array<[string, number]> = []
-    service.onData((taskId, data) => dataEvents.push([taskId, data]))
-    service.onExit((taskId, exitCode) => exitEvents.push([taskId, exitCode]))
+    service.onData((chatId, data) => dataEvents.push([chatId, data]))
+    service.onExit((chatId, exitCode) => exitEvents.push([chatId, exitCode]))
 
     service.create('t1', 'D:/a')
     service.create('t2', 'D:/b')
@@ -163,7 +174,7 @@ describe('terminal service (fake PTY)', () => {
     expect(service.hasRunningSession('t1')).toBe(true)
   })
 
-  it('writes to unknown tasks reject as not_found; writes to ended sessions reject as a typed conflict', () => {
+  it('writes to unknown chats reject as not_found; writes to ended sessions reject as a typed conflict', () => {
     const { service, ptys } = createHarness()
     service.create('t1', 'D:/a')
     ptys[0].emitExit(0)
@@ -224,7 +235,30 @@ describe('terminal service (fake PTY)', () => {
     expect(service.hasRunningSession('t3')).toBe(false)
   })
 
-  it('terminate on an unknown task is a safe no-op', () => {
+  it('quit teardown emits no exit events (chat removal is suppressed during quit)', () => {
+    // ConPTY-style kill raises an exit event afterwards; the chat-close flow
+    // (renderer-driven chat removal, spec Behaviour 11) must never start while
+    // the application quits — chats stay in the tree and the database.
+    const { service, ptys } = createHarness({ killEmitsExit: true })
+    const exitEvents: Array<[string, number]> = []
+    service.onExit((chatId, exitCode) => exitEvents.push([chatId, exitCode]))
+    service.create('t1', 'D:/a')
+    service.create('t2', 'D:/b')
+
+    service.terminateAll()
+
+    expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1])
+    expect(exitEvents).toEqual([])
+    expect(service.hasRunningSession('t1')).toBe(false)
+    expect(service.hasRunningSession('t2')).toBe(false)
+
+    // Late exit events after the teardown are dropped as well.
+    ptys[0].emitExit(3)
+    ptys[1].emitExit(3)
+    expect(exitEvents).toEqual([])
+  })
+
+  it('terminate on an unknown chat is a safe no-op', () => {
     const { service } = createHarness()
     expect(() => service.terminate('ghost')).not.toThrow()
   })
@@ -232,7 +266,7 @@ describe('terminal service (fake PTY)', () => {
   it('unsubscribing stops data/exit delivery', () => {
     const { service, ptys } = createHarness()
     const seen: string[] = []
-    const unsubscribe = service.onData((taskId, data) => seen.push(`${taskId}:${data}`))
+    const unsubscribe = service.onData((chatId, data) => seen.push(`${chatId}:${data}`))
     service.create('t1', 'D:/a')
     ptys[0].emitData('a')
     unsubscribe()

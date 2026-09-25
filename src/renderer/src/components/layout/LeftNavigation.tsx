@@ -1,13 +1,13 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { ProjectInfo, TaskInfo } from '../../../../shared/ipc-contract'
+import type { ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ResizeHandle } from './ResizeHandle'
 
-// Left navigation (UX-UI §9–10): project rows expand to their task lists,
-// with Add Project, Remove Project and a New Task input under the active
+// Left navigation (UX-UI §9–10): project rows expand to their chat lists,
+// with Add Project, Remove Project and a New Chat input under the active
 // project.
 
 interface LeftNavigationProps {
@@ -15,16 +15,18 @@ interface LeftNavigationProps {
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
   onResizeNudge: (delta: number) => void
   projects: ProjectInfo[]
-  tasksByProject: Record<string, TaskInfo[]>
+  chatsByProject: Record<string, ChatInfo[]>
   expandedProjectIds: ReadonlySet<string>
   selectedProjectId: string | null
-  selectedTaskId: string | null
+  selectedChatId: string | null
   onSelectProject: (projectId: string) => void
   onToggleProject: (projectId: string) => void
-  onSelectTask: (projectId: string, taskId: string) => void
+  onSelectChat: (projectId: string, chatId: string) => void
   onAddProject: () => void
   onRemoveProject: (projectId: string) => void
-  onCreateTask: (projectId: string, name: string) => Promise<boolean>
+  onCreateChat: (projectId: string, name: string) => Promise<boolean>
+  /** Bumped by the "Start new chat" empty state to focus the New Chat input. */
+  newChatFocusNonce: number
   notice: string | null
 }
 
@@ -33,16 +35,17 @@ export function LeftNavigation({
   onResizeStart,
   onResizeNudge,
   projects,
-  tasksByProject,
+  chatsByProject,
   expandedProjectIds,
   selectedProjectId,
-  selectedTaskId,
+  selectedChatId,
   onSelectProject,
   onToggleProject,
-  onSelectTask,
+  onSelectChat,
   onAddProject,
   onRemoveProject,
-  onCreateTask,
+  onCreateChat,
+  newChatFocusNonce,
   notice,
 }: LeftNavigationProps): React.JSX.Element {
   return (
@@ -86,7 +89,7 @@ export function LeftNavigation({
             {projects.map((project) => {
               const isExpanded = expandedProjectIds.has(project.id)
               const isSelected = project.id === selectedProjectId
-              const tasks = tasksByProject[project.id] ?? []
+              const chats = chatsByProject[project.id] ?? []
               return (
                 <li key={project.id} className="py-0.5">
                   <div
@@ -129,29 +132,29 @@ export function LeftNavigation({
                   {isExpanded ? (
                     <div
                       className="ml-4 border-l border-neutral-800 pl-2"
-                      data-testid={testIdFor.projectTasks(project.id)}
+                      data-testid={testIdFor.projectChats(project.id)}
                     >
-                      {tasks.length === 0 ? (
+                      {chats.length === 0 ? (
                         <p className="px-1 py-1 text-xs leading-relaxed text-neutral-500">
-                          No tasks yet.
+                          No chats yet.
                         </p>
                       ) : (
                         <ul>
-                          {tasks.map((task) => {
-                            const isTaskSelected = task.id === selectedTaskId && isSelected
+                          {chats.map((chat) => {
+                            const isChatSelected = chat.id === selectedChatId && isSelected
                             return (
-                              <li key={task.id}>
+                              <li key={chat.id}>
                                 <button
                                   type="button"
                                   className={cn(
                                     'w-full truncate rounded px-2 py-1 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100',
-                                    isTaskSelected && 'bg-neutral-800 text-neutral-100',
+                                    isChatSelected && 'bg-neutral-800 text-neutral-100',
                                   )}
-                                  data-testid={testIdFor.taskRow(task.id)}
-                                  data-selected={isTaskSelected ? 'true' : 'false'}
-                                  onClick={() => onSelectTask(project.id, task.id)}
+                                  data-testid={testIdFor.chatRow(chat.id)}
+                                  data-selected={isChatSelected ? 'true' : 'false'}
+                                  onClick={() => onSelectChat(project.id, chat.id)}
                                 >
-                                  {task.name}
+                                  {chat.name}
                                 </button>
                               </li>
                             )
@@ -159,7 +162,11 @@ export function LeftNavigation({
                         </ul>
                       )}
                       {isSelected ? (
-                        <NewTaskForm projectId={project.id} onCreateTask={onCreateTask} />
+                        <NewChatForm
+                          projectId={project.id}
+                          onCreateChat={onCreateChat}
+                          focusNonce={newChatFocusNonce}
+                        />
                       ) : null}
                     </div>
                   ) : null}
@@ -182,17 +189,21 @@ export function LeftNavigation({
   )
 }
 
-function NewTaskForm({
+function NewChatForm({
   projectId,
-  onCreateTask,
+  onCreateChat,
+  focusNonce,
 }: {
   projectId: string
-  onCreateTask: (projectId: string, name: string) => Promise<boolean>
+  onCreateChat: (projectId: string, name: string) => Promise<boolean>
+  /** Non-zero bumps focus the input ("Start new chat" empty state). */
+  focusNonce: number
 }): React.JSX.Element {
   const [name, setName] = useState('')
   const mountedRef = useRef(true)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
-  // A create that resolves after unmount (task switch mid-submit) must not
+  // A create that resolves after unmount (chat switch mid-submit) must not
   // write state into a dead component.
   useEffect(() => {
     mountedRef.current = true
@@ -201,9 +212,17 @@ function NewTaskForm({
     }
   }, [])
 
+  // The center "Start new chat" affordance hands the flow here (spec
+  // Behaviour 11): the name input takes focus when the signal arrives.
+  useEffect(() => {
+    if (focusNonce > 0) {
+      inputRef.current?.focus()
+    }
+  }, [focusNonce])
+
   function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault()
-    void onCreateTask(projectId, name).then((created) => {
+    void onCreateChat(projectId, name).then((created) => {
       if (created && mountedRef.current) {
         setName('')
       }
@@ -213,22 +232,23 @@ function NewTaskForm({
   return (
     <form
       className="mt-1 flex items-center gap-1 px-1 py-1"
-      data-testid={TEST_ID.newTaskForm}
+      data-testid={TEST_ID.newChatForm}
       onSubmit={handleSubmit}
     >
       <input
+        ref={inputRef}
         type="text"
         className="min-w-0 flex-1 rounded border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 placeholder:text-neutral-500 focus:border-neutral-600 focus:outline-none"
-        data-testid={TEST_ID.newTaskInput}
-        placeholder="New Task"
-        aria-label="New task name"
+        data-testid={TEST_ID.newChatInput}
+        placeholder="New Chat"
+        aria-label="New chat name"
         value={name}
         onChange={(event) => setName(event.target.value)}
       />
       <button
         type="submit"
         className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
-        data-testid={TEST_ID.newTaskSubmit}
+        data-testid={TEST_ID.newChatSubmit}
       >
         Add
       </button>

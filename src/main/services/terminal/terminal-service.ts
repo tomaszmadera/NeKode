@@ -2,7 +2,7 @@ import { statSync } from 'node:fs'
 import type { Unsubscribe } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 
-// Task terminal sessions (spec Data/API, SDD §17): one PTY process per task,
+// Chat terminal sessions (spec Data/API, SDD §17): one PTY process per chat,
 // spawned lazily on the first terminal attach. The renderer never touches
 // node-pty; this service is the only owner of PTY processes. The PTY factory
 // is injected so unit tests run against a fake PTY (no real processes).
@@ -35,7 +35,7 @@ export interface ShellSpec {
 type SessionStatus = 'running' | 'exited'
 
 interface TerminalSession {
-  taskId: string
+  chatId: string
   pty: PtyProcessLike
   status: SessionStatus
   exitCode: number | null
@@ -77,8 +77,9 @@ export class TerminalService {
   readonly #cols: number
   readonly #rows: number
   readonly #sessions = new Map<string, TerminalSession>()
-  readonly #dataListeners = new Set<(taskId: string, data: string) => void>()
-  readonly #exitListeners = new Set<(taskId: string, exitCode: number) => void>()
+  readonly #dataListeners = new Set<(chatId: string, data: string) => void>()
+  readonly #exitListeners = new Set<(chatId: string, exitCode: number) => void>()
+  #quitting = false
 
   constructor(options: TerminalServiceOptions) {
     this.#createPty = options.createPty
@@ -89,18 +90,18 @@ export class TerminalService {
   }
 
   /**
-   * Lazily spawns the task's PTY on first attach. Idempotent per taskId while
-   * the session is alive (one PTY per task, spec Business rules); an exited
+   * Lazily spawns the chat's PTY on first attach. Idempotent per chatId while
+   * the session is alive (one PTY per chat, spec Business rules); an exited
    * session is replaced by a fresh process (spec Edge cases).
    */
-  create(taskId: string, cwd: string): string {
-    const existing = this.#sessions.get(taskId)
+  create(chatId: string, cwd: string): string {
+    const existing = this.#sessions.get(chatId)
     if (existing !== undefined && existing.status === 'running') {
-      return existing.taskId
+      return existing.chatId
     }
     if (existing !== undefined) {
       this.#disposeSession(existing)
-      this.#sessions.delete(taskId)
+      this.#sessions.delete(chatId)
     }
     if (!this.#isDirectory(cwd)) {
       throw new AppError(
@@ -126,7 +127,7 @@ export class TerminalService {
     }
 
     const session: TerminalSession = {
-      taskId,
+      chatId,
       pty,
       status: 'running',
       exitCode: null,
@@ -135,81 +136,91 @@ export class TerminalService {
     session.subscriptions.push(
       pty.onData((data) => {
         for (const listener of this.#dataListeners) {
-          listener(taskId, data)
+          listener(chatId, data)
         }
       }),
     )
     session.subscriptions.push(
       pty.onExit((event) => {
-        if (session.status === 'exited') {
+        // Quit teardown must never look like a chat exit: while quitting (and
+        // after any teardown disposed this subscription) exit events are
+        // dropped, so the renderer's chat-close flow (spec Behaviour 11) is
+        // never triggered by application quit (spec Behaviour 8).
+        if (session.status === 'exited' || this.#quitting) {
           return
         }
         session.status = 'exited'
         session.exitCode = event.exitCode
         for (const listener of this.#exitListeners) {
-          listener(taskId, event.exitCode)
+          listener(chatId, event.exitCode)
         }
       }),
     )
-    this.#sessions.set(taskId, session)
-    return session.taskId
+    this.#sessions.set(chatId, session)
+    return session.chatId
   }
 
-  /** Delivers renderer input to the task's PTY, hidden or not (spec Edge cases). */
-  write(taskId: string, data: string): void {
-    const session = this.#requireRunning(taskId)
+  /** Delivers renderer input to the chat's PTY, hidden or not (spec Edge cases). */
+  write(chatId: string, data: string): void {
+    const session = this.#requireRunning(chatId)
     session.pty.write(data)
   }
 
-  resize(taskId: string, cols: number, rows: number): void {
-    const session = this.#requireRunning(taskId)
+  resize(chatId: string, cols: number, rows: number): void {
+    const session = this.#requireRunning(chatId)
     session.pty.resize(cols, rows)
   }
 
   /** Terminates one session; safe to call repeatedly. */
-  terminate(taskId: string): void {
-    const session = this.#sessions.get(taskId)
+  terminate(chatId: string): void {
+    const session = this.#sessions.get(chatId)
     if (session === undefined) {
       return
     }
     this.#disposeSession(session)
-    this.#sessions.delete(taskId)
+    this.#sessions.delete(chatId)
   }
 
-  /** App-quit teardown (spec Behaviour 8): no orphaned shell processes. */
+  /**
+   * App-quit teardown (spec Behaviour 8): no orphaned shell processes and no
+   * chat deletions. Exit events raised by this destruction are suppressed
+   * (#quitting, plus subscriptions disposed before kill) so the renderer
+   * never starts the chat-close flow while the application quits.
+   */
   terminateAll(): void {
+    this.#quitting = true
     for (const session of [...this.#sessions.values()]) {
       this.#disposeSession(session)
     }
     this.#sessions.clear()
   }
 
-  onData(listener: (taskId: string, data: string) => void): Unsubscribe {
+  onData(listener: (chatId: string, data: string) => void): Unsubscribe {
     this.#dataListeners.add(listener)
     return () => {
       this.#dataListeners.delete(listener)
     }
   }
 
-  onExit(listener: (taskId: string, exitCode: number) => void): Unsubscribe {
+  onExit(listener: (chatId: string, exitCode: number) => void): Unsubscribe {
     this.#exitListeners.add(listener)
     return () => {
       this.#exitListeners.delete(listener)
     }
   }
 
-  /** Test/debug helper: whether a live (running) session exists for a task. */
-  hasRunningSession(taskId: string): boolean {
-    return this.#sessions.get(taskId)?.status === 'running'
+  /** Test/debug helper: whether a live (running) session exists for a chat. */
+  hasRunningSession(chatId: string): boolean {
+    return this.#sessions.get(chatId)?.status === 'running'
   }
 
-  #requireRunning(taskId: string): TerminalSession {
-    const session = this.#sessions.get(taskId)
+  #requireRunning(chatId: string): TerminalSession {
+    const session = this.#sessions.get(chatId)
     if (session === undefined) {
-      throw new AppError('not_found', 'No terminal session exists for this task.')
+      throw new AppError('not_found', 'No terminal session exists for this chat.')
     }
     if (session.status === 'exited') {
-      // Writes racing a session exit are expected during fast task switches;
+      // Writes racing a session exit are expected during fast chat switches;
       // they reject as a typed conflict and the renderer drops the input.
       throw new AppError('conflict', 'The terminal session has ended.')
     }

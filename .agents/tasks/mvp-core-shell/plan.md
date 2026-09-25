@@ -12,7 +12,7 @@ This file is the execution strategy for one task. It is not live progress and mu
 
 ## Goal of this iteration
 
-Deliver the spec's vertical slice: shell + persistence + task terminal with session preservation, verified against the acceptance criteria.
+Deliver the spec's vertical slice: shell + persistence + chat terminal with session preservation and chat closing on terminal exit, verified against the acceptance criteria.
 
 ## Spec
 
@@ -20,7 +20,7 @@ Deliver the spec's vertical slice: shell + persistence + task terminal with sess
 
 ## Out of scope
 
-Everything in the spec's Non-goals: file tree/preview, Action Bar, bottom terminal, Kanban preview, git operations UI, agent protocols, multi-terminal/split panes.
+Everything in the spec's Non-goals: file tree/preview, Action Bar, bottom terminal panel, Kanban, git operations UI, agent protocols, multi-terminal/split panes, task entity and progress tracking (post-MVP).
 
 ## Stages
 
@@ -48,6 +48,14 @@ Everything in the spec's Non-goals: file tree/preview, Action Bar, bottom termin
 - Expected evidence: task record Verification rows; test output; acceptance-criteria walkthrough notes; final verification subject.
 - Likely files: `src/main/services/terminal/*`, `src/main/ipc/terminals/*`, `src/preload/index.ts`, `src/renderer/src/**` (task workspace, terminal components).
 
+### Stage 4 - Chat entity and terminal-exit chat closing (acceptance-gate correction)
+
+- Outcome: the tree entity is the chat (Projects -> Chats) across DB, IPC, and UI (`tasks` -> `chats`, `window.app.chats.*`, drop the `status` column via migration); exiting a chat terminal (`exit`, `Ctrl+D` at an empty prompt, shell crash) closes the chat - terminal view disposed, chat removed from tree and database, next chat of the project auto-selected (previous one if the closed chat was last), otherwise a "Start new chat" empty state; the "session ended"/"Start new session" state is removed entirely (spawn-error + retry state stays); application quit never deletes chats and the restart restore is unchanged.
+- Boundary: no bottom terminal panel, no task entity, no kanban; the bottom region stays hidden.
+- Verification: unit tests (chat service CRUD + migration, quit-suppression of chat removal, `projects:remove` PTY termination) + renderer tests (terminal exit -> dispose + chat removal + next-chat selection / "Start new chat" empty state; quit does not remove chats) + `pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build` + manual re-test of acceptance criteria 1-6 and 9 on `pnpm dev`.
+- Expected evidence: task record Verification rows; test output; acceptance re-test notes per criterion.
+- Likely files: `src/main/db/*`, `src/main/services/*`, `src/main/ipc/*`, `src/preload/*`, `src/renderer/src/**`, tests.
+
 ## Preflight before edits
 
 - Skill: `preflight`
@@ -68,6 +76,8 @@ Everything in the spec's Non-goals: file tree/preview, Action Bar, bottom termin
 - Stage 3 (or earlier if touched): move `right` region div out of the center column to a real five-region sibling (SDD §7); move `TEST_ID` constants from `App.tsx` to `lib/test-ids.ts` to break App↔component import cycle; remove `@electron-toolkit/preload` from devDependencies; keyboard resize support (`role=separator` a11y) + `preventDefault` on handle mousedown; replace deprecated `environmentMatchGlobs` in vitest config; extend ipc-stubs tests to invoke handlers (payload slicing uncovered) and add a drag interaction test for resize.
 - Stage 3 (from Stage 2 review, non-blocking): `App.tsx` persistSelection/resize-end handlers swallow `state.set` rejections with bare `.catch(() => undefined)` — surface to the notice banner or console (spec Errors); `useResizableRegion` endDrag fires `onResizeEnd` even when the size never changed (zero-move click, multi-touch guard, unmount) — only fire when the size actually changed; `NewTaskForm` clears its input after `await` with no unmount guard; a pending `loadTasks(projectId)` resolving after that project's removal re-populates `tasksByProject` with an orphaned entry — drop results for projects no longer present.
 - Test depth (from re-review, Stage 2/3 when touching tests): first y-axis move assertion in useResizableRegion.test.tsx is a no-op (delta equals initialSize — strengthen or drop); unmount test is a smoke test, not a regression discriminator (jsdom limitation — note in test); multi-touch/isPrimary/button guard has no coverage (firePointer always sends primary button); lostpointercapture is tested with a manual Event (covers endDrag logic, not real capture retargeting — impossible in jsdom, already commented).
+
+- Stage 4 (review 2026-09-25, non-blocking): `LeftNavigation.tsx` — auto-focus inputu New Chat przy kazdym pozniejszym wyborze projektu po jednym bump `newChatFocusNonce` (efekt focusu z deps [focusNonce], NewChatForm remount per projekt) — skupiaj tylko gdy nonce faktycznie rosnal (lastSeenNonceRef). `ChatWorkspace.tsx` — auto-wybor nastepcy moze retryowac failed spawn bez jawnej re-selekcji — potwierdzone jako zamierzone (decyzja w rekordzie), nie wymaga zmiany.
 
 ## Approval
 

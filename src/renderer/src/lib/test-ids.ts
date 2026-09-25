@@ -1,4 +1,4 @@
-// Stable test ids shared by the shell, navigation and task workspace.
+// Stable test ids shared by the shell, navigation and chat workspace.
 // Kept out of App.tsx so components never import from App (no import cycle).
 
 export const TEST_ID = {
@@ -16,32 +16,32 @@ export const TEST_ID = {
   addProjectButton: 'add-project-button',
   welcomeSurface: 'welcome-surface',
   actionNotice: 'action-notice',
-  newTaskForm: 'new-task-form',
-  newTaskInput: 'new-task-input',
-  newTaskSubmit: 'new-task-submit',
+  newChatForm: 'new-chat-form',
+  newChatInput: 'new-chat-input',
+  newChatSubmit: 'new-chat-submit',
   headerProjectName: 'header-project-name',
   headerProjectPath: 'header-project-path',
   headerRuntimeLabel: 'header-runtime-label',
   headerGitBranch: 'header-git-branch',
   headerGitStatus: 'header-git-status',
   headerGitNone: 'header-git-none',
-  taskWorkspace: 'task-workspace',
-  taskWorkspaceTitle: 'task-workspace-title',
+  chatWorkspace: 'chat-workspace',
+  chatWorkspaceTitle: 'chat-workspace-title',
   terminalHost: 'terminal-host',
   terminalView: 'terminal-view',
-  terminalSessionEnded: 'terminal-session-ended',
   terminalSpawnError: 'terminal-spawn-error',
-  terminalStartNewSession: 'terminal-start-new-session',
   terminalRetry: 'terminal-retry',
+  startNewChatState: 'start-new-chat-state',
+  startNewChatButton: 'start-new-chat-button',
 } as const
 
-/** Test ids that depend on record ids (projects/tasks/sessions). */
+/** Test ids that depend on record ids (projects/chats/sessions). */
 export const testIdFor = {
   projectRow: (projectId: string): string => `project-row-${projectId}`,
   projectSelect: (projectId: string): string => `project-select-${projectId}`,
   projectToggle: (projectId: string): string => `project-toggle-${projectId}`,
-  projectTasks: (projectId: string): string => `project-tasks-${projectId}`,
+  projectChats: (projectId: string): string => `project-chats-${projectId}`,
   removeProject: (projectId: string): string => `remove-project-${projectId}`,
-  taskRow: (taskId: string): string => `task-row-${taskId}`,
-  terminalView: (taskId: string): string => `terminal-view-${taskId}`,
+  chatRow: (chatId: string): string => `chat-row-${chatId}`,
+  terminalView: (chatId: string): string => `terminal-view-${chatId}`,
 }

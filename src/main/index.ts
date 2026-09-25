@@ -71,15 +71,17 @@ app.whenReady().then(() => {
     trustedRendererUrls: getTrustedRendererUrls(),
     // Terminal data/exit events go to every window's webContents (single-window
     // app today; the fan-out keeps the contract window-agnostic).
-    broadcast: (channel, taskId, payload) => {
+    broadcast: (channel, chatId, payload) => {
       for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send(channel, taskId, payload)
+        window.webContents.send(channel, chatId, payload)
       }
     },
   })
 
-  // App-quit PTY teardown (spec Behaviour 8): terminate every task terminal
-  // so no orphaned pwsh/powershell processes outlive the app.
+  // App-quit PTY teardown (spec Behaviour 8): terminate every chat terminal
+  // so no orphaned pwsh/powershell processes outlive the app. Quit is NOT a
+  // chat exit: chat rows are never deleted here, and terminateAll suppresses
+  // exit events so the renderer's chat-close flow cannot run while quitting.
   app.on('before-quit', () => {
     services.terminals.terminateAll()
   })

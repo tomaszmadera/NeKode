@@ -10,9 +10,10 @@ function fakeServices(): AppServices {
       add: () => ({ id: 'p1', name: 'demo', path: 'D:/code/demo', runtimeLabel: null }),
       remove: () => {},
     },
-    tasks: {
+    chats: {
       list: () => [],
-      create: () => ({ id: 't1', projectId: 'p1', name: 'n', status: 'idle' }),
+      create: () => ({ id: 't1', projectId: 'p1', name: 'n' }),
+      remove: vi.fn(),
     },
     state: { get: vi.fn(() => null), set: vi.fn() },
     terminals: {
@@ -40,7 +41,7 @@ function channelMap() {
 
 describe('ipc payload validation', () => {
   it('rejects wrong arity before touching services', () => {
-    const entry = channelMap().get('tasks:create')
+    const entry = channelMap().get('chats:create')
     expect(entry).toBeDefined()
     if (!entry) {
       return
@@ -117,8 +118,9 @@ describe('ipc payload validation', () => {
       'projects:list',
       'projects:add',
       'projects:remove',
-      'tasks:list',
-      'tasks:create',
+      'chats:list',
+      'chats:create',
+      'chats:remove',
       'state:get',
       'state:set',
       'terminals:create',

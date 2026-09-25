@@ -20,10 +20,10 @@ export interface RegisterHandlersOptions {
   trustedRendererUrls?: readonly string[]
   /**
    * Main → renderer event fan-out for terminals:data / terminals:exit
-   * (channel, taskId, payload). Injectable for tests; main/index.ts targets
+   * (channel, chatId, payload). Injectable for tests; main/index.ts targets
    * every BrowserWindow webContents.
    */
-  broadcast?: (channel: string, taskId: string, payload: string | number) => void
+  broadcast?: (channel: string, chatId: string, payload: string | number) => void
 }
 
 export function registerAppIpcHandlers(
@@ -89,8 +89,9 @@ export function registerAppIpcHandlers(
   })
 
   // projects:remove also tears down the removed project's terminal sessions:
-  // the task ids are resolved before the cascade delete and each orphaned PTY
-  // is terminated here in main (the renderer only evicts its session views).
+  // the chat ids are resolved before the cascade delete (the FK cascade wipes
+  // the chat rows) and each orphaned PTY is terminated here in main (the
+  // renderer only evicts its session views).
   handle(IPC_CHANNEL.projectsRemove, (payload) => {
     const entry = validated.get(IPC_CHANNEL.projectsRemove)
     const args = entry !== undefined ? entry.parse(payload) : payload
@@ -98,16 +99,37 @@ export function registerAppIpcHandlers(
     if (typeof projectId !== 'string') {
       throw new AppError('validation', 'projects:remove arg[0] must be a string')
     }
-    const taskIds = services.tasks.list(projectId).map((task) => task.id)
+    const chatIds = services.chats.list(projectId).map((chat) => chat.id)
     const result = services.projects.remove(projectId)
-    for (const taskId of taskIds) {
-      services.terminals.terminate(taskId)
+    for (const chatId of chatIds) {
+      services.terminals.terminate(chatId)
     }
     return result
   })
 
+  // chats:remove is the terminal-exit close flow (spec Behaviour 11): the chat
+  // row is deleted and its terminal session record is dropped here in main
+  // (the PTY is already dead in this flow; terminate stays idempotent).
+  // Application quit never reaches this handler — quit teardown suppresses
+  // terminals:exit forwarding (TerminalService.terminateAll) so the renderer
+  // never starts this close flow while quitting (spec Behaviour 8).
+  handle(IPC_CHANNEL.chatsRemove, (payload) => {
+    const entry = validated.get(IPC_CHANNEL.chatsRemove)
+    const args = entry !== undefined ? entry.parse(payload) : payload
+    const chatId = args[0]
+    if (typeof chatId !== 'string') {
+      throw new AppError('validation', 'chats:remove arg[0] must be a string')
+    }
+    services.chats.remove(chatId)
+    services.terminals.terminate(chatId)
+  })
+
   for (const [channel, entry] of validated) {
-    if (channel === IPC_CHANNEL.projectsAdd || channel === IPC_CHANNEL.projectsRemove) {
+    if (
+      channel === IPC_CHANNEL.projectsAdd ||
+      channel === IPC_CHANNEL.projectsRemove ||
+      channel === IPC_CHANNEL.chatsRemove
+    ) {
       continue
     }
     handle(channel, (payload) => {
@@ -116,13 +138,16 @@ export function registerAppIpcHandlers(
     })
   }
 
-  // Terminal session events (main → renderer), keyed by taskId so hidden
-  // task terminals keep receiving their own data (spec Edge cases).
-  services.terminals.onData((taskId, data) => {
-    broadcast(IPC_CHANNEL.terminalsData, taskId, data)
+  // Terminal session events (main → renderer), keyed by chatId so hidden
+  // chat terminals keep receiving their own data (spec Edge cases). Exit
+  // events drive the renderer-side chat close flow (spec Behaviour 11); the
+  // TerminalService suppresses them during quit teardown so quitting can
+  // never delete chats (spec Behaviour 8).
+  services.terminals.onData((chatId, data) => {
+    broadcast(IPC_CHANNEL.terminalsData, chatId, data)
   })
-  services.terminals.onExit((taskId, exitCode) => {
-    broadcast(IPC_CHANNEL.terminalsExit, taskId, exitCode)
+  services.terminals.onExit((chatId, exitCode) => {
+    broadcast(IPC_CHANNEL.terminalsExit, chatId, exitCode)
   })
 }
 

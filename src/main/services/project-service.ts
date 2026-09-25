@@ -75,7 +75,7 @@ export class ProjectService {
   }
 
   remove(projectId: string): void {
-    // FK cascade removes the project's tasks; stale selection keys in
+    // FK cascade removes the project's chats; stale selection keys in
     // app_state are handled by AppStateService.cleanupSelection on next read.
     const result = this.db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
     if (result.changes === 0) {

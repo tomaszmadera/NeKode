@@ -3,9 +3,9 @@ import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import type { AppServices } from '../ipc/service-registry'
 import { AppStateService } from './app-state-service'
+import { ChatService } from './chat-service'
 import { GitService } from './git/git-service'
 import { ProjectService } from './project-service'
-import { TaskService } from './task-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { TerminalService } from './terminal/terminal-service'
 
@@ -22,14 +22,14 @@ export function createServices(options: CreateServicesOptions): AppServices {
   const db = openDatabase(options.dbPath)
   runMigrations(db)
   const projects = new ProjectService({ db, fs: { stat: (path) => safeStat(path) } })
-  const tasks = new TaskService({ db })
+  const chats = new ChatService({ db })
   const state = new AppStateService({ db })
   const terminals = new TerminalService({ createPty: createNodePty })
   const git = new GitService()
   return {
     projects: {
       // Stale selection keys are cleaned on every list read (spec Edge cases:
-      // a selection pointing at a removed project/task falls back to the
+      // a selection pointing at a removed project/chat falls back to the
       // default empty state and the keys are removed).
       list: () => {
         state.cleanupSelection()
@@ -38,19 +38,20 @@ export function createServices(options: CreateServicesOptions): AppServices {
       add: (path) => projects.add(path),
       remove: (projectId) => projects.remove(projectId),
     },
-    tasks: {
-      list: (projectId) => tasks.list(projectId),
-      create: (projectId, name) => tasks.create(projectId, name),
+    chats: {
+      list: (projectId) => chats.list(projectId),
+      create: (projectId, name) => chats.create(projectId, name),
+      remove: (chatId) => chats.remove(chatId),
     },
     state: {
       get: (key) => state.get(key),
       set: (key, value) => state.set(key, value),
     },
     terminals: {
-      create: (taskId, cwd) => terminals.create(taskId, cwd),
-      write: (taskId, data) => terminals.write(taskId, data),
-      resize: (taskId, cols, rows) => terminals.resize(taskId, cols, rows),
-      terminate: (taskId) => terminals.terminate(taskId),
+      create: (chatId, cwd) => terminals.create(chatId, cwd),
+      write: (chatId, data) => terminals.write(chatId, data),
+      resize: (chatId, cols, rows) => terminals.resize(chatId, cols, rows),
+      terminate: (chatId) => terminals.terminate(chatId),
       terminateAll: () => terminals.terminateAll(),
       onData: (listener) => terminals.onData(listener),
       onExit: (listener) => terminals.onExit(listener),
