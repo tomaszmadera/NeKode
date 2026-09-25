@@ -25,7 +25,7 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
 
 2. **Zarządzanie czatami (Chats):**
    - Drzewko w lewym panelu: PROJEKT → CZATY (czaty widoczne pod projektami).
-   - Tworzenie nowego czatu i przełączanie między czatami z zachowaniem stanu sesji roboczej.
+   - Tworzenie nowego czatu bez formularza nazwy (nazwa = nazwa terminala/shella, np. „PowerShell"; nazwy mogą się powtarzać) i przełączanie między czatami z zachowaniem stanu sesji roboczej.
    - Zamykanie czatu wraz z zamknięciem jego terminala (`exit`, `Ctrl+D`): czat znika z drzewka, aplikacja przechodzi do kolejnego czatu w projekcie (gdy czatów nie zostanie — stan pusty z przyciskiem "Start new chat").
 
 3. **Sesje terminala (PTY):**
@@ -61,4 +61,5 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
 - Brak synchronizacji chmurowej i kont użytkowników (dane przechowywane wyłącznie lokalnie).
 - Post-MVP: encja **Task (zadanie)** — jednostka pracy przypinana do czatu, z panelem zapisu postępu prac (wzorzem mogą być rekordy `.agents/tasks/*/task.md` z project-template, ale bez uzależnienia aplikacji od konkretnego harnessa).
 - Post-MVP: migawki przekazania prac (handoff) powiązane z zadaniami.
+- Post-MVP: ręczna zmiana nazwy czatu (pole `name` w bazie zostaje przygotowane; domyślnie nazwa = nazwa terminala/shella).
 - Post-MVP: funkcjonalność tablicy **Kanban** (wcześniej planowana jako poglądowy podgląd w MVP — przeniesiona poza MVP w celu przemyślenia modelu razem z zadaniami).

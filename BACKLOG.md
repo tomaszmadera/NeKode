@@ -12,4 +12,6 @@ Nowe pozycje dopisuj jako pojedyncze punkty. Gdy pomysł wchodzi do realizacji, 
 
 - Post-MVP: funkcjonalność Kanban (wcześniej poglądowy podgląd w MVP — przeniesiona poza MVP razem z modelem zadań). Źródło: decyzja użytkownika 2026-09-25 (requirements.md §3).
 
+- Post-MVP: ręczna zmiana nazwy czatu (pole `name` w bazie przygotowane; domyślnie nazwa = nazwa terminala/shella). Źródło: decyzja użytkownika 2026-09-25.
+
 - Terminologia w UX-UI.md i SDD.md: dostosowanie do modelu PROJEKT → CZATY (task = przyszła encja z postępem prac) — dokumenty nadal opisują task z terminalem. Źródło: zmiana modelu 2026-09-25.

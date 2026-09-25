@@ -13,7 +13,8 @@ export interface AppServices {
   }
   chats: {
     list(projectId: string): ChatInfo[]
-    create(projectId: string, name: string): ChatInfo
+    /** Name is derived from the platform shell (spec Behaviour 3); duplicates allowed. */
+    create(projectId: string): ChatInfo
     /** Removes one chat row (terminal-exit close flow, spec Behaviour 11). */
     remove(chatId: string): void
   }

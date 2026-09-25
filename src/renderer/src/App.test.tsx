@@ -164,8 +164,8 @@ describe('project and chat data flow', () => {
     const chatRow = await screen.findByTestId(testIdFor.chatRow('t1'))
     expect(chatRow.textContent).toBe('First chat')
     expect(app.chats.list).toHaveBeenCalledWith('p1')
-    // The active project gets the New Chat input (UX-UI §10).
-    expect(screen.getByTestId(TEST_ID.newChatInput)).toBeTruthy()
+    // The active project gets the New Chat button (UX-UI §10): no naming form.
+    expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
   })
 
   it('add-project: dialog result refreshes the list and selects the new project', async () => {
@@ -193,7 +193,7 @@ describe('project and chat data flow', () => {
     const row = await screen.findByTestId(testIdFor.projectRow('p1'))
     expect(row.getAttribute('data-selected')).toBe('true')
     expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
-    expect(screen.getByTestId(TEST_ID.newChatInput)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
   })
@@ -224,43 +224,89 @@ describe('project and chat data flow', () => {
     expect(notice.textContent).toContain('already registered')
   })
 
-  it('new-chat: creates the chat under the active project and selects it', async () => {
+  it('new-chat: creates the chat immediately (no naming form) and selects it', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     vi.mocked(app.chats.create).mockResolvedValue(chatTwo)
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const input = await screen.findByTestId(TEST_ID.newChatInput)
-    fireEvent.change(input, { target: { value: 'Second chat' } })
-    fireEvent.submit(screen.getByTestId(TEST_ID.newChatForm))
+    // No name is typed anywhere: the button creates the chat right away and
+    // main derives the name from the shell (spec Behaviour 3).
+    fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
 
     await screen.findByTestId(testIdFor.chatRow('t2'))
-    expect(app.chats.create).toHaveBeenCalledWith('p1', 'Second chat')
+    expect(app.chats.create).toHaveBeenCalledWith('p1')
+    expect(app.chats.create).toHaveBeenCalledTimes(1)
     const chatRow = getByTestIdString(testIdFor.chatRow('t2'))
     expect(chatRow.getAttribute('data-selected')).toBe('true')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
-    expect((getByTestIdString(TEST_ID.newChatInput) as HTMLInputElement).value).toBe('')
   })
 
-  it('new-chat: failures surface the typed error message and keep the input', async () => {
+  it('new-chat: two chats may carry the same name (shell label, duplicates allowed)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.create).mockRejectedValue({
-      nekodeAppError: true,
-      code: 'conflict',
-      message: 'A chat named "Dup" already exists in this project.',
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    // Both chats share the same shell-derived name.
+    vi.mocked(app.chats.create)
+      .mockResolvedValueOnce({ id: 't1', projectId: 'p1', name: 'PowerShell' })
+      .mockResolvedValueOnce({ id: 't2', projectId: 'p1', name: 'PowerShell' })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
+    await screen.findByTestId(testIdFor.chatRow('t1'))
+    fireEvent.click(screen.getByTestId(TEST_ID.newChatButton))
+    await screen.findByTestId(testIdFor.chatRow('t2'))
+
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).textContent).toBe('PowerShell')
+    expect(screen.getByTestId(testIdFor.chatRow('t2')).textContent).toBe('PowerShell')
+    expect(getByTestIdString(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe('true')
+  })
+
+  it('Start new chat expands a collapsed project so the new chat row is visible', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.chats.create).mockResolvedValue({
+      id: 't9',
+      projectId: 'p1',
+      name: 'PowerShell',
     })
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const input = await screen.findByTestId(TEST_ID.newChatInput)
-    fireEvent.change(input, { target: { value: 'Dup' } })
-    fireEvent.submit(screen.getByTestId(TEST_ID.newChatForm))
+    // An empty selected project shows the "Start new chat" empty state
+    // (spec Behaviour 11)…
+    await screen.findByTestId(TEST_ID.startNewChatState)
+    // …and the user collapses the project node: its chat subtree unmounts.
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
+    expect(screen.queryByTestId(testIdFor.projectChats('p1'))).toBeNull()
+
+    fireEvent.click(screen.getByTestId(TEST_ID.startNewChatButton))
+    await waitFor(() => expect(app.chats.create).toHaveBeenCalledWith('p1'))
+    // The chat is created and selected — and its row must be visible in the
+    // tree: creating a chat re-expands its project node (spec Behaviour 3).
+    const chatRow = await screen.findByTestId(testIdFor.chatRow('t9'))
+    expect(chatRow.getAttribute('data-selected')).toBe('true')
+    expect(screen.getByTestId(testIdFor.projectChats('p1'))).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
+  })
+
+  it('new-chat: failures surface the typed error message and keep the affordance', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.create).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'not_found',
+      message: 'Project not found.',
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
 
     const notice = await screen.findByTestId(TEST_ID.actionNotice)
-    expect(notice.textContent).toContain('already exists')
-    expect((getByTestIdString(TEST_ID.newChatInput) as HTMLInputElement).value).toBe('Dup')
+    expect(notice.textContent).toContain('Project not found.')
+    expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
   })
 
   it('remove-project: falls back to the default empty state and drops removed data', async () => {
@@ -353,7 +399,7 @@ describe('project and chat data flow', () => {
       'false',
     )
     expect(screen.queryByTestId(TEST_ID.headerProjectName)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.newChatInput)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.newChatButton)).toBeNull()
     expect(app.chats.list).not.toHaveBeenCalled()
   })
 
@@ -370,7 +416,7 @@ describe('project and chat data flow', () => {
     await screen.findByTestId(TEST_ID.headerProjectName)
     expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
     expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('false')
-    expect(screen.getByTestId(TEST_ID.newChatInput)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
   })
 
   it('renders the project name, absolute path and runtime label in the context header', async () => {
@@ -629,6 +675,29 @@ describe('chat closing on terminal exit (Stage 4)', () => {
     unmount()
   })
 
+  it('Ctrl+D at an empty input line closes the chat like a terminal exit (spec AC9)', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+    const terminal = mockTerminalInstances[0]
+    expect(terminal.keyHandler).not.toBeNull()
+
+    // PowerShell does not end on Ctrl+D: the app intercepts the shortcut at an
+    // empty input line and runs the same close flow as a terminal exit.
+    act(() => {
+      const allowed = (terminal.keyHandler as (event: KeyboardEvent) => boolean)(
+        new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, bubbles: true, cancelable: true }),
+      )
+      expect(allowed).toBe(false)
+    })
+
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull())
+    await waitFor(() =>
+      expect(getByTestIdString(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe('true'),
+    )
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+  })
+
   it('closing the last chat selects the previous one, then the Start new chat state', async () => {
     await renderWithChats([chatOne, chatTwo], 't2')
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', 'D:/code/demo'))
@@ -650,11 +719,16 @@ describe('chat closing on terminal exit (Stage 4)', () => {
     expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
 
-    // The affordance hands the flow to the New Chat input in the tree.
+    // The affordance creates a chat immediately (spec Behaviour 3 — no form).
+    vi.mocked(app.chats.create).mockResolvedValue({
+      id: 't3',
+      projectId: 'p1',
+      name: 'PowerShell',
+    })
     fireEvent.click(screen.getByTestId(TEST_ID.startNewChatButton))
-    await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByTestId(TEST_ID.newChatInput)),
-    )
+    await waitFor(() => expect(app.chats.create).toHaveBeenCalledWith('p1'))
+    await screen.findByTestId(testIdFor.chatRow('t3'))
+    expect(getByTestIdString(testIdFor.chatRow('t3')).getAttribute('data-selected')).toBe('true')
   })
 
   it('a background chat that exits is removed without stealing the selection', async () => {

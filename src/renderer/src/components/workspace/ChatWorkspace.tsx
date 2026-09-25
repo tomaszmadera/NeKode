@@ -52,7 +52,10 @@ interface ChatWorkspaceProps {
    * project. Never called for teardown caused by application quit.
    */
   onChatClosed: (chatId: string) => void
-  /** "Start new chat" empty state: focus the New Chat input in the tree. */
+  /**
+   * "Start new chat" empty state: create a chat immediately (no naming form,
+   * spec Behaviour 3).
+   */
   onStartNewChat: () => void
 }
 
@@ -229,6 +232,7 @@ export function ChatWorkspace({
               cwd={record.cwd}
               visible={chatId === selectedChatId}
               onExit={() => handleExit(chatId)}
+              onClose={() => handleExit(chatId)}
               onSpawnError={(message) => handleSpawnError(chatId, message)}
             />
             {record.status === 'error' && chatId === selectedChatId ? (

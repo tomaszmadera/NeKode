@@ -46,8 +46,11 @@ describe('ipc payload validation', () => {
     if (!entry) {
       return
     }
+    // chats:create carries no name (spec Behaviour 3): exactly one argument.
     expect(() => entry.parse([])).toThrow(ValidationError)
-    expect(() => entry.parse(['p1', 'name', 'extra'])).toThrow(/expected 2 argument/)
+    expect(() => entry.parse(['p1', 'name', 'extra'])).toThrow(/expected 1 argument/)
+    expect(() => entry.parse(['p1', 'name'])).toThrow(/expected 1 argument/)
+    expect(entry.parse(['p1'])).toEqual(['p1'])
   })
 
   it('rejects non-string and non-finite arguments', () => {

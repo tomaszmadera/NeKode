@@ -56,6 +56,14 @@ Everything in the spec's Non-goals: file tree/preview, Action Bar, bottom termin
 - Expected evidence: task record Verification rows; test output; acceptance re-test notes per criterion.
 - Likely files: `src/main/db/*`, `src/main/services/*`, `src/main/ipc/*`, `src/preload/*`, `src/renderer/src/**`, tests.
 
+### Stage 4 acceptance correction (user-gate follow-up)
+
+- Outcome: `Ctrl+D` closes the chat only at an empty input line outside full-screen programs (passed through to the PTY as EOF otherwise — Linux-like prompt behaviour); chat creation has no naming form — the name is derived from the platform shell in main (e.g. "PowerShell"), duplicate names allowed within a project (the `unique(project_id, name)` index is dropped via migration); manual rename is post-MVP (the `name` column stays).
+- Boundary: no rename UI, no bottom panel, no task entity.
+- Verification: unit tests (migration dropping the unique index, duplicate chat names, shell-derived name) + renderer tests (`Ctrl+D` close vs pass-through cases, create without form) + gates `pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build` + manual retest of acceptance criteria 9-10 on `pnpm dev`.
+- Expected evidence: task record Verification rows; test output; acceptance re-test notes.
+- Likely files: `src/main/db/*`, `src/main/services/chat-service*`, `src/preload/*`, `src/renderer/src/**` (LeftNavigation, ChatWorkspace, ChatTerminal, StartNewChatSurface), tests.
+
 ## Preflight before edits
 
 - Skill: `preflight`
@@ -77,6 +85,7 @@ Everything in the spec's Non-goals: file tree/preview, Action Bar, bottom termin
 - Stage 3 (from Stage 2 review, non-blocking): `App.tsx` persistSelection/resize-end handlers swallow `state.set` rejections with bare `.catch(() => undefined)` — surface to the notice banner or console (spec Errors); `useResizableRegion` endDrag fires `onResizeEnd` even when the size never changed (zero-move click, multi-touch guard, unmount) — only fire when the size actually changed; `NewTaskForm` clears its input after `await` with no unmount guard; a pending `loadTasks(projectId)` resolving after that project's removal re-populates `tasksByProject` with an orphaned entry — drop results for projects no longer present.
 - Test depth (from re-review, Stage 2/3 when touching tests): first y-axis move assertion in useResizableRegion.test.tsx is a no-op (delta equals initialSize — strengthen or drop); unmount test is a smoke test, not a regression discriminator (jsdom limitation — note in test); multi-touch/isPrimary/button guard has no coverage (firePointer always sends primary button); lostpointercapture is tested with a manual Event (covers endDrag logic, not real capture retargeting — impossible in jsdom, already commented).
 
+- Stage 4 (re-review rr2 korekty acceptance 2026-09-25, non-blocking, bezpieczny kierunek): `ChatTerminal.tsx:109-112` — Ctrl+D w buforze alternatywnym ustawia stan linii na 'unknown', wiec po wyjsciu z vim/htop skrot jest zablokowany przy faktycznie pustej linii (false block) — wykrywaj opuszczenie bufora alternatywnego albo zaakceptuj ograniczenie. `ChatTerminal.tsx:75-85` — licznik w UTF-16 code units vs kasowanie code pointow przez readline (surrogate/combining moga zawyzac — tylko opoznia zamkniecie).
 - Stage 4 (re-review rr1 2026-09-25, non-blocking): `App.tsx:72` — selectionRef pisany w ciele renderu (side effect na ref) — synchronizuj z committed state w useEffect (zapisy synchroniczne w handleChatClosed zostawic). `App.tsx:469` — po failed load utworzenie i zamkniecie czatu pokazuje Welcome zamiast 'Start new chat' (chatsLoaded=false) — oznaczaj projekt jako zaladowany po successful chats.create albo retry loadChats. `App.tsx:188` — loadChats nadpisuje caly wpis i moze wskrzesic wiersz usuniety przez rownolegly close flow (pre-existing; wiazane z wpisem BACKLOG o ewikcji) — zamiast nadpisania uzgodnij (reconcile).
 - Stage 4 (review 2026-09-25, non-blocking): `LeftNavigation.tsx` — auto-focus inputu New Chat przy kazdym pozniejszym wyborze projektu po jednym bump `newChatFocusNonce` (efekt focusu z deps [focusNonce], NewChatForm remount per projekt) — skupiaj tylko gdy nonce faktycznie rosnal (lastSeenNonceRef). `ChatWorkspace.tsx` — auto-wybor nastepcy moze retryowac failed spawn bez jawnej re-selekcji — potwierdzone jako zamierzone (decyzja w rekordzie), nie wymaga zmiany.
 

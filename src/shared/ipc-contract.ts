@@ -64,7 +64,13 @@ export interface AppApi {
   }
   chats: {
     list(projectId: string): Promise<ChatInfo[]>
-    create(projectId: string, name: string): Promise<ChatInfo>
+    /**
+     * Creates a chat with no naming form (spec Behaviour 3): the name is
+     * derived from the platform shell (e.g. "PowerShell" on win32) and may
+     * repeat within a project. Returns the created chat (selected by the
+     * renderer).
+     */
+    create(projectId: string): Promise<ChatInfo>
     /**
      * Removes a chat from the tree and the database (the terminal-exit close
      * flow, spec Behaviour 11). Main also drops the chat's terminal session.

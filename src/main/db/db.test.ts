@@ -41,8 +41,8 @@ describe('runMigrations', () => {
   it('creates the schema once and is idempotent', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(2)
-      expect(runMigrations(db)).toBe(2)
+      expect(runMigrations(db)).toBe(3)
+      expect(runMigrations(db)).toBe(3)
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as Array<{ name: string }>
@@ -79,7 +79,7 @@ describe('runMigrations', () => {
     }
   })
 
-  it('rejects duplicate project paths and duplicate chat names', () => {
+  it('rejects duplicate project paths and allows duplicate chat names', () => {
     const db = openDatabase(':memory:')
     try {
       runMigrations(db)
@@ -92,8 +92,10 @@ describe('runMigrations', () => {
       const insertChat = db.prepare(
         'INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)',
       )
-      insertChat.run('t1', 'p1', 'Chat', '2026-01-01T00:00:00Z')
-      expect(() => insertChat.run('t2', 'p1', 'Chat', '2026-01-01T00:00:01Z')).toThrow(/UNIQUE/i)
+      insertChat.run('t1', 'p1', 'PowerShell', '2026-01-01T00:00:00Z')
+      // The chat name is a display label; duplicates within a project are
+      // allowed (spec Business rules, identity is the id).
+      expect(() => insertChat.run('t2', 'p1', 'PowerShell', '2026-01-01T00:00:01Z')).not.toThrow()
     } finally {
       db.close()
     }
@@ -127,7 +129,7 @@ describe('migration 2 (tasks -> chats)', () => {
   it('carries rows over to chats without status and drops the tasks table', () => {
     const db = createLegacyDb()
     try {
-      expect(runMigrations(db)).toBe(2)
+      expect(runMigrations(db)).toBe(3)
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -205,7 +207,111 @@ describe('migration 2 (tasks -> chats)', () => {
       const applied = db
         .prepare('SELECT version FROM schema_migrations ORDER BY version')
         .all() as Array<{ version: number }>
-      expect(applied.map((row) => row.version)).toEqual([1, 2])
+      expect(applied.map((row) => row.version)).toEqual([1, 2, 3])
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('migration 3 (chat name unique index dropped)', () => {
+  /**
+   * Builds a legacy database exactly as migration 2 left it: `chats` with
+   * UNIQUE (project_id, name) and real rows under it.
+   */
+  function createLegacyDbAtV2(): Database.Database {
+    const db = openDatabase(':memory:')
+    db.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      INSERT INTO schema_migrations (version, applied_at) VALUES (1, '2026-01-01T00:00:00Z');
+      INSERT INTO schema_migrations (version, applied_at) VALUES (2, '2026-01-01T00:00:00Z');
+    `)
+    MIGRATIONS[0].up(db)
+    MIGRATIONS[1].up(db)
+    db.prepare(
+      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+    db.prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)').run(
+      't1',
+      'p1',
+      'PowerShell',
+      '2026-01-01T00:00:00Z',
+    )
+    db.prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)').run(
+      't2',
+      'p1',
+      'bash',
+      '2026-01-01T00:00:01Z',
+    )
+    db.prepare('INSERT INTO app_state (key, value) VALUES (?, ?)').run('selection.chatId', 't1')
+    return db
+  }
+
+  it('a legacy database really enforced the unique index before the migration', () => {
+    const db = createLegacyDbAtV2()
+    try {
+      expect(() =>
+        db
+          .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
+          .run('t3', 'p1', 'PowerShell', '2026-01-01T00:00:02Z'),
+      ).toThrow(/UNIQUE/i)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('drops the unique index: duplicate chat names within a project are allowed', () => {
+    const db = createLegacyDbAtV2()
+    try {
+      expect(runMigrations(db)).toBe(3)
+      expect(() =>
+        db
+          .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
+          .run('t3', 'p1', 'PowerShell', '2026-01-01T00:00:02Z'),
+      ).not.toThrow()
+      const names = db
+        .prepare('SELECT name FROM chats WHERE project_id = ? ORDER BY created_at, name')
+        .all('p1') as Array<{ name: string }>
+      expect(names.map((row) => row.name)).toEqual(['PowerShell', 'bash', 'PowerShell'])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('leaves existing rows and state untouched', () => {
+    const db = createLegacyDbAtV2()
+    try {
+      runMigrations(db)
+      const rows = db
+        .prepare('SELECT id, project_id, name, created_at FROM chats ORDER BY created_at, name')
+        .all() as Array<{ id: string; project_id: string; name: string; created_at: string }>
+      expect(rows).toEqual([
+        {
+          id: 't1',
+          project_id: 'p1',
+          name: 'PowerShell',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 't2',
+          project_id: 'p1',
+          name: 'bash',
+          created_at: '2026-01-01T00:00:01Z',
+        },
+      ])
+      expect(
+        db.prepare('SELECT value FROM app_state WHERE key = ?').get('selection.chatId'),
+      ).toEqual({ value: 't1' })
+      // The cascade and the column set survive the table rebuild.
+      const columns = db.prepare('PRAGMA table_info(chats)').all() as Array<{ name: string }>
+      expect(columns.map((column) => column.name)).toEqual([
+        'id',
+        'project_id',
+        'name',
+        'created_at',
+      ])
+      db.prepare('DELETE FROM projects WHERE id = ?').run('p1')
+      expect((db.prepare('SELECT COUNT(*) AS c FROM chats').get() as { c: number }).c).toBe(0)
     } finally {
       db.close()
     }

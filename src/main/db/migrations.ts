@@ -72,6 +72,31 @@ export const MIGRATIONS: readonly Migration[] = [
       `)
     },
   },
+  {
+    // Stage 4 acceptance: a chat name is a shell-derived display label and may
+    // repeat within one project (spec Business rules; identity is the id).
+    // SQLite cannot drop a UNIQUE constraint, so the table is rebuilt without
+    // UNIQUE (project_id, name); rows are carried over unchanged (append,
+    // never rewrite).
+    version: 3,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE chats_renamed (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+
+        INSERT INTO chats_renamed (id, project_id, name, created_at)
+          SELECT id, project_id, name, created_at FROM chats;
+
+        DROP TABLE chats;
+
+        ALTER TABLE chats_renamed RENAME TO chats;
+      `)
+    },
+  },
 ]
 
 export function runMigrations(db: Database.Database): number {
