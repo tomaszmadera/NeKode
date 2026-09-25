@@ -10,7 +10,7 @@ current_step: Phase 2.5
 updated: 2026-09-25
 branch: main
 worktree: current
-next_action: Stage 4 (model czatu + zamkniecie czatu na exit/Ctrl+D) wg plan.md Stage 4 i zaktualizowanego spec.md: implementacja + review, potem user-gate (retest AC wg nowego kontraktu, zwlaszcza AC9) i task-close z pelna weryfikacja
+next_action: User-gate acceptance retest (AC1-6 + AC9 wg zmienionego kontraktu + restart restore) w pnpm dev / scripts/start.ps1; po pass: task-close z verification subject + verify-full
 blockers: none
 ---
 
@@ -83,6 +83,7 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 | Stage 4 implementacja (subagent-implementer deleg_0502341e) + bramki koordynatora | pass | Rename task->chat w calym stosie (tabela `chats` bez `status`, `chats:*` IPC, `window.app.chats.*`, ChatTerminal/ChatWorkspace/StartNewChatSurface, test-ids); migracja v2 (tasks->chats + rename klucza selection.taskId -> selection.chatId z zachowaniem wartosci, test na legacy DB v1); zamkniecie czatu sterowane z renderera na terminals:exit (dispose + chats:remove idempotentne); quit-protection (#quitting + dispose subskrypcji przed kill w terminateAll — zdarzenia exit z destrukcji nie kasuja czatow); wybor nastepcy (kolejny w drzewku, poprzedni jesli ostatni; czat tla usuwany bez kradziezy selekcji); stan "session ended" usuniety calkowicie, spawn-error + Retry zostaje; "Start new chat" w stanie pustym (fokus New Chat). Diff = deklarowane pliki (z usunieciami starych nazw task*); brak nowych zalenosci. Bramki koordynatora: lint 0, tc 0, test 154/154 (17 plikow, +16), build 0; bundle renderera czysty; grep "Session ended|Start new session" = 0 trafien; flaga #quitting potwierdzona w terminal-service |
 | Discrimination check quit-suppression (implementer, re-verify) | pass | Cofniecie fixa (bez #quitting, kill przed dispose subskrypcji) -> 2 testy terminal-service padaja; przywrocenie fixa -> zielone |
 | Korekta Stage 4 (subagent-implementer deleg_decc62e9) + bramki koordynatora | pass | (1) nastepca + selekcja z zywych danych: lustra chatsByProjectRef/selectionRef (jeden applyChatsUpdate, 6 miejsc setChatsByProject), invariant przepisujacy selectedChatId wskazujace na nieistniejacy czat na nastepce lub null (obejmuje ownerProjectId===null); (2) reset closingChatIdsRef gdy sesja czatu sie otwiera (fresh record) — czat zawsze zamykalny po bledzie remove; (3) opcjonalny guard: 'Start new chat' dopiero po zaladowaniu listy czatow (loadedChatProjectIds/chatsLoaded), wczesniej Welcome. Testy regresyjne 4 nowe (158/158, +4): dwa exity w jednym tyku -> brak martwej selekcji + Start new chat; failed remove -> kolejny exit zamyka (e2e + unit); guard ladowania. Discrimination check: reverting fixow pada dokladnie na nowych testach (3 scenariusze), przywrocenie -> zielone. Bramki koordynatora: lint 0, tc 0, test 158/158 (17 plikow), build 0; diff = deklarowane 4 pliki, brak niezadeklarowanych edycji |
+| Re-review Stage 4 runda 1 (swiezy reviewer deleg_5dff1287) | pass | 0 blocking; oba fixy zamkniete (lustra zywych danych + invariant selekcji — dwa exity w jednym tyku koncza sie zywa selekcja/Start new chat; reset closingChatIdsRef przy fresh record — czat zawsze zamykalny po bledzie remove); test_honesty zweryfikowane empirycznie mutacjami w kopii scratch (3 mutacje padaja dokladnie na nowych testach); 3 non-blocking -> carry-over w plan.md (render-write selectionRef; chatsLoaded po failed load/create; nadpisywanie wpisu przez loadChats — pre-existing). Werdykt: pass |
 | Independent review Stage 4 (subagent-reviewer deleg_6b9f77bf) | blocking | 2 blocking w flow zamkniecia czatu (renderer): (1) nastepca wyznaczany z przestarzalego snapshotu chatsByProject — dwa jednoczesne exity pozostawiaja selectedChatId na usunietym czacie (martwy, pusty srodek; lami AC9/decision 4-5); (2) po bledzie chats.remove wpis closingChatIdsRef nigdy nie znika — czat staje sie trwale niezamykalny przez exit. 3 non-blocking: miganie stanu 'Start new chat' przed zaladowaniem czatow; auto-focus New Chat przy kazdym projekcie po jednym bump nonce; needs-confirmation: auto-wybor nastepcy retryuje failed spawn. Weryfikacja decyzji materialnych 1,2,3,6 = zgodne z kontraktem (dispose-before-kill, migracje w transakcji, #quitting trwale, rename kompletny — 0 pozostalych identyfikatorow task/'Session ended'). Werdykt reviewera: blocking; bramki reviewera nie przeliczane (code-review skill) |
 
 ## Timing
@@ -118,7 +119,8 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 | implement:stage4 | work | 2026-09-25T12:13:51Z | 2026-09-25T13:06:35Z |
 | review:stage4 | work | 2026-09-25T13:06:35Z | 2026-09-25T14:14:51Z |
 | correction:stage4 | work | 2026-09-25T14:14:51Z | 2026-09-25T14:45:44Z |
-| review:stage4-rr1 | work | 2026-09-25T14:45:44Z | |
+| review:stage4-rr1 | work | 2026-09-25T14:45:44Z | 2026-09-25T15:07:52Z |
+| user-gate:acceptance-rr1 | wait | 2026-09-25T15:07:52Z | |
 
 ## Risks and blockers
 
