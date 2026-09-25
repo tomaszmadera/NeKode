@@ -1,4 +1,5 @@
 import { statSync } from 'node:fs'
+import { basename } from 'node:path'
 import type { Unsubscribe } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 
@@ -60,6 +61,17 @@ export function defaultShell(): ShellSpec {
     return { file: 'powershell.exe', args: ['-NoLogo'] }
   }
   return { file: process.env.SHELL ?? '/bin/bash', args: [] }
+}
+
+/**
+ * Display label for a shell (spec Behaviour 3: a chat is named after its
+ * shell, e.g. "PowerShell" on Windows). Derived from the same ShellSpec the
+ * PTY spawns with, so the chat name and the terminal can never disagree.
+ */
+export function shellDisplayName(shell: ShellSpec = defaultShell()): string {
+  const base = basename(shell.file).replace(/\.(exe|com|cmd|bat)$/i, '')
+  // PowerShell keeps its product casing; other shells use their binary name.
+  return /^powershell$/i.test(base) ? 'PowerShell' : base
 }
 
 function defaultIsDirectory(path: string): boolean {

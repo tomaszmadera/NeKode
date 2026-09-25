@@ -49,7 +49,8 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
     },
     chats: {
       list: (projectId) => invoke<ChatInfo[]>(IPC_CHANNEL.chatsList, projectId),
-      create: (projectId, name) => invoke<ChatInfo>(IPC_CHANNEL.chatsCreate, projectId, name),
+      // No name argument: the main process derives it from the shell.
+      create: (projectId) => invoke<ChatInfo>(IPC_CHANNEL.chatsCreate, projectId),
       remove: (chatId) => invoke<void>(IPC_CHANNEL.chatsRemove, chatId),
     },
     state: {

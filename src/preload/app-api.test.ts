@@ -39,7 +39,7 @@ describe('preload app api', () => {
     await api.projects.add()
     await api.projects.remove('p1')
     await api.chats.list('p1')
-    await api.chats.create('p1', 'Fix bug')
+    await api.chats.create('p1')
     await api.chats.remove('t1')
     expect(ipc.invocations.map((i) => i.channel)).toEqual([
       IPC_CHANNEL.projectsList,
@@ -49,6 +49,8 @@ describe('preload app api', () => {
       IPC_CHANNEL.chatsCreate,
       IPC_CHANNEL.chatsRemove,
     ])
+    // The create payload is the project id only — no name travels over IPC.
+    expect(ipc.invocations[4].args).toEqual(['p1'])
   })
 
   it('routes state, terminal and git calls to explicit channels', async () => {

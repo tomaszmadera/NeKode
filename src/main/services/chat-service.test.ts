@@ -6,10 +6,13 @@ import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import { ChatService } from './chat-service'
 import { ProjectService } from './project-service'
+import { shellDisplayName } from './terminal/terminal-service'
 
 // ChatService unit tests on an :memory: database (pattern: db.test.ts),
 // including the service-level cascade when a project is removed and the
-// chat-removal close flow (spec Behaviour 11).
+// chat-removal close flow (spec Behaviour 11). Chat creation takes no name
+// (spec Behaviour 3): the name is the shell-derived display label and may
+// repeat within a project.
 
 const openDatabases: Array<{ close(): void }> = []
 
@@ -19,7 +22,15 @@ afterEach(() => {
   }
 })
 
-function createServices(): { projects: ProjectService; chats: ChatService } {
+interface ServiceBundle {
+  db: ReturnType<typeof openDatabase>
+  projects: ProjectService
+  chats: ChatService
+  /** Builds an extra ChatService over the same database with its own name. */
+  chatsNamed: (chatName: () => string) => ChatService
+}
+
+function createServices(options: { chatName?: () => string } = {}): ServiceBundle {
   const db = openDatabase(':memory:')
   openDatabases.push(db)
   runMigrations(db)
@@ -29,7 +40,12 @@ function createServices(): { projects: ProjectService; chats: ChatService } {
       stat: () => ({ isDirectory: () => true }),
     },
   })
-  return { projects, chats: new ChatService({ db }) }
+  return {
+    db,
+    projects,
+    chats: new ChatService({ db, chatName: options.chatName }),
+    chatsNamed: (chatName: () => string) => new ChatService({ db, chatName }),
+  }
 }
 
 function expectAppError(run: () => unknown, code: AppErrorCode): AppError {
@@ -49,74 +65,73 @@ const demoPath = join(tmpdir(), 'nekode-chat-service-tests', 'demo-project')
 const otherPath = join(tmpdir(), 'nekode-chat-service-tests', 'other-project')
 
 describe('ChatService', () => {
-  it('create stores a trimmed chat (no status field) under the project', () => {
-    const { projects, chats } = createServices()
+  it('create takes no name and stores the shell-named chat (no status field)', () => {
+    const { projects, chats } = createServices({ chatName: () => 'PowerShell' })
     const project = projects.add(demoPath)
 
-    const created = chats.create(project.id, '  Ship the release  ')
+    const created = chats.create(project.id)
     expect(created.id.length).toBeGreaterThan(0)
     expect(created.projectId).toBe(project.id)
-    expect(created.name).toBe('Ship the release')
+    expect(created.name).toBe('PowerShell')
     // The chat model has no task status (spec Data/API): the payload shape
     // itself is the contract.
-    expect(created).toEqual({ id: created.id, projectId: project.id, name: 'Ship the release' })
+    expect(created).toEqual({ id: created.id, projectId: project.id, name: 'PowerShell' })
     expect(chats.get(created.id)).toEqual(created)
     expect(chats.list(project.id)).toEqual([created])
   })
 
-  it('list only returns chats of the given project', () => {
+  it('derives the default name from the platform shell (same config as the PTY)', () => {
     const { projects, chats } = createServices()
+    const project = projects.add(demoPath)
+
+    const created = chats.create(project.id)
+    expect(created.name).toBe(shellDisplayName())
+    expect(created.name.length).toBeGreaterThan(0)
+  })
+
+  it('rejects an empty derived name', () => {
+    const { projects, chats } = createServices({ chatName: () => '   ' })
+    const project = projects.add(demoPath)
+    expectAppError(() => chats.create(project.id), 'validation')
+    expect(chats.list(project.id)).toEqual([])
+  })
+
+  it('allows two chats with the same name within one project (spec Business rules)', () => {
+    const { projects, chats } = createServices({ chatName: () => 'PowerShell' })
+    const project = projects.add(demoPath)
+
+    const first = chats.create(project.id)
+    const second = chats.create(project.id)
+    expect(second.name).toBe(first.name)
+    expect(second.id).not.toBe(first.id)
+    expect(chats.list(project.id)).toHaveLength(2)
+  })
+
+  it('list only returns chats of the given project', () => {
+    const { projects, chatsNamed } = createServices()
     const project = projects.add(demoPath)
     const otherProject = projects.add(otherPath)
 
-    chats.create(project.id, 'Chat A')
-    chats.create(otherProject.id, 'Chat B')
+    chatsNamed(() => 'Chat A').create(project.id)
+    chatsNamed(() => 'Chat B').create(otherProject.id)
 
+    const chats = chatsNamed(() => 'unused')
     expect(chats.list(project.id).map((chat) => chat.name)).toEqual(['Chat A'])
     expect(chats.list(otherProject.id).map((chat) => chat.name)).toEqual(['Chat B'])
   })
 
-  it('rejects an empty or whitespace-only name', () => {
-    const { projects, chats } = createServices()
-    const project = projects.add(demoPath)
-    expectAppError(() => chats.create(project.id, ''), 'validation')
-    expectAppError(() => chats.create(project.id, '   '), 'validation')
-    expect(chats.list(project.id)).toEqual([])
-  })
-
-  it('rejects a duplicate chat name within one project', () => {
-    const { projects, chats } = createServices()
-    const project = projects.add(demoPath)
-    chats.create(project.id, 'Fix login')
-
-    const error = expectAppError(() => chats.create(project.id, ' Fix login '), 'conflict')
-    expect(error.message).toContain('already exists')
-    expect(chats.list(project.id)).toHaveLength(1)
-  })
-
-  it('allows the same chat name in a different project', () => {
-    const { projects, chats } = createServices()
-    const project = projects.add(demoPath)
-    const otherProject = projects.add(otherPath)
-
-    chats.create(project.id, 'Shared name')
-    const created = chats.create(otherProject.id, 'Shared name')
-    expect(created.name).toBe('Shared name')
-    expect(chats.list(otherProject.id)).toHaveLength(1)
-  })
-
   it('rejects creating a chat under a missing project', () => {
     const { chats } = createServices()
-    expectAppError(() => chats.create('missing-project', 'Orphan'), 'not_found')
+    expectAppError(() => chats.create('missing-project'), 'not_found')
   })
 
   it('removing a project cascades to its chats (service level)', () => {
-    const { projects, chats } = createServices()
+    const { projects, chats, chatsNamed } = createServices()
     const project = projects.add(demoPath)
     const otherProject = projects.add(otherPath)
-    const first = chats.create(project.id, 'Chat A')
-    chats.create(project.id, 'Chat B')
-    const kept = chats.create(otherProject.id, 'Chat C')
+    const first = chatsNamed(() => 'Chat A').create(project.id)
+    chatsNamed(() => 'Chat B').create(project.id)
+    const kept = chatsNamed(() => 'Chat C').create(otherProject.id)
 
     projects.remove(project.id)
 
@@ -127,10 +142,10 @@ describe('ChatService', () => {
   })
 
   it('remove deletes exactly the given chat and is idempotent', () => {
-    const { projects, chats } = createServices()
+    const { projects, chats, chatsNamed } = createServices()
     const project = projects.add(demoPath)
-    const first = chats.create(project.id, 'Chat A')
-    const second = chats.create(project.id, 'Chat B')
+    const first = chatsNamed(() => 'Chat A').create(project.id)
+    const second = chatsNamed(() => 'Chat B').create(project.id)
 
     chats.remove(first.id)
     expect(chats.get(first.id)).toBeNull()
@@ -140,18 +155,6 @@ describe('ChatService', () => {
     expect(() => chats.remove(first.id)).not.toThrow()
     expect(() => chats.remove('ghost-chat')).not.toThrow()
     expect(chats.list(project.id)).toEqual([second])
-  })
-
-  it('a removed chat name can be used again', () => {
-    const { projects, chats } = createServices()
-    const project = projects.add(demoPath)
-    const first = chats.create(project.id, 'Reusable')
-    chats.remove(first.id)
-
-    const recreated = chats.create(project.id, 'Reusable')
-    expect(recreated.name).toBe('Reusable')
-    expect(recreated.id).not.toBe(first.id)
-    expect(chats.list(project.id)).toHaveLength(1)
   })
 
   it('get returns null for an unknown id', () => {

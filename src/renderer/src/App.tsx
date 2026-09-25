@@ -54,7 +54,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
   const [selectionNonce, setSelectionNonce] = useState(0)
-  const [newChatFocusNonce, setNewChatFocusNonce] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   const [leftWidth, setLeftWidth] = useState(LEFT_REGION_SIZE.default)
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
@@ -310,12 +309,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app, applyChatsUpdate, persistSelection, selectedProjectId],
   )
 
+  // New Chat (spec Behaviour 3): created immediately with no naming form —
+  // the name comes from the platform shell in main and duplicates are
+  // allowed. The new chat becomes the selected chat.
   const handleCreateChat = useCallback(
-    (projectId: string, name: string): Promise<boolean> => {
+    (projectId: string): Promise<boolean> => {
       setNotice(null)
       return (async () => {
         try {
-          const chat = await app.chats.create(projectId, name)
+          const chat = await app.chats.create(projectId)
           applyChatsUpdate((previous) => {
             const existing = previous[projectId] ?? []
             return {
@@ -324,6 +326,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             }
           })
           setSelectedProjectId(projectId)
+          // A created chat must be visible in the tree: re-expand its project
+          // node even when the user collapsed it (Start new chat / New Chat,
+          // spec Behaviour 3).
+          setExpandedProjectIds((previous) => new Set(previous).add(projectId))
           setSelectedChatId(chat.id)
           setSelectionNonce((previous) => previous + 1)
           persistSelection(projectId, chat.id)
@@ -402,18 +408,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app, applyChatsUpdate, persistSelection],
   )
 
-  // "Start new chat" empty state (spec Behaviour 11): expand the selected
-  // project and hand the flow to the New Chat input in the left tree.
+  // "Start new chat" empty state (spec Behaviour 11): create a chat
+  // immediately for the selected project (spec Behaviour 3 — no naming form).
   const handleStartNewChat = useCallback((): void => {
-    setExpandedProjectIds((previous) => {
-      const next = new Set(previous)
-      if (selectedProjectId !== null) {
-        next.add(selectedProjectId)
-      }
-      return next
-    })
-    setNewChatFocusNonce((previous) => previous + 1)
-  }, [selectedProjectId])
+    if (selectedProjectId !== null) {
+      void handleCreateChat(selectedProjectId)
+    }
+  }, [handleCreateChat, selectedProjectId])
 
   const leftRegion = useResizableRegion({
     axis: 'x',
@@ -456,7 +457,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onAddProject={handleAddProject}
           onRemoveProject={handleRemoveProject}
           onCreateChat={handleCreateChat}
-          newChatFocusNonce={newChatFocusNonce}
           notice={notice}
         />
         <div className="flex min-w-0 flex-1 flex-col">

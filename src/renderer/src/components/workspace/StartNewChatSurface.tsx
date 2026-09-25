@@ -3,7 +3,8 @@ import { TEST_ID } from '../../lib/test-ids'
 
 // Empty state for a project without any chats (spec Behaviour 11): after the
 // last chat closes on terminal exit, the center surface offers a "Start new
-// chat" affordance that hands the flow to the New Chat input in the tree.
+// chat" affordance that creates a chat immediately (spec Behaviour 3 — the
+// name is the shell's display label, no naming form).
 
 export function StartNewChatSurface({
   onStartNewChat,

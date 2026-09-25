@@ -1,5 +1,4 @@
 import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
 import type { ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
@@ -7,8 +6,9 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ResizeHandle } from './ResizeHandle'
 
 // Left navigation (UX-UI §9–10): project rows expand to their chat lists,
-// with Add Project, Remove Project and a New Chat input under the active
-// project.
+// with Add Project, Remove Project and a New Chat button under the active
+// project. New Chat creates the chat immediately (no naming form — the name
+// is the shell's display label, spec Behaviour 3).
 
 interface LeftNavigationProps {
   width: number
@@ -24,9 +24,8 @@ interface LeftNavigationProps {
   onSelectChat: (projectId: string, chatId: string) => void
   onAddProject: () => void
   onRemoveProject: (projectId: string) => void
-  onCreateChat: (projectId: string, name: string) => Promise<boolean>
-  /** Bumped by the "Start new chat" empty state to focus the New Chat input. */
-  newChatFocusNonce: number
+  /** Creates a chat immediately with the shell-derived name (no form). */
+  onCreateChat: (projectId: string) => Promise<boolean>
   notice: string | null
 }
 
@@ -45,7 +44,6 @@ export function LeftNavigation({
   onAddProject,
   onRemoveProject,
   onCreateChat,
-  newChatFocusNonce,
   notice,
 }: LeftNavigationProps): React.JSX.Element {
   return (
@@ -162,11 +160,16 @@ export function LeftNavigation({
                         </ul>
                       )}
                       {isSelected ? (
-                        <NewChatForm
-                          projectId={project.id}
-                          onCreateChat={onCreateChat}
-                          focusNonce={newChatFocusNonce}
-                        />
+                        <button
+                          type="button"
+                          className="mt-1 w-full rounded px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                          data-testid={TEST_ID.newChatButton}
+                          onClick={() => {
+                            void onCreateChat(project.id)
+                          }}
+                        >
+                          New Chat
+                        </button>
                       ) : null}
                     </div>
                   ) : null}
@@ -186,72 +189,5 @@ export function LeftNavigation({
         testId={TEST_ID.leftResizeHandle}
       />
     </aside>
-  )
-}
-
-function NewChatForm({
-  projectId,
-  onCreateChat,
-  focusNonce,
-}: {
-  projectId: string
-  onCreateChat: (projectId: string, name: string) => Promise<boolean>
-  /** Non-zero bumps focus the input ("Start new chat" empty state). */
-  focusNonce: number
-}): React.JSX.Element {
-  const [name, setName] = useState('')
-  const mountedRef = useRef(true)
-  const inputRef = useRef<HTMLInputElement | null>(null)
-
-  // A create that resolves after unmount (chat switch mid-submit) must not
-  // write state into a dead component.
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
-
-  // The center "Start new chat" affordance hands the flow here (spec
-  // Behaviour 11): the name input takes focus when the signal arrives.
-  useEffect(() => {
-    if (focusNonce > 0) {
-      inputRef.current?.focus()
-    }
-  }, [focusNonce])
-
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
-    event.preventDefault()
-    void onCreateChat(projectId, name).then((created) => {
-      if (created && mountedRef.current) {
-        setName('')
-      }
-    })
-  }
-
-  return (
-    <form
-      className="mt-1 flex items-center gap-1 px-1 py-1"
-      data-testid={TEST_ID.newChatForm}
-      onSubmit={handleSubmit}
-    >
-      <input
-        ref={inputRef}
-        type="text"
-        className="min-w-0 flex-1 rounded border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 placeholder:text-neutral-500 focus:border-neutral-600 focus:outline-none"
-        data-testid={TEST_ID.newChatInput}
-        placeholder="New Chat"
-        aria-label="New chat name"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-      />
-      <button
-        type="submit"
-        className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
-        data-testid={TEST_ID.newChatSubmit}
-      >
-        Add
-      </button>
-    </form>
   )
 }

@@ -110,9 +110,9 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     ),
     serviceChannel('projects:remove', ['string'], (args) => services.projects.remove(args[0])),
     serviceChannel('chats:list', ['string'], (args) => services.chats.list(args[0])),
-    serviceChannel('chats:create', ['string', 'string'], (args) =>
-      services.chats.create(args[0], args[1]),
-    ),
+    // No name payload: the chat name is derived from the platform shell in
+    // main (spec Behaviour 3) and duplicates within a project are allowed.
+    serviceChannel('chats:create', ['string'], (args) => services.chats.create(args[0])),
     // Terminal-exit close flow (spec Behaviour 11): the renderer-driven chat
     // removal; never invoked on application quit.
     serviceChannel('chats:remove', ['string'], (args) => services.chats.remove(args[0])),

@@ -2,15 +2,23 @@ import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import type { ChatInfo } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
+import { shellDisplayName } from './terminal/terminal-service'
 
 // ChatService: chat list/create/remove scoped to a project (spec Business
-// rules: non-empty trimmed name, duplicates within one project rejected). A
-// chat is removed only by project removal (cascade) or by its terminal
-// exiting (spec Behaviour 11) — that policy lives in the IPC layer, this
-// service owns the row. Application quit never removes chats.
+// rules: the name is a non-empty shell-derived display label and duplicates
+// within one project are allowed — identity is the id). A chat is removed
+// only by project removal (cascade) or by its terminal exiting (spec
+// Behaviour 11) — that policy lives in the IPC layer, this service owns the
+// row. Application quit never removes chats.
 
 export interface ChatServiceDeps {
   db: Database.Database
+  /**
+   * Display name for newly created chats (the platform shell, spec
+   * Behaviour 3). Injectable for tests; defaults to the same shell
+   * configuration the PTY spawns with (process.platform-based).
+   */
+  chatName?: () => string
 }
 
 interface ChatRow {
@@ -30,9 +38,11 @@ function toInfo(row: ChatRow): ChatInfo {
 
 export class ChatService {
   private readonly db: Database.Database
+  private readonly chatName: () => string
 
   constructor(deps: ChatServiceDeps) {
     this.db = deps.db
+    this.chatName = deps.chatName ?? (() => shellDisplayName())
   }
 
   list(projectId: string): ChatInfo[] {
@@ -44,9 +54,14 @@ export class ChatService {
     return rows.map(toInfo)
   }
 
-  create(projectId: string, name: string): ChatInfo {
-    const trimmed = typeof name === 'string' ? name.trim() : ''
-    if (trimmed.length === 0) {
+  /**
+   * Creates a chat with no naming form (spec Behaviour 3): the name is the
+   * platform shell's display label (e.g. "PowerShell" on win32) and may
+   * repeat within a project — the generated id is the identity.
+   */
+  create(projectId: string): ChatInfo {
+    const name = this.chatName().trim()
+    if (name.length === 0) {
       throw new AppError('validation', 'Chat name must not be empty.', 'chats:create')
     }
 
@@ -59,24 +74,13 @@ export class ChatService {
     try {
       this.db
         .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
-        .run(id, projectId, trimmed, new Date().toISOString())
+        .run(id, projectId, name, new Date().toISOString())
     } catch (error) {
-      if (
-        error instanceof Error &&
-        'code' in error &&
-        (error as NodeJS.ErrnoException).code === 'SQLITE_CONSTRAINT_UNIQUE'
-      ) {
-        throw new AppError(
-          'conflict',
-          `A chat named "${trimmed}" already exists in this project.`,
-          'chats:create',
-        )
-      }
       console.error('[sqlite] chats:create failed:', error)
       throw new AppError('sqlite', 'Database error.', 'chats:create')
     }
 
-    return { id, projectId, name: trimmed }
+    return { id, projectId, name }
   }
 
   get(chatId: string): ChatInfo | null {

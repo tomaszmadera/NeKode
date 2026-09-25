@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AppError } from '../../../shared/ipc-error'
 import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-service'
-import { TerminalService } from './terminal-service'
+import { shellDisplayName, TerminalService } from './terminal-service'
 
 // Terminal service unit tests with a fake PTY injected (plan Stage 3): no
 // real processes are spawned in vitest. Covers lazy spawn keyed by chatId,
@@ -272,5 +272,27 @@ describe('terminal service (fake PTY)', () => {
     unsubscribe()
     ptys[0].emitData('b')
     expect(seen).toEqual(['t1:a'])
+  })
+})
+
+describe('shellDisplayName', () => {
+  it('derives the chat label from the shell the PTY spawns with', () => {
+    expect(shellDisplayName({ file: 'powershell.exe', args: ['-NoLogo'] })).toBe('PowerShell')
+    expect(
+      shellDisplayName({
+        file: 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe',
+        args: [],
+      }),
+    ).toBe('PowerShell')
+    expect(shellDisplayName({ file: '/bin/zsh', args: [] })).toBe('zsh')
+    expect(shellDisplayName({ file: 'pwsh.exe', args: [] })).toBe('pwsh')
+    expect(shellDisplayName({ file: '/usr/bin/fish', args: [] })).toBe('fish')
+  })
+
+  it('defaults to the platform shell configuration', () => {
+    // The default follows the same rule the PTY spawn uses (process.platform).
+    const expected = process.platform === 'win32' ? 'PowerShell' : shellDisplayName()
+    expect(shellDisplayName()).toBe(expected)
+    expect(shellDisplayName().length).toBeGreaterThan(0)
   })
 })

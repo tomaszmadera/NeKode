@@ -40,7 +40,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
     },
     chats: {
       list: (projectId) => chats.list(projectId),
-      create: (projectId, name) => chats.create(projectId, name),
+      create: (projectId) => chats.create(projectId),
       remove: (chatId) => chats.remove(chatId),
     },
     state: {

@@ -13,6 +13,10 @@ export class MockTerminal {
   written: unknown[] = []
   loadedAddons: unknown[] = []
   disposed = false
+  /** Normal buffer by default; tests flip `type` to 'alternate' (vim/htop). */
+  buffer = { active: { type: 'normal' as 'normal' | 'alternate' } }
+  /** The registered custom key handler (Ctrl+D interception, spec AC9). */
+  keyHandler: ((event: KeyboardEvent) => boolean) | null = null
   private dataListeners = new Set<(data: string) => void>()
 
   constructor(options?: unknown) {
@@ -39,6 +43,10 @@ export class MockTerminal {
 
   loadAddon = vi.fn((addon: unknown): void => {
     this.loadedAddons.push(addon)
+  })
+
+  attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean): void => {
+    this.keyHandler = handler
   })
 
   dispose = vi.fn((): void => {
