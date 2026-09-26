@@ -24,6 +24,12 @@
       "scopes": ["product"],
       "tags": ["codex", "review", "usage-limit", "fallback", "subagent"],
       "path": ".agents/lessons/items/external-reviewer-usage-limit-fallback.md"
+    },
+    {
+      "id": "powershell-psreadline-key-chords-self-insert",
+      "scopes": ["product"],
+      "tags": ["powershell", "psreadline", "conpty", "xterm", "terminal", "ctrl-d", "windows"],
+      "path": ".agents/lessons/items/powershell-psreadline-key-chords-self-insert.md"
     }
   ]
 }
