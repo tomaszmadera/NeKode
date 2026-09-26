@@ -50,6 +50,24 @@ const assertSafePath: Validator = (value, label) => {
   }
 }
 
+/**
+ * Project-relative path arguments (files:*). Shape only: a non-empty string
+ * without NUL bytes. Traversal (`..`), absolute inputs and symlinks leaving
+ * the project root are containment violations handled by the file service —
+ * they must surface as the not-found error, never as a validation error
+ * (spec AC7: indistinguishable from "not found").
+ */
+const assertRelativePath: Validator = (value, label) => {
+  assertString(value, label)
+  const path = value as string
+  if (path.includes('\u0000')) {
+    fail(label, 'must not contain NUL characters')
+  }
+  if (path.length === 0) {
+    fail(label, 'must be a non-empty relative path')
+  }
+}
+
 function fail(label: string, rule: string): never {
   throw new ValidationError(`${label} ${rule}`)
 }
@@ -69,7 +87,7 @@ export interface ValidatedChannel {
 }
 
 /** Type list for each positional argument of a channel payload. */
-type ArgType = 'string' | 'number' | 'path'
+type ArgType = 'string' | 'number' | 'path' | 'relativePath' | 'relativePath?'
 
 /**
  * Channel backed by a real service. Payloads must match the declared arity
@@ -90,6 +108,12 @@ function serviceChannel(
           assertString(payload[index], label)
         } else if (type === 'path') {
           assertSafePath(payload[index], label)
+        } else if (type === 'relativePath') {
+          assertRelativePath(payload[index], label)
+        } else if (type === 'relativePath?') {
+          if (payload[index] !== null) {
+            assertRelativePath(payload[index], label)
+          }
         } else {
           assertFiniteNumber(payload[index], label)
         }
@@ -132,6 +156,19 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     ),
     // Read-only git status; failures degrade to "no git" inside the service.
     serviceChannel('git:status', ['path'], (args) => services.git.getStatus(args[0])),
+    // Project files (spec Data/API): read-only tree listing, preview
+    // classification and the single OS action (openExternal). Relative-path
+    // shape is validated here; containment (`..`, absolute, symlinks leaving
+    // the root) is enforced by the service and surfaces as not_found.
+    serviceChannel('files:list', ['string', 'relativePath?'], (args) =>
+      services.files.list(args[0], args[1] as string | null),
+    ),
+    serviceChannel('files:read', ['string', 'relativePath'], (args) =>
+      services.files.read(args[0], args[1]),
+    ),
+    serviceChannel('files:openExternal', ['string', 'relativePath'], (args) =>
+      services.files.openExternal(args[0], args[1]),
+    ),
   ]
 }
 

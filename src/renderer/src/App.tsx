@@ -1,8 +1,11 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
+import type { ChatInfo, FileEntry, ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
+import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
+import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
+import { ProjectFilesSurface } from './components/files/ProjectFilesSurface'
 import { CenterHeader } from './components/layout/CenterHeader'
 import { LeftNavigation } from './components/layout/LeftNavigation'
 import { ResizeHandle } from './components/layout/ResizeHandle'
@@ -57,6 +60,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [notice, setNotice] = useState<string | null>(null)
   const [leftWidth, setLeftWidth] = useState(LEFT_REGION_SIZE.default)
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
+  // Project Files mode (spec Behaviour 1–2, 12): the project whose tree is
+  // shown in the left panel, or null for the Projects/Chats navigation. The
+  // mode never touches the chat/project selection — `← Projects` restores the
+  // center surface that was active before entry (Behaviour 12). Per-project
+  // tree state lives in filesSessions for the app session only (Behaviour 14).
+  const [filesProjectId, setFilesProjectId] = useState<string | null>(null)
+  const [filesSessions, setFilesSessions] = useState<Record<string, ProjectFilesSession>>({})
   // Projects removed in this session: pending chat loads for them are stale.
   const removedProjectIdsRef = useRef<Set<string>>(new Set())
   // Synchronous mirror of chatsByProject: every mutation goes through
@@ -293,6 +303,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           next.delete(projectId)
           return next
         })
+        // Drop the removed project's file-tree session (Behaviour 14) and
+        // leave Project Files mode if its tree is on screen.
+        setFilesSessions((previous) => {
+          if (!(projectId in previous)) {
+            return previous
+          }
+          const next = { ...previous }
+          delete next[projectId]
+          return next
+        })
+        setFilesProjectId((current) => (current === projectId ? null : current))
         if (projectId === selectedProjectId) {
           setSelectedProjectId(null)
           setSelectedChatId(null)
@@ -308,6 +329,111 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     },
     [app, applyChatsUpdate, persistSelection, selectedProjectId],
   )
+
+  // --- Project Files mode (spec Behaviour 1–2, 6, 12, 14–15) ---------------
+
+  const updateFilesSession = useCallback(
+    (projectId: string, updater: (session: ProjectFilesSession) => ProjectFilesSession): void => {
+      setFilesSessions((previous) => ({
+        ...previous,
+        [projectId]: updater(previous[projectId] ?? emptyProjectFilesSession()),
+      }))
+    },
+    [],
+  )
+
+  // One directory read per expansion (spec Behaviour 6): the children are
+  // cached for the session, so collapsing and re-expanding never re-reads.
+  const loadFilesDirectory = useCallback(
+    (projectId: string, relativePath: string): void => {
+      void app.files
+        .list(projectId, relativePath === '' ? null : relativePath)
+        .then((entries: FileEntry[]) => {
+          // A load resolving after its project was removed is stale.
+          if (removedProjectIdsRef.current.has(projectId)) {
+            return
+          }
+          updateFilesSession(projectId, (session) => ({
+            ...session,
+            childrenByPath: { ...session.childrenByPath, [relativePath]: entries },
+            treeError: null,
+          }))
+        })
+        .catch((error: unknown) => {
+          if (removedProjectIdsRef.current.has(projectId)) {
+            return
+          }
+          // Inline tree error (spec Errors): the app keeps working and
+          // `← Projects` always exits the mode.
+          updateFilesSession(projectId, (session) => ({
+            ...session,
+            treeError: errorMessage(error, 'Failed to load project files.'),
+          }))
+        })
+    },
+    [app, updateFilesSession],
+  )
+
+  // Entering the mode is per project and idempotent (spec Behaviour 4): the
+  // retained expansion state and last selected file survive the round-trip.
+  const handleOpenProjectFiles = useCallback(
+    (projectId: string): void => {
+      setNotice(null)
+      setFilesProjectId(projectId)
+      const session = filesSessions[projectId] ?? emptyProjectFilesSession()
+      if (session.childrenByPath[''] === undefined) {
+        loadFilesDirectory(projectId, '')
+      }
+    },
+    [filesSessions, loadFilesDirectory],
+  )
+
+  const handleCloseProjectFiles = useCallback((): void => {
+    setNotice(null)
+    setFilesProjectId(null)
+  }, [])
+
+  const handleFilesToggleDirectory = useCallback(
+    (relativePath: string): void => {
+      if (filesProjectId === null) {
+        return
+      }
+      const projectId = filesProjectId
+      const session = filesSessions[projectId] ?? emptyProjectFilesSession()
+      const expandedPaths = new Set(session.expandedPaths)
+      if (expandedPaths.has(relativePath)) {
+        // Collapse keeps the cached children and nested expansion state.
+        expandedPaths.delete(relativePath)
+        updateFilesSession(projectId, (current) => ({ ...current, expandedPaths }))
+        return
+      }
+      expandedPaths.add(relativePath)
+      updateFilesSession(projectId, (current) => ({
+        ...current,
+        expandedPaths,
+        treeError: null,
+      }))
+      if (session.childrenByPath[relativePath] === undefined) {
+        loadFilesDirectory(projectId, relativePath)
+      }
+    },
+    [filesProjectId, filesSessions, loadFilesDirectory, updateFilesSession],
+  )
+
+  const handleFilesSelectFile = useCallback(
+    (relativePath: string): void => {
+      if (filesProjectId === null) {
+        return
+      }
+      updateFilesSession(filesProjectId, (session) => ({ ...session, selectedPath: relativePath }))
+    },
+    [filesProjectId, updateFilesSession],
+  )
+
+  // Failed "Open externally" (spec Errors): a notice, never a silent drop.
+  const handleFilesOpenExternalError = useCallback((message: string): void => {
+    setNotice(message)
+  }, [])
 
   // New Chat (spec Behaviour 3): created immediately with no naming form —
   // the name comes from the platform shell in main and duplicates are
@@ -434,6 +560,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   })
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null
+  const filesProject =
+    filesProjectId === null
+      ? null
+      : (projects.find((project) => project.id === filesProjectId) ?? null)
+  const filesSession =
+    filesProjectId === null
+      ? emptyProjectFilesSession()
+      : (filesSessions[filesProjectId] ?? emptyProjectFilesSession())
 
   return (
     <div
@@ -442,39 +576,71 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     >
       <TopBar />
       <div className="flex min-h-0 flex-1">
-        <LeftNavigation
-          width={leftWidth}
-          onResizeStart={leftRegion.startResize}
-          onResizeNudge={leftRegion.nudge}
-          projects={projects}
-          chatsByProject={chatsByProject}
-          expandedProjectIds={expandedProjectIds}
-          selectedProjectId={selectedProjectId}
-          selectedChatId={selectedChatId}
-          onSelectProject={handleSelectProject}
-          onToggleProject={handleToggleProject}
-          onSelectChat={handleSelectChat}
-          onAddProject={handleAddProject}
-          onRemoveProject={handleRemoveProject}
-          onCreateChat={handleCreateChat}
-          notice={notice}
-        />
+        {filesProject !== null ? (
+          <ProjectFilesPanel
+            width={leftWidth}
+            onResizeStart={leftRegion.startResize}
+            onResizeNudge={leftRegion.nudge}
+            project={filesProject}
+            session={filesSession}
+            onBack={handleCloseProjectFiles}
+            onToggleDirectory={handleFilesToggleDirectory}
+            onSelectFile={handleFilesSelectFile}
+            notice={notice}
+          />
+        ) : (
+          <LeftNavigation
+            width={leftWidth}
+            onResizeStart={leftRegion.startResize}
+            onResizeNudge={leftRegion.nudge}
+            projects={projects}
+            chatsByProject={chatsByProject}
+            expandedProjectIds={expandedProjectIds}
+            selectedProjectId={selectedProjectId}
+            selectedChatId={selectedChatId}
+            onSelectProject={handleSelectProject}
+            onToggleProject={handleToggleProject}
+            onSelectChat={handleSelectChat}
+            onAddProject={handleAddProject}
+            onRemoveProject={handleRemoveProject}
+            onOpenProjectFiles={handleOpenProjectFiles}
+            onCreateChat={handleCreateChat}
+            notice={notice}
+          />
+        )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <CenterHeader app={app} project={selectedProject} />
+          <CenterHeader app={app} project={filesProject ?? selectedProject} />
           <main className="flex min-h-0 flex-1 flex-col" data-testid={TEST_ID.centerSurface}>
-            <ChatWorkspace
-              app={app}
-              projects={projects}
-              chatsByProject={chatsByProject}
-              chatsLoaded={
-                selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
-              }
-              selectedProjectId={selectedProjectId}
-              selectedChatId={selectedChatId}
-              selectionNonce={selectionNonce}
-              onChatClosed={handleChatClosed}
-              onStartNewChat={handleStartNewChat}
-            />
+            {filesProject !== null ? (
+              <ProjectFilesSurface
+                app={app}
+                project={filesProject}
+                selectedPath={filesSession.selectedPath}
+                onOpenExternalError={handleFilesOpenExternalError}
+              />
+            ) : null}
+            {/* Chat sessions stay mounted (hidden) while Project Files mode is
+                open: PTY processes and xterm scrollback survive the round-trip
+                (spec Behaviour 12 / AC6). */}
+            <div
+              className="flex min-h-0 flex-1 flex-col"
+              style={{ display: filesProject !== null ? 'none' : 'flex' }}
+              data-testid={TEST_ID.chatSurfaceHost}
+            >
+              <ChatWorkspace
+                app={app}
+                projects={projects}
+                chatsByProject={chatsByProject}
+                chatsLoaded={
+                  selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
+                }
+                selectedProjectId={selectedProjectId}
+                selectedChatId={selectedChatId}
+                selectionNonce={selectionNonce}
+                onChatClosed={handleChatClosed}
+                onStartNewChat={handleStartNewChat}
+              />
+            </div>
           </main>
         </div>
         {/* Right region is a real five-region sibling (SDD §7), hidden by default. */}

@@ -4,6 +4,7 @@ import { runMigrations } from '../db/migrations'
 import type { AppServices } from '../ipc/service-registry'
 import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
+import { FilesService } from './files/files-service'
 import { GitService } from './git/git-service'
 import { ProjectService } from './project-service'
 import { createNodePty } from './terminal/node-pty-factory'
@@ -12,10 +13,17 @@ import { TerminalService } from './terminal/terminal-service'
 // Wires the persistence, terminal and git stacks to the typed service registry
 // consumed by the IPC handlers. DB path is injected so tests use :memory: or a
 // temp dir; the terminal/git services are constructed here with their real
-// OS-facing implementations (node-pty, git CLI).
+// OS-facing implementations (node-pty, git CLI). The file service's external
+// open is injected too (shell.openPath in main/index.ts) — this module stays
+// free of electron imports.
 
 export interface CreateServicesOptions {
   dbPath: string
+  /**
+   * OS default-application open (shell.openPath). Resolves '' on success and
+   * an error description on failure (the Electron contract).
+   */
+  openExternal: (absolutePath: string) => Promise<string>
 }
 
 export function createServices(options: CreateServicesOptions): AppServices {
@@ -26,6 +34,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
   const state = new AppStateService({ db })
   const terminals = new TerminalService({ createPty: createNodePty })
   const git = new GitService()
+  const files = new FilesService({ projects, openExternal: options.openExternal })
   return {
     projects: {
       // Stale selection keys are cleaned on every list read (spec Edge cases:
@@ -58,6 +67,11 @@ export function createServices(options: CreateServicesOptions): AppServices {
     },
     git: {
       getStatus: (projectPath) => git.getStatus(projectPath),
+    },
+    files: {
+      list: (projectId, relativePath) => files.list(projectId, relativePath),
+      read: (projectId, relativePath) => files.read(projectId, relativePath),
+      openExternal: (projectId, relativePath) => files.openExternal(projectId, relativePath),
     },
   }
 }

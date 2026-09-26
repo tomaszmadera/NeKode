@@ -24,6 +24,7 @@ export const TEST_ID = {
   headerGitStatus: 'header-git-status',
   headerGitNone: 'header-git-none',
   chatWorkspace: 'chat-workspace',
+  chatSurfaceHost: 'chat-surface-host',
   chatWorkspaceTitle: 'chat-workspace-title',
   terminalHost: 'terminal-host',
   terminalView: 'terminal-view',
@@ -31,6 +32,20 @@ export const TEST_ID = {
   terminalRetry: 'terminal-retry',
   startNewChatState: 'start-new-chat-state',
   startNewChatButton: 'start-new-chat-button',
+  projectContextMenu: 'project-context-menu',
+  projectFilesPanel: 'project-files-panel',
+  filesBackButton: 'files-back-button',
+  filesProjectName: 'files-project-name',
+  fileTree: 'file-tree',
+  fileTreeError: 'file-tree-error',
+  filesViewLabel: 'files-view-label',
+  filePreviewEmpty: 'file-preview-empty',
+  filePreviewBreadcrumb: 'file-preview-breadcrumb',
+  filePreviewError: 'file-preview-error',
+  filePreviewTooLarge: 'file-preview-too-large',
+  filePreviewBinary: 'file-preview-binary',
+  filePreviewOpenExternal: 'file-preview-open-external',
+  filePreviewMonaco: 'file-preview-monaco',
 } as const
 
 /** Test ids that depend on record ids (projects/chats/sessions). */
@@ -39,7 +54,10 @@ export const testIdFor = {
   projectSelect: (projectId: string): string => `project-select-${projectId}`,
   projectToggle: (projectId: string): string => `project-toggle-${projectId}`,
   projectChats: (projectId: string): string => `project-chats-${projectId}`,
+  projectFiles: (projectId: string): string => `project-files-${projectId}`,
   removeProject: (projectId: string): string => `remove-project-${projectId}`,
   chatRow: (chatId: string): string => `chat-row-${chatId}`,
   terminalView: (chatId: string): string => `terminal-view-${chatId}`,
+  /** File tree entry row (entry ids carry their '/'-separated relative path). */
+  fileEntry: (relativePath: string): string => `file-entry-${relativePath}`,
 }

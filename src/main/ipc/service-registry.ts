@@ -1,4 +1,11 @@
-import type { ChatInfo, GitStatus, ProjectInfo, Unsubscribe } from '../../shared/ipc-contract'
+import type {
+  ChatInfo,
+  FileEntry,
+  FilePreview,
+  GitStatus,
+  ProjectInfo,
+  Unsubscribe,
+} from '../../shared/ipc-contract'
 
 // Real service registry (Stage 2: persistence; Stage 3: terminals + git;
 // Stage 4: the chat entity). Terminal data/exit events are pushed to the
@@ -39,5 +46,13 @@ export interface AppServices {
   }
   git: {
     getStatus(projectPath: string): Promise<GitStatus>
+  }
+  files: {
+    /** One directory level of the project tree (null = project root). */
+    list(projectId: string, relativePath: string | null): Promise<FileEntry[]>
+    /** Read-only preview classification of one project file. */
+    read(projectId: string, relativePath: string): Promise<FilePreview>
+    /** Opens the file with the OS default application (main-process only). */
+    openExternal(projectId: string, relativePath: string): Promise<void>
   }
 }

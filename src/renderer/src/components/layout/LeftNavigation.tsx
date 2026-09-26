@@ -1,14 +1,23 @@
 import type React from 'react'
+import { useEffect, useState } from 'react'
 import type { ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { NoticeBanner } from './NoticeBanner'
 import { ResizeHandle } from './ResizeHandle'
 
 // Left navigation (UX-UI §9–10): project rows expand to their chat lists,
-// with Add Project, Remove Project and a New Chat button under the active
-// project. New Chat creates the chat immediately (no naming form — the name
-// is the shell's display label, spec Behaviour 3).
+// with Add Project and a New Chat button under the active project. New Chat
+// creates the chat immediately (no naming form — the name is the shell's
+// display label, spec Behaviour 3).
+//
+// Project Files entry (spec Behaviour 1): the row shows a "Files" action on
+// hover/focus (tooltip "Show project files"); clicking the row itself only
+// selects the project and expands/collapses its chat list — it never opens
+// Project Files. Project removal lives in the row's context menu only (right
+// click / ContextMenu key / Shift+F10, spec Behaviour 3): the row has no
+// remove button.
 
 interface LeftNavigationProps {
   width: number
@@ -24,9 +33,17 @@ interface LeftNavigationProps {
   onSelectChat: (projectId: string, chatId: string) => void
   onAddProject: () => void
   onRemoveProject: (projectId: string) => void
+  /** Enters Project Files mode for the project (spec Behaviour 1). */
+  onOpenProjectFiles: (projectId: string) => void
   /** Creates a chat immediately with the shell-derived name (no form). */
   onCreateChat: (projectId: string) => Promise<boolean>
   notice: string | null
+}
+
+interface ContextMenuState {
+  projectId: string
+  x: number
+  y: number
 }
 
 export function LeftNavigation({
@@ -43,9 +60,32 @@ export function LeftNavigation({
   onSelectChat,
   onAddProject,
   onRemoveProject,
+  onOpenProjectFiles,
   onCreateChat,
   notice,
 }: LeftNavigationProps): React.JSX.Element {
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+
+  // Escape closes the context menu (the overlay handles pointer dismissal).
+  useEffect(() => {
+    if (contextMenu === null) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setContextMenu(null)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [contextMenu])
+
+  function openContextMenu(projectId: string, x: number, y: number): void {
+    setContextMenu({ projectId, x, y })
+  }
+
   return (
     <aside
       className={cn('flex shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/40')}
@@ -65,15 +105,7 @@ export function LeftNavigation({
           Add Project
         </button>
       </div>
-      {notice !== null ? (
-        <p
-          className="mx-2 rounded border border-red-900 bg-red-950/40 px-2 py-1.5 text-xs leading-relaxed text-red-300"
-          data-testid={TEST_ID.actionNotice}
-          role="alert"
-        >
-          {notice}
-        </p>
-      ) : null}
+      <NoticeBanner notice={notice} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {projects.length === 0 ? (
           <p
@@ -90,13 +122,27 @@ export function LeftNavigation({
               const chats = chatsByProject[project.id] ?? []
               return (
                 <li key={project.id} className="py-0.5">
+                  {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'flex items-center gap-1 rounded px-1 py-1',
+                      'group flex items-center gap-1 rounded px-1 py-1',
                       isSelected && 'bg-neutral-800/80',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      openContextMenu(project.id, event.clientX, event.clientY)
+                    }}
+                    onKeyDown={(event) => {
+                      // Keyboard context-menu invocation (spec Behaviour 3):
+                      // the ContextMenu key or Shift+F10 opens the menu.
+                      if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+                        event.preventDefault()
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        openContextMenu(project.id, rect.left, rect.bottom)
+                      }
+                    }}
                   >
                     <button
                       type="button"
@@ -119,12 +165,13 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-red-300"
-                      data-testid={testIdFor.removeProject(project.id)}
-                      aria-label={`Remove Project ${project.name}`}
-                      onClick={() => onRemoveProject(project.id)}
+                      className="rounded px-1.5 py-0.5 text-xs text-neutral-500 opacity-0 hover:bg-neutral-800 hover:text-neutral-100 focus-visible:opacity-100 group-hover:opacity-100"
+                      data-testid={testIdFor.projectFiles(project.id)}
+                      title="Show project files"
+                      aria-label={`Show project files for ${project.name}`}
+                      onClick={() => onOpenProjectFiles(project.id)}
                     >
-                      Remove
+                      Files
                     </button>
                   </div>
                   {isExpanded ? (
@@ -179,6 +226,17 @@ export function LeftNavigation({
           </ul>
         )}
       </div>
+      {contextMenu !== null ? (
+        <ContextMenuOverlay
+          state={contextMenu}
+          projectName={projects.find((project) => project.id === contextMenu.projectId)?.name ?? ''}
+          onClose={() => setContextMenu(null)}
+          onRemoveProject={(projectId) => {
+            setContextMenu(null)
+            onRemoveProject(projectId)
+          }}
+        />
+      ) : null}
       <ResizeHandle
         axis="x"
         size={width}
@@ -189,5 +247,62 @@ export function LeftNavigation({
         testId={TEST_ID.leftResizeHandle}
       />
     </aside>
+  )
+}
+
+/**
+ * Project row context menu (spec Behaviour 3): the only place the Remove
+ * Project action lives now. Rendered as a fixed overlay so the menu closes on
+ * any outside click or context-menu gesture.
+ */
+function ContextMenuOverlay({
+  state,
+  projectName,
+  onClose,
+  onRemoveProject,
+}: {
+  state: ContextMenuState
+  projectName: string
+  onClose: () => void
+  onRemoveProject: (projectId: string) => void
+}): React.JSX.Element {
+  return (
+    <div
+      role="menu"
+      aria-label={`Project ${projectName}`}
+      className="fixed inset-0 z-40"
+      onClick={(event) => {
+        // Only the backdrop dismisses: menu-item clicks run their own action.
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          onClose()
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+    >
+      <div
+        className="absolute min-w-40 rounded border border-neutral-700 bg-neutral-900 py-1 shadow-lg"
+        style={{ left: state.x, top: state.y }}
+        data-testid={TEST_ID.projectContextMenu}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          className="w-full px-3 py-1.5 text-left text-xs text-red-300 hover:bg-neutral-800"
+          data-testid={testIdFor.removeProject(state.projectId)}
+          aria-label={`Remove Project ${projectName}`}
+          onClick={() => onRemoveProject(state.projectId)}
+        >
+          Remove Project
+        </button>
+      </div>
+    </div>
   )
 }

@@ -58,7 +58,19 @@ export function registerAppIpcHandlers(
     ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...payload: unknown[]) => {
       try {
         assertTrustedSender(event, channel)
-        return run(payload)
+        const result = run(payload)
+        if (result instanceof Promise) {
+          // Async service failures serialize like sync ones: the typed
+          // AppError becomes the transport payload, never a raw rejection
+          // (spec Errors: no raw stack traces over the bridge).
+          return result.catch((error: unknown) => {
+            if (!(error instanceof AppError)) {
+              console.error(`[ipc] ${channel} failed:`, error)
+            }
+            throw toTransportError(error, channel)
+          })
+        }
+        return result
       } catch (error) {
         // Full error details stay on the main side; the renderer receives the
         // sanitized typed payload (ipc-error.ts).
