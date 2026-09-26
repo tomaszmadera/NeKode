@@ -1,16 +1,16 @@
 ---
 id: mvp-core-shell
 schema_version: 2
-status: active
+status: completed
 intent: feature
 complexity: large
 durability: recorded
 current_phase: Phase 2
-current_step: Phase 2.5
+current_step: none
 updated: 2026-09-26
 branch: main
 worktree: current
-next_action: Retest user-gate punktow 3/5 po korekcie rundy 5 (Ctrl+D po tekscie = delete-char bez zatruwania linii, Ctrl+U = kill-line) w pnpm dev / scripts/start.ps1; po pass: task-close z verification subject + verify-full
+next_action: none
 blockers: none
 ---
 
@@ -39,7 +39,7 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 - [x] Phase 2.2 - Stage 1: Application shell and typed IPC skeleton
 - [x] Phase 2.3 - Stage 2: Persistence services and project/chat data flow
 - [x] Phase 2.4 - Stage 3: Chat terminal with session preservation (accepted 2026-09-25: AC1-6 pass; kontrola exit -> zmiana kontraktu, realizowana w Phase 2.5)
-- [ ] Phase 2.5 - Stage 4: Chat entity and terminal-exit chat closing (acceptance-gate correction)
+- [x] Phase 2.5 - Stage 4: Chat entity and terminal-exit chat closing (acceptance-gate correction). Acceptance punktow 3/5 (Ctrl+D/Ctrl+U w GUI) deferred-by-decision do BACKLOG.md 2026-09-26
 
 ## Decisions
 
@@ -52,6 +52,7 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 - Ctrl+D (decyzja uzytkownika 2026-09-25): zamyka czat tylko przy pustej linii wejsciowej poza programami pelnoekranowymi (analogia do Linuksa przy promptcie); w przeciwnym razie skrot przechodzi do PTY jako EOF. Doprecyzowanie (2026-09-25, needs-confirmation z review): przy pustym wierszu Ctrl+D zamyka czat takze wewnatrz programow normalnego bufora (np. python REPL) — uzytkownik wybral proste, przewidywalne zachowanie; wyjscie z REPL-a przez exit()/Ctrl+Z+Enter.
 - Klawisze Ctrl+D/Ctrl+U (nowela kontraktu 2026-09-26, decyzja uzytkownika - wariant rekomendowany 1+1): poza buforem alternatywnym Ctrl+D przy pustej linii zamyka czat, przy niepustej emuluje readline delete-char (bajt klawisza Delete, sekwencja ESC[3~), a Ctrl+U emuluje unix-line-discard (bajty DEL za komorki wejscia przed kursorem; tekst za kursorem zostaje). Surowe bajty sterujace 0x04/0x15 nie sa przepuszczane do PTY poza buforem alternatywnym (tam oba klawisze przechodza nietkniete) - powloka uzytkownika (PSReadLine, Windows edit mode) nie ma na nie wiazan i wstawia je do linii jako widoczne ^D/^U, zatruwajac linie oceniana przez brame pustosci. Dowody: przechwyty realnego ConPTY tmp/repro2-*.bin; empirycznie potwierdzone ESC[3~ = delete-char (no-op na koncu linii), DEL = kasowanie znaku.
 - Auto-wybor nastepcy po zamknieciu czatu liczy sie jako zdarzenie selekcji dla cyklu zycia sesji (zgodne z Behaviour 11 "the app then selects the next chat") — moze wiec podjac jedna probe spawnu dla czatu z bledem spawnu; zasada Stage 3 (respawn przy jawnej re-selekcji) chroni przed respawnem od odswiezenia danych, nie przed nawigacja. Potwierdzone przez koordynatora 2026-09-25 (review needs-confirmation).
+- Acceptance punktow 3/5 (Ctrl+D/Ctrl+U w GUI) odlozone do BACKLOG.md decyzja uzytkownika 2026-09-26 (po fail retestu runda 5 z pelna emulacja readline, commit abc0219); zamkniecie zadania uznaje te punkty za deferred-by-decision, NIE za spelnione. Kod zostaje (emulacja line-edit jest blizsza kontraktowi niz stare passthrough 0x04/0x15 zatruwajace linie).
 - Klasyfikacja: intent feature, complexity large (4 etapy: shell/IPC, persystencja, terminal, korekta acceptance - model czatu).
 
 ## Changed files
@@ -101,7 +102,30 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 | Korekta acceptance runda 5 - emulacja line-edit Ctrl+D/Ctrl+U (koordynator w sesji, root-cause fix) + bramki | pass | Kontrakt zmieniony (decyzja uzytkownika 2026-09-26, wariant rekomendowany 1+1): poza buforem alternatywnym Ctrl+D przy niepustej linii = emulacja readline delete-char (bajt klawisza Delete '\x1b[3~'; no-op na koncu linii - dowody s7/s9 z realnego ConPTY), Ctrl+U = emulacja unix-line-discard (N x '\x7f' za komorki wejscia miedzy baza promptu a kursorem; tekst za kursorem zostaje; N=0 i brak wysylki gdy wiersz nie zaczyna sie od bazy - zero slepych backspace'y); surowe \x04/\x15 nigdy nie trafiaja do PTY poza buforem alternatywnym (tam oba klawisze przechodza nietkniete - vim/htop). Zmiany: ChatTerminal.tsx (promptBaseEndX, sendToPty z freeze bazy, inputCellsBeforeCursor, przebudowany keydown handler), ChatTerminal.test.tsx (regresje: wczesniejszy Ctrl+D nie zatruje przeplywu ptk 3; Ctrl+U wysyla dokladnie N backspace'y i nigdy \x15; Ctrl+U/\x15 w alternate buffer przechodzi; dostosowane oczekiwania passthrough->emulacja w history/paste/AltGr/double-Ctrl+D), spec.md Behaviour 11 + AC9. Discrimination: asercje na dokladnych bajtach (zamiana emulacji na \x04/\x15 = fail testow). Bramki koordynatora: lint 0, tc 0, test 182/182 (17 plikow, +1), build 0. Niezalezny review subagent (deleg_dbdee1df) w toku |
 | Korekta acceptance runda 5 - hardening po review (koordynator) | pass | Zamkniete 3 z 5 findings review: (1) luka pokrycia - strażnik 'brak slepych backspace'y' (before.startsWith(promptBase)) mial 0 testow, mutacja przezyla -> nowy test (wiersz przemalowany przez wyjscie programu, dluzszy niz baza: Ctrl+U wysyla 0 bajtow) + wlasna mutacja strażnika = dokladnie 1 fail, przywrocenie 24/24; (2) liczenie regionu Ctrl+U: komorki -> znaki (before.slice(promptBase.length).length = jednostka kasowana przez backspace powloki), usuniety promptBaseEndX, udokumentowane bezpieczne luki (zawijana linia = martwy Ctrl+U; znaki wielokodowe); (3) spec.md Behaviour 11: usunieta zbita fraza 'The app then the terminal view...'. Bramki po hardeningu: lint 0, tc 0, test 183/183 (17 plikow, +1), build 0 |
 | Independent review korekty acceptance runda 5 (subagent-reviewer deleg_dbdee1df) | pass | 0 blocking; bramki reviewera zielone (lint/tc/test 182/182/build); test_honesty mutacjami: zamiana emulacji Ctrl+D na 0x04 lapana przez 4 testy, Ctrl+U na 0x15 przez 2 testy (przywrocenie = zielone, hash plikow identyczny); poprawnosc kontraktu potwierdzona (bajty zgodne z dowodami ConPTY, maszyna freeze/reset spojna, brak sciezki zamykajacej czat przy niepustej linii); dirty set = 3 pliki produktowe + rekordy koordynatora, brak niezadeklarowanych. 5 findings non-blocking/needs-confirmation (1-3 zamkniete w hardeningu powyżej, 4: pusta baza ('',0) self-consistent - udokumentowane, 5: zbita fraza spec - zamknieta). Werdykt: pass |
+| Acceptance retest user-gate 2026-09-26 runda 5 (punkty 3/5) | fail | Uzytkownik: 'nie dziala' (bez szczegolow) mimo wariantu 1+1 (commit abc0219). Decyzja uzytkownika 2026-09-26: nie naprawiac teraz - odlozyc do BACKLOG.md na koniec ('szkoda mi czasu'). Punkty 3/5 acceptance = deferred-by-decision, NIE spelnione; kod zostaje (emulacja line-edit blizsza kontraktowi niz stare passthrough 0x04/0x15 zatruwajace linie). Przyczyna GUI niewykryta - diagnostyka swiadomie odlozona; roznica mock/jsdom vs realne GUI do rozstrzygniecia przy realizacji pozycji z backlogu |
+| verify-full (subject 1, attempt 1) | pass | `python .agents/scripts/verify-full` exit 0: typecheck node+web 0, vitest 183/183 (17 plikow), validate-config ok, `cmd /c pnpm run verify` 0. Subject 1 (head abc0219, sciezki: src, docs/features/mvp-core-shell, .agents/tasks/mvp-core-shell/plan.md, .agents/lessons, BACKLOG.md) niezmieniony do zamkniecia. Punkty 3/5 acceptance = deferred-by-decision (BACKLOG.md), nie pokryte przez te weryfikacje jako spelnione |
 | Independent review Stage 4 (subagent-reviewer deleg_6b9f77bf) | blocking | 2 blocking w flow zamkniecia czatu (renderer): (1) nastepca wyznaczany z przestarzalego snapshotu chatsByProject — dwa jednoczesne exity pozostawiaja selectedChatId na usunietym czacie (martwy, pusty srodek; lami AC9/decision 4-5); (2) po bledzie chats.remove wpis closingChatIdsRef nigdy nie znika — czat staje sie trwale niezamykalny przez exit. 3 non-blocking: miganie stanu 'Start new chat' przed zaladowaniem czatow; auto-focus New Chat przy kazdym projekcie po jednym bump nonce; needs-confirmation: auto-wybor nastepcy retryuje failed spawn. Weryfikacja decyzji materialnych 1,2,3,6 = zgodne z kontraktem (dispose-before-kill, migracje w transakcji, #quitting trwale, rename kompletny — 0 pozostalych identyfikatorow task/'Session ended'). Werdykt reviewera: blocking; bramki reviewera nie przeliczane (code-review skill) |
+
+### Verification subject 1
+
+```json
+{
+  "attempt": 1,
+  "head": "abc0219bee7368d2941687796080afbe554a1d93",
+  "paths": [
+    ".agents/lessons",
+    ".agents/tasks/mvp-core-shell/plan.md",
+    "BACKLOG.md",
+    "docs/features/mvp-core-shell",
+    "src"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "6f286f6828a9d8a02964c843e978ffbb6dbe3569fd3542f8e8f218970bbe1957",
+  "unstaged_diff_sha256": "720a7882655657b18c87fee92fc26edff63291c780f3356454feea06353f07b0",
+  "untracked_files_sha256": "1286e95840be258c6b119fc6e1d0a583f8849ce5aa4ac44e3370d8f685bf5af0"
+}
+```
 
 ## Timing
 
@@ -155,7 +179,10 @@ Spec: `docs/features/mvp-core-shell/spec.md`. Plan: `.agents/tasks/mvp-core-shel
 | approval | wait | 2026-09-26T10:29:51Z | 2026-09-26T11:02:22Z |
 | review:acceptance-rr3 | work | 2026-09-26T11:02:22Z | 2026-09-26T11:11:33Z |
 | correction:acceptance | work | 2026-09-26T11:11:33Z | 2026-09-26T11:16:03Z |
-| user-gate:acceptance-rr5 | wait | 2026-09-26T11:16:03Z | |
+| user-gate:acceptance-rr5 | wait | 2026-09-26T11:16:03Z | 2026-09-26T11:34:12Z |
+| retro | work | 2026-09-26T11:34:12Z | 2026-09-26T11:37:30Z |
+| verify | work | 2026-09-26T11:38:30Z | 2026-09-26T11:39:31Z |
+| close | work | 2026-09-26T11:43:02Z | 2026-09-26T11:43:02Z |
 
 ## Risks and blockers
 
