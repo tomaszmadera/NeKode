@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
-import { APP_STATE_KEY, type AppApi } from '../../shared/ipc-contract'
+import { APP_STATE_KEY, type AppApi, emptyGitWorktree } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
@@ -44,7 +44,9 @@ function createAppApiStub(): AppApi {
       onExit: vi.fn().mockReturnValue(() => undefined),
     },
     git: {
-      getStatus: vi.fn().mockResolvedValue({ branch: 'main', dirty: false }),
+      getStatus: vi
+        .fn()
+        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),
@@ -105,14 +107,15 @@ describe('application shell', () => {
     cleanup()
   })
 
-  it('renders the five shell regions', () => {
+  it('renders the shell regions with the tab strip, action-row slot and status bar', () => {
     render(<App app={app} />)
-    expect(screen.getByTestId(TEST_ID.topBar)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.leftNav)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.centerHeader)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.tabStrip)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.actionRowSlot)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.centerSurface)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.bottomRegion)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.rightRegion)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
   })
 
   it('shows the default empty state (UX-UI §6)', async () => {
@@ -197,7 +200,7 @@ describe('project and chat data flow', () => {
 
     const row = await screen.findByTestId(testIdFor.projectRow('p1'))
     expect(row.getAttribute('data-selected')).toBe('true')
-    expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
@@ -329,7 +332,7 @@ describe('project and chat data flow', () => {
 
     expect(await screen.findByTestId(TEST_ID.emptyProjectList)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.headerProjectName)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.statusProjectName)).toBeNull()
     expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull()
     expect(app.projects.list).toHaveBeenCalledTimes(2)
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, '')
@@ -389,7 +392,7 @@ describe('project and chat data flow', () => {
     const chatRow = await screen.findByTestId(testIdFor.chatRow('t1'))
     expect(chatRow.getAttribute('data-selected')).toBe('true')
     expect(getByTestIdString(testIdFor.projectRow('p1')).getAttribute('data-selected')).toBe('true')
-    expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
     expect(app.state.set).not.toHaveBeenCalled()
   })
 
@@ -406,7 +409,7 @@ describe('project and chat data flow', () => {
     expect(getByTestIdString(testIdFor.projectRow('p1')).getAttribute('data-selected')).toBe(
       'false',
     )
-    expect(screen.queryByTestId(TEST_ID.headerProjectName)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.statusProjectName)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.newChatButton)).toBeNull()
     expect(app.chats.list).not.toHaveBeenCalled()
   })
@@ -421,21 +424,21 @@ describe('project and chat data flow', () => {
     })
 
     render(<App app={app} />)
-    await screen.findByTestId(TEST_ID.headerProjectName)
-    expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
+    await screen.findByTestId(TEST_ID.statusProjectName)
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
     expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('false')
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
   })
 
-  it('renders the project name, absolute path and runtime label in the context header', async () => {
+  it('renders the project name, absolute path and runtime label in the status bar', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
-    expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
-    expect(screen.getByTestId(TEST_ID.headerProjectPath).textContent).toBe('D:/code/demo')
-    expect(screen.getByTestId(TEST_ID.headerRuntimeLabel).textContent).toBe('Node 24')
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
+    expect(screen.getByTestId(TEST_ID.statusProjectPath).textContent).toBe('D:/code/demo')
+    expect(screen.getByTestId(TEST_ID.statusRuntimes).textContent).toContain('Node 24')
   })
 
   it('omits the runtime badge when the project has no runtime label', async () => {
@@ -444,8 +447,8 @@ describe('project and chat data flow', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
 
-    expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Plain')
-    expect(screen.queryByTestId(TEST_ID.headerRuntimeLabel)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Plain')
+    expect(screen.queryByTestId(TEST_ID.statusRuntimes)).toBeNull()
   })
 
   it('hydrates region sizes from persisted state', async () => {
@@ -506,7 +509,10 @@ describe('chat workspace (Stage 3)', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
 
     const workspace = getByTestIdString(TEST_ID.chatWorkspace)
-    expect(workspace.textContent).toContain('First chat')
+    // The chat name lives in the terminal-chat tab label (tab model).
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
+    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
+    expect(workspace).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
     // Lazy spawn on first attach: one PTY, cwd = the project directory.
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
@@ -529,42 +535,52 @@ describe('chat workspace (Stage 3)', () => {
     expect(app.terminals.create).toHaveBeenCalledTimes(2)
   })
 
-  it('shows the git branch and worktree status in the context header', async () => {
+  it('shows the git branch and worktree status in the status bar (UX-UI §16)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.git.getStatus).mockResolvedValue({ branch: 'feature/meta-pixel', dirty: true })
+    vi.mocked(app.git.getStatus).mockResolvedValue({
+      branch: 'feature/meta-pixel',
+      dirty: true,
+      worktree: { ...emptyGitWorktree(), modified: 4, added: 2, untracked: 1, ahead: 3 },
+    })
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
     await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('D:/code/demo'))
-    expect((await screen.findByTestId(TEST_ID.headerGitBranch)).textContent).toBe(
-      'feature/meta-pixel',
+    const branchGlyph = String.fromCharCode(0xe0a0)
+    expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toBe(
+      `${branchGlyph} feature/meta-pixel`,
     )
-    expect(screen.getByTestId(TEST_ID.headerGitStatus).textContent).toContain('dirty')
+    expect(screen.getByTestId(TEST_ID.statusGitStatus).textContent).toBe('● 7 changes')
+    expect(screen.getByTestId(TEST_ID.statusGitStatus).getAttribute('title')).toContain('Modified')
   })
 
   it('shows a clean worktree status', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.git.getStatus).mockResolvedValue({ branch: 'main', dirty: false })
+    vi.mocked(app.git.getStatus).mockResolvedValue({
+      branch: 'main',
+      dirty: false,
+      worktree: emptyGitWorktree(),
+    })
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
-    expect((await screen.findByTestId(TEST_ID.headerGitBranch)).textContent).toBe('main')
-    expect(screen.getByTestId(TEST_ID.headerGitStatus).textContent).toContain('clean')
+    expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toContain('main')
+    expect(screen.getByTestId(TEST_ID.statusGitStatus).textContent).toBe('✓ clean')
   })
 
-  it('degrades the header to "no git" when git fails (spec Errors)', async () => {
+  it('degrades the status bar to "no git" when git fails (spec Errors)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.git.getStatus).mockRejectedValue(new Error('git missing'))
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
-    expect(await screen.findByTestId(TEST_ID.headerGitNone)).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.headerGitBranch)).toBeNull()
+    expect(await screen.findByTestId(TEST_ID.statusGitNone)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.statusGitBranch)).toBeNull()
     // The workspace still renders despite the git failure.
-    expect(screen.getByTestId(TEST_ID.headerProjectName).textContent).toBe('Demo')
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
   })
 })
 

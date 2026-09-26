@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi, ChatInfo, FileEntry, ProjectInfo } from '../../../../shared/ipc-contract'
+import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
@@ -9,9 +10,10 @@ import { resetMockTerminals } from '../../test/xterm-mock'
 // Project Files view tests (spec Required tests — renderer): the "Files"
 // action enters the mode and the row click does not; the context menu holds
 // Remove Project and the row has no remove button; tree expand/collapse/
-// select with lazy caching; empty state → preview; too-large/binary
-// fallbacks with "Open externally"; `← Projects` restores the previous
-// center surface; per-project state retention across mode round-trips.
+// select with lazy caching; clicking a file opens its tab (label = file name,
+// tooltip = relative path); too-large/binary fallbacks with "Open externally"
+// per tab; `← Projects` round-trips keep the tab strip and the terminal
+// session; per-project tree state retention across mode round-trips.
 //
 // xterm.js is mocked at the module boundary (jsdom has no canvas) and the
 // Monaco preview wrapper is mocked so the tests assert the data handed to
@@ -51,7 +53,9 @@ function createAppApiStub(): AppApi {
       onExit: vi.fn().mockReturnValue(() => undefined),
     },
     git: {
-      getStatus: vi.fn().mockResolvedValue({ branch: 'main', dirty: false }),
+      getStatus: vi
+        .fn()
+        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),
@@ -109,6 +113,11 @@ async function enterFilesMode(): Promise<void> {
   await screen.findByTestId(TEST_ID.fileTree)
 }
 
+/** Main-surface pane of one open file tab (hidden view when inactive). */
+function pane(relativePath: string): HTMLElement {
+  return screen.getByTestId(testIdFor.filePreviewPane(relativePath))
+}
+
 describe('project files — entry points (spec Behaviour 1–3)', () => {
   let app: AppApi
 
@@ -135,18 +144,21 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(testIdFor.chatRow('t1'))
     expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.filesViewLabel)).toBeNull()
+    expect(screen.queryAllByTestId(/^tab-file-/)).toEqual([])
 
     // The Files action enters the mode (Behaviour 1 / AC1).
     await enterFilesMode()
     expect(getByTestIdString(TEST_ID.filesBackButton).textContent).toContain('← Projects')
     expect(getByTestIdString(TEST_ID.filesProjectName).textContent).toBe('Demo')
-    expect(getByTestIdString(TEST_ID.filesViewLabel).textContent).toBe('Files')
-    expect(getByTestIdString(TEST_ID.filePreviewEmpty).textContent).toContain(
-      'Select a file to preview',
-    )
-    // The project context header is unchanged (Behaviour 4).
-    expect(getByTestIdString(TEST_ID.headerProjectName).textContent).toBe('Demo')
+    // The center keeps the tab strip (tab model): no "Files" view label and no
+    // preview empty state — clicking a file opens its tab.
+    const strip = getByTestIdString(TEST_ID.tabStrip)
+    expect(strip).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.tabTerminal)).toBeTruthy()
+    expect(screen.queryByText('Select a file to preview')).toBeNull()
+    expect(screen.queryAllByTestId(/^tab-file-/)).toEqual([])
+    // The project context lives in the status bar (Behaviour 4).
+    expect(getByTestIdString(TEST_ID.statusProjectName).textContent).toBe('Demo')
     expect(app.files.list).toHaveBeenCalledWith('p1', null)
   })
 
@@ -230,12 +242,12 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))
     expect(app.files.list).toHaveBeenCalledTimes(2)
 
-    // Selecting a file leaves the empty state for the preview (AC4).
+    // Selecting a file opens its tab (AC4) instead of an empty-state swap.
     fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src/app.ts')))
-    expect(screen.queryByTestId(TEST_ID.filePreviewEmpty)).toBeNull()
+    await screen.findByTestId(testIdFor.tabFile('src/app.ts'))
   })
 
-  it('previews a text file read-only with breadcrumb and mapped language', async () => {
+  it('previews a text file read-only in its tab, with mapped language and path tooltip', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     mockListings(app)
     vi.mocked(app.files.read).mockResolvedValue({
@@ -248,18 +260,20 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     await enterFilesMode()
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
 
-    expect((await screen.findByTestId(TEST_ID.filePreviewBreadcrumb)).textContent).toBe('README.md')
-    const monaco = await screen.findByTestId(TEST_ID.filePreviewMonaco)
+    // Tab label = file name; tooltip = the path relative to the project root.
+    const tab = screen.getByTestId(testIdFor.tabFile('README.md'))
+    expect(within(tab).getByText('README.md')).toBeTruthy()
+    expect(tab.getAttribute('title')).toBe('README.md')
+    const monaco = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewMonaco)
     expect(monaco.getAttribute('data-language')).toBe('typescript')
     expect(monaco.textContent).toBe('const x: number = 1')
     expect(app.files.read).toHaveBeenCalledWith('p1', 'README.md')
 
-    // Nested paths breadcrumb as segments (spec Behaviour 7).
+    // Nested paths tooltip as segments (spec Behaviour 7).
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
-    expect((await screen.findByTestId(TEST_ID.filePreviewBreadcrumb)).textContent).toBe(
-      'src / app.ts',
-    )
+    const nestedTab = screen.getByTestId(testIdFor.tabFile('src/app.ts'))
+    expect(nestedTab.getAttribute('title')).toBe('src / app.ts')
   })
 
   it('falls back to plain text when the extension has no language mapping', async () => {
@@ -274,7 +288,7 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     render(<App app={app} />)
     await enterFilesMode()
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    const monaco = await screen.findByTestId(TEST_ID.filePreviewMonaco)
+    const monaco = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewMonaco)
     expect(monaco.getAttribute('data-language')).toBe('plaintext')
   })
 
@@ -290,17 +304,19 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     await enterFilesMode()
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
 
-    const tooLarge = await screen.findByTestId(TEST_ID.filePreviewTooLarge)
+    const tooLarge = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewTooLarge)
     expect(tooLarge.textContent).toContain('This file is too large for preview.')
-    fireEvent.click(getByTestIdString(TEST_ID.filePreviewOpenExternal))
+    fireEvent.click(within(pane('README.md')).getByTestId(TEST_ID.filePreviewOpenExternal))
     await waitFor(() => expect(app.files.openExternal).toHaveBeenCalledWith('p1', 'README.md'))
 
     vi.mocked(app.files.read).mockResolvedValue({ kind: 'binary' })
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
-    const binary = await screen.findByTestId(TEST_ID.filePreviewBinary)
+    // Fallbacks are per tab: the too-large state stays in its own tab.
+    const binary = await within(pane('src/app.ts')).findByTestId(TEST_ID.filePreviewBinary)
     expect(binary.textContent).toContain('Binary file')
-    expect(screen.getByTestId(TEST_ID.filePreviewOpenExternal)).toBeTruthy()
+    expect(within(pane('src/app.ts')).getByTestId(TEST_ID.filePreviewOpenExternal)).toBeTruthy()
+    expect(within(pane('README.md')).getByTestId(TEST_ID.filePreviewTooLarge)).toBeTruthy()
   })
 
   it('surfaces a failed Open externally as a notice (spec Errors)', async () => {
@@ -316,7 +332,7 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     render(<App app={app} />)
     await enterFilesMode()
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(await screen.findByTestId(TEST_ID.filePreviewOpenExternal))
+    fireEvent.click(await within(pane('README.md')).findByTestId(TEST_ID.filePreviewOpenExternal))
 
     const notice = await screen.findByTestId(TEST_ID.actionNotice)
     expect(notice.textContent).toContain('Failed to open the file externally.')
@@ -341,7 +357,7 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     expect(screen.queryByTestId(TEST_ID.fileTreeError)).toBeNull()
   })
 
-  it('shows a preview error for a file that vanished; selecting another file works', async () => {
+  it('shows a preview error for a file that vanished; other tabs keep working', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     mockListings(app)
     vi.mocked(app.files.read)
@@ -355,12 +371,12 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     render(<App app={app} />)
     await enterFilesMode()
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    const error = await screen.findByTestId(TEST_ID.filePreviewError)
+    const error = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewError)
     expect(error.textContent).toContain('File not found.')
 
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
-    expect(await screen.findByTestId(TEST_ID.filePreviewMonaco)).toBeTruthy()
+    expect(await within(pane('src/app.ts')).findByTestId(TEST_ID.filePreviewMonaco)).toBeTruthy()
   })
 })
 
@@ -376,7 +392,7 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     cleanup()
   })
 
-  it('`← Projects` restores the previous center surface and keeps sessions mounted', async () => {
+  it('`← Projects` keeps the tab strip and the active tab; the session survives (AC6)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     mockListings(app)
@@ -388,36 +404,39 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     const workspace = getByTestIdString(TEST_ID.chatWorkspace)
 
     await enterFilesMode()
-    // The chat workspace stays mounted and hidden — the PTY session and its
-    // scrollback survive the round-trip (Behaviour 12 / AC6).
+    // The center keeps the tab strip and the active tab (Behaviour 12): the
+    // chat workspace stays mounted and visible, the PTY session and its
+    // scrollback survive the round-trip (AC6).
     expect(screen.getByTestId(TEST_ID.chatWorkspace)).toBe(workspace)
-    expect(getByTestIdString(TEST_ID.chatSurfaceHost).style.display).toBe('none')
+    expect(getByTestIdString(TEST_ID.chatSurfaceHost).style.display).toBe('flex')
+    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
     expect(app.terminals.create).toHaveBeenCalledTimes(1)
 
     fireEvent.click(getByTestIdString(TEST_ID.filesBackButton))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
+    expect(screen.getByTestId(TEST_ID.chatWorkspace)).toBe(workspace)
     expect(getByTestIdString(TEST_ID.chatSurfaceHost).style.display).toBe('flex')
-    expect(getByTestIdString(TEST_ID.chatWorkspace).textContent).toContain('First chat')
     // Typing resumes in the same session: no re-spawn happened.
     expect(app.terminals.create).toHaveBeenCalledTimes(1)
   })
 
-  it('`← Projects` restores the Welcome surface when no chat was active', async () => {
+  it('`← Projects` keeps the Welcome surface when no chat was active', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     mockListings(app)
-
     render(<App app={app} />)
     await screen.findByTestId(TEST_ID.welcomeSurface)
     await enterFilesMode()
-    // The welcome surface stays mounted but hidden while the mode is open.
-    expect(getByTestIdString(TEST_ID.chatSurfaceHost).style.display).toBe('none')
+    // Project Files mode never swaps the center surface (tab model): the
+    // welcome surface stays on screen while the mode is open.
+    expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
+    expect(getByTestIdString(TEST_ID.chatSurfaceHost).style.display).toBe('flex')
 
     fireEvent.click(getByTestIdString(TEST_ID.filesBackButton))
     expect(getByTestIdString(TEST_ID.chatSurfaceHost).style.display).toBe('flex')
     await screen.findByTestId(TEST_ID.welcomeSurface)
   })
 
-  it('retains expansion state and the selected file per project across round-trips (AC9)', async () => {
+  it('retains expansion state and the open tab per project across round-trips (AC9)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
     mockListings(app)
     vi.mocked(app.files.read).mockResolvedValue({
@@ -430,26 +449,28 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     await enterFilesMode()
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
-    await screen.findByTestId(TEST_ID.filePreviewBreadcrumb)
+    await within(pane('src/app.ts')).findByTestId(TEST_ID.filePreviewMonaco)
     expect(app.files.list).toHaveBeenCalledTimes(2)
 
-    // Leave and re-enter: expansion and the selected preview are restored
-    // without re-listing (Behaviour 14).
+    // Leave and re-enter: expansion and the open tab with its preview are
+    // restored without re-listing (Behaviour 14).
     fireEvent.click(getByTestIdString(TEST_ID.filesBackButton))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
     fireEvent.click(await screen.findByTestId(testIdFor.projectFiles('p1')))
     await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))
-    expect((await screen.findByTestId(TEST_ID.filePreviewBreadcrumb)).textContent).toBe(
-      'src / app.ts',
+    expect(screen.getByTestId(testIdFor.tabFile('src/app.ts')).getAttribute('data-selected')).toBe(
+      'true',
     )
+    await waitFor(() => expect(pane('src/app.ts').style.display).toBe('flex'))
     expect(app.files.list).toHaveBeenCalledTimes(2)
 
-    // Another project shows its own tree with its own state (Behaviour 15).
+    // Another project shows its own tree and its own tab set (Behaviour 15).
     fireEvent.click(getByTestIdString(TEST_ID.filesBackButton))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
     fireEvent.click(await screen.findByTestId(testIdFor.projectFiles('p2')))
     await screen.findByTestId(testIdFor.fileEntry('docs'))
     expect(screen.queryByTestId(testIdFor.fileEntry('src'))).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.filePreviewBreadcrumb)).toBeNull()
+    expect(screen.queryByTestId(testIdFor.tabFile('src/app.ts'))).toBeNull()
+    expect(screen.queryAllByTestId(/^tab-file-/)).toEqual([])
   })
 })

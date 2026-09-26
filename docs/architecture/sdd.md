@@ -248,30 +248,33 @@ sandbox: true // where practical
 
 # 7. Primary UI Layout
 
-The application should use a five-region conceptual layout:
+The application uses a five-region conceptual layout (user decision 2026-09-26: no window-top action band and no context header above the main surface):
 
 ```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│ TOP: Project Action Bar                                                  │
-├────────────────┬──────────────────────────────────────────┬──────────────┤
+┌────────────────┬──────────────────────────────────────────┬──────────────┐
 │ LEFT           │ CENTER                                   │ RIGHT        │
-│ Projects       │ Context Header                           │ hidden       │
-│ and Tasks      ├──────────────────────────────────────────┤ by default   │
+│ Projects       │ Tab Strip                                │ hidden       │
+│ and Tasks      │ [chat][files…][+ New chat]               │ by default   │
+├────────────────┼──────────────────────────────────────────┼──────────────┤
+│                │ Action Bar                               │              │
+│                │ [Handoff|Resume] [Stop|Continue] ▶ …     │              │
+├────────────────┼──────────────────────────────────────────┼──────────────┤
 │                │ Main Surface                             │              │
 │                │                                          │              │
 ├────────────────┴──────────────────────────────────────────┴──────────────┤
 │ BOTTOM: Auxiliary Terminal                                               │
+├──────────────────────────────────────────────────────────────────────────┤
+│ STATUS BAR: gerde.pl · D:\Projects\gerde.pl · PHP 8.5 ·  main · ● 4     │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 Semantics:
 
-- **TOP** — configurable project controls.
 - **LEFT** — work navigation.
-- **CENTER HEADER** — current workspace context.
-- **CENTER** — actual work surface.
-- **BOTTOM** — auxiliary terminal/tools.
+- **CENTER** — one column, top-down: **tab strip** (the terminal-chat tab is always first, never closable, its label is the active chat's name; then open-file tabs, `+ New chat`), **action bar** (action row), **main surface**.
 - **RIGHT** — secondary tools, hidden by default.
+- **BOTTOM** — auxiliary terminal/tools.
+- **STATUS BAR** — project context (name, path, runtimes, Git branch and worktree status — §9), full window width at the very bottom of the window.
 
 ---
 
@@ -328,15 +331,15 @@ The terminal process must remain running when the user switches to another task.
 
 ---
 
-# 9. Center Context Header
+# 9. Project Context: Status Bar
 
-Whenever the center panel is operating inside a project context, a compact context header should be visible.
+The project context is presented in the status bar: the full-width bar at the very bottom of the window, below all other regions. The former center context header is removed (relocation per user decision 2026-09-26). With no active project the project section of the status bar is empty; the bar itself stays.
 
 Example:
 
 ```text
 gerde.pl
-D:\Projects\gerde.pl   PHP 8.5   Node 24   Docker    feature/meta-pixel   ● 4
+D:\Projects\gerde.pl   PHP 8.5   Node 24   Docker   feature/meta-pixel   ● 4
 ```
 
 Minimum information:
@@ -893,18 +896,21 @@ The layout implementation should make this panel easy to activate later.
 
 ---
 
-# 21. Top Action Bar
+# 21. Action Bar
 
-The top region is a configurable **Project Action Bar**.
+The **Project Action Bar** is the action row directly below the tab strip in the center column, full width of the center column. Placement per user decision 2026-09-26: it is not a window-top band.
+
+Order: the fixed groups `Handoff | Resume` and `Stop | Continue`, then configurable project actions.
 
 Example:
 
 ```text
-▶ Docker Up   ■ Docker Down   🧪 Tests   🚀 Deploy
+[Handoff | Resume]   [Stop | Continue]   ▶ Docker Up   🧪 Tests   🚀 Deploy
 ```
 
 Purpose:
 
+- send fixed agent-communication input to the active chat terminal,
 - execute frequent project commands with one click,
 - act as a project-specific control surface,
 - expose common operations without requiring terminal typing.
@@ -933,7 +939,8 @@ interface ActionControl {
 
     runMode:
         | "background"
-        | "bottom-terminal"
+        // reserved until the bottom panel exists (separate task):
+        // | "bottom-terminal"
         | "new-terminal"
 
     confirm?: boolean
@@ -976,6 +983,7 @@ The action:
 3. streams output to the terminal.
 
 Recommended default for commands where output matters.
+Reserved until the bottom auxiliary terminal panel exists (separate task); the action form in this version offers only Background and New terminal.
 
 Examples:
 
@@ -1071,8 +1079,7 @@ Working directory:
 [ Project root ]
 
 Run in:
-(*) Bottom terminal
-( ) Background
+(*) Background
 ( ) New terminal
 
 [ ] Ask for confirmation
@@ -1081,6 +1088,7 @@ Run in:
 ```
 
 Persistence may still use JSON or SQLite internally.
+The `bottom-terminal` run mode is reserved until the bottom auxiliary terminal panel exists and is not offered in the form in this version.
 
 ---
 
@@ -2231,7 +2239,7 @@ The MVP is considered technically complete when all criteria below are met.
 - [ ] Selected text files open read-only.
 - [ ] Large/binary files are handled safely.
 
-## Context Header
+## Status Bar
 
 - [ ] Current project name is displayed.
 - [ ] Current path is displayed.
@@ -2245,7 +2253,7 @@ The MVP is considered technically complete when all criteria below are met.
 - [ ] Action has title.
 - [ ] Action may have icon.
 - [ ] Action has command.
-- [ ] Action can execute in bottom terminal.
+- [ ] Action can execute in background or in a new terminal (the bottom-terminal mode is reserved until the bottom panel exists).
 - [ ] Action status is visible.
 
 ## Kanban
@@ -2497,7 +2505,7 @@ The center area is a generic Workspace/Main Surface, not an editor.
 
 ## Decision 8
 
-The top region is a configurable Project Action Bar.
+The configurable Project Action Bar is the action row below the tab strip in the center column (placement revised by user decision 2026-09-26).
 
 ## Decision 9
 
@@ -2524,24 +2532,26 @@ The architecture must anticipate task-specific Git worktrees.
 # 70. Final MVP Shape
 
 ```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│ PROJECT ACTION BAR                                                       │
-│ ▶ Docker Up   ■ Down   🧪 Tests   🚀 Deploy                     ⚙      │
-├────────────────┬──────────────────────────────────────────┬──────────────┤
-│ PROJECTS       │ gerde.pl                                 │ RIGHT        │
-│                │ D:\dev\gerde  PHP 8.5   main  ● 3      │ hidden       │
-│ ▼ gerde.pl     ├──────────────────────────────────────────┤              │
-│   Fix Pixel    │                                          │ future:      │
-│   SEO          │           MAIN SURFACE                   │ Browser      │
-│   Hero         │                                          │ Terminal     │
-│                │ Project selected:                        │              │
-│ ▼ knajpy       │     Files | Kanban                       │              │
-│   Auth         │                                          │              │
-│   Reviews      │ Task selected:                           │              │
-│                │     Primary Terminal                     │              │
+┌────────────────┬──────────────────────────────────────────┬──────────────┐
+│ PROJECTS       │ TABS                                     │ RIGHT        │
+│                │ [Fix Pixel] [Billing.php] [+ New chat]   │ hidden       │
+├────────────────┼──────────────────────────────────────────┼──────────────┤
+│ ▼ gerde.pl     │ ACTIONS                                  │ future:      │
+│   Fix Pixel    │ [Handoff|Resume] [Stop|Continue]         │ Browser      │
+│   SEO          │ ▶ Docker Up  🧪 Tests                     │ Terminal     │
+│   Hero         │                                          │              │
+├────────────────┼──────────────────────────────────────────┼──────────────┤
+│                │ MAIN SURFACE                             │              │
+│ ▼ knajpy       │                                          │              │
+│   Auth         │ Task: Fix Pixel                          │              │
+│   Reviews      │     Terminal (active tab)                │              │
 │                │                                          │              │
+│                │ File tabs:                               │              │
+│                │     read-only preview                    │              │
 ├────────────────┴──────────────────────────────────────────┴──────────────┤
 │ AUXILIARY TERMINAL                                        Ctrl + `       │
+├──────────────────────────────────────────────────────────────────────────┤
+│ STATUS BAR  gerde.pl  D:\dev\gerde  PHP 8.5   main  ● 3                 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 

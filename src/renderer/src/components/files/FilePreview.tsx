@@ -5,11 +5,12 @@ import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { TEST_ID } from '../../lib/test-ids'
 import { MonacoPreview } from './MonacoPreview'
 
-// Read-only file preview (spec Behaviour 7–11): breadcrumb of the relative
-// path, then the classified preview — text in Monaco, or the too-large /
-// binary fallback with the single OS action ("Open externally"). A file that
-// vanished between listing and read shows a localized error state; selecting
-// another file works (the effect reloads on path change).
+// Read-only file preview of one file tab (spec Behaviour 6–7): the classified
+// preview — text in Monaco, or the too-large / binary fallback with the single
+// OS action ("Open externally"). The breadcrumb is superseded by the tab model
+// (the tab tooltip carries the relative path). A file that vanished between
+// listing and read shows a localized error state inside this tab only; other
+// tabs are unaffected (each tab owns its preview view).
 
 interface FilePreviewProps {
   app: AppApi
@@ -26,10 +27,6 @@ type PreviewState =
 
 function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
-}
-
-function breadcrumb(relativePath: string): string {
-  return relativePath.split('/').join(' / ')
 }
 
 export function FilePreview({
@@ -71,12 +68,6 @@ export function FilePreview({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div
-        className="shrink-0 border-b border-neutral-800 px-4 py-2 text-xs text-neutral-500"
-        data-testid={TEST_ID.filePreviewBreadcrumb}
-      >
-        {breadcrumb(relativePath)}
-      </div>
       <div className="min-h-0 flex-1">
         {state.status === 'error' ? (
           <p

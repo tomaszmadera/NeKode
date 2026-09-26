@@ -1,6 +1,6 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
-import { IPC_CHANNEL } from '../../shared/ipc-contract'
+import { emptyGitWorktree, IPC_CHANNEL } from '../../shared/ipc-contract'
 import { APP_ERROR_MARKER, AppError } from '../../shared/ipc-error'
 import {
   type PtyFactory,
@@ -113,7 +113,9 @@ function createHarness(): Harness {
       },
     },
     git: {
-      getStatus: vi.fn(() => Promise.resolve({ branch: 'main', dirty: false })),
+      getStatus: vi.fn(() =>
+        Promise.resolve({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
+      ),
     },
     files: {
       list: vi.fn(() => Promise.resolve([])),
@@ -217,7 +219,11 @@ describe('registered ipc handlers', () => {
       },
       state: { get: vi.fn(() => null), set: vi.fn() },
       terminals,
-      git: { getStatus: vi.fn(() => Promise.resolve({ branch: null, dirty: false })) },
+      git: {
+        getStatus: vi.fn(() =>
+          Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
+        ),
+      },
       files: {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
@@ -269,7 +275,11 @@ describe('registered ipc handlers', () => {
       },
       state: { get: vi.fn(() => null), set: vi.fn() },
       terminals,
-      git: { getStatus: vi.fn(() => Promise.resolve({ branch: null, dirty: false })) },
+      git: {
+        getStatus: vi.fn(() =>
+          Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
+        ),
+      },
       files: {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),

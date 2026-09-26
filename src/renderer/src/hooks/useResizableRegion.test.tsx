@@ -3,6 +3,7 @@ import type React from 'react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../shared/ipc-contract'
+import { emptyGitWorktree } from '../../../shared/ipc-contract'
 import { App, TEST_ID } from '../App'
 import { BOTTOM_REGION_SIZE, useResizableRegion } from './useResizableRegion'
 
@@ -39,7 +40,9 @@ function createAppApiStub(): AppApi {
       onExit: vi.fn().mockReturnValue(() => undefined),
     },
     git: {
-      getStatus: vi.fn().mockResolvedValue({ branch: 'main', dirty: false }),
+      getStatus: vi
+        .fn()
+        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),

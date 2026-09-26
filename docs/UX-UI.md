@@ -122,27 +122,33 @@ Do not mix English and Polish labels.
 
 # 5. Global Layout
 
+The window has no top action band and no context header above the main surface (user decision 2026-09-26). The center column is one vertical stack: tab strip, action bar, main surface; the status bar spans the full window width at the very bottom.
+
 ```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│ TOP: Action Bar                                                          │
-├────────────────┬──────────────────────────────────────────┬──────────────┤
+┌────────────────┬──────────────────────────────────────────┬──────────────┐
 │ LEFT           │ CENTER                                   │ RIGHT        │
-│ Navigation     │ Context Header                           │ hidden       │
-│                ├──────────────────────────────────────────┤ by default   │
+│ Navigation     │ Tab Strip                                │ hidden       │
+│                │ [chat][files…][+ New chat]               │ by default   │
+├────────────────┼──────────────────────────────────────────┼──────────────┤
+│                │ Action Bar                               │              │
+│                │ [Handoff|Resume] [Stop|Continue] ▶ …     │              │
+├────────────────┼──────────────────────────────────────────┼──────────────┤
 │                │ Main Surface                             │              │
+│                │                                          │              │
 ├────────────────┴──────────────────────────────────────────┴──────────────┤
 │ BOTTOM: Auxiliary Terminal / Tools                                       │
+├──────────────────────────────────────────────────────────────────────────┤
+│ STATUS BAR: gerde.pl · D:\Projects\gerde.pl · PHP 8.5 ·  main · ● 4     │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 Semantics:
 
-- **Top** — project controls and quick actions.
 - **Left** — navigation between projects, tasks and project contents.
-- **Center header** — current project/workspace context.
-- **Center** — the main active work surface.
+- **Center** — one column, top-down: **tab strip** (the terminal-chat tab is always first, never closable, its label is the active chat's name; then open-file tabs, `+ New chat`), **action bar** (action row), the main active work surface.
 - **Bottom** — auxiliary terminal and future tool panels.
 - **Right** — secondary tools such as Browser or second Terminal.
+- **Status bar** — project context: name, path, runtimes, Git branch and worktree status (§14–§16).
 
 ---
 
@@ -157,7 +163,6 @@ On startup, restore the most recent useful state when possible:
 - bottom panel state,
 - bottom terminal height,
 - right panel state,
-- project tab state,
 - active terminal association.
 
 If no prior state exists:
@@ -178,19 +183,21 @@ Hidden
 
 ---
 
-# 7. Top Action Bar
+# 7. Action Bar
 
-The top bar is a configurable **Project Action Bar**.
+The action bar (action row) sits directly below the tab strip in the center column, full width of the center column. Placement per user decision 2026-09-26: it is not a window-top band.
 
 It is not a generic toolbar.
 
 Its purpose is to expose frequently used actions for the current project.
 
-Example:
+Layout:
 
 ```text
-▶ Docker Up   ■ Docker Down   🧪 Tests   🚀 Deploy
+[Handoff | Resume]   [Stop | Continue]   ▶ Docker Up   🧪 Tests   🚀 Deploy
 ```
+
+The fixed groups come first, then the configurable actions.
 
 Possible actions:
 
@@ -222,25 +229,36 @@ Buttons should be compact:
 
 Do not require icons.
 
-Recommended states:
+The fixed buttons write terminal input to the active chat terminal (through `terminals:write`):
+
+```text
+Handoff     Napisz handoff        + CR (0x0D)
+Resume      Wznów z handoffu  + CR (0x0D)
+Continue    Continue             + CR (0x0D)
+Stop        Ctrl+C (0x03)
+```
+
+These strings are literal data; they are never localized or altered. `Stop` never sends Ctrl+D (0x04 closes chats). The four fixed buttons are enabled only while the active chat has a live terminal session.
+
+Recommended states for configurable action buttons:
 
 ```text
 ▶ Docker Up      idle
 ◌ Docker Up      running
 ✓ Docker Up      success
 ✕ Docker Up      failed
-● Dev Server     long-running
 ```
 
-Do not show large success toasts for routine operations.
+Hover details show the command, exit code and completion time.
+
+Do not show success toasts.
 
 Actions may run:
 
 - in background,
-- in bottom terminal,
-- in a new terminal.
+- in a new terminal (a new chat whose terminal receives the command).
 
-Default for visible developer commands should usually be **Bottom Terminal**.
+The bottom-terminal run mode is reserved until the bottom auxiliary terminal panel exists (separate task) and is not offered in the action form.
 
 ---
 
@@ -390,9 +408,11 @@ Avoid animated terminal text or large viewport movement.
 
 ---
 
-# 14. Center Context Header
+# 14. Status Bar
 
-Whenever the active center surface belongs to a Project, show a compact project/workspace context header.
+The status bar sits at the very bottom of the window and spans its full width, below all other regions. It carries the project context previously shown in the center context header (relocation per user decision 2026-09-26 — there is no context header above the main surface).
+
+Whenever the active center surface belongs to a Project, show a compact project/workspace context.
 
 Example:
 
@@ -410,6 +430,8 @@ Minimum data:
 - worktree/Git status.
 
 Long paths should be truncated visually but shown fully on hover.
+
+With no active project the project section is empty; the bar itself stays.
 
 ---
 
@@ -476,15 +498,14 @@ MVP default:
 Primary Terminal
 ```
 
-Example:
+Example (the tab strip and action bar sit above the surface per §5; the project context lives in the status bar per §14):
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ Fix Meta Pixel                                               │
-│ gerde.pl · D:\Projects\gerde.pl · PHP 8.5 ·  feature/pixel│
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
-│ PS D:\Projects\gerde.pl> codex                             │
+│ PS D:\Projects\gerde.pl> codex                               │
 │                                                              │
 │ > Fix the invalid Meta Pixel currency warning                │
 │                                                              │
@@ -804,7 +825,7 @@ Example:
 ```text
 Fix Meta Pixel
 
-feature/meta-pixel
+ feature/meta-pixel
 Codex
 
 [Implement]
@@ -1170,7 +1191,7 @@ Agent
 Codex
 
 Branch
-feature/meta-pixel
+ feature/meta-pixel
 
 Handoff
 "Currency warning identified in checkout tracking.
@@ -1231,7 +1252,7 @@ Example:
 
 ```text
 Fix Meta Pixel
-gerde.pl · feature/meta-pixel · PHP 8.5 · ● 3 changes
+gerde.pl ·  feature/meta-pixel · PHP 8.5 · ● 3 changes
 
 Agent: Codex ▾        Handoff ▾
 ```
@@ -1394,15 +1415,15 @@ Actions
 
 Docker Up
 docker compose up -d
-Bottom Terminal
+Background
 
 Tests
 php artisan test
-Bottom Terminal
+New terminal
 
 Deploy
 bash scripts/deploy.sh
-Bottom Terminal
+Background
 
 [Add Action]
 ```
@@ -1425,7 +1446,7 @@ Working Directory
 Project Root
 
 Run In
-Bottom Terminal
+Background | New terminal
 
 [ ] Ask for confirmation
 
@@ -1434,25 +1455,21 @@ Bottom Terminal
 
 Dangerous actions may require confirmation.
 
+Saved actions appear in the action bar immediately and survive application restarts. The `bottom-terminal` run mode is reserved until the bottom auxiliary terminal panel exists (separate task) and is not offered in this form.
+
 ---
 
 # 50. Project File Navigation
 
 Entering Project Files may transform the left panel into the Project file tree.
 
-The center shows the selected file.
-
-Optional breadcrumb:
-
-```text
-app / Services / BillingService.php
-```
+Clicking a file opens it in a file tab of the tab strip and shows it in the main surface: the tab label is the file name and the tab tooltip is the path relative to the project root (e.g. `app / Services / Billing.php`). The breadcrumb and the `Files` view label are superseded by the tab model (user decision 2026-09-26) and are not rendered.
 
 Remember per Project:
 
 - expanded tree nodes,
+- open file tabs, their order and the active tab,
 - last selected file,
-- Files/Kanban tab,
 - left-navigation sub-view,
 - scroll position where practical.
 
@@ -1464,7 +1481,7 @@ Project switch:
 
 - update selection immediately,
 - center content crossfade,
-- context header fade/change,
+- status bar project context fade/change,
 - 140–180 ms.
 
 Task switch:
@@ -1700,7 +1717,7 @@ Example:
 
 ```text
 Fix Meta Pixel
-feature/meta-pixel
+ feature/meta-pixel
 .worktrees/meta-pixel
 ```
 
@@ -1824,7 +1841,9 @@ Remember user sizing preferences.
 
 ---
 
-# 65. Responsive Context Header
+# 65. Responsive Status Bar Context
+
+The status bar project context adapts to window width.
 
 Wide:
 
@@ -1939,23 +1958,25 @@ BACKLOG             TODO                IN PROGRESS             DONE
 
 # 68. Complete Layout Example
 
+The tab strip and the action bar occupy the top of the center column; the status bar spans the window at the very bottom (user decision 2026-09-26 — no top action band, no context header).
+
 ```text
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ ▶ Docker Up   ■ Down   🧪 Tests   🚀 Deploy                      ⚙          │
-├──────────────────┬───────────────────────────────────────────┬───────────────┤
-│ Projects         │ gerde.pl                                  │               │
-│                  │ D:\dev\gerde · PHP 8.5 ·  main · ● 3  │ RIGHT PANEL   │
-│ ▼ gerde.pl       ├───────────────────────────────────────────┤ hidden        │
+┌──────────────────┬───────────────────────────────────────────┬───────────────┐
+│ Projects         │ [Fix Pixel] [web.php] [+ New chat]        │ RIGHT PANEL   │
+├──────────────────┼───────────────────────────────────────────┼───────────────┤
+│ ▼ gerde.pl       │ [Handoff|Resume] [Stop|Continue] ▶ …      │ hidden        │
 │   Fix Pixel      │                                           │ by default    │
-│   SEO Cleanup    │             MAIN SURFACE                  │               │
+│   SEO Cleanup    │ MAIN SURFACE                              │               │
 │   Hero Redesign  │                                           │ Browser       │
 │                  │ Task: Fix Pixel                           │ Terminal      │
 │ ▼ knajpy         │ Agent: Codex ▾                            │ future        │
 │   Authentication │                                           │               │
-│   Reviews        │ PS D:\dev\gerde> codex                  │               │
+│   Reviews        │ PS D:\dev\gerde> codex                    │               │
 │                  │ ...                                       │               │
 ├──────────────────┴───────────────────────────────────────────┴───────────────┤
-│ AUXILIARY TERMINAL                                             Ctrl + `       │
+│ AUXILIARY TERMINAL                                             Ctrl + `      │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ STATUS BAR  gerde.pl  D:\dev\gerde  PHP 8.5   main  ● 3                     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1965,19 +1986,23 @@ BACKLOG             TODO                IN PROGRESS             DONE
 
 ```text
 ┌──────────────────┬───────────────────────────────────────────────────────────┐
-│ ← Projects       │ gerde.pl                                                  │
-│                  │ D:\dev\gerde · PHP 8.5 ·  main · ✓ clean             │
-│ ▼ app            ├───────────────────────────────────────────────────────────┤
-│   ▼ Services     │ Files   Kanban                                            │
-│     Billing.php  │                                                           │
-│                  │ Billing.php                                               │
-│ ▼ routes         │                                                           │
-│   web.php        │  1 <?php                                                  │
-│                  │  2                                                        │
-│ composer.json    │  3 namespace App\Services;                               │
-│                  │ ...                                                       │
-└──────────────────┴───────────────────────────────────────────────────────────┘
+│ ← Projects       │ [Fix Pixel] [Billing.php] [web.php] [+ New chat]          │
+├──────────────────┼───────────────────────────────────────────────────────────┤
+│                  │ [Handoff|Resume] [Stop|Continue] ▶ Docker Up              │
+├──────────────────┼───────────────────────────────────────────────────────────┤
+│ ▼ app            │                                                           │
+│   ▼ Services     │  1 <?php                                                  │
+│     Billing.php  │  2                                                        │
+│                  │  3 namespace App\Services;                                │
+│ ▼ routes         │  ...                                                      │
+│   web.php        │                                                           │
+│ composer.json    │                                                           │
+├──────────────────┴───────────────────────────────────────────────────────────┤
+│ gerde.pl · D:\dev\gerde · PHP 8.5 ·  main · ✓ clean                         │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The file tab tooltip shows the path relative to the project root (here: `app / Services / Billing.php`); the breadcrumb and the `Files` view label are not rendered (tab model per `docs/features/center-layout-tabs-actions/spec.md`).
 
 ---
 
@@ -1987,22 +2012,24 @@ This is the intended MVP visual preview. The cards, Handoff indicator and button
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ gerde.pl                                                                     │
-│ D:\dev\gerde · PHP 8.5 ·  main · ● 3                                    │
+│ [Fix Pixel] [Billing.php] [+ New chat]                                       │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ Files   Kanban                                                               │
-│         ──────                                                               │
-│                                                                              │
+│ [Handoff|Resume] [Stop|Continue] ▶ Docker Up  Tests                          │
+├──────────────────────────────────────────────────────────────────────────────┤
 │ BACKLOG           TODO             IN PROGRESS           DONE                │
 │                                                                              │
-│ ┌─────────────┐   ┌─────────────┐  ┌─────────────────┐  ┌──────────────┐   │
-│ │ SEO Audit   │   │ Fix Pixel   │  │ Auth Cleanup    │  │ Docker Setup │   │
-│ │             │   │             │  │ Codex           │  │              │   │
-│ │ [Implement] │   │ [Implement] │  │ Handoff ready   │  │              │   │
-│ └─────────────┘   └─────────────┘  │ [Resume]        │  └──────────────┘   │
-│                                    └─────────────────┘                     │
+│ ┌─────────────┐   ┌─────────────┐  ┌─────────────────┐  ┌──────────────┐     │
+│ │ SEO Audit   │   │ Fix Pixel   │  │ Auth Cleanup    │  │ Docker Setup │     │
+│ │             │   │             │  │ Codex           │  │              │     │
+│ │ [Implement] │   │ [Implement] │  │ Handoff ready   │  │              │     │
+│ └─────────────┘   └─────────────┘  │ [Resume]        │  └──────────────┘     │
+│                                    └─────────────────┘                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ gerde.pl · D:\dev\gerde · PHP 8.5 ·  main · ● 3                             │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The Kanban visual preview fills the main surface; how it is reached and how it integrates with the tab model is decided with the future Kanban task (see `§18`).
 
 ---
 
@@ -2146,11 +2173,14 @@ KANBAN CARD — POST-MVP
 HANDOFF outside Kanban
 → Resume Task automatically where supported by MVP scope
 
-TOP
-→ Project Actions
+ACTION BAR (below the tab strip)
+→ Handoff | Resume, Stop | Continue + Project Actions
 
 BOTTOM
 → Auxiliary Terminal
+
+STATUS BAR
+→ Project context (name, path, runtimes, Git)
 
 RIGHT
 → Hidden / future tools
@@ -2169,7 +2199,7 @@ RIGHT
 7. A configurable Default Console Agent exists.
 8. The user may choose another configured agent.
 9. Project context exposes path, runtime, branch and worktree/Git status.
-10. The top region is a configurable Project Action Bar.
+10. The configurable Project Action Bar is the action row below the tab strip in the center column (placement revised by user decision 2026-09-26).
 11. `Ctrl + `` toggles the auxiliary bottom terminal.
 12. The right panel is hidden by default.
 13. Files and Kanban are primary Project views.
@@ -2499,7 +2529,7 @@ The final placement is intentionally not fixed yet. The component should work in
 
 ```text
 Fix Meta Pixel
-gerde.pl · feature/meta-pixel · PHP 8.5
+gerde.pl ·  feature/meta-pixel · PHP 8.5
 
 ●────●────●────○────○
 Plan Inspect Implement Test Review
@@ -2563,7 +2593,7 @@ Example:
 
 ```text
 Fix Meta Pixel
-gerde.pl · feature/meta-pixel · PHP 8.5 · ● 3 changes
+gerde.pl ·  feature/meta-pixel · PHP 8.5 · ● 3 changes
 
 ●────●────●────○────○
 Plan Inspect Implement Test Review

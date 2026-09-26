@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
+import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
@@ -72,7 +73,9 @@ function createAppMock(): AppMockBundle {
       }),
     },
     git: {
-      getStatus: vi.fn().mockResolvedValue({ branch: 'main', dirty: false }),
+      getStatus: vi
+        .fn()
+        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),
@@ -146,7 +149,10 @@ describe('ChatWorkspace session host', () => {
     rerender(<ChatWorkspace {...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })} />)
     expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
     const workspace = screen.getByTestId(TEST_ID.chatWorkspace)
-    expect(workspace.textContent).toContain('First chat')
+    // The chat name lives in the terminal-chat tab label (tab model); the
+    // workspace itself hosts the terminal view.
+    expect(workspace).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId(testIdFor.terminalView('t1'))).toBeTruthy())
     await waitFor(() =>
       expect(bundle.app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'),
     )
