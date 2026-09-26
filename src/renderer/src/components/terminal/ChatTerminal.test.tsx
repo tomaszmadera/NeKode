@@ -285,11 +285,14 @@ describe('ChatTerminal lifecycle', () => {
     expect(mockTerminalInstances[0].dispose).not.toHaveBeenCalled()
   })
 
-  // Ctrl+D shortcut (spec Behaviour 11 / AC9): the app closes the chat when
-  // the input line is visibly empty outside full-screen programs — including
-  // while a normal-buffer program (python REPL) runs (contract decision);
-  // otherwise the key reaches the PTY as \\x04 (a line edit on a non-empty
-  // line). Emptiness is read from the xterm buffer: the row prefix before the
+  // Ctrl+D/Ctrl+U shortcuts (spec Behaviour 11 / AC9): the app closes
+  // the chat when the input line is visibly empty outside full-screen
+  // programs — including while a normal-buffer program (python REPL) runs
+  // (contract decision). On a non-empty line both shortcuts are emulated
+  // readline line edits (delete-char / unix-line-discard) and raw control
+  // bytes are never forwarded: the user's shell self-inserts them as visible
+  // ^D/^U glyphs (PSReadLine, Windows edit mode — retest 2026-09-26).
+  // Emptiness is read from the xterm buffer: the row prefix before the
   // cursor must equal the stored prompt base, so any visible return to the
   // prompt closes again — whatever the input stream did before.
   const PROMPT = 'PS D:\\code\\demo> '
@@ -363,12 +366,14 @@ describe('ChatTerminal lifecycle', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
 
     // But input with no drawn base to compare against is unverifiable: the
-    // gate stays shut.
+    // gate stays shut and Ctrl+D emulates delete-char instead of closing.
     const onClose2 = vi.fn()
-    const { terminal: terminal2 } = renderTerminal(onClose2)
+    const { terminal: terminal2, bundle: bundle2 } = renderTerminal(onClose2)
     typeText(terminal2, 'abc')
-    expect(pressKey(terminal2, { key: 'd', ctrlKey: true })).toBe(true)
+    expect(pressKey(terminal2, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose2).not.toHaveBeenCalled()
+    await waitFor(() => expect(bundle2.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[3~'))
+    expect(bundle2.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x04')
   })
 
   it('Ctrl+D at a visibly empty input line closes the chat (same flow as terminal exit)', async () => {
@@ -398,57 +403,49 @@ describe('ChatTerminal lifecycle', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  // Regression (user retest 2026-09-25): an earlier Ctrl+D with text on the
-  // line forwards \\x04 to the PTY (a line edit, not a reset). The old stream
-  // tracker wedged at 'unknown' on that byte and never recovered, so a later
-  // visibly erased line still refused to close. Visual comparison self-heals:
-  // whatever happened before, a row that reads as the prompt base closes.
-  it('earlier Ctrl+D passthrough never wedges the gate: a visibly erased line closes', async () => {
+  // Regression (user retests 2026-09-25/26): an earlier Ctrl+D with text on
+  // the line must never poison what follows. It emulates delete-char — a
+  // no-op at the end of the line — instead of forwarding \\x04, which the
+  // user's shell self-inserts as a visible ^D glyph that then breaks the
+  // erase-to-empty flow. 'abc' survives untouched, erasing it visibly
+  // returns the row to the prompt base and Ctrl+D closes.
+  it('earlier Ctrl+D at a non-empty line never wedges the gate: a visibly erased line closes', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
 
     typeText(terminal, 'abc')
-    // Text on the line: not intercepted, \\x04 reaches the PTY.
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
-    act(() => {
-      terminal.emitInput('\x04')
-    })
-    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x04'))
-    // \\x04 deletes nothing at the end of a non-empty line: 'abc' is still
-    // there and the user erases it.
-    backspace(terminal, 3)
-
-    typeText(terminal, 'abc')
+    // Text on the line: emulated delete-char; no raw \\x04 reaches the PTY.
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[3~'))
+    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x04')
+    // Delete-char at the end of a non-empty line deletes nothing: 'abc' is
+    // still there and the user erases it.
     backspace(terminal, 3)
     expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
 
-    // The line is visibly empty: the shortcut closes, despite the earlier
-    // \\x04 in the stream.
+    // The line is visibly empty: the shortcut closes.
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Ctrl+D with text on the line passes through to the PTY (never closes)', async () => {
+  it('Ctrl+D with text on the line emulates delete-char (never closes)', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
 
     typeText(terminal, 'abc')
     const allowed = pressKey(terminal, { key: 'd', ctrlKey: true })
-    // Not intercepted: xterm forwards \\x04 to the PTY, where on a non-empty
-    // line it deletes a character — it is EOF only at an empty line, which is
-    // exactly the state the gate requires.
-    expect(allowed).toBe(true)
+    // Consumed and emulated: the Delete key byte deletes a character under
+    // the cursor in any readline-style shell, and the raw \\x04 — which the
+    // user's shell self-inserts as a ^D glyph — never reaches the PTY.
+    expect(allowed).toBe(false)
     expect(onClose).not.toHaveBeenCalled()
-
-    act(() => {
-      terminal.emitInput('\x04')
-    })
-    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x04'))
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[3~'))
+    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x04')
   })
 
-  it('history recall fills the line: Ctrl+D passes through until the recall is visibly erased', async () => {
+  it('history recall fills the line: Ctrl+D never closes until the recall is visibly erased', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
@@ -459,13 +456,13 @@ describe('ChatTerminal lifecycle', () => {
       terminal.emitInput('\x1b[A')
       terminal.echo('git status')
     })
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).not.toHaveBeenCalled()
 
     // Partial erase still leaves text on the line — never close.
     backspace(terminal, 3)
     expect(terminal.buffer.active.rows[0]).toBe(`${PROMPT}git sta`)
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).not.toHaveBeenCalled()
 
     // Erased back to the prompt base: the line is visibly empty again.
@@ -475,16 +472,22 @@ describe('ChatTerminal lifecycle', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Ctrl+U that clears the whole line leaves the prompt: Ctrl+D closes', async () => {
+  it('Ctrl+U emulates unix-line-discard: the erased line reads as the prompt and Ctrl+D closes', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
 
     typeText(terminal, 'abc')
-    // The shell's unix-line-discard clears the whole line and redraws the
-    // prompt — the row reads as the base again.
+    // The app emulates the line edit with one backspace per input cell before
+    // the cursor — the raw \x15 would be self-inserted by the user's shell as
+    // a ^U glyph, never clearing anything.
+    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
+    await waitFor(() =>
+      expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x7f\x7f\x7f'),
+    )
+    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x15')
+    // The shell echoes the backspaces as erasures — the row reads as the base.
     act(() => {
-      terminal.emitInput('\x15')
       terminal.eraseBefore(3)
     })
     expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
@@ -493,7 +496,7 @@ describe('ChatTerminal lifecycle', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Ctrl+U leaving text behind the cursor is not empty: Ctrl+D passes through', async () => {
+  it('Ctrl+U kills only the input before the cursor: text behind it survives and the gate stays shut', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
@@ -505,17 +508,19 @@ describe('ChatTerminal lifecycle', () => {
       terminal.emitInput('\x1b[D')
       terminal.buffer.active.cursorX -= 1
     })
-    // unix-line-discard kills only backward from the cursor (down to the
-    // prompt): 'c' survives behind it and the row no longer reads as the
+    // Emulated unix-line-discard kills only backward from the cursor (down to
+    // the prompt): 'c' survives behind it and the row no longer reads as the
     // prompt base.
+    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x7f\x7f'))
     act(() => {
-      terminal.emitInput('\x15')
       terminal.eraseBefore(2)
     })
     expect(terminal.buffer.active.rows[0]).toBe(`${PROMPT}c`)
     expect(terminal.buffer.active.cursorX).toBe(PROMPT.length)
 
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
+    // Text behind the cursor: the line is not empty — Ctrl+D must not close.
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).not.toHaveBeenCalled()
 
     // Control: step over the survivor, erase it — the gate closes again.
@@ -529,7 +534,26 @@ describe('ChatTerminal lifecycle', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('pasted text fills the line: Ctrl+D passes through until it is visibly erased', async () => {
+  it('Ctrl+U never sends blind backspaces when the row is not attributable to the prompt base', async () => {
+    const onClose = vi.fn()
+    const { terminal, bundle } = renderTerminal(onClose)
+    showPrompt(terminal, bundle)
+
+    typeText(terminal, 'abc')
+    // Program output repaints the cursor row: it no longer reads as
+    // prompt+input — and is longer than the base, so an unguarded character
+    // count would happily send backspaces into unknown territory.
+    act(() => {
+      terminal.setCursorRow('program output repaints this row!!')
+      bundle.emitData('program output repaints this row!!')
+    })
+    const writesBefore = vi.mocked(bundle.app.terminals.write).mock.calls.length
+    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
+    expect(vi.mocked(bundle.app.terminals.write).mock.calls.length).toBe(writesBefore)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('pasted text fills the line: Ctrl+D never closes until it is visibly erased', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
@@ -540,7 +564,8 @@ describe('ChatTerminal lifecycle', () => {
       terminal.emitInput('\x1b[200~git status\x1b[201~')
       terminal.echo('git status')
     })
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
+    // Not empty (pasted text): Ctrl+D emulates delete-char, never closes.
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).not.toHaveBeenCalled()
 
     // Erased back to the prompt base: the line is visibly empty again.
@@ -564,6 +589,21 @@ describe('ChatTerminal lifecycle', () => {
     backspace(terminal, 3)
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl+U inside a full-screen program (alternate buffer) passes through untouched', async () => {
+    const onClose = vi.fn()
+    const { terminal, bundle } = renderTerminal(onClose)
+    showPrompt(terminal, bundle)
+    terminal.buffer.active.type = 'alternate'
+
+    typeText(terminal, 'abc')
+    // vim/htop use Ctrl+U for scrolling: the key is left to xterm and no
+    // synthetic line-edit bytes are ever sent.
+    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(true)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x15')
+    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x7f')
   })
 
   it('Ctrl+D is matched on the physical key (non-Latin layouts)', async () => {
@@ -601,29 +641,28 @@ describe('ChatTerminal lifecycle', () => {
     // character reaches the PTY as data — a keydown-flag gate missed it.
     expect(pressKey(terminal, { key: 'ą', ctrlKey: true, altKey: true })).toBe(true)
     typeText(terminal, 'ą')
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).not.toHaveBeenCalled()
     // AltGr+d itself is never the Ctrl+D shortcut (altKey is held).
     expect(pressKey(terminal, { key: 'd', ctrlKey: true, altKey: true })).toBe(true)
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('double Ctrl+D at a non-empty line never closes (the forwarded \\x04 is not a delete-at-end)', async () => {
+  it('double Ctrl+D at a non-empty line never closes (emulated delete-char keeps the line non-empty)', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
 
     typeText(terminal, 'a')
-    // First Ctrl+D is not intercepted: xterm forwards \\x04 to the PTY, where
-    // at the end of a non-empty line it deletes nothing — 'a' stays.
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
-    act(() => {
-      terminal.emitInput('\x04')
-    })
-    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x04'))
+    // First Ctrl+D emulates delete-char: at the end of a non-empty line it
+    // deletes nothing — 'a' stays (the raw \\x04 would have become a ^D
+    // glyph in the user's shell instead).
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[3~'))
+    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x04')
     expect(terminal.buffer.active.rows[0]).toBe(`${PROMPT}a`)
-    // The line still holds 'a': a second Ctrl+D must pass through, never close.
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
+    // The line still holds 'a': a second Ctrl+D must not close either.
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).not.toHaveBeenCalled()
 
     // Control: visibly erasing 'a' opens the gate again.

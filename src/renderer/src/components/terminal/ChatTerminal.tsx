@@ -27,7 +27,8 @@ interface ChatTerminalProps {
    * terminal exit (spec Behaviour 11 / AC9). Contract decision: at an empty
    * line the chat closes even while a normal-buffer program (e.g. a python
    * REPL) runs — leaving such a program is `exit()`/Ctrl+Z+Enter, not this
-   * shortcut.
+   * shortcut. On a non-empty line `Ctrl+D`/`Ctrl+U` emulate readline
+   * `delete-char`/`unix-line-discard` (see the key handler below).
    */
   onClose: () => void
   /** Spawn failure (e.g. project directory missing): typed error state. */
@@ -176,15 +177,53 @@ export function ChatTerminal({
       void appRef.current.terminals.write(chatId, data).catch(() => undefined)
     })
 
+    // Synthetic input from the app's own line-edit emulations (below): it
+    // freezes the prompt base exactly like real input bytes do.
+    function sendToPty(data: string): void {
+      baseFrozen = true
+      void appRef.current.terminals.write(chatId, data).catch(() => undefined)
+    }
+
+    // Input characters between the prompt base and the cursor — the region a
+    // readline-style Ctrl+U (unix-line-discard) deletes, counted in the same
+    // unit the shell's backspace deletes. Zero when the row cannot be
+    // attributed to prompt + input: never send blind backspaces. Known
+    // bounded gaps (safe direction — a dead Ctrl+U, never a destructive one):
+    // a wrapped input line whose cursor row no longer starts with the base,
+    // and multi-code-point cells (combining marks) where characters and
+    // backspaces can disagree by one.
+    function inputCharsBeforeCursor(): number {
+      if (promptBase === null) {
+        return 0
+      }
+      const buffer = terminal.buffer.active
+      const line = buffer.getLine(buffer.baseY + buffer.cursorY)
+      if (line === undefined) {
+        return 0
+      }
+      const before = line.translateToString(false, 0, buffer.cursorX)
+      if (!before.startsWith(promptBase)) {
+        return 0
+      }
+      return before.slice(promptBase.length).length
+    }
+
     // The shell (e.g. PowerShell with PSReadLine) does not end on Ctrl+D, so
     // the app closes the chat — but only when the input line is visibly
     // empty (compared against the prompt base, above) and no full-screen
     // program owns the terminal (alternate buffer, e.g. vim/htop — there
-    // Ctrl+D scrolls). At an empty line the chat closes even while a
-    // normal-buffer program (e.g. a python REPL) runs: leaving such a program
-    // is `exit()`/Ctrl+Z+Enter, not this shortcut (contract decision).
-    // Otherwise the key is left to xterm and reaches the PTY as `\x04`, where
-    // on a non-empty line it deletes a character.
+    // Ctrl+D/Ctrl+U keep their program meaning and pass through untouched).
+    // At an empty line the chat closes even while a normal-buffer program
+    // (e.g. a python REPL) runs: leaving such a program is `exit()`/Ctrl+Z+Enter,
+    // not this shortcut (contract decision).
+    // On a non-empty line the two shortcuts are EMULATED readline line edits.
+    // Raw control bytes must never be forwarded: the user's shell (PSReadLine,
+    // Windows edit mode) has no Ctrl+D/Ctrl+U binding and self-inserts them
+    // into the input line as visible ^D/^U glyphs, poisoning the line the
+    // emptiness gate judges (user retest 2026-09-26). The emulations are what
+    // every readline-style shell understands: Ctrl+D = delete-char (the Delete
+    // key byte), Ctrl+U = unix-line-discard (backspaces over the input before
+    // the cursor; text behind it survives).
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
       if (event.type !== 'keydown') {
         return true
@@ -201,14 +240,26 @@ export function ChatTerminal({
         resetBytePending = true
         return true
       }
-      // Matched on the physical key (event.code) so the shortcut also works on
-      // non-Latin layouts where Ctrl+D reports a different event.key.
+      // Matched on the physical key (event.code) so the shortcuts also work on
+      // non-Latin layouts where Ctrl+D/Ctrl+U report a different event.key.
       const isCtrlD = (event.code === 'KeyD' || event.key === 'd' || event.key === 'D') && ctrlOnly
-      if (isCtrlD && terminal.buffer.active.type !== 'alternate' && isInputLineEmpty()) {
-        onCloseRef.current()
+      const isCtrlU = (event.code === 'KeyU' || event.key === 'u' || event.key === 'U') && ctrlOnly
+      if ((!isCtrlD && !isCtrlU) || terminal.buffer.active.type === 'alternate') {
+        return true
+      }
+      if (isCtrlD) {
+        if (isInputLineEmpty()) {
+          onCloseRef.current()
+          return false
+        }
+        sendToPty('\x1b[3~')
         return false
       }
-      return true
+      const kill = inputCharsBeforeCursor()
+      if (kill > 0) {
+        sendToPty('\x7f'.repeat(kill))
+      }
+      return false
     })
 
     function isInputLineEmpty(): boolean {
