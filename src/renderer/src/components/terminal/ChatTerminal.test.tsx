@@ -1,6 +1,7 @@
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../../shared/ipc-contract'
+import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { mockFitAddonInstances, resetMockFitAddons } from '../../test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
 import { ChatTerminal } from './ChatTerminal'
@@ -67,7 +68,9 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       }),
     },
     git: {
-      getStatus: vi.fn().mockResolvedValue({ branch: null, dirty: false }),
+      getStatus: vi
+        .fn()
+        .mockResolvedValue({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),

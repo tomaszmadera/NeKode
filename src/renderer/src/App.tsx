@@ -3,13 +3,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatInfo, FileEntry, ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
+import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
-import { ProjectFilesSurface } from './components/files/ProjectFilesSurface'
-import { CenterHeader } from './components/layout/CenterHeader'
 import { LeftNavigation } from './components/layout/LeftNavigation'
 import { ResizeHandle } from './components/layout/ResizeHandle'
-import { TopBar } from './components/layout/TopBar'
+import { StatusBar } from './components/layout/StatusBar'
+import { TabStrip } from './components/tabs/TabStrip'
+import {
+  activateTab,
+  closeFileTab,
+  emptyTabsSession,
+  openFileTab,
+  type ProjectTabsSession,
+  type TabId,
+  TERMINAL_TAB,
+} from './components/tabs/tabs-session'
 import { ChatWorkspace } from './components/workspace/ChatWorkspace'
 import {
   BOTTOM_REGION_SIZE,
@@ -18,7 +27,7 @@ import {
   type RegionSizeLimits,
   useResizableRegion,
 } from './hooks/useResizableRegion'
-import { TEST_ID } from './lib/test-ids'
+import { TEST_ID, testIdFor } from './lib/test-ids'
 
 // Re-exported so existing imports keep working; the definitions live in
 // lib/test-ids.ts to break the App ↔ component import cycle.
@@ -62,11 +71,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
   // Project Files mode (spec Behaviour 1–2, 12): the project whose tree is
   // shown in the left panel, or null for the Projects/Chats navigation. The
-  // mode never touches the chat/project selection — `← Projects` restores the
-  // center surface that was active before entry (Behaviour 12). Per-project
-  // tree state lives in filesSessions for the app session only (Behaviour 14).
+  // mode never touches the chat/project selection and no longer swaps the
+  // center surface (`← Projects` keeps the tab strip and the active tab).
+  // Per-project tree state lives in filesSessions for the app session only
+  // (Behaviour 14).
   const [filesProjectId, setFilesProjectId] = useState<string | null>(null)
   const [filesSessions, setFilesSessions] = useState<Record<string, ProjectFilesSession>>({})
+  // Per-project tab-strip sessions (center-layout-tabs-actions spec
+  // Behaviour 3–5): open file tabs in open order, the active tab and the
+  // previously active tab. Per-session UI state — never persisted.
+  const [tabsByProject, setTabsByProject] = useState<Record<string, ProjectTabsSession>>({})
   // Projects removed in this session: pending chat loads for them are stale.
   const removedProjectIdsRef = useRef<Set<string>>(new Set())
   // Synchronous mirror of chatsByProject: every mutation goes through
@@ -200,6 +214,42 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app, applyChatsUpdate],
   )
 
+  // --- Tab strip sessions (spec Behaviour 3–5) ----------------------------
+
+  const updateTabsSession = useCallback(
+    (projectId: string, updater: (session: ProjectTabsSession) => ProjectTabsSession): void => {
+      setTabsByProject((previous) => ({
+        ...previous,
+        [projectId]: updater(previous[projectId] ?? emptyTabsSession()),
+      }))
+    },
+    [],
+  )
+
+  // The tab strip and the main surface belong to one project at a time: the
+  // Files-mode project while its tree is on screen, else the selected one.
+  const tabProjectId = filesProjectId ?? selectedProjectId
+
+  const handleSelectTab = useCallback(
+    (tab: TabId): void => {
+      if (tabProjectId === null) {
+        return
+      }
+      updateTabsSession(tabProjectId, (session) => activateTab(session, tab))
+    },
+    [tabProjectId, updateTabsSession],
+  )
+
+  const handleCloseFileTab = useCallback(
+    (relativePath: string): void => {
+      if (tabProjectId === null) {
+        return
+      }
+      updateTabsSession(tabProjectId, (session) => closeFileTab(session, relativePath))
+    },
+    [tabProjectId, updateTabsSession],
+  )
+
   const handleSelectProject = useCallback(
     (projectId: string): void => {
       setNotice(null)
@@ -224,8 +274,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setSelectionNonce((previous) => previous + 1)
       setExpandedProjectIds((previous) => new Set(previous).add(projectId))
       persistSelection(projectId, chatId)
+      // Selecting a chat shows its terminal: the terminal-chat tab becomes
+      // the active tab of the chat's project (Behaviour 2).
+      updateTabsSession(projectId, (session) => activateTab(session, TERMINAL_TAB))
     },
-    [persistSelection],
+    [persistSelection, updateTabsSession],
   )
 
   const handleToggleProject = useCallback(
@@ -304,8 +357,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           return next
         })
         // Drop the removed project's file-tree session (Behaviour 14) and
+        // tab-strip session (tabs are per-project, spec Behaviour 5), and
         // leave Project Files mode if its tree is on screen.
         setFilesSessions((previous) => {
+          if (!(projectId in previous)) {
+            return previous
+          }
+          const next = { ...previous }
+          delete next[projectId]
+          return next
+        })
+        setTabsByProject((previous) => {
           if (!(projectId in previous)) {
             return previous
           }
@@ -375,7 +437,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   )
 
   // Entering the mode is per project and idempotent (spec Behaviour 4): the
-  // retained expansion state and last selected file survive the round-trip.
+  // retained expansion state and open file tabs survive the round-trip.
   const handleOpenProjectFiles = useCallback(
     (projectId: string): void => {
       setNotice(null)
@@ -420,14 +482,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [filesProjectId, filesSessions, loadFilesDirectory, updateFilesSession],
   )
 
+  // Clicking a file in the tree opens its tab, or focuses it when already
+  // open — a file never has two tabs (spec Behaviour 3).
   const handleFilesSelectFile = useCallback(
     (relativePath: string): void => {
       if (filesProjectId === null) {
         return
       }
-      updateFilesSession(filesProjectId, (session) => ({ ...session, selectedPath: relativePath }))
+      const projectId = filesProjectId
+      updateFilesSession(projectId, (session) => ({ ...session, selectedPath: relativePath }))
+      updateTabsSession(projectId, (session) => openFileTab(session, relativePath))
     },
-    [filesProjectId, updateFilesSession],
+    [filesProjectId, updateFilesSession, updateTabsSession],
   )
 
   // Failed "Open externally" (spec Errors): a notice, never a silent drop.
@@ -437,7 +503,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   // New Chat (spec Behaviour 3): created immediately with no naming form —
   // the name comes from the platform shell in main and duplicates are
-  // allowed. The new chat becomes the selected chat.
+  // allowed. The new chat becomes the selected chat and its terminal shows
+  // (the terminal-chat tab becomes active).
   const handleCreateChat = useCallback(
     (projectId: string): Promise<boolean> => {
       setNotice(null)
@@ -459,6 +526,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           setSelectedChatId(chat.id)
           setSelectionNonce((previous) => previous + 1)
           persistSelection(projectId, chat.id)
+          updateTabsSession(projectId, (session) => activateTab(session, TERMINAL_TAB))
           return true
         } catch (error) {
           setNotice(errorMessage(error, 'Failed to create the chat.'))
@@ -466,8 +534,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
       })()
     },
-    [app, applyChatsUpdate, persistSelection],
+    [app, applyChatsUpdate, persistSelection, updateTabsSession],
   )
+
+  // `+ New chat` (spec Behaviour 8): the existing new-chat flow unchanged —
+  // immediate creation in the active project, shell display name, chat
+  // selected and its terminal shown.
+  const handleTabNewChat = useCallback((): void => {
+    if (tabProjectId !== null) {
+      void handleCreateChat(tabProjectId)
+    }
+  }, [handleCreateChat, tabProjectId])
 
   // Terminal-exit close flow (spec Behaviour 11): remove the chat from the
   // tree and the database, then continue on the next chat of the same project
@@ -568,13 +645,24 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     filesProjectId === null
       ? emptyProjectFilesSession()
       : (filesSessions[filesProjectId] ?? emptyProjectFilesSession())
+  const tabProject =
+    tabProjectId === null ? null : (projects.find((project) => project.id === tabProjectId) ?? null)
+  const tabsSession =
+    tabProjectId === null ? emptyTabsSession() : (tabsByProject[tabProjectId] ?? emptyTabsSession())
+  const activeTab = tabsSession.active
+  const activeChat =
+    selectedProject === null
+      ? null
+      : (chatsByProject[selectedProject.id]?.find((chat) => chat.id === selectedChatId) ?? null)
+  // Selected project wins for the status bar context when no tree is shown;
+  // in Files mode the tree's project is the active workspace project.
+  const statusProject = tabProject ?? selectedProject
 
   return (
     <div
       className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100 antialiased"
       data-testid={TEST_ID.appShell}
     >
-      <TopBar />
       <div className="flex min-h-0 flex-1">
         {filesProject !== null ? (
           <ProjectFilesPanel
@@ -609,22 +697,52 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           />
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <CenterHeader app={app} project={filesProject ?? selectedProject} />
+          {/* Center column (spec Behaviour 1): tab strip, reserved action-row
+              slot, main surface. No window-top band and no context header. */}
+          <TabStrip
+            chatName={activeChat?.name ?? null}
+            openFiles={tabsSession.openFiles}
+            active={activeTab}
+            onSelectTab={handleSelectTab}
+            onCloseFile={handleCloseFileTab}
+            onNewChat={handleTabNewChat}
+          />
+          {/* Reserved place for the action row (Stage 3 boundary): no controls. */}
+          <div
+            className="flex h-8 shrink-0 items-center border-b border-neutral-800"
+            data-testid={TEST_ID.actionRowSlot}
+            aria-hidden="true"
+          />
           <main className="flex min-h-0 flex-1 flex-col" data-testid={TEST_ID.centerSurface}>
-            {filesProject !== null ? (
-              <ProjectFilesSurface
-                app={app}
-                project={filesProject}
-                selectedPath={filesSession.selectedPath}
-                onOpenExternalError={handleFilesOpenExternalError}
-              />
-            ) : null}
-            {/* Chat sessions stay mounted (hidden) while Project Files mode is
-                open: PTY processes and xterm scrollback survive the round-trip
-                (spec Behaviour 12 / AC6). */}
+            {/* Every open file tab owns its preview view (hidden while another
+                tab is active): per-tab loading/fallback/error state survives
+                tab switches and never touches the other tabs (Behaviour 6–7). */}
+            {tabProject !== null
+              ? tabsSession.openFiles.map((path) => (
+                  <div
+                    key={path}
+                    className="flex min-h-0 flex-1 flex-col"
+                    style={{
+                      display:
+                        activeTab.kind === 'file' && activeTab.path === path ? 'flex' : 'none',
+                    }}
+                    data-testid={testIdFor.filePreviewPane(path)}
+                  >
+                    <FilePreview
+                      app={app}
+                      projectId={tabProject.id}
+                      relativePath={path}
+                      onOpenExternalError={handleFilesOpenExternalError}
+                    />
+                  </div>
+                ))
+              : null}
+            {/* Chat sessions stay mounted (hidden) while a file tab is active:
+                PTY processes and xterm scrollback survive tab switches and
+                mode round-trips (spec Behaviour 6 / AC2, AC11). */}
             <div
               className="flex min-h-0 flex-1 flex-col"
-              style={{ display: filesProject !== null ? 'none' : 'flex' }}
+              style={{ display: activeTab.kind === 'terminal' ? 'flex' : 'none' }}
               data-testid={TEST_ID.chatSurfaceHost}
             >
               <ChatWorkspace
@@ -664,6 +782,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           testId={TEST_ID.bottomResizeHandle}
         />
       </div>
+      {/* Status bar: the very bottom of the window, full width (spec
+          Behaviour 18). */}
+      <StatusBar app={app} project={statusProject} />
     </div>
   )
 }

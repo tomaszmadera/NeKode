@@ -39,7 +39,9 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
    - Podgląd zawartości plików w trybie tylko do odczytu (read-only) przy użyciu komponentu Monaco Editor.
 
 5. **Pasek akcji projektu (Action Bar):**
-   - Górny pasek z konfigurowalnymi przyciskami do uruchamiania zdefiniowanych poleceń projektu (np. dev server, testy, build, weryfikacja).
+   - Pasek akcji w kolumnie środkowej, bezpośrednio pod paskiem zakładek (decyzja użytkownika 2026-09-26): stałe grupy `Handoff | Resume` i `Stop | Continue`, a następnie konfigurowalne przyciski do uruchamiania zdefiniowanych poleceń projektu (np. dev server, testy, build, weryfikacja).
+   - Stałe przyciski wysyłają do terminala aktywnego czatu dokładne dane wejściowe (tekst + CR; `Stop` = Ctrl+C) przez istniejące IPC `terminals:write`.
+   - Wykonywanie poleceń w trybie `background` albo `new-terminal` (nowy czat z poleceniem); tryb `bottom-terminal` zarezerwowany do czasu dolnego panelu terminali (wymaganie 3).
 
 6. **Persystencja danych:**
    - Zapisywanie konfiguracji projektów, czatów, historii i stanu layoutu w lokalnej bazie SQLite (`better-sqlite3`).
@@ -47,7 +49,9 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
 7. **Interfejs użytkownika:**
    - Ergonomiczny, ciemny interfejs zgodny ze specyfikacją [`UX-UI.md`](file:///mnt/f/projects/NeKode/docs/UX-UI.md).
    - Skalowalne i resizowalne panele robocze.
-   - Interfejs w całości w języku angielskim.
+   - Kolumna środkowa: pasek zakładek u góry (zakładka aktywnego czatu — niezamykalna; zakładki otwartych plików; `+ New chat`), pod nim pasek akcji (zob. 5), poniżej powierzchnia główna.
+   - Pasek statusu na samym dole okna (cała szerokość) z kontekstem projektu: nazwa, ścieżka, wykryte runtimy oraz gałąź i status Git.
+   - Interfejs w całości w języku angielskim; stałe ciągi wysyłane do terminala przez przyciski paska akcji (np. `Napisz handoff`) są danymi literałowymi i nie podlegają tłumaczeniu.
 
 ---
 

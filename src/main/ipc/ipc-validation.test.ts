@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { emptyGitWorktree } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import { buildValidatedChannels, ValidationError } from './ipc-validation'
 import type { AppServices } from './service-registry'
@@ -26,7 +27,9 @@ function fakeServices(): AppServices {
       onExit: () => () => undefined,
     },
     git: {
-      getStatus: vi.fn(() => Promise.resolve({ branch: null, dirty: false })),
+      getStatus: vi.fn(() =>
+        Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
+      ),
     },
     files: {
       list: vi.fn(() => Promise.resolve([])),

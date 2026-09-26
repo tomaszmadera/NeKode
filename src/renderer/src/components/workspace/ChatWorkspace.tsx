@@ -6,8 +6,8 @@ import { ChatTerminal } from '../terminal/ChatTerminal'
 import { StartNewChatSurface } from './StartNewChatSurface'
 import { WelcomeSurface } from './WelcomeSurface'
 
-// Chat workspace (UX-UI §17): chat title bar plus the primary terminal
-// filling the rest of the center surface. This component is the session host:
+// Chat workspace (UX-UI §17): the primary terminal filling the center
+// surface. This component is the session host:
 // every chat terminal view that ever mounted stays mounted (hidden) while the
 // user works elsewhere, so PTY processes and xterm scrollback survive chat and
 // project switches (spec Behaviour 6-7, A4). Views for removed chats (project
@@ -79,8 +79,6 @@ export function ChatWorkspace({
   const closingChatIdsRef = useRef<Set<string>>(new Set())
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null
-  const selectedChat =
-    selectedProject === null ? null : findChat(chatsByProject, selectedProject.id, selectedChatId)
 
   // Empty-state contract (spec Behaviour 11): a selected project without any
   // chats shows the "Start new chat" affordance instead of the welcome page —
@@ -210,14 +208,8 @@ export function ChatWorkspace({
       className="flex min-h-0 flex-1 flex-col"
       data-testid={selectedChatId !== null ? TEST_ID.chatWorkspace : undefined}
     >
-      {selectedChat !== null ? (
-        <div
-          className="flex h-9 shrink-0 items-center border-b border-neutral-800 px-4"
-          data-testid={TEST_ID.chatWorkspaceTitle}
-        >
-          <span className="truncate text-sm font-medium text-neutral-100">{selectedChat.name}</span>
-        </div>
-      ) : null}
+      {/* The chat name lives in the terminal-chat tab label (tab model): no
+          title bar above the terminal. */}
       <div className="relative min-h-0 flex-1" data-testid={TEST_ID.terminalHost}>
         {Object.entries(sessions).map(([chatId, record]) => (
           <div
