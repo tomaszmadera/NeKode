@@ -1,7 +1,7 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import { IPC_CHANNEL } from '../../shared/ipc-contract'
-import { APP_ERROR_MARKER } from '../../shared/ipc-error'
+import { APP_ERROR_MARKER, AppError } from '../../shared/ipc-error'
 import {
   type PtyFactory,
   type PtyProcessLike,
@@ -115,6 +115,11 @@ function createHarness(): Harness {
     git: {
       getStatus: vi.fn(() => Promise.resolve({ branch: 'main', dirty: false })),
     },
+    files: {
+      list: vi.fn(() => Promise.resolve([])),
+      read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
+      openExternal: vi.fn(() => Promise.resolve()),
+    },
   }
 
   const broadcasts: Array<{ channel: string; chatId: string; payload: string | number }> = []
@@ -213,6 +218,11 @@ describe('registered ipc handlers', () => {
       state: { get: vi.fn(() => null), set: vi.fn() },
       terminals,
       git: { getStatus: vi.fn(() => Promise.resolve({ branch: null, dirty: false })) },
+      files: {
+        list: vi.fn(() => Promise.resolve([])),
+        read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
+        openExternal: vi.fn(() => Promise.resolve()),
+      },
     }
     const { ipcMain, invoke } = createFakeIpcMain()
     registerAppIpcHandlers(ipcMain, services, {
@@ -260,6 +270,11 @@ describe('registered ipc handlers', () => {
       state: { get: vi.fn(() => null), set: vi.fn() },
       terminals,
       git: { getStatus: vi.fn(() => Promise.resolve({ branch: null, dirty: false })) },
+      files: {
+        list: vi.fn(() => Promise.resolve([])),
+        read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
+        openExternal: vi.fn(() => Promise.resolve()),
+      },
     }
     const { ipcMain, invoke } = createFakeIpcMain()
     registerAppIpcHandlers(ipcMain, services, {
@@ -329,6 +344,85 @@ describe('registered ipc handlers', () => {
       // Raw error details are sanitized to the generic typed payload.
       expect((error as Error).message).toContain(APP_ERROR_MARKER)
       expect((error as Error).message).not.toContain('db exploded')
+    }
+  })
+})
+
+describe('files:* channels (project files view)', () => {
+  it('routes validated payloads to the file service (root and nested)', async () => {
+    const { services, invoke } = createHarness()
+    await invoke(IPC_CHANNEL.filesList, ['p1', null])
+    expect(services.files.list).toHaveBeenCalledWith('p1', null)
+
+    await invoke(IPC_CHANNEL.filesList, ['p1', 'src/app'])
+    expect(services.files.list).toHaveBeenCalledWith('p1', 'src/app')
+
+    await invoke(IPC_CHANNEL.filesRead, ['p1', 'app/Services/Billing.php'])
+    expect(services.files.read).toHaveBeenCalledWith('p1', 'app/Services/Billing.php')
+
+    await invoke(IPC_CHANNEL.filesOpenExternal, ['p1', 'docs/readme.md'])
+    expect(services.files.openExternal).toHaveBeenCalledWith('p1', 'docs/readme.md')
+  })
+
+  it('rejects invalid payloads with typed validation errors before the service', () => {
+    const { services, invoke } = createHarness()
+    const cases: Array<[string, unknown[]]> = [
+      // Wrong arity (files:list takes exactly two arguments).
+      [IPC_CHANNEL.filesList, ['p1']],
+      [IPC_CHANNEL.filesList, ['p1', 'src', 'extra']],
+      // Non-string project id.
+      [IPC_CHANNEL.filesRead, [42, 'a.txt']],
+      // files:list is the only channel accepting null (the project root).
+      [IPC_CHANNEL.filesRead, ['p1', null]],
+      // Relative path shape: non-empty string without NUL bytes.
+      [IPC_CHANNEL.filesRead, ['p1', '']],
+      [IPC_CHANNEL.filesOpenExternal, ['p1', 'a\u0000b.txt']],
+      [IPC_CHANNEL.filesList, ['p1', 7]],
+    ]
+    for (const [channel, payload] of cases) {
+      try {
+        invoke(channel, payload)
+        expect.unreachable(`validation must reject ${channel} ${JSON.stringify(payload)}`)
+      } catch (error) {
+        expect((error as Error).message).toContain(APP_ERROR_MARKER)
+        expect((error as Error).message).toContain('validation')
+      }
+    }
+    expect(services.files.list).not.toHaveBeenCalled()
+    expect(services.files.read).not.toHaveBeenCalled()
+    expect(services.files.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('lets containment violations through validation and transports them as typed not_found', async () => {
+    const harness = createHarness()
+    // Shape validation must not swallow traversal: the service decides
+    // containment and answers with the not-found error (spec AC7).
+    vi.mocked(harness.services.files.read).mockRejectedValue(
+      new AppError('not_found', 'File not found.', 'files:read'),
+    )
+    try {
+      await harness.invoke(IPC_CHANNEL.filesRead, ['p1', '../outside/secret.txt'])
+      expect.unreachable('containment rejection must reject')
+    } catch (error) {
+      const message = (error as Error).message
+      expect(message).toContain(APP_ERROR_MARKER)
+      expect(message).toContain('not_found')
+      expect(message).toContain('File not found.')
+    }
+  })
+
+  it('transports a failed Open externally as a typed error (notice path)', async () => {
+    const harness = createHarness()
+    vi.mocked(harness.services.files.openExternal).mockRejectedValue(
+      new AppError('unknown', 'Failed to open the file externally.', 'files:openExternal'),
+    )
+    try {
+      await harness.invoke(IPC_CHANNEL.filesOpenExternal, ['p1', 'doc.pdf'])
+      expect.unreachable('open failure must reject')
+    } catch (error) {
+      const message = (error as Error).message
+      expect(message).toContain(APP_ERROR_MARKER)
+      expect(message).toContain('Failed to open the file externally.')
     }
   })
 })

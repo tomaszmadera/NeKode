@@ -28,6 +28,11 @@ function fakeServices(): AppServices {
     git: {
       getStatus: vi.fn(() => Promise.resolve({ branch: null, dirty: false })),
     },
+    files: {
+      list: vi.fn(() => Promise.resolve([])),
+      read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
+      openExternal: vi.fn(() => Promise.resolve()),
+    },
   }
 }
 
@@ -81,6 +86,27 @@ describe('ipc payload validation', () => {
     expect(entry?.parse(['t1', 'D:/code/demo'])).toEqual(['t1', 'D:/code/demo'])
   })
 
+  it('validates files relative paths by shape only (containment is the service’s job)', () => {
+    const channels = channelMap()
+    const read = channels.get('files:read')
+    expect(read?.parse(['p1', 'app/Services/Billing.php'])).toEqual([
+      'p1',
+      'app/Services/Billing.php',
+    ])
+    // Empty and NUL-carrying strings are shape violations…
+    expect(() => read?.parse(['p1', ''])).toThrow(ValidationError)
+    expect(() => read?.parse(['p1', 'a\u0000b'])).toThrow(/NUL/)
+    expect(() => read?.parse(['p1', null])).toThrow(ValidationError)
+    // …but traversal/absolute inputs pass validation untouched: they must be
+    // rejected by the file service with the not-found error (spec AC7).
+    expect(read?.parse(['p1', '../outside/secret.txt'])).toEqual(['p1', '../outside/secret.txt'])
+    expect(read?.parse(['p1', 'D:/outside/secret.txt'])).toEqual(['p1', 'D:/outside/secret.txt'])
+
+    const list = channels.get('files:list')
+    expect(list?.parse(['p1', null])).toEqual(['p1', null])
+    expect(() => list?.parse(['p1', ''])).toThrow(ValidationError)
+  })
+
   it('ValidationError transports as a typed validation AppError', () => {
     const error = new ValidationError('bad payload')
     expect(error).toBeInstanceOf(AppError)
@@ -130,6 +156,9 @@ describe('ipc payload validation', () => {
       'terminals:write',
       'terminals:resize',
       'git:status',
+      'files:list',
+      'files:read',
+      'files:openExternal',
     ]) {
       expect(channels.has(channel)).toBe(true)
     }

@@ -66,7 +66,12 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  const services = createServices({ dbPath: join(app.getPath('userData'), 'nekode.db') })
+  const services = createServices({
+    dbPath: join(app.getPath('userData'), 'nekode.db'),
+    // The single OS-facing action of the project-files feature (spec
+    // Behaviour 11): open with the OS default application. '' = success.
+    openExternal: (absolutePath) => shell.openPath(absolutePath),
+  })
   registerAppIpcHandlers(ipcMain, services, {
     trustedRendererUrls: getTrustedRendererUrls(),
     // Terminal data/exit events go to every window's webContents (single-window

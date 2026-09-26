@@ -1,4 +1,12 @@
-import type { AppApi, ChatInfo, GitStatus, ProjectInfo, Unsubscribe } from '../shared/ipc-contract'
+import type {
+  AppApi,
+  ChatInfo,
+  FileEntry,
+  FilePreview,
+  GitStatus,
+  ProjectInfo,
+  Unsubscribe,
+} from '../shared/ipc-contract'
 import { IPC_CHANNEL } from '../shared/ipc-contract'
 import { parseAppErrorPayload } from '../shared/ipc-error'
 import type { IpcRendererLike } from './bridge-types'
@@ -78,6 +86,14 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
     },
     git: {
       getStatus: (projectPath) => invoke<GitStatus>(IPC_CHANNEL.gitStatus, projectPath),
+    },
+    files: {
+      list: (projectId, relativePath) =>
+        invoke<FileEntry[]>(IPC_CHANNEL.filesList, projectId, relativePath),
+      read: (projectId, relativePath) =>
+        invoke<FilePreview>(IPC_CHANNEL.filesRead, projectId, relativePath),
+      openExternal: (projectId, relativePath) =>
+        invoke<void>(IPC_CHANNEL.filesOpenExternal, projectId, relativePath),
     },
   }
 }

@@ -74,6 +74,11 @@ function createAppMock(): AppMockBundle {
     git: {
       getStatus: vi.fn().mockResolvedValue({ branch: 'main', dirty: false }),
     },
+    files: {
+      list: vi.fn().mockResolvedValue([]),
+      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
+      openExternal: vi.fn().mockResolvedValue(undefined),
+    },
   }
   return {
     app,

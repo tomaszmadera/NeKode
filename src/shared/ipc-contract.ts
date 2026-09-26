@@ -26,6 +26,23 @@ export interface GitStatus {
 
 export type Unsubscribe = () => void
 
+// One entry of a project file-tree listing (spec Data/API): one directory
+// level, already filtered in main (default directory exclusions).
+export interface FileEntry {
+  name: string
+  /** Path relative to the project root, '/'-separated ('' is never used: the root itself has no entry). */
+  relativePath: string
+  kind: 'file' | 'directory'
+}
+
+// Read-only file preview classification (spec Data/API / Behaviour 10):
+// text at or below the preview threshold, too-large above it, binary when
+// the content is not decodable as UTF-8 (or sniffs binary).
+export type FilePreview =
+  | { kind: 'text'; content: string; language: string | null }
+  | { kind: 'too-large'; size: number }
+  | { kind: 'binary' }
+
 // Channel names mirror the spec Data/API bridge. terminals:terminate is
 // intentionally absent: app-quit PTY teardown runs in the main process
 // (TerminalService.terminateAll on app quit), never through the renderer.
@@ -44,6 +61,9 @@ export const IPC_CHANNEL = {
   terminalsData: 'terminals:data',
   terminalsExit: 'terminals:exit',
   gitStatus: 'git:status',
+  filesList: 'files:list',
+  filesRead: 'files:read',
+  filesOpenExternal: 'files:openExternal',
 } as const
 
 // Keys of the flat app_state key–value store (spec Data/API). Shared so the
@@ -91,5 +111,17 @@ export interface AppApi {
   }
   git: {
     getStatus(projectPath: string): Promise<GitStatus>
+  }
+  files: {
+    /**
+     * One directory level of the project tree (null = project root). The
+     * listing is filtered in main (default directory exclusions) and never
+     * resolves outside the registered project root.
+     */
+    list(projectId: string, relativePath: string | null): Promise<FileEntry[]>
+    /** Read-only preview classification of one project file. */
+    read(projectId: string, relativePath: string): Promise<FilePreview>
+    /** Opens the file with the OS default application (main: shell.openPath). */
+    openExternal(projectId: string, relativePath: string): Promise<void>
   }
 }

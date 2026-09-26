@@ -46,6 +46,11 @@ function createAppApiStub(): AppApi {
     git: {
       getStatus: vi.fn().mockResolvedValue({ branch: 'main', dirty: false }),
     },
+    files: {
+      list: vi.fn().mockResolvedValue([]),
+      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
+      openExternal: vi.fn().mockResolvedValue(undefined),
+    },
   }
 }
 
@@ -317,7 +322,9 @@ describe('project and chat data flow', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(testIdFor.chatRow('t1'))
 
-    fireEvent.click(screen.getByTestId(testIdFor.removeProject('p1')))
+    // Removal is reachable only from the row context menu (spec Behaviour 3).
+    fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
     await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
 
     expect(await screen.findByTestId(TEST_ID.emptyProjectList)).toBeTruthy()
@@ -343,7 +350,8 @@ describe('project and chat data flow', () => {
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't1')
 
     vi.mocked(app.state.set).mockClear()
-    fireEvent.click(screen.getByTestId(testIdFor.removeProject('p2')))
+    fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p2')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p2')))
     await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p2'))
     await waitFor(() => expect(app.projects.list).toHaveBeenCalledTimes(2))
 
