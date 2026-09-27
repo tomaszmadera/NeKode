@@ -30,6 +30,12 @@
       "scopes": ["product"],
       "tags": ["powershell", "psreadline", "conpty", "xterm", "terminal", "ctrl-d", "windows"],
       "path": ".agents/lessons/items/powershell-psreadline-key-chords-self-insert.md"
+    },
+    {
+      "id": "powershell-preserve-native-exit-code",
+      "scopes": ["product"],
+      "tags": ["powershell", "windows", "verification", "exit-code", "native-command"],
+      "path": ".agents/lessons/items/powershell-preserve-native-exit-code.md"
     }
   ]
 }
