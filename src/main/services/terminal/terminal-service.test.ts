@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createBottomTabId } from '../../../shared/bottom-tab-id'
 import { AppError } from '../../../shared/ipc-error'
 import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-service'
 import { shellDisplayName, TerminalService } from './terminal-service'
@@ -261,6 +262,74 @@ describe('terminal service (fake PTY)', () => {
   it('terminate on an unknown chat is a safe no-op', () => {
     const { service } = createHarness()
     expect(() => service.terminate('ghost')).not.toThrow()
+  })
+
+  it('a bottom tab id can create, write, resize, and exit without affecting a chat id', () => {
+    const { service, ptys } = createHarness()
+    const bottomId = createBottomTabId('p1')
+    const dataEvents: Array<[string, string]> = []
+    const exitEvents: Array<[string, number]> = []
+    service.onData((sessionId, data) => dataEvents.push([sessionId, data]))
+    service.onExit((sessionId, exitCode) => exitEvents.push([sessionId, exitCode]))
+
+    service.create('chat-1', 'D:/chat')
+    service.create(bottomId, 'D:/bottom')
+    service.write(bottomId, 'dir\r')
+    service.resize(bottomId, 100, 40)
+    ptys[0]?.emitData('from-chat')
+    ptys[1]?.emitData('from-bottom')
+    ptys[1]?.emitExit(0)
+
+    expect(ptys[0]?.writes).toEqual([])
+    expect(ptys[1]?.writes).toEqual(['dir\r'])
+    expect(ptys[1]?.resizes).toEqual([{ cols: 100, rows: 40 }])
+    expect(dataEvents).toEqual([
+      ['chat-1', 'from-chat'],
+      [bottomId, 'from-bottom'],
+    ])
+    expect(exitEvents).toEqual([[bottomId, 0]])
+    expect(service.hasRunningSession('chat-1')).toBe(true)
+    expect(service.hasRunningSession(bottomId)).toBe(false)
+    expect(ptys[0]?.killCount).toBe(0)
+  })
+
+  it('project-scoped bottom teardown kills only that project, and quit kills every PTY without exits', () => {
+    const { service, ptys } = createHarness({ killEmitsExit: true })
+    const bottomP1 = createBottomTabId('p1')
+    const bottomP2 = createBottomTabId('p2')
+    const exitEvents: Array<[string, number]> = []
+    service.onExit((sessionId, exitCode) => exitEvents.push([sessionId, exitCode]))
+    service.create('chat-p1', 'D:/a')
+    service.create(bottomP1, 'D:/a')
+    service.create('chat-p2', 'D:/b')
+    service.create(bottomP2, 'D:/b')
+
+    service.terminateProjectBottom('p1')
+    expect(ptys.map((pty) => pty.killCount)).toEqual([0, 1, 0, 0])
+    expect(service.hasRunningSession('chat-p1')).toBe(true)
+    expect(service.hasRunningSession(bottomP1)).toBe(false)
+    expect(service.hasRunningSession('chat-p2')).toBe(true)
+    expect(service.hasRunningSession(bottomP2)).toBe(true)
+    // Project removal is not a chat close: the chat PTY is left for the
+    // caller that owns chat ids, and no exit event is raised for the bottom tab.
+    expect(exitEvents).toEqual([])
+
+    service.terminateAll()
+    expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1, 1, 1])
+    expect(exitEvents).toEqual([])
+    expect(service.hasRunningSession('chat-p1')).toBe(false)
+    expect(service.hasRunningSession('chat-p2')).toBe(false)
+    expect(service.hasRunningSession(bottomP2)).toBe(false)
+  })
+
+  it('a bottom tab closed before create does not spawn', () => {
+    const { service, spawn } = createHarness()
+    const bottomId = createBottomTabId('p1')
+    service.terminate(bottomId)
+    expect(spawn).not.toHaveBeenCalled()
+    expect(() => service.create(bottomId, 'D:/a')).toThrow(AppError)
+    expect(spawn).not.toHaveBeenCalled()
+    expect(service.hasRunningSession(bottomId)).toBe(false)
   })
 
   it('unsubscribing stops data/exit delivery', () => {

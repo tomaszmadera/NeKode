@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs'
 import { basename } from 'node:path'
+import { bottomTabProjectId, isBottomTabId } from '../../../shared/bottom-tab-id'
 import type { Unsubscribe } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 
@@ -91,6 +92,9 @@ export class TerminalService {
   readonly #sessions = new Map<string, TerminalSession>()
   readonly #dataListeners = new Set<(chatId: string, data: string) => void>()
   readonly #exitListeners = new Set<(chatId: string, exitCode: number) => void>()
+  // Bottom-tab ids closed before their create IPC arrived. create() refuses
+  // them once so a late spawn cannot outlive the tab. Chat ids are not recorded.
+  readonly #closedBottomTabs = new Set<string>()
   #quitting = false
 
   constructor(options: TerminalServiceOptions) {
@@ -107,6 +111,13 @@ export class TerminalService {
    * session is replaced by a fresh process (spec Edge cases).
    */
   create(chatId: string, cwd: string): string {
+    if (this.#quitting) {
+      throw new AppError('conflict', 'The application is closing.')
+    }
+    if (this.#closedBottomTabs.has(chatId)) {
+      this.#closedBottomTabs.delete(chatId)
+      throw new AppError('conflict', 'The terminal was closed before it started.')
+    }
     const existing = this.#sessions.get(chatId)
     if (existing !== undefined && existing.status === 'running') {
       return existing.chatId
@@ -185,12 +196,29 @@ export class TerminalService {
 
   /** Terminates one session; safe to call repeatedly. */
   terminate(chatId: string): void {
+    if (isBottomTabId(chatId)) {
+      this.#closedBottomTabs.add(chatId)
+    }
     const session = this.#sessions.get(chatId)
     if (session === undefined) {
       return
     }
     this.#disposeSession(session)
     this.#sessions.delete(chatId)
+  }
+
+  /** Project removal: kill bottom-tab PTYs of that project and no others. */
+  terminateProjectBottom(projectId: string): void {
+    for (const sessionId of [...this.#sessions.keys()]) {
+      if (bottomTabProjectId(sessionId) === projectId) {
+        this.terminate(sessionId)
+      }
+    }
+  }
+
+  /** Display label of the shell this service spawns. */
+  shellName(): string {
+    return shellDisplayName(this.#shell)
   }
 
   /**

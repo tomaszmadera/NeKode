@@ -19,6 +19,10 @@ export const TEST_ID = {
   centerSurface: 'region-center-surface',
   rightRegion: 'region-right',
   bottomRegion: 'region-bottom',
+  bottomNewTerminal: 'bottom-new-terminal',
+  bottomEmpty: 'bottom-empty',
+  bottomTerminalError: 'bottom-terminal-error',
+  bottomTerminalRetry: 'bottom-terminal-retry',
   leftResizeHandle: 'resize-handle-left',
   bottomResizeHandle: 'resize-handle-bottom',
   projectList: 'project-list',
@@ -58,6 +62,9 @@ export const testIdFor = {
   removeProject: (projectId: string): string => `remove-project-${projectId}`,
   chatRow: (chatId: string): string => `chat-row-${chatId}`,
   terminalView: (chatId: string): string => `terminal-view-${chatId}`,
+  bottomTab: (tabId: string): string => `bottom-tab-${tabId}`,
+  bottomTabClose: (tabId: string): string => `bottom-tab-close-${tabId}`,
+  bottomTerminal: (tabId: string): string => `bottom-terminal-${tabId}`,
   /** File tree entry row (entry ids carry their '/'-separated relative path). */
   fileEntry: (relativePath: string): string => `file-entry-${relativePath}`,
   /** File tab of the tab strip (ids carry the '/'-separated relative path). */

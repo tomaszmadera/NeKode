@@ -5,6 +5,7 @@ import type React from 'react'
 import { useEffect, useRef } from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { isBottomPanelChord } from './bottom-panel-chord'
 
 // One xterm.js view per chat session (UX-UI §17). The view owns the xterm
 // instance and the bridge subscriptions; the PTY itself lives in the main
@@ -17,8 +18,10 @@ interface ChatTerminalProps {
   chatId: string
   /** Project directory; becomes the PTY cwd on first attach. */
   cwd: string
-  /** Whether this view is the selected chat's visible terminal. */
+  /** Whether this view is the selected terminal (chat or bottom tab). */
   visible: boolean
+  /** Focus the xterm textarea. Bottom-panel open uses this; chats do not. */
+  focused?: boolean
   /** PTY exit: the host closes the chat (spec Behaviour 11). */
   onExit: (exitCode: number) => void
   /**
@@ -71,12 +74,14 @@ export function ChatTerminal({
   chatId,
   cwd,
   visible,
+  focused = false,
   onExit,
   onClose,
   onSpawnError,
   onReady,
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const terminalRef = useRef<Terminal | null>(null)
   // Latest callbacks without re-creating the terminal session on re-render.
   const appRef = useRef(app)
   const onExitRef = useRef(onExit)
@@ -109,6 +114,7 @@ export function ChatTerminal({
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
+    terminalRef.current = terminal
     terminal.open(container)
 
     function fitAndResize(): void {
@@ -229,6 +235,11 @@ export function ChatTerminal({
     // key byte), Ctrl+U = unix-line-discard (backspaces over the input before
     // the cursor; text behind it survives).
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+      // The bottom-panel chord must never be written to this PTY, including
+      // while the terminal textarea has focus (spec Behaviour 3).
+      if (isBottomPanelChord(event)) {
+        return false
+      }
       if (event.type !== 'keydown') {
         return true
       }
@@ -327,6 +338,7 @@ export function ChatTerminal({
 
     return () => {
       disposed = true
+      terminalRef.current = null
       cleanupResize()
       unsubscribeData()
       unsubscribeExit()
@@ -338,11 +350,19 @@ export function ChatTerminal({
     // when a dead session must be replaced.
   }, [chatId, cwd])
 
+  useEffect(() => {
+    if (!focused) {
+      return
+    }
+    terminalRef.current?.focus()
+  }, [focused])
+
   return (
     <div
       ref={containerRef}
-      className="h-full w-full bg-neutral-950"
+      className="h-full w-full bg-neutral-950 outline-none"
       data-testid={`terminal-canvas-${chatId}`}
+      tabIndex={-1}
       style={{ display: visible ? 'block' : 'none' }}
     />
   )

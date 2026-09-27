@@ -86,9 +86,10 @@ export type FilePreview =
   | { kind: 'too-large'; size: number }
   | { kind: 'binary' }
 
-// Channel names mirror the spec Data/API bridge. terminals:terminate is
-// intentionally absent: app-quit PTY teardown runs in the main process
-// (TerminalService.terminateAll on app quit), never through the renderer.
+// Channel names mirror the spec Data/API bridge. terminals:terminate accepts
+// only a bottom tab id (tab close). Chat teardown and application quit stay
+// in the main process: chats:remove, projects:remove, and
+// TerminalService.terminateAll on app quit. Quit never goes through the renderer.
 export const IPC_CHANNEL = {
   projectsList: 'projects:list',
   projectsAdd: 'projects:add',
@@ -101,6 +102,8 @@ export const IPC_CHANNEL = {
   terminalsCreate: 'terminals:create',
   terminalsWrite: 'terminals:write',
   terminalsResize: 'terminals:resize',
+  terminalsTerminate: 'terminals:terminate',
+  terminalsShellName: 'terminals:shellName',
   terminalsData: 'terminals:data',
   terminalsExit: 'terminals:exit',
   gitStatus: 'git:status',
@@ -122,6 +125,8 @@ export const APP_STATE_KEY = {
   selectedChatId: 'selection.chatId',
   leftRegionWidth: 'region.left.width',
   bottomRegionHeight: 'region.bottom.height',
+  /** '1' open, '0' hidden. Missing or any other value means hidden. */
+  bottomRegionOpen: 'region.bottom.open',
 } as const
 
 export interface AppApi {
@@ -155,6 +160,16 @@ export interface AppApi {
     create(chatId: string, cwd: string): Promise<string>
     write(chatId: string, data: string): Promise<void>
     resize(chatId: string, cols: number, rows: number): Promise<void>
+    /**
+     * Platform shell display label (for example "PowerShell"). Bottom tabs
+     * take their label from this. It does not create a chat.
+     */
+    shellName(): Promise<string>
+    /**
+     * Terminates one bottom-tab PTY. Rejects any other id. Chat sessions and
+     * application quit do not use this method.
+     */
+    terminate(bottomTabId: string): Promise<void>
     onData(chatId: string, callback: (data: string) => void): Unsubscribe
     onExit(chatId: string, callback: (exitCode: number) => void): Unsubscribe
   }

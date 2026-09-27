@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path'
+import { isBottomTabId } from '../../shared/bottom-tab-id'
 import type { ActionInput } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import type { AppServices } from './service-registry'
@@ -230,6 +231,20 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel('terminals:resize', ['string', 'number', 'number'], (args) =>
       services.terminals.resize(args[0], args[1], args[2]),
     ),
+    serviceChannel('terminals:shellName', [], () => services.terminals.shellName()),
+    {
+      channel: 'terminals:terminate',
+      parse: (payload) => {
+        requireArgs(payload, 1, 'terminals:terminate')
+        assertString(payload[0], 'terminals:terminate arg[0]')
+        const sessionId = payload[0] as string
+        if (!isBottomTabId(sessionId)) {
+          throw new ValidationError('terminals:terminate arg[0] must be a bottom tab id')
+        }
+        return payload
+      },
+      invoke: (args) => services.terminals.terminate(args[0] as string),
+    },
     // Read-only git status; failures degrade to "no git" inside the service.
     serviceChannel('git:status', ['path'], (args) => services.git.getStatus(args[0])),
     // Project files (spec Data/API): read-only tree listing, preview

@@ -1,5 +1,6 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
+import { createBottomTabId } from '../../shared/bottom-tab-id'
 import { emptyGitWorktree, IPC_CHANNEL } from '../../shared/ipc-contract'
 import { APP_ERROR_MARKER, AppError } from '../../shared/ipc-error'
 import {
@@ -114,7 +115,9 @@ function createHarness(): Harness {
       create: vi.fn(() => 't1'),
       write: vi.fn(),
       resize: vi.fn(),
+      shellName: vi.fn(() => 'PowerShell'),
       terminate: vi.fn(),
+      terminateProjectBottom: vi.fn(),
       terminateAll: vi.fn(),
       onData: (listener) => {
         terminalListeners.data.push(listener)
@@ -300,6 +303,76 @@ describe('registered ipc handlers', () => {
     expect(terminals.hasRunningSession('t2')).toBe(false)
     expect(terminals.hasRunningSession('t3')).toBe(true)
     expect(terminals.hasRunningSession('ghost')).toBe(false)
+  })
+
+  it('projects:remove terminates that project bottom PTYs only, and does not remove chats', () => {
+    const ptys: FakePty[] = []
+    const createPty: PtyFactory = (options) => {
+      const pty = new FakePty(1000 + ptys.length, options)
+      ptys.push(pty)
+      return pty
+    }
+    const terminals = new TerminalService({ createPty, isDirectory: () => true })
+    const bottomP1 = createBottomTabId('p1')
+    const bottomP2 = createBottomTabId('p2')
+    const chats = [
+      { id: 't1', projectId: 'p1', name: 'a' },
+      { id: 't3', projectId: 'p2', name: 'c' },
+    ]
+    const services: AppServices = {
+      actions: fakeActions(),
+      projects: {
+        list: vi.fn(() => []),
+        add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
+        remove: vi.fn(),
+      },
+      chats: {
+        list: vi.fn((projectId: string) => chats.filter((chat) => chat.projectId === projectId)),
+        create: vi.fn(() => chats[0]),
+        remove: vi.fn(),
+      },
+      state: { get: vi.fn(() => null), set: vi.fn() },
+      terminals,
+      git: {
+        getStatus: vi.fn(() =>
+          Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
+        ),
+      },
+      files: {
+        list: vi.fn(() => Promise.resolve([])),
+        read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
+        openExternal: vi.fn(() => Promise.resolve()),
+      },
+    }
+    const { ipcMain, invoke } = createFakeIpcMain()
+    registerAppIpcHandlers(ipcMain, services, {
+      showOpenDialog: vi.fn() as never,
+      trustedRendererUrls: ['file:///renderer/index.html'],
+    })
+
+    terminals.create('t1', 'D:/a')
+    terminals.create(bottomP1, 'D:/a')
+    terminals.create('t3', 'D:/b')
+    terminals.create(bottomP2, 'D:/b')
+
+    invoke(IPC_CHANNEL.projectsRemove, ['p1'])
+
+    expect(services.chats.remove).not.toHaveBeenCalled()
+    expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1, 0, 0])
+    expect(terminals.hasRunningSession('t1')).toBe(false)
+    expect(terminals.hasRunningSession(bottomP1)).toBe(false)
+    expect(terminals.hasRunningSession('t3')).toBe(true)
+    expect(terminals.hasRunningSession(bottomP2)).toBe(true)
+
+    // Quit is terminateAll in main, not a chat-close. Exit events stay suppressed
+    // so the renderer cannot delete chats. Bottom PTYs die with the rest.
+    const exits: Array<[string, number]> = []
+    terminals.onExit((sessionId, code) => exits.push([sessionId, code]))
+    terminals.terminateAll()
+    expect(exits).toEqual([])
+    expect(services.chats.remove).not.toHaveBeenCalled()
+    expect(terminals.hasRunningSession('t3')).toBe(false)
+    expect(terminals.hasRunningSession(bottomP2)).toBe(false)
   })
 
   it('does not stop action children when project removal fails', () => {

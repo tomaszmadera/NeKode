@@ -50,11 +50,15 @@ export interface AppServices {
     create(chatId: string, cwd: string): string
     write(chatId: string, data: string): void
     resize(chatId: string, cols: number, rows: number): void
+    /** Display label of the shell new sessions spawn. */
+    shellName(): string
     /**
-     * Per-chat teardown for the project-removal cascade (orphaned PTYs are
-     * terminated in main); not part of the renderer bridge.
+     * Per-session teardown. The renderer bridge exposes this only for bottom
+     * tab ids. Project removal and chat close call it in main.
      */
     terminate(chatId: string): void
+    /** Bottom-tab PTYs whose id belongs to the removed project. */
+    terminateProjectBottom(projectId: string): void
     /** App-quit teardown (spec Behaviour 8); not part of the renderer bridge. */
     terminateAll(): void
     onData(listener: (chatId: string, data: string) => void): Unsubscribe

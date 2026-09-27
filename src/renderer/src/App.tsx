@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createBottomTabId } from '../../shared/bottom-tab-id'
 import type {
   ActionControl,
   ActionExecution,
@@ -15,7 +16,6 @@ import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
 import { LeftNavigation } from './components/layout/LeftNavigation'
-import { ResizeHandle } from './components/layout/ResizeHandle'
 import { StatusBar } from './components/layout/StatusBar'
 import { TabStrip } from './components/tabs/TabStrip'
 import {
@@ -27,6 +27,20 @@ import {
   type TabId,
   TERMINAL_TAB,
 } from './components/tabs/tabs-session'
+import { BottomPanel } from './components/terminal/BottomPanel'
+import { isBottomPanelChord } from './components/terminal/bottom-panel-chord'
+import {
+  addBottomTab,
+  allBottomTabs,
+  type BottomTab,
+  type BottomTabsState,
+  closeBottomTab,
+  dropBottomProject,
+  emptyBottomTabs,
+  markBottomTabError,
+  retryBottomTab,
+  selectBottomTab,
+} from './components/terminal/bottom-tabs'
 import { ChatWorkspace } from './components/workspace/ChatWorkspace'
 import {
   BOTTOM_REGION_SIZE,
@@ -83,6 +97,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const pendingTerminalCommandsRef = useRef<Record<string, string>>({})
   const [leftWidth, setLeftWidth] = useState(LEFT_REGION_SIZE.default)
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
+  const [bottomOpen, setBottomOpen] = useState(false)
+  const [bottomTabs, setBottomTabs] = useState<BottomTabsState>(emptyBottomTabs)
   // Project Files mode (spec Behaviour 1–2, 12): the project whose tree is
   // shown in the left panel, or null for the Projects/Chats navigation. The
   // mode never touches the chat/project selection and no longer swaps the
@@ -107,6 +123,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // earlier in the same tick (render-time assignment syncs user selections).
   const selectionRef = useRef({ projectId: selectedProjectId, chatId: selectedChatId })
   selectionRef.current = { projectId: selectedProjectId, chatId: selectedChatId }
+  const projectsRef = useRef(projects)
+  projectsRef.current = projects
+  const bottomOpenRef = useRef(bottomOpen)
+  bottomOpenRef.current = bottomOpen
+  const bottomOpenTouchedRef = useRef(false)
+  const bottomTabsRef = useRef(bottomTabs)
+  bottomTabsRef.current = bottomTabs
+  const tabProjectIdRef = useRef<string | null>(null)
+  const focusBeforeOpenRef = useRef<HTMLElement | null>(null)
+  const centerSurfaceRef = useRef<HTMLElement | null>(null)
 
   // Single write path for chatsByProject: the mirror and the state are
   // mutated in lockstep so concurrent close flows never act on stale data.
@@ -156,14 +182,21 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
     async function hydrate(): Promise<void> {
       try {
-        const [loadedProjects, savedProjectId, savedChatId, savedLeftWidth, savedBottomHeight] =
-          await Promise.all([
-            app.projects.list(),
-            app.state.get(APP_STATE_KEY.selectedProjectId),
-            app.state.get(APP_STATE_KEY.selectedChatId),
-            app.state.get(APP_STATE_KEY.leftRegionWidth),
-            app.state.get(APP_STATE_KEY.bottomRegionHeight),
-          ])
+        const [
+          loadedProjects,
+          savedProjectId,
+          savedChatId,
+          savedLeftWidth,
+          savedBottomHeight,
+          savedBottomOpen,
+        ] = await Promise.all([
+          app.projects.list(),
+          app.state.get(APP_STATE_KEY.selectedProjectId),
+          app.state.get(APP_STATE_KEY.selectedChatId),
+          app.state.get(APP_STATE_KEY.leftRegionWidth),
+          app.state.get(APP_STATE_KEY.bottomRegionHeight),
+          app.state.get(APP_STATE_KEY.bottomRegionOpen),
+        ])
         if (cancelled) {
           return
         }
@@ -171,6 +204,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         setProjects(loadedProjects)
         setLeftWidth(parsePersistedSize(savedLeftWidth, LEFT_REGION_SIZE))
         setBottomHeight(parsePersistedSize(savedBottomHeight, BOTTOM_REGION_SIZE))
+        // A toggle that landed before hydration wins. Missing or invalid
+        // open flag stays hidden (spec Behaviour 2). Tabs are not restored.
+        if (!bottomOpenTouchedRef.current) {
+          const open = savedBottomOpen === '1'
+          bottomOpenRef.current = open
+          setBottomOpen(open)
+        }
 
         // Stale selection falls back to the default empty state (spec Edge
         // cases); the main process deletes the stale keys (cleanupSelection).
@@ -245,6 +285,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app],
   )
 
+  const persistBottomOpen = useCallback(
+    (open: boolean): void => {
+      void app.state
+        .set(APP_STATE_KEY.bottomRegionOpen, open ? '1' : '0')
+        .catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to save the bottom panel.'))
+        })
+    },
+    [app],
+  )
+
   const loadChats = useCallback(
     async (projectId: string): Promise<void> => {
       const chats = await app.chats.list(projectId)
@@ -282,6 +333,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // in the tab-strip project (see handleStartNewChat). With no selection at
   // all there is no split: the neutral surfaces stay as today.
   const tabProjectId = filesProjectId ?? selectedProjectId
+  tabProjectIdRef.current = tabProjectId
   const chatSurfaceDiverged = selectedProjectId !== null && selectedProjectId !== tabProjectId
 
   const handleSelectTab = useCallback(
@@ -383,11 +435,30 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     (projectId: string): void => {
       setNotice(null)
       void (async () => {
+        const bottomIds =
+          bottomTabsRef.current.byProject[projectId]?.tabs.map((tab) => tab.id) ?? []
         try {
           await app.projects.remove(projectId)
         } catch (error) {
           setNotice(errorMessage(error, 'Failed to remove the project.'))
           return
+        }
+        // Tombstone ids that have not spawned yet. projects:remove already
+        // killed live bottom PTYs; a create still in flight must not outlive
+        // the project.
+        const closeResults = await Promise.all(
+          bottomIds.map(async (tabId) => {
+            try {
+              await app.terminals.terminate(tabId)
+              return null
+            } catch (error) {
+              return error
+            }
+          }),
+        )
+        const closeFailure = closeResults.find((result) => result !== null)
+        if (closeFailure) {
+          setNotice(errorMessage(closeFailure, 'Failed to close the terminal.'))
         }
         // Drop the removed data (the main process cleans stale selection keys
         // on the next read) and fall back to the default empty state only when
@@ -430,6 +501,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           return next
         })
         setFilesProjectId((current) => (current === projectId ? null : current))
+        setBottomTabs((previous) => dropBottomProject(previous, projectId))
         if (projectId === selectedProjectId) {
           setSelectedProjectId(null)
           setSelectedChatId(null)
@@ -685,6 +757,136 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     }
   }, [handleCreateChat, tabProjectId])
 
+  const createBottomTab = useCallback(
+    async (projectId: string): Promise<void> => {
+      const project = projectsRef.current.find((item) => item.id === projectId)
+      if (project === undefined) {
+        setNotice('Select or add a project before starting a terminal.')
+        return
+      }
+      let label: string
+      try {
+        label = (await app.terminals.shellName()).trim()
+      } catch (error) {
+        setNotice(errorMessage(error, 'Failed to start the terminal.'))
+        return
+      }
+      if (label.length === 0) {
+        setNotice('Failed to start the terminal.')
+        return
+      }
+      if (removedProjectIdsRef.current.has(projectId)) {
+        return
+      }
+      const tab: BottomTab = {
+        id: createBottomTabId(projectId),
+        projectId,
+        label,
+        cwd: project.path,
+        generation: 0,
+        status: 'running',
+        errorMessage: null,
+      }
+      setBottomTabs((previous) => addBottomTab(previous, tab))
+    },
+    [app],
+  )
+
+  const handleNewBottomTerminal = useCallback((): void => {
+    const projectId = tabProjectIdRef.current
+    if (projectId === null) {
+      setNotice('Select or add a project before starting a terminal.')
+      return
+    }
+    setNotice(null)
+    void createBottomTab(projectId)
+  }, [createBottomTab])
+
+  const handleCloseBottomTab = useCallback(
+    (tabId: string): void => {
+      void (async () => {
+        try {
+          await app.terminals.terminate(tabId)
+        } catch (error) {
+          setNotice(errorMessage(error, 'Failed to close the terminal.'))
+          return
+        }
+        setBottomTabs((previous) => closeBottomTab(previous, tabId))
+      })()
+    },
+    [app],
+  )
+
+  const handleBottomExit = useCallback(
+    (tabId: string): void => {
+      setBottomTabs((previous) => closeBottomTab(previous, tabId))
+      void app.terminals.terminate(tabId).catch(() => undefined)
+    },
+    [app],
+  )
+
+  const hideBottomPanel = useCallback((): void => {
+    bottomOpenTouchedRef.current = true
+    bottomOpenRef.current = false
+    setBottomOpen(false)
+    persistBottomOpen(false)
+    const previous = focusBeforeOpenRef.current
+    focusBeforeOpenRef.current = null
+    queueMicrotask(() => {
+      if (previous?.isConnected) {
+        previous.focus()
+      } else {
+        centerSurfaceRef.current?.focus()
+      }
+    })
+  }, [persistBottomOpen])
+
+  const showBottomPanel = useCallback((): void => {
+    const active = document.activeElement
+    focusBeforeOpenRef.current =
+      active instanceof HTMLElement && active !== document.body ? active : null
+    bottomOpenTouchedRef.current = true
+    bottomOpenRef.current = true
+    setBottomOpen(true)
+    persistBottomOpen(true)
+    const projectId = tabProjectIdRef.current
+    if (projectId === null) {
+      return
+    }
+    const session = bottomTabsRef.current.byProject[projectId]
+    if (session !== undefined && session.tabs.length > 0) {
+      return
+    }
+    void createBottomTab(projectId)
+  }, [createBottomTab, persistBottomOpen])
+
+  const showBottomRef = useRef(showBottomPanel)
+  const hideBottomRef = useRef(hideBottomPanel)
+  showBottomRef.current = showBottomPanel
+  hideBottomRef.current = hideBottomPanel
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat || !isBottomPanelChord(event)) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      if (document.querySelector('[aria-modal="true"]') !== null) {
+        return
+      }
+      if (bottomOpenRef.current) {
+        hideBottomRef.current()
+      } else {
+        showBottomRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [])
+
   const leftRegion = useResizableRegion({
     axis: 'x',
     minSize: LEFT_REGION_SIZE.min,
@@ -817,7 +1019,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               setActionSettingsOpen(true)
             }}
           />
-          <main className="flex min-h-0 flex-1 flex-col" data-testid={TEST_ID.centerSurface}>
+          <main
+            ref={centerSurfaceRef}
+            tabIndex={-1}
+            className="flex min-h-0 flex-1 flex-col outline-none"
+            data-testid={TEST_ID.centerSurface}
+          >
             {/* Every open file tab owns its preview view (hidden while another
                 tab is active): per-tab loading/fallback/error state survives
                 tab switches and never touches the other tabs (Behaviour 6–7). */}
@@ -886,22 +1093,32 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onClose={() => setActionSettingsOpen(false)}
         />
       ) : null}
-      <div
-        className="flex shrink-0 flex-col bg-neutral-900/60"
-        data-testid={TEST_ID.bottomRegion}
-        style={{ display: 'none' }}
-      >
-        <div className="flex-1 px-4 py-2 text-xs text-neutral-500">Auxiliary Terminal</div>
-        <ResizeHandle
-          axis="y"
-          size={bottomHeight}
-          minSize={BOTTOM_REGION_SIZE.min}
-          maxSize={BOTTOM_REGION_SIZE.max}
-          onResizeStart={bottomRegion.startResize}
-          onResizeNudge={bottomRegion.nudge}
-          testId={TEST_ID.bottomResizeHandle}
-        />
-      </div>
+      <BottomPanel
+        app={app}
+        open={bottomOpen}
+        height={bottomHeight}
+        activeProjectId={tabProjectId}
+        tabs={allBottomTabs(bottomTabs)}
+        activeTabId={
+          tabProjectId === null ? null : (bottomTabs.byProject[tabProjectId]?.activeId ?? null)
+        }
+        onNewTerminal={handleNewBottomTerminal}
+        onSelectTab={(tabId) => {
+          if (tabProjectId !== null) {
+            setBottomTabs((previous) => selectBottomTab(previous, tabProjectId, tabId))
+          }
+        }}
+        onCloseTab={handleCloseBottomTab}
+        onExit={handleBottomExit}
+        onSpawnError={(tabId, message) => {
+          setBottomTabs((previous) => markBottomTabError(previous, tabId, message))
+        }}
+        onRetry={(tabId) => {
+          setBottomTabs((previous) => retryBottomTab(previous, tabId))
+        }}
+        onResizeStart={bottomRegion.startResize}
+        onResizeNudge={bottomRegion.nudge}
+      />
       {/* Status bar: the very bottom of the window, full width (spec
           Behaviour 18). */}
       <StatusBar app={app} project={statusProject} />
