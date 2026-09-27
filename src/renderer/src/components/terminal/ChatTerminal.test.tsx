@@ -30,6 +30,14 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
   const exitUnsubscribes: Array<() => void> = []
 
   const app: AppApi = {
+    actions: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+      status: vi.fn(),
+    },
     projects: {
       list: vi.fn().mockResolvedValue([]),
       add: vi.fn().mockResolvedValue(null),
@@ -137,6 +145,67 @@ describe('ChatTerminal lifecycle', () => {
 
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
     await waitFor(() => expect(app.terminals.resize).toHaveBeenCalledWith('t1', 80, 24))
+  })
+
+  it('ignores create completion after the view has been disposed', async () => {
+    let resolveCreate: ((sessionId: string) => void) | undefined
+    const onReady = vi.fn()
+    const readyBundle = createAppMock()
+    vi.mocked(readyBundle.app.terminals.create).mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveCreate = resolve
+        }),
+    )
+    const readyView = render(
+      <ChatTerminal
+        app={readyBundle.app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+        onReady={onReady}
+      />,
+    )
+    await waitFor(() =>
+      expect(readyBundle.app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'),
+    )
+    readyView.unmount()
+    await act(async () => {
+      resolveCreate?.('t1')
+    })
+    expect(onReady).not.toHaveBeenCalled()
+
+    let rejectCreate: ((error: unknown) => void) | undefined
+    const onSpawnError = vi.fn()
+    const errorBundle = createAppMock()
+    vi.mocked(errorBundle.app.terminals.create).mockImplementation(
+      () =>
+        new Promise<string>((_resolve, reject) => {
+          rejectCreate = reject
+        }),
+    )
+    const errorView = render(
+      <ChatTerminal
+        app={errorBundle.app}
+        chatId="t2"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={onSpawnError}
+      />,
+    )
+    await waitFor(() =>
+      expect(errorBundle.app.terminals.create).toHaveBeenCalledWith('t2', 'D:/code/demo'),
+    )
+    errorView.unmount()
+    await act(async () => {
+      rejectCreate?.(new Error('spawn failed'))
+    })
+    expect(onSpawnError).not.toHaveBeenCalled()
   })
 
   it('writes session data into xterm and sends user input to the PTY', async () => {

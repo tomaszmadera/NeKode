@@ -7,8 +7,8 @@ to: Main (kolejna sesja)
 branch: main
 worktree: current
 checkpoint_subject: 4cc4508ebfe2238bf88a60bbe69bdcdc3d268d6d+sha256:a79a6803ce2ca8d2d42a6c539064ca6cca272bad4a974e8bf4d9d676ba452dbc
-current_step: Phase 2.3
-next_action: Niezależny re-review korekty:3 (skill code-review, implementation gate, świeży subagent; scope = diff korekty wobec fix direction i poprzedniego blocking findingu; CAP r1/2) — ewentualna 2. runda korekt, potem Stage 3
+current_step: Phase 3.1
+next_action: User-gate demo AC5-AC8 w pnpm dev, potem task-close z final verification full. Stage 3 review re-review passed 2026-09-27. checkpoint_subject ponizej zostaje przy snapshocie 11:35Z i nie opisuje biezacego worktree.
 blockers: none
 ---
 
@@ -16,7 +16,9 @@ blockers: none
 
 ## Repository snapshot
 
-Task record: `.agents/tasks/center-layout-tabs-actions/task.md` (status active, current_step Phase 2.3 — Stage 2 po review r1 i korekcie, re-review nie wykonany). Rola: Main (koordynator sesji Hermes) → Main (kolejna sesja); powód: user stop — „jak subagent skończy to napisz handoff" (praca kontynuowana w innej sesji). Spec: `docs/features/center-layout-tabs-actions/spec.md` (kompletny kontrakt, AC1-11); plan: `.agents/tasks/center-layout-tabs-actions/plan.md` (approved 2026-09-26, Large, 3 etapy).
+Stan na 2026-09-27T18:04:34Z (wzniesienie po przerwanej sesji Codex, nie nowy checkpoint commit): Stage 2 jest zamkniety (re-review pass, commit 997f7dd). Stage 3 jest w worktree, niezacommitowany, review:3 mial 3 warningi, korekta:3 i re-review:3 daly `No significant issues found.` Bramki Main po korekcie: lint 0, typecheck 0, test 296/296 w 23 plikach, build 0. Biezacy krok to user-gate Phase 3.1. Ponizszy opis 11:35Z jest historia Stage 2, nie pierwsza akcja.
+
+Task record: `.agents/tasks/center-layout-tabs-actions/task.md` (status active, current_step Phase 3.1). Rola: Main (koordynator sesji Hermes) → Main (kolejna sesja); powód: user stop — „jak subagent skończy to napisz handoff" (praca kontynuowana w innej sesji). Spec: `docs/features/center-layout-tabs-actions/spec.md` (kompletny kontrakt, AC1-11); plan: `.agents/tasks/center-layout-tabs-actions/plan.md` (approved 2026-09-26, Large, 3 etapy).
 
 **Working** (scope checkpointu: rekord + rewizja docs Stage 1 + kod Stage 2 z korektą:3 w `src/` + ten snapshot; HEAD 4cc4508 — patrz checkpoint_subject):
 
@@ -67,9 +69,10 @@ Task record: `.agents/tasks/center-layout-tabs-actions/task.md` (status active, 
 
 ## Resume instructions
 
-1. Pierwsza akcja: niezależny re-review korekty:3 (skill `code-review`, implementation gate, świeży subagent). Scope: diff korekty = `git diff 4cc4508 -- src` wobec fix direction w Decisions (powyżej) i poprzedniego blocking findingu (review:2, App.tsx:231). Kontekst CAP: blocking = TYLKO problemy w poprawionym findingu lub nowo wprowadzone błędy; carry-over (tooltip, kopia empty state) NIE jest blockingiem. CAP runda 1 z 2 wykorzystana — po drugiej blokującej re-review eskalować do użytkownika zamiast przedłużać. Oczekiwane evidence: findingsy albo „No significant issues found."; wynik do wiersza Verification rekordu.
-2. Przed jakąkolwiek edycją: `git status`, `python .agents/scripts/task-status --check .agents/tasks/center-layout-tabs-actions/task.md`, lektura specu (kontrakt nadrzędny), planu (Stage 3) oraz Decisions w rekordzie i wyżej.
-3. Kolejność: re-review korekty:3 → Stage 3 (pasek akcji; świeży implementer wg skillu `implement` + niezależny review `code-review`; CAP 2 rund korekt/re-review na etap) → user-gate demo AC (Phase 3.1, `pnpm dev`, realne GUI; zbierać decyzje user-gate z Unresolved assumptions) → task-close z final verification `full` (skill `task-close`). Decyzja runtimeLabel: zebrać od użytkownika przed kodem runtime detection; nie blokuje Stage 3.
-4. Nie powtarzać: reprodukcja historycznego schematu `checkpoint_subject` (patrz Failed approaches) bez nowej hipotezy; edycje skryptowe z niejednoznacznymi markerami; przywracanie fallbacku `statusProject ?? selectedProject` (P4b: martwe).
+1. Pierwsza akcja: user-gate Phase 3.1. Skill: nie implementowac Stage 3 od nowa. Uzytkownik uruchamia `pnpm dev` i potwierdza AC5-AC8 oraz punkty user-gate z Unresolved assumptions. Oczekiwane evidence: decyzja uzytkownika (akceptacja albo lista usterek). Nastepny skill po akceptacji: `task-close` z final verification `full`.
+2. Stage 3 jest skonczony w worktree: self-review, review z 3 warningami, korekta i re-review `No significant issues found.` Nie powtarzac implementacji ani review bez nowej usterki z demo.
+3. Przed edycja po demo: `git status`, `python .agents/scripts/task-status --check .agents/tasks/center-layout-tabs-actions/task.md`, spec i plan Stage 3. Kontrakt bajtow: CR 0x0D, Stop 0x03, nigdy 0x04.
+4. Nie commitowac wpisu lekcji `project-scoped-mcp-ownership` razem z ta praca, jesli nie nalezy do zakresu. Nie ruszac `package.json`, gdy `git diff --numstat -- package.json` jest pusty.
+5. Nie powtarzac: reprodukcja historycznego schematu `checkpoint_subject` (patrz Failed approaches) bez nowej hipotezy; edycje skryptowe z niejednoznacznymi markerami; przywracanie fallbacku `statusProject ?? selectedProject` (P4b: martwe); spawn PTY wewnatrz `ActionService.execute` dla `new-terminal`.
 
 Repozytorium przy snapshotcie: HEAD 4cc4508, scope zadania zgodny z digestiem; checkpoint commit obejmuje wszystkie pliki task-owned łącznie z tym snapshotem.

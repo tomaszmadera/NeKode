@@ -100,10 +100,10 @@ export function registerAppIpcHandlers(
     })
   })
 
-  // projects:remove also tears down the removed project's terminal sessions:
-  // the chat ids are resolved before the cascade delete (the FK cascade wipes
-  // the chat rows) and each orphaned PTY is terminated here in main (the
-  // renderer only evicts its session views).
+  // projects:remove tears down the removed project's terminal sessions and
+  // background action children. Chat ids are resolved before the cascade
+  // (the FK wipes the rows). Children are stopped only after the delete
+  // succeeds, from the in-memory set the cascade cannot see.
   handle(IPC_CHANNEL.projectsRemove, (payload) => {
     const entry = validated.get(IPC_CHANNEL.projectsRemove)
     const args = entry !== undefined ? entry.parse(payload) : payload
@@ -113,6 +113,7 @@ export function registerAppIpcHandlers(
     }
     const chatIds = services.chats.list(projectId).map((chat) => chat.id)
     const result = services.projects.remove(projectId)
+    services.actions.stopForProject(projectId)
     for (const chatId of chatIds) {
       services.terminals.terminate(chatId)
     }

@@ -97,6 +97,27 @@ export const MIGRATIONS: readonly Migration[] = [
       `)
     },
   },
+  {
+    version: 4,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE actions (
+          id TEXT PRIMARY KEY,
+          project_id TEXT REFERENCES projects (id) ON DELETE CASCADE,
+          scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
+          title TEXT NOT NULL,
+          icon TEXT,
+          command TEXT NOT NULL,
+          cwd TEXT,
+          run_mode TEXT NOT NULL CHECK (run_mode IN ('background', 'new-terminal')),
+          confirm INTEGER NOT NULL CHECK (confirm IN (0, 1)),
+          sort_order INTEGER NOT NULL,
+          CHECK ((scope = 'global' AND project_id IS NULL) OR (scope = 'project' AND project_id IS NOT NULL))
+        );
+        CREATE INDEX actions_order ON actions (sort_order, title);
+      `)
+    },
+  },
 ]
 
 export function runMigrations(db: Database.Database): number {

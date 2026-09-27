@@ -1,6 +1,6 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
+import type { ActionControl, ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY, type AppApi, emptyGitWorktree } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
 import { resetMockFitAddons } from './test/fit-addon-mock'
@@ -13,6 +13,14 @@ vi.mock('@xterm/addon-fit', () => import('./test/fit-addon-mock'))
 
 function createAppApiStub(): AppApi {
   return {
+    actions: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+      status: vi.fn(),
+    },
     projects: {
       list: vi.fn().mockResolvedValue([]),
       add: vi.fn().mockResolvedValue({
@@ -95,6 +103,381 @@ const projectNoRuntime: ProjectInfo = {
 }
 const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
 const chatTwo: ChatInfo = { id: 't2', projectId: 'p1', name: 'Second chat' }
+const buildAction: ActionControl = {
+  id: 'a1',
+  scope: 'project',
+  projectId: 'p1',
+  title: 'Build',
+  icon: null,
+  command: 'pnpm build',
+  cwd: null,
+  runMode: 'background',
+  confirm: false,
+  sortOrder: 0,
+}
+
+describe('action row and settings', () => {
+  let app: AppApi
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  async function renderSelectedChat(): Promise<void> {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+  }
+
+  it('writes contractual bytes only for a live terminal', async () => {
+    await renderSelectedChat()
+    const buttons = ['Handoff', 'Resume', 'Stop', 'Continue']
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Handoff' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    for (const label of buttons) fireEvent.click(screen.getByRole('button', { name: label }))
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(4))
+    expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
+      ['t1', 'Napisz handoff\r'],
+      ['t1', 'Wznów z handoffu\r'],
+      ['t1', '\x03'],
+      ['t1', 'Continue\r'],
+    ])
+  })
+
+  it('disables fixed buttons before spawn and after a spawn failure', async () => {
+    vi.mocked(app.terminals.create).mockRejectedValue(new Error('spawn failed'))
+    await renderSelectedChat()
+    await screen.findByTestId(TEST_ID.terminalSpawnError)
+    for (const label of ['Handoff', 'Resume', 'Stop', 'Continue']) {
+      expect((screen.getByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(true)
+    }
+  })
+
+  it('disables fixed buttons as soon as the active PTY exits', async () => {
+    let exit: ((code: number) => void) | undefined
+    vi.mocked(app.terminals.onExit).mockImplementation((_id, listener) => {
+      exit = listener
+      return () => undefined
+    })
+    vi.mocked(app.chats.remove).mockImplementation(() => new Promise<void>(() => undefined))
+    await renderSelectedChat()
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    act(() => {
+      exit?.(0)
+    })
+    expect((screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('orders configured actions after both fixed groups and polls completion', async () => {
+    const idle = {
+      status: 'idle' as const,
+      exitCode: null,
+      completedAt: null,
+      error: null,
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([buildAction])
+    vi.mocked(app.actions.status).mockResolvedValue(idle)
+    vi.mocked(app.actions.execute).mockImplementation(async () => {
+      vi.mocked(app.actions.status).mockResolvedValue({
+        status: 'failed',
+        exitCode: 7,
+        completedAt: '2026-09-27T15:00:00Z',
+        error: null,
+      })
+      return { status: 'running', exitCode: null, completedAt: null, error: null }
+    })
+    await renderSelectedChat()
+    await waitFor(() => expect(app.actions.status).toHaveBeenCalledWith('a1'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    const row = screen.getByTestId(TEST_ID.actionRowSlot)
+    expect([...row.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'Handoff',
+      'Resume',
+      'Stop',
+      'Continue',
+      '▶ Build',
+      'Actions',
+    ])
+    expect(app.actions.execute).not.toHaveBeenCalled()
+    const statusReadsAtIdle = vi.mocked(app.actions.status).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    await waitFor(() => expect(app.actions.execute).toHaveBeenCalledWith('a1', 'p1', false))
+    await waitFor(
+      () =>
+        expect(screen.getByRole('button', { name: /Build/ }).getAttribute('data-status')).toBe(
+          'failed',
+        ),
+      { timeout: 1500 },
+    )
+    expect(vi.mocked(app.actions.status).mock.calls.length).toBeGreaterThan(statusReadsAtIdle)
+    expect(screen.getByRole('button', { name: /Build/ }).getAttribute('title')).toContain(
+      'Exit code: 7',
+    )
+  })
+
+  it('asks before a confirmation action and does not execute on cancel', async () => {
+    vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, confirm: true }])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      await renderSelectedChat()
+      fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+      expect(confirm).toHaveBeenCalledWith('Run Build?')
+      expect(app.actions.execute).not.toHaveBeenCalled()
+      confirm.mockReturnValue(true)
+      vi.mocked(app.actions.execute).mockResolvedValue({
+        status: 'success',
+        exitCode: 0,
+        completedAt: '2026-09-27T15:00:00Z',
+        error: null,
+      })
+      fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+      await waitFor(() => expect(app.actions.execute).toHaveBeenCalledWith('a1', 'p1', true))
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('delivers a new-terminal command once after the chat view is ready, with configured cwd', async () => {
+    const action = {
+      ...buildAction,
+      runMode: 'new-terminal' as const,
+      command: 'pnpm dev',
+      cwd: 'D:/code/demo/app',
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([action])
+    vi.mocked(app.actions.execute).mockResolvedValue({
+      status: 'success',
+      exitCode: null,
+      completedAt: '2026-09-27T15:00:00Z',
+      error: null,
+      chat: chatTwo,
+      terminalCommand: 'pnpm dev',
+      terminalCwd: action.cwd,
+    })
+    await renderSelectedChat()
+    let finishSpawn: ((id: string) => void) | undefined
+    vi.mocked(app.terminals.create).mockImplementation((chatId) =>
+      chatId === 't2'
+        ? new Promise<string>((resolve) => {
+            finishSpawn = resolve
+          })
+        : Promise.resolve(chatId),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe(
+        'true',
+      ),
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', 'D:/code/demo/app'))
+    expect(vi.mocked(app.terminals.write).mock.calls.filter(([id]) => id === 't2')).toHaveLength(0)
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
+    await act(async () => {
+      finishSpawn?.('t2')
+    })
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t2', 'pnpm dev\r'))
+    expect(vi.mocked(app.terminals.write).mock.calls.filter(([id]) => id === 't2')).toHaveLength(1)
+    const subscribedAt = vi.mocked(app.terminals.onData).mock.invocationCallOrder[
+      vi.mocked(app.terminals.onData).mock.calls.findIndex(([id]) => id === 't2')
+    ]
+    const wroteAt = vi.mocked(app.terminals.write).mock.invocationCallOrder[
+      vi.mocked(app.terminals.write).mock.calls.findIndex(([id]) => id === 't2')
+    ]
+    expect(subscribedAt).toBeLessThan(wroteAt)
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+  })
+
+  it('shows a notice when the new-terminal command cannot be written and keeps the chat', async () => {
+    const action = {
+      ...buildAction,
+      runMode: 'new-terminal' as const,
+      command: 'pnpm dev',
+      cwd: 'D:/code/demo/app',
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([action])
+    vi.mocked(app.actions.execute).mockResolvedValue({
+      status: 'success',
+      exitCode: null,
+      completedAt: '2026-09-27T15:00:00Z',
+      error: null,
+      chat: chatTwo,
+      terminalCommand: 'pnpm dev',
+      terminalCwd: action.cwd,
+    })
+    vi.mocked(app.terminals.write).mockImplementation(async (chatId) => {
+      if (chatId === 't2') {
+        throw { nekodeAppError: true, code: 'not_found', message: 'Session ended.' }
+      }
+    })
+    await renderSelectedChat()
+    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    expect((await screen.findByTestId(TEST_ID.actionNotice)).textContent).toContain(
+      'Session ended.',
+    )
+    expect(screen.getByTestId(testIdFor.chatRow('t2'))).toBeTruthy()
+    expect(vi.mocked(app.chats.remove)).not.toHaveBeenCalled()
+    expect(vi.mocked(app.terminals.write).mock.calls).toContainEqual(['t2', 'pnpm dev\r'])
+  })
+
+  it('keeps global actions and swaps project actions with the active project', async () => {
+    const lint = {
+      ...buildAction,
+      id: 'g1',
+      scope: 'global' as const,
+      projectId: null,
+      title: 'Lint',
+      command: 'pnpm lint',
+      sortOrder: 0,
+    }
+    const other = { ...buildAction, id: 'a2', projectId: 'p2', title: 'Test', sortOrder: 2 }
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectNoRuntime])
+    vi.mocked(app.actions.list).mockResolvedValue([lint, buildAction, other])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await waitFor(() =>
+      expect(
+        [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
+          (button) => button.textContent,
+        ),
+      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', '▶ Lint', '▶ Build', 'Actions']),
+    )
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    await waitFor(() =>
+      expect(
+        [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
+          (button) => button.textContent,
+        ),
+      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', '▶ Lint', '▶ Test', 'Actions']),
+    )
+  })
+
+  it('validates the form and reflects saved actions immediately', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByRole('alert').textContent).toContain('Title and command')
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Build' } })
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm build' } })
+    vi.mocked(app.actions.create).mockResolvedValue(buildAction)
+    vi.mocked(app.actions.list).mockResolvedValue([buildAction])
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.actions.create).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Build', command: 'pnpm build' }),
+      ),
+    )
+    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Build' })).toBeTruthy())
+  })
+
+  it('edits and deletes actions from Project Settings with immediate row updates', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.actions.list).mockResolvedValue([buildAction])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } })
+    vi.mocked(app.actions.update).mockResolvedValue({ ...buildAction, title: 'Test' })
+    vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, title: 'Test' }])
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Test' })).toBeTruthy())
+    vi.mocked(app.actions.delete).mockResolvedValue(undefined)
+    vi.mocked(app.actions.list).mockResolvedValue([])
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: '▶ Test' })).toBeNull())
+  })
+
+  it('gives the next action a sort order past the current maximum after a delete', async () => {
+    const gone = { ...buildAction, id: 'a-gone', title: 'Gone', sortOrder: 0 }
+    const keep = { ...buildAction, id: 'a-keep', title: 'Keep', sortOrder: 1 }
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.actions.list).mockResolvedValueOnce([gone, keep]).mockResolvedValue([keep])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    const goneRow = screen.getByText('Gone').closest('li')
+    expect(goneRow).toBeTruthy()
+    fireEvent.click(within(goneRow as HTMLElement).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.queryByText('Gone')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Next' } })
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm next' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.actions.create).toHaveBeenCalledWith(expect.objectContaining({ sortOrder: 2 })),
+    )
+  })
+
+  it('reloads actions after the active project is removed', async () => {
+    vi.mocked(app.projects.list).mockResolvedValueOnce([projectA]).mockResolvedValue([])
+    vi.mocked(app.actions.list).mockResolvedValueOnce([buildAction]).mockResolvedValue([])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await screen.findByRole('button', { name: '▶ Build' })
+    expect(app.actions.list).toHaveBeenCalledTimes(1)
+    fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
+    await waitFor(() => expect(app.actions.list).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByRole('button', { name: '▶ Build' })).toBeNull())
+  })
+
+  it('stops polling when action status is not_found and does not report it', async () => {
+    vi.mocked(app.actions.list).mockResolvedValue([buildAction])
+    vi.mocked(app.actions.status).mockResolvedValue({
+      status: 'running',
+      exitCode: null,
+      completedAt: null,
+      error: null,
+    })
+    await renderSelectedChat()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Build/ }).getAttribute('data-status')).toBe(
+        'running',
+      ),
+    )
+    const reads = vi.mocked(app.actions.status).mock.calls.length
+    vi.mocked(app.actions.status).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'not_found',
+      message: 'Action not found.',
+    })
+    await waitFor(() =>
+      expect(vi.mocked(app.actions.status).mock.calls.length).toBeGreaterThan(reads),
+    )
+    expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
+    const settled = vi.mocked(app.actions.status).mock.calls.length
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+    })
+    expect(vi.mocked(app.actions.status).mock.calls.length).toBe(settled)
+    expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
+  })
+})
 
 describe('application shell', () => {
   let app: AppApi

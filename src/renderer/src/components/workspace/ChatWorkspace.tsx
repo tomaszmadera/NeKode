@@ -63,6 +63,9 @@ interface ChatWorkspaceProps {
    * state regardless of the chat lists (spec Behaviour 2).
    */
   forceStartNewChat?: boolean
+  terminalCwds?: Record<string, string>
+  onSessionStatus?: (chatId: string, live: boolean) => void
+  onSessionReady?: (chatId: string) => void
 }
 
 function freshRecord(cwd: string): SessionRecord {
@@ -80,6 +83,9 @@ export function ChatWorkspace({
   onChatClosed,
   onStartNewChat,
   forceStartNewChat = false,
+  terminalCwds = {},
+  onSessionStatus,
+  onSessionReady,
 }: ChatWorkspaceProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Record<string, SessionRecord>>({})
   // Chats whose exit already started the close flow (guards duplicate exits).
@@ -105,8 +111,13 @@ export function ChatWorkspace({
   // Latest lookup data for the selection effect (below): read through a ref
   // so projects/chats reloads — which swap object identities on every
   // refresh — can never re-trigger session spawning.
-  const lookupRef = useRef({ selectedProjectId, projects, chatsByProject })
-  lookupRef.current = { selectedProjectId, projects, chatsByProject }
+  const lookupRef = useRef({ selectedProjectId, projects, chatsByProject, terminalCwds })
+  lookupRef.current = { selectedProjectId, projects, chatsByProject, terminalCwds }
+
+  const onSessionStatusRef = useRef(onSessionStatus)
+  const onSessionReadyRef = useRef(onSessionReady)
+  onSessionStatusRef.current = onSessionStatus
+  onSessionReadyRef.current = onSessionReady
 
   const onChatClosedRef = useRef(onChatClosed)
   onChatClosedRef.current = onChatClosed
@@ -127,7 +138,7 @@ export function ChatWorkspace({
     if (project === null || findChat(lookup.chatsByProject, project.id, selectedChatId) === null) {
       return
     }
-    const cwd = project.path
+    const cwd = lookup.terminalCwds[selectedChatId] ?? project.path
     // Opening (or keeping) a session means this chat is not closing: a stale
     // close guard left behind by an earlier failed close (the host keeps the
     // chat when chats.remove rejects) must not swallow this session's exit —
@@ -177,6 +188,7 @@ export function ChatWorkspace({
       return
     }
     closingChatIdsRef.current.add(chatId)
+    onSessionStatusRef.current?.(chatId, false)
     setSessions((previous) => {
       if (previous[chatId] === undefined) {
         return previous
@@ -189,6 +201,7 @@ export function ChatWorkspace({
   }, [])
 
   const handleSpawnError = useCallback((chatId: string, message: string): void => {
+    onSessionStatusRef.current?.(chatId, false)
     setSessions((previous) => {
       const existing = previous[chatId]
       if (existing === undefined) {
@@ -236,6 +249,10 @@ export function ChatWorkspace({
               onExit={() => handleExit(chatId)}
               onClose={() => handleExit(chatId)}
               onSpawnError={(message) => handleSpawnError(chatId, message)}
+              onReady={() => {
+                onSessionStatusRef.current?.(chatId, true)
+                onSessionReadyRef.current?.(chatId)
+              }}
             />
             {record.status === 'error' && chatId === selectedChatId ? (
               <SpawnErrorOverlay

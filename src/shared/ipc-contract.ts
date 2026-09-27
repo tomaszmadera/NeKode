@@ -19,6 +19,33 @@ export interface ChatInfo {
   name: string
 }
 
+export interface ActionInput {
+  scope: 'global' | 'project'
+  projectId: string | null
+  title: string
+  icon: string | null
+  command: string
+  cwd: string | null
+  runMode: 'background' | 'new-terminal'
+  confirm: boolean
+  sortOrder: number
+}
+
+export interface ActionControl extends ActionInput {
+  id: string
+}
+
+export interface ActionExecution {
+  status: 'idle' | 'running' | 'success' | 'failed'
+  exitCode: number | null
+  completedAt: string | null
+  error: string | null
+  chat?: ChatInfo
+  /** New-terminal delivery waits until its terminal view is subscribed and ready. */
+  terminalCommand?: string
+  terminalCwd?: string
+}
+
 // Worktree/change counts behind the UX-UI §16 status forms and hover details.
 export interface GitWorktreeStatus {
   modified: number
@@ -80,6 +107,12 @@ export const IPC_CHANNEL = {
   filesList: 'files:list',
   filesRead: 'files:read',
   filesOpenExternal: 'files:openExternal',
+  actionsList: 'actions:list',
+  actionsCreate: 'actions:create',
+  actionsUpdate: 'actions:update',
+  actionsDelete: 'actions:delete',
+  actionsExecute: 'actions:execute',
+  actionsStatus: 'actions:status',
 } as const
 
 // Keys of the flat app_state key–value store (spec Data/API). Shared so the
@@ -139,5 +172,13 @@ export interface AppApi {
     read(projectId: string, relativePath: string): Promise<FilePreview>
     /** Opens the file with the OS default application (main: shell.openPath). */
     openExternal(projectId: string, relativePath: string): Promise<void>
+  }
+  actions: {
+    list(): Promise<ActionControl[]>
+    create(input: ActionInput): Promise<ActionControl>
+    update(id: string, input: ActionInput): Promise<ActionControl>
+    delete(id: string): Promise<void>
+    execute(id: string, projectId: string | null, confirmed: boolean): Promise<ActionExecution>
+    status(id: string): Promise<ActionExecution>
   }
 }

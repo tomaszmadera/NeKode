@@ -37,6 +37,14 @@ function createAppMock(): AppMockBundle {
   const exitListenersByChat = new Map<string, Set<(exitCode: number) => void>>()
   const dataListenersByChat = new Map<string, Set<(data: string) => void>>()
   const app: AppApi = {
+    actions: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+      status: vi.fn(),
+    },
     projects: {
       list: vi.fn().mockResolvedValue([projectA]),
       add: vi.fn().mockResolvedValue(null),

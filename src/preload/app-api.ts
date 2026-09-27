@@ -1,4 +1,6 @@
 import type {
+  ActionControl,
+  ActionExecution,
   AppApi,
   ChatInfo,
   FileEntry,
@@ -48,6 +50,15 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
   }
 
   return {
+    actions: {
+      list: () => invoke<ActionControl[]>(IPC_CHANNEL.actionsList),
+      create: (input) => invoke<ActionControl>(IPC_CHANNEL.actionsCreate, input),
+      update: (id, input) => invoke<ActionControl>(IPC_CHANNEL.actionsUpdate, id, input),
+      delete: (id) => invoke<void>(IPC_CHANNEL.actionsDelete, id),
+      execute: (id, projectId, confirmed) =>
+        invoke<ActionExecution>(IPC_CHANNEL.actionsExecute, id, projectId, confirmed),
+      status: (id) => invoke<ActionExecution>(IPC_CHANNEL.actionsStatus, id),
+    },
     projects: {
       list: () => invoke<ProjectInfo[]>(IPC_CHANNEL.projectsList),
       // No path argument: the native directory dialog opens in main.
