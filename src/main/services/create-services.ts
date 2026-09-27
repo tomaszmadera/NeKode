@@ -2,6 +2,7 @@ import { statSync } from 'node:fs'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import type { AppServices } from '../ipc/service-registry'
+import { ActionService } from './action-service'
 import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
 import { FilesService } from './files/files-service'
@@ -35,7 +36,21 @@ export function createServices(options: CreateServicesOptions): AppServices {
   const terminals = new TerminalService({ createPty: createNodePty })
   const git = new GitService()
   const files = new FilesService({ projects, openExternal: options.openExternal })
+  const actions = new ActionService({
+    db,
+    createChat: (projectId) => chats.create(projectId),
+    createTerminal: (chatId, cwd) => terminals.create(chatId, cwd),
+  })
   return {
+    actions: {
+      list: () => actions.list(),
+      create: (input) => actions.create(input),
+      update: (id, input) => actions.update(id, input),
+      delete: (id) => actions.delete(id),
+      execute: (id, projectId, confirmed) => actions.execute(id, projectId, confirmed),
+      status: (id) => actions.status(id),
+      stopForProject: (projectId) => actions.stopForProject(projectId),
+    },
     projects: {
       // Stale selection keys are cleaned on every list read (spec Edge cases:
       // a selection pointing at a removed project/chat falls back to the

@@ -1,4 +1,7 @@
 import type {
+  ActionControl,
+  ActionExecution,
+  ActionInput,
   ChatInfo,
   FileEntry,
   FilePreview,
@@ -13,6 +16,19 @@ import type {
 // handlers invoke.
 
 export interface AppServices {
+  actions: {
+    list(): ActionControl[]
+    create(input: ActionInput): ActionControl
+    update(id: string, input: ActionInput): ActionControl
+    delete(id: string): void
+    execute(id: string, projectId: string | null, confirmed: boolean): ActionExecution
+    status(id: string): ActionExecution
+    /**
+     * Stops background children owned by a project after `projects:remove`.
+     * Not part of the renderer bridge.
+     */
+    stopForProject(projectId: string): void
+  }
   projects: {
     list(): ProjectInfo[]
     add(path: string): ProjectInfo

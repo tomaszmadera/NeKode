@@ -35,6 +35,7 @@ interface LeftNavigationProps {
   onRemoveProject: (projectId: string) => void
   /** Enters Project Files mode for the project (spec Behaviour 1). */
   onOpenProjectFiles: (projectId: string) => void
+  onOpenProjectSettings: (projectId: string) => void
   /** Creates a chat immediately with the shell-derived name (no form). */
   onCreateChat: (projectId: string) => Promise<boolean>
   notice: string | null
@@ -61,6 +62,7 @@ export function LeftNavigation({
   onAddProject,
   onRemoveProject,
   onOpenProjectFiles,
+  onOpenProjectSettings,
   onCreateChat,
   notice,
 }: LeftNavigationProps): React.JSX.Element {
@@ -235,6 +237,10 @@ export function LeftNavigation({
             setContextMenu(null)
             onRemoveProject(projectId)
           }}
+          onOpenProjectSettings={(projectId) => {
+            setContextMenu(null)
+            onOpenProjectSettings(projectId)
+          }}
         />
       ) : null}
       <ResizeHandle
@@ -260,11 +266,13 @@ function ContextMenuOverlay({
   projectName,
   onClose,
   onRemoveProject,
+  onOpenProjectSettings,
 }: {
   state: ContextMenuState
   projectName: string
   onClose: () => void
   onRemoveProject: (projectId: string) => void
+  onOpenProjectSettings: (projectId: string) => void
 }): React.JSX.Element {
   return (
     <div
@@ -292,6 +300,14 @@ function ContextMenuOverlay({
         style={{ left: state.x, top: state.y }}
         data-testid={TEST_ID.projectContextMenu}
       >
+        <button
+          type="button"
+          role="menuitem"
+          className="w-full px-3 py-1.5 text-left text-xs text-neutral-300 hover:bg-neutral-800"
+          onClick={() => onOpenProjectSettings(state.projectId)}
+        >
+          Project Settings
+        </button>
         <button
           type="button"
           role="menuitem"

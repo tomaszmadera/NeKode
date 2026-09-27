@@ -18,6 +18,14 @@ vi.mock('@xterm/addon-fit', () => import('../test/fit-addon-mock'))
 
 function createAppApiStub(): AppApi {
   return {
+    actions: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+      status: vi.fn(),
+    },
     projects: {
       list: vi.fn().mockResolvedValue([]),
       add: vi.fn().mockResolvedValue(undefined),

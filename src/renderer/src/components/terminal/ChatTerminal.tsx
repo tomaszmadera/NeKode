@@ -33,6 +33,7 @@ interface ChatTerminalProps {
   onClose: () => void
   /** Spawn failure (e.g. project directory missing): typed error state. */
   onSpawnError: (message: string) => void
+  onReady?: () => void
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -73,6 +74,7 @@ export function ChatTerminal({
   onExit,
   onClose,
   onSpawnError,
+  onReady,
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   // Latest callbacks without re-creating the terminal session on re-render.
@@ -80,10 +82,12 @@ export function ChatTerminal({
   const onExitRef = useRef(onExit)
   const onCloseRef = useRef(onClose)
   const onSpawnErrorRef = useRef(onSpawnError)
+  const onReadyRef = useRef(onReady)
   appRef.current = app
   onExitRef.current = onExit
   onCloseRef.current = onClose
   onSpawnErrorRef.current = onSpawnError
+  onReadyRef.current = onReady
 
   useEffect(() => {
     const container = containerRef.current
@@ -284,12 +288,18 @@ export function ChatTerminal({
     }
 
     // Lazy spawn: the main process creates the PTY on this first attach.
+    // An exit can unmount this view before create resolves. Completion after
+    // cleanup must not mark the chat live or flush a pending command.
+    let disposed = false
     void appRef.current.terminals
       .create(chatId, cwd)
       .then(() => {
+        if (disposed) return
         fitAndResize()
+        onReadyRef.current?.()
       })
       .catch((error: unknown) => {
+        if (disposed) return
         onSpawnErrorRef.current(errorMessage(error, 'Failed to start the terminal for this chat.'))
       })
 
@@ -316,6 +326,7 @@ export function ChatTerminal({
     fitAndResize()
 
     return () => {
+      disposed = true
       cleanupResize()
       unsubscribeData()
       unsubscribeExit()

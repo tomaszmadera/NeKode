@@ -24,6 +24,35 @@ function createIpcMock() {
 }
 
 describe('preload app api', () => {
+  it('routes action CRUD, execution, and state queries through typed channels', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    const input = {
+      scope: 'project' as const,
+      projectId: 'p1',
+      title: 'Build',
+      icon: null,
+      command: 'pnpm build',
+      cwd: null,
+      runMode: 'background' as const,
+      confirm: true,
+      sortOrder: 0,
+    }
+    await api.actions.list()
+    await api.actions.create(input)
+    await api.actions.update('a1', input)
+    await api.actions.delete('a1')
+    await api.actions.execute('a1', 'p1', true)
+    await api.actions.status('a1')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.actionsList, args: [] },
+      { channel: IPC_CHANNEL.actionsCreate, args: [input] },
+      { channel: IPC_CHANNEL.actionsUpdate, args: ['a1', input] },
+      { channel: IPC_CHANNEL.actionsDelete, args: ['a1'] },
+      { channel: IPC_CHANNEL.actionsExecute, args: ['a1', 'p1', true] },
+      { channel: IPC_CHANNEL.actionsStatus, args: ['a1'] },
+    ])
+  })
   beforeEach(() => {
     vi.unstubAllGlobals()
   })

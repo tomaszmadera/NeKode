@@ -29,6 +29,14 @@ vi.mock('../files/MonacoPreview', () => ({
 
 function createAppApiStub(): AppApi {
   return {
+    actions: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+      status: vi.fn(),
+    },
     projects: {
       list: vi.fn().mockResolvedValue([]),
       add: vi.fn().mockResolvedValue(null),

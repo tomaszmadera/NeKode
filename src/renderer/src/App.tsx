@@ -1,8 +1,16 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatInfo, FileEntry, ProjectInfo } from '../../shared/ipc-contract'
+import type {
+  ActionControl,
+  ActionExecution,
+  ChatInfo,
+  FileEntry,
+  ProjectInfo,
+} from '../../shared/ipc-contract'
 import { APP_STATE_KEY } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
+import { ActionBar } from './components/actions/ActionBar'
+import { ActionSettings } from './components/actions/ActionSettings'
 import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
@@ -67,6 +75,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
   const [selectionNonce, setSelectionNonce] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
+  const [actions, setActions] = useState<ActionControl[]>([])
+  const [actionSettingsOpen, setActionSettingsOpen] = useState(false)
+  const [actionSettingsProjectId, setActionSettingsProjectId] = useState<string | null>(null)
+  const [liveChatIds, setLiveChatIds] = useState<ReadonlySet<string>>(new Set())
+  const [terminalCwds, setTerminalCwds] = useState<Record<string, string>>({})
+  const pendingTerminalCommandsRef = useRef<Record<string, string>>({})
   const [leftWidth, setLeftWidth] = useState(LEFT_REGION_SIZE.default)
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
   // Project Files mode (spec Behaviour 1–2, 12): the project whose tree is
@@ -102,6 +116,37 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setChatsByProject(chatsByProjectRef.current)
     },
     [],
+  )
+
+  const refreshActions = useCallback(async (): Promise<void> => {
+    setActions(await app.actions.list())
+  }, [app])
+
+  useEffect(() => {
+    void refreshActions().catch((error: unknown) => {
+      setNotice(errorMessage(error, 'Failed to load actions.'))
+    })
+  }, [refreshActions])
+
+  const handleSessionStatus = useCallback((chatId: string, live: boolean): void => {
+    setLiveChatIds((previous) => {
+      const next = new Set(previous)
+      if (live) next.add(chatId)
+      else next.delete(chatId)
+      return next
+    })
+  }, [])
+
+  const handleSessionReady = useCallback(
+    (chatId: string): void => {
+      const command = pendingTerminalCommandsRef.current[chatId]
+      if (command === undefined) return
+      delete pendingTerminalCommandsRef.current[chatId]
+      void app.terminals.write(chatId, `${command}\r`).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to write the action command.'))
+      })
+    },
+    [app],
   )
 
   // Startup hydration: real project list, persisted selection (dropped when
@@ -396,9 +441,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           // The removal already succeeded; a failed follow-up refresh must not
           // be reported as a removal failure.
         }
+        try {
+          await refreshActions()
+        } catch (error) {
+          setNotice(errorMessage(error, 'Failed to load actions.'))
+        }
       })()
     },
-    [app, applyChatsUpdate, persistSelection, selectedProjectId],
+    [app, applyChatsUpdate, persistSelection, refreshActions, selectedProjectId],
   )
 
   // --- Project Files mode (spec Behaviour 1–2, 6, 12, 14–15) ---------------
@@ -678,6 +728,29 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // selectedProjectId (filesProjectId ?? selectedProjectId).
   const statusProject = tabProject
 
+  const handleNewTerminalAction = (execution: ActionExecution): void => {
+    const chat = execution.chat
+    const command = execution.terminalCommand
+    const cwd = execution.terminalCwd
+    if (!chat || command === undefined || cwd === undefined) return
+    pendingTerminalCommandsRef.current[chat.id] = command
+    setTerminalCwds((previous) => ({ ...previous, [chat.id]: cwd }))
+    applyChatsUpdate((previous) => ({
+      ...previous,
+      [chat.projectId]: [
+        ...(previous[chat.projectId] ?? []).filter((item) => item.id !== chat.id),
+        chat,
+      ],
+    }))
+    setLoadedChatProjectIds((previous) => new Set(previous).add(chat.projectId))
+    setExpandedProjectIds((previous) => new Set(previous).add(chat.projectId))
+    setSelectedProjectId(chat.projectId)
+    setSelectedChatId(chat.id)
+    setSelectionNonce((previous) => previous + 1)
+    persistSelection(chat.projectId, chat.id)
+    updateTabsSession(chat.projectId, (session) => activateTab(session, TERMINAL_TAB))
+  }
+
   return (
     <div
       className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100 antialiased"
@@ -712,6 +785,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             onAddProject={handleAddProject}
             onRemoveProject={handleRemoveProject}
             onOpenProjectFiles={handleOpenProjectFiles}
+            onOpenProjectSettings={(projectId) => {
+              setActionSettingsProjectId(projectId)
+              setActionSettingsOpen(true)
+            }}
             onCreateChat={handleCreateChat}
             notice={notice}
           />
@@ -727,11 +804,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             onCloseFile={handleCloseFileTab}
             onNewChat={handleTabNewChat}
           />
-          {/* Reserved place for the action row (Stage 3 boundary): no controls. */}
-          <div
-            className="flex h-8 shrink-0 items-center border-b border-neutral-800"
-            data-testid={TEST_ID.actionRowSlot}
-            aria-hidden="true"
+          <ActionBar
+            app={app}
+            actions={actions}
+            projectId={tabProjectId}
+            activeChatId={activeChat?.id ?? null}
+            chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
+            onNewTerminal={handleNewTerminalAction}
+            onError={setNotice}
+            onSettings={() => {
+              setActionSettingsProjectId(tabProjectId)
+              setActionSettingsOpen(true)
+            }}
           />
           <main className="flex min-h-0 flex-1 flex-col" data-testid={TEST_ID.centerSurface}>
             {/* Every open file tab owns its preview view (hidden while another
@@ -779,6 +863,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 selectedChatId={chatSurfaceDiverged ? null : selectedChatId}
                 selectionNonce={selectionNonce}
                 forceStartNewChat={chatSurfaceDiverged}
+                terminalCwds={terminalCwds}
+                onSessionStatus={handleSessionStatus}
+                onSessionReady={handleSessionReady}
                 onChatClosed={handleChatClosed}
                 onStartNewChat={handleStartNewChat}
               />
@@ -790,6 +877,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           Right Panel
         </div>
       </div>
+      {actionSettingsOpen ? (
+        <ActionSettings
+          app={app}
+          actions={actions}
+          projectId={actionSettingsProjectId}
+          onRefresh={refreshActions}
+          onClose={() => setActionSettingsOpen(false)}
+        />
+      ) : null}
       <div
         className="flex shrink-0 flex-col bg-neutral-900/60"
         data-testid={TEST_ID.bottomRegion}

@@ -6,6 +6,15 @@ import type { AppServices } from './service-registry'
 
 function fakeServices(): AppServices {
   return {
+    actions: {
+      list: vi.fn(() => []),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+      status: vi.fn(),
+      stopForProject: vi.fn(),
+    },
     projects: {
       list: () => [],
       add: () => ({ id: 'p1', name: 'demo', path: 'D:/code/demo', runtimeLabel: null }),
@@ -48,6 +57,34 @@ function channelMap() {
 }
 
 describe('ipc payload validation', () => {
+  it('validates action inputs and confirmation before service calls', () => {
+    const channels = channelMap()
+    const input = {
+      scope: 'project',
+      projectId: 'p1',
+      title: 'Build',
+      icon: null,
+      command: 'pnpm build',
+      cwd: null,
+      runMode: 'background',
+      confirm: false,
+      sortOrder: 0,
+    }
+    expect(channels.get('actions:create')?.parse([input])).toEqual([input])
+    expect(() => channels.get('actions:create')?.parse([{ ...input, title: '' }])).toThrow(
+      ValidationError,
+    )
+    expect(() =>
+      channels.get('actions:create')?.parse([{ ...input, runMode: 'bottom-terminal' }]),
+    ).toThrow(ValidationError)
+    expect(() => channels.get('actions:create')?.parse([{ ...input, cwd: '../outside' }])).toThrow(
+      ValidationError,
+    )
+    expect(() => channels.get('actions:execute')?.parse(['a1', 'p1', 'true'])).toThrow(
+      ValidationError,
+    )
+    expect(channels.get('actions:execute')?.parse(['a1', 'p1', true])).toEqual(['a1', 'p1', true])
+  })
   it('rejects wrong arity before touching services', () => {
     const entry = channelMap().get('chats:create')
     expect(entry).toBeDefined()

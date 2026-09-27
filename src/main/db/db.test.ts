@@ -41,12 +41,13 @@ describe('runMigrations', () => {
   it('creates the schema once and is idempotent', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(3)
-      expect(runMigrations(db)).toBe(3)
+      expect(runMigrations(db)).toBe(4)
+      expect(runMigrations(db)).toBe(4)
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as Array<{ name: string }>
       expect(tables.map((row) => row.name)).toEqual([
+        'actions',
         'app_state',
         'chats',
         'projects',
@@ -129,12 +130,13 @@ describe('migration 2 (tasks -> chats)', () => {
   it('carries rows over to chats without status and drops the tasks table', () => {
     const db = createLegacyDb()
     try {
-      expect(runMigrations(db)).toBe(3)
+      expect(runMigrations(db)).toBe(4)
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as Array<{ name: string }>
       expect(tables.map((row) => row.name)).toEqual([
+        'actions',
         'app_state',
         'chats',
         'projects',
@@ -207,7 +209,7 @@ describe('migration 2 (tasks -> chats)', () => {
       const applied = db
         .prepare('SELECT version FROM schema_migrations ORDER BY version')
         .all() as Array<{ version: number }>
-      expect(applied.map((row) => row.version)).toEqual([1, 2, 3])
+      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4])
     } finally {
       db.close()
     }
@@ -263,7 +265,7 @@ describe('migration 3 (chat name unique index dropped)', () => {
   it('drops the unique index: duplicate chat names within a project are allowed', () => {
     const db = createLegacyDbAtV2()
     try {
-      expect(runMigrations(db)).toBe(3)
+      expect(runMigrations(db)).toBe(4)
       expect(() =>
         db
           .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')

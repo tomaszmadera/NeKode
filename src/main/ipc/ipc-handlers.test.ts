@@ -11,6 +11,18 @@ import {
 import { registerAppIpcHandlers } from './ipc-handlers'
 import type { AppServices } from './service-registry'
 
+function fakeActions(): AppServices['actions'] {
+  return {
+    list: vi.fn(() => []),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    execute: vi.fn(),
+    status: vi.fn(),
+    stopForProject: vi.fn(),
+  }
+}
+
 // Registered-handler tests (plan carry-over: the previous stub tests never
 // invoked the handlers, leaving sender guarding, payload slicing and the
 // dialog flow uncovered). A fake IpcMain captures the registered callbacks.
@@ -81,6 +93,7 @@ function createHarness(): Harness {
   } = { data: [], exit: [] }
 
   const services: AppServices = {
+    actions: fakeActions(),
     projects: {
       list: vi.fn(() => []),
       add: vi.fn((path: string) => ({
@@ -143,6 +156,36 @@ function createHarness(): Harness {
 }
 
 describe('registered ipc handlers', () => {
+  it('routes action CRUD and execution, rejecting malformed inputs before services', () => {
+    const { services, invoke } = createHarness()
+    const input = {
+      scope: 'project',
+      projectId: 'p1',
+      title: 'Build',
+      icon: null,
+      command: 'pnpm build',
+      cwd: null,
+      runMode: 'background',
+      confirm: true,
+      sortOrder: 0,
+    }
+    invoke(IPC_CHANNEL.actionsCreate, [input])
+    invoke(IPC_CHANNEL.actionsUpdate, ['a1', input])
+    invoke(IPC_CHANNEL.actionsExecute, ['a1', 'p1', true])
+    invoke(IPC_CHANNEL.actionsStatus, ['a1'])
+    invoke(IPC_CHANNEL.actionsDelete, ['a1'])
+    expect(services.actions.create).toHaveBeenCalledWith(input)
+    expect(services.actions.update).toHaveBeenCalledWith('a1', input)
+    expect(services.actions.execute).toHaveBeenCalledWith('a1', 'p1', true)
+    expect(services.actions.status).toHaveBeenCalledWith('a1')
+    expect(services.actions.delete).toHaveBeenCalledWith('a1')
+    expect(() => invoke(IPC_CHANNEL.actionsCreate, [{ ...input, command: '' }])).toThrow(
+      APP_ERROR_MARKER,
+    )
+    expect(() => invoke(IPC_CHANNEL.actionsExecute, ['a1', 'p1', 'true'])).toThrow(APP_ERROR_MARKER)
+    expect(services.actions.create).toHaveBeenCalledTimes(1)
+    expect(services.actions.execute).toHaveBeenCalledTimes(1)
+  })
   it('invokes services through validation and slices payloads', async () => {
     const { services, invoke } = createHarness()
     await invoke(IPC_CHANNEL.terminalsCreate, ['t1', 'D:/code/demo'])
@@ -207,6 +250,7 @@ describe('registered ipc handlers', () => {
       { id: 't3', projectId: 'p2', name: 'c' },
     ]
     const services: AppServices = {
+      actions: fakeActions(),
       projects: {
         list: vi.fn(() => []),
         add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
@@ -245,6 +289,10 @@ describe('registered ipc handlers', () => {
     invoke(IPC_CHANNEL.projectsRemove, ['p1'])
 
     expect(services.projects.remove).toHaveBeenCalledWith('p1')
+    expect(services.actions.stopForProject).toHaveBeenCalledWith('p1')
+    expect(vi.mocked(services.projects.remove).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(services.actions.stopForProject).mock.invocationCallOrder[0],
+    )
     // Only the removed project's orphaned PTYs are terminated; the other
     // project's session survives (terminateAll stays reserved for app quit).
     expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1, 0])
@@ -252,6 +300,17 @@ describe('registered ipc handlers', () => {
     expect(terminals.hasRunningSession('t2')).toBe(false)
     expect(terminals.hasRunningSession('t3')).toBe(true)
     expect(terminals.hasRunningSession('ghost')).toBe(false)
+  })
+
+  it('does not stop action children when project removal fails', () => {
+    const harness = createHarness()
+    vi.mocked(harness.services.projects.remove).mockImplementation(() => {
+      throw new AppError('not_found', 'Project not found.', 'projects:remove')
+    })
+    expect(() => harness.invoke(IPC_CHANNEL.projectsRemove, ['missing'])).toThrow(
+      /Project not found/,
+    )
+    expect(harness.services.actions.stopForProject).not.toHaveBeenCalled()
   })
 
   it('chats:remove deletes the chat row and terminates exactly its session (fake PTY)', () => {
@@ -263,6 +322,7 @@ describe('registered ipc handlers', () => {
     }
     const terminals = new TerminalService({ createPty, isDirectory: () => true })
     const services: AppServices = {
+      actions: fakeActions(),
       projects: {
         list: vi.fn(() => []),
         add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),

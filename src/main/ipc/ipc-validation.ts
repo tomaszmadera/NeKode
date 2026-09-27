@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path'
+import type { ActionInput } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import type { AppServices } from './service-registry'
 
@@ -78,6 +79,62 @@ function requireArgs(payload: unknown[], count: number, channel: string): void {
   }
 }
 
+function assertActionInput(value: unknown, label: string): asserts value is ActionInput {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    fail(label, 'must be an action object')
+  const input = value as Record<string, unknown>
+  const keys = [
+    'scope',
+    'projectId',
+    'title',
+    'icon',
+    'command',
+    'cwd',
+    'runMode',
+    'confirm',
+    'sortOrder',
+  ]
+  if (
+    Object.keys(input).length !== keys.length ||
+    Object.keys(input).some((key) => !keys.includes(key))
+  )
+    fail(label, 'has unexpected or missing fields')
+  if (input.scope !== 'global' && input.scope !== 'project') fail(`${label}.scope`, 'is invalid')
+  if (input.projectId !== null) assertString(input.projectId, `${label}.projectId`)
+  if (typeof input.title !== 'string' || !input.title.trim())
+    fail(`${label}.title`, 'must be non-empty')
+  if (input.icon !== null) assertString(input.icon, `${label}.icon`)
+  if (typeof input.command !== 'string' || !input.command.trim())
+    fail(`${label}.command`, 'must be non-empty')
+  if (input.cwd !== null) assertSafePath(input.cwd, `${label}.cwd`)
+  if (input.runMode !== 'background' && input.runMode !== 'new-terminal')
+    fail(`${label}.runMode`, 'is invalid')
+  if (typeof input.confirm !== 'boolean') fail(`${label}.confirm`, 'must be a boolean')
+  if (typeof input.sortOrder !== 'number' || !Number.isSafeInteger(input.sortOrder))
+    fail(`${label}.sortOrder`, 'must be an integer')
+  if ((input.scope === 'project') !== (input.projectId !== null))
+    fail(label, 'has inconsistent scope and projectId')
+}
+
+function actionInputChannel(
+  channel: string,
+  withId: boolean,
+  invokeService: (id: string | null, input: ActionInput) => unknown,
+): ValidatedChannel {
+  return {
+    channel,
+    parse: (payload) => {
+      requireArgs(payload, withId ? 2 : 1, channel)
+      if (withId) assertString(payload[0], `${channel} arg[0]`)
+      const input = payload[withId ? 1 : 0]
+      assertActionInput(input, `${channel} input`)
+      return withId ? [payload[0], input] : [input]
+    },
+    invoke: (args) =>
+      invokeService(withId ? (args[0] as string) : null, args[withId ? 1 : 0] as ActionInput),
+  }
+}
+
 export interface ValidatedChannel {
   channel: string
   /** Returns service args extracted from the raw invoke payload. */
@@ -126,6 +183,25 @@ function serviceChannel(
 
 export function buildValidatedChannels(services: AppServices): ValidatedChannel[] {
   return [
+    serviceChannel('actions:list', [], () => services.actions.list()),
+    actionInputChannel('actions:create', false, (_, input) => services.actions.create(input)),
+    actionInputChannel('actions:update', true, (id, input) =>
+      services.actions.update(id as string, input),
+    ),
+    serviceChannel('actions:delete', ['string'], (args) => services.actions.delete(args[0])),
+    {
+      channel: 'actions:execute',
+      parse: (payload) => {
+        requireArgs(payload, 3, 'actions:execute')
+        assertString(payload[0], 'actions:execute id')
+        if (payload[1] !== null) assertString(payload[1], 'actions:execute projectId')
+        if (typeof payload[2] !== 'boolean') fail('actions:execute confirmed', 'must be a boolean')
+        return payload
+      },
+      invoke: (args) =>
+        services.actions.execute(args[0] as string, args[1] as string | null, args[2] as boolean),
+    },
+    serviceChannel('actions:status', ['string'], (args) => services.actions.status(args[0])),
     serviceChannel('projects:list', [], () => services.projects.list()),
     // The Add Project flow opens the native dialog in main (ipc-handlers);
     // the channel payload is empty and the path comes from the dialog.
