@@ -36,6 +36,18 @@
       "scopes": ["product"],
       "tags": ["powershell", "windows", "verification", "exit-code", "native-command"],
       "path": ".agents/lessons/items/powershell-preserve-native-exit-code.md"
+    },
+    {
+      "id": "project-scoped-mcp-ownership",
+      "scopes": ["product"],
+      "tags": ["codex", "mcp", "unity", "config"],
+      "path": ".agents/lessons/items/project-scoped-mcp-ownership.md"
+    },
+    {
+      "id": "windows-biome-package-json-eol",
+      "scopes": ["product"],
+      "tags": ["windows", "git", "autocrlf", "biome", "lint", "package.json"],
+      "path": ".agents/lessons/items/windows-biome-package-json-eol.md"
     }
   ]
 }
