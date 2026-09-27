@@ -1,6 +1,6 @@
 {
   "name": "nekode",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Agent-First Coding Environment",
   "main": "./out/main/index.js",
   "author": "NeKode Team",
