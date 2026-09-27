@@ -10,7 +10,7 @@ current_step: Phase 2.2
 updated: 2026-09-27
 branch: main
 worktree: current
-next_action: Resume from handoff and run independent review of Stage 1 before Stage 2
+next_action: Resume from handoff. Re-review the Stage 1 correction. Do not start Stage 2.
 blockers: none
 ---
 
@@ -95,6 +95,11 @@ Panel (skrót, fokus, wysokość, trwałość układu), wiele zakładek terminal
 | `pnpm run test` | pass | exit 0; 314/314 in 24 files; coordinator recount 2026-09-27T21:00:01Z |
 | `pnpm run lint` | fail | exit 1; only `package.json` CRLF in the worktree (63 CR). HEAD blob has 0 CR and 63 LF. `git status` does not list `package.json`. Known lesson `windows-biome-package-json-eol`. Not a Stage 1 diff |
 | `pnpm run build` | not rerun | implementer reported exit 0; coordinator did not rerun build |
+| `python .agents/scripts/preflight` | pass | exit 0; 2026-09-27T21:17:01Z resume; Python 3.13.5; windows-native; branch main; unstaged 2 (handoff and this record) |
+| hook reproduction | diagnosed | `Read 2 skills [hooks: 4 ok, 4 failed]` is two skill reads, four hooks each. Shell is pwsh (`GROK_SHELL` unset). OK twice each, exit 0, stdout `{}`: `.grok/hooks/quota.json` PreToolUse `python3 "$(git rev-parse --show-toplevel)/.agents/hooks/dispatch.py" --event pretool --agent grok` and `.grok/hooks/task-report.json` PostToolUse `--event task-report --agent grok`. FAIL twice each, exit 1: `.claude/settings.json` PreToolUse and PostToolUse. The command is the bash one-liner starting `PY="$(command -v python3 || command -v python || echo py -3)"`. pwsh ParserError: unexpected token `"$DIR/.agents/hooks/dispatch.py"`. Not `.agents/hooks.json` and not `dispatch.py`. The original session did not store stderr. Green `Skill handoff [hooks: 2/2]` is the two Grok hooks only. |
+| review:1 | blocking | 2026-09-27T21:36:53Z. Independent subagent, implementation gate, base `d84c2a2`, exit 0. Two warnings: `App.tsx:467` removed-project guard is after the first await, so a bottom tab awaiting `shellName` can spawn after `terminateProjectBottom` and unmount without killing the PTY (`ChatTerminal.tsx:339`). `App.tsx:836` hide restores focus when the node is merely connected, so a chat textarea under `display: none` does not yield to the center surface. |
+| correction:1 | returned | 2026-09-27T22:01:53Z. Paths: `src/renderer/src/App.tsx`, `src/renderer/src/BottomPanel.test.tsx`. Red before the fix, exit 1: `BottomPanel.test.tsx` focus case (`document.activeElement` stayed the hidden terminal canvas) and the shell-name race (two PowerShell tabs while `projects.remove` was pending). A third red run caught a failed removal clearing the tombstone. Green after the fix: `cmd /c pnpm exec vitest run src/renderer/src/BottomPanel.test.tsx src/renderer/src/App.test.tsx` 69 passed; later `BottomPanel.test.tsx` 17 passed. Biome on those two files: no fixes. Coordinator recount `cmd /c pnpm run typecheck:web` exit 0. `pnpm run typecheck` (node) not run. |
+| review:2 | interrupted | 2026-09-27T22:10:21Z. Re-review of the correction started and was stopped before findings returned. Not a pass. |
 
 ## Timing
 
@@ -106,7 +111,11 @@ Panel (skrót, fokus, wysokość, trwałość układu), wiele zakładek terminal
 | approval | wait | 2026-09-27T20:09:59Z | 2026-09-27T20:21:26Z |
 | preflight | work | 2026-09-27T20:21:26Z | 2026-09-27T20:23:13Z |
 | implement:1 | work | 2026-09-27T20:23:13Z | 2026-09-27T21:00:01Z |
-| handoff | wait | 2026-09-27T21:00:01Z | |
+| handoff | wait | 2026-09-27T21:00:01Z | 2026-09-27T21:17:01Z |
+| review:1 | work | 2026-09-27T21:17:01Z | 2026-09-27T21:36:53Z |
+| correction:1 | work | 2026-09-27T21:36:53Z | 2026-09-27T22:01:53Z |
+| review:2 | work | 2026-09-27T22:01:53Z | 2026-09-27T22:10:21Z |
+| handoff | wait | 2026-09-27T22:10:21Z | |
 
 ## Risks and blockers
 
@@ -115,4 +124,4 @@ Panel (skrót, fokus, wysokość, trwałość układu), wiele zakładek terminal
 
 ## Resume instructions
 
-Wznów z `.agents/handoffs/bottom-auxiliary-terminal.md`. Pierwsza akcja: niezależny review etapu 1 (`code-review`), nie Stage 2. Nie powtarzaj implementacji etapu 1 bez nowej usterki. Nie commituj `package.json` z powodu CRLF.
+Wznów z `.agents/handoffs/bottom-auxiliary-terminal.md`. Review:2 korekty etapu 1 nie wrócił i nie jest zaliczeniem. Następna akcja: świeży niezależny re-review samego diffa korekty (`code-review`), nie cały etap 1 i nie Stage 2. Została najwyżej jedna runda korekty. Diagnoza hooków jest w Verification. Nie zmieniaj `.agents/hooks.json` ani `dispatch.py` z tego powodu. Nie commituj `package.json` z powodu CRLF.

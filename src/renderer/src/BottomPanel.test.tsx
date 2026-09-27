@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY, type AppApi, emptyGitWorktree } from '../../shared/ipc-contract'
@@ -8,6 +8,13 @@ import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 
 vi.mock('@xterm/xterm', () => import('./test/xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('./test/fit-addon-mock'))
+vi.mock('./components/files/MonacoPreview', () => ({
+  MonacoPreview: ({ content, language }: { content: string; language: string | null }) => (
+    <pre data-testid="file-preview-monaco" data-language={language ?? 'plaintext'}>
+      {content}
+    </pre>
+  ),
+}))
 
 const projectA: ProjectInfo = {
   id: 'p1',
@@ -224,6 +231,48 @@ describe('bottom auxiliary terminal panel', () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByTestId(TEST_ID.centerSurface)),
     )
+  })
+
+  it('focuses the center surface when the saved focus is a chat terminal hidden by a file tab', async () => {
+    await renderSelectedProject()
+    const canvas = screen.getByTestId('terminal-canvas-t1')
+    canvas.focus()
+    expect(document.activeElement).toBe(canvas)
+
+    pressChord()
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('data-testid') ?? '').toMatch(
+        /^terminal-canvas-bottom:/,
+      )
+    })
+
+    vi.mocked(app.files.list).mockResolvedValue([
+      { name: 'README.md', relativePath: 'README.md', kind: 'file' },
+    ])
+    vi.mocked(app.files.read).mockResolvedValue({
+      kind: 'text',
+      content: '# Demo',
+      language: 'markdown',
+    })
+    fireEvent.click(screen.getByTestId(testIdFor.projectFiles('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none'),
+    )
+    // The selected chat terminal stays mounted and display:block; the host
+    // above it is display:none. isConnected stays true.
+    expect(canvas.isConnected).toBe(true)
+    expect(canvas.style.display).not.toBe('none')
+
+    const creates = vi.mocked(app.terminals.create).mock.calls.length
+    pressChord()
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByTestId(TEST_ID.centerSurface)),
+    )
+    expect(bottomRegion().style.display).toBe('none')
+    expect(app.terminals.terminate).not.toHaveBeenCalled()
+    expect(vi.mocked(app.terminals.create).mock.calls.length).toBe(creates)
+    expect(mockTerminalInstances.every((terminal) => !terminal.disposed)).toBe(true)
   })
 
   it('creates, switches, and closes tabs without listing them as chats', async () => {
@@ -449,6 +498,124 @@ describe('bottom auxiliary terminal panel', () => {
     )
     expect(app.chats.remove).not.toHaveBeenCalled()
   })
+
+  it('does not spawn a bottom terminal for a project removed while its shell name is loading', async () => {
+    await renderSelectedProject()
+    pressChord()
+    await screen.findByRole('button', { name: 'PowerShell' })
+    const [existingId] = bottomTabIds()
+    expect(existingId).toBeTruthy()
+    const createsBefore = bottomCreateIds(app)
+
+    let resolveShell: (name: string) => void = () => undefined
+    vi.mocked(app.terminals.shellName).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveShell = resolve
+        }),
+    )
+    let resolveRemove: () => void = () => undefined
+    vi.mocked(app.projects.remove).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemove = () => {
+            resolve()
+          }
+        }),
+    )
+
+    const shellCalls = vi.mocked(app.terminals.shellName).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
+    await waitFor(() =>
+      expect(vi.mocked(app.terminals.shellName).mock.calls.length).toBe(shellCalls + 1),
+    )
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
+
+    await act(async () => {
+      resolveShell('PowerShell')
+    })
+    expect(screen.getAllByRole('button', { name: 'PowerShell' })).toHaveLength(1)
+    expect(bottomCreateIds(app)).toEqual(createsBefore)
+
+    await act(async () => {
+      resolveRemove()
+    })
+    await waitFor(() =>
+      expect(screen.queryByTestId(testIdFor.bottomTerminal(existingId ?? ''))).toBeNull(),
+    )
+    expect(screen.queryByRole('button', { name: 'PowerShell' })).toBeNull()
+    expect(bottomCreateIds(app)).toEqual(createsBefore)
+    expect(vi.mocked(app.terminals.terminate).mock.calls.map(([id]) => id)).toContain(existingId)
+    const terminated = new Set(vi.mocked(app.terminals.terminate).mock.calls.map(([id]) => id))
+    for (const id of bottomCreateIds(app)) {
+      expect(terminated.has(id)).toBe(true)
+    }
+  })
+
+  it('still opens a bottom terminal after project removal fails', async () => {
+    await renderSelectedProject()
+    vi.mocked(app.projects.remove).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'sqlite',
+      message: 'Database is locked.',
+    })
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    expect((await screen.findByTestId(TEST_ID.actionNotice)).textContent).toContain(
+      'Database is locked.',
+    )
+    pressChord()
+    expect(await screen.findByRole('button', { name: 'PowerShell' })).toBeTruthy()
+    expect(bottomCreateIds(app)).toHaveLength(1)
+  })
+
+  it('does not spawn a bottom terminal when an earlier removal fails and a later one succeeds', async () => {
+    await renderSelectedProject()
+    const removeCalls: Array<{ resolve: () => void; reject: (error: unknown) => void }> = []
+    vi.mocked(app.projects.remove).mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          removeCalls.push({ resolve, reject })
+        }),
+    )
+    let resolveShell: (name: string) => void = () => undefined
+    vi.mocked(app.terminals.shellName).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveShell = resolve
+        }),
+    )
+
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(removeCalls).toHaveLength(1))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(removeCalls).toHaveLength(2))
+
+    const shellCalls = vi.mocked(app.terminals.shellName).mock.calls.length
+    await act(async () => {
+      removeCalls[0]?.reject({
+        nekodeAppError: true,
+        code: 'sqlite',
+        message: 'Database is locked.',
+      })
+    })
+    pressChord()
+    await act(async () => {
+      resolveShell('PowerShell')
+    })
+    expect(vi.mocked(app.terminals.shellName).mock.calls.length).toBe(shellCalls)
+    expect(bottomCreateIds(app)).toEqual([])
+
+    await act(async () => {
+      removeCalls[1]?.resolve()
+    })
+    expect(bottomCreateIds(app)).toEqual([])
+    expect(screen.queryByRole('button', { name: 'PowerShell' })).toBeNull()
+  })
 })
 
 function bottomTabIds(): string[] {
@@ -456,6 +623,13 @@ function bottomTabIds(): string[] {
     const testId = element.getAttribute('data-testid') ?? ''
     return testId.slice('bottom-tab-'.length)
   })
+}
+
+function bottomCreateIds(app: AppApi): string[] {
+  return vi
+    .mocked(app.terminals.create)
+    .mock.calls.map(([id]) => id)
+    .filter((id) => id.startsWith('bottom:'))
 }
 
 function labelButton(tabId: string): HTMLElement {

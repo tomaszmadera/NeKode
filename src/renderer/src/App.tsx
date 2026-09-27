@@ -72,6 +72,31 @@ function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
 }
 
+// True when the element can take focus. `display: none` on an ancestor (a
+// chat switch, or the chat surface under a file tab) leaves the node
+// connected, but focus() does not make it document.activeElement.
+function isRenderedElement(element: HTMLElement): boolean {
+  if (!element.isConnected) {
+    return false
+  }
+  let current: HTMLElement | null = element
+  while (current !== null) {
+    if (current.hidden) {
+      return false
+    }
+    const style = window.getComputedStyle(current)
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      style.visibility === 'collapse'
+    ) {
+      return false
+    }
+    current = current.parentElement
+  }
+  return true
+}
+
 /** Whether a chat id still exists in any project's chat list. */
 function chatExistsIn(chatsByProject: Record<string, ChatInfo[]>, chatId: string): boolean {
   return Object.values(chatsByProject).some((chats) => chats.some((chat) => chat.id === chatId))
@@ -113,6 +138,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [tabsByProject, setTabsByProject] = useState<Record<string, ProjectTabsSession>>({})
   // Projects removed in this session: pending chat loads for them are stale.
   const removedProjectIdsRef = useRef<Set<string>>(new Set())
+  // Overlapping removals of one id. One success keeps the tombstone; it is
+  // cleared only when every in-flight attempt has failed.
+  const projectRemovalsRef = useRef(new Map<string, { pending: number; succeeded: boolean }>())
   // Synchronous mirror of chatsByProject: every mutation goes through
   // applyChatsUpdate (below), so near-simultaneous terminal-exit close flows
   // compute their successor from live data, never from a stale render
@@ -418,6 +446,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           return
         }
         removedProjectIdsRef.current.delete(project.id)
+        projectRemovalsRef.current.delete(project.id)
         setProjects(await app.projects.list())
         applyChatsUpdate((previous) => ({ ...previous, [project.id]: [] }))
         setLoadedChatProjectIds((previous) => new Set(previous).add(project.id))
@@ -435,17 +464,32 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     (projectId: string): void => {
       setNotice(null)
       void (async () => {
+        // Before the first await. A shell-name fetch already in flight must
+        // not add or spawn a bottom tab, and a state update that lands after
+        // the drop must not put the tab back.
+        const removal = projectRemovalsRef.current.get(projectId) ?? {
+          pending: 0,
+          succeeded: false,
+        }
+        removal.pending += 1
+        projectRemovalsRef.current.set(projectId, removal)
+        removedProjectIdsRef.current.add(projectId)
         const bottomIds =
           bottomTabsRef.current.byProject[projectId]?.tabs.map((tab) => tab.id) ?? []
         try {
           await app.projects.remove(projectId)
         } catch (error) {
+          removal.pending -= 1
+          if (removal.pending === 0 && !removal.succeeded) {
+            projectRemovalsRef.current.delete(projectId)
+            removedProjectIdsRef.current.delete(projectId)
+          }
           setNotice(errorMessage(error, 'Failed to remove the project.'))
           return
         }
-        // Tombstone ids that have not spawned yet. projects:remove already
-        // killed live bottom PTYs; a create still in flight must not outlive
-        // the project.
+        removal.succeeded = true
+        removal.pending -= 1
+        // projects:remove already killed these PTYs. terminate is idempotent.
         const closeResults = await Promise.all(
           bottomIds.map(async (tabId) => {
             try {
@@ -464,7 +508,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         // on the next read) and fall back to the default empty state only when
         // the removed project is the currently selected one. Pending chat
         // loads for this project become stale (see loadChats).
-        removedProjectIdsRef.current.add(projectId)
         setProjects((previous) => previous.filter((project) => project.id !== projectId))
         applyChatsUpdate((previous) => {
           const next = { ...previous }
@@ -759,6 +802,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   const createBottomTab = useCallback(
     async (projectId: string): Promise<void> => {
+      if (removedProjectIdsRef.current.has(projectId)) {
+        return
+      }
       const project = projectsRef.current.find((item) => item.id === projectId)
       if (project === undefined) {
         setNotice('Select or add a project before starting a terminal.')
@@ -768,14 +814,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       try {
         label = (await app.terminals.shellName()).trim()
       } catch (error) {
+        if (removedProjectIdsRef.current.has(projectId)) {
+          return
+        }
         setNotice(errorMessage(error, 'Failed to start the terminal.'))
+        return
+      }
+      if (removedProjectIdsRef.current.has(projectId)) {
         return
       }
       if (label.length === 0) {
         setNotice('Failed to start the terminal.')
-        return
-      }
-      if (removedProjectIdsRef.current.has(projectId)) {
         return
       }
       const tab: BottomTab = {
@@ -787,7 +836,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         status: 'running',
         errorMessage: null,
       }
-      setBottomTabs((previous) => addBottomTab(previous, tab))
+      setBottomTabs((previous) => {
+        if (removedProjectIdsRef.current.has(projectId)) {
+          return previous
+        }
+        return addBottomTab(previous, tab)
+      })
     },
     [app],
   )
@@ -835,7 +889,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     queueMicrotask(() => {
       if (previous?.isConnected) {
         previous.focus()
-      } else {
+      }
+      if (
+        previous === null ||
+        !previous.isConnected ||
+        !isRenderedElement(previous) ||
+        document.activeElement !== previous
+      ) {
         centerSurfaceRef.current?.focus()
       }
     })
