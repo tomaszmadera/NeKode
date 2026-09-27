@@ -7,10 +7,10 @@ complexity: large
 durability: recorded
 current_phase: Phase 2
 current_step: Phase 2.3
-updated: 2026-09-26
+updated: 2026-09-27
 branch: main
 worktree: current
-next_action: Niezależny review Stage 2 (skill code-review, swiezy subagent) + korekty; potem Stage 3 wg planu
+next_action: Re-review korekty:3 (skill code-review, implementation gate, swiezy subagent, scope = diff korekty; CAP r1/2 wykorzystany) + ewentualna 2. runda korekt; potem Stage 3 wg planu
 blockers: none
 ---
 
@@ -51,6 +51,7 @@ Spec: `docs/features/center-layout-tabs-actions/spec.md`. Plan: `.agents/tasks/c
 - Pasek akcji (decyzja użytkownika 2026-09-26): najpierw grupy stałe „Handoff | Resume", „Stop | Continue", dalej akcje konfigurowalne (np. „Preview"). Przyciski skrótowe wklepują tekst do terminala aktywnego czatu i zatwierdzają Enterem (CR, 0x0D): Handoff = `Napisz handoff`, Resume = `Wznów z handoffu`, Continue = `Continue`. Stop = interrupt sesji PTY przez Ctrl+C (0x03) — wyprowadzenie techniczne koordynatora: NIE Ctrl+D, bo w kontrakcie (mvp-core-shell Behaviour 11) Ctrl+D zamyka czat.
 - Akcje konfigurowalne wykonują się wg UX-UI §8 (tło / bottom terminal / nowy terminal), ale tryb bottom terminal odroczony do osobnego zadania (dolny panel) — w tym zadaniu do dyspozycji tło i/lub nowy terminal; bez toastów sukcesu przy rutynowych operacjach.
 - Model czatów bez zmian względem mvp-core-shell: przełączanie czatów drzewkiem po lewej; zakładka terminal-chat pokazuje aktywny czat (sesje żyją w ukrytych widokach — dotychczasowa technika ChatWorkspace).
+- Rozstrzygnięcie review Stage 2 (decyzja techniczna koordynatora 2026-09-27, finding warning App.tsx:231 — rozjazd aktywnego projektu w trybie plików): aktywnym projektem jest projekt paska zakładek (`tabProjectId = filesProjectId ?? selectedProjectId`) end-to-end — zakładka terminal-chat, powierzchnia terminala, empty state `Start new chat` i status bar wyprowadzone z `tabProjectId`; zakładka terminal-chat pokazuje aktywny czat TYLKO gdy należy do projektu paska (selectedProjectId === tabProjectId), inaczej empty state Behaviour 2 z `Start new chat` tworzącym czat w projekcie paska (przepływ adopcji zaznaczenia w handleCreateChat bez zmian). Semantyka akcji Files bez zmian (Behaviour 19). Kwalifikuje decyzję „Model czatów bez zmian” (zakładka terminal-chat pokazuje aktywny czat — w granicach projektu paska). Do potwierdzenia na demo user-gate (Phase 3.1) razem z interpretacją 3.
 
 ## Changed files
 
@@ -69,6 +70,8 @@ Spec: `docs/features/center-layout-tabs-actions/spec.md`. Plan: `.agents/tasks/c
 | stage-1 docs | pass | Rewizja docs (implementer subagent Hermes): SDD §7/§9/§21 + §64/§69/§70, UX-UI §5/§7/§8/§14/§17/§49/§50/§51/§65/§68/§69 + §77/§78, requirements §2.5/§2.7, project-files-view spec (Behaviour 4/7/9/12, AC 1/4/6, Required tests). `git diff --check` = exit 0; przeglad docs/ katalog-po-katalogu + grep terminalowy: 0 sprzecznych wzmianek o TOP Action Bar / starym context header (pozostalosci uzasadnione: mvp-core-shell = opis historyczny zamknietej funkcji, docs/references = materialy mockupowe sprzed decyzji, przełącznik Files/Kanban §18 = post-MVP) |
 | stage-1 review | pass (r3 clean) | review:1 (swiezy subagent, implementation gate): 5 warningow + 3 sugestie + 1 needs-confirmation; korekta:1 (Main); review:1:r2: 3 nowe warningi; korekta:2 (Main; CAP 2/2 wykorzystany); review:1:r3: 'No significant issues found.' (3/3 resolved, 0 nowych). needs-confirmation 'project tab state' w UX-UI §6 rozstrzygniety przez Main: usuniete (zakladki niepersistowane wg Non-goals specu; slowownik Files/Kanban zniesiony) |
 | stage-2 implement | pass (gates green; review pending) | Layout (implementer subagent Hermes): pasek zakladek + pliki w zakladkach (read-only Monaco z fallbackami) + retencja per projekt + status bar + usuniecie headera kontekstowego i pasa TOP; wiersz akcji = pusty zarezerwowany slot (Stage 3). Bramki: `pnpm run lint` 0 bledow, `pnpm run typecheck` exit 0, `pnpm run test` 264/264 (22 pliki; niezależnie przeliczone przez koordynatora 2026-09-26T23:32Z), `pnpm run build` exit 0 (bundle renderera bez electron/node). Testy dyskryminujace (kolejnosc/retencja/fallback zamkniecia) weryfikowane mutacjami przez implementera, przywrocone bitowo (sha256 zgodne). Review Stage 2 NIE wykonany — user stop przed review (handoff). Walidator edycji zglosil 1 no-op patch w git-service.test.ts (old==new; plik i jego testy OK). |
+| stage-2 review:2 | blocking (r1; korekta otwarta) | 2026-09-27 niezalezny review (swiezy subagent, implementation gate, skill code-review): 1 warning + 2 suggestion + 1 needs-confirmation. Blocking: rozjazd aktywnego projektu w trybie plikow (strip+status za filesProjectId, terminal/empty-state za selectedProjectId; App.tsx:231) — rozstrzygniecie w Decisions. Dyskryminacja testow niezaleznie potwierdzona 4 probami mutacji w kopii scratch (kolejnosc 5 fail / close-fallback 2 / retencja 2 / hidden-views 1; 0 surviving). 23/23 plikow diff deklarowane; actionRowSlot czysty (0 materialu Stage 3); renderer purity; brak dangling refs; no-op patch git-service.test.ts potwierdzony nieszkodliwy. Poza korekta: suggestion (tooltip sciezkowy w TabStrip, disabled/notice dla + New chat bez projektu — czesciowo optional, fixture non-persistence) + needs-confirmation (format runtimeLabel — decyzja uzytkownika). CAP r1/2 otwarty. |
+| stage-2 correction:3 | pass (bramki zielone; re-review pending) | Korekta warningu review:2 (implementer subagent Hermes, wg fix direction w Decisions): split active project — chatSurfaceDiverged w App, terminal-chat tab/surface/empty state wyprowadzone z tabProjectId, Start new chat tworzy w projekcie paska (adopcja zaznaczenia rozpuszcza split), statusProject = tabProject (fallback ?? selectedProject usuniety jako martwy, P4b=0 fail). Optional: + New chat bez projektu = notice; fixture non-persistence asertuje tez wartosci state.set. Nowe testy 5 + 1 wzmocniony (269/269, 22 pliki). Proby mutacji w kopii scratch (P0 3 fail / P1 2 / P2a 1 / P2b 3 / P3 1 / P4 1 / P5 1 / P6 1 / P6b 0 = guard potwierdzony; 0 surviving). Deklaracja changed_files = git status (App.tsx, ChatWorkspace.tsx, CenterTabs.test.tsx). Bramki przeliczone przez koordynatora w main sesji 2026-09-27T11:34Z: lint 0, typecheck 0, test 269/269, build 0. Odchylenia do user-gate: brak splitu przy calkowitym braku zaznaczenia (Welcome surface — wymuszony istniejacym testem), kopia empty state w splicie gdy projekt paska MA czaty. |
 
 ## Timing
 
@@ -87,7 +90,10 @@ Spec: `docs/features/center-layout-tabs-actions/spec.md`. Plan: `.agents/tasks/c
 | correction:2 | work | 2026-09-26T21:39:21Z | 2026-09-26T21:46:10Z |
 | review:1 | work | 2026-09-26T21:46:10Z | 2026-09-26T21:51:48Z |
 | implement:2 | work | 2026-09-26T21:51:48Z | 2026-09-26T23:30:37Z |
-| handoff | wait | 2026-09-26T23:34:25Z | |
+| handoff | wait | 2026-09-26T23:34:25Z | 2026-09-27T08:35:54Z |
+| review:2 | work | 2026-09-27T08:35:54Z | 2026-09-27T09:35:08Z |
+| correction:3 | work | 2026-09-27T09:49:00Z | 2026-09-27T11:31:03Z |
+| handoff | wait | 2026-09-27T11:35:42Z | |
 
 ## Risks and blockers
 

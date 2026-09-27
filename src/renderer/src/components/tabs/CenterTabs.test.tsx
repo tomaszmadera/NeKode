@@ -77,6 +77,7 @@ const projectB: ProjectInfo = {
 }
 const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
 const chatTwo: ChatInfo = { id: 't2', projectId: 'p1', name: 'Second chat' }
+const chatOther: ChatInfo = { id: 't8', projectId: 'p2', name: 'Other chat' }
 
 const rootEntries: FileEntry[] = [
   { name: 'src', relativePath: 'src', kind: 'directory' },
@@ -316,13 +317,18 @@ describe('tab strip — per-project retention (spec Behaviour 5, AC4)', () => {
     await enterFilesMode(app, 'p1')
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
     await screen.findByTestId(testIdFor.filePreviewPane('README.md'))
-    // Selection keys are persisted; open tabs never are (Non-goals).
+    // Selection keys are persisted; open tabs never are (Non-goals) — neither
+    // under a tabs-prefixed key nor smuggled as a call VALUE under an
+    // unrelated key (that regression shape must not survive this fixture).
     await waitFor(() => expect(app.state.set).toHaveBeenCalled())
-    const writtenKeys = vi.mocked(app.state.set).mock.calls.map((call) => String(call[0]))
-    expect(writtenKeys).toContain(APP_STATE_KEY.selectedProjectId)
-    for (const key of writtenKeys) {
+    const writes = vi
+      .mocked(app.state.set)
+      .mock.calls.map((call) => [String(call[0]), String(call[1])] as const)
+    expect(writes.map(([key]) => key)).toContain(APP_STATE_KEY.selectedProjectId)
+    for (const [key, value] of writes) {
       expect(key.startsWith('tabs')).toBe(false)
       expect(key).not.toContain('README.md')
+      expect(value).not.toContain('README.md')
     }
   })
 })
@@ -356,6 +362,18 @@ describe('tab strip — terminal tab, + New chat and session survival (spec Beha
     )
     expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', 'D:/code/demo'))
+  })
+
+  it('`+ New chat` with no active project is noticed instead of a silent no-op (Behaviour 8)', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    render(<App app={app} />)
+    await screen.findByTestId(testIdFor.projectRow('p1'))
+    // The control is always present, but the new-chat flow cannot run without
+    // an active project: the dead click surfaces a notice, never nothing.
+    fireEvent.click(screen.getByTestId(TEST_ID.tabNewChat))
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toContain('Select or add a project')
+    expect(app.chats.create).not.toHaveBeenCalled()
   })
 
   it('terminal sessions survive file-tab round-trips (hidden views, no respawn)', async () => {
@@ -438,5 +456,128 @@ describe('tab strip — terminal tab, + New chat and session survival (spec Beha
     expect(otherPane.textContent).toContain('still here')
     expect(within(otherPane).queryByTestId(TEST_ID.filePreviewError)).toBeNull()
     expect(screen.getByTestId(testIdFor.tabFile('notes.txt'))).toBeTruthy()
+  })
+})
+
+describe('terminal tab and surface pin to the tab-strip project (Files-mode divergence)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('Files mode of an unselected project row shows the Behaviour 2 empty state, not the other project terminal', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
+    vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
+      projectId === 'p1' ? [chatOne] : [],
+    )
+    mockListings(app)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
+
+    // Files action on the unselected project row (Behaviour 19 unchanged):
+    // the strip becomes p2's while the chat selection stays on p1's chat.
+    await enterFilesMode(app, 'p2')
+
+    // The terminal-chat tab never labels itself with the other project's chat.
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('Chat')
+    // The terminal surface is the Behaviour 2 empty state (Start new chat);
+    // the other project's terminal is hidden, never shown here.
+    expect(await screen.findByTestId(TEST_ID.startNewChatState)).toBeTruthy()
+    expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('none')
+    expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
+    // AC9: the status bar context is the tab-strip project.
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Other')
+    expect(screen.getByTestId(TEST_ID.statusProjectPath).textContent).toBe('D:/code/other')
+
+    // Leaving Files mode dissolves the divergence: the active chat terminal
+    // returns with its live session (no respawn), exactly as before.
+    fireEvent.click(screen.getByTestId(TEST_ID.filesBackButton))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('block'),
+    )
+    expect(screen.queryByTestId(TEST_ID.startNewChatState)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
+    expect(app.terminals.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('Start new chat in the divergence creates in the tab-strip project and dissolves it', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
+    vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
+      projectId === 'p1' ? [chatOne] : [],
+    )
+    vi.mocked(app.chats.create).mockResolvedValue({ id: 't9', projectId: 'p2', name: 'PowerShell' })
+    mockListings(app)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+    await enterFilesMode(app, 'p2')
+    fireEvent.click(await screen.findByTestId(TEST_ID.startNewChatButton))
+
+    // The chat is created in the tab-strip project — never in the selected one.
+    await waitFor(() => expect(app.chats.create).toHaveBeenCalledWith('p2'))
+    expect(app.chats.create).not.toHaveBeenCalledWith('p1')
+    // The created chat becomes the tab-strip project's active chat: the split
+    // is gone and its terminal shows (Behaviour 8 new-chat flow unchanged).
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('PowerShell'),
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t9', 'D:/code/other'))
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Other')
+  })
+
+  it('the divergence empty state shows even when the tab-strip project has chats of its own', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
+    vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
+      projectId === 'p1' ? [chatOne] : [chatOther],
+    )
+    mockListings(app)
+
+    render(<App app={app} />)
+    // p2's chat list is loaded before the split (its node is expanded once).
+    fireEvent.click(await screen.findByTestId(testIdFor.projectToggle('p2')))
+    await screen.findByTestId(testIdFor.chatRow('t8'))
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+    await enterFilesMode(app, 'p2')
+
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('Chat')
+    expect(await screen.findByTestId(TEST_ID.startNewChatState)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
+    // p2's own chat never steals the surface without a selection of its own.
+    expect(screen.queryByTestId(testIdFor.terminalView('t8'))).toBeNull()
+    expect(app.terminals.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('the normal case is unchanged: Files mode of the selected project keeps its active chat', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    mockListings(app)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+    await enterFilesMode(app, 'p1')
+
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
+    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('block'),
+    )
+    expect(screen.queryByTestId(TEST_ID.startNewChatState)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
   })
 })

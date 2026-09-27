@@ -228,7 +228,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   // The tab strip and the main surface belong to one project at a time: the
   // Files-mode project while its tree is on screen, else the selected one.
+  // The active project is this tab-strip project, end to end: the terminal
+  // tab, the terminal surface and the status bar follow it. The chat
+  // selection points elsewhere only in the reachable Files-mode divergence —
+  // a split between two projects (Files action on an unselected project row
+  // while a chat selection is active; Behaviour 19 unchanged). There the
+  // surface shows the Behaviour 2 empty state whose `Start new chat` creates
+  // in the tab-strip project (see handleStartNewChat). With no selection at
+  // all there is no split: the neutral surfaces stay as today.
   const tabProjectId = filesProjectId ?? selectedProjectId
+  const chatSurfaceDiverged = selectedProjectId !== null && selectedProjectId !== tabProjectId
 
   const handleSelectTab = useCallback(
     (tab: TabId): void => {
@@ -541,9 +550,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // immediate creation in the active project, shell display name, chat
   // selected and its terminal shown.
   const handleTabNewChat = useCallback((): void => {
-    if (tabProjectId !== null) {
-      void handleCreateChat(tabProjectId)
+    if (tabProjectId === null) {
+      // The control is always present (Behaviour 8); with no active project
+      // the flow cannot run, so the dead click is noticed, not swallowed.
+      setNotice('Select or add a project before starting a new chat.')
+      return
     }
+    void handleCreateChat(tabProjectId)
   }, [handleCreateChat, tabProjectId])
 
   // Terminal-exit close flow (spec Behaviour 11): remove the chat from the
@@ -612,12 +625,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   )
 
   // "Start new chat" empty state (spec Behaviour 11): create a chat
-  // immediately for the selected project (spec Behaviour 3 — no naming form).
+  // immediately for the tab-strip project (spec Behaviour 3 — no naming
+  // form). In the Files-mode divergence this creates in the tab-strip
+  // project; handleCreateChat adopts the selection to the created chat's
+  // project, which dissolves the divergence.
   const handleStartNewChat = useCallback((): void => {
-    if (selectedProjectId !== null) {
-      void handleCreateChat(selectedProjectId)
+    if (tabProjectId !== null) {
+      void handleCreateChat(tabProjectId)
     }
-  }, [handleCreateChat, selectedProjectId])
+  }, [handleCreateChat, tabProjectId])
 
   const leftRegion = useResizableRegion({
     axis: 'x',
@@ -650,13 +666,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const tabsSession =
     tabProjectId === null ? emptyTabsSession() : (tabsByProject[tabProjectId] ?? emptyTabsSession())
   const activeTab = tabsSession.active
+  // The terminal-chat tab shows the active chat's name only while the active
+  // chat belongs to the tab-strip project (Behaviour 2); in the Files-mode
+  // divergence the strip never labels itself with another project's chat.
   const activeChat =
-    selectedProject === null
-      ? null
-      : (chatsByProject[selectedProject.id]?.find((chat) => chat.id === selectedChatId) ?? null)
-  // Selected project wins for the status bar context when no tree is shown;
-  // in Files mode the tree's project is the active workspace project.
-  const statusProject = tabProject ?? selectedProject
+    selectedProject !== null && selectedProjectId === tabProjectId
+      ? (chatsByProject[selectedProject.id]?.find((chat) => chat.id === selectedChatId) ?? null)
+      : null
+  // The status bar context is the tab-strip project (AC9). The former
+  // `?? selectedProject` fallback is dead: tabProjectId always covers
+  // selectedProjectId (filesProjectId ?? selectedProjectId).
+  const statusProject = tabProject
 
   return (
     <div
@@ -739,7 +759,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               : null}
             {/* Chat sessions stay mounted (hidden) while a file tab is active:
                 PTY processes and xterm scrollback survive tab switches and
-                mode round-trips (spec Behaviour 6 / AC2, AC11). */}
+                mode round-trips (spec Behaviour 6 / AC2, AC11). In the
+                Files-mode divergence no active chat belongs to the tab-strip
+                project: the surface shows the Behaviour 2 empty state, never
+                another project's terminal. */}
             <div
               className="flex min-h-0 flex-1 flex-col"
               style={{ display: activeTab.kind === 'terminal' ? 'flex' : 'none' }}
@@ -753,8 +776,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                   selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
                 }
                 selectedProjectId={selectedProjectId}
-                selectedChatId={selectedChatId}
+                selectedChatId={chatSurfaceDiverged ? null : selectedChatId}
                 selectionNonce={selectionNonce}
+                forceStartNewChat={chatSurfaceDiverged}
                 onChatClosed={handleChatClosed}
                 onStartNewChat={handleStartNewChat}
               />

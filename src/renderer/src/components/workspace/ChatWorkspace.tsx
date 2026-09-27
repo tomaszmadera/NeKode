@@ -57,6 +57,12 @@ interface ChatWorkspaceProps {
    * spec Behaviour 3).
    */
   onStartNewChat: () => void
+  /**
+   * Files-mode divergence: no active chat belongs to the tab-strip project,
+   * so the terminal surface shows the Behaviour 2 "Start new chat" empty
+   * state regardless of the chat lists (spec Behaviour 2).
+   */
+  forceStartNewChat?: boolean
 }
 
 function freshRecord(cwd: string): SessionRecord {
@@ -73,6 +79,7 @@ export function ChatWorkspace({
   selectionNonce,
   onChatClosed,
   onStartNewChat,
+  forceStartNewChat = false,
 }: ChatWorkspaceProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Record<string, SessionRecord>>({})
   // Chats whose exit already started the close flow (guards duplicate exits).
@@ -83,14 +90,17 @@ export function ChatWorkspace({
   // Empty-state contract (spec Behaviour 11): a selected project without any
   // chats shows the "Start new chat" affordance instead of the welcome page —
   // but only once its chat list actually loaded (before that "no chats" is
-  // unknown, and the neutral welcome surface is shown).
+  // unknown, and the neutral welcome surface is shown). The Files-mode
+  // divergence forces the Behaviour 2 empty state outright: no active chat
+  // belongs to the tab-strip project (spec Behaviour 2).
   const selectedProjectChats =
     selectedProject === null ? [] : (chatsByProject[selectedProject.id] ?? [])
   const showStartNewChat =
-    selectedProject !== null &&
-    selectedChatId === null &&
-    chatsLoaded &&
-    selectedProjectChats.length === 0
+    forceStartNewChat ||
+    (selectedProject !== null &&
+      selectedChatId === null &&
+      chatsLoaded &&
+      selectedProjectChats.length === 0)
 
   // Latest lookup data for the selection effect (below): read through a ref
   // so projects/chats reloads — which swap object identities on every
