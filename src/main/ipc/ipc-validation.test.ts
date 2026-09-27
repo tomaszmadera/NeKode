@@ -30,7 +30,9 @@ function fakeServices(): AppServices {
       create: vi.fn(() => 't1'),
       write: vi.fn(),
       resize: vi.fn(),
+      shellName: vi.fn(() => 'PowerShell'),
       terminate: vi.fn(),
+      terminateProjectBottom: vi.fn(),
       terminateAll: vi.fn(),
       onData: () => () => undefined,
       onExit: () => () => undefined,
@@ -195,6 +197,8 @@ describe('ipc payload validation', () => {
       'terminals:create',
       'terminals:write',
       'terminals:resize',
+      'terminals:shellName',
+      'terminals:terminate',
       'git:status',
       'files:list',
       'files:read',
@@ -202,8 +206,27 @@ describe('ipc payload validation', () => {
     ]) {
       expect(channels.has(channel)).toBe(true)
     }
-    // terminals:terminate is not part of the renderer contract (A8 decision):
-    // app-quit teardown runs in main via terminateAll.
-    expect(channels.has('terminals:terminate')).toBe(false)
+  })
+
+  it('terminals:terminate accepts a bottom tab id and rejects a chat id', () => {
+    const services = fakeServices()
+    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
+    for (const entry of buildValidatedChannels(services)) {
+      channels.set(entry.channel, entry)
+    }
+    const terminate = channels.get('terminals:terminate')
+    const bottomId = 'bottom:p1:tab-a'
+    expect(terminate?.parse([bottomId])).toEqual([bottomId])
+    terminate?.invoke(terminate.parse([bottomId]))
+    expect(services.terminals.terminate).toHaveBeenCalledWith(bottomId)
+
+    expect(() => terminate?.parse(['t1'])).toThrow(ValidationError)
+    expect(() => terminate?.parse([])).toThrow(ValidationError)
+    expect(services.terminals.terminate).toHaveBeenCalledTimes(1)
+
+    const shellName = channels.get('terminals:shellName')
+    expect(shellName?.parse([])).toEqual([])
+    expect(shellName?.invoke([])).toBe('PowerShell')
+    expect(() => shellName?.parse(['extra'])).toThrow(ValidationError)
   })
 })

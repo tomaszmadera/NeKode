@@ -63,6 +63,8 @@ function createAppMock(): AppMockBundle {
       create: vi.fn().mockImplementation((chatId: string) => Promise.resolve(chatId)),
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
+      shellName: vi.fn().mockResolvedValue('PowerShell'),
+      terminate: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn((chatId: string, cb: (data: string) => void) => {
         const listeners = dataListenersByChat.get(chatId) ?? new Set()
         listeners.add(cb)

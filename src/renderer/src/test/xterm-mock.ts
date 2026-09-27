@@ -120,6 +120,11 @@ export class MockTerminal {
     this.keyHandler = handler
   })
 
+  /** Real xterm focuses its textarea; the mock focuses the opened element. */
+  focus = vi.fn((): void => {
+    this.openedElement?.focus()
+  })
+
   dispose = vi.fn((): void => {
     this.disposed = true
     this.dataListeners.clear()

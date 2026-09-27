@@ -117,6 +117,7 @@ export function registerAppIpcHandlers(
     for (const chatId of chatIds) {
       services.terminals.terminate(chatId)
     }
+    services.terminals.terminateProjectBottom(projectId)
     return result
   })
 

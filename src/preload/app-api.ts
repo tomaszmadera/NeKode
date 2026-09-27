@@ -80,6 +80,8 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       create: (chatId, cwd) => invoke<string>(IPC_CHANNEL.terminalsCreate, chatId, cwd),
       write: (chatId, data) => invoke<void>(IPC_CHANNEL.terminalsWrite, chatId, data),
       resize: (chatId, cols, rows) => invoke<void>(IPC_CHANNEL.terminalsResize, chatId, cols, rows),
+      shellName: () => invoke<string>(IPC_CHANNEL.terminalsShellName),
+      terminate: (bottomTabId) => invoke<void>(IPC_CHANNEL.terminalsTerminate, bottomTabId),
       onData: (chatId, callback) =>
         subscribe<string>(
           IPC_CHANNEL.terminalsData,

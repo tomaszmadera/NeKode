@@ -58,6 +58,8 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
         : vi.fn().mockResolvedValue('t1'),
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
+      shellName: vi.fn().mockResolvedValue('PowerShell'),
+      terminate: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn((_chatId: string, cb: (data: string) => void) => {
         dataListeners.add(cb)
         const unsubscribe = () => {

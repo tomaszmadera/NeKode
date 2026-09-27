@@ -55,6 +55,8 @@ function createAppApiStub(): AppApi {
       create: vi.fn().mockResolvedValue('term-1'),
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
+      shellName: vi.fn().mockResolvedValue('PowerShell'),
+      terminate: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn().mockReturnValue(() => undefined),
       onExit: vi.fn().mockReturnValue(() => undefined),
     },
