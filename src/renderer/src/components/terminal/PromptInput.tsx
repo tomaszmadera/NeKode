@@ -52,6 +52,20 @@ export function PromptInput({
           value={value}
           onChange={(event) => setValue(event.target.value)}
         />
+        {/* Send submits by click (form submit path, same as Enter). Disabled
+            while the input is empty, mirroring the Enter no-op. The hairline
+            divider gives the frame's right end the action row's segment
+            language (design doc 5): Send | Dictation. */}
+        <span aria-hidden="true" className="h-4 w-px shrink-0 self-center bg-divider" />
+        <button
+          type="submit"
+          className="flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
+          data-testid={TEST_ID.terminalPromptSend}
+          disabled={value.length === 0}
+        >
+          <Icon.send size={14} aria-hidden />
+          Send
+        </button>
         {/* Design doc 21 idle state: rendered, recognizable, disabled until a
             recognizer is wired. The button is the frame's right segment:
             square left edge, flush to the frame end. The visible label names

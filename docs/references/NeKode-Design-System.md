@@ -362,7 +362,7 @@ components import icons by role name from `src/renderer/src/lib/icons.tsx`
 `Icon.container`, `Icon.chat`, `Icon.directory`, `Icon.files`, `Icon.git`,
 `Icon.kanban`, `Icon.projects`, `Icon.check`, `Icon.dictation`,
 `Icon.panelLeft`, `Icon.panelRight`, `Icon.terminal`, `Icon.agent`,
-`Icon.search`, ...), never from lucide-react directly, so a package swap or
+`Icon.search`, `Icon.send`, ...), never from lucide-react directly, so a package swap or
 glyph change stays a one-file edit. Icons inherit `currentColor` and carry
 `aria-hidden` whenever a visible label names the control.
 
@@ -431,7 +431,11 @@ Requirements:
 - active segment may use the info blue as text or a thin indicator, never a large fill.
 
 Implemented (2026-09-28) for the fixed `Handoff | Resume` and `Stop |
-Continue` segments; configured actions stay separate filled buttons.
+Continue` segments; configured actions stay separate filled buttons. The
+action row's right end is an icon-only Actions control (2026-09-28): the
+`Icon.settings` gear with the accessible name and tooltip `Actions`
+(`aria-label`/`title`, the visible label is gone), no default fill and a
+`--color-button-hover` fill on hover so the icon stays discoverable.
 
 ---
 
@@ -558,8 +562,13 @@ The console must look like a **running terminal agent**, not an AI chat.
 Prompt input (2026-09-28): every terminal view ends in a styled input row
 (`PromptInput`) instead of typing at the shell prompt line: a `>` glyph, a
 mono input in an `--radius-md` frame on `--color-panel` with a
-`--color-edge` border (info on focus), and the Dictation control (design doc
-21) at the right end of the frame. The frame is the only boundary between
+`--color-edge` border (info on focus), and the Send and Dictation controls
+at the right end of the frame. Send (2026-09-28: Lucide paper plane
+`Icon.send` plus the visible `Send` label) submits the line by click through
+the same PTY write path as Enter and is disabled while the input is empty; a
+centered hairline divider (design doc 5) separates Send from the Dictation
+control (design doc 21), the frame's last segment. The frame is the only
+boundary between
 terminal output and the input row: no separator line above the row (the old
 full-width hairline doubled the frame's border and rendered unevenly under
 fractional Windows scaling; removed 2026-09-28). Enter submits the line plus
@@ -704,7 +713,8 @@ Dictation should use a microphone icon.
 Implemented (2026-09-28): the Idle state ships as a disabled, labeled button
 (`Icon.dictation` mic plus the visible `Dictation` label, `--color-button`
 surface, `--color-ink-disabled`) built into the terminal prompt input frame
-as its right segment: flush to the frame end at full inner height, square
+as its right segment (2026-09-28: its last segment, after the Send control,
+design doc 15): flush to the frame end at full inner height, square
 left edge, right corners following the frame radius (clipped by the frame).
 The visible label names the control, so the icon is decorative
 (`aria-hidden`). No recognizer is wired yet, so Hover and Listening are

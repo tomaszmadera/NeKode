@@ -3,75 +3,187 @@
   "lessons": [
     {
       "id": "native-deps-prebuilt-binaries",
-      "scopes": ["product"],
-      "tags": ["pnpm", "better-sqlite3", "node-pty", "node-gyp", "electron", "windows"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "pnpm",
+        "better-sqlite3",
+        "node-pty",
+        "node-gyp",
+        "electron",
+        "windows"
+      ],
       "path": ".agents/lessons/items/native-deps-prebuilt-binaries.md"
     },
     {
       "id": "windows-gui-launchers-powershell",
-      "scopes": ["product"],
-      "tags": ["windows", "nsis", "installer", "powershell", "bash"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "windows",
+        "nsis",
+        "installer",
+        "powershell",
+        "bash"
+      ],
       "path": ".agents/lessons/items/windows-gui-launchers-powershell.md"
     },
     {
       "id": "electron-userdata-not-appdata",
-      "scopes": ["product"],
-      "tags": ["electron", "windows", "smoke-test", "userData"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "electron",
+        "windows",
+        "smoke-test",
+        "userData"
+      ],
       "path": ".agents/lessons/items/electron-userdata-not-appdata.md"
     },
     {
       "id": "external-reviewer-usage-limit-fallback",
-      "scopes": ["product"],
-      "tags": ["codex", "review", "usage-limit", "fallback", "subagent"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "codex",
+        "review",
+        "usage-limit",
+        "fallback",
+        "subagent"
+      ],
       "path": ".agents/lessons/items/external-reviewer-usage-limit-fallback.md"
     },
     {
       "id": "powershell-psreadline-key-chords-self-insert",
-      "scopes": ["product"],
-      "tags": ["powershell", "psreadline", "conpty", "xterm", "terminal", "ctrl-d", "windows"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "powershell",
+        "psreadline",
+        "conpty",
+        "xterm",
+        "terminal",
+        "ctrl-d",
+        "windows"
+      ],
       "path": ".agents/lessons/items/powershell-psreadline-key-chords-self-insert.md"
     },
     {
       "id": "powershell-preserve-native-exit-code",
-      "scopes": ["product"],
-      "tags": ["powershell", "windows", "verification", "exit-code", "native-command"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "powershell",
+        "windows",
+        "verification",
+        "exit-code",
+        "native-command"
+      ],
       "path": ".agents/lessons/items/powershell-preserve-native-exit-code.md"
     },
     {
       "id": "project-scoped-mcp-ownership",
-      "scopes": ["product"],
-      "tags": ["codex", "mcp", "unity", "config"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "codex",
+        "mcp",
+        "unity",
+        "config"
+      ],
       "path": ".agents/lessons/items/project-scoped-mcp-ownership.md"
     },
     {
       "id": "windows-biome-package-json-eol",
-      "scopes": ["product"],
-      "tags": ["windows", "git", "autocrlf", "biome", "lint", "package.json"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "windows",
+        "git",
+        "autocrlf",
+        "biome",
+        "lint",
+        "package.json"
+      ],
       "path": ".agents/lessons/items/windows-biome-package-json-eol.md"
     },
     {
       "id": "debug-task-timing-element",
-      "scopes": ["product"],
-      "tags": ["task-record", "debug", "timing", "task-status"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "task-record",
+        "debug",
+        "timing",
+        "task-status"
+      ],
       "path": ".agents/lessons/items/debug-task-timing-element.md"
     },
     {
       "id": "git-checkout-reintroduces-crlf",
-      "scopes": ["product"],
-      "tags": ["windows", "git", "autocrlf", "checkout", "restore", "eol", "biome"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "windows",
+        "git",
+        "autocrlf",
+        "checkout",
+        "restore",
+        "eol",
+        "biome"
+      ],
       "path": ".agents/lessons/items/git-checkout-reintroduces-crlf.md"
     },
     {
       "id": "windows-python-harness-utf8-output",
-      "scopes": ["product"],
-      "tags": ["windows", "python", "powershell", "task-status", "encoding"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "windows",
+        "python",
+        "powershell",
+        "task-status",
+        "encoding"
+      ],
       "path": ".agents/lessons/items/windows-python-harness-utf8-output.md"
     },
     {
       "id": "timing-rows-append-chronological",
-      "scopes": ["product"],
-      "tags": ["task-record", "timing", "task-status"],
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "task-record",
+        "timing",
+        "task-status"
+      ],
       "path": ".agents/lessons/items/timing-rows-append-chronological.md"
+    },
+    {
+      "id": "verify-targeted-cmd-wrapper-gitbash",
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "windows",
+        "git-bash",
+        "verification",
+        "verify-targeted",
+        "pnpm",
+        "createprocess"
+      ],
+      "path": ".agents/lessons/items/verify-targeted-cmd-wrapper-gitbash.md"
     }
   ]
 }

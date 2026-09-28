@@ -51,6 +51,7 @@ export const TEST_ID = {
   filePreviewOpenExternal: 'file-preview-open-external',
   filePreviewMonaco: 'file-preview-monaco',
   terminalPromptInput: 'terminal-prompt-input',
+  terminalPromptSend: 'terminal-prompt-send',
   terminalPromptDictation: 'terminal-prompt-dictation',
 } as const
 
