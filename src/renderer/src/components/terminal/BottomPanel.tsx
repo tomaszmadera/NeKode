@@ -24,6 +24,8 @@ interface BottomPanelProps {
   onExit: (tabId: string) => void
   onSpawnError: (tabId: string, message: string) => void
   onRetry: (tabId: string) => void
+  /** Bottom-terminal delivery: the tab's terminal view is subscribed and ready. */
+  onSessionReady: (tabId: string) => void
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
   onResizeNudge: (delta: number) => void
 }
@@ -41,6 +43,7 @@ export function BottomPanel({
   onExit,
   onSpawnError,
   onRetry,
+  onSessionReady,
   onResizeStart,
   onResizeNudge,
 }: BottomPanelProps): React.JSX.Element {
@@ -128,6 +131,7 @@ export function BottomPanel({
                 onExit={() => onExit(tab.id)}
                 onClose={() => onCloseTab(tab.id)}
                 onSpawnError={(message) => onSpawnError(tab.id, message)}
+                onReady={() => onSessionReady(tab.id)}
               />
               {tab.status === 'error' && visible ? (
                 <div

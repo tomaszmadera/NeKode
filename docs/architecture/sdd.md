@@ -939,8 +939,9 @@ interface ActionControl {
 
     runMode:
         | "background"
-        // reserved until the bottom panel exists (separate task):
-        // | "bottom-terminal"
+        // shipped with the bottom auxiliary terminal panel:
+        // contract: docs/features/bottom-auxiliary-terminal/spec.md
+        | "bottom-terminal"
         | "new-terminal"
 
     confirm?: boolean
@@ -983,7 +984,7 @@ The action:
 3. streams output to the terminal.
 
 Recommended default for commands where output matters.
-Reserved until the bottom auxiliary terminal panel exists (separate task); the action form in this version offers only Background and New terminal.
+Shipped with the bottom auxiliary terminal panel: the execution contract (opens the panel, adds a new bottom tab in the active project, writes the command plus CR once the terminal is ready, reports delivery success with a null exit code) lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
 
 Examples:
 
@@ -1088,7 +1089,7 @@ Run in:
 ```
 
 Persistence may still use JSON or SQLite internally.
-The `bottom-terminal` run mode is reserved until the bottom auxiliary terminal panel exists and is not offered in the form in this version.
+The action form offers Background, New terminal, and Bottom terminal. Saved actions keep the mode they already have.
 
 ---
 
@@ -2253,7 +2254,7 @@ The MVP is considered technically complete when all criteria below are met.
 - [ ] Action has title.
 - [ ] Action may have icon.
 - [ ] Action has command.
-- [ ] Action can execute in background or in a new terminal (the bottom-terminal mode is reserved until the bottom panel exists).
+- [ ] Action can execute in background, in a new terminal, or in a bottom terminal.
 - [ ] Action status is visible.
 
 ## Kanban

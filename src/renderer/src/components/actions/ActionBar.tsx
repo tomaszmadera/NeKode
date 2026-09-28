@@ -11,6 +11,8 @@ interface ActionBarProps {
   activeChatId: string | null
   chatIsLive: boolean
   onNewTerminal: (execution: ActionExecution) => void
+  /** Bottom-terminal delivery: opens the panel and adds a new bottom tab. */
+  onBottomTerminal: (execution: ActionExecution, projectId: string) => void
   onError: (message: string) => void
   onSettings: () => void
 }
@@ -37,6 +39,7 @@ export function ActionBar({
   activeChatId,
   chatIsLive,
   onNewTerminal,
+  onBottomTerminal,
   onError,
   onSettings,
 }: ActionBarProps): React.JSX.Element {
@@ -140,6 +143,8 @@ export function ActionBar({
 
   async function execute(action: ActionControl): Promise<void> {
     if (executeLockRef.current.has(action.id)) return
+    // Confirmation (spec Behaviour 16): the modal runs before the IPC call, so
+    // a cancel sends nothing, creates no tab, and changes no panel state.
     if (action.confirm && !window.confirm(`Run ${action.title}?`)) return
     executeLockRef.current.add(action.id)
     const epoch = epochOf(runEpochRef.current, action.id) + 1
@@ -149,6 +154,9 @@ export function ActionBar({
       if (epochOf(runEpochRef.current, action.id) !== epoch) return
       setStates((previous) => ({ ...previous, [action.id]: state }))
       if (state.chat) onNewTerminal(state)
+      if (state.bottomTabId !== undefined && projectId !== null) {
+        onBottomTerminal(state, projectId)
+      }
     } catch (error) {
       if (epochOf(runEpochRef.current, action.id) === epoch) onError(message(error))
     } finally {

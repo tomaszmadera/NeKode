@@ -258,7 +258,7 @@ Actions may run:
 - in background,
 - in a new terminal (a new chat whose terminal receives the command).
 
-The bottom-terminal run mode is reserved until the bottom auxiliary terminal panel exists (separate task) and is not offered in the action form.
+The bottom-terminal run mode is no longer reserved: with the bottom auxiliary terminal panel shipped it is offered in the action form, and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
 
 ---
 
@@ -1455,7 +1455,7 @@ Background | New terminal
 
 Dangerous actions may require confirmation.
 
-Saved actions appear in the action bar immediately and survive application restarts. The `bottom-terminal` run mode is reserved until the bottom auxiliary terminal panel exists (separate task) and is not offered in this form.
+Saved actions appear in the action bar immediately and survive application restarts. The `bottom-terminal` run mode is no longer reserved: with the bottom auxiliary terminal panel shipped it is offered in this form, and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
 
 ---
 
