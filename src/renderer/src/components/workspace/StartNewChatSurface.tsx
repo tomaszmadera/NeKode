@@ -13,7 +13,7 @@ export function StartNewChatSurface({
 }): React.JSX.Element {
   return (
     <section
-      className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
+      className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-3 px-6 text-center"
       data-testid={TEST_ID.startNewChatState}
     >
       <h1 className="text-lg font-medium text-ink">No chats in this project</h1>

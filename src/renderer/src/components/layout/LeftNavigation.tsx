@@ -95,13 +95,15 @@ export function LeftNavigation({
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >
-      <div className="flex items-center justify-between px-4 pt-3 pb-1">
+      {/* Window drag surface (title bar): the top strip is the base app
+          background; the button opts out of dragging. */}
+      <div className="drag-region flex items-center justify-between bg-app px-4 pt-3 pb-1">
         <h2 className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
           Projects
         </h2>
         <button
           type="button"
-          className="flex h-control items-center gap-1.5 rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover"
+          className="no-drag flex h-control items-center gap-1.5 rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover"
           data-testid={TEST_ID.addProjectButton}
           onClick={onAddProject}
         >
@@ -128,10 +130,7 @@ export function LeftNavigation({
                 <li key={project.id} className="py-0.5">
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
-                    className={cn(
-                      'group flex items-center gap-1 rounded px-1 py-1',
-                      isSelected && 'bg-highlight',
-                    )}
+                    className="group flex items-center rounded px-1 py-1"
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
                     onContextMenu={(event) => {
@@ -164,7 +163,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm text-ink hover:bg-highlight"
+                      className="min-w-0 flex-1 truncate rounded pr-1 py-0.5 text-left text-sm uppercase text-ink"
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
                       onClick={() => onSelectProject(project.id)}
@@ -173,7 +172,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="flex items-center rounded px-1.5 py-0.5 text-ink-muted opacity-0 hover:bg-highlight hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+                      className="ml-1 flex items-center rounded px-1.5 py-0.5 text-ink-muted opacity-0 hover:bg-highlight hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
                       data-testid={testIdFor.projectFiles(project.id)}
                       title="Show project files"
                       aria-label={`Show project files for ${project.name}`}
@@ -183,10 +182,9 @@ export function LeftNavigation({
                     </button>
                   </div>
                   {isExpanded ? (
-                    <div
-                      className="ml-4 border-l border-edge pl-2"
-                      data-testid={testIdFor.projectChats(project.id)}
-                    >
+                    /* Full-width rows, no vertical guide line: the chat
+                       highlight reads across the whole list width. */
+                    <div data-testid={testIdFor.projectChats(project.id)}>
                       {chats.length === 0 ? (
                         <p className="px-1 py-1 text-xs leading-relaxed text-ink-muted">
                           No chats yet.
@@ -200,14 +198,15 @@ export function LeftNavigation({
                                 <button
                                   type="button"
                                   className={cn(
-                                    'w-full truncate rounded px-2 py-1 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink',
+                                    'flex w-full items-center gap-1.5 rounded pb-1 pl-6 pr-2 pt-1 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink',
                                     isChatSelected && 'bg-highlight text-ink',
                                   )}
                                   data-testid={testIdFor.chatRow(chat.id)}
                                   data-selected={isChatSelected ? 'true' : 'false'}
                                   onClick={() => onSelectChat(project.id, chat.id)}
                                 >
-                                  {chat.name}
+                                  <Icon.chat size={12} aria-hidden className="shrink-0" />
+                                  <span className="min-w-0 truncate">{chat.name}</span>
                                 </button>
                               </li>
                             )
@@ -217,12 +216,13 @@ export function LeftNavigation({
                       {isSelected ? (
                         <button
                           type="button"
-                          className="mt-1 flex h-control w-full items-center rounded px-2 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                          className="mt-1 flex w-full items-center gap-1.5 rounded pb-1 pl-6 pr-2 pt-1 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
                           data-testid={TEST_ID.newChatButton}
                           onClick={() => {
                             void onCreateChat(project.id)
                           }}
                         >
+                          <Icon.plus size={12} aria-hidden className="shrink-0" />
                           New Chat
                         </button>
                       ) : null}

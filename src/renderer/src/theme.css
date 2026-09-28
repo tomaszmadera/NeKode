@@ -23,9 +23,10 @@
   --color-error: rgb(151 65 80);
   --color-info: rgb(83 134 188);
 
-  /* Structure: inactive tab border / hairline separators, double-button divider bar */
+  /* Structure: inactive tab border / hairline separators. The divider is the
+     inset separator between connected buttons (design doc 5, 11.4). */
   --color-edge: rgb(33 37 49);
-  --color-divider: rgb(17 20 35);
+  --color-divider: rgb(56 70 96);
 
   /* Scrollbars (terminal viewport and app scroll areas). Derived values,
      design doc 4; scrollbars render only when content overflows (index.css). */

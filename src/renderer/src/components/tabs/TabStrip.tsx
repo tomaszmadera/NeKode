@@ -42,13 +42,17 @@ export function TabStrip({
 }: TabStripProps): React.JSX.Element {
   return (
     <nav
-      className="flex h-9 shrink-0 items-stretch border-b border-edge bg-app px-1 pt-1"
+      className="drag-region flex h-9 shrink-0 items-stretch bg-app px-1 pt-1"
+      // Keep `+ New chat` clear of the native caption buttons: the Windows
+      // window-controls overlay reserves the top-right corner (design doc
+      // 26.2). Without the overlay env() falls back to 100vw, i.e. no inset.
+      style={{ paddingRight: 'calc(100vw - env(titlebar-area-width, 100vw))' }}
       data-testid={TEST_ID.tabStrip}
     >
       <button
         type="button"
         className={cn(
-          'flex max-w-48 items-center gap-1 rounded-t-md px-3 text-xs text-ink-secondary hover:text-ink',
+          'no-drag flex max-w-48 items-center gap-1 rounded-t-md px-3 text-xs text-ink-secondary hover:text-ink',
           active.kind === 'terminal'
             ? 'bg-button text-ink'
             : 'border border-edge bg-tab-inactive hover:bg-highlight',
@@ -65,7 +69,7 @@ export function TabStrip({
           <div
             key={path}
             className={cn(
-              'group flex shrink-0 items-stretch rounded-t-md',
+              'no-drag group flex shrink-0 items-stretch rounded-t-md',
               isActive ? 'bg-button' : 'border border-edge bg-tab-inactive hover:bg-highlight',
             )}
             data-testid={testIdFor.tabFile(path)}
@@ -97,7 +101,7 @@ export function TabStrip({
       <div className="flex-1" />
       <button
         type="button"
-        className="flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+        className="no-drag flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
         data-testid={TEST_ID.tabNewChat}
         onClick={onNewChat}
       >

@@ -24,6 +24,19 @@ function createWindow(): void {
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    // Custom title bar (design doc 26.2): the renderer's top strips are the
+    // drag surface (.drag-region in index.css) and paint the base app
+    // background; Windows draws the caption buttons in the top-right corner
+    // over the web content with the overlay colors below. The height matches
+    // the 36px tab strip. backgroundColor prevents a white flash before the
+    // first renderer paint.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#111423',
+      symbolColor: '#cacbd1',
+      height: 36,
+    },
+    backgroundColor: '#111423',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,

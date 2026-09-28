@@ -58,7 +58,7 @@ function FileTreeLevel({
             <li key={entry.relativePath}>
               <button
                 type="button"
-                className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-sm text-ink-secondary hover:bg-highlight hover:text-ink"
                 style={{ paddingLeft: 4 + depth * 12 }}
                 data-testid={testIdFor.fileEntry(entry.relativePath)}
                 data-kind="directory"
@@ -89,7 +89,7 @@ function FileTreeLevel({
             <button
               type="button"
               className={cn(
-                'block w-full truncate rounded px-1 py-0.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink',
+                'block w-full truncate rounded px-1 py-0.5 text-left text-sm text-ink-secondary hover:bg-highlight hover:text-ink',
                 isSelected && 'bg-highlight text-ink',
               )}
               style={{ paddingLeft: 18 + depth * 12 }}
