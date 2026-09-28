@@ -1,16 +1,16 @@
 ---
 id: ux-ui-polish-followup
 schema_version: 2
-status: active
+status: completed
 intent: feature
 complexity: small
 durability: recorded
 current_phase: Phase 7
-current_step: Phase 7.1
+current_step: none
 updated: 2026-09-28
 branch: main
 worktree: current
-next_action: Take the user's next UI improvement list at intake, then plan the first slice
+next_action: none
 blockers: none
 ---
 
@@ -95,7 +95,24 @@ Record closed here (2026-09-28T21:37Z); the user then drove further corrections 
 
 ## Phase 7 - Next session
 
-- [ ] Phase 7.1 - Intake: take the user's next UI improvement list, classify, and plan the slice
+- [x] Phase 7.1 - Intake: change list taken (items 16-17 below), classification confirmed (feature/small/recorded, no risk flags)
+- [x] Phase 7.2 - Plan the slice (in-session, below)
+- [x] Phase 7.3 - Implement, affected checks, review, verify (lint exit 0, typecheck exit 0, `pnpm test` 342/342 including the two new Send tests; diff reviewed, no findings; `verify-targeted` on the two affected test files exit 0, 91/91; verification subject 2 matches)
+- [x] Phase 7.4 - Retro: lesson `verify-targeted-cmd-wrapper-gitbash` recorded (bare `pnpm` command fails in `verify-targeted` with `WinError 2`; Git Bash converts `/c` to `C:/`, use `cmd //c`). The lesson writes landed after verification subject 2 was captured, so subject 3 re-captures the state with the lesson files included and a second targeted verify run covers it (append-only).
+
+User change list (intake 2026-09-28, resumed session):
+
+16. Action row, right end: the Actions control keeps only its icon, no default background; hover fill or pointer-only at the implementer's discretion.
+17. Terminal prompt input: add a Send button (paper plane icon, label "Send") before the Dictation control, so a line can be submitted by clicking.
+
+Plan:
+
+- `ActionBar.tsx`: the right-end Actions control becomes icon-only: keep `Icon.settings`, drop the visible label, add `aria-label="Actions"` and `title="Actions"` (accessible name and tooltip preserved), remove `bg-button`, add `hover:bg-button-hover`, keep the row-height `self-stretch`. Decision: hover fill, not pointer-only, so the icon stays discoverable as a control and matches the row's other hover states; the hand cursor is already global.
+- `PromptInput.tsx`: add a Send submit button between the input and Dictation as a full-height right segment (`h-full`, square left edge) with `Icon.send` plus the visible "Send" label, disabled while the input is empty, `bg-button` with `bg-button-hover` on hover; a standard centered hairline divider separates Send from Dictation (the action row's segment language, design doc 5/11.4).
+- `icons.tsx`: add `Icon.send` (Lucide `Send`, the paper plane).
+- `test-ids.ts`: add `terminalPromptSend`.
+- Tests: `App.test.tsx` action-row `textContent` assertions map `aria-label ?? textContent` so the icon-only button keeps its name in the list; `ChatTerminal.test.tsx` gains a click-submit test for Send.
+- Design doc: sections 10 (`Icon.send` role name), 15 (prompt input row gains Send), 21 (Dictation sits after Send), 11.4 (action row right end is icon-only).
 
 ## Decisions
 
@@ -131,6 +148,16 @@ Carried from `ux-ui-theme-and-fonts`, the 0.4.5 slice, and this session (next ow
 - `docs/references/NeKode-Design-System.md` - sections 5, 7, 11.4, 14, 15, 19, 21, 23, 26.1, 26.2, 30
 - `package.json` - working-copy line endings normalized to LF (no content change)
 
+Resumed session (items 16-17, 2026-09-28):
+
+- `src/renderer/src/components/actions/ActionBar.tsx` - right-end Actions control is icon-only: no default fill, hover fill, `aria-label`/`title` `Actions`
+- `src/renderer/src/components/terminal/PromptInput.tsx` - Send submit button (paper plane `Icon.send` + label) between the input and Dictation, disabled while the input is empty, hairline divider before it
+- `src/renderer/src/lib/icons.tsx` - `Icon.send` (Lucide `Send`)
+- `src/renderer/src/lib/test-ids.ts` - `terminalPromptSend`
+- `src/renderer/src/App.test.tsx` - action-row button list assertions prefer `aria-label` over `textContent` (icon-only Actions control)
+- `src/renderer/src/components/terminal/ChatTerminal.test.tsx` - Send click-submit test and Send-disabled-when-empty test
+- `docs/references/NeKode-Design-System.md` - sections 10 (`Icon.send`), 11.4 (icon-only Actions control), 15 (Send in the prompt frame), 21 (Dictation is the last segment after Send)
+
 ## Verification
 
 | Check | Result | Notes |
@@ -145,6 +172,7 @@ Carried from `ux-ui-theme-and-fonts`, the 0.4.5 slice, and this session (next ow
 | Compiled CSS checks | pass | `out/renderer/assets/index-D8bnbCDD.css` contained `.drag-region`, `.no-drag`, `--color-divider-light`, both divider border colors, `.uppercase`; `env(titlebar-area-width, 100vw)` present in the renderer JS bundle. (Bundle rebuilt several times in Phase 6; later rebuilds exit 0.) |
 | Electron runtime smoke | pass | built app ran 12s with the new `titleBarStyle`/`titleBarOverlay` options: window process tree alive, empty error log, stopped via `taskkill` |
 | Post-close rounds (each) | pass | lint exit 0, typecheck exit 0, `pnpm test` 340/340; last full run 2026-09-28T22:50Z |
+| Resumed session (items 16-17) | pass | baseline `pnpm test` 340/340 (first run hit the known flaky `terminal-service.test.ts:196` ConPTY spawn test, clean on rerun); after edits: `pnpm run lint` exit 0, `pnpm run typecheck` exit 0, `pnpm test` 342/342; `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/App.test.tsx src/renderer/src/components/terminal/ChatTerminal.test.tsx` exit 0 (91/91, two runs); verification subject 3 `check` exit 0 immediately before close |
 | Alignment measurement | pass | DOM harness over the built CSS in the in-app browser: project name text x == chat icon x (diff 0), chat row height == New Chat row height (24px), plus icon at the chat-icon column x |
 
 ### Verification subject 1
@@ -175,6 +203,54 @@ Carried from `ux-ui-theme-and-fonts`, the 0.4.5 slice, and this session (next ow
 }
 ```
 
+### Verification subject 2
+
+```json
+{
+  "attempt": 2,
+  "head": "929f3f6bfbce1b4ceffd993776a005fe61595f49",
+  "paths": [
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/App.test.tsx",
+    "src/renderer/src/components/actions/ActionBar.tsx",
+    "src/renderer/src/components/terminal/ChatTerminal.test.tsx",
+    "src/renderer/src/components/terminal/PromptInput.tsx",
+    "src/renderer/src/lib/icons.tsx",
+    "src/renderer/src/lib/test-ids.ts"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "52abcdadfafd4c7c62e006e2f58925aa47a5e7e66db9592bb98dd82a06921cb3",
+  "unstaged_diff_sha256": "976e18b7ed8c7c2842b49edbde432a62ed03edb07c9ff6ea46aed5f5aabfc792",
+  "untracked_files_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}
+```
+
+### Verification subject 3
+
+```json
+{
+  "attempt": 3,
+  "head": "929f3f6bfbce1b4ceffd993776a005fe61595f49",
+  "paths": [
+    ".agents/lessons/index.json",
+    ".agents/lessons/items/verify-targeted-cmd-wrapper-gitbash.md",
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/App.test.tsx",
+    "src/renderer/src/components/actions/ActionBar.tsx",
+    "src/renderer/src/components/terminal/ChatTerminal.test.tsx",
+    "src/renderer/src/components/terminal/PromptInput.tsx",
+    "src/renderer/src/lib/icons.tsx",
+    "src/renderer/src/lib/test-ids.ts"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "cb06645908ee9b267c91276e29100a482a549ad5bd9e1814f78dfe03e7ba6eac",
+  "unstaged_diff_sha256": "377867132f08ffff503236113508bc32f11c0325be274e4b60241c287e1fb465",
+  "untracked_files_sha256": "f571b0abd27f77c3c1452c72e0788d52992aeda29c0cb68a22c15d71558382e4"
+}
+```
+
 ## Timing
 
 | Element | Kind | Started | Ended |
@@ -188,7 +264,14 @@ Carried from `ux-ui-theme-and-fonts`, the 0.4.5 slice, and this session (next ow
 | verify | work | 2026-09-28T21:30:47Z | 2026-09-28T21:33:55Z |
 | retro | work | 2026-09-28T21:35:48Z | 2026-09-28T21:36:28Z |
 | implement:followup | work | 2026-09-28T21:37:10Z | 2026-09-28T22:53:39Z |
-| handoff | wait | 2026-09-28T22:53:39Z | |
+| handoff | wait | 2026-09-28T22:53:39Z | 2026-09-28T22:58:26Z |
+| intake | work | 2026-09-28T22:58:26Z | 2026-09-28T23:00:41Z |
+| plan | work | 2026-09-28T23:00:41Z | 2026-09-28T23:02:38Z |
+| implement:resumed | work | 2026-09-28T23:02:38Z | 2026-09-28T23:07:30Z |
+| review | work | 2026-09-28T23:07:30Z | 2026-09-28T23:09:30Z |
+| verify | work | 2026-09-28T23:09:30Z | 2026-09-28T23:13:20Z |
+| retro | work | 2026-09-28T23:13:20Z | 2026-09-28T23:15:35Z |
+| verify | work | 2026-09-28T23:15:35Z | 2026-09-28T23:17:38Z |
 
 Record created retroactively at handoff (user pause after publishing 0.4.5): the intake row shares the record-creation instant instead of inventing a span. Phase 6 correction rounds share the single `implement:followup` row; each round's checks are in the Verification table.
 

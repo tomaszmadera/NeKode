@@ -256,13 +256,17 @@ export function ActionBar({
           </button>
         )
       })}
+      {/* Icon-only ghost control: no default fill, hover fill keeps it
+          discoverable; the accessible name and tooltip come from aria-label
+          and title since the visible label is gone. */}
       <button
         type="button"
-        className="ml-auto flex shrink-0 items-center gap-1.5 self-stretch rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover"
+        className="ml-auto flex shrink-0 items-center justify-center self-stretch rounded-md px-2 text-ink hover:bg-button-hover"
+        aria-label="Actions"
+        title="Actions"
         onClick={onSettings}
       >
         <Icon.settings size={14} aria-hidden />
-        Actions
       </button>
     </div>
   )

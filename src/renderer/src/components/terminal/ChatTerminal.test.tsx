@@ -429,6 +429,44 @@ describe('ChatTerminal lifecycle', () => {
     expect((getByTestId(TEST_ID.terminalPromptDictation) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('prompt input Send button submits the typed line and clears the input', async () => {
+    const { app } = createAppMock()
+    const { getByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
+    const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'git status' } })
+    fireEvent.click(getByTestId(TEST_ID.terminalPromptSend))
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status\r'))
+    expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
+  })
+
+  it('prompt input Send button is disabled while the input is empty', async () => {
+    const { app } = createAppMock()
+    const { getByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
+    expect((getByTestId(TEST_ID.terminalPromptSend) as HTMLButtonElement).disabled).toBe(true)
+  })
+
   // Ctrl+D/Ctrl+U shortcuts (spec Behaviour 11 / AC9): the app closes
   // the chat when the input line is visibly empty outside full-screen
   // programs — including while a normal-buffer program (python REPL) runs

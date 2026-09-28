@@ -224,14 +224,13 @@ describe('action row and settings', () => {
       await Promise.resolve()
     })
     const row = screen.getByTestId(TEST_ID.actionRowSlot)
-    expect([...row.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
-      'Handoff',
-      'Resume',
-      'Stop',
-      'Continue',
-      'Build',
-      'Actions',
-    ])
+    // The right-end Actions control is icon-only, so its name comes from
+    // aria-label; the mapper prefers it over text content.
+    expect(
+      [...row.querySelectorAll('button')].map(
+        (button) => button.getAttribute('aria-label') ?? button.textContent,
+      ),
+    ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Build', 'Actions'])
     expect(app.actions.execute).not.toHaveBeenCalled()
     const statusReadsAtIdle = vi.mocked(app.actions.status).mock.calls.length
     fireEvent.click(screen.getByRole('button', { name: 'Build' }))
@@ -493,7 +492,7 @@ describe('action row and settings', () => {
     await waitFor(() =>
       expect(
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
-          (button) => button.textContent,
+          (button) => button.getAttribute('aria-label') ?? button.textContent,
         ),
       ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Build', 'Actions']),
     )
@@ -501,7 +500,7 @@ describe('action row and settings', () => {
     await waitFor(() =>
       expect(
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
-          (button) => button.textContent,
+          (button) => button.getAttribute('aria-label') ?? button.textContent,
         ),
       ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Test', 'Actions']),
     )
