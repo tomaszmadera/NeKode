@@ -53,13 +53,12 @@ Application chrome should visually recede. Terminals, task state, repository con
 
 ### 2.4 Color has meaning
 
-Blue is reserved primarily for:
+Blue (`--color-info`) is reserved primarily for:
 
-- selected states,
-- active controls,
-- current workflow stage,
 - focus,
-- primary actions.
+- primary actions,
+- current workflow stage,
+- info state.
 
 Green indicates success/completion. Amber indicates attention or medium/high effort. Red indicates errors, destructive actions or negative diff values.
 
@@ -93,11 +92,11 @@ component tokens
 Example:
 
 ```text
---blue-500
+--color-info
     ↓
---color-accent
+--focus-ring-color
     ↓
---button-primary-background
+--button-focus-ring
 ```
 
 This makes later theme variants possible without rewriting components.
@@ -106,52 +105,49 @@ This makes later theme variants possible without rewriting components.
 
 ## 4. Color palette
 
-### 4.1 Neutral / background scale
+### 4.1 Surfaces
 
-| Token | Hex | Usage |
+| Token | Value | Usage |
 |---|---:|---|
-| `--bg-app` | `#090D14` | Main application background |
-| `--bg-surface-1` | `#0D121B` | Primary panels |
-| `--bg-surface-2` | `#111824` | Elevated panel / toolbar |
-| `--bg-surface-3` | `#162030` | Hovered / selected low-emphasis surface |
-| `--bg-surface-4` | `#1B2738` | Strong selected surface |
-| `--bg-terminal` | `#080C12` | Agent console and terminal |
+| `--color-app` | `rgb(17 20 35)` | Main application background |
+| `--color-panel` | `rgb(26 29 44)` | Left and right panels, tab strip, status bar, dialogs |
+| `--color-highlight` | `rgb(31 44 63)` | Highlight and selection inside panels |
+| `--color-button` | `rgb(30 42 66)` | Command buttons and the active tab |
+| `--color-button-hover` | `rgb(38 52 80)` | Button hover (derived) |
+| `--color-tab-inactive` | `rgb(25 29 41)` | Inactive tab background |
+| `--color-terminal` | `rgb(13 15 26)` | Agent console and terminal (derived) |
 
-The palette should have a **slight cool-blue bias**, not pure gray or pure black.
+The palette has a cool navy bias: every surface mixes blue into the gray, never pure black.
 
 ### 4.2 Text
 
-| Token | Hex | Usage |
+| Token | Value | Usage |
 |---|---:|---|
-| `--text-primary` | `#E8EEF7` | Main text |
-| `--text-secondary` | `#A9B4C3` | Secondary labels |
-| `--text-muted` | `#748195` | Metadata / low-emphasis labels |
-| `--text-disabled` | `#4E5968` | Disabled controls |
-| `--text-inverse` | `#07101B` | Text on bright accent surfaces |
+| `--color-ink` | `rgb(202 203 209)` | Main text |
+| `--color-ink-secondary` | `rgb(140 142 152)` | Secondary labels (derived) |
+| `--color-ink-muted` | `rgb(106 108 118)` | Metadata / low-emphasis labels (derived) |
+| `--color-ink-disabled` | `rgb(76 78 88)` | Disabled controls (derived) |
 
 Avoid pure white except in rare, high-priority cases.
 
 ### 4.3 Accent blue
 
-| Token | Hex | Usage |
+The single blue accent is the info color. Use it for focus, primary actions and workflow indicators; never as a large surface fill.
+
+| Token | Value | Usage |
 |---|---:|---|
-| `--accent-300` | `#78B9FF` | Bright text/accent |
-| `--accent-400` | `#4EA2FF` | Active state |
-| `--accent-500` | `#2F8DF4` | Primary accent |
-| `--accent-600` | `#2175D6` | Pressed state |
-| `--accent-soft` | `rgba(47, 141, 244, 0.14)` | Soft selection background |
-| `--accent-glow` | `rgba(47, 141, 244, 0.24)` | Very restrained glow |
+| `--color-info` | `rgb(83 134 188)` | Focus outline, primary accent, info text |
 
 ### 4.4 Semantic colors
 
-| Meaning | Base | Soft background |
+| Meaning | Text | Soft background |
 |---|---:|---:|
-| Success | `#55C58A` | `rgba(85,197,138,0.12)` |
-| Warning | `#D9A441` | `rgba(217,164,65,0.12)` |
-| Error | `#E06C75` | `rgba(224,108,117,0.12)` |
-| Info | `#62A8E8` | `rgba(98,168,232,0.12)` |
+| Success | `rgb(147 189 161)` | `rgb(147 189 161 / 0.12)` |
+| Warning | `rgb(217 164 65)` | `rgb(217 164 65 / 0.12)` |
+| Error | `rgb(151 65 80)` | `rgb(151 65 80 / 0.12)` |
+| Info | `rgb(83 134 188)` | `rgb(83 134 188 / 0.12)` |
 
-Semantic colors should normally be used in small areas: icons, labels, dots, text or thin indicators.
+Semantic colors are text and indicator colors: icons, labels, dots, thin indicators and banner text. `--color-error` is intentionally deep: keep it on small elements and pair status with an icon or wording so color alone never carries the message.
 
 ---
 
@@ -160,16 +156,14 @@ Semantic colors should normally be used in small areas: icons, labels, dots, tex
 Use borders mainly for structure, not decoration.
 
 ```css
---border-subtle: rgba(162, 184, 214, 0.08);
---border-default: rgba(162, 184, 214, 0.12);
---border-strong: rgba(162, 184, 214, 0.18);
---border-focus: rgba(78, 162, 255, 0.72);
+--color-edge: rgb(33 37 49);    /* inactive tab border, hairline separators */
+--color-divider: rgb(17 20 35); /* bar that separates segments of a double button */
 ```
 
 Recommended border width:
 
 - standard: `1px`
-- active tab underline: `2px`
+- inactive tabs: `1px` full outline (no underline convention)
 
 Avoid double borders between adjacent panes. Prefer a single shared divider.
 
@@ -179,23 +173,23 @@ Avoid double borders between adjacent panes. Prefer a single shared divider.
 
 ### 6.1 UI font
 
-Preferred stack:
+Applied stack:
 
 ```css
-font-family: Inter, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+font-family: "Recursive Sans Casual", Inter, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
 ```
 
-On Windows, `Segoe UI Variable` can be preferred when available.
+`Recursive Sans Casual` is the proportional counterpart of the bundled Recursive variable font (MONO axis 0, CASL axis 1). Inter and the Segoe faces stay in the stack as fallbacks.
 
 ### 6.2 Monospace font
 
-Preferred stack:
+Applied stack:
 
 ```css
-font-family: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+font-family: "Recursive Mono Casual", Consolas, "Courier New", monospace;
 ```
 
-Do not bundle proprietary font files unnecessarily. Use local/system fonts where possible.
+Recursive is bundled locally under the SIL Open Font License (`src/renderer/src/fonts/OFL.txt`): one variable woff2 serves both the UI sans and the terminal mono through the MONO axis. Do not bundle fonts without a libre license; otherwise prefer local/system fonts.
 
 ### 6.3 Type scale
 
@@ -216,6 +210,26 @@ Avoid oversized headings. NeKode should feel like a workspace, not a content sit
 - Normal UI: `0` to `0.01em`
 - Uppercase project labels: `0.04em` to `0.06em`
 - Metadata/status: up to `0.03em`
+
+### 6.5 Font pairing candidates
+
+Decision (2026-09-28): a candidate is usable only when it has a non-mono counterpart, so UI and terminal can compose as one family. Candidates without a sans version are filtered out; the applied pairing is the first retained candidate, **Recursive Mono Casual** with **Recursive Sans Casual** for the UI. Both come from one bundled variable font (the MONO axis switches mono/proportional, CASL 1 gives the casual character), which guarantees identical design across UI and terminal.
+
+| Candidate | Sans counterpart | Result |
+|---|---|---|
+| Recursive Mono Casual | Recursive Sans (same variable family, MONO axis 0) | Applied |
+| Comic Mono | none (fork of Comic Shanns, mono only) | Filtered |
+| Fira Code | Fira Sans | Retained |
+| Cascadia Code | none in the family (Windows pairs it with Segoe UI Variable, a different family) | Filtered |
+| Maple Mono | none (all published variants are mono) | Filtered |
+| Monospace Argon | none (Monaspace is a superfamily of five mono styles) | Filtered |
+| Source Code Pro | Source Sans 3 | Retained |
+| JetBrains Mono | JetBrains Sans (used in JetBrains branding, no public release) | Retained, counterpart not downloadable |
+| Iosevka Charon Mono | Iosevka Charon (quasi-proportional sibling) | Retained |
+| Google Sans Code | Google Sans (not distributed on Google Fonts; Google Sans Flex is the open variant) | Retained, counterpart not freely bundled |
+| Geist Mono | Geist | Retained |
+
+Retained candidates remain candidates for a later switch; the retained-but-not-downloadable entries stay on the list only until the counterpart becomes publicly available or the user re-ranks them.
 
 ---
 
@@ -251,19 +265,17 @@ Recommended component spacing:
 Rounded corners should remain restrained.
 
 ```css
---radius-xs: 3px;
---radius-sm: 5px;
---radius-md: 7px;
---radius-lg: 9px;
+--radius-sm: 4px;
+--radius-md: 6px;
+--radius-lg: 8px;
 --radius-pill: 999px;
 ```
 
 Usage:
 
-- tabs / compact buttons: `5px`
-- normal buttons: `5–7px`
-- search field: `7px`
-- tooltips / popovers: `7px`
+- buttons and rows: `6px`
+- tabs: `6px`, top corners only
+- dialogs / popovers: `8px`
 - status pills: pill radius only when visually appropriate
 
 Avoid large 12–20px SaaS-style rounding.
@@ -285,7 +297,7 @@ Use shadows only for floating elements:
 Active glow:
 
 ```css
-box-shadow: 0 0 14px rgba(47, 141, 244, 0.12);
+box-shadow: 0 0 14px rgb(83 134 188 / 0.14);
 ```
 
 Never use strong neon glow around entire panels.
@@ -328,20 +340,19 @@ Recommended height:
 - compact: `28px`
 - default: `30–32px`
 
-Base visual treatment:
+Base visual treatment (borderless, filled):
 
 ```css
-background: var(--bg-surface-2);
-border: 1px solid var(--border-default);
-color: var(--text-secondary);
+background: var(--color-button);
+border: none;
+color: var(--color-ink);
+border-radius: var(--radius-md);
 ```
 
 Hover:
 
 ```css
-background: var(--bg-surface-3);
-color: var(--text-primary);
-border-color: var(--border-strong);
+background: var(--color-button-hover);
 ```
 
 ### 11.2 Primary action
@@ -371,28 +382,29 @@ Strong red should appear on hover, active or confirmation state.
 
 Requirements:
 
-- shared outer border,
-- no gap between segments,
-- internal divider only,
+- borderless: each segment uses the button treatment (`--color-button`, no border),
+- shared outer radius, segments clipped as one component,
+- internal divider bar in `--color-divider`,
 - same height,
-- active segment may use blue fill.
+- active segment may use the info blue as text or a thin indicator, never a large fill.
 
 ---
 
 ## 12. Tabs
 
-Tabs should be compact and document/tool oriented.
+Tabs should be compact and document/tool oriented, with rounded top corners.
 
-Default:
+Inactive:
 
-- muted text,
-- transparent or near-transparent background.
+- background: `var(--color-tab-inactive)`,
+- border: `1px solid var(--color-edge)`,
+- text: `var(--color-ink-secondary)`.
 
 Active:
 
-- primary text,
-- subtle surface highlight,
-- `2px` blue underline or low-intensity blue edge.
+- background: `var(--color-button)` (the same surface as buttons),
+- no border,
+- text: `var(--color-ink)`.
 
 Close icons should only appear on hover or active tabs if used.
 
@@ -412,11 +424,9 @@ The left navigation rail should use:
 Active item:
 
 ```css
-background: var(--accent-soft);
-color: var(--text-primary);
+background: var(--color-highlight);
+color: var(--color-ink);
 ```
-
-Optional thin blue edge can reinforce selection.
 
 Primary sections:
 
@@ -442,7 +452,7 @@ Suggested style:
 font-size: 11px;
 font-weight: 600;
 letter-spacing: 0.05em;
-color: var(--text-muted);
+color: var(--color-ink-muted);
 ```
 
 Each project should expose a visible `Chats` subheading.
@@ -451,9 +461,8 @@ Chat items must use a **chat bubble icon**, not document/file icons.
 
 Selected chat:
 
-- accent-soft background,
-- primary text,
-- optional blue left edge.
+- highlight background (`--color-highlight`),
+- primary text.
 
 ---
 
@@ -464,7 +473,7 @@ The agent console is a first-class visual surface.
 Background:
 
 ```css
-background: var(--bg-terminal);
+background: var(--color-terminal);
 ```
 
 Typography:
@@ -475,7 +484,7 @@ Typography:
 
 Color mapping:
 
-- command/prompt: accent blue / cyan,
+- command/prompt: info blue,
 - normal output: text primary,
 - metadata: text muted,
 - success: green,
@@ -581,7 +590,7 @@ Tree characteristics:
 - 16px icons,
 - subtle indentation,
 - low-contrast guides only when necessary,
-- selected file using accent-soft background.
+- selected file using the highlight background (`--color-highlight`).
 
 ---
 
@@ -662,7 +671,7 @@ Every interactive element should define:
 Focus state:
 
 ```css
-outline: 1px solid var(--border-focus);
+outline: 1px solid var(--color-info);
 outline-offset: 1px;
 ```
 
@@ -711,7 +720,7 @@ Minimum targets:
 - minimum clickable target around `28x28px` in dense areas,
 - never communicate status by color alone.
 
-Terminal colors should remain distinguishable against `--bg-terminal`.
+Terminal colors should remain distinguishable against `--color-terminal`.
 
 ---
 
@@ -724,30 +733,34 @@ Expose tokens at the document root:
 ```css
 :root,
 [data-theme="dark"] {
-  --bg-app: #090d14;
-  --bg-surface-1: #0d121b;
-  --bg-surface-2: #111824;
-  --bg-surface-3: #162030;
-  --bg-terminal: #080c12;
+  /* surfaces */
+  --color-app: rgb(17 20 35);
+  --color-panel: rgb(26 29 44);
+  --color-highlight: rgb(31 44 63);
+  --color-button: rgb(30 42 66);
+  --color-button-hover: rgb(38 52 80);
+  --color-tab-inactive: rgb(25 29 41);
+  --color-terminal: rgb(13 15 26);
 
-  --text-primary: #e8eef7;
-  --text-secondary: #a9b4c3;
-  --text-muted: #748195;
+  /* text */
+  --color-ink: rgb(202 203 209);
+  --color-ink-secondary: rgb(140 142 152);
+  --color-ink-muted: rgb(106 108 118);
+  --color-ink-disabled: rgb(76 78 88);
 
-  --accent-400: #4ea2ff;
-  --accent-500: #2f8df4;
-  --accent-soft: rgba(47, 141, 244, 0.14);
+  /* semantic */
+  --color-success: rgb(147 189 161);
+  --color-warning: rgb(217 164 65);
+  --color-error: rgb(151 65 80);
+  --color-info: rgb(83 134 188);
 
-  --success: #55c58a;
-  --warning: #d9a441;
-  --error: #e06c75;
+  /* structure */
+  --color-edge: rgb(33 37 49);
+  --color-divider: rgb(17 20 35);
 
-  --border-subtle: rgba(162, 184, 214, 0.08);
-  --border-default: rgba(162, 184, 214, 0.12);
-  --border-strong: rgba(162, 184, 214, 0.18);
-
-  --radius-sm: 5px;
-  --radius-md: 7px;
+  /* radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
 }
 ```
 
@@ -807,21 +820,22 @@ Example:
 
 ```css
 :root {
-  --button-bg: var(--bg-surface-2);
-  --button-bg-hover: var(--bg-surface-3);
-  --button-border: var(--border-default);
-  --button-text: var(--text-secondary);
+  --button-bg: var(--color-button);
+  --button-bg-hover: var(--color-button-hover);
+  --button-text: var(--color-ink);
 
-  --tab-text: var(--text-muted);
-  --tab-text-active: var(--text-primary);
-  --tab-accent: var(--accent-500);
+  --tab-bg: var(--color-tab-inactive);
+  --tab-bg-active: var(--color-button);
+  --tab-border: var(--color-edge);
+  --tab-text: var(--color-ink-secondary);
+  --tab-text-active: var(--color-ink);
 
-  --panel-bg: var(--bg-surface-1);
-  --panel-border: var(--border-subtle);
+  --panel-bg: var(--color-panel);
+  --panel-divider: var(--color-edge);
 
-  --terminal-bg: var(--bg-terminal);
-  --terminal-text: var(--text-primary);
-  --terminal-muted: var(--text-muted);
+  --terminal-bg: var(--color-terminal);
+  --terminal-text: var(--color-ink);
+  --terminal-muted: var(--color-ink-muted);
 }
 ```
 
@@ -871,44 +885,35 @@ A NeKode screen should feel correct when:
 
 ```css
 :root {
-  /* backgrounds */
-  --bg-app: #090d14;
-  --bg-surface-1: #0d121b;
-  --bg-surface-2: #111824;
-  --bg-surface-3: #162030;
-  --bg-surface-4: #1b2738;
-  --bg-terminal: #080c12;
+  /* surfaces */
+  --color-app: rgb(17 20 35);
+  --color-panel: rgb(26 29 44);
+  --color-highlight: rgb(31 44 63);
+  --color-button: rgb(30 42 66);
+  --color-button-hover: rgb(38 52 80);
+  --color-tab-inactive: rgb(25 29 41);
+  --color-terminal: rgb(13 15 26);
 
   /* text */
-  --text-primary: #e8eef7;
-  --text-secondary: #a9b4c3;
-  --text-muted: #748195;
-  --text-disabled: #4e5968;
-
-  /* accent */
-  --accent-300: #78b9ff;
-  --accent-400: #4ea2ff;
-  --accent-500: #2f8df4;
-  --accent-600: #2175d6;
-  --accent-soft: rgba(47, 141, 244, 0.14);
+  --color-ink: rgb(202 203 209);
+  --color-ink-secondary: rgb(140 142 152);
+  --color-ink-muted: rgb(106 108 118);
+  --color-ink-disabled: rgb(76 78 88);
 
   /* semantic */
-  --success: #55c58a;
-  --warning: #d9a441;
-  --error: #e06c75;
-  --info: #62a8e8;
+  --color-success: rgb(147 189 161);
+  --color-warning: rgb(217 164 65);
+  --color-error: rgb(151 65 80);
+  --color-info: rgb(83 134 188);
 
-  /* borders */
-  --border-subtle: rgba(162, 184, 214, 0.08);
-  --border-default: rgba(162, 184, 214, 0.12);
-  --border-strong: rgba(162, 184, 214, 0.18);
-  --border-focus: rgba(78, 162, 255, 0.72);
+  /* structure */
+  --color-edge: rgb(33 37 49);
+  --color-divider: rgb(17 20 35);
 
   /* radius */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 7px;
-  --radius-lg: 9px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 
   /* density */
   --control-height-compact: 28px;

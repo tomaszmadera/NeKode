@@ -41,14 +41,16 @@ export function TabStrip({
 }: TabStripProps): React.JSX.Element {
   return (
     <nav
-      className="flex h-9 shrink-0 items-stretch border-b border-neutral-800 bg-neutral-900/60"
+      className="flex h-9 shrink-0 items-stretch border-b border-edge bg-app px-1 pt-1"
       data-testid={TEST_ID.tabStrip}
     >
       <button
         type="button"
         className={cn(
-          'flex max-w-48 items-center gap-1 border-r border-neutral-800 px-3 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100',
-          active.kind === 'terminal' && 'bg-neutral-800/70 text-neutral-100',
+          'flex max-w-48 items-center gap-1 rounded-t-md px-3 text-xs text-ink-secondary hover:text-ink',
+          active.kind === 'terminal'
+            ? 'bg-button text-ink'
+            : 'border border-edge bg-tab-inactive hover:bg-highlight',
         )}
         data-testid={TEST_ID.tabTerminal}
         data-selected={active.kind === 'terminal' ? 'true' : 'false'}
@@ -62,8 +64,8 @@ export function TabStrip({
           <div
             key={path}
             className={cn(
-              'group flex shrink-0 items-stretch border-r border-neutral-800',
-              isActive && 'bg-neutral-800/70',
+              'group flex shrink-0 items-stretch rounded-t-md',
+              isActive ? 'bg-button' : 'border border-edge bg-tab-inactive hover:bg-highlight',
             )}
             data-testid={testIdFor.tabFile(path)}
             data-selected={isActive ? 'true' : 'false'}
@@ -72,8 +74,8 @@ export function TabStrip({
             <button
               type="button"
               className={cn(
-                'flex max-w-48 items-center px-3 text-xs text-neutral-400 hover:text-neutral-100',
-                isActive && 'text-neutral-100',
+                'flex max-w-48 items-center px-3 text-xs text-ink-secondary hover:text-ink',
+                isActive && 'text-ink',
               )}
               onClick={() => onSelectTab({ kind: 'file', path })}
             >
@@ -81,7 +83,7 @@ export function TabStrip({
             </button>
             <button
               type="button"
-              className="px-2 text-xs text-neutral-500 hover:text-neutral-100"
+              className="px-2 text-xs text-ink-muted hover:text-ink"
               data-testid={testIdFor.tabFileClose(path)}
               aria-label={`Close ${fileName(path)}`}
               onClick={() => onCloseFile(path)}
@@ -94,7 +96,7 @@ export function TabStrip({
       <div className="flex-1" />
       <button
         type="button"
-        className="flex shrink-0 items-center px-3 text-xs text-neutral-400 hover:text-neutral-100"
+        className="flex shrink-0 items-center rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
         data-testid={TEST_ID.tabNewChat}
         onClick={onNewChat}
       >

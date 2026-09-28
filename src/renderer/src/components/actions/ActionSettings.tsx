@@ -104,27 +104,32 @@ export function ActionSettings({
         role="dialog"
         aria-modal="true"
         aria-label="Project Settings"
-        className="max-h-[85vh] w-[min(36rem,90vw)] overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-900 p-5 shadow-xl"
+        className="max-h-[85vh] w-[min(36rem,90vw)] overflow-y-auto rounded-lg border border-edge bg-panel p-5 shadow-xl"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Project Settings</h2>
-          <button type="button" aria-label="Close settings" onClick={onClose}>
+          <button
+            type="button"
+            aria-label="Close settings"
+            className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+            onClick={onClose}
+          >
             Close
           </button>
         </div>
-        <h3 className="mt-4 border-b border-neutral-700 pb-2 text-sm font-semibold">Actions</h3>
+        <h3 className="mt-4 border-b border-edge pb-2 text-sm font-semibold">Actions</h3>
         <ul className="mt-2 space-y-2">
           {visible.map((action) => (
             <li
               key={action.id}
-              className="flex items-center gap-2 rounded border border-neutral-800 px-2 py-1 text-xs"
+              className="flex items-center gap-2 rounded border border-edge px-2 py-1 text-xs"
             >
               <div className="min-w-0 flex-1">
                 <div className="font-medium">{action.title}</div>
-                <div className="truncate text-neutral-400" title={action.command}>
+                <div className="truncate text-ink-secondary" title={action.command}>
                   {action.command}
                 </div>
-                <div className="text-neutral-500">
+                <div className="text-ink-muted">
                   {action.runMode === 'background'
                     ? 'Background'
                     : action.runMode === 'bottom-terminal'
@@ -133,11 +138,16 @@ export function ActionSettings({
                   · {action.scope}
                 </div>
               </div>
-              <button type="button" onClick={() => edit(action)}>
+              <button
+                type="button"
+                className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                onClick={() => edit(action)}
+              >
                 Edit
               </button>
               <button
                 type="button"
+                className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error"
                 onClick={() => {
                   void remove(action.id)
                 }}
@@ -149,7 +159,7 @@ export function ActionSettings({
         </ul>
         <button
           type="button"
-          className="mt-3 rounded border border-neutral-700 px-2 py-1 text-xs"
+          className="mt-3 rounded-md bg-button px-2 py-1 text-xs text-ink hover:bg-button-hover"
           onClick={() => {
             setEditingId(null)
             setForm(emptyInput(projectId, nextSortOrder(actions)))
@@ -170,7 +180,7 @@ export function ActionSettings({
             <label>
               Scope
               <select
-                className="mt-1 block w-full bg-neutral-800 p-1"
+                className="mt-1 block w-full rounded-sm bg-highlight p-1"
                 value={form.scope}
                 onChange={(event) =>
                   setForm({
@@ -189,7 +199,7 @@ export function ActionSettings({
             <label>
               Title
               <input
-                className="mt-1 block w-full bg-neutral-800 p-1"
+                className="mt-1 block w-full rounded-sm bg-highlight p-1"
                 value={form.title}
                 onChange={(event) => setForm({ ...form, title: event.target.value })}
               />
@@ -197,7 +207,7 @@ export function ActionSettings({
             <label>
               Icon (optional)
               <input
-                className="mt-1 block w-full bg-neutral-800 p-1"
+                className="mt-1 block w-full rounded-sm bg-highlight p-1"
                 value={form.icon ?? ''}
                 onChange={(event) => setForm({ ...form, icon: event.target.value || null })}
               />
@@ -205,7 +215,7 @@ export function ActionSettings({
             <label>
               Command
               <input
-                className="mt-1 block w-full bg-neutral-800 p-1"
+                className="mt-1 block w-full rounded-sm bg-highlight p-1"
                 value={form.command}
                 onChange={(event) => setForm({ ...form, command: event.target.value })}
               />
@@ -213,7 +223,7 @@ export function ActionSettings({
             <label>
               Working Directory (project root by default)
               <input
-                className="mt-1 block w-full bg-neutral-800 p-1"
+                className="mt-1 block w-full rounded-sm bg-highlight p-1"
                 value={form.cwd ?? ''}
                 onChange={(event) => setForm({ ...form, cwd: event.target.value || null })}
               />
@@ -221,7 +231,7 @@ export function ActionSettings({
             <label>
               Run In
               <select
-                className="mt-1 block w-full bg-neutral-800 p-1"
+                className="mt-1 block w-full rounded-sm bg-highlight p-1"
                 value={form.runMode}
                 onChange={(event) =>
                   setForm({ ...form, runMode: event.target.value as ActionInput['runMode'] })
@@ -241,16 +251,20 @@ export function ActionSettings({
               Ask for confirmation
             </label>
             {error ? (
-              <p role="alert" className="text-red-300">
+              <p role="alert" className="text-error">
                 {error}
               </p>
             ) : null}
             <div className="flex gap-2">
-              <button type="submit" className="rounded border border-neutral-600 px-2 py-1">
+              <button
+                type="submit"
+                className="rounded-md bg-button px-2 py-1 text-xs text-ink hover:bg-button-hover"
+              >
                 Save
               </button>
               <button
                 type="button"
+                className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
                 onClick={() => {
                   setForm(null)
                   setError(null)
@@ -261,7 +275,7 @@ export function ActionSettings({
             </div>
           </form>
         ) : error ? (
-          <p role="alert" className="mt-2 text-xs text-red-300">
+          <p role="alert" className="mt-2 text-xs text-error">
             {error}
           </p>
         ) : null}

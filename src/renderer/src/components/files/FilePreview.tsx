@@ -71,7 +71,7 @@ export function FilePreview({
       <div className="min-h-0 flex-1">
         {state.status === 'error' ? (
           <p
-            className="px-4 py-3 text-sm text-red-300"
+            className="px-4 py-3 text-sm text-error"
             data-testid={TEST_ID.filePreviewError}
             role="alert"
           >
@@ -112,10 +112,10 @@ function FallbackState({
       className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
       data-testid={testId}
     >
-      <p className="text-sm text-neutral-300">{children}</p>
+      <p className="text-sm text-ink-secondary">{children}</p>
       <button
         type="button"
-        className="rounded border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800"
+        className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
         data-testid={TEST_ID.filePreviewOpenExternal}
         onClick={onOpenExternal}
       >

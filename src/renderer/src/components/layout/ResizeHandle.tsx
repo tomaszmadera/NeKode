@@ -42,8 +42,8 @@ export function ResizeHandle({
     <div
       className={
         axis === 'x'
-          ? 'h-1 w-full cursor-col-resize touch-none bg-neutral-800/60 hover:bg-neutral-700'
-          : 'h-1 w-full cursor-row-resize touch-none bg-neutral-800/60 hover:bg-neutral-700'
+          ? 'h-1 w-full cursor-col-resize touch-none bg-edge hover:bg-highlight'
+          : 'h-1 w-full cursor-row-resize touch-none bg-edge hover:bg-highlight'
       }
       onPointerDown={onResizeStart}
       onKeyDown={handleKeyDown}

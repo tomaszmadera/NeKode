@@ -72,7 +72,7 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
   return (
     <div ref={hostRef} className="h-full w-full" data-testid={TEST_ID.filePreviewMonaco}>
       {loadFailed ? (
-        <pre className="h-full w-full overflow-auto p-4 text-xs whitespace-pre-wrap text-neutral-300">
+        <pre className="h-full w-full overflow-auto p-4 text-xs whitespace-pre-wrap text-ink-secondary">
           {content}
         </pre>
       ) : null}

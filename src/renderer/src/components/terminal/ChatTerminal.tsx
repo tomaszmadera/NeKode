@@ -104,12 +104,12 @@ export function ChatTerminal({
       convertEol: true,
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: 'Consolas, "Courier New", monospace',
+      fontFamily: '"Recursive Mono Casual", Consolas, "Courier New", monospace',
       theme: {
-        background: '#0a0a0a',
-        foreground: '#e5e5e5',
-        cursor: '#e5e5e5',
-        selectionBackground: '#3f3f46',
+        background: 'rgb(13 15 26)',
+        foreground: 'rgb(202 203 209)',
+        cursor: 'rgb(202 203 209)',
+        selectionBackground: 'rgb(49 66 95)',
       },
     })
     const fitAddon = new FitAddon()
@@ -355,7 +355,7 @@ export function ChatTerminal({
   return (
     <div
       ref={containerRef}
-      className="h-full w-full bg-neutral-950 outline-none"
+      className="h-full w-full bg-terminal outline-none"
       data-testid={`terminal-canvas-${chatId}`}
       tabIndex={-1}
       style={{ display: visible ? 'block' : 'none' }}

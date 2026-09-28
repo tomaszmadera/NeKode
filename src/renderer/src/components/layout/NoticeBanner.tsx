@@ -10,7 +10,7 @@ export function NoticeBanner({ notice }: { notice: string | null }): React.JSX.E
   }
   return (
     <p
-      className="mx-2 rounded border border-red-900 bg-red-950/40 px-2 py-1.5 text-xs leading-relaxed text-red-300"
+      className="mx-2 rounded-md border border-error/50 bg-error/10 px-2 py-1.5 text-xs leading-relaxed text-error"
       data-testid={TEST_ID.actionNotice}
       role="alert"
     >

@@ -2,6 +2,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActionControl, ActionExecution, AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { cn } from '../../lib/cn'
 import { TEST_ID } from '../../lib/test-ids'
 
 interface ActionBarProps {
@@ -166,7 +167,7 @@ export function ActionBar({
 
   return (
     <div
-      className="flex h-8 shrink-0 items-center gap-2 overflow-x-auto border-b border-neutral-800 px-2"
+      className="flex h-8 shrink-0 items-center gap-2 overflow-x-auto border-b border-edge px-2"
       data-testid={TEST_ID.actionRowSlot}
     >
       {[
@@ -175,15 +176,18 @@ export function ActionBar({
       ].map((group) => (
         <fieldset
           key={group.name}
-          className="flex shrink-0 items-center rounded border border-neutral-700"
+          className="flex shrink-0 items-center overflow-hidden rounded-md"
         >
           <legend className="sr-only">{group.name}</legend>
-          {group.items.map((item) => (
+          {group.items.map((item, index) => (
             <button
               key={item.label}
               type="button"
               disabled={!chatIsLive || !activeChatId}
-              className="px-2 py-0.5 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:text-neutral-600"
+              className={cn(
+                'bg-button px-2 py-0.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled',
+                index > 0 && 'border-l border-divider',
+              )}
               onClick={() => {
                 void sendFixed(item.data)
               }}
@@ -214,7 +218,13 @@ export function ActionBar({
             disabled={status === 'running'}
             title={details}
             data-status={status}
-            className="shrink-0 rounded px-2 py-0.5 text-xs text-neutral-300 hover:bg-neutral-800 disabled:text-neutral-500"
+            className={cn(
+              'shrink-0 rounded-md bg-button px-2 py-0.5 text-xs hover:bg-button-hover disabled:text-ink-disabled',
+              status === 'success' && 'text-success',
+              status === 'failed' && 'text-error',
+              status === 'running' && 'text-info',
+              status === 'idle' && 'text-ink',
+            )}
             onClick={() => {
               void execute(action)
             }}
@@ -227,7 +237,7 @@ export function ActionBar({
       })}
       <button
         type="button"
-        className="ml-auto shrink-0 rounded px-2 py-0.5 text-xs text-neutral-400 hover:bg-neutral-800"
+        className="ml-auto shrink-0 rounded-md bg-button px-2 py-0.5 text-xs text-ink hover:bg-button-hover"
         onClick={onSettings}
       >
         Actions

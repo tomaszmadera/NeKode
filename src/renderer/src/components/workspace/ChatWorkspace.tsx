@@ -278,16 +278,16 @@ function SpawnErrorOverlay({
 }): React.JSX.Element {
   return (
     <div
-      className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-950/80 px-6 text-center"
+      className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-app/80 px-6 text-center"
       data-testid={TEST_ID.terminalSpawnError}
       role="alert"
     >
-      <p className="text-sm text-red-300">
+      <p className="text-sm text-error">
         {message ?? 'Failed to start the terminal for this chat.'}
       </p>
       <button
         type="button"
-        className="rounded border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800"
+        className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
         data-testid={TEST_ID.terminalRetry}
         onClick={onRetry}
       >
