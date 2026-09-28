@@ -13,5 +13,3 @@ Nowe pozycje dopisuj jako pojedyncze punkty. Gdy pomysł wchodzi do realizacji, 
 - Post-MVP: ręczna zmiana nazwy czatu (pole `name` w bazie przygotowane; domyślnie nazwa = nazwa terminala/shella). Źródło: decyzja użytkownika 2026-09-25.
 
 - Terminologia w UX-UI.md i SDD.md: dostosowanie do modelu PROJEKT → CZATY (task = przyszła encja z postępem prac) — dokumenty nadal opisują task z terminalem. Źródło: zmiana modelu 2026-09-25.
-
-- AC8 (project-files-view): demo „usunięty katalog projektu → inline error w trybie plików + działa ← Projects" — deferred-by-decision 2026-09-26 („wyjdzie w praniu"); przetestować przy naturalnym użytkowaniu widoku Files.
