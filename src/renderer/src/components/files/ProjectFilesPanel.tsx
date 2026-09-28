@@ -39,21 +39,21 @@ export function ProjectFilesPanel({
 }: ProjectFilesPanelProps): React.JSX.Element {
   return (
     <aside
-      className={cn('flex shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/40')}
+      className={cn('flex shrink-0 flex-col border-r border-edge bg-panel')}
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >
       <div className="flex items-center gap-2 px-3 pt-3 pb-1">
         <button
           type="button"
-          className="rounded px-1.5 py-1 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
+          className="rounded px-1.5 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
           data-testid={TEST_ID.filesBackButton}
           onClick={onBack}
         >
           ← Projects
         </button>
         <span
-          className="min-w-0 truncate text-xs font-medium text-neutral-200"
+          className="min-w-0 truncate text-xs font-medium text-ink"
           data-testid={TEST_ID.filesProjectName}
           title={project.path}
         >
@@ -64,7 +64,7 @@ export function ProjectFilesPanel({
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-testid={TEST_ID.fileTree}>
         {session.treeError !== null ? (
           <p
-            className="mx-1 rounded border border-red-900 bg-red-950/40 px-2 py-1.5 text-xs leading-relaxed text-red-300"
+            className="mx-1 rounded-md border border-error/50 bg-error/10 px-2 py-1.5 text-xs leading-relaxed text-error"
             data-testid={TEST_ID.fileTreeError}
             role="alert"
           >

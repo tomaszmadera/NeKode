@@ -1139,7 +1139,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   return (
     <div
-      className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100 antialiased"
+      className="flex h-screen w-screen flex-col overflow-hidden bg-app text-ink antialiased"
       data-testid={TEST_ID.appShell}
     >
       <div className="flex min-h-0 flex-1">

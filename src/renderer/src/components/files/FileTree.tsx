@@ -57,14 +57,14 @@ function FileTreeLevel({
             <li key={entry.relativePath}>
               <button
                 type="button"
-                className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
+                className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
                 style={{ paddingLeft: 4 + depth * 12 }}
                 data-testid={testIdFor.fileEntry(entry.relativePath)}
                 data-kind="directory"
                 aria-expanded={isExpanded}
                 onClick={() => onToggleDirectory(entry.relativePath)}
               >
-                <span aria-hidden="true" className="shrink-0 text-neutral-500">
+                <span aria-hidden="true" className="shrink-0 text-ink-muted">
                   {isExpanded ? '▾' : '▸'}
                 </span>
                 <span className="truncate">{entry.name}</span>
@@ -88,8 +88,8 @@ function FileTreeLevel({
             <button
               type="button"
               className={cn(
-                'block w-full truncate rounded px-1 py-0.5 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100',
-                isSelected && 'bg-neutral-800 text-neutral-100',
+                'block w-full truncate rounded px-1 py-0.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink',
+                isSelected && 'bg-highlight text-ink',
               )}
               style={{ paddingLeft: 18 + depth * 12 }}
               data-testid={testIdFor.fileEntry(entry.relativePath)}

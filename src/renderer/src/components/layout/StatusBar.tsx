@@ -100,19 +100,16 @@ export function StatusBar({ app, project }: StatusBarProps): React.JSX.Element {
 
   return (
     <footer
-      className="flex h-7 shrink-0 items-center gap-3 border-t border-neutral-800 bg-neutral-900 px-3 text-xs"
+      className="flex h-7 shrink-0 items-center gap-3 border-t border-edge bg-panel px-3 text-xs"
       data-testid={TEST_ID.statusBar}
     >
       {project !== null ? (
         <>
-          <span
-            className="shrink-0 font-medium text-neutral-200"
-            data-testid={TEST_ID.statusProjectName}
-          >
+          <span className="shrink-0 font-medium text-ink" data-testid={TEST_ID.statusProjectName}>
             {project.name}
           </span>
           <span
-            className="min-w-0 truncate text-neutral-500"
+            className="min-w-0 truncate text-ink-muted"
             data-testid={TEST_ID.statusProjectPath}
             title={project.path}
           >
@@ -121,13 +118,13 @@ export function StatusBar({ app, project }: StatusBarProps): React.JSX.Element {
           {visibleLabels.length > 0 ? (
             <span className="flex shrink-0 items-center gap-1" data-testid={TEST_ID.statusRuntimes}>
               {visibleLabels.map((label) => (
-                <span key={label} className="rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-300">
+                <span key={label} className="rounded bg-highlight px-1.5 py-0.5 text-ink-secondary">
                   {label}
                 </span>
               ))}
               {hiddenLabels.length > 0 ? (
                 <span
-                  className="rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-400"
+                  className="rounded bg-highlight px-1.5 py-0.5 text-ink-muted"
                   data-testid={TEST_ID.statusRuntimeMore}
                   title={hiddenLabels.join(', ')}
                 >
@@ -151,18 +148,18 @@ function GitSection({ status }: { status: GitStatus | null }): React.JSX.Element
     // Degraded "no git" state (not a repository, git missing, any failure):
     // no branch, neutral status — never an error banner.
     return (
-      <span className="shrink-0 text-neutral-600" data-testid={TEST_ID.statusGitNone}>
+      <span className="shrink-0 text-ink-disabled" data-testid={TEST_ID.statusGitNone}>
         no git
       </span>
     )
   }
   return (
     <>
-      <span className="shrink-0 text-neutral-300" data-testid={TEST_ID.statusGitBranch}>
+      <span className="shrink-0 text-ink-secondary" data-testid={TEST_ID.statusGitBranch}>
         {`${BRANCH_GLYPH} ${status.branch}`}
       </span>
       <span
-        className="shrink-0 text-neutral-400"
+        className="shrink-0 text-ink-muted"
         data-testid={TEST_ID.statusGitStatus}
         title={gitHoverDetails(status.worktree)}
       >

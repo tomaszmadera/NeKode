@@ -52,7 +52,7 @@ export function BottomPanel({
 
   return (
     <section
-      className="flex shrink-0 flex-col border-t border-neutral-800 bg-neutral-950"
+      className="flex shrink-0 flex-col border-t border-edge bg-app"
       data-testid={TEST_ID.bottomRegion}
       style={{ display: open ? 'flex' : 'none', height }}
     >
@@ -66,15 +66,15 @@ export function BottomPanel({
         testId={TEST_ID.bottomResizeHandle}
       />
       {visibleTabs.length > 0 ? (
-        <div className="flex h-8 shrink-0 items-stretch overflow-x-auto border-b border-neutral-800 bg-neutral-900/60">
+        <div className="flex h-8 shrink-0 items-stretch overflow-x-auto border-b border-edge bg-app px-1 pt-1">
           {visibleTabs.map((tab) => {
             const selected = tab.id === activeTabId
             return (
               <div
                 key={tab.id}
                 className={cn(
-                  'flex shrink-0 items-stretch border-r border-neutral-800',
-                  selected && 'bg-neutral-800/70',
+                  'flex shrink-0 items-stretch rounded-t-md',
+                  selected ? 'bg-button' : 'border border-edge bg-tab-inactive hover:bg-highlight',
                 )}
                 data-testid={testIdFor.bottomTab(tab.id)}
                 data-selected={selected ? 'true' : 'false'}
@@ -82,8 +82,8 @@ export function BottomPanel({
                 <button
                   type="button"
                   className={cn(
-                    'max-w-48 truncate px-3 text-xs text-neutral-400 hover:text-neutral-100',
-                    selected && 'text-neutral-100',
+                    'max-w-48 truncate px-3 text-xs text-ink-secondary hover:text-ink',
+                    selected && 'text-ink',
                   )}
                   data-selected={selected ? 'true' : 'false'}
                   onClick={() => onSelectTab(tab.id)}
@@ -92,7 +92,7 @@ export function BottomPanel({
                 </button>
                 <button
                   type="button"
-                  className="px-2 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-neutral-100"
+                  className="px-2 text-xs text-ink-muted hover:bg-highlight hover:text-ink"
                   aria-label={`Close ${tab.label}`}
                   data-testid={testIdFor.bottomTabClose(tab.id)}
                   onClick={() => onCloseTab(tab.id)}
@@ -104,7 +104,7 @@ export function BottomPanel({
           })}
           <button
             type="button"
-            className="shrink-0 px-3 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+            className="shrink-0 rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
             data-testid={TEST_ID.bottomNewTerminal}
             onClick={onNewTerminal}
           >
@@ -135,16 +135,16 @@ export function BottomPanel({
               />
               {tab.status === 'error' && visible ? (
                 <div
-                  className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-950/80 px-6 text-center"
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-app/80 px-6 text-center"
                   data-testid={TEST_ID.bottomTerminalError}
                   role="alert"
                 >
-                  <p className="text-sm text-red-300">
+                  <p className="text-sm text-error">
                     {tab.errorMessage ?? 'Failed to start the terminal.'}
                   </p>
                   <button
                     type="button"
-                    className="rounded border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800"
+                    className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
                     data-testid={TEST_ID.bottomTerminalRetry}
                     onClick={() => onRetry(tab.id)}
                   >
@@ -162,7 +162,7 @@ export function BottomPanel({
           >
             <button
               type="button"
-              className="rounded border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800"
+              className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
               data-testid={TEST_ID.bottomNewTerminal}
               onClick={onNewTerminal}
             >

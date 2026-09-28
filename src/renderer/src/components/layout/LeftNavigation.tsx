@@ -90,17 +90,17 @@ export function LeftNavigation({
 
   return (
     <aside
-      className={cn('flex shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/40')}
+      className={cn('flex shrink-0 flex-col border-r border-edge bg-panel')}
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >
       <div className="flex items-center justify-between px-4 pt-3 pb-1">
-        <h2 className="text-xs font-semibold tracking-wider text-neutral-400 uppercase">
+        <h2 className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
           Projects
         </h2>
         <button
           type="button"
-          className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
+          className="rounded-md bg-button px-2 py-1 text-xs text-ink hover:bg-button-hover"
           data-testid={TEST_ID.addProjectButton}
           onClick={onAddProject}
         >
@@ -111,7 +111,7 @@ export function LeftNavigation({
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {projects.length === 0 ? (
           <p
-            className="px-2 py-3 text-xs leading-relaxed text-neutral-500"
+            className="px-2 py-3 text-xs leading-relaxed text-ink-muted"
             data-testid={TEST_ID.emptyProjectList}
           >
             No projects yet. Add a local project to start working.
@@ -128,7 +128,7 @@ export function LeftNavigation({
                   <div
                     className={cn(
                       'group flex items-center gap-1 rounded px-1 py-1',
-                      isSelected && 'bg-neutral-800/80',
+                      isSelected && 'bg-highlight',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
@@ -148,7 +148,7 @@ export function LeftNavigation({
                   >
                     <button
                       type="button"
-                      className="rounded px-1 py-0.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                      className="rounded px-1 py-0.5 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
                       data-testid={testIdFor.projectToggle(project.id)}
                       aria-expanded={isExpanded}
                       aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${project.name}`}
@@ -158,7 +158,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm text-neutral-200 hover:bg-neutral-800 hover:text-neutral-100"
+                      className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm text-ink hover:bg-highlight"
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
                       onClick={() => onSelectProject(project.id)}
@@ -167,7 +167,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="rounded px-1.5 py-0.5 text-xs text-neutral-500 opacity-0 hover:bg-neutral-800 hover:text-neutral-100 focus-visible:opacity-100 group-hover:opacity-100"
+                      className="rounded px-1.5 py-0.5 text-xs text-ink-muted opacity-0 hover:bg-highlight hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
                       data-testid={testIdFor.projectFiles(project.id)}
                       title="Show project files"
                       aria-label={`Show project files for ${project.name}`}
@@ -178,11 +178,11 @@ export function LeftNavigation({
                   </div>
                   {isExpanded ? (
                     <div
-                      className="ml-4 border-l border-neutral-800 pl-2"
+                      className="ml-4 border-l border-edge pl-2"
                       data-testid={testIdFor.projectChats(project.id)}
                     >
                       {chats.length === 0 ? (
-                        <p className="px-1 py-1 text-xs leading-relaxed text-neutral-500">
+                        <p className="px-1 py-1 text-xs leading-relaxed text-ink-muted">
                           No chats yet.
                         </p>
                       ) : (
@@ -194,8 +194,8 @@ export function LeftNavigation({
                                 <button
                                   type="button"
                                   className={cn(
-                                    'w-full truncate rounded px-2 py-1 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100',
-                                    isChatSelected && 'bg-neutral-800 text-neutral-100',
+                                    'w-full truncate rounded px-2 py-1 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink',
+                                    isChatSelected && 'bg-highlight text-ink',
                                   )}
                                   data-testid={testIdFor.chatRow(chat.id)}
                                   data-selected={isChatSelected ? 'true' : 'false'}
@@ -211,7 +211,7 @@ export function LeftNavigation({
                       {isSelected ? (
                         <button
                           type="button"
-                          className="mt-1 w-full rounded px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                          className="mt-1 w-full rounded px-2 py-1 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
                           data-testid={TEST_ID.newChatButton}
                           onClick={() => {
                             void onCreateChat(project.id)
@@ -296,14 +296,14 @@ function ContextMenuOverlay({
       }}
     >
       <div
-        className="absolute min-w-40 rounded border border-neutral-700 bg-neutral-900 py-1 shadow-lg"
+        className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
         style={{ left: state.x, top: state.y }}
         data-testid={TEST_ID.projectContextMenu}
       >
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-neutral-300 hover:bg-neutral-800"
+          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
           onClick={() => onOpenProjectSettings(state.projectId)}
         >
           Project Settings
@@ -311,7 +311,7 @@ function ContextMenuOverlay({
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-red-300 hover:bg-neutral-800"
+          className="w-full px-3 py-1.5 text-left text-xs text-error hover:bg-error/10"
           data-testid={testIdFor.removeProject(state.projectId)}
           aria-label={`Remove Project ${projectName}`}
           onClick={() => onRemoveProject(state.projectId)}

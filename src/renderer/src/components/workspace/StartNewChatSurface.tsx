@@ -16,14 +16,14 @@ export function StartNewChatSurface({
       className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
       data-testid={TEST_ID.startNewChatState}
     >
-      <h1 className="text-lg font-medium text-neutral-100">No chats in this project</h1>
-      <p className="text-sm leading-relaxed text-neutral-400">
+      <h1 className="text-lg font-medium text-ink">No chats in this project</h1>
+      <p className="text-sm leading-relaxed text-ink-secondary">
         The previous chats were closed with their terminals. Start a new chat to open a fresh
         terminal session.
       </p>
       <button
         type="button"
-        className="rounded border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800"
+        className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
         data-testid={TEST_ID.startNewChatButton}
         onClick={onStartNewChat}
       >
