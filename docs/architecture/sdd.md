@@ -9,7 +9,7 @@
 **Primary implementation stack:** Electron + React + TypeScript  
 **Primary interaction model in MVP:** terminal-first, without ACP  
 **UI reference direction:** ZCode-inspired, minimal, workspace-oriented  
-**Primary domain objects:** Project, Task, Workspace, Terminal Session
+**Primary domain objects:** Project, Chat, Terminal Session (Task is the post-MVP progress entity, see §14)
 
 ---
 
@@ -20,9 +20,9 @@ This document defines the software design for a desktop application intended for
 The application is not intended to be a traditional IDE clone. Its primary role is to provide a clean desktop workspace for:
 
 - organizing software projects,
-- organizing project tasks,
+- organizing project chats,
 - running coding agents through terminal-based interfaces,
-- restoring active task workspaces,
+- restoring active chat workspaces,
 - browsing project files,
 - executing frequently used project actions,
 - observing Git/worktree state,
@@ -51,7 +51,9 @@ The application does **not** need to understand their protocols in the MVP.
 
 The application should be designed around the following principle:
 
-> The central object is a Task representing a unit of development work. Terminal sessions, Git branches, worktrees, agents, Kanban cards, files, browser previews and future automation are resources or representations associated with that Task.
+> The central object is a Chat representing a running work session in a project. Terminal sessions, files, Git context, actions and agent CLIs are resources or representations associated with that Chat.
+
+Terminology (model change 2026-09-25): the MVP tree entity is the **Chat** (PROJEKT → CZATY), a terminal session attached to a project whose name is derived from the shell. **Task** denotes the future post-MVP entity for tracking work progress, pinned to a chat. Sections about the functional Kanban, worktrees and progress use Task in that future sense.
 
 The application should therefore avoid becoming:
 
@@ -68,8 +70,8 @@ Instead it should become:
 The MVP SHALL provide:
 
 1. Project management.
-2. Task management inside projects.
-3. Persistent task-to-terminal associations during the application session.
+2. Chat management inside projects (PROJEKT → CZATY).
+3. Persistent chat-to-terminal associations during the application session.
 4. Multiple simultaneously running terminal sessions.
 5. Project file tree.
 6. Read-only file preview.
@@ -184,7 +186,7 @@ The MVP should prefer simple synchronous persistence over unnecessary infrastruc
 │  │ Renderer                                                   │  │
 │  │                                                            │  │
 │  │ React UI                                                   │  │
-│  │ ├── Project/Task navigation                                │  │
+│  │ ├── Project/Chat navigation                                │  │
 │  │ ├── Main workspace surface                                 │  │
 │  │ ├── File tree / file preview                               │  │
 │  │ ├── Terminal views                                         │  │
@@ -196,8 +198,8 @@ The MVP should prefer simple synchronous persistence over unnecessary infrastruc
 │  │ Electron Main / Application Core                           │  │
 │  │                                                            │  │
 │  │ ProjectService                                             │  │
-│  │ TaskService                                                │  │
-│  │ WorkspaceService                                           │  │
+│  │ ChatService                                                │  │
+│  │ WorkspaceService (post-MVP)                                │  │
 │  │ TerminalService                                            │  │
 │  │ FileService                                                │  │
 │  │ GitService                                                 │  │
@@ -226,7 +228,7 @@ Example:
 ```ts
 window.app.projects.list()
 window.app.projects.add(...)
-window.app.tasks.create(...)
+window.app.chats.create(...)
 window.app.terminals.create(...)
 window.app.terminals.write(...)
 window.app.git.getStatus(...)
@@ -254,7 +256,7 @@ The application uses a five-region conceptual layout (user decision 2026-09-26: 
 ┌────────────────┬──────────────────────────────────────────┬──────────────┐
 │ LEFT           │ CENTER                                   │ RIGHT        │
 │ Projects       │ Tab Strip                                │ hidden       │
-│ and Tasks      │ [chat][files…][+ New chat]               │ by default   │
+│ and Chats      │ [chat][files…][+ New chat]               │ by default   │
 ├────────────────┼──────────────────────────────────────────┼──────────────┤
 │                │ Action Bar                               │              │
 │                │ [Handoff|Resume] [Stop|Continue] ▶ …     │              │
@@ -290,13 +292,13 @@ Default hierarchy:
 Projects
 │
 ├── Project A
-│   ├── Task A
-│   ├── Task B
-│   └── Task C
+│   ├── Chat A
+│   ├── Chat B
+│   └── Chat C
 │
 ├── Project B
-│   ├── Task A
-│   └── Task B
+│   ├── Chat A
+│   └── Chat B
 │
 └── Project C
 ```
@@ -319,15 +321,15 @@ MVP project view contains:
 
 ---
 
-## 8.3 Task Click Behavior
+## 8.3 Chat Click Behavior
 
-Clicking a Task opens or restores the Task's current work surface.
+Clicking a Chat opens or restores the Chat's current work surface.
 
 For the MVP:
 
-> Task work surface = primary terminal session associated with that Task.
+> Chat work surface = primary terminal session associated with that Chat.
 
-The terminal process must remain running when the user switches to another task.
+The terminal process must remain running when the user switches to another chat.
 
 ---
 
@@ -528,7 +530,7 @@ Default tab:
 Files
 ```
 
-The Project Surface should own project-level views rather than task-specific terminal workspaces.
+The Project Surface should own project-level views rather than chat-specific terminal workspaces.
 
 ---
 
@@ -585,16 +587,17 @@ The application may refuse or truncate previews above a safe configured threshol
 
 ---
 
-# 14. Task Model
+# 14. Task Model (post-MVP)
 
-A Task is the central domain object.
+The central MVP domain object is the **Chat**: a terminal session attached to a project, named after the shell, creatable and removable through `ChatService` (§38). The Chat has no workflow state of its own.
 
-Initial interface:
+The **Task** is the future post-MVP entity for tracking work progress, pinned to a chat (requirements.md). Its design so far:
 
 ```ts
 interface Task {
     id: string
     projectId: string
+    chatId: string
 
     title: string
     description?: string
@@ -615,7 +618,7 @@ interface Task {
 }
 ```
 
-Although `branch` and `worktreePath` do not need active management in the MVP, fields or architectural support should be anticipated.
+Although `branch` and `worktreePath` do not need active management when the Task entity lands, fields or architectural support should be anticipated.
 
 ---
 
@@ -645,7 +648,7 @@ This is a major architectural constraint for the functional Kanban.
 
 ### MVP exception: demonstration cards
 
-The MVP Kanban is intentionally **visual-only**. Its cards are static demonstration data used to validate layout, hierarchy, density and future controls. They are **not real Task records**, do not need database persistence, and do not need to reference Tasks from the Project task tree.
+The MVP Kanban is intentionally **visual-only**. Its cards are static demonstration data used to validate layout, hierarchy, density and future controls. They are **not real Task records**, do not need database persistence, and do not need to reference entities from the project tree (the MVP tree shows chats).
 
 This exception exists only for the MVP preview. Once Kanban becomes functional post-MVP, every real Kanban card MUST represent the same underlying `Task` entity used elsewhere in the application.
 
@@ -708,10 +711,10 @@ interface TerminalSession {
     id: string
     workspaceId?: string
     projectId: string
-    taskId?: string
+    chatId?: string
 
     kind:
-        | "task-primary"
+        | "chat-primary"
         | "auxiliary"
         | "secondary"
 
@@ -733,14 +736,12 @@ interface TerminalSession {
 
 ---
 
-## 17.3 Primary Task Terminal
+## 17.3 Primary Chat Terminal
 
 For the MVP:
 
 ```text
-Task
-  ↓
-Workspace
+Chat
   ↓
 Primary Terminal Session
 ```
@@ -748,10 +749,12 @@ Primary Terminal Session
 Example:
 
 ```text
-Task: Implement OAuth
+Chat: Implement OAuth
        ↓
 Codex CLI running inside PowerShell
 ```
+
+The Workspace layer (§16) is a post-MVP refinement between the chat and its terminal.
 
 The application does not need to know that Codex is running.
 
@@ -759,17 +762,17 @@ It only owns the terminal session.
 
 ---
 
-## 17.4 Switching Tasks
+## 17.4 Switching Chats
 
 Assume:
 
 ```text
-Task A → PTY A
-Task B → PTY B
-Task C → PTY C
+Chat A → PTY A
+Chat B → PTY B
+Chat C → PTY C
 ```
 
-When switching from Task A to Task B:
+When switching from Chat A to Chat B:
 
 1. Do not terminate PTY A.
 2. Stop rendering PTY A.
@@ -778,7 +781,7 @@ When switching from Task A to Task B:
 5. Preserve PTY dimensions as needed.
 6. Keep background processes alive.
 
-Returning to Task A should show the same terminal process and state.
+Returning to Chat A should show the same terminal process and state.
 
 ---
 
@@ -790,13 +793,13 @@ Two levels of persistence must be distinguished.
 
 Within one application lifetime:
 
-- Task switching does not kill terminal sessions.
+- Chat switching does not kill terminal sessions.
 
 After application restart:
 
 - project list is restored,
-- tasks are restored,
-- active project/task is restored,
+- chats are restored,
+- active project/chat is restored,
 - terminal metadata may be restored,
 - terminal history may optionally be restored,
 - live processes do not need to survive.
@@ -816,9 +819,9 @@ Electron UI
      ▼
 Terminal Host / Daemon
      │
-     ├── PTY Task A
-     ├── PTY Task B
-     └── PTY Task C
+     ├── PTY Chat A
+     ├── PTY Chat B
+     └── PTY Chat C
 ```
 
 Benefits:
@@ -853,7 +856,7 @@ Example:
 
 ```text
 ┌──────────────────────────────────────┐
-│ Primary Task Terminal                │
+│ Primary Chat Terminal                │
 │                                      │
 │ Codex working...                     │
 │                                      │
@@ -1358,7 +1361,7 @@ interface AppLayoutState {
     }
 
     activeProjectId?: string
-    activeTaskId?: string
+    activeChatId?: string
 
     projectSurface?: "files" | "kanban"
 }
@@ -1373,13 +1376,13 @@ Use SQLite for application state.
 Persist at minimum:
 
 - projects,
-- tasks,
-- workspaces,
+- chats,
+- workspaces (post-MVP),
 - action controls,
 - terminal metadata,
 - UI layout state,
 - last selected project,
-- last selected task,
+- last selected chat,
 - selected project surface,
 - panel sizes.
 
@@ -1387,8 +1390,8 @@ Potential tables:
 
 ```text
 projects
-tasks
-workspaces
+chats
+workspaces (post-MVP)
 terminal_sessions
 actions
 settings
@@ -1411,23 +1414,17 @@ CREATE TABLE projects (
     last_opened_at TEXT
 );
 
-CREATE TABLE tasks (
+CREATE TABLE chats (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT NOT NULL,
-    workspace_id TEXT,
-    branch TEXT,
-    worktree_path TEXT,
+    name TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
     FOREIGN KEY(project_id) REFERENCES projects(id)
 );
 
 CREATE TABLE workspaces (
     id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
     project_id TEXT NOT NULL,
     cwd TEXT NOT NULL,
     branch TEXT,
@@ -1439,7 +1436,7 @@ CREATE TABLE workspaces (
 CREATE TABLE terminal_sessions (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
-    task_id TEXT,
+    chat_id TEXT,
     workspace_id TEXT,
     kind TEXT NOT NULL,
     shell TEXT NOT NULL,
@@ -1474,8 +1471,8 @@ Recommended core services:
 
 ```text
 ProjectService
-TaskService
-WorkspaceService
+ChatService
+WorkspaceService (post-MVP)
 TerminalService
 FileService
 GitService
@@ -1514,38 +1511,27 @@ interface ProjectService {
 
 ---
 
-# 38. TaskService
+# 38. ChatService
 
 Responsibilities:
 
-- create task,
-- rename task,
-- delete task,
-- update status,
-- list project tasks,
-- associate workspace.
+- create chat (no naming form: the name comes from the shell, duplicates allowed),
+- delete chat,
+- list project chats.
 
 Example:
 
 ```ts
-interface TaskService {
-    list(projectId: string): Promise<Task[]>
+interface ChatService {
+    list(projectId: string): Promise<Chat[]>
 
-    create(input: {
-        projectId: string
-        title: string
-    }): Promise<Task>
+    create(projectId: string): Promise<Chat>
 
-    rename(taskId: string, title: string): Promise<Task>
-
-    delete(taskId: string): Promise<void>
-
-    setStatus(
-        taskId: string,
-        status: Task["status"]
-    ): Promise<Task>
+    remove(chatId: string): Promise<void>
 }
 ```
+
+Chat rename and workflow status (`backlog`/`todo`/`in-progress`/`done`) are not chat concerns: rename is a deferred usability item, and status belongs to the post-MVP Task entity (§14).
 
 ---
 
@@ -1559,7 +1545,7 @@ Responsibilities:
 - terminate PTY,
 - stream output,
 - track process lifecycle,
-- associate terminal with Task/Workspace,
+- associate terminal with its chat,
 - create auxiliary terminals.
 
 Example:
@@ -1700,10 +1686,9 @@ projects:list
 projects:add
 projects:remove
 
-tasks:list
-tasks:create
-tasks:rename
-tasks:delete
+chats:list
+chats:create
+chats:remove
 
 terminals:create
 terminals:write
@@ -1745,7 +1730,7 @@ packages/
     persistence/
 
     project/
-    task/
+    chat/
     workspace/
     terminal/
     git/
@@ -1788,7 +1773,7 @@ renderer/
 
     features/
         projects/
-        tasks/
+        chats/
         files/
         terminal/
         actions/
@@ -1821,11 +1806,10 @@ UI state:
 Persistent state:
 
 - projects,
-- tasks,
-- task status,
+- chats,
 - actions,
 - selected project,
-- selected task,
+- selected chat,
 - panel dimensions,
 - panel visibility.
 
@@ -1847,7 +1831,7 @@ Recommended future shortcuts:
 Ctrl + P      Project/file quick open
 Ctrl + K      Command palette
 Ctrl + Shift+K Kanban
-Ctrl + Shift+T New task
+Ctrl + Shift+T New chat
 ```
 
 Do not add large shortcut systems before core workflows stabilize.
@@ -1872,7 +1856,7 @@ Guidelines:
 - avoid deeply nested toolbars,
 - avoid excessive icon-only controls,
 - keep secondary panels hidden until needed,
-- prioritize the active Task/workspace.
+- prioritize the active chat/workspace.
 
 ---
 
@@ -1931,7 +1915,7 @@ Minimum categories:
 application
 ipc
 projects
-tasks
+chats
 terminal
 filesystem
 git
@@ -2079,25 +2063,21 @@ Runtime + Git context detected
 
 ---
 
-# 58. MVP User Flow: Create Task
+# 58. MVP User Flow: Create Chat
 
 ```text
 Project context
   ↓
-Create Task
+Create Chat (no naming form)
   ↓
-Enter title
-  ↓
-Task created
-  ↓
-Workspace created
+Chat created (name from the shell)
   ↓
 Primary terminal created
   ↓
-Task opens in center
+Chat opens in center
 ```
 
-The task terminal should initially use the project path as `cwd`.
+The chat terminal initially uses the project path as `cwd`.
 
 ---
 
@@ -2106,33 +2086,33 @@ The task terminal should initially use the project path as `cwd`.
 Example:
 
 ```text
-Task: Fix authentication
+Chat: Fix authentication
 
 Primary terminal:
 
 PS D:\Projects\app> codex
 ```
 
-From this moment, Codex is simply a child process inside the Task terminal.
+From this moment, Codex is simply a child process inside the chat terminal.
 
 The application does not parse the agent protocol.
 
 ---
 
-# 60. MVP User Flow: Switch Tasks
+# 60. MVP User Flow: Switch Chats
 
 ```text
-Task A active
+Chat A active
   ↓
-Click Task B
+Click Chat B
   ↓
-Task A PTY remains alive
+Chat A PTY remains alive
   ↓
-Task B PTY appears
+Chat B PTY appears
   ↓
-Click Task A
+Click Chat A
   ↓
-same Task A PTY restored
+same Chat A PTY restored
 ```
 
 This behavior is required.
@@ -2142,7 +2122,7 @@ This behavior is required.
 # 61. MVP User Flow: Auxiliary Terminal
 
 ```text
-Agent running in primary task terminal
+Agent running in primary chat terminal
   ↓
 Ctrl + `
   ↓
@@ -2208,19 +2188,18 @@ The MVP is considered technically complete when all criteria below are met.
 - [ ] Projects persist after restart.
 - [ ] Projects appear in the left panel.
 
-## Tasks
+## Chats
 
-- [ ] User can create a Task inside a Project.
-- [ ] User can rename a Task.
-- [ ] User can delete a Task.
-- [ ] Tasks persist after restart.
-- [ ] Tasks appear under their Project.
+- [ ] User can create a Chat inside a Project (name from the shell, duplicates allowed).
+- [ ] User can delete a Chat by closing its terminal.
+- [ ] Chats persist after restart.
+- [ ] Chats appear under their Project.
 
 ## Terminal
 
-- [ ] Opening a Task creates or restores its primary terminal.
-- [ ] Multiple Task terminals can run simultaneously.
-- [ ] Switching Tasks does not terminate their PTYs.
+- [ ] Opening a Chat creates or restores its primary terminal.
+- [ ] Multiple chat terminals can run simultaneously.
+- [ ] Switching Chats does not terminate their PTYs.
 - [ ] Terminal input works correctly.
 - [ ] ANSI colors work correctly.
 - [ ] Terminal resize works.
@@ -2270,11 +2249,11 @@ The MVP is considered technically complete when all criteria below are met.
 ## Persistence
 
 - [ ] Projects persist.
-- [ ] Tasks persist.
+- [ ] Chats persist.
 - [ ] Actions persist.
 - [ ] Panel layout persists.
 - [ ] Last active Project persists.
-- [ ] Last active Task persists.
+- [ ] Last active Chat persists.
 
 ---
 
@@ -2287,7 +2266,7 @@ The implementation agent must not expand scope by adding:
 - direct OpenAI/Anthropic/Gemini APIs,
 - LLM selection,
 - prompt management,
-- chat UI,
+- LLM-style agent conversation UI (a "chat" in this application is a terminal session),
 - source code editing,
 - IntelliSense,
 - LSP,
@@ -2340,20 +2319,19 @@ If such functionality appears necessary, prefer leaving an extension point rathe
 3. file selection
 4. read-only Monaco preview
 
-## Phase 5 — Tasks
+## Phase 5 — Chats
 
-1. create Task
-2. rename Task
-3. delete Task
-4. Task navigation
-5. Workspace creation
+1. create Chat (name from the shell)
+2. delete Chat (terminal exit)
+3. Chat navigation
+4. cwd per chat (project path by default)
 
 ## Phase 6 — Terminals
 
 1. node-pty
 2. xterm.js
-3. Task terminal
-4. task switching
+3. Chat terminal
+4. chat switching
 5. resize
 6. lifecycle handling
 
@@ -2481,7 +2459,7 @@ The MVP is terminal-first and protocol-agnostic.
 
 ## Decision 4
 
-Task is the central domain object.
+Chat is the central MVP domain object (model change 2026-09-25); Task is the post-MVP progress entity pinned to a chat (§14).
 
 ## Decision 5
 
@@ -2489,17 +2467,17 @@ In the functional post-MVP Kanban, Task and Kanban card represent the same under
 
 ## Decision 6
 
-Task is not the same thing as a terminal.
+A chat is not the same thing as a terminal.
 
 The relationship is:
 
 ```text
-Task
-  ↓
-Workspace
+Chat
   ↓
 TerminalSession
 ```
+
+The Workspace layer between them is a post-MVP refinement (§16).
 
 ## Decision 7
 
@@ -2545,7 +2523,7 @@ The architecture must anticipate task-specific Git worktrees.
 ├────────────────┼──────────────────────────────────────────┼──────────────┤
 │                │ MAIN SURFACE                             │              │
 │ ▼ knajpy       │                                          │              │
-│   Auth         │ Task: Fix Pixel                          │              │
+│   Auth         │ Chat: Fix Pixel                          │              │
 │   Reviews      │     Terminal (active tab)                │              │
 │                │                                          │              │
 │                │ File tabs:                               │              │
@@ -2563,11 +2541,11 @@ The architecture must anticipate task-specific Git worktrees.
 
 The MVP should be intentionally simple:
 
-> Project → Task → persistent terminal workspace.
+> Project → Chat → persistent terminal workspace.
 
 The application adds value by providing:
 
-- task-based navigation,
+- chat-based navigation,
 - clean workspace switching,
 - visible project context,
 - reusable command controls,

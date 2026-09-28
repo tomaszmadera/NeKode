@@ -7,7 +7,7 @@
 **Language:** English only  
 **Target platform:** Windows 11  
 **Primary UI reference direction:** ZCode-inspired  
-**Product model:** Project → Task → Workspace  
+**Product model:** Project → Chat (Task is the post-MVP progress entity)  
 **Primary MVP interaction model:** terminal-first agentic coding  
 **Companion technical document:** `SDD.md`
 
@@ -22,8 +22,8 @@ The application should feel like a focused coding control surface rather than a 
 Its purpose is to make it easy to:
 
 - switch between projects,
-- switch between tasks,
-- resume existing task work,
+- switch between chats,
+- resume existing chat work,
 - launch coding agents in terminal sessions,
 - inspect project files,
 - see runtime and Git context,
@@ -66,7 +66,7 @@ The experience should avoid:
 
 The application should feel like:
 
-> a workspace for managing coding tasks and agents
+> a workspace for managing coding work and agents
 
 rather than:
 
@@ -76,20 +76,21 @@ rather than:
 
 # 3. Core UX Principle
 
-The central conceptual object is the **Task**.
+The central conceptual object in the MVP is the **Chat** (PROJEKT → CZATY; model change 2026-09-25).
 
-A Task may be represented in several places:
+A Chat appears as:
 
-- in the project task tree,
+- an entry in the project tree,
+- an active terminal workspace,
+- a handoff target.
+
+The **Task** is the future post-MVP entity for tracking work progress, pinned to a chat. It adds further representations:
+
 - as a Kanban card,
-- as an active terminal workspace,
-- as a handoff,
 - as a future Git worktree,
 - as a future agent execution unit.
 
-These are not separate task types.
-
-They are different views or states of the same work item.
+Task is reserved for that future entity; Kanban, worktree and progress sections use it in that sense.
 
 ---
 
@@ -100,7 +101,7 @@ The entire application UI must use **English**.
 Use:
 
 - Projects
-- Tasks
+- Chats
 - Files
 - Kanban
 - Resume
@@ -144,7 +145,7 @@ The window has no top action band and no context header above the main surface (
 
 Semantics:
 
-- **Left** — navigation between projects, tasks and project contents.
+- **Left** — navigation between projects, chats and project contents.
 - **Center** — one column, top-down: **tab strip** (the terminal-chat tab is always first, never closable, its label is the active chat's name; then open-file tabs, `+ New chat`), **action bar** (action row), the main active work surface.
 - **Bottom** — auxiliary terminal and future tool panels.
 - **Right** — secondary tools such as Browser or second Terminal.
@@ -157,7 +158,7 @@ Semantics:
 On startup, restore the most recent useful state when possible:
 
 - last selected project,
-- last selected task,
+- last selected chat,
 - active center surface,
 - left panel width,
 - bottom panel state,
@@ -264,7 +265,7 @@ The bottom-terminal run mode is no longer reserved: with the bottom auxiliary te
 
 # 9. Left Navigation — Default Mode
 
-The default left navigation shows Projects and Tasks.
+The default left navigation shows Projects and Chats.
 
 ```text
 Projects
@@ -285,7 +286,7 @@ Do not reproduce a VS Code-style permanent Activity Bar.
 
 ---
 
-# 10. Project and Task Rows
+# 10. Project and Chat Rows
 
 Project row example:
 
@@ -296,13 +297,13 @@ Project row example:
 Possible context actions:
 
 - Open
-- New Task
+- New Chat
 - Kanban
 - Project Settings
 - Remove Project
 - Reveal in Explorer
 
-Task row examples:
+Chat row examples:
 
 ```text
 Fix Meta Pixel
@@ -320,7 +321,7 @@ Use compact status markers only when useful.
 The left column may switch contextually between:
 
 ```text
-Projects / Tasks
+Projects / Chats
 Project Files
 ```
 
@@ -371,7 +372,7 @@ Avoid:
 - large scale changes,
 - long fades.
 
-Projects/Tasks → File Tree:
+Projects/Chats → File Tree:
 
 1. old content moves slightly left,
 2. fades slightly,
@@ -390,7 +391,7 @@ Respect reduced-motion settings.
 Use subtle motion for:
 
 - project expansion,
-- Task switching,
+- Chat switching,
 - Files/Kanban switching,
 - bottom terminal toggle,
 - right panel toggle,
@@ -488,9 +489,9 @@ Behind        0
 
 ---
 
-# 17. Center Surface — Task
+# 17. Center Surface — Chat
 
-When a Task is selected, the center displays the Task workspace.
+When a Chat is selected, the center displays the Chat workspace.
 
 MVP default:
 
@@ -593,7 +594,7 @@ Typical use:
 - docker compose logs
 - npm run lint
 
-The primary Task terminal remains dedicated to the main coding session.
+The primary chat terminal remains dedicated to the main coding session.
 
 ---
 
@@ -667,7 +668,7 @@ Command:
 codex
 ```
 
-Whenever the user starts or resumes a Task without choosing another agent, use the default.
+Whenever the user starts or resumes a chat without choosing another agent, use the default.
 
 ---
 
@@ -695,7 +696,7 @@ Agent choice may exist:
 
 - globally,
 - at Project level,
-- at Task level,
+- at Chat level,
 - as a one-time override when implementing,
 - as a one-time override when resuming a Handoff.
 
@@ -704,7 +705,7 @@ Resolution priority:
 ```text
 Explicit one-time choice
 ↓
-Task preferred agent
+Chat preferred agent
 ↓
 Project preferred agent
 ↓
@@ -713,12 +714,12 @@ Global default console agent
 
 ---
 
-# 25. Starting and Resuming Tasks
+# 25. Starting and Resuming Chats
 
-New Task:
+New Chat:
 
 ```text
-Task
+Chat
 Fix Meta Pixel
 
 Agent
@@ -727,7 +728,7 @@ Codex ▾
 [Start]
 ```
 
-Task with an active or resumable session:
+Chat with an active or resumable session:
 
 ```text
 [Resume]
@@ -805,9 +806,9 @@ Likely future column:
 
 # 28. Kanban Card
 
-In the **functional post-MVP Kanban**, a Kanban card represents the same Task object that appears in the Project Task tree.
+In the **functional post-MVP Kanban**, a Kanban card represents the Task entity pinned to a chat (see §3).
 
-In the MVP, cards only **simulate** that future representation. They are static demonstration cards, are not backed by real Tasks, and do not need to stay synchronized with the Project Task tree.
+In the MVP, cards only **simulate** that future representation. They are static demonstration cards, are not backed by real Tasks, and do not need to stay synchronized with the project tree.
 
 Possible compact metadata:
 
@@ -920,7 +921,7 @@ Flow:
 3. detect Git repository,
 4. detect runtime(s),
 5. detect available project configuration,
-6. load Tasks,
+6. load Chats,
 7. load Actions,
 8. expose Files and Kanban.
 
@@ -979,7 +980,7 @@ Gemini CLI
 
 Handoffs are a first-class continuation mechanism.
 
-A Handoff belongs to a Task.
+A Handoff belongs to a Chat.
 
 It captures enough information to continue work later or with another agent.
 
@@ -989,11 +990,11 @@ A Handoff should answer:
 - What is the current state?
 - What remains?
 - What should happen next?
-- Which Project and Task does it belong to?
+- Which Project and Chat does it belong to?
 - Which agent/session was used?
 - Which branch/worktree is relevant?
 
-Handoffs are not standalone notes detached from Tasks.
+Handoffs are not standalone notes detached from chats.
 
 ---
 
@@ -1001,10 +1002,10 @@ Handoffs are not standalone notes detached from Tasks.
 
 Handoffs may appear in:
 
-1. Task header,
-2. Task context menu,
+1. Chat header,
+2. Chat context menu,
 3. Kanban card indicator,
-4. Task details,
+4. Chat details,
 5. Resume flow.
 
 Kanban example:
@@ -1082,13 +1083,13 @@ Resume
 should automatically:
 
 1. select the corresponding Project,
-2. select the corresponding Task,
-3. restore/open the Task Workspace,
+2. select the corresponding Chat,
+3. restore/open the Chat workspace,
 4. restore or create the primary terminal,
 5. resolve the agent,
 6. start the agent if required,
 7. prepare Handoff context,
-8. continue the Task with minimal user interaction.
+8. continue the Chat with minimal user interaction.
 
 The user should not need to manually navigate through the application.
 
@@ -1103,7 +1104,7 @@ Explicitly selected agent
 ↓
 Handoff preferred/source agent
 ↓
-Task preferred agent
+Chat preferred agent
 ↓
 Project preferred agent
 ↓
@@ -1172,7 +1173,7 @@ Resuming…
 Then:
 
 - Project selection updates,
-- Task selection updates,
+- Chat selection updates,
 - center surface transitions,
 - terminal appears,
 - agent startup begins.
@@ -1182,9 +1183,9 @@ Avoid a modal unless a required choice is missing.
 Optional Resume preview:
 
 ```text
-Resume Task
+Resume Chat
 
-Task
+Chat
 Fix Meta Pixel
 
 Agent
@@ -1246,7 +1247,7 @@ Do not add a dedicated Paused column in the MVP.
 
 ---
 
-# 42. Task Header
+# 42. Chat Header
 
 Example:
 
@@ -1271,7 +1272,7 @@ History
 
 ---
 
-# 43. Task Context Menu
+# 43. Chat Context Menu
 
 Recommended:
 
@@ -1285,7 +1286,7 @@ Open Project Files
 Open Kanban
 Reveal Workspace
 Terminate Terminal
-Delete Task
+Delete Chat
 ```
 
 Only show actions relevant to the current state.
@@ -1331,21 +1332,23 @@ Project Kanban cards do not need to repeat it.
 
 ---
 
-# 46. Task Creation
+# 46. Chat Creation
 
 From Project:
 
 ```text
-New Task
+New Chat
 ```
 
-Future from Kanban:
+The chat is created immediately, without a naming form: the name comes from the shell and duplicates are allowed.
+
+Future from Kanban (post-MVP Task entity):
 
 ```text
 + Add Task
 ```
 
-Compact form:
+A future Task creation form may stay compact:
 
 ```text
 New Task
@@ -1390,7 +1393,7 @@ Do not let status dominate the terminal surface.
 
 # 48. Agent Switching
 
-Changing agent on an active Task should be explicit.
+Changing agent on an active chat should be explicit.
 
 If a process is running:
 
@@ -1475,7 +1478,7 @@ Remember per Project:
 
 ---
 
-# 51. Project and Task Switch Animations
+# 51. Project and Chat Switch Animations
 
 Project switch:
 
@@ -1484,22 +1487,22 @@ Project switch:
 - status bar project context fade/change,
 - 140–180 ms.
 
-Task switch:
+Chat switch:
 
 - minimal active-row animation,
 - terminal surface switch,
 - no animation of terminal text,
 - 80–140 ms.
 
-Same Task, local surface change:
+Same chat, local surface change:
 
 - short crossfade.
 
-Project → Task:
+Project → Chat:
 
 - subtle horizontal transition.
 
-Task → Task:
+Chat → Chat:
 
 - almost immediate crossfade.
 
@@ -1509,7 +1512,7 @@ Task → Task:
 
 Rules:
 
-- opening a Task should focus the terminal when appropriate,
+- opening a chat should focus the terminal when appropriate,
 - opening bottom terminal should focus it,
 - hiding bottom terminal should restore previous focus,
 - dialogs trap focus,
@@ -1531,7 +1534,7 @@ Recommended future:
 Ctrl + P         Quick Open
 Ctrl + K         Command Palette
 Ctrl + Shift + K Open Kanban
-Ctrl + Shift + T New Task
+Ctrl + Shift + T New Chat
 Ctrl + Shift + H Create Handoff
 ```
 
@@ -1541,7 +1544,7 @@ Ctrl + Shift + H Create Handoff
 
 Priority:
 
-1. current Task or Project,
+1. current Chat or Project,
 2. current work surface,
 3. relevant context,
 4. project Actions,
@@ -1630,7 +1633,7 @@ Detecting runtime…
 Loading files…
 Refreshing Git status…
 Starting terminal…
-Resuming task…
+Resuming chat…
 ```
 
 Avoid full-screen spinners.
@@ -1676,7 +1679,7 @@ Add a local project to start working.
 [Add Project]
 ```
 
-Task without session:
+Chat without session:
 
 ```text
 Fix Meta Pixel
@@ -1689,7 +1692,7 @@ Codex ▾
 [Start]
 ```
 
-Task with Handoff:
+Chat with Handoff:
 
 ```text
 Fix Meta Pixel
@@ -1878,17 +1881,16 @@ The MVP should support:
 - Switch Project
 - Project tree
 
-## Tasks
+## Chats
 
-- Create Task
-- Rename Task
-- Delete Task
-- Switch Task
-- Keep Task terminal alive during app lifetime
+- Create Chat (immediate, no naming form; the name comes from the shell)
+- Delete Chat (closing the terminal removes the chat)
+- Switch Chat
+- Keep Chat terminal alive during app lifetime
 
 ## Terminal
 
-- primary Task terminal
+- primary chat terminal
 - bottom auxiliary terminal
 - `Ctrl + `` toggle
 - concurrent sessions
@@ -1914,7 +1916,7 @@ The MVP should support:
 
 - Default Console Agent
 - select another configured agent
-- launch agent in Task terminal
+- launch agent in chat terminal
 
 ## Kanban
 
@@ -1931,11 +1933,11 @@ The MVP should support:
 
 At minimum, UX should support:
 
-- one latest Handoff per Task,
+- one latest Handoff per Chat,
 - manual Handoff content,
 - Resume action,
 - agent resolution,
-- reopening/starting Task terminal.
+- reopening/starting the chat terminal.
 
 ---
 
@@ -1968,7 +1970,7 @@ The tab strip and the action bar occupy the top of the center column; the status
 │   Fix Pixel      │                                           │ by default    │
 │   SEO Cleanup    │ MAIN SURFACE                              │               │
 │   Hero Redesign  │                                           │ Browser       │
-│                  │ Task: Fix Pixel                           │ Terminal      │
+│                  │ Chat: Fix Pixel                           │ Terminal      │
 │ ▼ knajpy         │ Agent: Codex ▾                            │ future        │
 │   Authentication │                                           │               │
 │   Reviews        │ PS D:\dev\gerde> codex                    │               │
@@ -2029,7 +2031,7 @@ This is the intended MVP visual preview. The cards, Handoff indicator and button
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The Kanban visual preview fills the main surface; how it is reached and how it integrates with the tab model is decided with the future Kanban task (see `§18`).
+The Kanban visual preview fills the main surface; how it is reached and how it integrates with the tab model is decided with the future Kanban work (see `§18`).
 
 ---
 
@@ -2091,7 +2093,7 @@ Bad:
 When possible:
 
 - Projects remain in stable positions,
-- Tasks remain under Projects,
+- Chats remain under Projects,
 - Files retain expansion state,
 - panel widths remain stable,
 - tabs do not reorder,
@@ -2108,7 +2110,7 @@ Ideal return-to-work flow:
 ```text
 Open app
 ↓
-click Task
+click Chat
 ```
 
 or:
@@ -2128,7 +2130,7 @@ Support:
 ```text
 Global default
 Project default
-Task override
+Chat override
 One-time override
 ```
 
@@ -2153,13 +2155,13 @@ No ACP, structured tool events or direct LLM integration is required for the MVP
 ```text
 LEFT
 Projects
-└── Tasks
+└── Chats
 
 PROJECT CLICK
 → Files / Kanban
 
-TASK CLICK
-→ Task Terminal
+CHAT CLICK
+→ Chat Terminal
 
 KANBAN CARD — MVP
 → visual demonstration only
@@ -2171,7 +2173,7 @@ KANBAN CARD — POST-MVP
 → Resume
 
 HANDOFF outside Kanban
-→ Resume Task automatically where supported by MVP scope
+→ Resume Chat automatically where supported by MVP scope
 
 ACTION BAR (below the tab strip)
 → Handoff | Resume, Stop | Continue + Project Actions
@@ -2191,11 +2193,11 @@ RIGHT
 # 78. Key UX Decisions
 
 1. The application UI is English only.
-2. The left panel defaults to Projects → Tasks.
+2. The left panel defaults to Projects → Chats.
 3. Project navigation can transition into a File Tree view.
 4. These transitions use subtle, satisfying animations.
-5. Task selection opens/restores the Task work surface.
-6. The MVP Task work surface is primarily a terminal.
+5. Chat selection opens/restores the Chat work surface.
+6. The MVP Chat work surface is primarily a terminal.
 7. A configurable Default Console Agent exists.
 8. The user may choose another configured agent.
 9. Project context exposes path, runtime, branch and worktree/Git status.
@@ -2205,9 +2207,9 @@ RIGHT
 13. Files and Kanban are primary Project views.
 14. The MVP Kanban is a visual-only preview using static demonstration cards, not real Tasks.
 15. MVP demonstration cards show the intended future `Implement`, `Resume` and `Open` controls, but those controls do not execute Kanban workflows.
-16. In the functional post-MVP Kanban, cards represent the same Task objects as the Task tree and the previewed controls become functional.
-17. Handoffs belong to Tasks.
-18. `Resume` from Handoff automatically reopens the correct Project, Task, Workspace and agent workflow.
+16. In the functional post-MVP Kanban, cards represent the Task entities pinned to chats and the previewed controls become functional.
+17. Handoffs belong to Chats.
+18. `Resume` from Handoff automatically reopens the correct Project, Chat, Workspace and agent workflow.
 19. Handoff Resume works with console agents and does not require ACP.
 20. Motion improves orientation and satisfaction without becoming distracting.
 
@@ -2239,7 +2241,7 @@ Future UX may expand with:
 All future features should extend the same:
 
 ```text
-Project → Task → Workspace
+Project → Chat → Task (→ Workspace)
 ```
 
 model.
@@ -2253,7 +2255,7 @@ The application is an **agent-first coding workspace**.
 Its defining UX is:
 
 - project-centered,
-- task-centered,
+- chat-centered,
 - terminal-native,
 - Kanban-aware,
 - Handoff-aware,
@@ -2266,7 +2268,7 @@ The long-term functional core loop is:
 ```text
 Choose Project
 ↓
-Choose or create Task
+Choose or create Chat
 ↓
 Implement with default console agent
 ↓
