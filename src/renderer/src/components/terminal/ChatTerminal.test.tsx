@@ -468,6 +468,24 @@ describe('ChatTerminal lifecycle', () => {
     expect(vi.mocked(bundle.app.terminals.write).mock.calls.length).toBe(writesBefore)
   })
 
+  it('focus reports before the first prompt do not block Ctrl+D on an empty line', async () => {
+    const onClose = vi.fn()
+    const { terminal, bundle } = renderTerminal(onClose)
+
+    // PowerShell enables DEC focus reporting at startup. xterm replies with
+    // blur/focus bytes onData before the prompt is parsed; neither is input.
+    act(() => {
+      terminal.emitInput('\x1b[O')
+      terminal.emitInput('\x1b[I')
+    })
+    showPrompt(terminal, bundle)
+
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[O')
+    expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[I')
+  })
+
   it("typed 'abc' erased with Backspace x3 is visibly the prompt again: Ctrl+D closes", async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
