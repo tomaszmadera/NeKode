@@ -60,6 +60,12 @@
       "scopes": ["product"],
       "tags": ["windows", "git", "autocrlf", "checkout", "restore", "eol", "biome"],
       "path": ".agents/lessons/items/git-checkout-reintroduces-crlf.md"
+    },
+    {
+      "id": "windows-python-harness-utf8-output",
+      "scopes": ["product"],
+      "tags": ["windows", "python", "powershell", "task-status", "encoding"],
+      "path": ".agents/lessons/items/windows-python-harness-utf8-output.md"
     }
   ]
 }
