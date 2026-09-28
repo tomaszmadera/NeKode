@@ -2,6 +2,7 @@ import type React from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { BOTTOM_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ResizeHandle } from '../layout/ResizeHandle'
 import type { BottomTab } from './bottom-tabs'
@@ -92,22 +93,23 @@ export function BottomPanel({
                 </button>
                 <button
                   type="button"
-                  className="px-2 text-xs text-ink-muted hover:bg-highlight hover:text-ink"
+                  className="flex items-center px-2 text-ink-muted hover:bg-highlight hover:text-ink"
                   aria-label={`Close ${tab.label}`}
                   data-testid={testIdFor.bottomTabClose(tab.id)}
                   onClick={() => onCloseTab(tab.id)}
                 >
-                  x
+                  <Icon.close size={12} aria-hidden />
                 </button>
               </div>
             )
           })}
           <button
             type="button"
-            className="shrink-0 rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+            className="flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
             data-testid={TEST_ID.bottomNewTerminal}
             onClick={onNewTerminal}
           >
+            <Icon.terminal size={14} aria-hidden />
             New terminal
           </button>
         </div>
@@ -144,7 +146,7 @@ export function BottomPanel({
                   </p>
                   <button
                     type="button"
-                    className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
+                    className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
                     data-testid={TEST_ID.bottomTerminalRetry}
                     onClick={() => onRetry(tab.id)}
                   >
@@ -162,10 +164,11 @@ export function BottomPanel({
           >
             <button
               type="button"
-              className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
+              className="flex h-control items-center gap-1.5 rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
               data-testid={TEST_ID.bottomNewTerminal}
               onClick={onNewTerminal}
             >
+              <Icon.terminal size={14} aria-hidden />
               New terminal
             </button>
           </div>

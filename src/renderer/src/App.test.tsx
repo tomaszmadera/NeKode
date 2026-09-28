@@ -229,12 +229,12 @@ describe('action row and settings', () => {
       'Resume',
       'Stop',
       'Continue',
-      '▶ Build',
+      'Build',
       'Actions',
     ])
     expect(app.actions.execute).not.toHaveBeenCalled()
     const statusReadsAtIdle = vi.mocked(app.actions.status).mock.calls.length
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     await waitFor(() => expect(app.actions.execute).toHaveBeenCalledWith('a1', 'p1', false))
     await waitFor(
       () =>
@@ -254,7 +254,7 @@ describe('action row and settings', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     try {
       await renderSelectedChat()
-      fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Build' }))
       expect(confirm).toHaveBeenCalledWith('Run Build?')
       expect(app.actions.execute).not.toHaveBeenCalled()
       confirm.mockReturnValue(true)
@@ -264,7 +264,7 @@ describe('action row and settings', () => {
         completedAt: '2026-09-27T15:00:00Z',
         error: null,
       })
-      fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Build' }))
       await waitFor(() => expect(app.actions.execute).toHaveBeenCalledWith('a1', 'p1', true))
     } finally {
       confirm.mockRestore()
@@ -297,7 +297,7 @@ describe('action row and settings', () => {
           })
         : Promise.resolve(chatId),
     )
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     await waitFor(() =>
       expect(screen.getByTestId(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe(
         'true',
@@ -344,7 +344,7 @@ describe('action row and settings', () => {
       }
     })
     await renderSelectedChat()
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     expect((await screen.findByTestId(TEST_ID.actionNotice)).textContent).toContain(
       'Session ended.',
     )
@@ -384,7 +384,7 @@ describe('action row and settings', () => {
       .mocked(app.state.set)
       .mock.calls.filter(([key]) => key === APP_STATE_KEY.selectedChatId).length
 
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     await waitFor(() => expect(app.actions.execute).toHaveBeenCalledWith('a1', 'p1', false))
     // The panel opened and exactly one new bottom tab exists, selected in the
     // strip. It is not a chat: chats.create never ran, the selection keeps t1.
@@ -444,7 +444,7 @@ describe('action row and settings', () => {
         throw { nekodeAppError: true, code: 'not_found', message: 'Session ended.' }
       }
     })
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     expect((await screen.findByTestId(TEST_ID.actionNotice)).textContent).toContain(
       'Session ended.',
     )
@@ -464,7 +464,7 @@ describe('action row and settings', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     try {
       await renderSelectedChat()
-      fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Build' }))
       expect(confirm).toHaveBeenCalledWith('Run Build?')
       expect(app.actions.execute).not.toHaveBeenCalled()
       expect(bottomRegion().style.display).toBe('none')
@@ -495,7 +495,7 @@ describe('action row and settings', () => {
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
           (button) => button.textContent,
         ),
-      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', '▶ Lint', '▶ Build', 'Actions']),
+      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Build', 'Actions']),
     )
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
     await waitFor(() =>
@@ -503,7 +503,7 @@ describe('action row and settings', () => {
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
           (button) => button.textContent,
         ),
-      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', '▶ Lint', '▶ Test', 'Actions']),
+      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Test', 'Actions']),
     )
   })
 
@@ -525,7 +525,7 @@ describe('action row and settings', () => {
         expect.objectContaining({ title: 'Build', command: 'pnpm build' }),
       ),
     )
-    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Build' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Build' })).toBeTruthy())
   })
 
   it('offers Bottom terminal in Run In and saves the bottom-terminal mode', async () => {
@@ -573,11 +573,11 @@ describe('action row and settings', () => {
     vi.mocked(app.actions.update).mockResolvedValue({ ...buildAction, title: 'Test' })
     vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, title: 'Test' }])
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Test' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Test' })).toBeTruthy())
     vi.mocked(app.actions.delete).mockResolvedValue(undefined)
     vi.mocked(app.actions.list).mockResolvedValue([])
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '▶ Test' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Test' })).toBeNull())
   })
 
   it('gives the next action a sort order past the current maximum after a delete', async () => {
@@ -588,10 +588,11 @@ describe('action row and settings', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
-    const goneRow = screen.getByText('Gone').closest('li')
+    // 'Gone' also names the action-bar button; the row lives in the dialog.
+    const goneRow = within(screen.getByRole('dialog')).getByText('Gone').closest('li')
     expect(goneRow).toBeTruthy()
     fireEvent.click(within(goneRow as HTMLElement).getByRole('button', { name: 'Delete' }))
-    await waitFor(() => expect(screen.queryByText('Gone')).toBeNull())
+    await waitFor(() => expect(within(screen.getByRole('dialog')).queryByText('Gone')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Next' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm next' } })
@@ -606,13 +607,13 @@ describe('action row and settings', () => {
     vi.mocked(app.actions.list).mockResolvedValueOnce([buildAction]).mockResolvedValue([])
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    await screen.findByRole('button', { name: '▶ Build' })
+    await screen.findByRole('button', { name: 'Build' })
     expect(app.actions.list).toHaveBeenCalledTimes(1)
     fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
     await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
     await waitFor(() => expect(app.actions.list).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '▶ Build' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Build' })).toBeNull())
   })
 
   it('stops polling when action status is not_found and does not report it', async () => {

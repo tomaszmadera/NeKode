@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { isBottomPanelChord } from './bottom-panel-chord'
+import { PromptInput } from './PromptInput'
 
 // One xterm.js view per chat session (UX-UI §17). The view owns the xterm
 // instance and the bridge subscriptions; the PTY itself lives in the main
@@ -82,6 +83,11 @@ export function ChatTerminal({
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  // Latest PTY writer for the prompt input below the terminal (assigned inside
+  // the mount effect; null outside it). A submission is Enter semantics: the
+  // line plus CR goes to the PTY and the Ctrl+D prompt base is re-collected
+  // from the shell's next prompt redraw.
+  const sendRef = useRef<((data: string) => void) | null>(null)
   // Latest callbacks without re-creating the terminal session on re-render.
   const appRef = useRef(app)
   const onExitRef = useRef(onExit)
@@ -198,6 +204,17 @@ export function ChatTerminal({
       baseFrozen = true
       void appRef.current.terminals.write(chatId, data).catch(() => undefined)
     }
+
+    // Prompt-input submission (sendRef): Enter semantics, not generic input.
+    // The submitted bytes never pass through xterm's onData, so the handler
+    // above would never see the reset; thawing here lets the next writeParsed
+    // after the shell redraws its prompt re-collect the base, keeping the
+    // Ctrl+D emptiness gate reading the fresh empty line.
+    function submitPromptLine(line: string): void {
+      baseFrozen = false
+      void appRef.current.terminals.write(chatId, `${line}\r`).catch(() => undefined)
+    }
+    sendRef.current = submitPromptLine
 
     // Only edit a line that still begins with the captured prompt. Follow
     // xterm's wrapped-row chain so long input remains eligible when the cursor
@@ -334,6 +351,7 @@ export function ChatTerminal({
     return () => {
       disposed = true
       terminalRef.current = null
+      sendRef.current = null
       cleanupResize()
       unsubscribeData()
       unsubscribeExit()
@@ -354,11 +372,15 @@ export function ChatTerminal({
 
   return (
     <div
-      ref={containerRef}
       className="h-full w-full bg-terminal outline-none"
       data-testid={`terminal-canvas-${chatId}`}
       tabIndex={-1}
       style={{ display: visible ? 'block' : 'none' }}
-    />
+    >
+      <div className="flex h-full w-full flex-col">
+        <div ref={containerRef} className="min-h-0 flex-1" />
+        <PromptInput onSubmit={(line) => sendRef.current?.(line)} />
+      </div>
+    </div>
   )
 }

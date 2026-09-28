@@ -158,7 +158,7 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
 
     // The Files action enters the mode (Behaviour 1 / AC1).
     await enterFilesMode()
-    expect(getByTestIdString(TEST_ID.filesBackButton).textContent).toContain('← Projects')
+    expect(getByTestIdString(TEST_ID.filesBackButton).textContent).toContain('Projects')
     expect(getByTestIdString(TEST_ID.filesProjectName).textContent).toBe('Demo')
     // The center keeps the tab strip (tab model): no "Files" view label and no
     // preview empty state — clicking a file opens its tab.

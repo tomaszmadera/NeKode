@@ -1,7 +1,8 @@
-import { act, cleanup, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
+import { TEST_ID } from '../../lib/test-ids'
 import { mockFitAddonInstances, resetMockFitAddons } from '../../test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
 import { ChatTerminal } from './ChatTerminal'
@@ -332,7 +333,7 @@ describe('ChatTerminal lifecycle', () => {
 
   it('hides the view without touching the session (display driven by visibility)', async () => {
     const { app } = createAppMock()
-    const { rerender } = render(
+    const { rerender, getByTestId } = render(
       <ChatTerminal
         app={app}
         chatId="t1"
@@ -343,8 +344,10 @@ describe('ChatTerminal lifecycle', () => {
         onSpawnError={() => undefined}
       />,
     )
-    const container = mockTerminalInstances[0].openedElement as HTMLElement
-    expect(container.style.display).toBe('block')
+    // The view element (test id carrier) drives visibility; the xterm host is
+    // its flex child that shares the prompt input row below.
+    const view = getByTestId('terminal-canvas-t1')
+    expect(view.style.display).toBe('block')
 
     rerender(
       <ChatTerminal
@@ -357,11 +360,73 @@ describe('ChatTerminal lifecycle', () => {
         onSpawnError={() => undefined}
       />,
     )
-    expect(container.style.display).toBe('none')
+    expect(view.style.display).toBe('none')
     // Re-render must not re-spawn or re-attach the session.
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
     expect(mockTerminalInstances).toHaveLength(1)
     expect(mockTerminalInstances[0].dispose).not.toHaveBeenCalled()
+  })
+
+  // Styled prompt input under the terminal: Enter submits the line plus CR
+  // through the PTY write path with Enter semantics (the Ctrl+D prompt base
+  // re-collects from the shell's next redraw), an empty line submits nothing,
+  // and the Dictation control is the design-doc 21 idle state (rendered,
+  // disabled) until a recognizer is wired.
+  it('prompt input writes the submitted line plus CR to the PTY and clears itself', async () => {
+    const { app } = createAppMock()
+    const { getByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
+    const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'git status' } })
+    fireEvent.submit(input.closest('form') as HTMLFormElement)
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status\r'))
+    expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
+  })
+
+  it('prompt input submits nothing on an empty line', async () => {
+    const { app } = createAppMock()
+    const { getByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
+    const form = getByTestId(TEST_ID.terminalPromptInput).closest('form') as HTMLFormElement
+    fireEvent.submit(form)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
+    expect(app.terminals.write).not.toHaveBeenCalled()
+  })
+
+  it('prompt input renders the Dictation control disabled (not wired yet)', async () => {
+    const { app } = createAppMock()
+    const { getByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    expect((getByTestId(TEST_ID.terminalPromptDictation) as HTMLButtonElement).disabled).toBe(true)
   })
 
   // Ctrl+D/Ctrl+U shortcuts (spec Behaviour 11 / AC9): the app closes

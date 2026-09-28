@@ -23,7 +23,7 @@ export function StartNewChatSurface({
       </p>
       <button
         type="button"
-        className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
+        className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
         data-testid={TEST_ID.startNewChatButton}
         onClick={onStartNewChat}
       >

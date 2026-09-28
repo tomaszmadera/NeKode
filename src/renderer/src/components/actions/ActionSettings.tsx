@@ -159,7 +159,7 @@ export function ActionSettings({
         </ul>
         <button
           type="button"
-          className="mt-3 rounded-md bg-button px-2 py-1 text-xs text-ink hover:bg-button-hover"
+          className="mt-3 h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
           onClick={() => {
             setEditingId(null)
             setForm(emptyInput(projectId, nextSortOrder(actions)))
@@ -258,13 +258,13 @@ export function ActionSettings({
             <div className="flex gap-2">
               <button
                 type="submit"
-                className="rounded-md bg-button px-2 py-1 text-xs text-ink hover:bg-button-hover"
+                className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
               >
                 Save
               </button>
               <button
                 type="button"
-                className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                className="h-control rounded-md px-4 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
                 onClick={() => {
                   setForm(null)
                   setError(null)
