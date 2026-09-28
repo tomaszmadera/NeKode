@@ -1409,3 +1409,105 @@ describe('chat closing on terminal exit (Stage 4)', () => {
     expect(await screen.findByTestId(TEST_ID.startNewChatState)).toBeTruthy()
   })
 })
+
+describe('stale chat list responses', () => {
+  let app: AppApi
+  let exitListenersByChat: Map<string, Set<(exitCode: number) => void>>
+
+  function emitExit(chatId: string, exitCode: number): void {
+    act(() => {
+      for (const listener of [...(exitListenersByChat.get(chatId) ?? [])]) {
+        listener(exitCode)
+      }
+    })
+  }
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    exitListenersByChat = new Map()
+    resetMockTerminals()
+    resetMockFitAddons()
+    vi.mocked(app.terminals.onExit).mockImplementation(
+      (chatId: string, callback: (exitCode: number) => void) => {
+        const listeners = exitListenersByChat.get(chatId) ?? new Set()
+        listeners.add(callback)
+        exitListenersByChat.set(chatId, listeners)
+        return () => {
+          listeners.delete(callback)
+        }
+      },
+    )
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('a chats:list response older than a concurrent create keeps the created chat and its live session view', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.state.get).mockResolvedValue(null)
+    // The project's chat load hangs on a snapshot taken before the create.
+    let resolveStaleList: (chats: ChatInfo[]) => void = () => undefined
+    vi.mocked(app.chats.list).mockImplementation(
+      () =>
+        new Promise<ChatInfo[]>((resolve) => {
+          resolveStaleList = resolve
+        }),
+    )
+    vi.mocked(app.chats.create).mockResolvedValue(chatTwo)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await waitFor(() => expect(app.chats.list).toHaveBeenCalledTimes(1))
+    // The create lands (optimistic add plus a live session) while the list
+    // request is still in flight.
+    fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', 'D:/code/demo'))
+    const createdTerminal = mockTerminalInstances[mockTerminalInstances.length - 1]
+
+    // The pre-create snapshot resolves now: it must not evict the live view.
+    await act(async () => {
+      resolveStaleList([chatOne])
+    })
+    expect(screen.getByTestId(testIdFor.chatRow('t2'))).toBeTruthy()
+    expect(createdTerminal.dispose).not.toHaveBeenCalled()
+  })
+
+  it('a chats:list response older than a close does not resurrect the closed chat', async () => {
+    let resolveStaleList: (chats: ChatInfo[]) => void = () => undefined
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    vi.mocked(app.chats.list)
+      .mockResolvedValueOnce([chatOne]) // hydration
+      .mockImplementationOnce(
+        () =>
+          new Promise<ChatInfo[]>((resolve) => {
+            resolveStaleList = resolve
+          }),
+      )
+
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+    // A second load starts before the close lands: collapse, then re-expand
+    // the project (the selection, and with it the exit listener, stays on t1).
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
+    await waitFor(() => expect(app.chats.list).toHaveBeenCalledTimes(2))
+
+    emitExit('t1', 0)
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull())
+
+    // The pre-close snapshot resolves now: the closed chat must stay gone.
+    await act(async () => {
+      resolveStaleList([chatOne])
+    })
+    expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull()
+  })
+})
