@@ -50,6 +50,12 @@
       "path": ".agents/lessons/items/windows-biome-package-json-eol.md"
     },
     {
+      "id": "debug-task-timing-element",
+      "scopes": ["product"],
+      "tags": ["task-record", "debug", "timing", "task-status"],
+      "path": ".agents/lessons/items/debug-task-timing-element.md"
+    },
+    {
       "id": "git-checkout-reintroduces-crlf",
       "scopes": ["product"],
       "tags": ["windows", "git", "autocrlf", "checkout", "restore", "eol", "biome"],
