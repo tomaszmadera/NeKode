@@ -66,6 +66,12 @@
       "scopes": ["product"],
       "tags": ["windows", "python", "powershell", "task-status", "encoding"],
       "path": ".agents/lessons/items/windows-python-harness-utf8-output.md"
+    },
+    {
+      "id": "timing-rows-append-chronological",
+      "scopes": ["product"],
+      "tags": ["task-record", "timing", "task-status"],
+      "path": ".agents/lessons/items/timing-rows-append-chronological.md"
     }
   ]
 }

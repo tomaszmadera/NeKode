@@ -7,7 +7,7 @@ complexity: standard
 durability: recorded
 current_phase: Phase 3
 current_step: none
-updated: 2026-09-26
+updated: 2026-09-28
 branch: main
 worktree: current
 next_action: none
@@ -42,6 +42,7 @@ Spec: `docs/features/project-files-view/spec.md`. Plan: `.agents/tasks/project-f
 
 - [x] Phase 3.1 - User-gate: demo AC1-9 w realnym GUI (pnpm dev; AC1-7,9 pass runda 1, AC8 deferred-by-decision 2026-09-26)
 - [x] Phase 3.2 - task-close z final verification `full` (subject 1 + verify-full pass 2026-09-26; AC8 deferred-by-decision)
+- [x] Phase 3.3 - User-gate AC8 re-check w realnym GUI (user-gate:r4; potwierdzone przez użytkownika 2026-09-28; AC1-9 komplet)
 
 ## Decisions
 
@@ -55,6 +56,7 @@ Spec: `docs/features/project-files-view/spec.md`. Plan: `.agents/tasks/project-f
 - Retro 2026-09-26: kandydat na lekcję z handoffa (fixture fake-fs musi jawnie modelować warianty case/ADS, mutant musi zabijać wskazane testy) jest już pokryty przez skill discriminating-tests (procedure 2 + pitfalls) — brak nowego wpisu w .agents/lessons.
 
 - AC8 ostatecznie: deferred-by-decision (użytkownik 2026-09-26, „wyjdzie w praniu") — bez demo w GUI; wpis w BACKLOG.md; zadanie zamykane z AC8 jawnie niespełnionym (precedens: punkty 3/5 mvp-core-shell).
+- AC8 zamknięty (użytkownik 2026-09-28, realne GUI): usunięty/nieczytelny katalog projektu → inline error z nazwaniem problemu w obszarze drzewa plików, reszta aplikacji działa dalej, `← Projects` wychodzi z trybu. Supersedes deferral z 2026-09-26; wpis AC8 usunięty z BACKLOG.md; AC1-9 komplet.
 
 ## Changed files
 
@@ -78,6 +80,7 @@ Spec: `docs/features/project-files-view/spec.md`. Plan: `.agents/tasks/project-f
 | User-gate demo AC1-9 runda 1 (użytkownik, pnpm dev) | pass (AC8 deferred) | AC1-7 i AC9 pass; AC8 (usunięty katalog projektu → inline error) odroczony decyzją użytkownika na ostatnią bramkę przed zamknięciem (user-gate:r3). Świadome odstępstwo: Phase 3.2 (retro/verify-full) przed AC8 — fail AC8 = korekta + nowy verification subject + ponowny verify (CAP 2 rundy) |
 | verify-full (subject 1, attempt 1) | pass | `python .agents/scripts/verify-full` exit 0: configuration valid; lint 0 (77 plików); typecheck node+web 0; vitest 232/232 (19 plików); validate-config ok; `cmd /c pnpm run verify` 0; SKIP: harness tests (template-only). Subject 1 (head 2d7d8f3, paths: .agents/tasks/project-files-view/plan.md, docs/features/project-files-view, src) zamrożony do close; AC8 = osobna bramka user-gate:r3, nie pokryta przez tę weryfikację jako spelnione |
 | User-gate AC8 (user-gate:r3) | deferred-by-decision | Użytkownik 2026-09-26: nie testuje AC8 („wyjdzie w praniu") — AC8 = deferred-by-decision, precedens: punkty 3/5 mvp-core-shell; wpis w BACKLOG.md. AC1-7 oraz AC9 pass (runda 1) |
+| User-gate AC8 re-check (user-gate:r4, realne GUI) | pass | Użytkownik 2026-09-28 potwierdza: katalog projektu usunięty/nieczytelny → inline error z nazwaniem problemu w obszarze drzewa, reszta aplikacji działa, `← Projects` wychodzi z trybu. Deferral zamknięty; AC1-9 komplet |
 
 ### Verification subject 1
 
@@ -120,6 +123,7 @@ Spec: `docs/features/project-files-view/spec.md`. Plan: `.agents/tasks/project-f
 | verify | work | 2026-09-26T17:25:22Z | 2026-09-26T17:26:17Z |
 | user-gate:r3 | wait | 2026-09-26T17:27:44Z | 2026-09-26T17:40:45Z |
 | close | work | 2026-09-26T17:40:45Z | 2026-09-26T17:42:53Z |
+| user-gate:r4 | wait | 2026-09-28T17:23:01Z | 2026-09-28T17:23:17Z |
 
 ## Risks and blockers
 
