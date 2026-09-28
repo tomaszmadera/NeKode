@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import type Database from 'better-sqlite3'
+import { createBottomTabId } from '../../shared/bottom-tab-id'
 import type {
   ActionControl,
   ActionExecution,
@@ -20,7 +21,7 @@ interface ActionRow {
   icon: string | null
   command: string
   cwd: string | null
-  run_mode: 'background' | 'new-terminal'
+  run_mode: 'background' | 'new-terminal' | 'bottom-terminal'
   confirm: number
   sort_order: number
 }
@@ -42,6 +43,13 @@ export interface ActionServiceDeps {
    * The chat view spawns after it subscribes to terminal data.
    */
   createTerminal: (chatId: string, cwd: string) => string
+  /**
+   * Bottom-terminal delivery: one fresh id per execution, `bottom:<projectId>:<token>`
+   * (src/shared/bottom-tab-id.ts). The renderer creates the tab, spawns the
+   * PTY through terminals:create, and writes the command after it is ready.
+   * Injectable for tests; production wiring uses createBottomTabId.
+   */
+  createBottomTabId?: (projectId: string) => string
   isDirectory?: (path: string) => boolean
 }
 
@@ -281,6 +289,30 @@ export class ActionService {
         completedAt: new Date().toISOString(),
         error: null,
         chat,
+        terminalCommand: action.command,
+        terminalCwd: cwd,
+      }
+      this.#status.set(id, success)
+      return success
+    }
+    if (action.runMode === 'bottom-terminal') {
+      // Same project rule as new-terminal (spec Behaviour 16).
+      if (projectId === null) {
+        throw new AppError('validation', 'Select a project to open a terminal.', 'actions:execute')
+      }
+      this.#invalidateRun(id)
+      this.#stopChild(id)
+      // Delivery success with a null exit code: nothing here spawns a PTY or
+      // creates a chat. The renderer opens the panel, adds a new bottom tab
+      // for the fresh id, and writes the command plus CR once that tab's
+      // terminal is subscribed (spec Behaviour 16, 18). The shell command's
+      // later exit is never tracked.
+      const success: ActionExecution = {
+        status: 'success',
+        exitCode: null,
+        completedAt: new Date().toISOString(),
+        error: null,
+        bottomTabId: (this.#deps.createBottomTabId ?? createBottomTabId)(projectId),
         terminalCommand: action.command,
         terminalCwd: cwd,
       }

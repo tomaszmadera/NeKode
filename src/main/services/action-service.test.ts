@@ -25,14 +25,16 @@ function setup() {
   )
   const createChat = vi.fn(() => ({ id: 't2', projectId: 'p1', name: 'PowerShell' }))
   const createTerminal = vi.fn(() => 't2')
+  const createBottomTabId = vi.fn((projectId: string) => `bottom:${projectId}:test-tab`)
   const service = new ActionService({
     db,
     startBackground,
     createChat,
     createTerminal,
+    createBottomTabId,
     isDirectory: () => true,
   })
-  return { db, service, startBackground, createChat, createTerminal }
+  return { db, service, startBackground, createChat, createTerminal, createBottomTabId }
 }
 
 describe('ActionService', () => {
@@ -66,7 +68,7 @@ describe('ActionService', () => {
       first.close()
       const reopened = openDatabase(path)
       try {
-        expect(runMigrations(reopened)).toBe(4)
+        expect(runMigrations(reopened)).toBe(5)
         expect(
           new ActionService({ db: reopened, ...deps }).list().map((action) => action.title),
         ).toEqual(['Build'])
@@ -234,6 +236,109 @@ describe('ActionService', () => {
       })
       finishFirst?.(7)
       expect(service.status(action.id)).toMatchObject({ status: 'success', exitCode: 0 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('executes bottom-terminal by addressing a new bottom tab without a chat or a PTY', () => {
+    const { db, service, createChat, createTerminal, createBottomTabId } = setup()
+    try {
+      const action = service.create({
+        scope: 'project',
+        projectId: 'p1',
+        title: 'Watch',
+        icon: null,
+        command: 'pnpm test',
+        cwd: 'D:/code/demo/app',
+        runMode: 'bottom-terminal',
+        confirm: false,
+        sortOrder: 0,
+      })
+      const result = service.execute(action.id, 'p1', false)
+      // Delivery success with a null exit code: the shell command's later exit
+      // is never tracked (bottom-auxiliary-terminal spec Behaviour 18).
+      expect(result).toEqual({
+        status: 'success',
+        exitCode: null,
+        completedAt: expect.any(String),
+        error: null,
+        bottomTabId: 'bottom:p1:test-tab',
+        terminalCommand: 'pnpm test',
+        terminalCwd: 'D:/code/demo/app',
+      })
+      expect(createBottomTabId).toHaveBeenCalledWith('p1')
+      expect(createChat).not.toHaveBeenCalled()
+      expect(createTerminal).not.toHaveBeenCalled()
+      expect(service.status(action.id)).toMatchObject({ status: 'success', exitCode: null })
+
+      // No configured cwd falls back to the project path.
+      const rooted = service.create({
+        scope: 'project',
+        projectId: 'p1',
+        title: 'Rooted',
+        icon: null,
+        command: 'pnpm lint',
+        cwd: null,
+        runMode: 'bottom-terminal',
+        confirm: false,
+        sortOrder: 1,
+      })
+      expect(service.execute(rooted.id, 'p1', false).terminalCwd).toBe('D:/code/demo')
+      // Every execution gets a fresh id: no reuse of an existing tab.
+      expect(createBottomTabId).toHaveBeenCalledTimes(2)
+      expect(createChat).not.toHaveBeenCalled()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('bottom-terminal needs a project and fails on a missing working directory without a tab', () => {
+    const { db, service, createChat, createTerminal, createBottomTabId } = setup()
+    try {
+      // projectId null: the same validation error as new-terminal, no tab.
+      const global = service.create({
+        scope: 'global',
+        projectId: null,
+        title: 'Global watch',
+        icon: null,
+        command: 'pnpm test',
+        cwd: 'D:/code/anywhere',
+        runMode: 'bottom-terminal',
+        confirm: false,
+        sortOrder: 0,
+      })
+      expect(() => service.execute(global.id, null, false)).toThrow(
+        /Select a project to open a terminal\./,
+      )
+      expect(createChat).not.toHaveBeenCalled()
+      expect(createTerminal).not.toHaveBeenCalled()
+      expect(createBottomTabId).not.toHaveBeenCalled()
+
+      // Missing working directory: failed status, no tab id in the result.
+      const action = service.create({
+        scope: 'project',
+        projectId: 'p1',
+        title: 'Watch',
+        icon: null,
+        command: 'pnpm test',
+        cwd: 'D:/code/missing',
+        runMode: 'bottom-terminal',
+        confirm: false,
+        sortOrder: 1,
+      })
+      const missing = new ActionService({
+        db,
+        startBackground: vi.fn(),
+        createChat,
+        createTerminal: vi.fn(),
+        isDirectory: (path) => path !== 'D:/code/missing',
+      })
+      const result = missing.execute(action.id, 'p1', false)
+      expect(result.status).toBe('failed')
+      expect(result.error).toContain('D:/code/missing')
+      expect(result.bottomTabId).toBeUndefined()
+      expect(createChat).not.toHaveBeenCalled()
     } finally {
       db.close()
     }

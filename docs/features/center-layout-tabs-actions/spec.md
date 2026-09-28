@@ -25,7 +25,7 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 
 ## Non-goals
 
-- Bottom auxiliary terminal and the `bottom-terminal` run mode (separate task, requirement 3); the action form offers only `background` and `new-terminal`.
+- Bottom auxiliary terminal and the `bottom-terminal` run mode (separate task, requirement 3); the action form offers only `background` and `new-terminal` in this feature. Once the bottom auxiliary terminal panel ships, the mode is offered and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
 - The rich Handoff feature from `docs/UX-UI.md` §33–§41 (handoff form, structured handoff records, automatic resume flow, agent resolution). The `Handoff` / `Resume` buttons here are terminal-input shortcuts only.
 - Repository-based action configuration (`.agentcode/actions.yaml`, SDD §26) — post-MVP.
 - File editing, dirty state, or tab drag-and-drop reordering.
@@ -61,7 +61,7 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 - All terminal input from buttons goes through the existing typed IPC (`terminals:write`) — the renderer never touches the OS (SDD §6). Exact bytes: CR is 0x0D; `Stop` is 0x03.
 - Action execution is explicit user-triggered trusted local automation (SDD §52): no auto-run on open, no scheduled runs, no repository-supplied configuration in this version.
 - Actions persist in the SQLite `actions` table (SDD §35 shape: id, project_id nullable for global scope, scope, title, icon, command, cwd, run_mode, confirm, sort_order) added via the existing migration mechanism.
-- `run_mode` accepts `background` and `new-terminal` only in this version; `bottom-terminal` is reserved until the bottom panel exists.
+- `run_mode` accepted `background` and `new-terminal` in this version; with the bottom auxiliary terminal panel shipped, `bottom-terminal` is accepted as well and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
 - The fixed button prompt strings (`Napisz handoff`, `Wznów z handoffu`, `Continue`) and `Stop` semantics (0x03) are contractual literals, independent of UI language (UI stays English per requirements §2.7).
 - Action command output is never rendered as markup; background failures report actionable state (command + exit code) per SDD §50.
 
@@ -78,7 +78,7 @@ Typed IPC channels follow the existing `IPC_CHANNEL` / `AppApi` pattern (`src/sh
 - `actions:execute(id) -> void` — runs per the action's run mode; execution state (running / success / failed / exitCode) is exposed to the renderer via a typed state event or query.
 - Existing `terminals:write` carries the fixed-button input (text + CR, or 0x03).
 
-`ActionControl` follows SDD §22: `{ id, scope: 'global' | 'project', projectId?, title, icon?, command, cwd?, runMode: 'background' | 'new-terminal', confirm?, sortOrder }`. Inputs are validated with the existing IPC validation pattern; invalid input returns a typed `ipc-error`, never raw stack traces. No new OS-facing channels beyond the existing terminal and file channels.
+`ActionControl` follows SDD §22: `{ id, scope: 'global' | 'project', projectId?, title, icon?, command, cwd?, runMode: 'background' | 'new-terminal' | 'bottom-terminal', confirm?, sortOrder }`. Inputs are validated with the existing IPC validation pattern; invalid input returns a typed `ipc-error`, never raw stack traces. No new OS-facing channels beyond the existing terminal and file channels.
 
 ## Edge cases
 

@@ -120,6 +120,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [liveChatIds, setLiveChatIds] = useState<ReadonlySet<string>>(new Set())
   const [terminalCwds, setTerminalCwds] = useState<Record<string, string>>({})
   const pendingTerminalCommandsRef = useRef<Record<string, string>>({})
+  // Bottom-terminal action commands waiting for their new tab's terminal to
+  // become ready. Keyed by bottom tab id; consumed exactly once (AC10).
+  const pendingBottomCommandsRef = useRef<Record<string, string>>({})
   const [leftWidth, setLeftWidth] = useState(LEFT_REGION_SIZE.default)
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
   const [bottomOpen, setBottomOpen] = useState(false)
@@ -197,6 +200,20 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       if (command === undefined) return
       delete pendingTerminalCommandsRef.current[chatId]
       void app.terminals.write(chatId, `${command}\r`).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to write the action command.'))
+      })
+    },
+    [app],
+  )
+
+  // Ready callback for bottom-tab terminals: identical delivery contract —
+  // the command plus one CR (0x0D), written once, after subscription.
+  const handleBottomSessionReady = useCallback(
+    (tabId: string): void => {
+      const command = pendingBottomCommandsRef.current[tabId]
+      if (command === undefined) return
+      delete pendingBottomCommandsRef.current[tabId]
+      void app.terminals.write(tabId, `${command}\r`).catch((error: unknown) => {
         setNotice(errorMessage(error, 'Failed to write the action command.'))
       })
     },
@@ -801,7 +818,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   }, [handleCreateChat, tabProjectId])
 
   const createBottomTab = useCallback(
-    async (projectId: string): Promise<void> => {
+    async (projectId: string, options?: { tabId?: string; cwd?: string }): Promise<void> => {
       if (removedProjectIdsRef.current.has(projectId)) {
         return
       }
@@ -828,10 +845,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         return
       }
       const tab: BottomTab = {
-        id: createBottomTabId(projectId),
+        id: options?.tabId ?? createBottomTabId(projectId),
         projectId,
         label,
-        cwd: project.path,
+        cwd: options?.cwd ?? project.path,
         generation: 0,
         status: 'running',
         errorMessage: null,
@@ -1013,6 +1030,31 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     updateTabsSession(chat.projectId, (session) => activateTab(session, TERMINAL_TAB))
   }
 
+  // Bottom-terminal delivery (bottom-auxiliary-terminal spec Behaviour 16–18):
+  // the execution addresses a brand-new bottom tab id. The panel opens if
+  // hidden (plain open: no chord auto-tab, so exactly one new tab lands per
+  // execution), the tab is added to the tab-strip project (never a chat,
+  // never a selection change), and the command plus CR (0x0D) is written once
+  // that tab's terminal view is subscribed and ready
+  // (handleBottomSessionReady).
+  const handleBottomTerminalAction = useCallback(
+    (execution: ActionExecution, projectId: string): void => {
+      const tabId = execution.bottomTabId
+      const command = execution.terminalCommand
+      const cwd = execution.terminalCwd
+      if (tabId === undefined || command === undefined || cwd === undefined) return
+      pendingBottomCommandsRef.current[tabId] = command
+      if (!bottomOpenRef.current) {
+        bottomOpenTouchedRef.current = true
+        bottomOpenRef.current = true
+        setBottomOpen(true)
+        persistBottomOpen(true)
+      }
+      void createBottomTab(projectId, { tabId, cwd })
+    },
+    [createBottomTab, persistBottomOpen],
+  )
+
   return (
     <div
       className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100 antialiased"
@@ -1073,6 +1115,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             activeChatId={activeChat?.id ?? null}
             chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
             onNewTerminal={handleNewTerminalAction}
+            onBottomTerminal={handleBottomTerminalAction}
             onError={setNotice}
             onSettings={() => {
               setActionSettingsProjectId(tabProjectId)
@@ -1170,6 +1213,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }}
         onCloseTab={handleCloseBottomTab}
         onExit={handleBottomExit}
+        onSessionReady={handleBottomSessionReady}
         onSpawnError={(tabId, message) => {
           setBottomTabs((previous) => markBottomTabError(previous, tabId, message))
         }}

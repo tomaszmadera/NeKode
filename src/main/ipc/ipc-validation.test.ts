@@ -76,8 +76,14 @@ describe('ipc payload validation', () => {
     expect(() => channels.get('actions:create')?.parse([{ ...input, title: '' }])).toThrow(
       ValidationError,
     )
+    // The bottom-terminal mode is a valid ActionInput (bottom-auxiliary-terminal
+    // spec, Data/API): validation accepts it…
+    const bottomInput = { ...input, runMode: 'bottom-terminal' }
+    expect(channels.get('actions:create')?.parse([bottomInput])).toEqual([bottomInput])
+    expect(channels.get('actions:update')?.parse(['a1', bottomInput])).toEqual(['a1', bottomInput])
+    // …and still rejects an unknown mode.
     expect(() =>
-      channels.get('actions:create')?.parse([{ ...input, runMode: 'bottom-terminal' }]),
+      channels.get('actions:create')?.parse([{ ...input, runMode: 'detached' }]),
     ).toThrow(ValidationError)
     expect(() => channels.get('actions:create')?.parse([{ ...input, cwd: '../outside' }])).toThrow(
       ValidationError,

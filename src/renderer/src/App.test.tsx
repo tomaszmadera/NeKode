@@ -72,6 +72,17 @@ function getByTestIdString(testId: string): HTMLElement {
   return element
 }
 
+function bottomCreateIds(app: AppApi): string[] {
+  return vi
+    .mocked(app.terminals.create)
+    .mock.calls.map(([id]) => id)
+    .filter((id) => id.startsWith('bottom:'))
+}
+
+function bottomRegion(): HTMLElement {
+  return getByTestIdString(TEST_ID.bottomRegion)
+}
+
 function firePointer(
   element: Element,
   type: 'pointerdown' | 'pointermove' | 'pointerup',
@@ -342,6 +353,128 @@ describe('action row and settings', () => {
     expect(vi.mocked(app.terminals.write).mock.calls).toContainEqual(['t2', 'pnpm dev\r'])
   })
 
+  it('delivers a bottom-terminal command into a new bottom tab after it is ready, without changing the selected chat', async () => {
+    const action = {
+      ...buildAction,
+      runMode: 'bottom-terminal' as const,
+      command: 'pnpm test',
+      cwd: 'D:/code/demo/app',
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([action])
+    vi.mocked(app.actions.execute).mockResolvedValue({
+      status: 'success',
+      exitCode: null,
+      completedAt: '2026-09-27T15:00:00Z',
+      error: null,
+      bottomTabId: 'bottom:p1:tab-1',
+      terminalCommand: 'pnpm test',
+      terminalCwd: 'D:/code/demo/app',
+    })
+    await renderSelectedChat()
+    // Hold the new tab's terminal spawn until we know the write waits for it.
+    let finishSpawn: ((id: string) => void) | undefined
+    vi.mocked(app.terminals.create).mockImplementation((id) =>
+      id.startsWith('bottom:')
+        ? new Promise<string>((resolve) => {
+            finishSpawn = resolve
+          })
+        : Promise.resolve(id),
+    )
+    const selectedChatBefore = vi
+      .mocked(app.state.set)
+      .mock.calls.filter(([key]) => key === APP_STATE_KEY.selectedChatId).length
+
+    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    await waitFor(() => expect(app.actions.execute).toHaveBeenCalledWith('a1', 'p1', false))
+    // The panel opened and exactly one new bottom tab exists, selected in the
+    // strip. It is not a chat: chats.create never ran, the selection keeps t1.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId(testIdFor.bottomTab('bottom:p1:tab-1')).getAttribute('data-selected'),
+      ).toBe('true'),
+    )
+    expect(bottomRegion().style.display).not.toBe('none')
+    expect(app.chats.create).not.toHaveBeenCalled()
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+    const selectedChatAfter = vi
+      .mocked(app.state.set)
+      .mock.calls.filter(([key]) => key === APP_STATE_KEY.selectedChatId).length
+    expect(selectedChatAfter).toBe(selectedChatBefore)
+    expect(app.terminals.create).toHaveBeenCalledWith('bottom:p1:tab-1', 'D:/code/demo/app')
+
+    // Before the terminal view is subscribed and ready, nothing is written.
+    expect(vi.mocked(app.terminals.write).mock.calls).toHaveLength(0)
+    await act(async () => {
+      finishSpawn?.('bottom:p1:tab-1')
+    })
+    // Exact bytes: command plus CR 0x0D, exactly once.
+    await waitFor(() =>
+      expect(app.terminals.write).toHaveBeenCalledWith('bottom:p1:tab-1', 'pnpm test\r'),
+    )
+    expect(vi.mocked(app.terminals.write).mock.calls).toEqual([['bottom:p1:tab-1', 'pnpm test\r']])
+    const subscribedAt = vi.mocked(app.terminals.onData).mock.invocationCallOrder[
+      vi.mocked(app.terminals.onData).mock.calls.findIndex(([id]) => id === 'bottom:p1:tab-1')
+    ]
+    const wroteAt = vi.mocked(app.terminals.write).mock.invocationCallOrder[
+      vi.mocked(app.terminals.write).mock.calls.findIndex(([id]) => id === 'bottom:p1:tab-1')
+    ]
+    expect(subscribedAt).toBeLessThan(wroteAt)
+  })
+
+  it('shows a notice when the bottom-terminal command cannot be written and keeps the tab', async () => {
+    const action = {
+      ...buildAction,
+      runMode: 'bottom-terminal' as const,
+      command: 'pnpm test',
+      cwd: 'D:/code/demo/app',
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([action])
+    vi.mocked(app.actions.execute).mockResolvedValue({
+      status: 'success',
+      exitCode: null,
+      completedAt: '2026-09-27T15:00:00Z',
+      error: null,
+      bottomTabId: 'bottom:p1:tab-1',
+      terminalCommand: 'pnpm test',
+      terminalCwd: 'D:/code/demo/app',
+    })
+    await renderSelectedChat()
+    vi.mocked(app.terminals.write).mockImplementation(async (id) => {
+      if (id.startsWith('bottom:')) {
+        throw { nekodeAppError: true, code: 'not_found', message: 'Session ended.' }
+      }
+    })
+    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    expect((await screen.findByTestId(TEST_ID.actionNotice)).textContent).toContain(
+      'Session ended.',
+    )
+    // The failed write leaves the new tab in place (spec Errors).
+    expect(screen.getByTestId(testIdFor.bottomTab('bottom:p1:tab-1'))).toBeTruthy()
+    expect(app.chats.remove).not.toHaveBeenCalled()
+  })
+
+  it('bottom-terminal confirmation cancel creates no tab and does not open the panel', async () => {
+    const action = {
+      ...buildAction,
+      runMode: 'bottom-terminal' as const,
+      confirm: true,
+      command: 'pnpm test',
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([action])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      await renderSelectedChat()
+      fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+      expect(confirm).toHaveBeenCalledWith('Run Build?')
+      expect(app.actions.execute).not.toHaveBeenCalled()
+      expect(bottomRegion().style.display).toBe('none')
+      expect(app.terminals.shellName).not.toHaveBeenCalled()
+      expect(bottomCreateIds(app)).toEqual([])
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
   it('keeps global actions and swaps project actions with the active project', async () => {
     const lint = {
       ...buildAction,
@@ -393,6 +526,40 @@ describe('action row and settings', () => {
       ),
     )
     await waitFor(() => expect(screen.getByRole('button', { name: '▶ Build' })).toBeTruthy())
+  })
+
+  it('offers Bottom terminal in Run In and saves the bottom-terminal mode', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    const runIn = screen.getByLabelText('Run In') as HTMLSelectElement
+    expect([...runIn.options].map((option) => option.value)).toEqual([
+      'background',
+      'new-terminal',
+      'bottom-terminal',
+    ])
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Tests' } })
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm test' } })
+    fireEvent.change(runIn, { target: { value: 'bottom-terminal' } })
+    vi.mocked(app.actions.create).mockResolvedValue({
+      ...buildAction,
+      title: 'Tests',
+      command: 'pnpm test',
+      runMode: 'bottom-terminal',
+    })
+    vi.mocked(app.actions.list).mockResolvedValue([
+      { ...buildAction, title: 'Tests', command: 'pnpm test', runMode: 'bottom-terminal' },
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.actions.create).toHaveBeenCalledWith(
+        expect.objectContaining({ runMode: 'bottom-terminal' }),
+      ),
+    )
+    // The saved action's settings row shows the new mode label.
+    expect(await screen.findByText('Bottom terminal · project')).toBeTruthy()
   })
 
   it('edits and deletes actions from Project Settings with immediate row updates', async () => {

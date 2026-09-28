@@ -41,7 +41,7 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
 5. **Pasek akcji projektu (Action Bar):**
    - Pasek akcji w kolumnie środkowej, bezpośrednio pod paskiem zakładek (decyzja użytkownika 2026-09-26): stałe grupy `Handoff | Resume` i `Stop | Continue`, a następnie konfigurowalne przyciski do uruchamiania zdefiniowanych poleceń projektu (np. dev server, testy, build, weryfikacja).
    - Stałe przyciski wysyłają do terminala aktywnego czatu dokładne dane wejściowe (tekst + CR; `Stop` = Ctrl+C) przez istniejące IPC `terminals:write`.
-   - Wykonywanie poleceń w trybie `background` albo `new-terminal` (nowy czat z poleceniem); tryb `bottom-terminal` zarezerwowany do czasu dolnego panelu terminali (wymaganie 3).
+   - Wykonywanie poleceń w trybie `background` albo `new-terminal` (nowy czat z poleceniem); tryb `bottom-terminal` (nowa zakładka dolnego panelu z poleceniem) realizuje kontrakt `docs/features/bottom-auxiliary-terminal/spec.md` po dostarczeniu dolnego panelu terminali (wymaganie 3).
 
 6. **Persystencja danych:**
    - Zapisywanie konfiguracji projektów, czatów, historii i stanu layoutu w lokalnej bazie SQLite (`better-sqlite3`).

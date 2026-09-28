@@ -108,7 +108,11 @@ function assertActionInput(value: unknown, label: string): asserts value is Acti
   if (typeof input.command !== 'string' || !input.command.trim())
     fail(`${label}.command`, 'must be non-empty')
   if (input.cwd !== null) assertSafePath(input.cwd, `${label}.cwd`)
-  if (input.runMode !== 'background' && input.runMode !== 'new-terminal')
+  if (
+    input.runMode !== 'background' &&
+    input.runMode !== 'new-terminal' &&
+    input.runMode !== 'bottom-terminal'
+  )
     fail(`${label}.runMode`, 'is invalid')
   if (typeof input.confirm !== 'boolean') fail(`${label}.confirm`, 'must be a boolean')
   if (typeof input.sortOrder !== 'number' || !Number.isSafeInteger(input.sortOrder))

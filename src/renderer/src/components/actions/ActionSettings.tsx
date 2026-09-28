@@ -125,7 +125,12 @@ export function ActionSettings({
                   {action.command}
                 </div>
                 <div className="text-neutral-500">
-                  {action.runMode === 'background' ? 'Background' : 'New terminal'} · {action.scope}
+                  {action.runMode === 'background'
+                    ? 'Background'
+                    : action.runMode === 'bottom-terminal'
+                      ? 'Bottom terminal'
+                      : 'New terminal'}{' '}
+                  · {action.scope}
                 </div>
               </div>
               <button type="button" onClick={() => edit(action)}>
@@ -224,6 +229,7 @@ export function ActionSettings({
               >
                 <option value="background">Background</option>
                 <option value="new-terminal">New terminal</option>
+                <option value="bottom-terminal">Bottom terminal</option>
               </select>
             </label>
             <label className="flex items-center gap-2">

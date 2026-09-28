@@ -41,8 +41,8 @@ describe('runMigrations', () => {
   it('creates the schema once and is idempotent', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(4)
-      expect(runMigrations(db)).toBe(4)
+      expect(runMigrations(db)).toBe(5)
+      expect(runMigrations(db)).toBe(5)
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as Array<{ name: string }>
@@ -130,7 +130,7 @@ describe('migration 2 (tasks -> chats)', () => {
   it('carries rows over to chats without status and drops the tasks table', () => {
     const db = createLegacyDb()
     try {
-      expect(runMigrations(db)).toBe(4)
+      expect(runMigrations(db)).toBe(5)
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -209,7 +209,139 @@ describe('migration 2 (tasks -> chats)', () => {
       const applied = db
         .prepare('SELECT version FROM schema_migrations ORDER BY version')
         .all() as Array<{ version: number }>
-      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4])
+      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5])
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('migration 5 (run_mode gains bottom-terminal)', () => {
+  /**
+   * Builds a database exactly as migration 4 left it: the `actions` table
+   * whose CHECK still allows only 'background' and 'new-terminal'.
+   */
+  function createLegacyDbAtV4(): Database.Database {
+    const db = openDatabase(':memory:')
+    db.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      INSERT INTO schema_migrations (version, applied_at) VALUES (1, '2026-01-01T00:00:00Z');
+      INSERT INTO schema_migrations (version, applied_at) VALUES (2, '2026-01-01T00:00:00Z');
+      INSERT INTO schema_migrations (version, applied_at) VALUES (3, '2026-01-01T00:00:00Z');
+      INSERT INTO schema_migrations (version, applied_at) VALUES (4, '2026-01-01T00:00:00Z');
+    `)
+    MIGRATIONS[0].up(db)
+    MIGRATIONS[1].up(db)
+    MIGRATIONS[2].up(db)
+    MIGRATIONS[3].up(db)
+    db.prepare(
+      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+    db.exec(`
+      INSERT INTO actions (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order) VALUES
+        ('a-bg', 'p1', 'project', 'Background', NULL, 'pnpm build', NULL, 'background', 0, 0),
+        ('a-nt', 'p1', 'project', 'New terminal', NULL, 'pnpm dev', NULL, 'new-terminal', 0, 1);
+    `)
+    return db
+  }
+
+  it('a v4 database really rejects bottom-terminal before the migration', () => {
+    const db = createLegacyDbAtV4()
+    try {
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO actions
+             (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order)
+             VALUES ('a-bt', 'p1', 'project', 'Bottom', NULL, 'pnpm test', NULL, 'bottom-terminal', 0, 2)`,
+          )
+          .run(),
+      ).toThrow(/CHECK|run_mode/i)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('accepts bottom-terminal on an empty database and keeps the schema', () => {
+    const db = openDatabase(':memory:')
+    try {
+      expect(runMigrations(db)).toBe(5)
+      db.prepare(
+        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO actions
+             (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order)
+             VALUES ('a-bt', 'p1', 'project', 'Bottom', NULL, 'pnpm test', NULL, 'bottom-terminal', 0, 0)`,
+          )
+          .run(),
+      ).not.toThrow()
+      // Idempotent: a second run re-applies nothing.
+      expect(runMigrations(db)).toBe(5)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('lets populated databases accept bottom-terminal and keeps old rows byte-for-byte', () => {
+    const db = createLegacyDbAtV4()
+    try {
+      expect(runMigrations(db)).toBe(5)
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO actions
+             (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order)
+             VALUES ('a-bt', 'p1', 'project', 'Bottom', NULL, 'pnpm test', NULL, 'bottom-terminal', 0, 2)`,
+          )
+          .run(),
+      ).not.toThrow()
+      // Old run_mode values are rewritten by nothing (spec Business rules).
+      const rows = db
+        .prepare(
+          'SELECT id, project_id, scope, title, command, cwd, run_mode, confirm, sort_order FROM actions ORDER BY sort_order',
+        )
+        .all() as Array<Record<string, unknown>>
+      expect(rows).toEqual([
+        {
+          id: 'a-bg',
+          project_id: 'p1',
+          scope: 'project',
+          title: 'Background',
+          command: 'pnpm build',
+          cwd: null,
+          run_mode: 'background',
+          confirm: 0,
+          sort_order: 0,
+        },
+        {
+          id: 'a-nt',
+          project_id: 'p1',
+          scope: 'project',
+          title: 'New terminal',
+          command: 'pnpm dev',
+          cwd: null,
+          run_mode: 'new-terminal',
+          confirm: 0,
+          sort_order: 1,
+        },
+        {
+          id: 'a-bt',
+          project_id: 'p1',
+          scope: 'project',
+          title: 'Bottom',
+          command: 'pnpm test',
+          cwd: null,
+          run_mode: 'bottom-terminal',
+          confirm: 0,
+          sort_order: 2,
+        },
+      ])
+      // The rebuilt table keeps the cascade.
+      db.prepare('DELETE FROM projects WHERE id = ?').run('p1')
+      expect((db.prepare('SELECT COUNT(*) AS c FROM actions').get() as { c: number }).c).toBe(0)
     } finally {
       db.close()
     }
@@ -265,7 +397,7 @@ describe('migration 3 (chat name unique index dropped)', () => {
   it('drops the unique index: duplicate chat names within a project are allowed', () => {
     const db = createLegacyDbAtV2()
     try {
-      expect(runMigrations(db)).toBe(4)
+      expect(runMigrations(db)).toBe(5)
       expect(() =>
         db
           .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
