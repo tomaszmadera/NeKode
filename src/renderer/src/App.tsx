@@ -102,6 +102,29 @@ function chatExistsIn(chatsByProject: Record<string, ChatInfo[]>, chatId: string
   return Object.values(chatsByProject).some((chats) => chats.some((chat) => chat.id === chatId))
 }
 
+// A chats:list response is a snapshot that can predate mutations the renderer
+// already applied: a concurrent create lands after the snapshot was taken, a
+// close lands before a response that still carries the chat. Replacing the
+// known list with such a snapshot transiently drops a chat whose session view
+// is alive (the ChatWorkspace eviction effect then disposes its xterm and
+// scrollback) or resurrects a closed chat. Merge instead: fetched entries
+// update their id in place, known entries the snapshot predates are kept, and
+// tombstoned ids (closed by this renderer in this session) never come back.
+function mergeFetchedChats(
+  known: ChatInfo[],
+  fetched: ChatInfo[],
+  removedChatIds: ReadonlySet<string>,
+): ChatInfo[] {
+  const byId = new Map(known.map((chat) => [chat.id, chat] as const))
+  for (const chat of fetched) {
+    byId.set(chat.id, chat)
+  }
+  for (const chatId of removedChatIds) {
+    byId.delete(chatId)
+  }
+  return [...byId.values()]
+}
+
 export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [chatsByProject, setChatsByProject] = useState<Record<string, ChatInfo[]>>({})
@@ -141,6 +164,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [tabsByProject, setTabsByProject] = useState<Record<string, ProjectTabsSession>>({})
   // Projects removed in this session: pending chat loads for them are stale.
   const removedProjectIdsRef = useRef<Set<string>>(new Set())
+  // Chats closed by explicit close flows in this session: fetched lists can
+  // predate the close, and mergeFetchedChats must not resurrect them. Chat
+  // ids are unique per database row, so they never legitimately return.
+  const removedChatIdsRef = useRef<Set<string>>(new Set())
   // Overlapping removals of one id. One success keeps the tombstone; it is
   // cleared only when every in-flight attempt has failed.
   const projectRemovalsRef = useRef(new Map<string, { pending: number; succeeded: boolean }>())
@@ -275,12 +302,24 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         if (cancelled || removedProjectIdsRef.current.has(projectId)) {
           return
         }
-        applyChatsUpdate((previous) => ({ ...previous, [projectId]: chats }))
+        applyChatsUpdate((previous) => ({
+          ...previous,
+          [projectId]: mergeFetchedChats(
+            previous[projectId] ?? [],
+            chats,
+            removedChatIdsRef.current,
+          ),
+        }))
         setLoadedChatProjectIds((previous) => new Set(previous).add(projectId))
         setExpandedProjectIds((previous) => new Set(previous).add(projectId))
         setSelectedProjectId(projectId)
+        // applyChatsUpdate applies synchronously, so the mirror already holds
+        // the merged list here.
+        const mergedChats = chatsByProjectRef.current[projectId] ?? []
         setSelectedChatId(
-          savedChat !== null && chats.some((chat) => chat.id === savedChat) ? savedChat : null,
+          savedChat !== null && mergedChats.some((chat) => chat.id === savedChat)
+            ? savedChat
+            : null,
         )
       } catch (error) {
         if (!cancelled) {
@@ -349,7 +388,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       if (removedProjectIdsRef.current.has(projectId)) {
         return
       }
-      applyChatsUpdate((previous) => ({ ...previous, [projectId]: chats }))
+      applyChatsUpdate((previous) => ({
+        ...previous,
+        [projectId]: mergeFetchedChats(previous[projectId] ?? [], chats, removedChatIdsRef.current),
+      }))
       setLoadedChatProjectIds((previous) => new Set(previous).add(projectId))
     },
     [app, applyChatsUpdate],
@@ -768,6 +810,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           setNotice(errorMessage(error, 'Failed to close the chat.'))
           return
         }
+        // Tombstone before the map removal: fetched lists still in flight can
+        // predate this close, and mergeFetchedChats must not resurrect it.
+        removedChatIdsRef.current.add(chatId)
         let successorChatId: string | null = null
         for (const [projectId, chats] of Object.entries(chatsByProjectRef.current)) {
           const index = chats.findIndex((chat) => chat.id === chatId)
