@@ -10,7 +10,7 @@ Give the developer a full-width auxiliary terminal panel above the status bar, w
 
 ## Related requirements
 
-- `docs/product/requirements.md` §2 item 3 (auxiliary bottom terminal panel, including several terminals or tabs) and item 5 (`bottom-terminal` reserved until this panel exists).
+- `docs/product/requirements.md` §2 item 3 (auxiliary bottom terminal panel, including several terminals or tabs) and item 5 (the `bottom-terminal` run mode follows this spec's contract; the panel it requires is delivered here).
 - `docs/architecture/SDD.md` §19 (toggle, keep the session while hidden, remember height, vertical resize), §23.2 (bottom-terminal execution), §33 (`bottomPanel.open` and `bottomPanel.height`), §61 (hide does not kill the process).
 - `docs/UX-UI.md` §5 (bottom region spans the window, above the status bar), §6 (hidden by default; restore open state and height), §52 (focus on open, restore focus on hide), §53 (`Ctrl + ``).
 - User decision 2026-09-27: the panel has multiple terminal tabs. Panel mechanics stay as in SDD §19 and UX-UI. Tab rules are this spec.

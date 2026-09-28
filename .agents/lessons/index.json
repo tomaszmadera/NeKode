@@ -48,6 +48,12 @@
       "scopes": ["product"],
       "tags": ["windows", "git", "autocrlf", "biome", "lint", "package.json"],
       "path": ".agents/lessons/items/windows-biome-package-json-eol.md"
+    },
+    {
+      "id": "git-checkout-reintroduces-crlf",
+      "scopes": ["product"],
+      "tags": ["windows", "git", "autocrlf", "checkout", "restore", "eol", "biome"],
+      "path": ".agents/lessons/items/git-checkout-reintroduces-crlf.md"
     }
   ]
 }
