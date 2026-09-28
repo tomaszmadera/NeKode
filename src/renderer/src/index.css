@@ -107,3 +107,21 @@ body {
 .xterm .xterm-viewport.xterm-viewport {
   overflow-y: auto;
 }
+
+/* Custom title bar (design doc 26.2): the top strips of the app are the
+   window drag surface (titleBarStyle: 'hidden' + titleBarOverlay in the main
+   process); interactive children opt out so clicks land on the control. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Click affordance (user request 2026-09-29): the hand cursor on every
+   enabled button. Disabled buttons keep their own cursor (the
+   cursor-not-allowed utilities) because they never match :not(:disabled). */
+button:not(:disabled) {
+  cursor: pointer;
+}

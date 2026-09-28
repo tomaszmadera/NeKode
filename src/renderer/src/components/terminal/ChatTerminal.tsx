@@ -378,7 +378,10 @@ export function ChatTerminal({
       style={{ display: visible ? 'block' : 'none' }}
     >
       <div className="flex h-full w-full flex-col">
-        <div ref={containerRef} className="min-h-0 flex-1" />
+        {/* Padding around the xterm host (both chat and bottom terminals);
+            FitAddon fits into the content box, so the inset is terminal
+            breathing room, never clipped output. */}
+        <div ref={containerRef} className="min-h-0 flex-1 px-3 py-2" />
         <PromptInput onSubmit={(line) => sendRef.current?.(line)} />
       </div>
     </div>

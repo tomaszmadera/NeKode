@@ -163,8 +163,16 @@ Use borders mainly for structure, not decoration.
 
 ```css
 --color-edge: rgb(33 37 49);    /* inactive tab border, hairline separators */
---color-divider: rgb(17 20 35); /* bar that separates segments of a double button */
+--color-divider: rgb(56 70 96); /* inset separator between connected buttons */
 ```
+
+The double-button divider is the toolbar-standard single hairline
+(2026-09-29, replacing an earlier two-tone groove the user found too
+intense): 1px wide, vertically centered, and shorter than the buttons
+(`16px` in the `32px` control height), in `--color-divider`. The segment
+group carries the button surface (`--color-button`) behind the whole
+divider column, so no dark gap shows above and below the hairline and the
+group reads as one component.
 
 Recommended border width:
 
@@ -268,6 +276,11 @@ Control height: filled buttons and input frames share one height token,
 `--spacing-control` (2rem = 32px), matched to the visible tab height (the tab
 strip is `36px` minus its `4px` top padding). Ghost inline controls (row
 actions, tab close, tree chevrons) keep row scale.
+
+Implemented (2026-09-28): the action row pads its controls (`8px` above,
+below and at the sides, one grid step on each axis) instead of stretching
+them flush to the row borders, so filled buttons keep the `32px` control
+height with visible breathing room.
 
 ---
 
@@ -413,9 +426,12 @@ Requirements:
 
 - borderless: each segment uses the button treatment (`--color-button`, no border),
 - shared outer radius, segments clipped as one component,
-- internal divider bar in `--color-divider`,
+- internal divider per section 5: a single 1px `--color-divider` hairline, vertically centered and shorter than the segments,
 - same height,
 - active segment may use the info blue as text or a thin indicator, never a large fill.
+
+Implemented (2026-09-28) for the fixed `Handoff | Resume` and `Stop |
+Continue` segments; configured actions stay separate filled buttons.
 
 ---
 
@@ -493,6 +509,19 @@ Selected chat:
 - highlight background (`--color-highlight`),
 - primary text.
 
+Implemented (2026-09-28): project rows render uppercase (`text-transform`,
+14px), and every chat row carries the chat bubble icon (`Icon.chat`, 12px)
+before the shell display name; the icon's left edge aligns with the project
+name's left edge (both at the list inset plus `24px`). The selected project
+row carries no
+background fill and the project name gives no hover background (user
+decisions 2026-09-28/29; selection stays in
+`data-selected` for behavior). The chat list has no vertical guide line and
+its rows span the full list width; the selected chat keeps the highlight
+background (`--color-highlight`) across that full width. The `+ New Chat`
+affordance is a row matching the chat rows: same height, the plus icon in
+the chat-icon column (user decision 2026-09-29).
+
 ---
 
 ## 15. Agent console
@@ -530,7 +559,11 @@ Prompt input (2026-09-28): every terminal view ends in a styled input row
 (`PromptInput`) instead of typing at the shell prompt line: a `>` glyph, a
 mono input in an `--radius-md` frame on `--color-panel` with a
 `--color-edge` border (info on focus), and the Dictation control (design doc
-21) at the right end of the frame. Enter submits the line plus CR through the
+21) at the right end of the frame. The frame is the only boundary between
+terminal output and the input row: no separator line above the row (the old
+full-width hairline doubled the frame's border and rendered unevenly under
+fractional Windows scaling; removed 2026-09-28). Enter submits the line plus
+CR through the
 same PTY write path as typed input, so shell echo, history and the Ctrl+D
 emptiness gate keep working. Scrollbars render only when content overflows
 (xterm.css forces a permanent `overflow-y: scroll`; `index.css` overrides it
@@ -631,6 +664,9 @@ Tree characteristics:
 - low-contrast guides only when necessary,
 - selected file using the highlight background (`--color-highlight`).
 
+Implemented (2026-09-28): tree rows use the 14px UI size (`text-sm`), raised
+from 12px for readability; chevrons stay 12px.
+
 ---
 
 ## 20. Bottom status bar
@@ -665,10 +701,14 @@ Do not show editor-specific metadata such as:
 
 Dictation should use a microphone icon.
 
-Implemented (2026-09-28): the Idle state ships as the disabled mic button
-(`Icon.dictation`, `--color-ink-disabled`) integrated at the right end of the
-terminal prompt input frame. No recognizer is wired yet, so Hover and
-Listening are pending until the dictation feature lands.
+Implemented (2026-09-28): the Idle state ships as a disabled, labeled button
+(`Icon.dictation` mic plus the visible `Dictation` label, `--color-button`
+surface, `--color-ink-disabled`) built into the terminal prompt input frame
+as its right segment: flush to the frame end at full inner height, square
+left edge, right corners following the frame radius (clipped by the frame).
+The visible label names the control, so the icon is decorative
+(`aria-hidden`). No recognizer is wired yet, so Hover and Listening are
+pending until the dictation feature lands.
 
 States:
 
@@ -720,6 +760,11 @@ outline-offset: 1px;
 ```
 
 Do not remove keyboard focus indicators.
+
+Cursor (user decision 2026-09-29): every enabled button shows the hand
+cursor (`cursor: pointer` on `button:not(:disabled)`, `index.css`); disabled
+controls keep `not-allowed`. Hover backgrounds stay per component (section
+14): the project name row gives no hover background.
 
 ---
 
@@ -800,7 +845,7 @@ Expose tokens at the document root:
 
   /* structure */
   --color-edge: rgb(33 37 49);
-  --color-divider: rgb(17 20 35);
+  --color-divider: rgb(56 70 96);
 
   /* radius */
   --radius-sm: 4px;
@@ -810,7 +855,20 @@ Expose tokens at the document root:
 
 ### 26.2 Native desktop behavior
 
-When using a custom title bar in Electron:
+Implemented (2026-09-28): the app uses the Window Controls Overlay title bar.
+`src/main/index.ts` sets `titleBarStyle: 'hidden'` plus `titleBarOverlay`
+(`#111423` strip, `#cacbd1` symbols, 36px to match the tab strip) and a
+matching `backgroundColor` against the first-paint flash. The renderer's top
+strips (tab strip, Projects header, Files header) are the drag surface
+(`.drag-region` / `.no-drag` in `index.css`) and paint the base app
+background; the tab strip insets `+ New chat` by
+`calc(100vw - env(titlebar-area-width, 100vw))` so it never sits under the
+caption buttons. The hairline under the tab strip is owned by the action row
+(`border-t`), not by the tab strip: the 36px overlay strip paints over a
+`border-b` at the strip's bottom edge, so the line visibly vanished under
+the caption buttons (fixed 2026-09-29).
+
+Rules:
 
 - preserve standard Windows minimize/maximize/close behavior,
 - define draggable and non-draggable regions correctly,
@@ -952,7 +1010,7 @@ A NeKode screen should feel correct when:
 
   /* structure */
   --color-edge: rgb(33 37 49);
-  --color-divider: rgb(17 20 35);
+  --color-divider: rgb(56 70 96);
 
   /* radius */
   --radius-sm: 4px;

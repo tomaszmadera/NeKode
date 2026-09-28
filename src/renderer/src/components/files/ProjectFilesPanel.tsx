@@ -44,10 +44,12 @@ export function ProjectFilesPanel({
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >
-      <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+      {/* Window drag surface (title bar): the top strip is the base app
+          background; the back button opts out of dragging. */}
+      <div className="drag-region flex items-center gap-2 bg-app px-3 pt-3 pb-1">
         <button
           type="button"
-          className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="no-drag flex items-center gap-1 rounded px-1.5 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
           data-testid={TEST_ID.filesBackButton}
           onClick={onBack}
         >

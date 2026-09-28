@@ -176,7 +176,7 @@ export function ActionBar({
 
   return (
     <div
-      className="flex h-8 shrink-0 items-center gap-2 overflow-x-auto border-b border-edge px-2"
+      className="flex shrink-0 items-center gap-2 overflow-x-auto border-y border-edge px-2 py-2"
       data-testid={TEST_ID.actionRowSlot}
     >
       {[
@@ -185,27 +185,31 @@ export function ActionBar({
       ].map((group) => (
         <fieldset
           key={group.name}
-          className="flex h-full shrink-0 items-stretch overflow-hidden rounded-md"
+          className="flex h-control shrink-0 items-stretch overflow-hidden rounded-md bg-button"
         >
           <legend className="sr-only">{group.name}</legend>
           {group.items.map((item, index) => {
             const FixedIcon = item.icon
             return (
-              <button
-                key={item.label}
-                type="button"
-                disabled={!chatIsLive || !activeChatId}
-                className={cn(
-                  'flex items-center gap-1.5 bg-button px-3 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled',
-                  index > 0 && 'border-l border-divider',
-                )}
-                onClick={() => {
-                  void sendFixed(item.data)
-                }}
-              >
-                <FixedIcon size={14} aria-hidden />
-                {item.label}
-              </button>
+              <div key={item.label} className="flex items-stretch">
+                {index > 0 ? (
+                  // Toolbar-standard separator (design doc 5): a single
+                  // low-contrast hairline, vertically centered, shorter than
+                  // the buttons.
+                  <span aria-hidden="true" className="h-4 w-px self-center bg-divider" />
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!chatIsLive || !activeChatId}
+                  className="flex items-center gap-1.5 bg-button px-3 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
+                  onClick={() => {
+                    void sendFixed(item.data)
+                  }}
+                >
+                  <FixedIcon size={14} aria-hidden />
+                  {item.label}
+                </button>
+              </div>
             )
           })}
         </fieldset>

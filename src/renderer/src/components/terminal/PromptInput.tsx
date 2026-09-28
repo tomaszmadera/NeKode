@@ -32,13 +32,15 @@ export function PromptInput({
 
   return (
     <form
-      className="flex shrink-0 items-center gap-2 border-t border-edge bg-terminal px-2 py-1.5"
+      className="flex shrink-0 items-center gap-2 bg-terminal px-2 py-1.5"
       onSubmit={(event) => {
         event.preventDefault()
         submit()
       }}
     >
-      <div className="flex h-control min-w-0 flex-1 items-center gap-2 rounded-md border border-edge bg-panel px-3 focus-within:border-info">
+      {/* overflow-hidden clips the Dictation button's right corners to the
+          frame radius, so the button reads as the input's right segment. */}
+      <div className="flex h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-edge bg-panel pl-3 focus-within:border-info">
         <span aria-hidden="true" className="select-none font-mono text-ink-muted">
           &gt;
         </span>
@@ -50,15 +52,20 @@ export function PromptInput({
           value={value}
           onChange={(event) => setValue(event.target.value)}
         />
+        {/* Design doc 21 idle state: rendered, recognizable, disabled until a
+            recognizer is wired. The button is the frame's right segment:
+            square left edge, flush to the frame end. The visible label names
+            the control, so the icon is decorative. */}
         <button
           type="button"
-          className="flex size-6 shrink-0 cursor-not-allowed items-center justify-center rounded-sm text-ink-disabled"
+          className="flex h-full shrink-0 cursor-not-allowed items-center gap-1.5 bg-button px-2.5 text-xs text-ink-disabled"
           data-testid={TEST_ID.terminalPromptDictation}
           aria-label="Dictation"
           title="Dictation is not wired up yet."
           disabled
         >
           <Icon.dictation size={14} aria-hidden />
+          Dictation
         </button>
       </div>
     </form>
