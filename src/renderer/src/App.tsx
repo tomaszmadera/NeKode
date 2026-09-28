@@ -561,6 +561,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           return next
         })
         setFilesProjectId((current) => (current === projectId ? null : current))
+        // The removal succeeded: those tabs are gone and their staged
+        // bottom-terminal commands can never be delivered (review follow-up:
+        // same leak class as the close/exit paths).
+        for (const tabId of bottomIds) {
+          delete pendingBottomCommandsRef.current[tabId]
+        }
         setBottomTabs((previous) => dropBottomProject(previous, projectId))
         if (projectId === selectedProjectId) {
           setSelectedProjectId(null)
@@ -819,11 +825,22 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   const createBottomTab = useCallback(
     async (projectId: string, options?: { tabId?: string; cwd?: string }): Promise<void> => {
+      const tabId = options?.tabId
+      const dropStagedCommand = (): void => {
+        // An aborted creation leaves a staged bottom-terminal command that can
+        // never be delivered (review:4 follow-up); a completed creation keeps
+        // it — the tab's ready event consumes it.
+        if (tabId !== undefined) {
+          delete pendingBottomCommandsRef.current[tabId]
+        }
+      }
       if (removedProjectIdsRef.current.has(projectId)) {
+        dropStagedCommand()
         return
       }
       const project = projectsRef.current.find((item) => item.id === projectId)
       if (project === undefined) {
+        dropStagedCommand()
         setNotice('Select or add a project before starting a terminal.')
         return
       }
@@ -832,15 +849,19 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         label = (await app.terminals.shellName()).trim()
       } catch (error) {
         if (removedProjectIdsRef.current.has(projectId)) {
+          dropStagedCommand()
           return
         }
+        dropStagedCommand()
         setNotice(errorMessage(error, 'Failed to start the terminal.'))
         return
       }
       if (removedProjectIdsRef.current.has(projectId)) {
+        dropStagedCommand()
         return
       }
       if (label.length === 0) {
+        dropStagedCommand()
         setNotice('Failed to start the terminal.')
         return
       }
@@ -855,6 +876,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       }
       setBottomTabs((previous) => {
         if (removedProjectIdsRef.current.has(projectId)) {
+          // The tombstone check drops the tab here; its staged command (if a
+          // bottom-terminal action staged one) must not survive either.
+          if (tabId !== undefined) {
+            delete pendingBottomCommandsRef.current[tabId]
+          }
           return previous
         }
         return addBottomTab(previous, tab)
@@ -882,6 +908,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           setNotice(errorMessage(error, 'Failed to close the terminal.'))
           return
         }
+        delete pendingBottomCommandsRef.current[tabId]
         setBottomTabs((previous) => closeBottomTab(previous, tabId))
       })()
     },
@@ -890,6 +917,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   const handleBottomExit = useCallback(
     (tabId: string): void => {
+      // The tab is gone: its staged bottom-terminal command must not linger
+      // (review:4 follow-up). A spawn failure keeps the entry — the retry
+      // remount fires a fresh ready event that must still deliver it.
+      delete pendingBottomCommandsRef.current[tabId]
       setBottomTabs((previous) => closeBottomTab(previous, tabId))
       void app.terminals.terminate(tabId).catch(() => undefined)
     },
@@ -1045,6 +1076,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       if (tabId === undefined || command === undefined || cwd === undefined) return
       pendingBottomCommandsRef.current[tabId] = command
       if (!bottomOpenRef.current) {
+        // Same focus contract as showBottomPanel (Behaviour 4): remember what
+        // held focus before the hidden panel opened, so a later hide restores
+        // focus there instead of falling back to the center surface.
+        const active = document.activeElement
+        focusBeforeOpenRef.current =
+          active instanceof HTMLElement && active !== document.body ? active : null
         bottomOpenTouchedRef.current = true
         bottomOpenRef.current = true
         setBottomOpen(true)

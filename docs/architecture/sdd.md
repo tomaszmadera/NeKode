@@ -2171,7 +2171,8 @@ command executes
   ↓
 output visible
   ↓
-Git status refreshes when command ends
+Git status stays as-is (no command-end detection; it refreshes
+on a project selection change)
 ```
 
 ---

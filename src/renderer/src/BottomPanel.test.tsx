@@ -411,6 +411,48 @@ describe('bottom auxiliary terminal panel', () => {
     expect(bottomRegion().style.display).toBe('none')
   })
 
+  it('an executed bottom-terminal action opening the hidden panel restores the pre-open focus on hide', async () => {
+    const action = {
+      id: 'a1',
+      scope: 'project' as const,
+      projectId: 'p1',
+      title: 'Build',
+      icon: null,
+      command: 'pnpm test',
+      cwd: 'D:/code/demo/app',
+      runMode: 'bottom-terminal' as const,
+      confirm: false,
+      sortOrder: 0,
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([action])
+    vi.mocked(app.actions.execute).mockResolvedValue({
+      status: 'success',
+      exitCode: null,
+      completedAt: '2026-09-27T15:00:00Z',
+      error: null,
+      bottomTabId: 'bottom:p1:tab-1',
+      terminalCommand: 'pnpm test',
+      terminalCwd: 'D:/code/demo/app',
+    })
+    await renderSelectedProject()
+    // Focus an element that will survive the whole flow, run the action.
+    const addProject = screen.getByTestId(TEST_ID.addProjectButton)
+    addProject.focus()
+    expect(document.activeElement).toBe(addProject)
+    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.bottomTab('bottom:p1:tab-1'))).toBeTruthy(),
+    )
+    expect(bottomRegion().style.display).not.toBe('none')
+
+    // Hiding the panel must restore the element focused before the action
+    // opened the hidden panel (Behaviour 4 on this path), not the center
+    // surface fallback.
+    pressChord()
+    await waitFor(() => expect(bottomRegion().style.display).toBe('none'))
+    await waitFor(() => expect(document.activeElement).toBe(addProject))
+  })
+
   it('shows a spawn error and retries only that tab', async () => {
     vi.mocked(app.terminals.create).mockImplementation(async (id: string) => {
       if (id.startsWith('bottom:')) {

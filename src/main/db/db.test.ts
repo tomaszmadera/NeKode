@@ -239,7 +239,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
     ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
     db.exec(`
       INSERT INTO actions (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order) VALUES
-        ('a-bg', 'p1', 'project', 'Background', NULL, 'pnpm build', NULL, 'background', 0, 0),
+        ('a-bg', 'p1', 'project', 'Background', 'hammer', 'pnpm build', NULL, 'background', 0, 0),
         ('a-nt', 'p1', 'project', 'New terminal', NULL, 'pnpm dev', NULL, 'new-terminal', 0, 1);
     `)
     return db
@@ -299,9 +299,12 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
           .run(),
       ).not.toThrow()
       // Old run_mode values are rewritten by nothing (spec Business rules).
+      // `icon` is in the SELECT on purpose: migration 5 rebuilds the actions
+      // table, and a dropped icon column must fail this assertion (review:4
+      // follow-up — the fixture keeps one non-NULL icon so the copy is real).
       const rows = db
         .prepare(
-          'SELECT id, project_id, scope, title, command, cwd, run_mode, confirm, sort_order FROM actions ORDER BY sort_order',
+          'SELECT id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order FROM actions ORDER BY sort_order',
         )
         .all() as Array<Record<string, unknown>>
       expect(rows).toEqual([
@@ -310,6 +313,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
           project_id: 'p1',
           scope: 'project',
           title: 'Background',
+          icon: 'hammer',
           command: 'pnpm build',
           cwd: null,
           run_mode: 'background',
@@ -321,6 +325,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
           project_id: 'p1',
           scope: 'project',
           title: 'New terminal',
+          icon: null,
           command: 'pnpm dev',
           cwd: null,
           run_mode: 'new-terminal',
@@ -332,6 +337,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
           project_id: 'p1',
           scope: 'project',
           title: 'Bottom',
+          icon: null,
           command: 'pnpm test',
           cwd: null,
           run_mode: 'bottom-terminal',
