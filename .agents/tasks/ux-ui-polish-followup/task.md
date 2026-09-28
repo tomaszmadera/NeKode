@@ -1,16 +1,16 @@
 ---
 id: ux-ui-polish-followup
 schema_version: 2
-status: completed
+status: active
 intent: feature
 complexity: small
 durability: recorded
-current_phase: Phase 7
-current_step: none
+current_phase: Phase 8
+current_step: Phase 8.1
 updated: 2026-09-28
 branch: main
 worktree: current
-next_action: none
+next_action: Take the user's next UI improvement list at intake, then plan the first slice
 blockers: none
 ---
 
@@ -113,6 +113,12 @@ Plan:
 - `test-ids.ts`: add `terminalPromptSend`.
 - Tests: `App.test.tsx` action-row `textContent` assertions map `aria-label ?? textContent` so the icon-only button keeps its name in the list; `ChatTerminal.test.tsx` gains a click-submit test for Send.
 - Design doc: sections 10 (`Icon.send` role name), 15 (prompt input row gains Send), 21 (Dictation sits after Send), 11.4 (action row right end is icon-only).
+
+Record closed here (2026-09-28T23:17Z); published as commit `4e8d515` plus version bump `75094e5` (tag `0.4.6`). The user approved the publication and announced further UI improvements to continue in a new session, so the record reopens at Phase 8.
+
+## Phase 8 - Next session (round 3)
+
+- [ ] Phase 8.1 - Intake: take the user's next UI improvement list, classify, and plan the slice
 
 ## Decisions
 
