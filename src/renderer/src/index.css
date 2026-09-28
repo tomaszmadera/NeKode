@@ -69,3 +69,41 @@ body {
   font-family:
     "Recursive Sans Casual", Inter, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
 }
+
+/* Scrollbars: themed from tokens (design doc 4) and rendered only when the
+   content overflows. xterm.css forces `overflow-y: scroll` on the terminal
+   viewport, which draws a permanent gutter in the main panel even with an
+   empty scrollback; the override below restores hide-when-empty. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: var(--radius-pill);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-active);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Doubled class raises specificity above xterm.css's own
+   `.xterm .xterm-viewport` rule, so the override wins regardless of the
+   bundle order of the two stylesheets. */
+.xterm .xterm-viewport.xterm-viewport {
+  overflow-y: auto;
+}

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { NoticeBanner } from './NoticeBanner'
 import { ResizeHandle } from './ResizeHandle'
@@ -100,10 +101,11 @@ export function LeftNavigation({
         </h2>
         <button
           type="button"
-          className="rounded-md bg-button px-2 py-1 text-xs text-ink hover:bg-button-hover"
+          className="flex h-control items-center gap-1.5 rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover"
           data-testid={TEST_ID.addProjectButton}
           onClick={onAddProject}
         >
+          <Icon.projectAdd size={14} aria-hidden />
           Add Project
         </button>
       </div>
@@ -148,13 +150,17 @@ export function LeftNavigation({
                   >
                     <button
                       type="button"
-                      className="rounded px-1 py-0.5 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                      className="flex items-center rounded px-1 py-0.5 text-ink-secondary hover:bg-highlight hover:text-ink"
                       data-testid={testIdFor.projectToggle(project.id)}
                       aria-expanded={isExpanded}
                       aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${project.name}`}
                       onClick={() => onToggleProject(project.id)}
                     >
-                      {isExpanded ? '▾' : '▸'}
+                      {isExpanded ? (
+                        <Icon.chevronDown size={12} aria-hidden />
+                      ) : (
+                        <Icon.chevronRight size={12} aria-hidden />
+                      )}
                     </button>
                     <button
                       type="button"
@@ -167,13 +173,13 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="rounded px-1.5 py-0.5 text-xs text-ink-muted opacity-0 hover:bg-highlight hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+                      className="flex items-center rounded px-1.5 py-0.5 text-ink-muted opacity-0 hover:bg-highlight hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
                       data-testid={testIdFor.projectFiles(project.id)}
                       title="Show project files"
                       aria-label={`Show project files for ${project.name}`}
                       onClick={() => onOpenProjectFiles(project.id)}
                     >
-                      Files
+                      <Icon.directory size={12} aria-hidden />
                     </button>
                   </div>
                   {isExpanded ? (
@@ -211,7 +217,7 @@ export function LeftNavigation({
                       {isSelected ? (
                         <button
                           type="button"
-                          className="mt-1 w-full rounded px-2 py-1 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                          className="mt-1 flex h-control w-full items-center rounded px-2 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
                           data-testid={TEST_ID.newChatButton}
                           onClick={() => {
                             void onCreateChat(project.id)

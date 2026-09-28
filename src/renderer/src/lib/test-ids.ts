@@ -50,6 +50,8 @@ export const TEST_ID = {
   filePreviewBinary: 'file-preview-binary',
   filePreviewOpenExternal: 'file-preview-open-external',
   filePreviewMonaco: 'file-preview-monaco',
+  terminalPromptInput: 'terminal-prompt-input',
+  terminalPromptDictation: 'terminal-prompt-dictation',
 } as const
 
 /** Test ids that depend on record ids (projects/chats/sessions/paths). */

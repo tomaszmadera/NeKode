@@ -2,6 +2,7 @@ import type React from 'react'
 import type { ProjectInfo } from '../../../../shared/ipc-contract'
 import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 import { NoticeBanner } from '../layout/NoticeBanner'
 import { ResizeHandle } from '../layout/ResizeHandle'
@@ -46,11 +47,12 @@ export function ProjectFilesPanel({
       <div className="flex items-center gap-2 px-3 pt-3 pb-1">
         <button
           type="button"
-          className="rounded px-1.5 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
           data-testid={TEST_ID.filesBackButton}
           onClick={onBack}
         >
-          ← Projects
+          <Icon.back size={12} aria-hidden />
+          Projects
         </button>
         <span
           className="min-w-0 truncate text-xs font-medium text-ink"

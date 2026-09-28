@@ -26,4 +26,24 @@
   /* Structure: inactive tab border / hairline separators, double-button divider bar */
   --color-edge: rgb(33 37 49);
   --color-divider: rgb(17 20 35);
+
+  /* Scrollbars (terminal viewport and app scroll areas). Derived values,
+     design doc 4; scrollbars render only when content overflows (index.css). */
+  --color-scrollbar: rgb(49 66 95);
+  --color-scrollbar-active: rgb(59 82 117);
+
+  /* Radius scale (design doc 8): rows/buttons 6px, dialogs 8px, pills only
+     where visually appropriate. Overriding these names re-skins everything. */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-pill: 999px;
+
+  /* Control scale: one control height shared by filled buttons and inputs,
+     matched to the visible tab height (design doc 7, 11). */
+  --spacing-control: 2rem;
+
+  /* Terminal-facing mono stack (design doc 6.2). Keep the xterm fontFamily in
+     ChatTerminal.tsx in sync with this list. */
+  --font-mono: "Recursive Mono Casual", Consolas, "Courier New", monospace;
 }

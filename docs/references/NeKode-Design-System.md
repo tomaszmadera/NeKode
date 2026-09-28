@@ -101,6 +101,12 @@ Example:
 
 This makes later theme variants possible without rewriting components.
 
+Implementation status (2026-09-28): the tokens live in `src/renderer/src/theme.css`
+(Tailwind v4 `@theme`, compiled at build time) and every renderer component
+consumes the semantic utilities. There is no runtime theme switching yet; the
+whole palette is one token file, so a variant means a second token set plus a
+loader.
+
 ---
 
 ## 4. Color palette
@@ -258,6 +264,11 @@ Recommended component spacing:
 - panel internal padding: `12px`
 - major section gap: `16px`
 
+Control height: filled buttons and input frames share one height token,
+`--spacing-control` (2rem = 32px), matched to the visible tab height (the tab
+strip is `36px` minus its `4px` top padding). Ghost inline controls (row
+actions, tab close, tree chevrons) keep row scale.
+
 ---
 
 ## 8. Radius
@@ -279,6 +290,9 @@ Usage:
 - status pills: pill radius only when visually appropriate
 
 Avoid large 12–20px SaaS-style rounding.
+
+The values above are theme tokens in `src/renderer/src/theme.css`
+(`--radius-sm/md/lg/pill`); overriding them re-skins every rounded surface.
 
 ---
 
@@ -329,6 +343,16 @@ Sizes:
 
 NeKode branding should use a **minimal cat icon**, not a cartoon mascot.
 
+Decision (2026-09-28): **Lucide** via `lucide-react` is the icon family. All
+components import icons by role name from `src/renderer/src/lib/icons.tsx`
+(`Icon.handoff`, `Icon.resume`, `Icon.stop`, `Icon.continue`, `Icon.preview`,
+`Icon.container`, `Icon.chat`, `Icon.directory`, `Icon.files`, `Icon.git`,
+`Icon.kanban`, `Icon.projects`, `Icon.check`, `Icon.dictation`,
+`Icon.panelLeft`, `Icon.panelRight`, `Icon.terminal`, `Icon.agent`,
+`Icon.search`, ...), never from lucide-react directly, so a package swap or
+glyph change stays a one-file edit. Icons inherit `currentColor` and carry
+`aria-hidden` whenever a visible label names the control.
+
 ---
 
 ## 11. Buttons
@@ -339,6 +363,11 @@ Recommended height:
 
 - compact: `28px`
 - default: `30–32px`
+
+Implemented (2026-09-28): filled `--color-button` actions use the shared
+`--spacing-control` height (32px), the same visual height as tabs; toolbar
+buttons stretch to their bar (`self-stretch`), standalone buttons use the
+token directly. Ghost row controls stay compact.
 
 Base visual treatment (borderless, filled):
 
@@ -497,6 +526,16 @@ Avoid syntax-editor conventions such as line numbers unless the console content 
 
 The console must look like a **running terminal agent**, not an AI chat.
 
+Prompt input (2026-09-28): every terminal view ends in a styled input row
+(`PromptInput`) instead of typing at the shell prompt line: a `>` glyph, a
+mono input in an `--radius-md` frame on `--color-panel` with a
+`--color-edge` border (info on focus), and the Dictation control (design doc
+21) at the right end of the frame. Enter submits the line plus CR through the
+same PTY write path as typed input, so shell echo, history and the Ctrl+D
+emptiness gate keep working. Scrollbars render only when content overflows
+(xterm.css forces a permanent `overflow-y: scroll`; `index.css` overrides it
+to `auto`) and use `--color-scrollbar` / `--color-scrollbar-active`.
+
 ---
 
 ## 16. Bottom terminal
@@ -625,6 +664,11 @@ Do not show editor-specific metadata such as:
 ## 21. Dictation control
 
 Dictation should use a microphone icon.
+
+Implemented (2026-09-28): the Idle state ships as the disabled mic button
+(`Icon.dictation`, `--color-ink-disabled`) integrated at the right end of the
+terminal prompt input frame. No recognizer is wired yet, so Hover and
+Listening are pending until the dictation feature lands.
 
 States:
 

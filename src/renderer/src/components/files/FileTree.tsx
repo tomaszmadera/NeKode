@@ -1,6 +1,7 @@
 import type React from 'react'
 import type { FileEntry } from '../../../../shared/ipc-contract'
 import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
 import { testIdFor } from '../../lib/test-ids'
 
 // Lazy file tree (spec Behaviour 5–6): directories first, then files, in
@@ -64,8 +65,8 @@ function FileTreeLevel({
                 aria-expanded={isExpanded}
                 onClick={() => onToggleDirectory(entry.relativePath)}
               >
-                <span aria-hidden="true" className="shrink-0 text-ink-muted">
-                  {isExpanded ? '▾' : '▸'}
+                <span aria-hidden="true" className="flex shrink-0 text-ink-muted">
+                  {isExpanded ? <Icon.chevronDown size={12} /> : <Icon.chevronRight size={12} />}
                 </span>
                 <span className="truncate">{entry.name}</span>
               </button>

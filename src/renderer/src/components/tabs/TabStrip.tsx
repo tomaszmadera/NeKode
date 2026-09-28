@@ -1,5 +1,6 @@
 import type React from 'react'
 import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { type TabId, TERMINAL_TAB } from './tabs-session'
 
@@ -83,12 +84,12 @@ export function TabStrip({
             </button>
             <button
               type="button"
-              className="px-2 text-xs text-ink-muted hover:text-ink"
+              className="flex items-center px-2 text-ink-muted hover:text-ink"
               data-testid={testIdFor.tabFileClose(path)}
               aria-label={`Close ${fileName(path)}`}
               onClick={() => onCloseFile(path)}
             >
-              ×
+              <Icon.close size={12} aria-hidden />
             </button>
           </div>
         )
@@ -96,11 +97,12 @@ export function TabStrip({
       <div className="flex-1" />
       <button
         type="button"
-        className="flex shrink-0 items-center rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+        className="flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
         data-testid={TEST_ID.tabNewChat}
         onClick={onNewChat}
       >
-        + New chat
+        <Icon.plus size={14} aria-hidden />
+        New chat
       </button>
     </nav>
   )

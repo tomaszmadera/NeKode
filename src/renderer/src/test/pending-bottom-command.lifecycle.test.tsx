@@ -143,7 +143,7 @@ describe('staged bottom-terminal commands do not outlive their tab', () => {
   it('closing the pending tab before it is ready never delivers the staged command', async () => {
     const releaseSpawn = stageActionAndBlockSpawn(app, 'bottom:p1:tab-1')
     await renderSelectedChat()
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     await waitFor(() =>
       expect(app.terminals.create).toHaveBeenCalledWith('bottom:p1:tab-1', 'D:/code/demo/app'),
     )
@@ -170,7 +170,7 @@ describe('staged bottom-terminal commands do not outlive their tab', () => {
   it('exiting the pending tab before it is ready never delivers the staged command', async () => {
     stageActionAndBlockSpawn(app, 'bottom:p1:tab-1')
     await renderSelectedChat()
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     await waitFor(() =>
       expect(app.terminals.create).toHaveBeenCalledWith('bottom:p1:tab-1', 'D:/code/demo/app'),
     )
@@ -216,7 +216,7 @@ describe('staged bottom-terminal commands do not outlive their tab', () => {
     await renderSelectedChat()
     // The project is removed while the createBottomTab work is in flight (the
     // spawn promise is still unresolved). The tombstone rules drop the tab.
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     await waitFor(() =>
       expect(app.terminals.create).toHaveBeenCalledWith('bottom:p1:tab-1', 'D:/code/demo/app'),
     )
@@ -257,7 +257,7 @@ describe('staged bottom-terminal commands do not outlive their tab', () => {
         : Promise.resolve(id),
     )
     await renderSelectedChat()
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     await waitFor(() => {
       expect(screen.getByTestId(TEST_ID.bottomTerminalError)).toBeTruthy()
     })

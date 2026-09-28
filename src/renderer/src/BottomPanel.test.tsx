@@ -439,7 +439,7 @@ describe('bottom auxiliary terminal panel', () => {
     const addProject = screen.getByTestId(TEST_ID.addProjectButton)
     addProject.focus()
     expect(document.activeElement).toBe(addProject)
-    fireEvent.click(screen.getByRole('button', { name: '▶ Build' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
     await waitFor(() =>
       expect(screen.getByTestId(testIdFor.bottomTab('bottom:p1:tab-1'))).toBeTruthy(),
     )

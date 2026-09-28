@@ -124,9 +124,16 @@ export class MockTerminal {
     this.keyHandler = handler
   })
 
-  /** Real xterm focuses its textarea; the mock focuses the opened element. */
+  /**
+   * Real xterm focuses its hidden textarea inside the opened element; the
+   * mock focuses the terminal view container instead: the nearest
+   * `data-testid^="terminal-canvas"` ancestor of the opened element (the
+   * opened element itself as the fallback), so tests can identify the
+   * focused terminal view by its stable test id.
+   */
   focus = vi.fn((): void => {
-    this.openedElement?.focus()
+    const view = this.openedElement?.closest<HTMLElement>('[data-testid^="terminal-canvas"]')
+    ;(view ?? this.openedElement)?.focus()
   })
 
   dispose = vi.fn((): void => {

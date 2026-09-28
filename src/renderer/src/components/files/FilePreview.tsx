@@ -2,6 +2,7 @@ import type React from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import type { AppApi, FilePreview as FilePreviewData } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 import { MonacoPreview } from './MonacoPreview'
 
@@ -115,10 +116,11 @@ function FallbackState({
       <p className="text-sm text-ink-secondary">{children}</p>
       <button
         type="button"
-        className="rounded-md bg-button px-3 py-1.5 text-xs text-ink hover:bg-button-hover"
+        className="flex h-control items-center gap-1.5 rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
         data-testid={TEST_ID.filePreviewOpenExternal}
         onClick={onOpenExternal}
       >
+        <Icon.external size={14} aria-hidden />
         Open externally
       </button>
     </div>

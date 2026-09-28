@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActionControl, ActionExecution, AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { cn } from '../../lib/cn'
+import { Icon, type LucideIcon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 
 interface ActionBarProps {
@@ -19,11 +20,19 @@ interface ActionBarProps {
 }
 
 const fixed = [
-  { label: 'Handoff', data: 'Napisz handoff\r' },
-  { label: 'Resume', data: 'Wznów z handoffu\r' },
-  { label: 'Stop', data: '\x03' },
-  { label: 'Continue', data: 'Continue\r' },
+  { label: 'Handoff', data: 'Napisz handoff\r', icon: Icon.handoff },
+  { label: 'Resume', data: 'Wznów z handoffu\r', icon: Icon.resume },
+  { label: 'Stop', data: '\x03', icon: Icon.stop },
+  { label: 'Continue', data: 'Continue\r', icon: Icon.continue },
 ] as const
+
+/** Status glyph per action state (design doc 10: status icons 13-14px). */
+const statusIcons: Record<'idle' | 'running' | 'success' | 'failed', LucideIcon> = {
+  idle: Icon.run,
+  running: Icon.running,
+  success: Icon.check,
+  failed: Icon.fail,
+}
 
 function message(error: unknown): string {
   return parseAppErrorPayload(error)?.message ?? 'Action failed.'
@@ -176,31 +185,35 @@ export function ActionBar({
       ].map((group) => (
         <fieldset
           key={group.name}
-          className="flex shrink-0 items-center overflow-hidden rounded-md"
+          className="flex h-full shrink-0 items-stretch overflow-hidden rounded-md"
         >
           <legend className="sr-only">{group.name}</legend>
-          {group.items.map((item, index) => (
-            <button
-              key={item.label}
-              type="button"
-              disabled={!chatIsLive || !activeChatId}
-              className={cn(
-                'bg-button px-2 py-0.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled',
-                index > 0 && 'border-l border-divider',
-              )}
-              onClick={() => {
-                void sendFixed(item.data)
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
+          {group.items.map((item, index) => {
+            const FixedIcon = item.icon
+            return (
+              <button
+                key={item.label}
+                type="button"
+                disabled={!chatIsLive || !activeChatId}
+                className={cn(
+                  'flex items-center gap-1.5 bg-button px-3 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled',
+                  index > 0 && 'border-l border-divider',
+                )}
+                onClick={() => {
+                  void sendFixed(item.data)
+                }}
+              >
+                <FixedIcon size={14} aria-hidden />
+                {item.label}
+              </button>
+            )
+          })}
         </fieldset>
       ))}
       {visible.map((action) => {
         const state = states[action.id]
         const status = state?.status ?? 'idle'
-        const symbol = { idle: '▶', running: '◌', success: '✓', failed: '✕' }[status]
+        const StatusIcon = statusIcons[status]
         const details = [
           action.command,
           state?.exitCode !== null && state?.exitCode !== undefined
@@ -219,7 +232,7 @@ export function ActionBar({
             title={details}
             data-status={status}
             className={cn(
-              'shrink-0 rounded-md bg-button px-2 py-0.5 text-xs hover:bg-button-hover disabled:text-ink-disabled',
+              'flex shrink-0 items-center gap-1.5 self-stretch rounded-md bg-button px-3 text-xs hover:bg-button-hover disabled:text-ink-disabled',
               status === 'success' && 'text-success',
               status === 'failed' && 'text-error',
               status === 'running' && 'text-info',
@@ -229,7 +242,11 @@ export function ActionBar({
               void execute(action)
             }}
           >
-            {`${symbol} `}
+            <StatusIcon
+              size={14}
+              aria-hidden
+              className={cn(status === 'running' && 'animate-spin')}
+            />
             {action.icon ? `${action.icon} ` : null}
             {action.title}
           </button>
@@ -237,9 +254,10 @@ export function ActionBar({
       })}
       <button
         type="button"
-        className="ml-auto shrink-0 rounded-md bg-button px-2 py-0.5 text-xs text-ink hover:bg-button-hover"
+        className="ml-auto flex shrink-0 items-center gap-1.5 self-stretch rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover"
         onClick={onSettings}
       >
+        <Icon.settings size={14} aria-hidden />
         Actions
       </button>
     </div>

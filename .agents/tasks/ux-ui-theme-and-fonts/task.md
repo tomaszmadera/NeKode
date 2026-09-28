@@ -1,16 +1,16 @@
 ---
 id: ux-ui-theme-and-fonts
 schema_version: 2
-status: active
+status: completed
 intent: feature
 complexity: small
 durability: recorded
-current_phase: Phase 5
-current_step: Phase 5.1
+current_phase: Phase 6
+current_step: none
 updated: 2026-09-28
 branch: main
 worktree: current
-next_action: Resume for the polish session: apply bigger buttons (see .agents/handoffs/ux-ui-theme-and-fonts.md)
+next_action: none
 blockers: none
 ---
 
@@ -46,7 +46,16 @@ Small development, no spec or plan file. In-session plan; source of truth for th
 
 ## Phase 5 - Handoff
 
-- [ ] Phase 5.1 - Handoff snapshot and one scoped checkpoint commit; work preserved for the polish session
+- [x] Phase 5.1 - Handoff snapshot and one scoped checkpoint commit; work preserved for the polish session (snapshot `.agents/handoffs/ux-ui-theme-and-fonts.md`, checkpoint commit 503b8da)
+
+## Phase 6 - Polish slice (session 2026-09-28, user list)
+
+- [x] Phase 6.1 - Plan the slice in-session. Findings and decisions: (a) the always-visible scroll is the xterm viewport (`overflow-y: scroll` forced by `@xterm/xterm/css/xterm.css:96`); fix with a themed `overflow-y: auto` override plus token-colored webkit scrollbar. (b) Tab visual height is 32px (`h-9` strip minus `pt-1`, `TabStrip.tsx:44`); introduce `--spacing-control: 2rem` and apply to filled `bg-button` buttons; ghost row controls (Edit/Delete/Close, tab close, tree chevron, Files hover) keep row scale. (c) Icon set: Lucide, already a dependency (`lucide-react@1.47.0`, unused) and prescribed by design doc §10; add `src/renderer/src/lib/icons.tsx` semantic mapping covering the user's full list (handoff/resume/stop/continue/preview/docker/chat/directory/files/git/kanban/projects/checkmarks/dictation/panel toggles/terminal/agent/search); status glyphs and micro-controls switch to icons; tests asserting `▶ Build`-style names updated to the label-only name. (d) Prompt input is feasible: same write path as ActionBar `sendFixed` (`app.terminals.write(chatId, data)`); render `PromptInput` under the xterm host inside `ChatTerminal` (outer display stays `block`/`none` per ChatTerminal.test.tsx:347); Enter sends `text + '\r'` through the in-component `sendToPty` (freezes the Ctrl+D prompt base); Dictation button rendered per design doc §21, disabled until the dictation feature exists (none found in src). (e) Theme tokens added: `--spacing-control`, `--radius-sm/md/lg` (doc §8), `--font-mono`, `--color-scrollbar`, `--color-scrollbar-active`; design doc sections 7, 8, 10, 11, 16, 21 updated.
+- [x] Phase 6.2 - Implemented: xterm viewport `overflow-y: auto` override + token-colored webkit scrollbars (`index.css`), `--color-scrollbar`/`--color-scrollbar-active` tokens; filled buttons at `--spacing-control` (32px) across ActionBar, empty states, retries, dialogs, Add Project, New Chat, Open externally
+- [x] Phase 6.3 - Implemented: `src/renderer/src/lib/icons.tsx` (Lucide, role-name mapping covering the full user list); applied to ActionBar fixed/status/settings buttons, tab and bottom-tab close, New chat/New terminal, project toggle and Files action, Add Project, Files-mode back, file-tree chevrons; status glyphs (`▶ ◌ ✓ ✕`) replaced by Play/LoaderCircle/CircleCheck/CircleX with aria-hidden icons; test names updated (`▶ Build` → `Build` etc.)
+- [x] Phase 6.4 - Implemented: `PromptInput.tsx` rendered under the xterm host in `ChatTerminal` (`>` glyph, mono input, `--radius-md` frame, info focus border, disabled Dictation mic at the right end); Enter submits `line + '\r'` through `sendToPty` (freezes the Ctrl+D prompt base); xterm-mock focus walks to the `terminal-canvas-*` view container; 3 new PromptInput tests (340/340)
+- [x] Phase 6.5 - Reviewed the complete slice diff. Findings, both corrected in-session: (1) prompt-input submission froze the Ctrl+D prompt base permanently; resubmission is now Enter semantics (`submitPromptLine` thaws the base so the shell's next prompt redraw re-collects it). (2) The `.xterm .xterm-viewport { overflow-y: auto }` override relied on bundle order; doubled-class selector removes the order dependency. Token discipline verified by grep: no raw palette colors introduced in renderer sources (the remaining xterm theme literals in ChatTerminal.tsx predate this task and are a recorded decision).
+- [x] Phase 6.6 - Verify: `python .agents/scripts/verify-full` exit 0 (lint 0 errors, typecheck pass, vitest 340/340); `pnpm build` exit 0 with compiled-CSS checks for `.h-control`, `--font-mono`, `--spacing-control`, `--color-scrollbar`, radius tokens and the `.xterm .xterm-viewport.xterm-viewport { overflow-y: auto }` override
 
 ## Decisions
 
@@ -69,11 +78,13 @@ Tracking: `.agents/tasks/ux-ui-theme-and-fonts/task.md` (this record), `.agents/
 
 | Check | Result | Notes |
 |---|---|---|
-| `pnpm run lint` (biome) | pass | exit 0 after `css.parser.tailwindDirectives` and formatting |
+| `pnpm run lint` (biome) | pass | exit 0 |
 | `pnpm run typecheck` (node+web) | pass | exit 0 |
-| `pnpm test` (vitest) | 336/337 | single failure `terminal-service.test.ts:196` "conpty failed": main-process ConPTY spawn, flaky (full pass on rerun), unrelated to renderer change |
-| `pnpm build` | pass | exit 0; both woff2 emitted to `out/renderer/assets/`; `--color-panel`/`.bg-panel`/`.text-ink` present in compiled CSS |
-| Canvas axis measurement | pass | Chromium measureText: Mono family `iiiiiiiiii` == `WWWWWWWWWW` (96px each), Sans 56px vs 152px; `@font-face` descriptors apply on canvas (xterm draws on canvas) |
+| `pnpm test` (vitest) | 340/340 | 3 new PromptInput tests; ConPTY flake passed in the preflight baseline run (337/337 before edits) |
+| `python .agents/scripts/verify-full` | pass | exit 0; runs validate-config + `cmd /c pnpm run verify` |
+| `pnpm build` | pass | exit 0; fonts bundled; tokens and utilities present in compiled CSS |
+| Canvas axis measurement (Phase 4, theme slice) | pass | Chromium measureText: Mono family `iiiiiiiiii` == `WWWWWWWWWW` (96px each), Sans 56px vs 152px; `@font-face` descriptors apply on canvas (xterm draws on canvas) |
+| Compiled CSS checks | pass | `.h-control`, `--font-mono`, `--spacing-control`, `--color-scrollbar`, `--radius-*`, `.xterm .xterm-viewport.xterm-viewport { overflow-y: auto }` present in `out/renderer/assets/index-*.css` |
 
 ### Verification subject 1
 
@@ -114,6 +125,44 @@ Tracking: `.agents/tasks/ux-ui-theme-and-fonts/task.md` (this record), `.agents/
   "untracked_files_sha256": "14a10941a78d0b29c76bd12b8c1f442eb9010eefc339ebdb57eb8de1700a97e5"
 }
 ```
+### Verification subject 2
+
+```json
+{
+  "attempt": 2,
+  "head": "503b8daf1c0ab07acb6b5070a40a83e5597f2c15",
+  "paths": [
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/App.test.tsx",
+    "src/renderer/src/BottomPanel.test.tsx",
+    "src/renderer/src/components/actions/ActionBar.tsx",
+    "src/renderer/src/components/actions/ActionSettings.tsx",
+    "src/renderer/src/components/files/FilePreview.tsx",
+    "src/renderer/src/components/files/FileTree.tsx",
+    "src/renderer/src/components/files/ProjectFiles.test.tsx",
+    "src/renderer/src/components/files/ProjectFilesPanel.tsx",
+    "src/renderer/src/components/layout/LeftNavigation.tsx",
+    "src/renderer/src/components/tabs/TabStrip.tsx",
+    "src/renderer/src/components/terminal/BottomPanel.tsx",
+    "src/renderer/src/components/terminal/ChatTerminal.test.tsx",
+    "src/renderer/src/components/terminal/ChatTerminal.tsx",
+    "src/renderer/src/components/terminal/PromptInput.tsx",
+    "src/renderer/src/components/workspace/ChatWorkspace.tsx",
+    "src/renderer/src/components/workspace/StartNewChatSurface.tsx",
+    "src/renderer/src/index.css",
+    "src/renderer/src/lib/icons.tsx",
+    "src/renderer/src/lib/test-ids.ts",
+    "src/renderer/src/test/pending-bottom-command.lifecycle.test.tsx",
+    "src/renderer/src/test/xterm-mock.ts",
+    "src/renderer/src/theme.css"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "f3fd0967d6eea6f3e0908fc4c2bfb30b0086585a04e9d92d420db560bf005671",
+  "unstaged_diff_sha256": "b530c65b5f62adb60869fdf7646cbd699e5a44eede6e4c57dda66a5d444bac37",
+  "untracked_files_sha256": "43f351a5c20cd3f2f12def3c8f1c3f30ba43710448623d085a8309b9a414aeac"
+}
+```
 ## Timing
 
 | Element | Kind | Started | Ended |
@@ -123,7 +172,13 @@ Tracking: `.agents/tasks/ux-ui-theme-and-fonts/task.md` (this record), `.agents/
 | implement | work | 2026-09-28T19:54:18Z | 2026-09-28T19:54:18Z |
 | review | work | 2026-09-28T19:54:18Z | 2026-09-28T19:54:18Z |
 | verify | work | 2026-09-28T19:54:18Z | 2026-09-28T19:54:18Z |
-| handoff | wait | 2026-09-28T19:54:18Z | |
+| handoff | wait | 2026-09-28T19:54:18Z | 2026-09-28T20:05:06Z |
+| plan | work | 2026-09-28T20:05:06Z | 2026-09-28T20:06:00Z |
+| preflight | work | 2026-09-28T20:06:00Z | 2026-09-28T20:13:55Z |
+| implement | work | 2026-09-28T20:13:55Z | 2026-09-28T20:28:40Z |
+| review | work | 2026-09-28T20:28:40Z | 2026-09-28T20:31:00Z |
+| correction | work | 2026-09-28T20:31:00Z | 2026-09-28T20:33:28Z |
+| verify | work | 2026-09-28T20:33:28Z | 2026-09-28T20:34:53Z |
 
 Record created retroactively at handoff: the session's work phases predate the record, so all closed rows share the record-creation instant instead of invented spans.
 
