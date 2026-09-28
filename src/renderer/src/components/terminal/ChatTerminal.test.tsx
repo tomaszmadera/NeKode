@@ -368,7 +368,7 @@ describe('ChatTerminal lifecycle', () => {
   // the chat when the input line is visibly empty outside full-screen
   // programs — including while a normal-buffer program (python REPL) runs
   // (contract decision). On a non-empty line both shortcuts are emulated
-  // readline line edits (delete-char / unix-line-discard) and raw control
+  // shell line edits (delete-char / whole-line deletion) and raw control
   // bytes are never forwarded: the user's shell self-inserts them as visible
   // ^D/^U glyphs (PSReadLine, Windows edit mode — retest 2026-09-26).
   // Emptiness is read from the xterm buffer: the row prefix before the
@@ -569,21 +569,18 @@ describe('ChatTerminal lifecycle', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Ctrl+U emulates unix-line-discard: the erased line reads as the prompt and Ctrl+D closes', async () => {
+  it('Ctrl+U clears the input: the erased line reads as the prompt and Ctrl+D closes', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
 
     typeText(terminal, 'abc')
-    // The app emulates the line edit with one backspace per input cell before
-    // the cursor — the raw \x15 would be self-inserted by the user's shell as
-    // a ^U glyph, never clearing anything.
+    // PSReadLine selects the entire input with Ctrl+A, then Backspace clears
+    // it. Raw \x15 would be self-inserted as a ^U glyph.
     expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
-    await waitFor(() =>
-      expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x7f\x7f\x7f'),
-    )
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x01\x7f'))
     expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x15')
-    // The shell echoes the backspaces as erasures — the row reads as the base.
+    // The shell echoes the deletion — the row reads as the base.
     act(() => {
       terminal.eraseBefore(3)
     })
@@ -593,7 +590,7 @@ describe('ChatTerminal lifecycle', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Ctrl+U kills only the input before the cursor: text behind it survives and the gate stays shut', async () => {
+  it('Ctrl+U removes the whole input when the cursor is in the middle of the line', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
@@ -605,33 +602,58 @@ describe('ChatTerminal lifecycle', () => {
       terminal.emitInput('\x1b[D')
       terminal.buffer.active.cursorX -= 1
     })
-    // Emulated unix-line-discard kills only backward from the cursor (down to
-    // the prompt): 'c' survives behind it and the row no longer reads as the
-    // prompt base.
+    // SelectAll + Backspace deletes both sides of the cursor, leaving the
+    // prompt intact.
     expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
-    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x7f\x7f'))
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x01\x7f'))
     act(() => {
-      terminal.eraseBefore(2)
+      terminal.setCursorRow(PROMPT)
     })
-    expect(terminal.buffer.active.rows[0]).toBe(`${PROMPT}c`)
+    expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
     expect(terminal.buffer.active.cursorX).toBe(PROMPT.length)
 
-    // Text behind the cursor: the line is not empty — Ctrl+D must not close.
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).not.toHaveBeenCalled()
-
-    // Control: step over the survivor, erase it — the gate closes again.
-    expect(pressKey(terminal, { key: 'ArrowRight' })).toBe(true)
-    act(() => {
-      terminal.emitInput('\x1b[C')
-      terminal.buffer.active.cursorX += 1
-    })
-    backspace(terminal, 1)
+    // Nothing remains behind the cursor, so Ctrl+D closes the chat.
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Ctrl+U never sends blind backspaces when the row is not attributable to the prompt base', async () => {
+  it('Ctrl+U removes text after the cursor when it is at the start of the input', async () => {
+    const onClose = vi.fn()
+    const { terminal, bundle } = renderTerminal(onClose)
+    showPrompt(terminal, bundle)
+
+    typeText(terminal, 'abc')
+    expect(pressKey(terminal, { key: 'Home' })).toBe(true)
+    act(() => {
+      terminal.emitInput('\x1b[H')
+      terminal.buffer.active.cursorX = PROMPT.length
+    })
+
+    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x01\x7f'))
+    act(() => {
+      terminal.setCursorRow(PROMPT)
+    })
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('Ctrl+U clears input whose cursor is on a wrapped continuation row', async () => {
+    const { terminal, bundle } = renderTerminal(vi.fn())
+    showPrompt(terminal, bundle)
+    typeText(terminal, 'abc')
+    act(() => {
+      terminal.buffer.active.rows = [`${PROMPT}ab`, 'c']
+      terminal.buffer.active.wrappedRows.add(1)
+      terminal.buffer.active.cursorY = 1
+      terminal.buffer.active.cursorX = 1
+    })
+
+    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x01\x7f'))
+  })
+
+  it('Ctrl+U does not edit a row that is not attributable to the prompt base', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)

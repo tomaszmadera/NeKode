@@ -30,8 +30,8 @@ interface ChatTerminalProps {
    * terminal exit (spec Behaviour 11 / AC9). Contract decision: at an empty
    * line the chat closes even while a normal-buffer program (e.g. a python
    * REPL) runs — leaving such a program is `exit()`/Ctrl+Z+Enter, not this
-   * shortcut. On a non-empty line `Ctrl+D`/`Ctrl+U` emulate readline
-   * `delete-char`/`unix-line-discard` (see the key handler below).
+   * shortcut. On a non-empty line `Ctrl+D` emulates `delete-char`;
+   * `Ctrl+U` clears the whole input line (see the key handler below).
    */
   onClose: () => void
   /** Spawn failure (e.g. project directory missing): typed error state. */
@@ -199,28 +199,20 @@ export function ChatTerminal({
       void appRef.current.terminals.write(chatId, data).catch(() => undefined)
     }
 
-    // Input characters between the prompt base and the cursor — the region a
-    // readline-style Ctrl+U (unix-line-discard) deletes, counted in the same
-    // unit the shell's backspace deletes. Zero when the row cannot be
-    // attributed to prompt + input: never send blind backspaces. Known
-    // bounded gaps (safe direction — a dead Ctrl+U, never a destructive one):
-    // a wrapped input line whose cursor row no longer starts with the base,
-    // and multi-code-point cells (combining marks) where characters and
-    // backspaces can disagree by one.
-    function inputCharsBeforeCursor(): number {
-      if (promptBase === null) {
-        return 0
+    // Only edit a line that still begins with the captured prompt. Follow
+    // xterm's wrapped-row chain so long input remains eligible when the cursor
+    // has moved onto a continuation row. Program output can repaint the row.
+    function hasAttributableInputLine(): boolean {
+      if (!baseFrozen || promptBase === null) {
+        return false
       }
       const buffer = terminal.buffer.active
-      const line = buffer.getLine(buffer.baseY + buffer.cursorY)
-      if (line === undefined) {
-        return 0
+      let row = buffer.baseY + buffer.cursorY
+      let line = buffer.getLine(row)
+      while (line?.isWrapped) {
+        line = buffer.getLine(--row)
       }
-      const before = line.translateToString(false, 0, buffer.cursorX)
-      if (!before.startsWith(promptBase)) {
-        return 0
-      }
-      return before.slice(promptBase.length).length
+      return line?.translateToString(false).startsWith(promptBase) ?? false
     }
 
     // The shell (e.g. PowerShell with PSReadLine) does not end on Ctrl+D, so
@@ -231,14 +223,14 @@ export function ChatTerminal({
     // At an empty line the chat closes even while a normal-buffer program
     // (e.g. a python REPL) runs: leaving such a program is `exit()`/Ctrl+Z+Enter,
     // not this shortcut (contract decision).
-    // On a non-empty line the two shortcuts are EMULATED readline line edits.
+    // On a non-empty line the shortcuts are emulated by shell edits.
     // Raw control bytes must never be forwarded: the user's shell (PSReadLine,
     // Windows edit mode) has no Ctrl+D/Ctrl+U binding and self-inserts them
     // into the input line as visible ^D/^U glyphs, poisoning the line the
     // emptiness gate judges (user retest 2026-09-26). The emulations are what
-    // every readline-style shell understands: Ctrl+D = delete-char (the Delete
-    // key byte), Ctrl+U = unix-line-discard (backspaces over the input before
-    // the cursor; text behind it survives).
+    // Ctrl+D = delete-char (the Delete key byte). Ctrl+U uses PowerShell's
+    // SelectAll binding followed by Backspace, which removes the whole input
+    // even when the cursor is in the middle or the line wraps.
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
       // The bottom-panel chord must never be written to this PTY, including
       // while the terminal textarea has focus (spec Behaviour 3).
@@ -275,9 +267,8 @@ export function ChatTerminal({
         sendToPty('\x1b[3~')
         return false
       }
-      const kill = inputCharsBeforeCursor()
-      if (kill > 0) {
-        sendToPty('\x7f'.repeat(kill))
+      if (hasAttributableInputLine()) {
+        sendToPty('\x01\x7f')
       }
       return false
     })
@@ -298,8 +289,7 @@ export function ChatTerminal({
       if (line.before !== promptBase) {
         return false
       }
-      // … and nothing may survive behind the cursor (Ctrl+U mid-line leaves
-      // the rest of the input there — that line is not empty).
+      // … and nothing may survive behind the cursor.
       return line.after === ''
     }
 

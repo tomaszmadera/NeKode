@@ -12,7 +12,10 @@ import { vi } from 'vitest'
 
 /** One buffer row; mirrors `IBufferLine.translateToString`. */
 export class MockBufferLine {
-  constructor(private readonly text: string) {}
+  constructor(
+    private readonly text: string,
+    readonly isWrapped = false,
+  ) {}
 
   /**
    * Real xterm signature: `translateToString(trimRight?, startColumn?,
@@ -46,6 +49,7 @@ export class MockBuffer {
   type: 'normal' | 'alternate' = 'normal'
   /** Absolute row indices; `baseY + cursorY` is the cursor row. */
   rows: string[] = ['']
+  wrappedRows = new Set<number>()
   baseY = 0
   cursorX = 0
   cursorY = 0
@@ -57,7 +61,7 @@ export class MockBuffer {
     while (this.rows.length <= y) {
       this.rows.push('')
     }
-    return new MockBufferLine(this.rows[y])
+    return new MockBufferLine(this.rows[y], this.wrappedRows.has(y))
   }
 }
 
