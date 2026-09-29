@@ -22,6 +22,8 @@
   --color-warning: rgb(217 164 65);
   --color-error: rgb(151 65 80);
   --color-info: rgb(83 134 188);
+  /* Project title accent in the left navigation (design doc 14). */
+  --color-project-title: rgb(111 157 200);
 
   /* Structure: inactive tab border / hairline separators. The divider is the
      inset separator between connected buttons (design doc 5, 11.4). */

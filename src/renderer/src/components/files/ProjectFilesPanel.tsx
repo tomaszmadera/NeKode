@@ -40,7 +40,7 @@ export function ProjectFilesPanel({
 }: ProjectFilesPanelProps): React.JSX.Element {
   return (
     <aside
-      className={cn('flex shrink-0 flex-col border-r border-edge bg-panel')}
+      className={cn('slide-in-from-right flex shrink-0 flex-col border-r border-edge bg-panel')}
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >

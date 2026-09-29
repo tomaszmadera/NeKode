@@ -42,10 +42,13 @@ export function TabStrip({
 }: TabStripProps): React.JSX.Element {
   return (
     <nav
-      className="drag-region flex h-9 shrink-0 items-stretch bg-app px-1 pt-1"
-      // Keep `+ New chat` clear of the native caption buttons: the Windows
-      // window-controls overlay reserves the top-right corner (design doc
-      // 26.2). Without the overlay env() falls back to 100vw, i.e. no inset.
+      className="drag-region flex h-10 shrink-0 items-stretch bg-app px-2 pt-2"
+      // The strip shares the action row's metrics (round 4, design doc 26.2):
+      // 8px left and top insets so the first tab aligns with the first button
+      // below; the extra strip height keeps the 32px tab size. Keep `+ New
+      // chat` clear of the native caption buttons: the Windows window-controls
+      // overlay reserves the top-right corner. Without the overlay env() falls
+      // back to 100vw, i.e. no inset.
       style={{ paddingRight: 'calc(100vw - env(titlebar-area-width, 100vw))' }}
       data-testid={TEST_ID.tabStrip}
     >

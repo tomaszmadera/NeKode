@@ -22,6 +22,9 @@ import { ResizeHandle } from './ResizeHandle'
 
 interface LeftNavigationProps {
   width: number
+  /** Mirrors the files panel's slide (left-to-right; only right after
+      leaving Project Files). */
+  slideIn?: boolean
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
   onResizeNudge: (delta: number) => void
   projects: ProjectInfo[]
@@ -50,6 +53,7 @@ interface ContextMenuState {
 
 export function LeftNavigation({
   width,
+  slideIn = false,
   onResizeStart,
   onResizeNudge,
   projects,
@@ -91,13 +95,17 @@ export function LeftNavigation({
 
   return (
     <aside
-      className={cn('flex shrink-0 flex-col border-r border-edge bg-panel')}
+      className={cn(
+        'flex shrink-0 flex-col border-r border-edge bg-panel',
+        slideIn && 'slide-in-from-left',
+      )}
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >
       {/* Window drag surface (title bar): the top strip is the base app
-          background; the button opts out of dragging. */}
-      <div className="drag-region flex items-center justify-between bg-app px-4 pt-3 pb-1">
+          background; the button opts out of dragging. Fixed 40px height so the
+          header matches the tab strip; the 32px control centers in it. */}
+      <div className="drag-region flex h-10 items-center justify-between bg-app px-4">
         <h2 className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
           Projects
         </h2>
@@ -130,7 +138,7 @@ export function LeftNavigation({
                 <li key={project.id} className="py-0.5">
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
-                    className="group flex items-center rounded px-1 py-1"
+                    className="flex items-center rounded px-1 py-1"
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
                     onContextMenu={(event) => {
@@ -163,7 +171,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="min-w-0 flex-1 truncate rounded pr-1 py-0.5 text-left text-sm uppercase text-ink"
+                      className="min-w-0 flex-1 truncate rounded pr-1 py-0.5 text-left text-sm uppercase text-project-title"
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
                       onClick={() => onSelectProject(project.id)}
@@ -172,7 +180,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="ml-1 flex items-center rounded px-1.5 py-0.5 text-ink-muted opacity-0 hover:bg-highlight hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+                      className="ml-1 flex items-center rounded px-1.5 py-0.5 text-ink-muted hover:bg-highlight hover:text-ink"
                       data-testid={testIdFor.projectFiles(project.id)}
                       title="Show project files"
                       aria-label={`Show project files for ${project.name}`}

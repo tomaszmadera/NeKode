@@ -184,6 +184,18 @@
         "createprocess"
       ],
       "path": ".agents/lessons/items/verify-targeted-cmd-wrapper-gitbash.md"
+    },
+    {
+      "id": "timing-suffix-only-staged-elements",
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "task-record",
+        "timing",
+        "task-status"
+      ],
+      "path": ".agents/lessons/items/timing-suffix-only-staged-elements.md"
     }
   ]
 }
