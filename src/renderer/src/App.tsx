@@ -157,6 +157,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // Per-project tree state lives in filesSessions for the app session only
   // (Behaviour 14).
   const [filesProjectId, setFilesProjectId] = useState<string | null>(null)
+  // True only right after leaving Project Files: the returning Projects list
+  // replays the files panel's slide (user decision 2026-09-29, round 8).
+  const [navSlideIn, setNavSlideIn] = useState(false)
   const [filesSessions, setFilesSessions] = useState<Record<string, ProjectFilesSession>>({})
   // Per-project tab-strip sessions (center-layout-tabs-actions spec
   // Behaviour 3–5): open file tabs in open order, the active tab and the
@@ -680,6 +683,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const handleOpenProjectFiles = useCallback(
     (projectId: string): void => {
       setNotice(null)
+      setNavSlideIn(false)
       setFilesProjectId(projectId)
       const session = filesSessions[projectId] ?? emptyProjectFilesSession()
       if (session.childrenByPath[''] === undefined) {
@@ -691,6 +695,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   const handleCloseProjectFiles = useCallback((): void => {
     setNotice(null)
+    setNavSlideIn(true)
     setFilesProjectId(null)
   }, [])
 
@@ -1158,6 +1163,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         ) : (
           <LeftNavigation
             width={leftWidth}
+            slideIn={navSlideIn}
             onResizeStart={leftRegion.startResize}
             onResizeNudge={leftRegion.nudge}
             projects={projects}
@@ -1179,9 +1185,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             notice={notice}
           />
         )}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="relative z-10 flex min-w-0 flex-1 flex-col bg-app">
           {/* Center column (spec Behaviour 1): tab strip, reserved action-row
-              slot, main surface. No window-top band and no context header. */}
+              slot, main surface. No window-top band and no context header.
+              Raised above the sliding left panel (transform creates a stacking
+              context that would otherwise paint over this column): the panel
+              emerges from under the middle panel, never over it. */}
           <TabStrip
             chatName={activeChat?.name ?? null}
             openFiles={tabsSession.openFiles}

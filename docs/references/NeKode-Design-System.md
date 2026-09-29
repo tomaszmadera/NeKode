@@ -487,7 +487,9 @@ Primary sections:
 
 ## 14. Project and chat styling
 
-Project names are uppercase, compact and muted.
+Project names are uppercase, compact, in the project-title accent
+(`--color-project-title`, rgb(111 157 200), 2026-09-29; previously the muted
+ink).
 
 Example:
 
@@ -501,7 +503,7 @@ Suggested style:
 font-size: 11px;
 font-weight: 600;
 letter-spacing: 0.05em;
-color: var(--color-ink-muted);
+color: var(--color-project-title);
 ```
 
 Each project should expose a visible `Chats` subheading.
@@ -524,7 +526,19 @@ decisions 2026-09-28/29; selection stays in
 its rows span the full list width; the selected chat keeps the highlight
 background (`--color-highlight`) across that full width. The `+ New Chat`
 affordance is a row matching the chat rows: same height, the plus icon in
-the chat-icon column (user decision 2026-09-29).
+the chat-icon column (user decision 2026-09-29). The project row's `Files`
+action is always visible (user decision 2026-09-29, previously
+hover-revealed), and entering Project Files slides the left panel in from
+the right: 220ms `cubic-bezier(0.2, 0, 0, 1)` (`slide-in-from-right` in
+`index.css`, section 24 panel-expansion band; disabled under
+`prefers-reduced-motion`). The slide passes under the center column, never
+over it (2026-09-29): the column is raised above the transformed panel
+(`relative z-10` with an opaque `bg-app`; a `transform` alone would paint
+the panel above all normal-flow siblings). Returning to Projects replays
+the mirrored slide (`slide-in-from-left`, left-to-right from the window's
+left edge, same 220ms; user decision 2026-09-29) for the Projects list
+(`slideIn` on `LeftNavigation`, set only right after leaving Project
+Files, so the app start stays static).
 
 ---
 
@@ -852,6 +866,7 @@ Expose tokens at the document root:
   --color-warning: rgb(217 164 65);
   --color-error: rgb(151 65 80);
   --color-info: rgb(83 134 188);
+  --color-project-title: rgb(111 157 200);
 
   /* structure */
   --color-edge: rgb(33 37 49);
@@ -867,13 +882,21 @@ Expose tokens at the document root:
 
 Implemented (2026-09-28): the app uses the Window Controls Overlay title bar.
 `src/main/index.ts` sets `titleBarStyle: 'hidden'` plus `titleBarOverlay`
-(`#111423` strip, `#cacbd1` symbols, 36px to match the tab strip) and a
-matching `backgroundColor` against the first-paint flash. The renderer's top
+(`#111423` strip, `#cacbd1` symbols, 36px; the tab strip itself is 40px since
+2026-09-29) and a matching `backgroundColor` against the first-paint flash.
+The renderer's top
 strips (tab strip, Projects header, Files header) are the drag surface
 (`.drag-region` / `.no-drag` in `index.css`) and paint the base app
 background; the tab strip insets `+ New chat` by
 `calc(100vw - env(titlebar-area-width, 100vw))` so it never sits under the
-caption buttons. The hairline under the tab strip is owned by the action row
+caption buttons. The tab strip shares the action row's metrics (2026-09-29):
+`px-2 pt-2` insets, so the first tab's left edge aligns with the first
+action-row button and the tabs keep the 32px control height inside the 40px
+strip. All three top strips share that 40px height (2026-09-29): the
+Projects and Files headers are fixed `h-10` strips that center their
+controls (the 32px Add Project button, the back row); previously the
+Projects header totaled 48px (`pt-3 pb-1` around the 32px control). The
+hairline under the tab strip is owned by the action row
 (`border-t`), not by the tab strip: the 36px overlay strip paints over a
 `border-b` at the strip's bottom edge, so the line visibly vanished under
 the caption buttons (fixed 2026-09-29).
@@ -1017,6 +1040,7 @@ A NeKode screen should feel correct when:
   --color-warning: rgb(217 164 65);
   --color-error: rgb(151 65 80);
   --color-info: rgb(83 134 188);
+  --color-project-title: rgb(111 157 200);
 
   /* structure */
   --color-edge: rgb(33 37 49);

@@ -1,16 +1,16 @@
 ---
 id: ux-ui-polish-followup
 schema_version: 2
-status: active
+status: completed
 intent: feature
 complexity: small
 durability: recorded
-current_phase: Phase 8
-current_step: Phase 8.1
-updated: 2026-09-28
+current_phase: Phase 14
+current_step: none
+updated: 2026-09-29
 branch: main
 worktree: current
-next_action: Take the user's next UI improvement list at intake, then plan the first slice
+next_action: none
 blockers: none
 ---
 
@@ -116,9 +116,141 @@ Plan:
 
 Record closed here (2026-09-28T23:17Z); published as commit `4e8d515` plus version bump `75094e5` (tag `0.4.6`). The user approved the publication and announced further UI improvements to continue in a new session, so the record reopens at Phase 8.
 
+User change list (intake 2026-09-29, round 3):
+
+18. Terminal prompt input: Send and Dictation sit next to each other, glued together from the frame's right end with no gap, and a divider sits between them but must not create a gap; nothing (no divider) on the input side of Send. The code deviated from the recorded contract: the hairline stood before Send and the frame's `gap-2` left an 8px gap between Send and Dictation; design doc 15 already prescribes the divider between Send and Dictation.
+
 ## Phase 8 - Next session (round 3)
 
-- [ ] Phase 8.1 - Intake: take the user's next UI improvement list, classify, and plan the slice
+- [x] Phase 8.1 - Intake and plan: change list taken (item 18 above), classification confirmed (feature/small/recorded, no risk flags); baseline `pnpm test` 342/342 before edits (2026-09-29T08:08Z, clean first run)
+- [x] Phase 8.2 - Implement, affected checks, review, verify (lint exit 0 after the known `package.json` CRLF working-copy fix, typecheck exit 0, `pnpm test` 342/342; diff reviewed, no findings; `verify-targeted` on `ChatTerminal.test.tsx` exit 0, 33/33; verification subject 4 `check` matched)
+- [x] Phase 8.3 - Retro: lesson `timing-suffix-only-staged-elements` recorded at intake (task-status rejects a stage suffix on the `intake` Timing element); the `package.json` CRLF recurrence is covered by existing lessons `windows-biome-package-json-eol` and `git-checkout-reintroduces-crlf` (no update, deduplicated)
+
+Plan (as executed):
+
+- `PromptInput.tsx`: the frame's right end becomes one segment group in the action row's language (design doc 5): wrap Send and Dictation in a `flex h-full shrink-0 items-stretch bg-button` group, remove the hairline span that stood before Send (nothing on the input side), and put the single centered hairline (`h-4 w-px self-center bg-divider`) between Send and Dictation. The frame's `gap-2` then applies only between the input and the group, so the controls sit flush from the right end with no gap; Dictation stays the last segment flush to the frame end with clipped corners.
+- No design doc change: section 15 already prescribes this exact arrangement ("a centered hairline divider separates Send from the Dictation control"); the edit aligns the code with the recorded contract.
+- Tests: existing Send/Dictation tests in `ChatTerminal.test.tsx` are testid-based and cover the behavior (click submit, disabled while empty, Dictation disabled); no structural assertions to update.
+- Affected checks: `pnpm run lint`, `pnpm run typecheck`, `pnpm test`; final verification targeted on `ChatTerminal.test.tsx`.
+
+Record closed here (2026-09-29T08:47:37Z); version stays 0.4.6 until the user approves the next publication. The user then added a tab strip change, so the record reopens at Phase 9.
+
+User change list (intake 2026-09-29, round 4):
+
+19. Tab strip: the same padding as the action row's buttons below - the first tab's left edge aligned with the first button's left edge (8px inset) and a proper top padding (8px). The user accepts this may look unusual against the Windows caption-button alignment and wants to evaluate it visually.
+
+## Phase 9 - Next session (round 4)
+
+- [x] Phase 9.1 - Intake and plan: change list taken (item 19 above), classification confirmed (feature/small/recorded, no risk flags), slice planned (2026-09-29T09:01Z)
+- [x] Phase 9.2 - Implement, affected checks, review, verify (baseline `pnpm test` 342/342; after edits lint exit 0, typecheck exit 0, `pnpm test` 342/342; diff reviewed, no findings; `verify-targeted` on `CenterTabs.test.tsx` exit 0, 15/15; verification subject 5 `check` matched; no lesson candidate this attempt, no retro row)
+
+Record closed here (2026-09-29T09:03:50Z); items 18 and 19 stay uncommitted, version stays 0.4.6 until the user approves publication. The user then added a project title color, so the record reopens at Phase 10.
+
+User change list (intake 2026-09-29, round 5):
+
+20. Titles get a different font color; project titles: rgb(111, 157, 200).
+
+## Phase 10 - Same session (round 5)
+
+- [x] Phase 10.1 - Intake and plan: change list taken (item 20 above), classification confirmed (feature/small/recorded, no risk flags), slice planned (2026-09-29T09:07Z)
+- [x] Phase 10.2 - Implement, affected checks, review, verify (baseline `pnpm test` 342/342; after edits lint exit 0, typecheck exit 0, `pnpm test` 342/342; diff reviewed, no findings; `verify-targeted` on `App.test.tsx` exit 0, 58/58; verification subject 6 `check` matched; no lesson candidate, no retro row)
+
+Record closed here (2026-09-29T09:09:20Z); items 18, 19 and 20 stay uncommitted, version stays 0.4.6 until the user approves publication. The user then added a files-panel slide and button visibility change, so the record reopens at Phase 11.
+
+User change list (intake 2026-09-29, round 6):
+
+21. Clicking the project row's "show files" action slides the files panel in from the right (right-to-left slide). The "Show Project Files" button is always visible, not hover-revealed only (corrects the feature spec's hover/focus wording).
+
+## Phase 11 - Same session (round 6)
+
+- [x] Phase 11.1 - Intake and plan: change list taken (item 21 above), classification confirmed (feature/small/recorded, no risk flags), slice planned (2026-09-29T09:12Z)
+- [x] Phase 11.2 - Implement, affected checks, review, verify (baseline `pnpm test` 342/342; after edits lint exit 0, typecheck exit 0, `pnpm test` 342/342; diff reviewed: the dead `group` class left by the removed hover reveal was dropped in the same attempt; `verify-targeted` on `ProjectFiles.test.tsx` exit 0, 13/13; verification subject 7 `check` matched; no lesson candidate, no retro row)
+
+Record closed here (2026-09-29T09:16:05Z); items 18-21 stay uncommitted, version stays 0.4.6 until the user approves publication. The user then added a header height alignment, so the record reopens at Phase 12.
+
+User change list (intake 2026-09-29, round 7):
+
+22. The left column header (Projects) and the main column header (tab strip) get the same height; the Projects header is currently a bit taller (48px: `pt-3` 12px + the 32px `h-control` Add Project button + `pb-1` 4px, versus the tab strip's fixed 40px `h-10`; the files-mode header already totals 40px).
+
+## Phase 12 - Same session (round 7)
+
+- [x] Phase 12.1 - Intake and plan: change list taken (item 22 above), classification confirmed (feature/small/recorded, no risk flags), slice planned (2026-09-29T10:20:46Z)
+- [x] Phase 12.2 - Implement, affected checks, review, verify (baseline `pnpm test` 342/342 clean first run 2026-09-29T10:22:48 local; after edits lint exit 0, typecheck exit 0, `pnpm test` 342/342; diff reviewed, no findings; `verify-targeted` on `App.test.tsx` exit 0, 58/58; verification subject 8 `check` matched immediately before close; no lesson candidate, no retro row)
+
+Record closed here (2026-09-29T10:24:36Z); items 18-22 stay uncommitted, version stays 0.4.6 until the user approves publication. The user then corrected the slide animation, so the record reopens at Phase 13 (the bare "OK." after round 7 was not read as publication approval; no publication option was selected).
+
+User change list (intake 2026-09-29, round 8):
+
+23. The Project Files slide-in must not travel over the middle tab strip and middle panel; it must emerge from under the middle panel. And when returning to Projects, the same animation should play.
+
+## Phase 13 - Same session (round 8)
+
+- [x] Phase 13.1 - Intake and plan: change list taken (item 23 above), classification confirmed (feature/small/recorded, no risk flags), slice planned (2026-09-29T10:31:00Z)
+- [x] Phase 13.2 - Implement, affected checks, review, verify (baseline `pnpm test` 342/342 clean first run 2026-09-29T10:38Z; after edits lint exit 0, typecheck exit 0, `pnpm test` 342/342; diff reviewed, no findings; `verify-targeted` on `ProjectFiles.test.tsx` exit 0, 13/13; verification subject 9 `check` matched immediately before close; no lesson candidate, no retro row)
+
+Record closed here (2026-09-29T10:41:51Z); items 18-23 stay uncommitted, version stays 0.4.6 until the user approves publication. The user then corrected the return-slide direction and speed, so the record reopens at Phase 14.
+
+User change list (intake 2026-09-29, round 9):
+
+24. The files slide right-to-left, so Projects on return must slide left-to-right (mirrored direction). And the slide gets roughly 10-15% slower.
+
+## Phase 14 - Same session (round 9)
+
+- [x] Phase 14.1 - Intake and plan: change list taken (item 24 above), classification confirmed (feature/small/recorded, no risk flags), slice planned (2026-09-29T10:51:51Z)
+- [x] Phase 14.2 - Implement, affected checks, review, verify (baseline `pnpm test` 342/342 clean first run 2026-09-29T10:52Z; after edits lint exit 0, typecheck exit 0, `pnpm test` 342/342; diff reviewed, no findings; `verify-targeted` on `ProjectFiles.test.tsx` exit 0, 13/13; verification subject 10 `check` matched immediately before close)
+
+Record closed here (2026-09-29T10:54:58Z); items 18-24 stay uncommitted, version stays 0.4.6 until the user approves publication.
+
+Plan (as executed):
+
+- `index.css`: new `slide-in-from-left` keyframes (`translateX(-100%)` to 0) and class; both slide classes slow from 200ms to 220ms (12%, inside the recorded 160-220ms panel-expansion band, design doc 24); the `prefers-reduced-motion` guard covers both classes.
+- `LeftNavigation.tsx`: `slideIn` applies `slide-in-from-left` - the mirrored direction: the Projects list enters from the left window edge moving right into its slot.
+- `ProjectFilesPanel.tsx`: unchanged; files keep entering right-to-left (`slide-in-from-right`), now 220ms.
+- `docs/references/NeKode-Design-System.md` section 14: return slide mirrored (left-to-right), both slides 220ms.
+- Tests: no test changes (animation classes are inert in jsdom).
+- Affected checks: `pnpm run lint`, `pnpm run typecheck`, `pnpm test`; final verification targeted on `ProjectFiles.test.tsx`.
+
+Plan (as executed):
+
+- `App.tsx`: the center column wrapper gains `relative z-10 bg-app`. Mechanism: the sliding panel carries a `transform`, which makes it a stacking context painted above all normal-flow siblings; raising the opaque center column paints it above the panel, so the panel emerges from under the middle tab strip and panel instead of traveling over them.
+- `App.tsx`: new `navSlideIn` state: `false` at startup, reset to `false` in `handleOpenProjectFiles`, set to `true` in `handleCloseProjectFiles`; passed to `LeftNavigation` as `slideIn`.
+- `LeftNavigation.tsx`: optional `slideIn?: boolean` prop; the root `aside` adds `slide-in-from-right` when set - the exact class and 200ms curve the files panel uses on entry, so returning to Projects replays the identical slide. Plain mounts (app start) stay static; the existing `prefers-reduced-motion` guard covers the class.
+- No exit-animation machinery: the panel/Projects swap stays an exclusive conditional render, so `data-testid={TEST_ID.leftNav}` never duplicates and no unmount timing enters tests.
+- `docs/references/NeKode-Design-System.md` section 14: record that the slide passes under the center column and that returning to Projects replays the same slide.
+- Tests: `ProjectFiles.test.tsx` back-button tests assert post-back state via test ids; the added class is inert in jsdom. No test changes.
+- Affected checks: `pnpm run lint`, `pnpm run typecheck`, `pnpm test`; final verification targeted on `ProjectFiles.test.tsx`.
+
+Plan (as executed):
+
+- `LeftNavigation.tsx`: the Projects header drops `pt-3 pb-1` for a fixed `h-10` (40px, the tab strip's height); `items-center` keeps the 32px Add Project button vertically centered (4px above and below), the strip stays the `bg-app` drag region with `px-4`.
+- `docs/references/NeKode-Design-System.md` section 26.2: record that the three top drag strips (tab strip, Projects header, Files header) share the 40px height; the Projects header centers its 32px control in the 40px strip (it is not a tab glued to the content below, so centered, not bottom-flush).
+- Tests: `App.test.tsx` asserts the project list and Add Project behavior via test ids, no class or metric assertions; no test changes.
+- Affected checks: `pnpm run lint`, `pnpm run typecheck`, `pnpm test`; final verification targeted on `App.test.tsx`.
+
+Plan (as executed):
+
+- `index.css`: new `slide-in-from-right` keyframe animation (`translateX(100%)` to 0) with 200ms `cubic-bezier(0.2, 0, 0, 1)` per the design doc 24 panel-expansion band, plus a `prefers-reduced-motion: reduce` guard that disables it.
+- `ProjectFilesPanel.tsx`: the panel's `aside` root gains `slide-in-from-right`; the animation runs on mount, i.e. on every entry into Project Files mode (the panel mounts only when `filesProject` is set, `App.tsx:1146`).
+- `LeftNavigation.tsx`: the Files action button drops `opacity-0`, `focus-visible:opacity-100` and `group-hover:opacity-100`, keeping the hover fill and tooltip.
+- `docs/features/project-files-view/spec.md`: lines 20 and 38 reworded from hover-revealed to always visible (the explicit user decision outranks the spec; correcting the lower contract).
+- `docs/references/NeKode-Design-System.md`: section 14 implemented block records the always-visible Files action and the slide-in panel entry.
+- Tests: `ProjectFiles.test.tsx` asserts the tooltip and behavior, not visibility classes; no test changes.
+- Affected checks: `pnpm run lint`, `pnpm run typecheck`, `pnpm test`; final verification targeted on `ProjectFiles.test.tsx`.
+
+Plan (as executed):
+
+- `theme.css`: new semantic token `--color-project-title: rgb(111 157 200)` in the semantic group (the no-raw-colors rule forces a token; the requested value differs from `--color-info` rgb(83 134 188), so no reuse).
+- `LeftNavigation.tsx`: the project name button drops `text-ink` for `text-project-title`; the row's chevron, files and chat controls keep their tokens.
+- `docs/references/NeKode-Design-System.md`: section 14 recolors the project-name suggested style to `var(--color-project-title)` (the "muted" wording goes); section 26.1 root token list gains `--color-project-title`.
+- Tests: project-row tests in `App.test.tsx` are testid-based, no color assertions; no test changes.
+- Affected checks: `pnpm run lint`, `pnpm run typecheck`, `pnpm test`; final verification targeted on `App.test.tsx`.
+
+Plan (as executed):
+
+- `TabStrip.tsx`: the strip goes from `h-9 px-1 pt-1` to `h-10 px-2 pt-2`: 8px left inset aligns the first tab with the first action-row button (`px-2` row padding), 8px top padding matches the row's `py-2`; the strip grows 4px so the tabs keep their current 32px height (equal to the `h-control` buttons below) and stay flush on the row's top border. The right-end `+ New chat` clearance keeps the inline `titlebar-area-width` calc, which overrides only the right padding.
+- `docs/references/NeKode-Design-System.md` section 26.2: reword the overlay note (the overlay stays 36px; the tab strip is now 40px) and record the shared action-row metrics rule (8px insets, 32px tabs, round-4 change).
+- Tests: `CenterTabs.test.tsx` and `App.test.tsx` assert strip existence and behavior only, no class assertions; no test changes.
+- Affected checks: `pnpm run lint`, `pnpm run typecheck`, `pnpm test`; final verification targeted on `CenterTabs.test.tsx`.
 
 ## Decisions
 
@@ -164,6 +296,46 @@ Resumed session (items 16-17, 2026-09-28):
 - `src/renderer/src/components/terminal/ChatTerminal.test.tsx` - Send click-submit test and Send-disabled-when-empty test
 - `docs/references/NeKode-Design-System.md` - sections 10 (`Icon.send`), 11.4 (icon-only Actions control), 15 (Send in the prompt frame), 21 (Dictation is the last segment after Send)
 
+Round 3 (item 18, 2026-09-29):
+
+- `src/renderer/src/components/terminal/PromptInput.tsx` - the frame's right end is one segment group: Send and Dictation glued with the centered hairline between them, no divider on the input side; lessons index and `timing-suffix-only-staged-elements` item updated alongside
+
+Round 4 (item 19, 2026-09-29):
+
+- `src/renderer/src/components/tabs/TabStrip.tsx` - strip metrics `h-10 px-2 pt-2`: 8px left/top insets shared with the action row, 32px tab height preserved in the 40px strip
+- `docs/references/NeKode-Design-System.md` - section 26.2: overlay stays 36px, tab strip is 40px, shared action-row metrics rule recorded
+
+Round 5 (item 20, 2026-09-29):
+
+- `src/renderer/src/theme.css` - new semantic token `--color-project-title` rgb(111 157 200)
+- `src/renderer/src/components/layout/LeftNavigation.tsx` - project name button `text-ink` → `text-project-title`
+- `docs/references/NeKode-Design-System.md` - section 14 project-name color, token added to the 26.1 and 30 token lists
+
+Round 6 (item 21, 2026-09-29):
+
+- `src/renderer/src/index.css` - `slide-in-from-right` keyframe (200ms, `cubic-bezier(0.2, 0, 0, 1)`) with a `prefers-reduced-motion` guard
+- `src/renderer/src/components/files/ProjectFilesPanel.tsx` - panel `aside` carries `slide-in-from-right`
+- `src/renderer/src/components/layout/LeftNavigation.tsx` - Files action always visible (opacity classes and the row's dead `group` class removed)
+- `docs/features/project-files-view/spec.md` - Files action reworded from hover-revealed to always visible (scope list and Behaviour 1)
+- `docs/references/NeKode-Design-System.md` - section 14 records the always-visible action and the slide-in entry
+
+Round 7 (item 22, 2026-09-29):
+
+- `src/renderer/src/components/layout/LeftNavigation.tsx` - Projects header is a fixed `h-10` strip with centered content (was `pt-3 pb-1`, 48px total)
+- `docs/references/NeKode-Design-System.md` - section 26.2 records the shared 40px height of the three top strips
+
+Round 8 (item 23, 2026-09-29):
+
+- `src/renderer/src/App.tsx` - center column wrapper `relative z-10 bg-app` (the sliding panel passes under it); `navSlideIn` state set true by the files back handler and passed to `LeftNavigation` as `slideIn`
+- `src/renderer/src/components/layout/LeftNavigation.tsx` - optional `slideIn` prop replays `slide-in-from-right` on the returning Projects list
+- `docs/references/NeKode-Design-System.md` - section 14 records the under-the-center-column stacking and the replayed return slide
+
+Round 9 (item 24, 2026-09-29):
+
+- `src/renderer/src/index.css` - `slide-in-from-left` keyframes and class; both slide classes 200ms to 220ms; reduced-motion guard covers both
+- `src/renderer/src/components/layout/LeftNavigation.tsx` - `slideIn` applies `slide-in-from-left` (mirrored direction)
+- `docs/references/NeKode-Design-System.md` - section 14: mirrored return slide, both slides 220ms
+
 ## Verification
 
 | Check | Result | Notes |
@@ -179,6 +351,13 @@ Resumed session (items 16-17, 2026-09-28):
 | Electron runtime smoke | pass | built app ran 12s with the new `titleBarStyle`/`titleBarOverlay` options: window process tree alive, empty error log, stopped via `taskkill` |
 | Post-close rounds (each) | pass | lint exit 0, typecheck exit 0, `pnpm test` 340/340; last full run 2026-09-28T22:50Z |
 | Resumed session (items 16-17) | pass | baseline `pnpm test` 340/340 (first run hit the known flaky `terminal-service.test.ts:196` ConPTY spawn test, clean on rerun); after edits: `pnpm run lint` exit 0, `pnpm run typecheck` exit 0, `pnpm test` 342/342; `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/App.test.tsx src/renderer/src/components/terminal/ChatTerminal.test.tsx` exit 0 (91/91, two runs); verification subject 3 `check` exit 0 immediately before close |
+| Round 3 (item 18) | pass | baseline `pnpm test` 342/342 (clean first run, 2026-09-29T08:08Z); after edits: `pnpm run lint` exit 0 (first run failed on the known `package.json` CRLF working-copy issue, restored from the HEAD blob), `pnpm run typecheck` exit 0, `pnpm test` 342/342; `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/components/terminal/ChatTerminal.test.tsx` exit 0 (33/33); verification subject 4 `check` matched immediately before close |
+| Round 4 (item 19) | pass | baseline `pnpm test` 342/342 (clean, 2026-09-29T09:01Z); after edits: `pnpm run lint` exit 0, `pnpm run typecheck` exit 0, `pnpm test` 342/342; `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/components/tabs/CenterTabs.test.tsx` exit 0 (15/15); verification subject 5 `check` matched immediately before close |
+| Round 5 (item 20) | pass | baseline `pnpm test` 342/342 (clean, 2026-09-29T09:06Z); after edits: `pnpm run lint` exit 0, `pnpm run typecheck` exit 0, `pnpm test` 342/342; `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/App.test.tsx` exit 0 (58/58); verification subject 6 `check` matched immediately before close |
+| Round 6 (item 21) | pass | baseline `pnpm test` 342/342 (clean, 2026-09-29T09:12Z); after edits: `pnpm run lint` exit 0, `pnpm run typecheck` exit 0, `pnpm test` 342/342 (rerun after the review correction, same result); `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/components/files/ProjectFiles.test.tsx` exit 0 (13/13); verification subject 7 `check` matched immediately before close |
+| Round 7 (item 22) | pass | baseline `pnpm test` 342/342 (clean first run, 2026-09-29T10:22Z); after edits: `pnpm run lint` exit 0, `pnpm run typecheck` exit 0, `pnpm test` 342/342; `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/App.test.tsx` exit 0 (58/58); verification subject 8 `check` matched immediately before close |
+| Round 8 (item 23) | pass | baseline `pnpm test` 342/342 (clean first run, 2026-09-29T10:38Z); after edits: `pnpm run lint` exit 0, `pnpm run typecheck` exit 0, `pnpm test` 342/342; `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/components/files/ProjectFiles.test.tsx` exit 0 (13/13); verification subject 9 `check` matched immediately before close |
+| Round 9 (item 24) | pass | baseline `pnpm test` 342/342 (clean first run, 2026-09-29T10:52Z); after edits: `pnpm run lint` exit 0, `pnpm run typecheck` exit 0, `pnpm test` 342/342; `python .agents/scripts/verify-targeted -- cmd //c pnpm exec vitest run src/renderer/src/components/files/ProjectFiles.test.tsx` exit 0 (13/13); verification subject 10 `check` matched immediately before close |
 | Alignment measurement | pass | DOM harness over the built CSS in the in-app browser: project name text x == chat icon x (diff 0), chat row height == New Chat row height (24px), plus icon at the chat-icon column x |
 
 ### Verification subject 1
@@ -257,6 +436,139 @@ Resumed session (items 16-17, 2026-09-28):
 }
 ```
 
+### Verification subject 4
+
+```json
+{
+  "attempt": 4,
+  "head": "69ffbca5b8cb1d20d38a6d65cb85984181d017be",
+  "paths": [
+    ".agents/lessons/index.json",
+    ".agents/lessons/items/timing-suffix-only-staged-elements.md",
+    "src/renderer/src/components/terminal/PromptInput.tsx"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "69790ec2f5d341a77f7dbba2855c2255cb4973fb901b0b710906b1a6579aac96",
+  "unstaged_diff_sha256": "c068e930bcf29a4f9cddda288cfebad6a9becdec2f44dac6a9315d64f5631946",
+  "untracked_files_sha256": "13b733c6802e8c2cf28dcc6bd2721a2b24d23da0a7feb3eb0107f1cd943ff6a9"
+}
+```
+
+### Verification subject 5
+
+```json
+{
+  "attempt": 5,
+  "head": "69ffbca5b8cb1d20d38a6d65cb85984181d017be",
+  "paths": [
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/components/tabs/TabStrip.tsx"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "fa35fa28e4a0210aeb34f331efddc489b8a6218a413e53d34ba20437404314b1",
+  "unstaged_diff_sha256": "9b8e006949612df50329e9668f6d0f4e48420bfe68b5e1d37b100190f9c64625",
+  "untracked_files_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}
+```
+
+### Verification subject 6
+
+```json
+{
+  "attempt": 6,
+  "head": "69ffbca5b8cb1d20d38a6d65cb85984181d017be",
+  "paths": [
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/components/layout/LeftNavigation.tsx",
+    "src/renderer/src/theme.css"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "6bd83b59d6a367e10277b64f2ca911bb30d2ce57ff54bc72fddc5bee6eb38d73",
+  "unstaged_diff_sha256": "9068ed94666f87ecdc8154655c657f90ded899e4eebd6225ef0c3a10f2e008d8",
+  "untracked_files_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}
+```
+
+### Verification subject 7
+
+```json
+{
+  "attempt": 7,
+  "head": "69ffbca5b8cb1d20d38a6d65cb85984181d017be",
+  "paths": [
+    "docs/features/project-files-view/spec.md",
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/components/files/ProjectFilesPanel.tsx",
+    "src/renderer/src/components/layout/LeftNavigation.tsx",
+    "src/renderer/src/index.css"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "83067c9f2a5deaae7715f020379d0571fc7be6747920aa2f0a4c4a50cae1006e",
+  "unstaged_diff_sha256": "04dd52af2e0259bc52c49bcec83a550d3f5b9d7bc7bb4ab686f180fd7eb08d63",
+  "untracked_files_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}
+```
+
+### Verification subject 8
+
+```json
+{
+  "attempt": 8,
+  "head": "69ffbca5b8cb1d20d38a6d65cb85984181d017be",
+  "paths": [
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/components/layout/LeftNavigation.tsx"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "8d546f442e637733016a76c2ae075746d8f00ef0f5997433d535e6ca18949930",
+  "unstaged_diff_sha256": "e212b5261572919258ebd499eb4214db426fc361004015ff2f38f05f3481fae4",
+  "untracked_files_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}
+```
+
+### Verification subject 9
+
+```json
+{
+  "attempt": 9,
+  "head": "69ffbca5b8cb1d20d38a6d65cb85984181d017be",
+  "paths": [
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/App.tsx",
+    "src/renderer/src/components/layout/LeftNavigation.tsx"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "cef2a0410b754f5f662518cd36c24caa2c91093cb6bcbfe0bc0f7d51e091e001",
+  "unstaged_diff_sha256": "70b3608a34652f5537629ae60153ff6d6b316562f39e9857d0d124baf2745ff4",
+  "untracked_files_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}
+```
+
+### Verification subject 10
+
+```json
+{
+  "attempt": 10,
+  "head": "69ffbca5b8cb1d20d38a6d65cb85984181d017be",
+  "paths": [
+    "docs/references/NeKode-Design-System.md",
+    "src/renderer/src/components/layout/LeftNavigation.tsx",
+    "src/renderer/src/index.css"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "a493ef63a0765b2bdf817fca4b0ec8fb9d55efed7eaf75f70b95b60edf96500b",
+  "unstaged_diff_sha256": "b9c76d67355a3b6e1c351197f4333c625fce56fb24ac168ee69c41f1de6048d9",
+  "untracked_files_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}
+```
+
 ## Timing
 
 | Element | Kind | Started | Ended |
@@ -278,6 +590,49 @@ Resumed session (items 16-17, 2026-09-28):
 | verify | work | 2026-09-28T23:09:30Z | 2026-09-28T23:13:20Z |
 | retro | work | 2026-09-28T23:13:20Z | 2026-09-28T23:15:35Z |
 | verify | work | 2026-09-28T23:15:35Z | 2026-09-28T23:17:38Z |
+| intake | work | 2026-09-29T08:07:24Z | 2026-09-29T08:39:43Z |
+| plan | work | 2026-09-29T08:39:43Z | 2026-09-29T08:39:43Z |
+| implement:round3 | work | 2026-09-29T08:39:43Z | 2026-09-29T08:44:05Z |
+| review | work | 2026-09-29T08:44:05Z | 2026-09-29T08:45:34Z |
+| verify | work | 2026-09-29T08:45:34Z | 2026-09-29T08:47:37Z |
+| retro | work | 2026-09-29T08:47:37Z | 2026-09-29T08:47:37Z |
+| close | work | 2026-09-29T08:47:37Z | 2026-09-29T08:47:37Z |
+| intake | work | 2026-09-29T08:58:36Z | 2026-09-29T09:01:17Z |
+| plan | work | 2026-09-29T09:01:17Z | 2026-09-29T09:01:17Z |
+| implement:round4 | work | 2026-09-29T09:01:17Z | 2026-09-29T09:03:10Z |
+| review | work | 2026-09-29T09:03:10Z | 2026-09-29T09:03:10Z |
+| verify | work | 2026-09-29T09:03:10Z | 2026-09-29T09:03:50Z |
+| close | work | 2026-09-29T09:03:50Z | 2026-09-29T09:03:50Z |
+| intake | work | 2026-09-29T09:05:22Z | 2026-09-29T09:06:54Z |
+| plan | work | 2026-09-29T09:06:54Z | 2026-09-29T09:06:54Z |
+| implement:round5 | work | 2026-09-29T09:06:54Z | 2026-09-29T09:08:52Z |
+| review | work | 2026-09-29T09:08:52Z | 2026-09-29T09:08:52Z |
+| verify | work | 2026-09-29T09:08:52Z | 2026-09-29T09:09:20Z |
+| close | work | 2026-09-29T09:09:20Z | 2026-09-29T09:09:20Z |
+| intake | work | 2026-09-29T09:10:50Z | 2026-09-29T09:12:53Z |
+| plan | work | 2026-09-29T09:12:53Z | 2026-09-29T09:12:53Z |
+| implement:round6 | work | 2026-09-29T09:12:53Z | 2026-09-29T09:15:40Z |
+| review | work | 2026-09-29T09:15:40Z | 2026-09-29T09:15:40Z |
+| verify | work | 2026-09-29T09:15:40Z | 2026-09-29T09:16:05Z |
+| close | work | 2026-09-29T09:16:05Z | 2026-09-29T09:16:05Z |
+| intake | work | 2026-09-29T10:20:46Z | 2026-09-29T10:22:00Z |
+| plan | work | 2026-09-29T10:22:00Z | 2026-09-29T10:22:00Z |
+| implement:round7 | work | 2026-09-29T10:22:00Z | 2026-09-29T10:23:21Z |
+| review | work | 2026-09-29T10:23:21Z | 2026-09-29T10:23:21Z |
+| verify | work | 2026-09-29T10:23:21Z | 2026-09-29T10:24:36Z |
+| close | work | 2026-09-29T10:24:36Z | 2026-09-29T10:24:36Z |
+| intake | work | 2026-09-29T10:31:00Z | 2026-09-29T10:40:00Z |
+| plan | work | 2026-09-29T10:40:00Z | 2026-09-29T10:40:00Z |
+| implement:round8 | work | 2026-09-29T10:40:00Z | 2026-09-29T10:41:30Z |
+| review | work | 2026-09-29T10:41:30Z | 2026-09-29T10:41:30Z |
+| verify | work | 2026-09-29T10:41:30Z | 2026-09-29T10:41:51Z |
+| close | work | 2026-09-29T10:41:51Z | 2026-09-29T10:41:51Z |
+| intake | work | 2026-09-29T10:51:51Z | 2026-09-29T10:53:30Z |
+| plan | work | 2026-09-29T10:53:30Z | 2026-09-29T10:53:30Z |
+| implement:round9 | work | 2026-09-29T10:53:30Z | 2026-09-29T10:54:30Z |
+| review | work | 2026-09-29T10:54:30Z | 2026-09-29T10:54:30Z |
+| verify | work | 2026-09-29T10:54:30Z | 2026-09-29T10:54:58Z |
+| close | work | 2026-09-29T10:54:58Z | 2026-09-29T10:54:58Z |
 
 Record created retroactively at handoff (user pause after publishing 0.4.5): the intake row shares the record-creation instant instead of inventing a span. Phase 6 correction rounds share the single `implement:followup` row; each round's checks are in the Verification table.
 

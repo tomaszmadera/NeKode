@@ -17,7 +17,7 @@ Let the user inspect a registered project's files without leaving NeKode: browse
 
 - Left panel "Project Files" mode: file tree of the project root with folder expand/collapse, file selection, `← Projects` back affordance, and a header showing the project name.
 - Read-only file preview in the center main surface (Monaco Editor): line numbers, syntax highlighting by extension where supported, scrolling. The preview opens in a file tab of the tab strip (label = file name, tooltip = path relative to the project root); the breadcrumb and the `Files` view label are superseded by the tab model (`docs/features/center-layout-tabs-actions/spec.md`).
-- Per-project entry point: a "Files" hover action on the project row in Projects/Chats navigation.
+- Per-project entry point: a "Files" action on the project row in Projects/Chats navigation (always visible; user decision 2026-09-29, previously hover-revealed).
 - Project row context menu with the "Remove Project" action (the row-level remove control moves here and disappears from the row).
 - Large-file and binary-file fallbacks with an "Open externally" action.
 - Default excluded-directory filtering (SDD §12 list).
@@ -35,7 +35,7 @@ Let the user inspect a registered project's files without leaving NeKode: browse
 
 ## Behaviour
 
-1. In Projects/Chats navigation, each project row shows a "Files" action (visible on hover/focus; tooltip "Show project files"). Clicking it enters Project Files mode for that project. The action is independent of the row's expand/collapse click target.
+1. In Projects/Chats navigation, each project row shows a "Files" action (always visible, user decision 2026-09-29; tooltip "Show project files"). Clicking it enters Project Files mode for that project. The action is independent of the row's expand/collapse click target.
 2. Clicking a project row itself keeps its current meaning: select the project and expand/collapse its chat list. It never opens Project Files.
 3. The project row opens a context menu on right-click (and the keyboard context-menu key). The menu contains "Remove Project", which runs the existing removal flow unchanged. The row-level remove control is removed; no visible row button performs removal.
 4. Entering Project Files mode replaces the left panel content with the project file tree: a `← Projects` back affordance, the project name, then the tree of the project root. The center keeps the tab strip and the main surface (`docs/features/center-layout-tabs-actions/spec.md`): the project context lives in the status bar and the `Files` view label is superseded by the tab model. Mode entry per project is idempotent.

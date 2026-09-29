@@ -38,8 +38,8 @@ export function PromptInput({
         submit()
       }}
     >
-      {/* overflow-hidden clips the Dictation button's right corners to the
-          frame radius, so the button reads as the input's right segment. */}
+      {/* overflow-hidden clips the segment group's right corners to the frame
+          radius, so the group reads as the input's right segment. */}
       <div className="flex h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-edge bg-panel pl-3 focus-within:border-info">
         <span aria-hidden="true" className="select-none font-mono text-ink-muted">
           &gt;
@@ -52,35 +52,40 @@ export function PromptInput({
           value={value}
           onChange={(event) => setValue(event.target.value)}
         />
-        {/* Send submits by click (form submit path, same as Enter). Disabled
-            while the input is empty, mirroring the Enter no-op. The hairline
-            divider gives the frame's right end the action row's segment
-            language (design doc 5): Send | Dictation. */}
-        <span aria-hidden="true" className="h-4 w-px shrink-0 self-center bg-divider" />
-        <button
-          type="submit"
-          className="flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
-          data-testid={TEST_ID.terminalPromptSend}
-          disabled={value.length === 0}
-        >
-          <Icon.send size={14} aria-hidden />
-          Send
-        </button>
-        {/* Design doc 21 idle state: rendered, recognizable, disabled until a
-            recognizer is wired. The button is the frame's right segment:
-            square left edge, flush to the frame end. The visible label names
-            the control, so the icon is decorative. */}
-        <button
-          type="button"
-          className="flex h-full shrink-0 cursor-not-allowed items-center gap-1.5 bg-button px-2.5 text-xs text-ink-disabled"
-          data-testid={TEST_ID.terminalPromptDictation}
-          aria-label="Dictation"
-          title="Dictation is not wired up yet."
-          disabled
-        >
-          <Icon.dictation size={14} aria-hidden />
-          Dictation
-        </button>
+        {/* The frame's right end is one segment group (design doc 5): Send and
+            Dictation glued over a single bg-button surface with the centered
+            hairline between them, and no divider on the input side. */}
+        <div className="flex h-full shrink-0 items-stretch bg-button">
+          {/* Send submits by click (form submit path, same as Enter). Disabled
+              while the input is empty, mirroring the Enter no-op. */}
+          <button
+            type="submit"
+            className="flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
+            data-testid={TEST_ID.terminalPromptSend}
+            disabled={value.length === 0}
+          >
+            <Icon.send size={14} aria-hidden />
+            Send
+          </button>
+          {/* Toolbar-standard separator (design doc 5): a single low-contrast
+              hairline, vertically centered, shorter than the buttons. */}
+          <span aria-hidden="true" className="h-4 w-px self-center bg-divider" />
+          {/* Design doc 21 idle state: rendered, recognizable, disabled until a
+              recognizer is wired. The button is the frame's right segment:
+              square left edge, flush to the frame end. The visible label names
+              the control, so the icon is decorative. */}
+          <button
+            type="button"
+            className="flex h-full shrink-0 cursor-not-allowed items-center gap-1.5 bg-button px-2.5 text-xs text-ink-disabled"
+            data-testid={TEST_ID.terminalPromptDictation}
+            aria-label="Dictation"
+            title="Dictation is not wired up yet."
+            disabled
+          >
+            <Icon.dictation size={14} aria-hidden />
+            Dictation
+          </button>
+        </div>
       </div>
     </form>
   )

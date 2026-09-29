@@ -125,3 +125,41 @@ body {
 button:not(:disabled) {
   cursor: pointer;
 }
+
+/* Project Files panel entry and the returning Projects list (user requests
+   2026-09-29): the files panel slides in right-to-left once per mount, the
+   Projects list mirrors it left-to-right after leaving Project Files.
+   Duration and easing from the design doc 24 panel-expansion band; users who
+   opt out of motion get the plain swap. */
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-from-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.slide-in-from-right {
+  animation: slide-in-from-right 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.slide-in-from-left {
+  animation: slide-in-from-left 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-in-from-right,
+  .slide-in-from-left {
+    animation: none;
+  }
+}
