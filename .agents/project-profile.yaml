@@ -13,10 +13,10 @@ runtime:
   language: TypeScript
   language_version: "5.9.3"
   framework: Electron
-  framework_version: "34.5.8"
+  framework_version: "44.4.5"
 database:
   engine: SQLite
-  version: "3.53.2"
+  version: "3.53.4"
 local_environment:
   provider: "windows-native (Windows 11, Node 24.18.0, pnpm 12.5.1)"
 quality:
