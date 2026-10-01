@@ -34,6 +34,18 @@ changes without terminal code, or for git/database tasks.
   close kills all PTYs, self-exit shows a "session ended" state and a fresh
   spawn on next selection, writes to hidden terminals still reach their PTY.
 
+- ConPTY passthrough (measured 2026-10-01, this machine): BEL (0x07), OSC 9
+  (`ESC]9;...BEL`) and OSC 777 all reach the node-pty stream byte-for-byte
+  through a spawned PowerShell. Agent-CLI attention signals (Claude Code
+  `preferredNotifChannel: terminal_bell`, Codex `[tui] notifications` with
+  notification_method osc9/bel) are therefore detectable in app code, via
+  xterm `onBell` + `registerOscHandler(9)` or a scan in `TerminalService.onData`.
+  Probe recipe: child writes the sequences fenced by ASCII markers; parent
+  spawned via node-pty diffs what arrives between the markers. Historic
+  ConPTY stripped OSC sequences (microsoft/node-pty#714); fixed in ConPTY
+  shipped with Windows Terminal 1.23 (late 2024) — this machine has the
+  fixed one, but old Windows 10 hosts may degrade to BEL-only.
+
 ## Lifecycle ownership
 
 | Layer | Lives in | Dies when |
@@ -72,5 +84,22 @@ architecture.
   spawn PTYs. Real ConPTY behavior needs a dev or packaged smoke on Windows
   (`pnpm run dev` or `dist/win-unpacked/nekode.exe`); when the environment
   cannot run it, record it as not run.
+- Renderer copy/paste is wired in ChatTerminal's
+  `attachCustomKeyEventHandler` + right-click menu (TerminalContextMenu):
+  Ctrl+C with an xterm selection copies instead of sending \x03 (Windows
+  convention), Ctrl+Shift+C/V are always copy/paste, Ctrl+V/Ctrl+Shift+V paste
+  through `terminal.paste()` — never write clipboard text with
+  `terminals:write` directly, or the Ctrl+D prompt-base tracker misses it and
+  the raw \x16 would double-paste in Windows edit mode.
 - Regression checks on every change: task switching keeps sessions alive and
   app quit leaves no orphaned `pwsh`/`powershell` processes.
+- Submit lines to a TUI with the split-write helper
+  (`src/renderer/src/lib/pty-submit.ts`): the line text first, the CR after a
+  150 ms gap — never `line + '\r'` in one write. ConPTY delivers a
+  single-write burst as one chunk, and prompt_toolkit TUIs (Hermes Agent)
+  parse that chunk as an unterminated bracketed paste: text enters their
+  input box, the CR is swallowed, nothing submits (measured on this host: a
+  CR reaching the child ≥120 ms after the text commits; ≤40 ms never does).
+  Plain shells (PSReadLine) submit either way, so the gap is inert there.
+  Raw-PTY node-pty probes are the way to verify such bugs — the byte path
+  through `terminals:write` was correct and only the chunking was wrong.

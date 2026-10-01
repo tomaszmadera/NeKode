@@ -238,6 +238,33 @@
         "scoped-files"
       ],
       "path": ".agents/lessons/items/ci-commit-files-single-flag.md"
+    },
+    {
+      "id": "safety-hook-code-key-property",
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "safety-hook",
+        "apply_patch",
+        "typescript",
+        "keyboard"
+      ],
+      "path": ".agents/lessons/items/safety-hook-code-key-property.md"
+    },
+    {
+      "id": "renderer-css-source-tests",
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "vitest",
+        "renderer",
+        "css",
+        "theme",
+        "readFileSync"
+      ],
+      "path": ".agents/lessons/items/renderer-css-source-tests.md"
     }
   ]
 }
