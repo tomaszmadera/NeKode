@@ -948,9 +948,12 @@ Clone Repository
 
 # 32. Project Settings
 
-Application settings are separate from Project Settings. The gear icon next to
-the brand in the window title bar opens App Settings, including when no project
-is selected or the project files view is open. It currently contains only the
+Application settings are separate from Project Settings. The App Settings
+opener (gear icon with the label "App Settings") sits at the very bottom of
+the left panel (user decision 2026-10-02, after Zed), in both modes that host
+the panel: the projects navigation and the project files view. It opens App
+Settings including when no project is selected or the project files view is
+open. It currently contains only the
 Theme selector: `default` and `default-beta-1` (the Cozy Dark palette:
 indigo surfaces, lavender primary accent).
 Selection applies immediately and is remembered locally across application
