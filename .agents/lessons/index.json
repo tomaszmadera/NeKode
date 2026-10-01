@@ -209,6 +209,22 @@
         "wait"
       ],
       "path": ".agents/lessons/items/active-record-keeps-current-step.md"
+    },
+    {
+      "id": "electron-cdp-smoke-isolation",
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "electron",
+        "windows",
+        "cdp",
+        "smoke-test",
+        "user-data-dir",
+        "remote-debugging",
+        "dispatchKeyEvent"
+      ],
+      "path": ".agents/lessons/items/electron-cdp-smoke-isolation.md"
     }
   ]
 }
