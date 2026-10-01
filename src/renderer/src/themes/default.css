@@ -27,6 +27,9 @@
   --color-project-title: rgb(226 230 238);
   --color-projects-header: rgb(134 174 216);
   --color-chat-title: rgb(141 168 205);
+  /* Selection accent: narrow left stripe on the selected project's container
+     (NEKODE-3, design doc 14). */
+  --color-accent: rgb(83 134 188);
 
   /* Structure: inactive tab border / hairline separators. The divider is the
      inset separator between connected buttons (design doc 5, 11.4). */
