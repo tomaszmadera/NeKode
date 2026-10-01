@@ -5,6 +5,7 @@ import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { AppBrand } from './AppBrand'
 import { NoticeBanner } from './NoticeBanner'
 import { ResizeHandle } from './ResizeHandle'
 
@@ -104,11 +105,11 @@ export function LeftNavigation({
     >
       {/* Window drag surface (title bar): the top strip is the base app
           background; the button opts out of dragging. Fixed 40px height so the
-          header matches the tab strip; the 32px control centers in it. */}
+          header matches the tab strip; the 32px control centers in it. The
+          strip carries the application brand (AppBrand) like other desktop
+          apps; the project list below it needs no "Projects" label. */}
       <div className="drag-region flex h-10 items-center justify-between bg-app px-4">
-        <h2 className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
-          Projects
-        </h2>
+        <AppBrand />
         <button
           type="button"
           className="no-drag flex h-control items-center gap-1.5 rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover"

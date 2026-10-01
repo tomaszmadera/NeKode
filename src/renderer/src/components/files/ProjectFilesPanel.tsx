@@ -4,15 +4,18 @@ import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
+import { AppBrand } from '../layout/AppBrand'
 import { NoticeBanner } from '../layout/NoticeBanner'
 import { ResizeHandle } from '../layout/ResizeHandle'
 import { FileTree } from './FileTree'
 import type { ProjectFilesSession } from './files-types'
 
-// Left panel of Project Files mode (spec Behaviour 4): `← Projects` back
-// affordance, the project name, and the project's file tree. The tree area
-// carries the inline error state (missing/unreadable project directory — the
-// rest of the app keeps working and `← Projects` always exits, spec Errors).
+// Left panel of Project Files mode (spec Behaviour 4): the application brand
+// (AppBrand, same strip as the default navigation), the project name, an
+// icon-only back affordance (tooltip "Back to Projects") and the project's
+// file tree. The tree area carries the inline error state (missing/unreadable
+// project directory — the rest of the app keeps working and the back
+// affordance always exits, spec Errors).
 
 interface ProjectFilesPanelProps {
   width: number
@@ -20,7 +23,7 @@ interface ProjectFilesPanelProps {
   onResizeNudge: (delta: number) => void
   project: ProjectInfo
   session: ProjectFilesSession
-  /** Exits Project Files mode (`← Projects`, spec Behaviour 12). */
+  /** Exits Project Files mode (the back affordance, spec Behaviour 12). */
   onBack: () => void
   onToggleDirectory: (relativePath: string) => void
   onSelectFile: (relativePath: string) => void
@@ -45,16 +48,19 @@ export function ProjectFilesPanel({
       data-testid={TEST_ID.leftNav}
     >
       {/* Window drag surface (title bar): the top strip is the base app
-          background; the back button opts out of dragging. */}
-      <div className="drag-region flex items-center gap-2 bg-app px-3 pt-3 pb-1">
+          background; the back button opts out of dragging. Fixed 40px height
+          and padding so the strip matches the default navigation header. */}
+      <div className="drag-region flex h-10 items-center gap-2 bg-app px-4">
+        <AppBrand />
         <button
           type="button"
-          className="no-drag flex items-center gap-1 rounded px-1.5 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="no-drag flex items-center rounded p-1 text-ink-secondary hover:bg-highlight hover:text-ink"
           data-testid={TEST_ID.filesBackButton}
+          aria-label="Back to Projects"
+          title="Back to Projects"
           onClick={onBack}
         >
           <Icon.back size={12} aria-hidden />
-          Projects
         </button>
         <span
           className="min-w-0 truncate text-xs font-medium text-ink"

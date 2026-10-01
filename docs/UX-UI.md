@@ -139,7 +139,7 @@ The window has no top action band and no context header above the main surface (
 ├────────────────┴──────────────────────────────────────────┴──────────────┤
 │ BOTTOM: Auxiliary Terminal / Tools                                       │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ STATUS BAR: gerde.pl · D:\Projects\gerde.pl · PHP 8.5 ·  main · ● 4     │
+│ STATUS BAR: gerde.pl · D:\Projects\gerde.pl · PHP 8.5 · [git icon] main · ● 4     │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -170,7 +170,7 @@ If no prior state exists:
 
 ```text
 Left:
-Projects
+NeKode (brand)
 
 Center:
 Welcome / empty state
@@ -268,7 +268,7 @@ The bottom-terminal run mode is no longer reserved: with the bottom auxiliary te
 The default left navigation shows Projects and Chats.
 
 ```text
-Projects
+[icon] NeKode
 
 ▼ gerde.pl
     Fix Meta Pixel
@@ -328,7 +328,7 @@ Project Files
 When entering the file tree:
 
 ```text
-← Projects
+[icon] NeKode   ← (back affordance, "Back to Projects")
 
 ▼ app
   ▼ Http
@@ -419,7 +419,7 @@ Example:
 
 ```text
 gerde.pl
-D:\Projects\gerde.pl   PHP 8.5   Node 24   Docker    feature/meta-pixel   ● 4
+D:\Projects\gerde.pl   PHP 8.5   Node 24   Docker   [git icon] feature/meta-pixel   ● 4
 ```
 
 Minimum data:
@@ -463,8 +463,8 @@ Runtime information is secondary context, not a headline.
 Branch:
 
 ```text
- main
- feature/meta-pixel
+[git icon] main
+[git icon] feature/meta-pixel
 ```
 
 Status:
@@ -826,7 +826,7 @@ Example:
 ```text
 Fix Meta Pixel
 
- feature/meta-pixel
+[git icon] feature/meta-pixel
 Codex
 
 [Implement]
@@ -1192,7 +1192,7 @@ Agent
 Codex
 
 Branch
- feature/meta-pixel
+[git icon] feature/meta-pixel
 
 Handoff
 "Currency warning identified in checkout tracking.
@@ -1253,7 +1253,7 @@ Example:
 
 ```text
 Fix Meta Pixel
-gerde.pl ·  feature/meta-pixel · PHP 8.5 · ● 3 changes
+gerde.pl · [git icon] feature/meta-pixel · PHP 8.5 · ● 3 changes
 
 Agent: Codex ▾        Handoff ▾
 ```
@@ -1720,7 +1720,7 @@ Example:
 
 ```text
 Fix Meta Pixel
- feature/meta-pixel
+[git icon] feature/meta-pixel
 .worktrees/meta-pixel
 ```
 
@@ -1851,19 +1851,19 @@ The status bar project context adapts to window width.
 Wide:
 
 ```text
-D:\Projects\gerde.pl   PHP 8.5   Node 24   Docker    feature/meta-pixel   ● 4
+D:\Projects\gerde.pl   PHP 8.5   Node 24   Docker   [git icon] feature/meta-pixel   ● 4
 ```
 
 Narrow:
 
 ```text
-gerde.pl   PHP 8.5    feature/meta-pixel   ● 4
+gerde.pl   PHP 8.5   [git icon] feature/meta-pixel   ● 4
 ```
 
 Very narrow:
 
 ```text
-gerde.pl    feature/meta-pixel
+gerde.pl   [git icon] feature/meta-pixel
 ```
 
 Use progressive disclosure.
@@ -1978,7 +1978,7 @@ The tab strip and the action bar occupy the top of the center column; the status
 ├──────────────────┴───────────────────────────────────────────┴───────────────┤
 │ AUXILIARY TERMINAL                                             Ctrl + `      │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ STATUS BAR  gerde.pl  D:\dev\gerde  PHP 8.5   main  ● 3                     │
+│ STATUS BAR  gerde.pl  D:\dev\gerde  PHP 8.5  [git icon] main  ● 3                     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1988,7 +1988,7 @@ The tab strip and the action bar occupy the top of the center column; the status
 
 ```text
 ┌──────────────────┬───────────────────────────────────────────────────────────┐
-│ ← Projects       │ [Fix Pixel] [Billing.php] [web.php] [+ New chat]          │
+│ [icon] NeKode  ← │ [Fix Pixel] [Billing.php] [web.php] [+ New chat]       │
 ├──────────────────┼───────────────────────────────────────────────────────────┤
 │                  │ [Handoff|Resume] [Stop|Continue] ▶ Docker Up              │
 ├──────────────────┼───────────────────────────────────────────────────────────┤
@@ -2000,7 +2000,7 @@ The tab strip and the action bar occupy the top of the center column; the status
 │   web.php        │                                                           │
 │ composer.json    │                                                           │
 ├──────────────────┴───────────────────────────────────────────────────────────┤
-│ gerde.pl · D:\dev\gerde · PHP 8.5 ·  main · ✓ clean                         │
+│ gerde.pl · D:\dev\gerde · PHP 8.5 · [git icon] main · ✓ clean                         │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2027,7 +2027,7 @@ This is the intended MVP visual preview. The cards, Handoff indicator and button
 │ └─────────────┘   └─────────────┘  │ [Resume]        │  └──────────────┘     │
 │                                    └─────────────────┘                       │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ gerde.pl · D:\dev\gerde · PHP 8.5 ·  main · ● 3                             │
+│ gerde.pl · D:\dev\gerde · PHP 8.5 · [git icon] main · ● 3                             │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2531,7 +2531,7 @@ The final placement is intentionally not fixed yet. The component should work in
 
 ```text
 Fix Meta Pixel
-gerde.pl ·  feature/meta-pixel · PHP 8.5
+gerde.pl · [git icon] feature/meta-pixel · PHP 8.5
 
 ●────●────●────○────○
 Plan Inspect Implement Test Review
@@ -2595,7 +2595,7 @@ Example:
 
 ```text
 Fix Meta Pixel
-gerde.pl ·  feature/meta-pixel · PHP 8.5 · ● 3 changes
+gerde.pl · [git icon] feature/meta-pixel · PHP 8.5 · ● 3 changes
 
 ●────●────●────○────○
 Plan Inspect Implement Test Review

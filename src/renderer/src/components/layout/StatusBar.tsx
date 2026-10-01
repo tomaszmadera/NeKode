@@ -7,6 +7,7 @@ import type {
   ProjectInfo,
 } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
+import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 
 // Status bar at the very bottom of the window (UX-UI §14): the project
@@ -23,8 +24,6 @@ interface StatusBarProps {
   project: ProjectInfo | null
 }
 
-/** Branch glyph of the UX-UI §16 form: U+E0A0 + space + branch name. */
-const BRANCH_GLYPH = String.fromCharCode(0xe0a0)
 const NEWLINE = String.fromCharCode(10)
 
 /** Runtime badges show at most three labels; the rest collapse to `+N` (§15). */
@@ -155,8 +154,12 @@ function GitSection({ status }: { status: GitStatus | null }): React.JSX.Element
   }
   return (
     <>
-      <span className="shrink-0 text-ink-secondary" data-testid={TEST_ID.statusGitBranch}>
-        {`${BRANCH_GLYPH} ${status.branch}`}
+      <span
+        className="flex shrink-0 items-center gap-1 text-ink-secondary"
+        data-testid={TEST_ID.statusGitBranch}
+      >
+        <Icon.git size={12} aria-hidden />
+        {status.branch}
       </span>
       <span
         className="shrink-0 text-ink-muted"

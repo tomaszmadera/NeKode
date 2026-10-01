@@ -18,11 +18,9 @@ import {
 
 // Status bar (UX-UI §14–16 / center-layout-tabs-actions spec Behaviour 18):
 // project name, visually truncated path (full on hover), runtime badges with
-// `+N` collapse, git branch form (U+E0A0 + space + name) and worktree status
-// forms with hover details; empty project section with no project and the
-// "no git" degradation (no branch, neutral status, no error banner).
-
-const BRANCH_GLYPH = String.fromCharCode(0xe0a0)
+// `+N` collapse, git branch form (git icon + name) and worktree status forms
+// with hover details; empty project section with no project and the "no git"
+// degradation (no branch, neutral status, no error banner).
 
 const projectA: ProjectInfo = {
   id: 'p1',
@@ -161,7 +159,7 @@ describe('status bar — git forms (UX-UI §16)', () => {
     cleanup()
   })
 
-  it('renders the branch form (U+E0A0 + space + name) and the changes form with hover details', async () => {
+  it('renders the branch form (git icon + name) and the changes form with hover details', async () => {
     app = createAppApiStub({
       branch: 'feature/meta-pixel',
       dirty: true,
@@ -169,7 +167,7 @@ describe('status bar — git forms (UX-UI §16)', () => {
     })
     render(<StatusBar app={app} project={projectA} />)
     const branch = await screen.findByTestId(TEST_ID.statusGitBranch)
-    expect(branch.textContent).toBe(`${BRANCH_GLYPH} feature/meta-pixel`)
+    expect(branch.textContent).toBe('feature/meta-pixel')
     const status = screen.getByTestId(TEST_ID.statusGitStatus)
     expect(status.textContent).toBe('● 7 changes')
     const details = status.getAttribute('title') ?? ''
@@ -188,7 +186,7 @@ describe('status bar — git forms (UX-UI §16)', () => {
     app = createAppApiStub({ branch: 'main', dirty: false, worktree: worktree({}) })
     render(<StatusBar app={app} project={projectA} />)
     expect((await screen.findByTestId(TEST_ID.statusGitStatus)).textContent).toBe('✓ clean')
-    expect(screen.getByTestId(TEST_ID.statusGitBranch).textContent).toBe(`${BRANCH_GLYPH} main`)
+    expect(screen.getByTestId(TEST_ID.statusGitBranch).textContent).toBe('main')
   })
 
   it('renders the conflicts form when the worktree has conflicts', async () => {
