@@ -76,6 +76,28 @@ Small development, in-session plan; source of truth: Plane card NEKODE-3 (brief 
 | Affected suites after edits: theme, App, CenterTabs, ProjectFiles, BottomPanel | 135/135 passed | 2026-10-02T01:04Z, with the concurrent agent's partial edits present in other files |
 | Full gates lint + typecheck + test | blocked → passed | second agent was mid-write during implementation; after their completion: lint 114 files OK, typecheck OK, 413/413 tests (2026-10-02T01:11Z) |
 | Final: `commands.verify_targeted` (theme, App, CenterTabs) | 104/104, exit 0 | 2026-10-02T01:16Z, after commit `5647c4d` |
+| Final (verification subject 1) | 104/104, exit 0 | 2026-10-02T01:18Z at HEAD `8c70cf1`; subject covers the five task-owned code paths |
+
+### Verification subject 1
+
+```json
+{
+  "attempt": 1,
+  "head": "8c70cf154f6a71ad2b056c5f2a74b0a2c78da389",
+  "paths": [
+    "src/renderer/src/App.test.tsx",
+    "src/renderer/src/components/layout/LeftNavigation.tsx",
+    "src/renderer/src/components/tabs/CenterTabs.test.tsx",
+    "src/renderer/src/themes/default-beta-1.css",
+    "src/renderer/src/themes/default.css"
+  ],
+  "schema_version": 1,
+  "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "subject_sha256": "45785f8013b5ff4f167602e6a8aecca9016755c2df0cb6c57f57930c61f1ba12",
+  "unstaged_diff_sha256": "1c746d3c53088e929a5b76f28e502448cf4145a22c259ce78a007b04930af7c3",
+  "untracked_files_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}
+```
 
 ## Timing
 
