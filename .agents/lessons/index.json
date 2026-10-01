@@ -225,6 +225,19 @@
         "dispatchKeyEvent"
       ],
       "path": ".agents/lessons/items/electron-cdp-smoke-isolation.md"
+    },
+    {
+      "id": "ci-commit-files-single-flag",
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "ci",
+        "commit",
+        "argparse",
+        "scoped-files"
+      ],
+      "path": ".agents/lessons/items/ci-commit-files-single-flag.md"
     }
   ]
 }
