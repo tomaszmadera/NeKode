@@ -334,6 +334,90 @@ describe('action row and settings', () => {
     expect(app.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code/demo')
   })
 
+  it('browse falls back to the project root while the current value is relative', async () => {
+    await renderSelectedChat()
+    vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/handoffs')
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    await screen.findByText('Project Settings')
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsHandoffDir), {
+      target: { value: '.agents/handoffs' },
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
+    await waitFor(() =>
+      expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
+        'D:/code/demo/handoffs',
+      ),
+    )
+    // The picker takes null or absolute only: the relative draft falls back
+    // to the project root instead of failing validation.
+    expect(app.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code/demo')
+  })
+
+  it('resume picker shows the empty-list and typed-error states for a configured directory', async () => {
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
+      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
+      return null
+    })
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.handoffs.list).mockResolvedValue([])
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    await screen.findByTestId(TEST_ID.handoffPickerEmpty)
+
+    // Configured but missing on disk: the typed not_found message renders
+    // inline in the reopened picker (spec Behaviour 5 / Errors).
+    vi.mocked(app.handoffs.list).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'not_found',
+      message: 'Handoff directory not found: D:/code/demo/.agents/handoffs',
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Close handoff picker' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    const error = await screen.findByTestId(TEST_ID.handoffPickerError)
+    expect(error.textContent).toContain('Handoff directory not found:')
+  })
+
+  it('prompt injection is addressed to one chat only', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Handoff' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
+    const promptOf = (chatId: string): HTMLInputElement =>
+      within(screen.getByTestId(testIdFor.terminalView(chatId))).getByTestId(
+        TEST_ID.terminalPromptInput,
+      ) as HTMLInputElement
+    await waitFor(() => expect(promptOf('t1').value).toBe('Write a handoff'))
+
+    // Behaviour 7: only the addressed chat sees the fill; switching to another
+    // chat must not deliver it there, and the draft stays in its chat.
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
+    expect(promptOf('t2').value).toBe('')
+    expect(promptOf('t1').value).toBe('Write a handoff')
+  })
+
   it('disables fixed buttons before spawn and after a spawn failure', async () => {
     vi.mocked(app.terminals.create).mockRejectedValue(new Error('spawn failed'))
     await renderSelectedChat()
