@@ -6,6 +6,7 @@ import type {
   FileEntry,
   FilePreview,
   GitStatus,
+  HandoffEntry,
   ProjectInfo,
   Unsubscribe,
 } from '../../shared/ipc-contract'
@@ -44,6 +45,8 @@ export interface AppServices {
   state: {
     get(key: string): string | null
     set(key: string, value: string): void
+    /** Main-side cleanup of per-entity keys (removed project handoff dirs). */
+    delete(key: string): void
   }
   terminals: {
     /** Lazily spawns one PTY per chat (idempotent while the session lives). */
@@ -74,5 +77,17 @@ export interface AppServices {
     read(projectId: string, relativePath: string): Promise<FilePreview>
     /** Opens the file with the OS default application (main-process only). */
     openExternal(projectId: string, relativePath: string): Promise<void>
+  }
+  handoffs: {
+    /** Regular files of the project's configured handoff directory, newest first. */
+    list(projectId: string): Promise<HandoffEntry[]>
+  }
+  dialogs: {
+    /**
+     * Native directory picker behind the typed channel; the OS dialog is
+     * injected at the composition root (shell/dialog stay out of
+     * create-services). Absolute path or null on cancel.
+     */
+    pickDirectory(defaultPath: string | null): Promise<string | null>
   }
 }

@@ -1,5 +1,5 @@
 import { dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron'
-import { IPC_CHANNEL } from '../../shared/ipc-contract'
+import { APP_STATE_KEY, IPC_CHANNEL, projectHandoffDirKey } from '../../shared/ipc-contract'
 import { AppError, type AppErrorPayload, toTransportError } from '../../shared/ipc-error'
 import { type InvokeSenderInfo, isTrustedSender } from '../security/sender-guard'
 import { buildValidatedChannels, type ValidatedChannel } from './ipc-validation'
@@ -83,20 +83,27 @@ export function registerAppIpcHandlers(
   }
 
   // projects:add is special: the directory dialog opens in main. Its payload
-  // is empty; a user cancel resolves null (renderer contract).
+  // is empty; a user cancel resolves null (renderer contract). The dialog
+  // resumes from the last confirmed directory (spec handoff-resume-flow
+  // Behaviour 1), which is persisted before the add attempt: a failed add
+  // still leaves the user's dialog choice remembered.
   handle(IPC_CHANNEL.projectsAdd, (payload) => {
     const entry = validated.get(IPC_CHANNEL.projectsAdd)
     if (entry) {
       entry.parse(payload)
     }
+    const defaultPath = services.state.get(APP_STATE_KEY.projectsLastDirectory)
     return showOpenDialog({
       properties: ['openDirectory'],
       title: 'Add Project',
+      defaultPath: defaultPath ?? undefined,
     }).then((result) => {
       if (result.canceled || result.filePaths.length === 0) {
         return null
       }
-      return services.projects.add(result.filePaths[0])
+      const chosen = result.filePaths[0]
+      services.state.set(APP_STATE_KEY.projectsLastDirectory, chosen)
+      return services.projects.add(chosen)
     })
   })
 
@@ -113,6 +120,9 @@ export function registerAppIpcHandlers(
     }
     const chatIds = services.chats.list(projectId).map((chat) => chat.id)
     const result = services.projects.remove(projectId)
+    // The removed project's handoff-directory setting has no owner anymore
+    // (spec handoff-resume-flow Behaviour 8); the FK cascade cannot reach it.
+    services.state.delete(projectHandoffDirKey(projectId))
     services.actions.stopForProject(projectId)
     for (const chatId of chatIds) {
       services.terminals.terminate(chatId)

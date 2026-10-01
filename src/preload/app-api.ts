@@ -6,6 +6,7 @@ import type {
   FileEntry,
   FilePreview,
   GitStatus,
+  HandoffEntry,
   ProjectInfo,
   Unsubscribe,
 } from '../shared/ipc-contract'
@@ -107,6 +108,13 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
         invoke<FilePreview>(IPC_CHANNEL.filesRead, projectId, relativePath),
       openExternal: (projectId, relativePath) =>
         invoke<void>(IPC_CHANNEL.filesOpenExternal, projectId, relativePath),
+    },
+    handoffs: {
+      list: (projectId) => invoke<HandoffEntry[]>(IPC_CHANNEL.handoffsList, projectId),
+    },
+    dialogs: {
+      pickDirectory: (defaultPath) =>
+        invoke<string | null>(IPC_CHANNEL.dialogsPickDirectory, defaultPath),
     },
   }
 }

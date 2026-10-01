@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ChatTerminal } from '../terminal/ChatTerminal'
+import type { PromptInjection } from '../terminal/PromptInput'
 import { StartNewChatSurface } from './StartNewChatSurface'
 import { WelcomeSurface } from './WelcomeSurface'
 
@@ -66,6 +67,14 @@ interface ChatWorkspaceProps {
   terminalCwds?: Record<string, string>
   onSessionStatus?: (chatId: string, live: boolean) => void
   onSessionReady?: (chatId: string) => void
+  /**
+   * Pending prompt-input fill from the action row (Handoff/Resume paste,
+   * spec handoff-resume-flow Behaviour 3/7): delivered only to the addressed
+   * chat's terminal, dropped when the selection moved elsewhere.
+   */
+  promptInjection?: { chatId: string; text: string; nonce: number } | null
+  /** Reports consumption (with the injection nonce) to the host. */
+  onPromptInjected?: (nonce: number) => void
 }
 
 function freshRecord(cwd: string): SessionRecord {
@@ -86,6 +95,8 @@ export function ChatWorkspace({
   terminalCwds = {},
   onSessionStatus,
   onSessionReady,
+  promptInjection = null,
+  onPromptInjected,
 }: ChatWorkspaceProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Record<string, SessionRecord>>({})
   // Chats whose exit already started the close flow (guards duplicate exits).
@@ -234,34 +245,49 @@ export function ChatWorkspace({
       {/* The chat name lives in the terminal-chat tab label (tab model): no
           title bar above the terminal. */}
       <div className="relative min-h-0 flex-1" data-testid={TEST_ID.terminalHost}>
-        {Object.entries(sessions).map(([chatId, record]) => (
-          <div
-            key={`${chatId}:${record.generation}`}
-            className="absolute inset-0"
-            style={{ display: chatId === selectedChatId ? 'block' : 'none' }}
-            data-testid={testIdFor.terminalView(chatId)}
-          >
-            <ChatTerminal
-              app={app}
-              chatId={chatId}
-              cwd={record.cwd}
-              visible={chatId === selectedChatId}
-              onExit={() => handleExit(chatId)}
-              onClose={() => handleExit(chatId)}
-              onSpawnError={(message) => handleSpawnError(chatId, message)}
-              onReady={() => {
-                onSessionStatusRef.current?.(chatId, true)
-                onSessionReadyRef.current?.(chatId)
-              }}
-            />
-            {record.status === 'error' && chatId === selectedChatId ? (
-              <SpawnErrorOverlay
-                message={record.errorMessage}
-                onRetry={() => handleRetry(chatId)}
+        {Object.entries(sessions).map(([chatId, record]) => {
+          // Only the addressed chat sees the fill (Behaviour 7): hidden
+          // terminals must not consume another chat's injection.
+          const injectionNonce = promptInjection?.chatId === chatId ? promptInjection.nonce : null
+          const injection: PromptInjection | null =
+            promptInjection !== null && promptInjection.chatId === chatId
+              ? { text: promptInjection.text, nonce: promptInjection.nonce }
+              : null
+          return (
+            <div
+              key={`${chatId}:${record.generation}`}
+              className="absolute inset-0"
+              style={{ display: chatId === selectedChatId ? 'block' : 'none' }}
+              data-testid={testIdFor.terminalView(chatId)}
+            >
+              <ChatTerminal
+                app={app}
+                chatId={chatId}
+                cwd={record.cwd}
+                visible={chatId === selectedChatId}
+                onExit={() => handleExit(chatId)}
+                onClose={() => handleExit(chatId)}
+                onSpawnError={(message) => handleSpawnError(chatId, message)}
+                onReady={() => {
+                  onSessionStatusRef.current?.(chatId, true)
+                  onSessionReadyRef.current?.(chatId)
+                }}
+                injected={injection}
+                onInjected={
+                  injection !== null && injectionNonce !== null && onPromptInjected
+                    ? () => onPromptInjected(injectionNonce)
+                    : undefined
+                }
               />
-            ) : null}
-          </div>
-        ))}
+              {record.status === 'error' && chatId === selectedChatId ? (
+                <SpawnErrorOverlay
+                  message={record.errorMessage}
+                  onRetry={() => handleRetry(chatId)}
+                />
+              ) : null}
+            </div>
+          )
+        })}
         {showStartNewChat ? <StartNewChatSurface onStartNewChat={onStartNewChat} /> : null}
         {selectedChatId === null && !showStartNewChat ? <WelcomeSurface /> : null}
       </div>

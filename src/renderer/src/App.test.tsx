@@ -1,7 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActionControl, ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
-import { APP_STATE_KEY, type AppApi, emptyGitWorktree } from '../../shared/ipc-contract'
+import {
+  APP_STATE_KEY,
+  type AppApi,
+  emptyGitWorktree,
+  projectHandoffDirKey,
+} from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
@@ -62,6 +67,12 @@ function createAppApiStub(): AppApi {
       list: vi.fn().mockResolvedValue([]),
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
+    },
+    handoffs: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+    dialogs: {
+      pickDirectory: vi.fn().mockResolvedValue(null),
     },
   }
 }
@@ -154,7 +165,7 @@ describe('action row and settings', () => {
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
   }
 
-  it('writes contractual bytes only for a live terminal', async () => {
+  it('writes contractual bytes only for a live terminal; Handoff pastes English into the input', async () => {
     await renderSelectedChat()
     const buttons = ['Handoff', 'Resume', 'Stop', 'Continue']
     await waitFor(() =>
@@ -163,13 +174,164 @@ describe('action row and settings', () => {
       ),
     )
     for (const label of buttons) fireEvent.click(screen.getByRole('button', { name: label }))
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(4))
+    // Paste-only default (spec handoff-resume-flow Behaviour 3): only Stop and
+    // Continue write to the PTY; Handoff fills the prompt input in English and
+    // Resume opens the handoff picker (unconfigured here -> modal only).
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(2))
     expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
-      ['t1', 'Napisz handoff\r'],
-      ['t1', 'Wznów z handoffu\r'],
       ['t1', '\x03'],
       ['t1', 'Continue\r'],
     ])
+    expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
+      'Write a handoff',
+    )
+    await screen.findByTestId(TEST_ID.handoffPicker)
+    expect(app.handoffs.list).not.toHaveBeenCalled()
+  })
+
+  it('auto-send writes the English Handoff and Resume commands straight to the PTY', async () => {
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
+      if (key === APP_STATE_KEY.autoSendHandoffResume) return '1'
+      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
+      return null
+    })
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.handoffs.list).mockResolvedValue([
+      {
+        name: '2026-10-01-auth.md',
+        path: 'D:/code/demo/.agents/handoffs/2026-10-01-auth.md',
+        modifiedAt: '2026-10-01T10:00:00.000Z',
+      },
+    ])
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Handoff' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff\r'))
+    expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    await screen.findByTestId(TEST_ID.handoffPicker)
+    await waitFor(() => expect(app.handoffs.list).toHaveBeenCalledWith('p1'))
+    fireEvent.click(screen.getAllByTestId(TEST_ID.handoffPickerEntry)[0])
+    await waitFor(() =>
+      expect(app.terminals.write).toHaveBeenCalledWith(
+        't1',
+        'Resume from handoff D:/code/demo/.agents/handoffs/2026-10-01-auth.md\r',
+      ),
+    )
+    expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
+  })
+
+  it('resume picker lists configured handoffs lazily and pastes the selected path', async () => {
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
+      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
+      return null
+    })
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.handoffs.list).mockResolvedValue([
+      {
+        name: 'newest.md',
+        path: 'D:/code/demo/.agents/handoffs/newest.md',
+        modifiedAt: '2026-10-01T10:00:00.000Z',
+      },
+      {
+        name: 'older.md',
+        path: 'D:/code/demo/.agents/handoffs/older.md',
+        modifiedAt: '2026-09-30T08:00:00.000Z',
+      },
+    ])
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    // Lazy load (spec Behaviour 4): the listing happens at picker open only.
+    expect(app.handoffs.list).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    await screen.findByTestId(TEST_ID.handoffPickerList)
+    expect(app.handoffs.list).toHaveBeenCalledTimes(1)
+    const names = screen
+      .getAllByTestId(TEST_ID.handoffPickerEntry)
+      .map((entry) => entry.textContent)
+    expect(names[0]).toContain('newest.md')
+    fireEvent.click(screen.getAllByTestId(TEST_ID.handoffPickerEntry)[0])
+    await waitFor(() =>
+      expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
+        'Resume from handoff D:/code/demo/.agents/handoffs/newest.md',
+      ),
+    )
+    expect(app.terminals.write).not.toHaveBeenCalled()
+    expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
+  })
+
+  it('resume picker without a configured directory offers configure and plain paste', async () => {
+    await renderSelectedChat()
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    await screen.findByTestId(TEST_ID.handoffPickerUnconfigured)
+    expect(app.handoffs.list).not.toHaveBeenCalled()
+
+    // Plain fallback: the English command without a path (spec Behaviour 5).
+    fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerPlainPaste))
+    await waitFor(() =>
+      expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
+        'Resume from handoff',
+      ),
+    )
+    expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
+
+    // Configure opens Project Settings for the active project.
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    await screen.findByTestId(TEST_ID.handoffPickerUnconfigured)
+    fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerConfigure))
+    await screen.findByText('Project Settings')
+    expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
+  })
+
+  it('project settings edits auto-send and the per-project handoff directory', async () => {
+    await renderSelectedChat()
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    await screen.findByText('Project Settings')
+
+    const autoSend = screen.getByTestId(TEST_ID.settingsAutoSend) as HTMLInputElement
+    expect(autoSend.checked).toBe(false)
+    fireEvent.click(autoSend)
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.autoSendHandoffResume, '1'),
+    )
+
+    const dirInput = screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement
+    expect(dirInput.value).toBe('')
+    fireEvent.change(dirInput, { target: { value: ' .agents/handoffs ' } })
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirSave))
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsHandoffDirSaved)))
+    expect(app.state.set).toHaveBeenCalledWith('project.handoffDir:p1', '.agents/handoffs')
+  })
+
+  it('project settings browse fills the handoff directory from the native picker', async () => {
+    await renderSelectedChat()
+    vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/.agents/handoffs')
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    await screen.findByText('Project Settings')
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
+    await waitFor(() =>
+      expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
+        'D:/code/demo/.agents/handoffs',
+      ),
+    )
+    expect(app.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code/demo')
   })
 
   it('disables fixed buttons before spawn and after a spawn failure', async () => {

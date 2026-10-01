@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 
@@ -9,18 +9,44 @@ import { TEST_ID } from '../../lib/test-ids'
 // keep working exactly as with typed input. The Dictation button is the
 // design doc 21 idle state: rendered and themed, disabled until a recognizer
 // is wired (none exists yet in the app).
+
+/** External draft fill (Handoff/Resume paste, spec handoff-resume-flow): the
+    nonce lets the same text re-inject and the host drop exactly this fill. */
+export interface PromptInjection {
+  text: string
+  nonce: number
+}
+
 interface PromptInputProps {
   /** Submits one input line (without the terminator) to the terminal. */
   onSubmit: (line: string) => void
   /** Placeholder shown while the input is empty. */
   placeholder?: string
+  /** Pending draft fill addressed to this input; replaces the whole value. */
+  injected?: PromptInjection | null
+  /** Reports consumption so the host can drop the pending injection. */
+  onInjected?: () => void
 }
 
 export function PromptInput({
   onSubmit,
   placeholder = 'Type a command',
+  injected = null,
+  onInjected,
 }: PromptInputProps): React.JSX.Element {
   const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const onInjectedRef = useRef(onInjected)
+  onInjectedRef.current = onInjected
+
+  useEffect(() => {
+    if (injected === null) {
+      return
+    }
+    setValue(injected.text)
+    onInjectedRef.current?.()
+    inputRef.current?.focus()
+  }, [injected])
 
   function submit(): void {
     if (value.length === 0) {
@@ -45,6 +71,7 @@ export function PromptInput({
           &gt;
         </span>
         <input
+          ref={inputRef}
           className="min-w-0 flex-1 bg-transparent font-mono text-[13px] text-ink outline-none placeholder:text-ink-muted"
           data-testid={TEST_ID.terminalPromptInput}
           aria-label="Terminal input"

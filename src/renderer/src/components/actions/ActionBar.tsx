@@ -15,16 +15,29 @@ interface ActionBarProps {
   onNewTerminal: (execution: ActionExecution) => void
   /** Bottom-terminal delivery: opens the panel and adds a new bottom tab. */
   onBottomTerminal: (execution: ActionExecution, projectId: string) => void
+  /**
+   * Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): the host
+   * pastes the English command into the active prompt input, or sends it
+   * straight to the PTY when auto-send is on. The command stays English.
+   */
+  onPromptCommand: (text: string) => void
+  /** Resume opens the handoff picker (lazy list, spec Behaviour 4). */
+  onResume: () => void
   onError: (message: string) => void
   onSettings: () => void
 }
 
-const fixed = [
-  { label: 'Handoff', data: 'Napisz handoff\r', icon: Icon.handoff },
-  { label: 'Resume', data: 'Wznów z handoffu\r', icon: Icon.resume },
-  { label: 'Stop', data: '\x03', icon: Icon.stop },
-  { label: 'Continue', data: 'Continue\r', icon: Icon.continue },
-] as const
+/** Fixed Handoff command (English, spec Behaviour 2). */
+const HANDOFF_COMMAND = 'Write a handoff'
+
+type FixedAction = 'handoff' | 'resume' | 'stop' | 'continue'
+
+const fixed: Array<{ label: string; action: FixedAction; icon: LucideIcon }> = [
+  { label: 'Handoff', action: 'handoff', icon: Icon.handoff },
+  { label: 'Resume', action: 'resume', icon: Icon.resume },
+  { label: 'Stop', action: 'stop', icon: Icon.stop },
+  { label: 'Continue', action: 'continue', icon: Icon.continue },
+]
 
 /** Status glyph per action state (design doc 10: status icons 13-14px). */
 const statusIcons: Record<'idle' | 'running' | 'success' | 'failed', LucideIcon> = {
@@ -50,6 +63,8 @@ export function ActionBar({
   chatIsLive,
   onNewTerminal,
   onBottomTerminal,
+  onPromptCommand,
+  onResume,
   onError,
   onSettings,
 }: ActionBarProps): React.JSX.Element {
@@ -151,6 +166,22 @@ export function ActionBar({
     }
   }
 
+  // Stop/Continue write straight to the PTY; Handoff/Resume go through the
+  // host (prompt-input paste, or direct send with auto-send on). Resume opens
+  // the handoff picker instead of pasting a fixed command (spec Behaviour 4).
+  function runFixed(action: FixedAction): void {
+    if (!activeChatId || !chatIsLive) return
+    if (action === 'handoff') {
+      onPromptCommand(HANDOFF_COMMAND)
+    } else if (action === 'resume') {
+      onResume()
+    } else if (action === 'stop') {
+      void sendFixed('\x03')
+    } else {
+      void sendFixed('Continue\r')
+    }
+  }
+
   async function execute(action: ActionControl): Promise<void> {
     if (executeLockRef.current.has(action.id)) return
     // Confirmation (spec Behaviour 16): the modal runs before the IPC call, so
@@ -203,7 +234,7 @@ export function ActionBar({
                   disabled={!chatIsLive || !activeChatId}
                   className="flex items-center gap-1.5 bg-button px-3 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
                   onClick={() => {
-                    void sendFixed(item.data)
+                    runFixed(item.action)
                   }}
                 >
                   <FixedIcon size={14} aria-hidden />

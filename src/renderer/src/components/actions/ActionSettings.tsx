@@ -1,12 +1,19 @@
 import type React from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ActionControl, ActionInput, AppApi } from '../../../../shared/ipc-contract'
+import { projectHandoffDirKey } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { TEST_ID } from '../../lib/test-ids'
 
 interface Props {
   app: AppApi
   actions: ActionControl[]
   projectId: string | null
+  /** Project root (Browse fallback when no directory is set yet); null without a project. */
+  projectPath: string | null
+  /** Application-global Handoff/Resume auto-send (spec Behaviour 6). */
+  autoSend: boolean
+  onAutoSendChange: (next: boolean) => void
   onRefresh: () => Promise<void>
   onClose: () => void
 }
@@ -37,6 +44,9 @@ export function ActionSettings({
   app,
   actions,
   projectId,
+  projectPath,
+  autoSend,
+  onAutoSendChange,
   onRefresh,
   onClose,
 }: Props): React.JSX.Element {
@@ -46,6 +56,64 @@ export function ActionSettings({
   const visible = actions.filter(
     (action) => action.scope === 'global' || action.projectId === projectId,
   )
+
+  // Configuration section state (spec handoff-resume-flow Behaviour 6): the
+  // handoff directory loads once per bound project; Save persists the exact
+  // input (empty clears the setting). Auto-send persists immediately.
+  const [handoffDir, setHandoffDir] = useState('')
+  const [handoffDirSaved, setHandoffDirSaved] = useState(false)
+  const [configError, setConfigError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (projectId === null) {
+      setHandoffDir('')
+      return
+    }
+    let alive = true
+    setHandoffDirSaved(false)
+    setConfigError(null)
+    void app.state
+      .get(projectHandoffDirKey(projectId))
+      .then((value) => {
+        if (alive) setHandoffDir(value ?? '')
+      })
+      .catch(() => {
+        // An unloaded setting is an empty input, not a blocking failure: the
+        // user can still type and save the directory.
+        if (alive) setHandoffDir('')
+      })
+    return () => {
+      alive = false
+    }
+  }, [app, projectId])
+
+  async function saveHandoffDir(): Promise<void> {
+    if (projectId === null) return
+    try {
+      await app.state.set(projectHandoffDirKey(projectId), handoffDir.trim())
+      setHandoffDirSaved(true)
+      setConfigError(null)
+    } catch (cause) {
+      setHandoffDirSaved(false)
+      setConfigError(
+        parseAppErrorPayload(cause)?.message ?? 'Failed to save the handoff directory.',
+      )
+    }
+  }
+
+  async function browseHandoffDir(): Promise<void> {
+    try {
+      const picked = await app.dialogs.pickDirectory(
+        handoffDir.trim().length > 0 ? handoffDir.trim() : projectPath,
+      )
+      if (picked !== null) {
+        setHandoffDir(picked)
+        setHandoffDirSaved(false)
+      }
+    } catch (cause) {
+      setConfigError(parseAppErrorPayload(cause)?.message ?? 'Failed to open the directory picker.')
+    }
+  }
 
   function edit(action: ActionControl): void {
     setEditingId(action.id)
@@ -116,6 +184,74 @@ export function ActionSettings({
           >
             Close
           </button>
+        </div>
+        {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is
+            application-global; the handoff directory is per project. */}
+        <div className="mt-4 text-xs" data-testid={TEST_ID.settingsConfigSection}>
+          <h3 className="border-b border-edge pb-2 text-sm font-semibold">Configuration</h3>
+          <label className="mt-2 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={autoSend}
+              data-testid={TEST_ID.settingsAutoSend}
+              onChange={(event) => {
+                onAutoSendChange(event.target.checked)
+              }}
+            />
+            Auto-send after Handoff/Resume
+          </label>
+          {projectId !== null ? (
+            <div className="mt-2">
+              <label>
+                Handoff directory (absolute, or relative to the project root)
+                <div className="mt-1 flex gap-2">
+                  <input
+                    className="min-w-0 flex-1 rounded-sm bg-highlight p-1"
+                    value={handoffDir}
+                    placeholder="e.g. .agents/handoffs"
+                    data-testid={TEST_ID.settingsHandoffDir}
+                    onChange={(event) => {
+                      setHandoffDir(event.target.value)
+                      setHandoffDirSaved(false)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover"
+                    data-testid={TEST_ID.settingsHandoffDirBrowse}
+                    onClick={() => {
+                      void browseHandoffDir()
+                    }}
+                  >
+                    Browse
+                  </button>
+                </div>
+              </label>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Save handoff directory"
+                  className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
+                  data-testid={TEST_ID.settingsHandoffDirSave}
+                  onClick={() => {
+                    void saveHandoffDir()
+                  }}
+                >
+                  Save
+                </button>
+                {handoffDirSaved ? (
+                  <span className="text-success" data-testid={TEST_ID.settingsHandoffDirSaved}>
+                    Saved
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          {configError ? (
+            <p role="alert" className="mt-2 text-error">
+              {configError}
+            </p>
+          ) : null}
         </div>
         <h3 className="mt-4 border-b border-edge pb-2 text-sm font-semibold">Actions</h3>
         <ul className="mt-2 space-y-2">

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY, type AppApi, emptyGitWorktree } from '../../shared/ipc-contract'
@@ -72,6 +72,12 @@ function createAppApiStub(): AppApi {
       list: vi.fn().mockResolvedValue([]),
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
+    },
+    handoffs: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+    dialogs: {
+      pickDirectory: vi.fn().mockResolvedValue(null),
     },
   }
 }
@@ -494,13 +500,26 @@ describe('bottom auxiliary terminal panel', () => {
     for (const label of ['Handoff', 'Resume', 'Stop', 'Continue']) {
       fireEvent.click(screen.getByRole('button', { name: label }))
     }
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(4))
+    // Paste-only default (spec handoff-resume-flow): Stop and Continue write
+    // to the active chat PTY only; the bottom tab never receives bytes.
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(2))
     expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
-      ['t1', 'Napisz handoff\r'],
-      ['t1', 'Wznów z handoffu\r'],
       ['t1', '\x03'],
       ['t1', 'Continue\r'],
     ])
+    // Handoff pastes English into the active chat's dedicated input; Resume
+    // opens the handoff picker (unconfigured in this fixture -> modal only).
+    // The chat and bottom terminals each own a prompt input: scope to the chat.
+    await waitFor(() =>
+      expect(
+        (
+          within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
+            TEST_ID.terminalPromptInput,
+          ) as HTMLInputElement
+        ).value,
+      ).toBe('Write a handoff'),
+    )
+    await screen.findByTestId(TEST_ID.handoffPicker)
   })
 
   it('surfaces a rejected open-flag write and keeps the panel open', async () => {

@@ -53,6 +53,21 @@ export const TEST_ID = {
   terminalPromptInput: 'terminal-prompt-input',
   terminalPromptSend: 'terminal-prompt-send',
   terminalPromptDictation: 'terminal-prompt-dictation',
+  handoffPicker: 'handoff-picker',
+  handoffPickerLoading: 'handoff-picker-loading',
+  handoffPickerUnconfigured: 'handoff-picker-unconfigured',
+  handoffPickerConfigure: 'handoff-picker-configure',
+  handoffPickerPlainPaste: 'handoff-picker-plain-paste',
+  handoffPickerError: 'handoff-picker-error',
+  handoffPickerEmpty: 'handoff-picker-empty',
+  handoffPickerList: 'handoff-picker-list',
+  handoffPickerEntry: 'handoff-picker-entry',
+  settingsConfigSection: 'settings-config-section',
+  settingsAutoSend: 'settings-auto-send',
+  settingsHandoffDir: 'settings-handoff-dir',
+  settingsHandoffDirBrowse: 'settings-handoff-dir-browse',
+  settingsHandoffDirSave: 'settings-handoff-dir-save',
+  settingsHandoffDirSaved: 'settings-handoff-dir-saved',
 } as const
 
 /** Test ids that depend on record ids (projects/chats/sessions/paths). */

@@ -110,7 +110,7 @@ function createHarness(): Harness {
       create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
       remove: vi.fn(),
     },
-    state: { get: vi.fn(() => null), set: vi.fn() },
+    state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
     terminals: {
       create: vi.fn(() => 't1'),
       write: vi.fn(),
@@ -137,6 +137,12 @@ function createHarness(): Harness {
       list: vi.fn(() => Promise.resolve([])),
       read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
       openExternal: vi.fn(() => Promise.resolve()),
+    },
+    handoffs: {
+      list: vi.fn(() => Promise.resolve([])),
+    },
+    dialogs: {
+      pickDirectory: vi.fn(() => Promise.resolve(null)),
     },
   }
 
@@ -239,6 +245,78 @@ describe('registered ipc handlers', () => {
     expect(harness.services.projects.add).toHaveBeenCalledWith('D:/code/demo')
   })
 
+  it('projects:add resumes the dialog from the last confirmed directory and persists the choice', async () => {
+    const harness = createHarness()
+    vi.mocked(harness.services.state.get).mockReturnValue('D:/code/previous')
+    harness.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    await expect(harness.invoke(IPC_CHANNEL.projectsAdd, [])).resolves.toBeNull()
+    expect(harness.showOpenDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultPath: 'D:/code/previous' }),
+    )
+    // A cancel chooses nothing: the stored path must survive untouched.
+    expect(harness.services.state.set).not.toHaveBeenCalled()
+
+    harness.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ['D:/code/demo'],
+    })
+    await harness.invoke(IPC_CHANNEL.projectsAdd, [])
+    // The confirmed directory persists before the add attempt (spec
+    // handoff-resume-flow Behaviour 1): a failed add still remembers it.
+    expect(harness.services.state.set).toHaveBeenCalledWith(
+      'projects.lastDirectory',
+      'D:/code/demo',
+    )
+    expect(harness.services.projects.add).toHaveBeenCalledWith('D:/code/demo')
+  })
+
+  it('projects:add opens the dialog without a default when nothing is stored', async () => {
+    const harness = createHarness()
+    harness.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    await harness.invoke(IPC_CHANNEL.projectsAdd, [])
+    expect(harness.showOpenDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Add Project', defaultPath: undefined }),
+    )
+  })
+
+  it('projects:add remembers the confirmed directory even when the add fails', async () => {
+    const harness = createHarness()
+    vi.mocked(harness.services.projects.add).mockImplementation(() => {
+      throw new AppError('unknown', 'boom', 'projects:add')
+    })
+    harness.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['D:/x'] })
+    await expect(harness.invoke(IPC_CHANNEL.projectsAdd, [])).rejects.toThrow(/boom/)
+    expect(harness.services.state.set).toHaveBeenCalledWith('projects.lastDirectory', 'D:/x')
+  })
+
+  it('projects:remove deletes the removed project handoff-directory setting', () => {
+    const harness = createHarness()
+    harness.invoke(IPC_CHANNEL.projectsRemove, ['p1'])
+    expect(harness.services.state.delete).toHaveBeenCalledWith('project.handoffDir:p1')
+  })
+
+  it('projects:remove keeps the setting when the removal fails', () => {
+    const harness = createHarness()
+    vi.mocked(harness.services.projects.remove).mockImplementation(() => {
+      throw new AppError('not_found', 'Project not found.', 'projects:remove')
+    })
+    expect(() => harness.invoke(IPC_CHANNEL.projectsRemove, ['missing'])).toThrow(
+      /Project not found/,
+    )
+    expect(harness.services.state.delete).not.toHaveBeenCalled()
+  })
+
+  it('dialogs:pickDirectory routes through the injected picker; cancel resolves null', async () => {
+    const harness = createHarness()
+    vi.mocked(harness.services.dialogs.pickDirectory).mockResolvedValue('D:/picked')
+    await expect(harness.invoke(IPC_CHANNEL.dialogsPickDirectory, ['D:/start'])).resolves.toBe(
+      'D:/picked',
+    )
+    expect(harness.services.dialogs.pickDirectory).toHaveBeenCalledWith('D:/start')
+    vi.mocked(harness.services.dialogs.pickDirectory).mockResolvedValue(null)
+    await expect(harness.invoke(IPC_CHANNEL.dialogsPickDirectory, [null])).resolves.toBeNull()
+  })
+
   it('projects:remove terminates the removed project’s orphaned PTYs (fake PTY)', () => {
     const ptys: FakePty[] = []
     const createPty: PtyFactory = (options) => {
@@ -264,7 +342,7 @@ describe('registered ipc handlers', () => {
         create: vi.fn(() => chats[0]),
         remove: vi.fn(),
       },
-      state: { get: vi.fn(() => null), set: vi.fn() },
+      state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
       terminals,
       git: {
         getStatus: vi.fn(() =>
@@ -275,6 +353,12 @@ describe('registered ipc handlers', () => {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
         openExternal: vi.fn(() => Promise.resolve()),
+      },
+      handoffs: {
+        list: vi.fn(() => Promise.resolve([])),
+      },
+      dialogs: {
+        pickDirectory: vi.fn(() => Promise.resolve(null)),
       },
     }
     const { ipcMain, invoke } = createFakeIpcMain()
@@ -331,7 +415,7 @@ describe('registered ipc handlers', () => {
         create: vi.fn(() => chats[0]),
         remove: vi.fn(),
       },
-      state: { get: vi.fn(() => null), set: vi.fn() },
+      state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
       terminals,
       git: {
         getStatus: vi.fn(() =>
@@ -342,6 +426,12 @@ describe('registered ipc handlers', () => {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
         openExternal: vi.fn(() => Promise.resolve()),
+      },
+      handoffs: {
+        list: vi.fn(() => Promise.resolve([])),
+      },
+      dialogs: {
+        pickDirectory: vi.fn(() => Promise.resolve(null)),
       },
     }
     const { ipcMain, invoke } = createFakeIpcMain()
@@ -406,7 +496,7 @@ describe('registered ipc handlers', () => {
         create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'a' })),
         remove: vi.fn(),
       },
-      state: { get: vi.fn(() => null), set: vi.fn() },
+      state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
       terminals,
       git: {
         getStatus: vi.fn(() =>
@@ -417,6 +507,12 @@ describe('registered ipc handlers', () => {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
         openExternal: vi.fn(() => Promise.resolve()),
+      },
+      handoffs: {
+        list: vi.fn(() => Promise.resolve([])),
+      },
+      dialogs: {
+        pickDirectory: vi.fn(() => Promise.resolve(null)),
       },
     }
     const { ipcMain, invoke } = createFakeIpcMain()
