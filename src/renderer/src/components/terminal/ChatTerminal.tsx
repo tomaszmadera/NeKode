@@ -387,11 +387,14 @@ export function ChatTerminal({
       tabIndex={-1}
       style={{ display: visible ? 'block' : 'none' }}
     >
-      <div className="flex h-full w-full flex-col">
-        {/* Padding around the xterm host (both chat and bottom terminals);
-            FitAddon fits into the content box, so the inset is terminal
-            breathing room, never clipped output. */}
-        <div ref={containerRef} className="min-h-0 flex-1 px-3 py-2" />
+      {/* One uniform 12px inset around the whole terminal window: the prompt
+          frame aligns with the terminal text edges, and bottom, side and top
+          margins read as one padding (user feedback 2026-10-01). The fit host
+          itself must stay paddingless: FitAddon measures only the host box,
+          so host padding made the xterm screen overflow it and the last text
+          row touched the prompt frame (measured 0.9px gap). */}
+      <div className="flex h-full w-full flex-col p-3">
+        <div ref={containerRef} className="min-h-0 flex-1" />
         <PromptInput
           onSubmit={(line) => sendRef.current?.(line)}
           injected={injected}
