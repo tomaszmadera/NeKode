@@ -501,6 +501,40 @@ describe('files:openExternal', () => {
   })
 })
 
+describe('files:openRoot', () => {
+  it('opens the registered project root via the injected OS opener', async () => {
+    const openExternal = vi.fn(async () => '')
+    const fs = createFakeFs({ nodes: { [ROOT]: { type: 'dir' } } })
+    await createService(fs, openExternal).openRoot('p1')
+    expect(openExternal).toHaveBeenCalledTimes(1)
+    expect(openExternal).toHaveBeenCalledWith(ROOT)
+  })
+
+  it('reports a missing project as not_found without touching the OS', async () => {
+    const openExternal = vi.fn(async () => '')
+    const fs = createFakeFs({ nodes: { [ROOT]: { type: 'dir' } } })
+    const error = await captureError(() => createService(fs, openExternal).openRoot('missing'))
+    expect(error.code).toBe('not_found')
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
+  it('reports a vanished root directory as not_found without touching the OS', async () => {
+    const openExternal = vi.fn(async () => '')
+    const fs = createFakeFs({ nodes: {} })
+    const error = await captureError(() => createService(fs, openExternal).openRoot('p1'))
+    expect(error.code).toBe('not_found')
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed OS open as a typed error', async () => {
+    const fs = createFakeFs({ nodes: { [ROOT]: { type: 'dir' } } })
+    const error = await captureError(() =>
+      createService(fs, async () => 'no association').openRoot('p1'),
+    )
+    expect(error.code).toBe('unknown')
+  })
+})
+
 describe('files — project root failures', () => {
   it('reports a missing/unreadable project root as the typed error (inline tree error)', async () => {
     const fs = createFakeFs({ nodes: {} })

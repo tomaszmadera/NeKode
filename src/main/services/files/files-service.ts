@@ -322,6 +322,29 @@ export class FilesService {
   }
 
   /**
+   * Opens the registered project root directory in the OS file manager.
+   * The root is a registered project id lookup, so no path traversal is
+   * possible; a vanished root resolves as the not-found error like every
+   * other rejected shape.
+   */
+  async openRoot(projectId: string): Promise<void> {
+    const channel = 'files:openRoot'
+    const project = this.#projects.get(projectId)
+    if (project === null) {
+      throw new AppError('not_found', 'Project not found.', channel)
+    }
+    const root = toPosix(project.path)
+    const stats = await this.#fs.stat(root)
+    if (stats === null || !stats.isDirectory) {
+      throw notFound(channel)
+    }
+    const failure = await this.#openExternal(root)
+    if (failure !== '') {
+      throw new AppError('unknown', 'Failed to open the file externally.', channel)
+    }
+  }
+
+  /**
    * Resolves a request path against the registered project root and enforces
    * containment on the canonical (symlink-resolved) path.
    */

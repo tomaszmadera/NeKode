@@ -264,6 +264,10 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel('files:openExternal', ['string', 'relativePath'], (args) =>
       services.files.openExternal(args[0], args[1]),
     ),
+    // Open the registered project root in the OS file manager: one project id
+    // argument, existence checked in the service (a vanished root surfaces as
+    // not_found like every other rejected shape).
+    serviceChannel('files:openRoot', ['string'], (args) => services.files.openRoot(args[0])),
     // Handoff directory listing (spec handoff-resume-flow): read-only, one
     // registered project id argument. The configured directory may resolve
     // outside the project root by explicit user configuration, so unlike

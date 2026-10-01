@@ -128,6 +128,7 @@ export const IPC_CHANNEL = {
   filesList: 'files:list',
   filesRead: 'files:read',
   filesOpenExternal: 'files:openExternal',
+  filesOpenRoot: 'files:openRoot',
   actionsList: 'actions:list',
   actionsCreate: 'actions:create',
   actionsUpdate: 'actions:update',
@@ -151,6 +152,8 @@ export const APP_STATE_KEY = {
   projectsLastDirectory: 'projects.lastDirectory',
   /** '1' sends Handoff/Resume commands straight to the PTY; missing means paste-only. */
   autoSendHandoffResume: 'handoffResume.autoSend',
+  /** '0' disables the Ctrl+Tab chat switch; missing or '1' means enabled. */
+  chatSwitchEnabled: 'chatSwitch.enabled',
 } as const
 
 /**
@@ -220,6 +223,11 @@ export interface AppApi {
     read(projectId: string, relativePath: string): Promise<FilePreview>
     /** Opens the file with the OS default application (main: shell.openPath). */
     openExternal(projectId: string, relativePath: string): Promise<void>
+    /**
+     * Opens the project root directory in the OS file manager (main:
+     * shell.openPath on the registered root). Unknown project: not_found.
+     */
+    openRoot(projectId: string): Promise<void>
   }
   actions: {
     list(): Promise<ActionControl[]>
