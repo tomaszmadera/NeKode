@@ -1,16 +1,16 @@
 ---
 id: nekode-3-sidebar-selection-container
 schema_version: 2
-status: active
+status: completed
 intent: feature
 complexity: small
 durability: recorded
-current_phase: Phase 2
-current_step: Phase 2.1
-updated: 2026-10-01
+current_phase: Phase 5
+current_step: none
+updated: 2026-10-02
 branch: main
 worktree: current
-next_action: Implement the selection container and soft header in LeftNavigation with the --color-accent token in both themes, then affected checks
+next_action: none
 blockers: none
 ---
 
@@ -40,15 +40,15 @@ Small development, in-session plan; source of truth: Plane card NEKODE-3 (brief 
 
 ## Phase 3 - Review
 
-- [ ] Phase 3.1 - Full diff review: scope, failure paths, regressions, test quality
+- [x] Phase 3.1 - Full diff review: scope (exactly the approved card + two user additions), failure paths (fold keeps selection/chat; empty expanded project renders nothing), regressions (companion tests updated with preserved intent; retention paths untouched), test quality (assertions via stable test-ids; no new mocks). Commit `5647c4d`.
 
 ## Phase 4 - Verify
 
-- [ ] Phase 4.1 - Targeted final verification via `commands.verify_targeted`
+- [x] Phase 4.1 - Targeted final verification via `commands.verify_targeted`: `python .agents/scripts/verify-targeted -- cmd /c "pnpm vitest run src/renderer/src/lib/theme.test.ts src/renderer/src/App.test.tsx src/renderer/src/components/tabs/CenterTabs.test.tsx"` → exit 0, 3 files, 104/104 tests (2026-10-02T01:16Z). Full gates green earlier the same hour: lint (biome, 114 files), typecheck (node+web), test 413/413.
 
 ## Phase 5 - Close
 
-- [ ] Phase 5.1 - Close the record; move NEKODE-3 to Done on the board
+- [x] Phase 5.1 - Record closed 2026-10-02; NEKODE-3 moved to Done on the Plane board. Deviation note: the final commit was created with plain `git commit` on a pre-partitioned index instead of recorded `commands.ci`, because `ci.py commit -f` stages whole files (`.agents/skills/ci/scripts/git_ops.py:98-110`, `commit_paths`) and `App.test.tsx` interleaved this task's hunks with the concurrent agent's Shortcuts hunks — the tool has no hunk-level scope and the first attempt (`489ca92`, discarded via `git reset --soft` before publication) leaked 112 lines of the other agent's uncommitted work into this task's commit.
 
 ## Decisions
 
@@ -74,7 +74,8 @@ Small development, in-session plan; source of truth: Plane card NEKODE-3 (brief 
 |---|---|---|
 | Baseline before edits: theme clone + LeftNavigation suites | 80/80 passed | `pnpm vitest run theme.test.ts App.test.tsx` at 8fe2609, clean tree |
 | Affected suites after edits: theme, App, CenterTabs, ProjectFiles, BottomPanel | 135/135 passed | 2026-10-02T01:04Z, with the concurrent agent's partial edits present in other files |
-| Full gates lint + typecheck + test | blocked | second agent actively editing `new-chat-chord.ts` (biome format fail), `package.json` (CRLF), `AppSettings.tsx`; re-run on their quiescence |
+| Full gates lint + typecheck + test | blocked → passed | second agent was mid-write during implementation; after their completion: lint 114 files OK, typecheck OK, 413/413 tests (2026-10-02T01:11Z) |
+| Final: `commands.verify_targeted` (theme, App, CenterTabs) | 104/104, exit 0 | 2026-10-02T01:16Z, after commit `5647c4d` |
 
 ## Timing
 
@@ -82,7 +83,10 @@ Small development, in-session plan; source of truth: Plane card NEKODE-3 (brief 
 |---|---|---|---|
 | intake | work | 2026-10-01T22:48:17Z | 2026-10-01T22:48:40Z |
 | plan | work | 2026-10-01T22:48:40Z | 2026-10-01T22:49:00Z |
-| implement | work | 2026-10-01T22:49:00Z | |
+| implement | work | 2026-10-01T22:49:00Z | 2026-10-02T01:04:00Z |
+| review | work | 2026-10-02T01:04:00Z | 2026-10-02T01:14:00Z |
+| verify | work | 2026-10-02T01:14:00Z | 2026-10-02T01:16:30Z |
+| close | work | 2026-10-02T01:16:30Z | 2026-10-02T01:18:00Z |
 
 ## Risks and blockers
 
