@@ -46,6 +46,7 @@ function fakeServices(): AppServices {
       list: vi.fn(() => Promise.resolve([])),
       read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
       openExternal: vi.fn(() => Promise.resolve()),
+      openRoot: vi.fn(() => Promise.resolve()),
     },
     handoffs: {
       list: vi.fn(() => Promise.resolve([])),
@@ -161,6 +162,23 @@ describe('ipc payload validation', () => {
     expect(() => list?.parse(['p1', ''])).toThrow(ValidationError)
   })
 
+  it('validates files:openRoot payloads', () => {
+    const services = fakeServices()
+    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
+    for (const entry of buildValidatedChannels(services)) {
+      channels.set(entry.channel, entry)
+    }
+
+    const openRoot = channels.get('files:openRoot')
+    openRoot?.invoke(openRoot.parse(['p1']))
+    expect(services.files.openRoot).toHaveBeenCalledWith('p1')
+
+    expect(() => openRoot?.parse([42])).toThrow(ValidationError)
+    expect(() => openRoot?.parse([])).toThrow(/expected 1 argument/)
+    expect(() => openRoot?.parse(['p1', 'extra'])).toThrow(/expected 1 argument/)
+    expect(services.files.openRoot).toHaveBeenCalledTimes(1)
+  })
+
   it('ValidationError transports as a typed validation AppError', () => {
     const error = new ValidationError('bad payload')
     expect(error).toBeInstanceOf(AppError)
@@ -215,6 +233,7 @@ describe('ipc payload validation', () => {
       'files:list',
       'files:read',
       'files:openExternal',
+      'files:openRoot',
       'handoffs:list',
       'dialogs:pickDirectory',
     ]) {

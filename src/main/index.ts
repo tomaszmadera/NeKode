@@ -2,10 +2,20 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import nekodeIcon from '../../resources/icon.ico?asset'
 import { isSafeExternalUrl } from '../shared/safe-url'
 import { registerAppIpcHandlers } from './ipc/ipc-handlers'
 import { isTrustedRendererUrl } from './security/sender-guard'
 import { createServices } from './services/create-services'
+
+// Isolated smoke/e2e runs (docs/development/setup.md §3): redirect userData
+// before the app is ready so the SQLite db and local settings stay out of the
+// developer's real profile. Windows ignores the APPDATA override (Known
+// Folder), so app.setPath is the only reliable isolation path.
+const smokeUserData = process.env.NEKODE_USER_DATA
+if (smokeUserData !== undefined && smokeUserData.length > 0) {
+  app.setPath('userData', smokeUserData)
+}
 
 // The single trusted renderer document: the dev server root in dev, the
 // built index.html in production. Used for both navigation locking and the
@@ -24,19 +34,23 @@ function createWindow(): void {
     height: 800,
     show: false,
     autoHideMenuBar: true,
-    // Custom title bar (design doc 26.2): the renderer's top strips are the
-    // drag surface (.drag-region in index.css) and paint the base app
-    // background; Windows draws the caption buttons in the top-right corner
-    // over the web content with the overlay colors below. The height matches
-    // the 36px tab strip. backgroundColor prevents a white flash before the
-    // first renderer paint.
+    // Window and taskbar icon (2026-10-01): the branded cat tile, so dev
+    // runs carry the app identity like the packaged exe (electron-builder
+    // win.icon below). ?asset resolves to a real file path in dev and build.
+    icon: nekodeIcon,
+    // Custom title bar (design doc 26.2): the renderer's full-width title
+    // bar strip (brand on the left) is the drag surface (.drag-region in
+    // index.css) and paints the base app background; Windows draws the
+    // caption buttons in the top-right corner over that strip with the
+    // overlay colors below. backgroundColor prevents a white flash before
+    // the first renderer paint.
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#111423',
+      color: '#0b0d1f',
       symbolColor: '#cacbd1',
       height: 36,
     },
-    backgroundColor: '#111423',
+    backgroundColor: '#0b0d1f',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,

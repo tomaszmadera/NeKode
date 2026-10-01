@@ -98,6 +98,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       list: (projectId, relativePath) => files.list(projectId, relativePath),
       read: (projectId, relativePath) => files.read(projectId, relativePath),
       openExternal: (projectId, relativePath) => files.openExternal(projectId, relativePath),
+      openRoot: (projectId) => files.openRoot(projectId),
     },
     handoffs: {
       list: (projectId) => handoffs.list(projectId),

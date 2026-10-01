@@ -156,4 +156,11 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.dialogsPickDirectory, args: [null] },
     ])
   })
+
+  it('routes files:openRoot through its typed channel', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.files.openRoot('p1')
+    expect(ipc.invocations).toEqual([{ channel: IPC_CHANNEL.filesOpenRoot, args: ['p1'] }])
+  })
 })

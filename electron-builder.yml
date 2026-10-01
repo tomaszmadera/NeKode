@@ -8,3 +8,12 @@
 #   Rebuilding them for Electron would require VS C++ Build Tools (not
 #   available on this host) and is not needed for N-API modules.
 npmRebuild: false
+
+# Windows application icon (added 2026-10-01, user request): the branded cat
+# tile rasterized from src/renderer/src/assets/brand/cat-icon-tile.svg
+# (16-256px; regenerate with ImageMagick `-define icon:auto-resize`) as the
+# exe icon; Windows derives the taskbar icon from it in packaged builds, and
+# the NSIS installer/uninstaller icons fall back to the application icon. The
+# same file is the dev window icon (BrowserWindow icon in src/main/index.ts).
+win:
+  icon: resources/icon.ico

@@ -77,6 +77,11 @@ export interface AppServices {
     read(projectId: string, relativePath: string): Promise<FilePreview>
     /** Opens the file with the OS default application (main-process only). */
     openExternal(projectId: string, relativePath: string): Promise<void>
+    /**
+     * Opens the registered project root in the OS file manager. Unknown
+     * project or missing root directory: not_found.
+     */
+    openRoot(projectId: string): Promise<void>
   }
   handoffs: {
     /** Regular files of the project's configured handoff directory, newest first. */
