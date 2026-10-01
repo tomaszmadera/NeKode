@@ -26,6 +26,12 @@ function nextSortOrder(actions: ActionControl[]): number {
   return max + 1
 }
 
+/** Absolute path shape for the picker defaultPath (the channel takes null or
+    absolute only): drive-rooted Windows and POSIX forms, no relative input. */
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path)
+}
+
 function emptyInput(projectId: string | null, sortOrder: number): ActionInput {
   return {
     scope: projectId === null ? 'global' : 'project',
@@ -77,10 +83,15 @@ export function ActionSettings({
       .then((value) => {
         if (alive) setHandoffDir(value ?? '')
       })
-      .catch(() => {
-        // An unloaded setting is an empty input, not a blocking failure: the
-        // user can still type and save the directory.
-        if (alive) setHandoffDir('')
+      .catch((cause: unknown) => {
+        // A failed read must not masquerade as "unconfigured": an empty input
+        // plus a visible error keeps a later Save from wiping the setting.
+        if (alive) {
+          setHandoffDir('')
+          setConfigError(
+            parseAppErrorPayload(cause)?.message ?? 'Failed to load the handoff directory setting.',
+          )
+        }
       })
     return () => {
       alive = false
@@ -102,10 +113,13 @@ export function ActionSettings({
   }
 
   async function browseHandoffDir(): Promise<void> {
+    // The picker's defaultPath must be null or absolute (validator rule): a
+    // relative current value falls back to the project root, like the empty
+    // case (spec Behaviour 6: current value or project root).
+    const current = handoffDir.trim()
+    const fallback = current.length > 0 && isAbsolutePath(current) ? current : projectPath
     try {
-      const picked = await app.dialogs.pickDirectory(
-        handoffDir.trim().length > 0 ? handoffDir.trim() : projectPath,
-      )
+      const picked = await app.dialogs.pickDirectory(fallback)
       if (picked !== null) {
         setHandoffDir(picked)
         setHandoffDirSaved(false)

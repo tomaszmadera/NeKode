@@ -226,6 +226,18 @@ describe('registered ipc handlers', () => {
     expect(services.chats.list).not.toHaveBeenCalled()
   })
 
+  it('rejects untrusted senders on the handoff and dialog channels before services', () => {
+    const { services, invoke } = createHarness()
+    expect(() => invoke(IPC_CHANNEL.handoffsList, ['p1'], 'file:///untrusted/index.html')).toThrow(
+      /untrusted/,
+    )
+    expect(() =>
+      invoke(IPC_CHANNEL.dialogsPickDirectory, [null], 'file:///untrusted/index.html'),
+    ).toThrow(/untrusted/)
+    expect(services.handoffs.list).not.toHaveBeenCalled()
+    expect(services.dialogs.pickDirectory).not.toHaveBeenCalled()
+  })
+
   it('projects:add routes the dialog result and cancels to null', async () => {
     const harness = createHarness()
     harness.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
