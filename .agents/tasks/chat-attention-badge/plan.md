@@ -1,7 +1,7 @@
 ---
 task_id: chat-attention-badge
 spec: docs/features/chat-attention-badge/spec.md
-status: draft
+status: approved
 ---
 
 # Plan: Chat attention badge
