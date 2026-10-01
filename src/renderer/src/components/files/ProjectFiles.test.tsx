@@ -12,7 +12,7 @@ import { resetMockTerminals } from '../../test/xterm-mock'
 // Remove Project and the row has no remove button; tree expand/collapse/
 // select with lazy caching; clicking a file opens its tab (label = file name,
 // tooltip = relative path); too-large/binary fallbacks with "Open externally"
-// per tab; `← Projects` round-trips keep the tab strip and the terminal
+// per tab; back-affordance round-trips keep the tab strip and the terminal
 // session; per-project tree state retention across mode round-trips.
 //
 // xterm.js is mocked at the module boundary (jsdom has no canvas) and the
@@ -162,9 +162,12 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
     expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull()
     expect(screen.queryAllByTestId(/^tab-file-/)).toEqual([])
 
-    // The Files action enters the mode (Behaviour 1 / AC1).
+    // The Files action enters the mode (Behaviour 1 / AC1). The back
+    // affordance is icon-only; its accessible name carries the meaning.
     await enterFilesMode()
-    expect(getByTestIdString(TEST_ID.filesBackButton).textContent).toContain('Projects')
+    expect(getByTestIdString(TEST_ID.filesBackButton).getAttribute('aria-label')).toBe(
+      'Back to Projects',
+    )
     expect(getByTestIdString(TEST_ID.filesProjectName).textContent).toBe('Demo')
     // The center keeps the tab strip (tab model): no "Files" view label and no
     // preview empty state — clicking a file opens its tab.
@@ -366,7 +369,7 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectFiles('p1')))
     const error = await screen.findByTestId(TEST_ID.fileTreeError)
     expect(error.textContent).toContain('File not found.')
-    // The rest of the app keeps working; `← Projects` exits the mode.
+    // The rest of the app keeps working; the back affordance exits the mode.
     expect(getByTestIdString(TEST_ID.appShell)).toBeTruthy()
     fireEvent.click(getByTestIdString(TEST_ID.filesBackButton))
     await screen.findByTestId(TEST_ID.projectList)
@@ -408,7 +411,7 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     cleanup()
   })
 
-  it('`← Projects` keeps the tab strip and the active tab; the session survives (AC6)', async () => {
+  it('the back affordance keeps the tab strip and the active tab; the session survives (AC6)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     mockListings(app)
@@ -436,7 +439,7 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     expect(app.terminals.create).toHaveBeenCalledTimes(1)
   })
 
-  it('`← Projects` keeps the Welcome surface when no chat was active', async () => {
+  it('the back affordance keeps the Welcome surface when no chat was active', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     mockListings(app)
     render(<App app={app} />)

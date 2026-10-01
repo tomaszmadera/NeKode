@@ -165,7 +165,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // Project Files mode (spec Behaviour 1–2, 12): the project whose tree is
   // shown in the left panel, or null for the Projects/Chats navigation. The
   // mode never touches the chat/project selection and no longer swaps the
-  // center surface (`← Projects` keeps the tab strip and the active tab).
+  // center surface (the back affordance keeps the tab strip and the active tab).
   // Per-project tree state lives in filesSessions for the app session only
   // (Behaviour 14).
   const [filesProjectId, setFilesProjectId] = useState<string | null>(null)
@@ -732,7 +732,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             return
           }
           // Inline tree error (spec Errors): the app keeps working and
-          // `← Projects` always exits the mode.
+          // the back affordance always exits the mode.
           updateFilesSession(projectId, (session) => ({
             ...session,
             treeError: errorMessage(error, 'Failed to load project files.'),

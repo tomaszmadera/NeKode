@@ -1345,9 +1345,8 @@ describe('chat workspace (Stage 3)', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
     await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('D:/code/demo'))
-    const branchGlyph = String.fromCharCode(0xe0a0)
     expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toBe(
-      `${branchGlyph} feature/meta-pixel`,
+      'feature/meta-pixel',
     )
     expect(screen.getByTestId(TEST_ID.statusGitStatus).textContent).toBe('● 7 changes')
     expect(screen.getByTestId(TEST_ID.statusGitStatus).getAttribute('title')).toContain('Modified')

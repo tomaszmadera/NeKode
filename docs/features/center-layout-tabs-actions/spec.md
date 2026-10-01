@@ -54,7 +54,7 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 16. Nothing executes without a user click. Actions are never run at application or project open.
 17. Actions are configured in Project Settings → Actions (`docs/UX-UI.md` §49): a list with `Add Action`, and an add/edit form with Title, Icon (optional), Command, Working Directory (project root default), Run In (`Background` | `New terminal`), and an `Ask for confirmation` checkbox. Changes take effect in the action row immediately and survive application restarts.
 18. The status bar spans the full window width at the very bottom, below all other regions. When a project is active it shows: project name, path (truncated visually, full on hover), runtime badges (`docs/UX-UI.md` §15, `+N` collapse), Git branch and worktree status (`docs/UX-UI.md` §16 forms, hover details). With no active project the project section is empty; the bar itself stays.
-19. The project file tree behavior (Files action, `← Projects`, default exclusions, lazy loading, expansion retention, Remove Project context menu) is unchanged from `docs/features/project-files-view/spec.md`.
+19. The project file tree behavior (Files action, the back affordance, default exclusions, lazy loading, expansion retention, Remove Project context menu) is unchanged from `docs/features/project-files-view/spec.md`.
 
 ## Business rules
 

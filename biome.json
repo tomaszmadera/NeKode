@@ -16,7 +16,8 @@
       "!**/.claude",
       "!**/.grok",
       "!**/.opencode",
-      "!**/docs"
+      "!**/docs",
+      "!src/renderer/src/assets/brand/*.svg"
     ]
   },
   "formatter": {
