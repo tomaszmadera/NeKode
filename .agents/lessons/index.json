@@ -196,6 +196,19 @@
         "task-status"
       ],
       "path": ".agents/lessons/items/timing-suffix-only-staged-elements.md"
+    },
+    {
+      "id": "active-record-keeps-current-step",
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "task-record",
+        "task-status",
+        "approval",
+        "wait"
+      ],
+      "path": ".agents/lessons/items/active-record-keeps-current-step.md"
     }
   ]
 }

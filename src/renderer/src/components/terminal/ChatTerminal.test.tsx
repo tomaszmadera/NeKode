@@ -88,6 +88,12 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
     },
+    handoffs: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+    dialogs: {
+      pickDirectory: vi.fn().mockResolvedValue(null),
+    },
   }
 
   return {
@@ -427,6 +433,71 @@ describe('ChatTerminal lifecycle', () => {
       />,
     )
     expect((getByTestId(TEST_ID.terminalPromptDictation) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('prompt input applies an injected draft, reports consumption and sends nothing', async () => {
+    const { app } = createAppMock()
+    const onInjected = vi.fn()
+    const { getByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+        injected={{ text: 'Write a handoff', nonce: 1 }}
+        onInjected={onInjected}
+      />,
+    )
+    await waitFor(() => expect(onInjected).toHaveBeenCalledTimes(1))
+    expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
+      'Write a handoff',
+    )
+    // Paste-only delivery (spec handoff-resume-flow Behaviour 3): the draft
+    // waits for the user; the injection itself writes nothing to the PTY.
+    expect(app.terminals.write).not.toHaveBeenCalled()
+  })
+
+  it('prompt injection replaces an existing draft; the user submits the fill themselves', async () => {
+    const { app } = createAppMock()
+    const onInjected = vi.fn()
+    const { getByTestId, rerender } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+        injected={{ text: 'ls -la', nonce: 1 }}
+        onInjected={onInjected}
+      />,
+    )
+    await waitFor(() => expect(onInjected).toHaveBeenCalled())
+    rerender(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+        injected={{ text: 'Write a handoff', nonce: 2 }}
+        onInjected={onInjected}
+      />,
+    )
+    await waitFor(() =>
+      expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
+        'Write a handoff',
+      ),
+    )
+    const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
+    fireEvent.submit(input.closest('form') as HTMLFormElement)
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff\r'))
   })
 
   it('prompt input Send button submits the typed line and clears the input', async () => {

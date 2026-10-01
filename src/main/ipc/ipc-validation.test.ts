@@ -25,7 +25,7 @@ function fakeServices(): AppServices {
       create: () => ({ id: 't1', projectId: 'p1', name: 'n' }),
       remove: vi.fn(),
     },
-    state: { get: vi.fn(() => null), set: vi.fn() },
+    state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
     terminals: {
       create: vi.fn(() => 't1'),
       write: vi.fn(),
@@ -46,6 +46,12 @@ function fakeServices(): AppServices {
       list: vi.fn(() => Promise.resolve([])),
       read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
       openExternal: vi.fn(() => Promise.resolve()),
+    },
+    handoffs: {
+      list: vi.fn(() => Promise.resolve([])),
+    },
+    dialogs: {
+      pickDirectory: vi.fn(() => Promise.resolve(null)),
     },
   }
 }
@@ -209,6 +215,8 @@ describe('ipc payload validation', () => {
       'files:list',
       'files:read',
       'files:openExternal',
+      'handoffs:list',
+      'dialogs:pickDirectory',
     ]) {
       expect(channels.has(channel)).toBe(true)
     }
@@ -234,5 +242,28 @@ describe('ipc payload validation', () => {
     expect(shellName?.parse([])).toEqual([])
     expect(shellName?.invoke([])).toBe('PowerShell')
     expect(() => shellName?.parse(['extra'])).toThrow(ValidationError)
+  })
+
+  it('validates handoffs:list and dialogs:pickDirectory payloads', () => {
+    const services = fakeServices()
+    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
+    for (const entry of buildValidatedChannels(services)) {
+      channels.set(entry.channel, entry)
+    }
+
+    const handoffs = channels.get('handoffs:list')
+    expect(() => handoffs?.parse([42])).toThrow(ValidationError)
+    expect(() => handoffs?.parse([])).toThrow(/expected 1 argument/)
+    handoffs?.invoke(handoffs.parse(['p1']))
+    expect(services.handoffs.list).toHaveBeenCalledWith('p1')
+
+    const pick = channels.get('dialogs:pickDirectory')
+    // Null (no default) and absolute defaults pass; relative/NUL shapes fail.
+    expect(pick?.parse([null])).toEqual([null])
+    expect(pick?.parse(['D:/code'])).toEqual(['D:/code'])
+    expect(() => pick?.parse(['relative/dir'])).toThrow(/absolute path/)
+    expect(() => pick?.parse(['D:/code\u0000x'])).toThrow(/NUL/)
+    pick?.invoke(pick.parse(['D:/code']))
+    expect(services.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code')
   })
 })

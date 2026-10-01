@@ -12,6 +12,7 @@ import { APP_STATE_KEY } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
 import { ActionBar } from './components/actions/ActionBar'
 import { ActionSettings } from './components/actions/ActionSettings'
+import { HandoffPicker } from './components/actions/HandoffPicker'
 import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
@@ -140,6 +141,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [actions, setActions] = useState<ActionControl[]>([])
   const [actionSettingsOpen, setActionSettingsOpen] = useState(false)
   const [actionSettingsProjectId, setActionSettingsProjectId] = useState<string | null>(null)
+  // Handoff/Resume delivery (spec handoff-resume-flow): auto-send default off
+  // (paste into the prompt input), the setting is application-global.
+  const [autoSendHandoff, setAutoSendHandoff] = useState(false)
+  const [handoffPickerOpen, setHandoffPickerOpen] = useState(false)
+  // Pending prompt-input fill addressed to one chat (paste-only delivery).
+  const [promptInjection, setPromptInjection] = useState<{
+    chatId: string
+    text: string
+    nonce: number
+  } | null>(null)
+  const promptInjectionNonceRef = useRef(0)
   const [liveChatIds, setLiveChatIds] = useState<ReadonlySet<string>>(new Set())
   const [terminalCwds, setTerminalCwds] = useState<Record<string, string>>({})
   const pendingTerminalCommandsRef = useRef<Record<string, string>>({})
@@ -214,6 +226,58 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setNotice(errorMessage(error, 'Failed to load actions.'))
     })
   }, [refreshActions])
+
+  useEffect(() => {
+    let alive = true
+    void app.state
+      .get(APP_STATE_KEY.autoSendHandoffResume)
+      .then((value) => {
+        if (alive) setAutoSendHandoff(value === '1')
+      })
+      .catch((error: unknown) => {
+        if (alive) setNotice(errorMessage(error, 'Failed to load settings.'))
+      })
+    return () => {
+      alive = false
+    }
+  }, [app])
+
+  const handleAutoSendChange = useCallback(
+    (next: boolean): void => {
+      setAutoSendHandoff(next)
+      void app.state
+        .set(APP_STATE_KEY.autoSendHandoffResume, next ? '1' : '0')
+        .catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to save the setting.'))
+        })
+    },
+    [app],
+  )
+
+  // Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): auto-send
+  // writes the English command plus CR straight to the PTY; the default paste
+  // mode fills the addressed chat's prompt input and waits for the user.
+  const handlePromptCommand = useCallback(
+    (text: string): void => {
+      const chatId = selectionRef.current.chatId
+      if (chatId === null || !liveChatIds.has(chatId)) return
+      if (autoSendHandoff) {
+        void app.terminals.write(chatId, `${text}\r`).catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to send the command.'))
+        })
+        return
+      }
+      promptInjectionNonceRef.current += 1
+      setPromptInjection({ chatId, text, nonce: promptInjectionNonceRef.current })
+    },
+    [app, autoSendHandoff, liveChatIds],
+  )
+
+  const handlePromptInjected = useCallback((nonce: number): void => {
+    setPromptInjection((previous) =>
+      previous !== null && previous.nonce === nonce ? null : previous,
+    )
+  }, [])
 
   const handleSessionStatus = useCallback((chatId: string, live: boolean): void => {
     setLiveChatIds((previous) => {
@@ -1207,6 +1271,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
             onNewTerminal={handleNewTerminalAction}
             onBottomTerminal={handleBottomTerminalAction}
+            onPromptCommand={handlePromptCommand}
+            onResume={() => {
+              if (tabProjectId !== null) {
+                setHandoffPickerOpen(true)
+              }
+            }}
             onError={setNotice}
             onSettings={() => {
               setActionSettingsProjectId(tabProjectId)
@@ -1269,6 +1339,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 onSessionReady={handleSessionReady}
                 onChatClosed={handleChatClosed}
                 onStartNewChat={handleStartNewChat}
+                promptInjection={promptInjection}
+                onPromptInjected={handlePromptInjected}
               />
             </div>
           </main>
@@ -1283,8 +1355,28 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           app={app}
           actions={actions}
           projectId={actionSettingsProjectId}
+          projectPath={
+            actionSettingsProjectId === null
+              ? null
+              : (projects.find((project) => project.id === actionSettingsProjectId)?.path ?? null)
+          }
+          autoSend={autoSendHandoff}
+          onAutoSendChange={handleAutoSendChange}
           onRefresh={refreshActions}
           onClose={() => setActionSettingsOpen(false)}
+        />
+      ) : null}
+      {handoffPickerOpen && tabProjectId !== null ? (
+        <HandoffPicker
+          app={app}
+          projectId={tabProjectId}
+          onPick={handlePromptCommand}
+          onConfigure={() => {
+            setHandoffPickerOpen(false)
+            setActionSettingsProjectId(tabProjectId)
+            setActionSettingsOpen(true)
+          }}
+          onClose={() => setHandoffPickerOpen(false)}
         />
       ) : null}
       <BottomPanel

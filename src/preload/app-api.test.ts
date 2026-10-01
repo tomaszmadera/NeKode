@@ -143,4 +143,17 @@ describe('preload app api', () => {
     const exitListeners = ipc.listeners.get(IPC_CHANNEL.terminalsExit)
     expect(exitListeners?.size ?? 0).toBe(0)
   })
+
+  it('routes handoff listing and the directory picker through typed channels', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.handoffs.list('p1')
+    await api.dialogs.pickDirectory('D:/code')
+    await api.dialogs.pickDirectory(null)
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.handoffsList, args: ['p1'] },
+      { channel: IPC_CHANNEL.dialogsPickDirectory, args: ['D:/code'] },
+      { channel: IPC_CHANNEL.dialogsPickDirectory, args: [null] },
+    ])
+  })
 })

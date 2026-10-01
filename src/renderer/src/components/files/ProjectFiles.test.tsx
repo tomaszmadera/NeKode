@@ -72,6 +72,12 @@ function createAppApiStub(): AppApi {
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
     },
+    handoffs: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+    dialogs: {
+      pickDirectory: vi.fn().mockResolvedValue(null),
+    },
   }
 }
 

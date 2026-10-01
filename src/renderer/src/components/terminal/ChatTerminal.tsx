@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { isBottomPanelChord } from './bottom-panel-chord'
-import { PromptInput } from './PromptInput'
+import { type PromptInjection, PromptInput } from './PromptInput'
 
 // One xterm.js view per chat session (UX-UI §17). The view owns the xterm
 // instance and the bridge subscriptions; the PTY itself lives in the main
@@ -25,6 +25,14 @@ interface ChatTerminalProps {
   focused?: boolean
   /** PTY exit: the host closes the chat (spec Behaviour 11). */
   onExit: (exitCode: number) => void
+  /**
+   * Draft fill addressed to THIS chat's prompt input (Handoff/Resume paste,
+   * spec handoff-resume-flow Behaviour 3). The host addresses injections per
+   * chat, so hidden terminals never receive another chat's fill.
+   */
+  injected?: PromptInjection | null
+  /** Reports consumption so the host can drop the pending injection. */
+  onInjected?: () => void
   /**
    * `Ctrl+D` at an empty input line outside full-screen programs: the
    * shortcut is intercepted and the chat closes through the same flow as a
@@ -80,6 +88,8 @@ export function ChatTerminal({
   onClose,
   onSpawnError,
   onReady,
+  injected = null,
+  onInjected,
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -382,7 +392,11 @@ export function ChatTerminal({
             FitAddon fits into the content box, so the inset is terminal
             breathing room, never clipped output. */}
         <div ref={containerRef} className="min-h-0 flex-1 px-3 py-2" />
-        <PromptInput onSubmit={(line) => sendRef.current?.(line)} />
+        <PromptInput
+          onSubmit={(line) => sendRef.current?.(line)}
+          injected={injected}
+          onInjected={onInjected}
+        />
       </div>
     </div>
   )

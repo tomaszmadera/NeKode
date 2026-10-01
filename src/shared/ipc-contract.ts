@@ -95,6 +95,15 @@ export type FilePreview =
   | { kind: 'too-large'; size: number }
   | { kind: 'binary' }
 
+// One regular file in a project's configured handoff directory (spec
+// handoff-resume-flow Data/API), newest first. `path` is the resolved
+// absolute path: it is what the Resume paste names in its command.
+export interface HandoffEntry {
+  name: string
+  path: string
+  modifiedAt: string
+}
+
 // Channel names mirror the spec Data/API bridge. terminals:terminate accepts
 // only a bottom tab id (tab close). Chat teardown and application quit stay
 // in the main process: chats:remove, projects:remove, and
@@ -125,6 +134,8 @@ export const IPC_CHANNEL = {
   actionsDelete: 'actions:delete',
   actionsExecute: 'actions:execute',
   actionsStatus: 'actions:status',
+  handoffsList: 'handoffs:list',
+  dialogsPickDirectory: 'dialogs:pickDirectory',
 } as const
 
 // Keys of the flat app_state key–value store (spec Data/API). Shared so the
@@ -136,7 +147,20 @@ export const APP_STATE_KEY = {
   bottomRegionHeight: 'region.bottom.height',
   /** '1' open, '0' hidden. Missing or any other value means hidden. */
   bottomRegionOpen: 'region.bottom.open',
+  /** Last confirmed Add Project dialog directory: the next dialog's defaultPath. */
+  projectsLastDirectory: 'projects.lastDirectory',
+  /** '1' sends Handoff/Resume commands straight to the PTY; missing means paste-only. */
+  autoSendHandoffResume: 'handoffResume.autoSend',
 } as const
+
+/**
+ * Per-project handoff directory setting key (spec handoff-resume-flow
+ * Business rules). Empty or missing value means unconfigured; relative
+ * values resolve against the project root at listing time.
+ */
+export function projectHandoffDirKey(projectId: string): string {
+  return `project.handoffDir:${projectId}`
+}
 
 export interface AppApi {
   projects: {
@@ -204,5 +228,20 @@ export interface AppApi {
     delete(id: string): Promise<void>
     execute(id: string, projectId: string | null, confirmed: boolean): Promise<ActionExecution>
     status(id: string): Promise<ActionExecution>
+  }
+  handoffs: {
+    /**
+     * One lazy listing of the project's configured handoff directory
+     * (regular files, newest first). Unconfigured project: typed
+     * validation error; missing directory: not_found naming the path.
+     */
+    list(projectId: string): Promise<HandoffEntry[]>
+  }
+  dialogs: {
+    /**
+     * Opens the native directory picker (main process). Resolves the chosen
+     * absolute path, or null when the user cancels. Persists nothing.
+     */
+    pickDirectory(defaultPath: string | null): Promise<string | null>
   }
 }

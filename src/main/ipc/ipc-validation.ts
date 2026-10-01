@@ -264,6 +264,22 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel('files:openExternal', ['string', 'relativePath'], (args) =>
       services.files.openExternal(args[0], args[1]),
     ),
+    // Handoff directory listing (spec handoff-resume-flow): read-only, one
+    // registered project id argument. The configured directory may resolve
+    // outside the project root by explicit user configuration, so unlike
+    // files:* there is no containment rule here.
+    serviceChannel('handoffs:list', ['string'], (args) => services.handoffs.list(args[0])),
+    {
+      channel: 'dialogs:pickDirectory',
+      parse: (payload) => {
+        requireArgs(payload, 1, 'dialogs:pickDirectory')
+        if (payload[0] !== null) {
+          assertSafePath(payload[0], 'dialogs:pickDirectory defaultPath')
+        }
+        return payload
+      },
+      invoke: (args) => services.dialogs.pickDirectory(args[0] as string | null),
+    },
   ]
 }
 

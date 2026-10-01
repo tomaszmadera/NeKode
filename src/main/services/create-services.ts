@@ -1,4 +1,5 @@
 import { statSync } from 'node:fs'
+import { projectHandoffDirKey } from '../../shared/ipc-contract'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import type { AppServices } from '../ipc/service-registry'
@@ -7,6 +8,7 @@ import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
 import { FilesService } from './files/files-service'
 import { GitService } from './git/git-service'
+import { HandoffsService } from './handoffs/handoffs-service'
 import { ProjectService } from './project-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { TerminalService } from './terminal/terminal-service'
@@ -25,6 +27,11 @@ export interface CreateServicesOptions {
    * an error description on failure (the Electron contract).
    */
   openExternal: (absolutePath: string) => Promise<string>
+  /**
+   * Native directory picker (dialog.showOpenDialog in main/index.ts).
+   * Resolves the chosen absolute path, or null when the user cancels.
+   */
+  pickDirectory: (defaultPath: string | null) => Promise<string | null>
 }
 
 export function createServices(options: CreateServicesOptions): AppServices {
@@ -36,6 +43,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
   const terminals = new TerminalService({ createPty: createNodePty })
   const git = new GitService()
   const files = new FilesService({ projects, openExternal: options.openExternal })
+  const handoffs = new HandoffsService({ projects, state, handoffDirKey: projectHandoffDirKey })
   const actions = new ActionService({
     db,
     createChat: (projectId) => chats.create(projectId),
@@ -70,6 +78,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
     state: {
       get: (key) => state.get(key),
       set: (key, value) => state.set(key, value),
+      delete: (key) => state.delete(key),
     },
     terminals: {
       create: (chatId, cwd) => terminals.create(chatId, cwd),
@@ -89,6 +98,12 @@ export function createServices(options: CreateServicesOptions): AppServices {
       list: (projectId, relativePath) => files.list(projectId, relativePath),
       read: (projectId, relativePath) => files.read(projectId, relativePath),
       openExternal: (projectId, relativePath) => files.openExternal(projectId, relativePath),
+    },
+    handoffs: {
+      list: (projectId) => handoffs.list(projectId),
+    },
+    dialogs: {
+      pickDirectory: (defaultPath) => options.pickDirectory(defaultPath),
     },
   }
 }

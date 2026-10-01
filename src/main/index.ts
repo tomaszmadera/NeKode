@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { isSafeExternalUrl } from '../shared/safe-url'
 import { registerAppIpcHandlers } from './ipc/ipc-handlers'
 import { isTrustedRendererUrl } from './security/sender-guard'
@@ -84,6 +84,19 @@ app.whenReady().then(() => {
     // The single OS-facing action of the project-files feature (spec
     // Behaviour 11): open with the OS default application. '' = success.
     openExternal: (absolutePath) => shell.openPath(absolutePath),
+    // Native directory picker behind dialogs:pickDirectory (spec
+    // handoff-resume-flow Data/API). Null = user cancel.
+    pickDirectory: async (defaultPath) => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Choose Directory',
+        defaultPath: defaultPath ?? undefined,
+      })
+      if (result.canceled || result.filePaths.length === 0) {
+        return null
+      }
+      return result.filePaths[0]
+    },
   })
   registerAppIpcHandlers(ipcMain, services, {
     trustedRendererUrls: getTrustedRendererUrls(),
