@@ -265,6 +265,20 @@
         "readFileSync"
       ],
       "path": ".agents/lessons/items/renderer-css-source-tests.md"
+    },
+    {
+      "id": "ci-commit-no-hunk-scope",
+      "scopes": [
+        "product"
+      ],
+      "tags": [
+        "ci",
+        "commit",
+        "git",
+        "concurrency",
+        "hunk-scope"
+      ],
+      "path": ".agents/lessons/items/ci-commit-no-hunk-scope.md"
     }
   ]
 }
