@@ -72,6 +72,7 @@ function createAppApiStub(): AppApi {
       list: vi.fn().mockResolvedValue([]),
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
+      openRoot: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
@@ -502,10 +503,12 @@ describe('bottom auxiliary terminal panel', () => {
     }
     // Paste-only default (spec handoff-resume-flow): Stop and Continue write
     // to the active chat PTY only; the bottom tab never receives bytes.
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(2))
+    // Continue is a split-write submission: the line, then the CR (0 ms gap).
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(3))
     expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
       ['t1', '\x03'],
-      ['t1', 'Continue\r'],
+      ['t1', 'Continue'],
+      ['t1', '\r'],
     ])
     // Handoff pastes English into the active chat's dedicated input; Resume
     // opens the handoff picker (unconfigured in this fixture -> modal only).

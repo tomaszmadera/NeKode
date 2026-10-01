@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
@@ -87,6 +87,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       list: vi.fn().mockResolvedValue([]),
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
+      openRoot: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
@@ -395,7 +396,10 @@ describe('ChatTerminal lifecycle', () => {
     const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
     fireEvent.change(input, { target: { value: 'git status' } })
     fireEvent.submit(input.closest('form') as HTMLFormElement)
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status\r'))
+    // Split-write submission (lib/pty-submit.ts): the line, then the CR as
+    // its own write (0 ms gap under tests).
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status'))
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
     expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
   })
 
@@ -497,7 +501,9 @@ describe('ChatTerminal lifecycle', () => {
     )
     const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
     fireEvent.submit(input.closest('form') as HTMLFormElement)
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff\r'))
+    // Split-write submission: the line, then the CR as its own write.
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff'))
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
   })
 
   it('prompt input Send button submits the typed line and clears the input', async () => {
@@ -517,7 +523,9 @@ describe('ChatTerminal lifecycle', () => {
     const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
     fireEvent.change(input, { target: { value: 'git status' } })
     fireEvent.click(getByTestId(TEST_ID.terminalPromptSend))
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status\r'))
+    // Split-write submission: the line, then the CR as its own write.
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status'))
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
     expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
   })
 
@@ -559,6 +567,18 @@ describe('ChatTerminal lifecycle', () => {
     return (handler as (event: KeyboardEvent) => boolean)(
       new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }),
     )
+  }
+
+  // pressKey that also hands back the event, so tests can assert the handler
+  // cancelled the browser default action (defaultPrevented).
+  function pressKeyEvent(
+    terminal: (typeof mockTerminalInstances)[number],
+    init: KeyboardEventInit,
+  ): { allowed: boolean; event: KeyboardEvent } {
+    const handler = terminal.keyHandler
+    expect(handler).not.toBeNull()
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+    return { allowed: (handler as (event: KeyboardEvent) => boolean)(event), event }
   }
 
   function renderTerminal(onClose: () => void): {
@@ -939,6 +959,194 @@ describe('ChatTerminal lifecycle', () => {
     // AltGr+d itself is never the Ctrl+D shortcut (altKey is held).
     expect(pressKey(terminal, { key: 'd', ctrlKey: true, altKey: true })).toBe(true)
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  // Copy/paste (terminal-context feature): Ctrl+C with a selection copies
+  // instead of aborting; Ctrl+Shift+C/V are always copy/paste; Ctrl+V/Ctrl+
+  // Shift+V paste the clipboard into the PTY through xterm.paste (the same
+  // onData path as typing); the chords stay alive inside full-screen programs
+  // only for copy — paste passes through there.
+  describe('copy/paste chords', () => {
+    function stubClipboard(): {
+      writeText: ReturnType<typeof vi.fn>
+      readText: ReturnType<typeof vi.fn>
+    } {
+      const writeText = vi.fn(() => Promise.resolve())
+      const readText = vi.fn(() => Promise.resolve('pasted text'))
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText, readText },
+      })
+      return { writeText, readText }
+    }
+
+    it('Ctrl+C with a selection copies to the clipboard instead of aborting the line', async () => {
+      const clipboard = stubClipboard()
+      const onClose = vi.fn()
+      const { terminal, bundle } = renderTerminal(onClose)
+      showPrompt(terminal, bundle)
+
+      typeText(terminal, 'abc')
+      terminal.setSelection('abc')
+      expect(pressKey(terminal, { key: 'c', ctrlKey: true })).toBe(false)
+      await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('abc'))
+      // Nothing was written to the PTY: no \x03 abort byte left the view.
+      expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x03')
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
+    it('Ctrl+C without a selection keeps aborting the line (no copy call)', async () => {
+      const clipboard = stubClipboard()
+      const onClose = vi.fn()
+      const { terminal, bundle } = renderTerminal(onClose)
+      showPrompt(terminal, bundle)
+
+      typeText(terminal, 'abc')
+      expect(pressKey(terminal, { key: 'c', ctrlKey: true })).toBe(true)
+      expect(clipboard.writeText).not.toHaveBeenCalled()
+      act(() => {
+        terminal.emitInput('\x03')
+        terminal.setCursorRow(PROMPT)
+        bundle.emitData(`^C\r\n${PROMPT}`)
+      })
+      expect(
+        vi.mocked(bundle.app.terminals.write).mock.calls.some(([, data]) => data === '\x03'),
+      ).toBe(true)
+    })
+
+    it('Ctrl+Shift+C copies the selection; Ctrl+Shift+V pastes the clipboard', async () => {
+      const clipboard = stubClipboard()
+      const onClose = vi.fn()
+      const { terminal, bundle } = renderTerminal(onClose)
+      showPrompt(terminal, bundle)
+
+      terminal.setSelection('selected output')
+      expect(pressKey(terminal, { key: 'c', ctrlKey: true, shiftKey: true })).toBe(false)
+      await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('selected output'))
+      expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x03')
+
+      expect(pressKey(terminal, { key: 'v', ctrlKey: true, shiftKey: true })).toBe(false)
+      await waitFor(() =>
+        expect(
+          vi
+            .mocked(bundle.app.terminals.write)
+            .mock.calls.some(([, data]) => data === 'pasted text'),
+        ).toBe(true),
+      )
+      // The paste went through xterm.paste (bracketed paste on the real
+      // terminal), not as a raw chord byte.
+      expect(terminal.paste).toHaveBeenCalledWith('pasted text')
+    })
+
+    it('Ctrl+V pastes through xterm.paste and the raw \\x16 never reaches the shell', async () => {
+      stubClipboard()
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      showPrompt(terminal, bundle)
+
+      expect(pressKey(terminal, { key: 'v', ctrlKey: true })).toBe(false)
+      await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith('pasted text'))
+      await waitFor(() =>
+        expect(
+          vi
+            .mocked(bundle.app.terminals.write)
+            .mock.calls.some(([, data]) => data === 'pasted text'),
+        ).toBe(true),
+      )
+      expect(
+        vi.mocked(bundle.app.terminals.write).mock.calls.some(([, data]) => data === '\x16'),
+      ).toBe(false)
+    })
+
+    it('empty clipboard pastes nothing (no PTY write, no paste call)', async () => {
+      const clipboard = stubClipboard()
+      clipboard.readText.mockReturnValue(Promise.resolve(''))
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      showPrompt(terminal, bundle)
+
+      expect(pressKey(terminal, { key: 'v', ctrlKey: true })).toBe(false)
+      await waitFor(() => expect(clipboard.readText).toHaveBeenCalled())
+      expect(terminal.paste).not.toHaveBeenCalled()
+      expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', 'pasted text')
+    })
+
+    // Regression (user report 2026-10-01: Ctrl+V pasted twice): the custom
+    // handler's `false` only stops xterm's own key handling — Chromium's
+    // default Ctrl+V action still fires a native `paste` event on the hidden
+    // xterm-helper-textarea, whose xterm listener pastes a second time. The
+    // handler must cancel the default action (preventDefault) exactly like
+    // xterm does internally for the raw chord byte it never lets us see.
+    it('Ctrl+V cancels the browser default so no second native paste fires', async () => {
+      stubClipboard()
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      showPrompt(terminal, bundle)
+
+      const { allowed, event } = pressKeyEvent(terminal, { key: 'v', ctrlKey: true })
+      expect(allowed).toBe(false)
+      expect(event.defaultPrevented).toBe(true)
+      await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith('pasted text'))
+      // Exactly one paste path ran: one xterm.paste and one PTY write.
+      expect(terminal.paste).toHaveBeenCalledTimes(1)
+      expect(
+        vi
+          .mocked(bundle.app.terminals.write)
+          .mock.calls.filter(([, data]) => data === 'pasted text'),
+      ).toHaveLength(1)
+    })
+
+    it('Ctrl+Shift+V also cancels the browser default', async () => {
+      stubClipboard()
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      showPrompt(terminal, bundle)
+
+      const { allowed, event } = pressKeyEvent(terminal, {
+        key: 'v',
+        ctrlKey: true,
+        shiftKey: true,
+      })
+      expect(allowed).toBe(false)
+      expect(event.defaultPrevented).toBe(true)
+    })
+
+    it('Ctrl+V inside a full-screen program (alternate buffer) passes through untouched', async () => {
+      const clipboard = stubClipboard()
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      showPrompt(terminal, bundle)
+      terminal.buffer.active.type = 'alternate'
+
+      expect(pressKey(terminal, { key: 'v', ctrlKey: true })).toBe(true)
+      expect(clipboard.readText).not.toHaveBeenCalled()
+      expect(terminal.paste).not.toHaveBeenCalled()
+      expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', 'pasted text')
+    })
+
+    it('right-click opens the Copy/Paste/Select All menu and its items act', async () => {
+      const clipboard = stubClipboard()
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      showPrompt(terminal, bundle)
+      terminal.setSelection('menu selection')
+
+      // Right-click on the terminal view opens the menu.
+      fireEvent.contextMenu(screen.getByTestId('terminal-canvas-t1'))
+      expect(screen.getByTestId(TEST_ID.terminalContextMenu)).toBeTruthy()
+
+      // Copy item: copies the selection, closes the menu, no abort byte.
+      fireEvent.click(screen.getByTestId(TEST_ID.terminalContextCopy))
+      await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('menu selection'))
+      expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x03')
+      expect(screen.queryByTestId(TEST_ID.terminalContextMenu)).toBeNull()
+
+      // Paste item: clipboard content reaches the PTY through xterm.paste.
+      fireEvent.contextMenu(screen.getByTestId('terminal-canvas-t1'))
+      fireEvent.click(screen.getByTestId(TEST_ID.terminalContextPaste))
+      await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith('pasted text'))
+      expect(screen.queryByTestId(TEST_ID.terminalContextMenu)).toBeNull()
+
+      // Select All item: selects the buffer, closes the menu.
+      fireEvent.contextMenu(screen.getByTestId('terminal-canvas-t1'))
+      fireEvent.click(screen.getByTestId(TEST_ID.terminalContextSelectAll))
+      expect(terminal.selectAll).toHaveBeenCalled()
+      expect(screen.queryByTestId(TEST_ID.terminalContextMenu)).toBeNull()
+    })
   })
 
   it('double Ctrl+D at a non-empty line never closes (emulated delete-char keeps the line non-empty)', async () => {

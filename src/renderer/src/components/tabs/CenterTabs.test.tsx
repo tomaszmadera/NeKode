@@ -69,6 +69,7 @@ function createAppApiStub(): AppApi {
       list: vi.fn().mockResolvedValue([]),
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
+      openRoot: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
@@ -270,6 +271,103 @@ describe('tab strip — closing (spec Behaviour 4, AC4)', () => {
     expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-src/app.ts'])
     expect(isTabSelected('src/app.ts')).toBe(true)
     await waitFor(() => expect(paneDisplay('src/app.ts')).toBe('flex'))
+  })
+})
+
+describe('tab strip — file-tab context menu and middle click (spec Behaviour 20–21)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  /** jsdom has no clipboard: stub writeText and return the spy. */
+  function stubClipboard(): { writeText: ReturnType<typeof vi.fn> } {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText, readText: vi.fn(() => Promise.resolve('')) },
+    })
+    return { writeText }
+  }
+
+  /** Middle click = auxclick with button 1 (bubbles to React's root). */
+  function middleClick(element: Element): void {
+    fireEvent(element, new MouseEvent('auxclick', { button: 1, bubbles: true }))
+  }
+
+  async function openTwoTabs(): Promise<void> {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockListings(app)
+    render(<App app={app} />)
+    await enterFilesMode(app, 'p1')
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
+  }
+
+  it('right click opens the context menu; Copy Relative Path copies and closes it', async () => {
+    const clipboard = stubClipboard()
+    await openTwoTabs()
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')))
+    expect(screen.getByTestId(TEST_ID.tabContextMenu)).toBeTruthy()
+    // The right click never changes the selection (active stays notes.txt).
+    expect(isTabSelected('notes.txt')).toBe(true)
+    expect(isTabSelected('README.md')).toBe(false)
+    fireEvent.click(screen.getByTestId(TEST_ID.tabContextCopyRelative))
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('notes.txt'))
+    expect(screen.queryByTestId(TEST_ID.tabContextMenu)).toBeNull()
+    // The tab itself is untouched by the copy.
+    expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-notes.txt'])
+  })
+
+  it('Copy Absolute Path copies the project root joined with the relative path', async () => {
+    const clipboard = stubClipboard()
+    await openTwoTabs()
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('src/app.ts')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.tabContextCopyAbsolute))
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('D:/code/demo/src/app.ts'))
+    expect(screen.queryByTestId(TEST_ID.tabContextMenu)).toBeNull()
+  })
+
+  it('Escape dismisses the menu without closing; the Close Tab item runs the close flow', async () => {
+    await openTwoTabs()
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')))
+    await screen.findByTestId(TEST_ID.tabContextMenu)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.tabContextMenu)).toBeNull()
+    expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-notes.txt'])
+    // Reopen: Close Tab closes the active tab with the Behaviour 4 fallback.
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Close Tab' }))
+    expect(tabIds()).toEqual(['tab-file-README.md'])
+    expect(isTabSelected('README.md')).toBe(true)
+  })
+
+  it('middle click closes the tab without changing the selection', async () => {
+    await openTwoTabs()
+    // Active = notes.txt; middle click closes the inactive README.md.
+    middleClick(screen.getByTestId(testIdFor.tabFile('README.md')))
+    expect(tabIds()).toEqual(['tab-file-notes.txt'])
+    expect(isTabSelected('notes.txt')).toBe(true)
+    // The last file tab: the close falls back to the terminal-chat tab.
+    middleClick(screen.getByTestId(testIdFor.tabFile('notes.txt')))
+    expect(tabIds()).toEqual([])
+    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
+  })
+
+  it('middle click on the close control never closes; left click still closes', async () => {
+    await openTwoTabs()
+    middleClick(screen.getByTestId(testIdFor.tabFileClose('notes.txt')))
+    expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-notes.txt'])
+    fireEvent.click(screen.getByTestId(testIdFor.tabFileClose('notes.txt')))
+    expect(tabIds()).toEqual(['tab-file-README.md'])
   })
 })
 

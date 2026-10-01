@@ -124,6 +124,33 @@ export class MockTerminal {
     this.keyHandler = handler
   })
 
+  // Selection/clipboard surface used by the terminal copy/paste wiring
+  // (ChatTerminal chords and context menu). Real xterm keeps these on the
+  // instance; the mock models just enough for the app's own assertions.
+  private selectedText: string | null = null
+
+  hasSelection = vi.fn((): boolean => this.selectedText !== null && this.selectedText.length > 0)
+
+  getSelection = vi.fn((): string => this.selectedText ?? '')
+
+  clearSelection = vi.fn((): void => {
+    this.selectedText = null
+  })
+
+  selectAll = vi.fn((): void => {
+    this.selectedText = this.buffer.active.rows.join('\n')
+  })
+
+  /** Real xterm.paste routes through onData (bracketed paste); so does the mock. */
+  paste = vi.fn((data: string): void => {
+    this.emitInput(data)
+  })
+
+  /** Test helper: simulates a user text selection inside the view (null clears). */
+  setSelection(text: string | null): void {
+    this.selectedText = text
+  }
+
   /**
    * Real xterm focuses its hidden textarea inside the opened element; the
    * mock focuses the terminal view container instead: the nearest
