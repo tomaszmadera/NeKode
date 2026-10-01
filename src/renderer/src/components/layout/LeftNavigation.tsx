@@ -119,7 +119,7 @@ export function LeftNavigation({
           title bar (user request 2026-10-01). */}
       <div className="mt-2 flex h-8 shrink-0 items-center justify-between px-4">
         <span
-          className="text-sm font-medium uppercase tracking-wide text-projects-header"
+          className="text-sm font-medium tracking-wide text-projects-header"
           data-testid={TEST_ID.projectsHeader}
         >
           Projects
@@ -151,10 +151,15 @@ export function LeftNavigation({
               const chats = chatsByProject[project.id] ?? []
               return (
                 <li key={project.id} className="py-1">
+                  {/* Selection container (NEKODE-3, brief r3.2): the whole
+                      row is the container — rounded, highlighted, with a
+                      narrow left accent stripe when selected; overflow-hidden
+                      clips the stripe to the radius. Stripe is decorative;
+                      selection stays announced by data-selected. */}
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'flex items-center rounded-md px-1 py-1.5',
+                      'relative flex items-center overflow-hidden rounded-md px-1 py-1.5',
                       isSelected && 'bg-highlight',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
@@ -173,28 +178,39 @@ export function LeftNavigation({
                       }
                     }}
                   >
+                    {isSelected ? (
+                      /* Narrow left accent stripe (NEKODE-3): lavender in
+                         default-beta-1, blue in default, from --color-accent. */
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-0 left-0 w-[3px] rounded-full bg-accent"
+                      />
+                    ) : null}
+                    {/* One toggle surface (user request 2026-10-02): the
+                        title itself expands/collapses the chat list. An
+                        unselected project is selected on first click (its
+                        select path also expands); a selected one folds and
+                        unfolds in place, keeping the active chat intact. */}
                     <button
                       type="button"
-                      className="flex items-center rounded px-1 py-1 text-ink-secondary hover:bg-highlight hover:text-ink"
-                      data-testid={testIdFor.projectToggle(project.id)}
-                      aria-expanded={isExpanded}
-                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${project.name}`}
-                      onClick={() => onToggleProject(project.id)}
-                    >
-                      {isExpanded ? (
-                        <Icon.chevronDown size={12} aria-hidden />
-                      ) : (
-                        <Icon.chevronRight size={12} aria-hidden />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 truncate rounded pr-1 py-1 text-left text-sm uppercase text-project-title"
+                      className="flex min-w-0 flex-1 items-center rounded px-1 py-1 text-left text-sm text-project-title transition-colors hover:bg-highlight hover:text-ink"
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
-                      onClick={() => onSelectProject(project.id)}
+                      aria-expanded={isExpanded}
+                      onClick={() => {
+                        if (isSelected) {
+                          onToggleProject(project.id)
+                        } else {
+                          onSelectProject(project.id)
+                        }
+                      }}
                     >
-                      {project.name}
+                      {isExpanded ? (
+                        <Icon.chevronDown size={12} aria-hidden className="mr-1 shrink-0" />
+                      ) : (
+                        <Icon.chevronRight size={12} aria-hidden className="mr-1 shrink-0" />
+                      )}
+                      <span className="min-w-0 truncate">{project.name}</span>
                     </button>
                     <button
                       type="button"
@@ -216,11 +232,7 @@ export function LeftNavigation({
                        selected first chat included — always, not only when
                        the first chat is selected. */
                     <div className="mt-1" data-testid={testIdFor.projectChats(project.id)}>
-                      {chats.length === 0 ? (
-                        <p className="py-1 pl-6 pr-2 text-xs leading-relaxed text-ink-muted">
-                          No chats yet.
-                        </p>
-                      ) : (
+                      {chats.length > 0 && (
                         <ul>
                           {chats.map((chat) => {
                             const isChatSelected = chat.id === selectedChatId && isSelected
@@ -229,7 +241,7 @@ export function LeftNavigation({
                                 <button
                                   type="button"
                                   className={cn(
-                                    'flex w-full items-center gap-1.5 rounded-md pb-2.5 pl-6 pr-2 pt-2.5 text-left text-xs text-chat-title hover:bg-highlight hover:text-ink',
+                                    'flex w-full items-center gap-1.5 rounded-sm pb-2.5 pl-6 pr-2 pt-2.5 text-left text-xs text-chat-title hover:bg-highlight hover:text-ink',
                                     isChatSelected && 'bg-highlight text-ink',
                                   )}
                                   data-testid={testIdFor.chatRow(chat.id)}

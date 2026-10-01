@@ -1358,8 +1358,9 @@ describe('project and chat data flow', () => {
     // An empty selected project shows the "Start new chat" empty state
     // (spec Behaviour 11)…
     await screen.findByTestId(TEST_ID.startNewChatState)
-    // …and the user collapses the project node: its chat subtree unmounts.
-    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
+    // …and the user collapses the project node by clicking its title (the
+    // selected project's title toggles the subtree): it unmounts.
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
     expect(screen.queryByTestId(testIdFor.projectChats('p1'))).toBeNull()
 
     fireEvent.click(screen.getByTestId(TEST_ID.startNewChatButton))
@@ -2044,9 +2045,10 @@ describe('stale chat list responses', () => {
     render(<App app={app} />)
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
     // A second load starts before the close lands: collapse, then re-expand
-    // the project (the selection, and with it the exit listener, stays on t1).
-    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
-    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
+    // the selected project by clicking its title (the selection, and with it
+    // the exit listener, stays on t1).
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() => expect(app.chats.list).toHaveBeenCalledTimes(2))
 
     emitExit('t1', 0)

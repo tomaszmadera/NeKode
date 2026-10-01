@@ -660,8 +660,9 @@ describe('terminal tab and surface pin to the tab-strip project (Files-mode dive
     mockListings(app)
 
     render(<App app={app} />)
-    // p2's chat list is loaded before the split (its node is expanded once).
-    fireEvent.click(await screen.findByTestId(testIdFor.projectToggle('p2')))
+    // p2's chat list is loaded before the split (selecting p2 expands its
+    // node); the split's own selection below moves back to p1.
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
     await screen.findByTestId(testIdFor.chatRow('t8'))
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
