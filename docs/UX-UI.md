@@ -953,12 +953,14 @@ opener (gear icon with the label "App Settings") sits at the very bottom of
 the left panel (user decision 2026-10-02, after Zed), in both modes that host
 the panel: the projects navigation and the project files view. It opens App
 Settings including when no project is selected or the project files view is
-open. It currently contains only the
-Theme selector: `default` and `default-beta-1` (the Cozy Dark palette:
-indigo surfaces, lavender primary accent).
-Selection applies immediately and is remembered locally across application
-restarts. Escape or the close button dismisses the dialog and returns focus to
-the opener; Tab keeps focus inside the dialog.
+open. The dialog has two tabs: **General** (theme selector: `default` and
+`default-beta-1` — the Cozy Dark palette: indigo surfaces, lavender primary
+accent; terminal font size; the "Switch chats with Ctrl+Tab" on/off switch)
+and **Shortcuts** (read-only documentation of every global and terminal
+keyboard shortcut). Theme selection applies immediately and is remembered
+locally across application restarts. Escape or the close button dismisses the
+dialog and returns focus to the opener; Tab keeps focus inside the dialog and
+cycles only the active tab's controls.
 
 Possible sections:
 
@@ -1541,11 +1543,27 @@ Rules:
 
 # 53. Keyboard Shortcuts
 
-Required:
+Required (implemented):
 
 ```text
-Ctrl + `     Toggle bottom terminal
+Ctrl + `          Toggle bottom terminal
+Ctrl + Tab        Next chat
+Ctrl + Shift+Tab  Previous chat
+Ctrl + N          New chat in the active project (full create path: created,
+                  selected, terminal shown; no-op with a notice without an
+                  active project)
 ```
+
+Ctrl+Tab can be turned off in App Settings → General ("Switch chats with
+Ctrl+Tab"). Ctrl+N has no off switch: it duplicates the always-visible
+"+ New chat" affordance. All app chords work while a terminal is focused and
+are never written to a PTY; they no-op while a modal dialog is open and ignore
+key auto-repeat. App Settings → Shortcuts documents this table in the UI.
+
+Terminal-surface chords (ChatTerminal, both chat and bottom-auxiliary
+terminals): Ctrl+C copy-or-abort, Ctrl+Shift+C copy, Ctrl+V / Ctrl+Shift+V
+paste, Ctrl+D close-chat-at-empty-prompt / delete-char, Ctrl+U clear input
+line (see the terminal sections for the exact gates).
 
 Recommended future:
 
@@ -1553,7 +1571,6 @@ Recommended future:
 Ctrl + P         Quick Open
 Ctrl + K         Command Palette
 Ctrl + Shift + K Open Kanban
-Ctrl + Shift + T New Chat
 Ctrl + Shift + H Create Handoff
 ```
 

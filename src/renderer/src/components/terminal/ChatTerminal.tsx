@@ -5,6 +5,7 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { isNewChatChord } from '../../lib/new-chat-chord'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import { DEFAULT_TERMINAL_FONT_SIZE } from '../../lib/terminal-font'
 import { themeColor } from '../lib/theme-color'
@@ -351,6 +352,11 @@ export function ChatTerminal({
       // The Ctrl+Tab chat-switch chord is the same: the app consumes it and
       // nothing reaches the shell (NEKODE-2).
       if (chatSwitchDirection(event) !== null) {
+        return false
+      }
+      // The Ctrl+N new-chat chord is the same: the app consumes it and
+      // nothing reaches the shell.
+      if (isNewChatChord(event)) {
         return false
       }
       if (event.type !== 'keydown') {

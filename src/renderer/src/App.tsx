@@ -54,6 +54,7 @@ import {
   type RegionSizeLimits,
   useResizableRegion,
 } from './hooks/useResizableRegion'
+import { isNewChatChord } from './lib/new-chat-chord'
 import { writeSubmitLine } from './lib/pty-submit'
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -1263,6 +1264,39 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         return
       }
       switchChatRef.current(direction)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [])
+
+  // Ctrl+N starts a new chat in the active project (spec Behaviour 3 path),
+  // capture phase so it wins over focus traversal even inside a focused
+  // terminal, and never reaches a PTY (ChatTerminal swallows the chord in its
+  // custom key handler). The project target is read from the existing
+  // tabProjectIdRef (revalidated every render above).
+  const createChatRef = useRef(handleCreateChat)
+  createChatRef.current = handleCreateChat
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat || !isNewChatChord(event)) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      if (document.querySelector('[aria-modal="true"]') !== null) {
+        return
+      }
+      const projectId = tabProjectIdRef.current
+      if (projectId === null) {
+        // Same contract as the "+ New chat" control (Behaviour 8): the flow
+        // cannot run without an active project, so the dead press is noticed.
+        setNotice('Select or add a project before starting a new chat.')
+        return
+      }
+      void createChatRef.current(projectId)
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => {
