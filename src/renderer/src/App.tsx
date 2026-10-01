@@ -18,6 +18,7 @@ import { emptyProjectFilesSession, type ProjectFilesSession } from './components
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
 import { AppBrand } from './components/layout/AppBrand'
 import { LeftNavigation } from './components/layout/LeftNavigation'
+import { PanelFooter } from './components/layout/PanelFooter'
 import { StatusBar } from './components/layout/StatusBar'
 import { AppSettings } from './components/settings/AppSettings'
 import { TabStrip } from './components/tabs/TabStrip'
@@ -53,7 +54,6 @@ import {
   type RegionSizeLimits,
   useResizableRegion,
 } from './hooks/useResizableRegion'
-import { Icon } from './lib/icons'
 import { writeSubmitLine } from './lib/pty-submit'
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -1378,15 +1378,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           sit one level below. */}
       <div className="drag-region flex h-10 shrink-0 items-center bg-app px-4">
         <AppBrand />
-        <button
-          type="button"
-          aria-label="App Settings"
-          title="App Settings"
-          className="no-drag ml-3 flex h-7 w-7 items-center justify-center rounded-md text-ink-muted hover:bg-highlight hover:text-ink focus-visible:outline focus-visible:outline-info"
-          onClick={() => setAppSettingsOpen(true)}
-        >
-          <Icon.settings size={16} aria-hidden />
-        </button>
       </div>
       {/* The hairline under the title bar is owned by the content row
           (border-t, design doc 26.2 convention), not by the strip itself. */}
@@ -1402,7 +1393,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             onToggleDirectory={handleFilesToggleDirectory}
             onSelectFile={handleFilesSelectFile}
             notice={notice}
-          />
+          >
+            <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
+          </ProjectFilesPanel>
         ) : (
           <LeftNavigation
             width={leftWidth}
@@ -1427,7 +1420,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             }}
             onCreateChat={handleCreateChat}
             notice={notice}
-          />
+          >
+            <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
+          </LeftNavigation>
         )}
         <div className="relative z-10 flex min-w-0 flex-1 flex-col bg-app">
           {/* Center column (spec Behaviour 1): tab strip, reserved action-row

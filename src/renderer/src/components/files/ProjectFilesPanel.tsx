@@ -27,6 +27,9 @@ interface ProjectFilesPanelProps {
   onToggleDirectory: (relativePath: string) => void
   onSelectFile: (relativePath: string) => void
   notice: string | null
+  /** Bottom-of-panel strip (App Settings opener), rendered after the
+      tree area and above the resize handle. */
+  children?: React.ReactNode
 }
 
 export function ProjectFilesPanel({
@@ -39,6 +42,7 @@ export function ProjectFilesPanel({
   onToggleDirectory,
   onSelectFile,
   notice,
+  children,
 }: ProjectFilesPanelProps): React.JSX.Element {
   return (
     <aside
@@ -88,6 +92,7 @@ export function ProjectFilesPanel({
           />
         )}
       </div>
+      {children}
       <ResizeHandle
         axis="x"
         size={width}

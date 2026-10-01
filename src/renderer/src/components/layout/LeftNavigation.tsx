@@ -46,6 +46,9 @@ interface LeftNavigationProps {
   /** Opens the project root in the OS file explorer. */
   onOpenInFileExplorer: (projectId: string) => void
   notice: string | null
+  /** Bottom-of-panel strip (App Settings opener), rendered after the
+      scrollable list and above the resize handle. */
+  children?: React.ReactNode
 }
 
 interface ContextMenuState {
@@ -74,6 +77,7 @@ export function LeftNavigation({
   onCreateChat,
   onOpenInFileExplorer,
   notice,
+  children,
 }: LeftNavigationProps): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
@@ -261,6 +265,10 @@ export function LeftNavigation({
           </ul>
         )}
       </div>
+      {/* Bottom-of-panel strip (user decision 2026-10-02, after Zed): the
+          App Settings opener lives at the very bottom of the left panel,
+          not in the window title bar. */}
+      {children}
       {contextMenu !== null ? (
         <ContextMenuOverlay
           state={contextMenu}

@@ -157,8 +157,7 @@ describe('app settings and themes', () => {
   it('opens app settings without a project, switches themes and restores the saved choice', () => {
     const app = createAppApiStub()
     const view = render(<App app={app} />)
-    const opener = screen.getByRole('button', { name: 'App Settings' })
-    expect(opener.classList.contains('no-drag')).toBe(true)
+    const opener = screen.getByTestId(TEST_ID.appSettingsButton)
     opener.focus()
     fireEvent.click(opener)
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })

@@ -71,6 +71,8 @@ export const TEST_ID = {
   handoffPickerEmpty: 'handoff-picker-empty',
   handoffPickerList: 'handoff-picker-list',
   handoffPickerEntry: 'handoff-picker-entry',
+  /** Left-panel footer: the App Settings opener (bottom of the panel). */
+  appSettingsButton: 'app-settings-button',
   settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
   /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
