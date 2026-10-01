@@ -77,6 +77,12 @@ export const TEST_ID = {
   settingsAutoSend: 'settings-auto-send',
   /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
   settingsChatSwitch: 'settings-chat-switch',
+  /** App Settings: General tab button. */
+  settingsGeneralTab: 'settings-general-tab',
+  /** App Settings: Shortcuts tab button. */
+  settingsShortcutsTab: 'settings-shortcuts-tab',
+  /** App Settings: shortcut table on the Shortcuts tab. */
+  settingsShortcutsTable: 'settings-shortcuts-table',
   settingsHandoffDir: 'settings-handoff-dir',
   settingsHandoffDirBrowse: 'settings-handoff-dir-browse',
   settingsHandoffDirSave: 'settings-handoff-dir-save',

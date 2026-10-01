@@ -173,8 +173,9 @@ describe('app settings and themes', () => {
     fireEvent.change(select, { target: { value: 'default-beta-1' } })
     expect(document.documentElement.dataset.theme).toBe('default-beta-1')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default-beta-1')
-    // Tab cycles the four dialog controls: theme select → font size →
-    // chat-switch checkbox → close button → back to the theme select.
+    // Tab cycles the six visible dialog controls: theme select → font size →
+    // chat-switch checkbox → General tab → Shortcuts tab → close button →
+    // back to the theme select.
     fireEvent.keyDown(select, { key: 'Tab' })
     expect(document.activeElement).toBe(
       within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize),
@@ -182,7 +183,13 @@ describe('app settings and themes', () => {
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
     expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsChatSwitch))
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(within(dialog).getByRole('button'))
+    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsGeneralTab))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsShortcutsTab))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole('button', { name: 'Close app settings' }),
+    )
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
     expect(document.activeElement).toBe(select)
     fireEvent.keyDown(select, { key: 'Escape' })
@@ -205,6 +212,42 @@ describe('app settings and themes', () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'removed-theme')
     render(<App app={createAppApiStub()} />)
     expect(document.documentElement.dataset.theme).toBe('default')
+  })
+
+  it('Shortcuts tab documents the global and terminal chords, General keeps the controls', () => {
+    render(<App app={createAppApiStub()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+
+    // General is the initial tab and keeps the live controls.
+    expect(
+      within(dialog).getByTestId(TEST_ID.settingsGeneralTab).getAttribute('aria-selected'),
+    ).toBe('true')
+    expect(within(dialog).getByRole('combobox', { name: 'Theme' })).toBeTruthy()
+
+    fireEvent.click(within(dialog).getByTestId(TEST_ID.settingsShortcutsTab))
+    const table = within(dialog).getByTestId(TEST_ID.settingsShortcutsTable)
+    // Global section: new chat, both chat-switch directions, bottom panel.
+    expect(table.textContent).toContain('Ctrl+N')
+    expect(table.textContent).toContain('Start a new chat in the active project')
+    expect(table.textContent).toContain('Ctrl+Tab')
+    expect(table.textContent).toContain('Ctrl+Shift+Tab')
+    expect(table.textContent).toContain('Ctrl+`')
+    // Terminal section: copy/paste, close, clear.
+    expect(table.textContent).toContain('Ctrl+C')
+    expect(table.textContent).toContain('Ctrl+V / Ctrl+Shift+V')
+    expect(table.textContent).toContain('Ctrl+D')
+    expect(table.textContent).toContain('Ctrl+U')
+    // The live controls stay on General only.
+    expect(within(table).queryByRole('combobox', { name: 'Theme' })).toBeNull()
+    expect(table.getAttribute('aria-hidden')).toBeNull()
+
+    fireEvent.click(within(dialog).getByTestId(TEST_ID.settingsGeneralTab))
+    expect(
+      within(dialog).getByTestId(TEST_ID.settingsGeneralTab).getAttribute('aria-selected'),
+    ).toBe('true')
+    expect(within(dialog).queryByTestId(TEST_ID.settingsShortcutsTable)).toBeNull()
+    expect(within(dialog).getByRole('combobox', { name: 'Theme' })).toBeTruthy()
   })
 
   it('shows a storage error and keeps the current theme when saving fails', () => {
@@ -351,6 +394,72 @@ describe('app settings and themes', () => {
     fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
     expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
     expect(app.terminals.create).not.toHaveBeenCalledWith('t2', projectA.path)
+  })
+
+  it('Ctrl+N starts a new chat in the active project and selects its terminal', async () => {
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+    vi.mocked(app.chats.create).mockResolvedValue({
+      id: 't9',
+      projectId: 'p1',
+      name: 'PowerShell',
+    })
+    const writesBefore = vi.mocked(app.terminals.write).mock.calls.length
+
+    fireEvent.keyDown(window, { code: 'KeyN', ctrlKey: true, bubbles: true, cancelable: true })
+
+    // The full create path ran: chat created, selected, persisted, and the
+    // terminal-chat tab activated (its terminal view mounts for the new chat).
+    await waitFor(() => expect(app.chats.create).toHaveBeenCalledWith('p1'))
+    await screen.findByTestId(testIdFor.chatRow('t9'))
+    expect(getByTestIdString(testIdFor.chatRow('t9')).getAttribute('data-selected')).toBe('true')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't9')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t9', projectA.path))
+    // The chord never reaches a PTY as input.
+    expect(vi.mocked(app.terminals.write).mock.calls.length).toBe(writesBefore)
+  })
+
+  it('Ctrl+N is ignored while a modal dialog is open and without an active project', async () => {
+    const app = createAppApiStub()
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    render(<App app={app} />)
+    // No project selected: the dead press is noticed, not swallowed silently.
+    fireEvent.keyDown(window, { code: 'KeyN', ctrlKey: true, bubbles: true, cancelable: true })
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toBe('Select or add a project before starting a new chat.')
+    expect(app.chats.create).not.toHaveBeenCalled()
+
+    // The App Settings dialog is a modal: the chord does nothing while open.
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await waitFor(() => expect(app.chats.list).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    fireEvent.keyDown(window, { code: 'KeyN', ctrlKey: true, bubbles: true, cancelable: true })
+    expect(app.chats.create).not.toHaveBeenCalled()
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
+  })
+
+  it('repeated Ctrl+N keydown (key auto-repeat) creates exactly one chat', async () => {
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+    vi.mocked(app.chats.create).mockResolvedValue({
+      id: 't9',
+      projectId: 'p1',
+      name: 'PowerShell',
+    })
+
+    fireEvent.keyDown(window, {
+      code: 'KeyN',
+      ctrlKey: true,
+      repeat: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(app.chats.create).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(window, { code: 'KeyN', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => expect(app.chats.create).toHaveBeenCalledTimes(1))
   })
 })
 
