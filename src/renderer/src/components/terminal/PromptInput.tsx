@@ -58,7 +58,7 @@ export function PromptInput({
 
   return (
     <form
-      className="flex shrink-0 items-center gap-2 bg-terminal px-2 py-1.5"
+      className="flex shrink-0 items-center gap-2 bg-terminal pt-2"
       onSubmit={(event) => {
         event.preventDefault()
         submit()
