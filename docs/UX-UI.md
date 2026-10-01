@@ -169,8 +169,11 @@ On startup, restore the most recent useful state when possible:
 If no prior state exists:
 
 ```text
+Title bar:
+NeKode (brand, full window width)
+
 Left:
-NeKode (brand)
+Projects
 
 Center:
 Welcome / empty state
@@ -265,10 +268,14 @@ The bottom-terminal run mode is no longer reserved: with the bottom auxiliary te
 
 # 9. Left Navigation — Default Mode
 
-The default left navigation shows Projects and Chats.
+The default left navigation shows Projects and Chats. The application brand
+lives in the continuous full-width window title bar with the Windows caption
+buttons at the right end (user decision 2026-10-01); the left panel starts
+with the "Projects" section header carrying an icon-only Add Project button
+on the right.
 
 ```text
-[icon] NeKode
+Projects                        +
 
 ▼ gerde.pl
     Fix Meta Pixel
@@ -940,6 +947,15 @@ Clone Repository
 ---
 
 # 32. Project Settings
+
+Application settings are separate from Project Settings. The gear icon next to
+the brand in the window title bar opens App Settings, including when no project
+is selected or the project files view is open. It currently contains only the
+Theme selector: `default` and `default-beta-1` (the Cozy Dark palette:
+indigo surfaces, lavender primary accent).
+Selection applies immediately and is remembered locally across application
+restarts. Escape or the close button dismisses the dialog and returns focus to
+the opener; Tab keeps focus inside the dialog.
 
 Possible sections:
 

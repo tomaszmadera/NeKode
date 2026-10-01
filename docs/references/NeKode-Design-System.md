@@ -101,11 +101,19 @@ Example:
 
 This makes later theme variants possible without rewriting components.
 
-Implementation status (2026-09-28): the tokens live in `src/renderer/src/theme.css`
-(Tailwind v4 `@theme`, compiled at build time) and every renderer component
-consumes the semantic utilities. There is no runtime theme switching yet; the
-whole palette is one token file, so a variant means a second token set plus a
-loader.
+Implementation status (2026-10-01): `src/renderer/src/theme.css` imports the
+`default` tokens from `themes/default.css` (Tailwind v4 `@theme`) and the
+`default-beta-1` overrides from `themes/default-beta-1.css`. The beta theme
+overrides every default token name with the Cozy Dark palette (theme.test.ts
+asserts name parity, not value parity), so the two themes may diverge freely.
+App Settings applies the selected theme
+through `data-theme` on the document root and saves its identifier in
+`localStorage` under `nekode.theme.v1`. Missing or unknown identifiers use
+`default`; storage failures are shown in App Settings. Renderer components
+continue to consume semantic utilities. The xterm terminal palette resolves
+the active theme's `--color-terminal`, `--color-ink`, and `--color-scrollbar`
+at mount (components/lib/theme-color.ts); the Monaco palette is not
+theme-aware.
 
 ---
 
@@ -115,7 +123,7 @@ loader.
 
 | Token | Value | Usage |
 |---|---:|---|
-| `--color-app` | `rgb(17 20 35)` | Main application background |
+| `--color-app` | `rgb(11 13 31)` | Main application background |
 | `--color-panel` | `rgb(26 29 44)` | Left and right panels, tab strip, status bar, dialogs |
 | `--color-highlight` | `rgb(31 44 63)` | Highlight and selection inside panels |
 | `--color-button` | `rgb(30 42 66)` | Command buttons and the active tab |
@@ -487,9 +495,12 @@ Primary sections:
 
 ## 14. Project and chat styling
 
-Project names are uppercase, compact, in the project-title accent
-(`--color-project-title`, rgb(111 157 200), 2026-09-29; previously the muted
-ink).
+Project names are uppercase, compact, almost white
+(`--color-project-title`, rgb(226 230 238), 2026-10-01; previously
+rgb(111 157 200), 2026-09-29, before that the muted ink). The Projects
+section header is light blue (`--color-projects-header`,
+rgb(134 174 216)) and chat names are pastel blue (`--color-chat-title`,
+rgb(141 168 205)), both added 2026-10-01.
 
 Example:
 
@@ -519,10 +530,18 @@ Implemented (2026-09-28): project rows render uppercase (`text-transform`,
 14px), and every chat row carries the chat bubble icon (`Icon.chat`, 12px)
 before the shell display name; the icon's left edge aligns with the project
 name's left edge (both at the list inset plus `24px`). The selected project
-row carries no
-background fill and the project name gives no hover background (user
-decisions 2026-09-28/29; selection stays in
-`data-selected` for behavior). The chat list has no vertical guide line and
+tile carries the highlight background (`--color-highlight`, user decision
+2026-10-01; previously no fill, user decisions 2026-09-28/29) and the
+project name gives no hover background (user decisions 2026-09-28/29;
+selection stays in
+`data-selected` for behavior). Left-navigation metrics (2026-10-01): the
+project row is a 40px tile (`py-1.5` row around the name button's `py-1`),
+with `py-1` list spacing between projects; chat rows are 36px
+(`pt-2.5 pb-2.5`), slightly shorter than the tile; a constant ~3px gap
+(scale step `mt-1`, 4px) separates the project tile from the chat list, so
+the tile's highlight and a selected first chat's highlight never merge —
+always, not only when the first chat is selected. The chat list has no
+vertical guide line and
 its rows span the full list width; the selected chat keeps the highlight
 background (`--color-highlight`) across that full width. The `+ New Chat`
 affordance is a row matching the chat rows: same height, the plus icon in
@@ -847,7 +866,7 @@ Expose tokens at the document root:
 :root,
 [data-theme="dark"] {
   /* surfaces */
-  --color-app: rgb(17 20 35);
+  --color-app: rgb(11 13 31);
   --color-panel: rgb(26 29 44);
   --color-highlight: rgb(31 44 63);
   --color-button: rgb(30 42 66);
@@ -866,7 +885,9 @@ Expose tokens at the document root:
   --color-warning: rgb(217 164 65);
   --color-error: rgb(151 65 80);
   --color-info: rgb(83 134 188);
-  --color-project-title: rgb(111 157 200);
+  --color-project-title: rgb(226 230 238);
+  --color-projects-header: rgb(134 174 216);
+  --color-chat-title: rgb(141 168 205);
 
   /* structure */
   --color-edge: rgb(33 37 49);
@@ -882,24 +903,28 @@ Expose tokens at the document root:
 
 Implemented (2026-09-28): the app uses the Window Controls Overlay title bar.
 `src/main/index.ts` sets `titleBarStyle: 'hidden'` plus `titleBarOverlay`
-(`#111423` strip, `#cacbd1` symbols, 36px; the tab strip itself is 40px since
+(`#0b0d1f` strip, `#cacbd1` symbols, 36px; the app strips are 40px since
 2026-09-29) and a matching `backgroundColor` against the first-paint flash.
-The renderer's top
-strips (tab strip, Projects header, Files header) are the drag surface
-(`.drag-region` / `.no-drag` in `index.css`) and paint the base app
-background; the tab strip insets `+ New chat` by
-`calc(100vw - env(titlebar-area-width, 100vw))` so it never sits under the
-caption buttons. The tab strip shares the action row's metrics (2026-09-29):
+Since the user decision of 2026-10-01 the renderer's title bar is one
+continuous full-width strip: the brand (AppBrand) at the left end, the
+Windows caption buttons overlaying the right end. It is the primary drag
+surface (`.drag-region` / `.no-drag` in `index.css`) and paints the base app
+background; the tab strip, the Files header and the left panel content start
+one level below, so nothing interactive sits under the caption buttons and
+the tab strip needs no `env(titlebar-area-width)` inset anymore. The tab
+strip shares the action row's metrics (2026-09-29):
 `px-2 pt-2` insets, so the first tab's left edge aligns with the first
 action-row button and the tabs keep the 32px control height inside the 40px
-strip. All three top strips share that 40px height (2026-09-29): the
-Projects and Files headers are fixed `h-10` strips that center their
-controls (the 32px Add Project button, the back row); previously the
-Projects header totaled 48px (`pt-3 pb-1` around the 32px control). The
+strip. The title bar, tab strip and Files header share that 40px height
+(2026-09-29): the Files header is a fixed `h-10` strip that centers its
+controls (the back row). The
 hairline under the tab strip is owned by the action row
 (`border-t`), not by the tab strip: the 36px overlay strip paints over a
 `border-b` at the strip's bottom edge, so the line visibly vanished under
-the caption buttons (fixed 2026-09-29).
+the caption buttons (fixed 2026-09-29). The hairline under the title bar
+follows the same convention: the content row below owns it (`border-t`,
+2026-10-01), which stays visible because the caption buttons overlay the
+strip's top band, not its bottom edge.
 
 Rules:
 
@@ -1021,7 +1046,7 @@ A NeKode screen should feel correct when:
 ```css
 :root {
   /* surfaces */
-  --color-app: rgb(17 20 35);
+  --color-app: rgb(11 13 31);
   --color-panel: rgb(26 29 44);
   --color-highlight: rgb(31 44 63);
   --color-button: rgb(30 42 66);
@@ -1040,7 +1065,9 @@ A NeKode screen should feel correct when:
   --color-warning: rgb(217 164 65);
   --color-error: rgb(151 65 80);
   --color-info: rgb(83 134 188);
-  --color-project-title: rgb(111 157 200);
+  --color-project-title: rgb(226 230 238);
+  --color-projects-header: rgb(134 174 216);
+  --color-chat-title: rgb(141 168 205);
 
   /* structure */
   --color-edge: rgb(33 37 49);
