@@ -91,6 +91,7 @@ function createAppMock(): AppMockBundle {
       list: vi.fn().mockResolvedValue([]),
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
+      openRoot: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),

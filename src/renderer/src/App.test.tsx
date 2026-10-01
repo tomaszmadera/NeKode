@@ -8,6 +8,8 @@ import {
   projectHandoffDirKey,
 } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
+import { TERMINAL_FONT_SIZE_STORAGE_KEY } from './lib/terminal-font'
+import { THEME_STORAGE_KEY } from './lib/theme'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 
@@ -67,6 +69,7 @@ function createAppApiStub(): AppApi {
       list: vi.fn().mockResolvedValue([]),
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
+      openRoot: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
@@ -140,6 +143,218 @@ const buildAction: ActionControl = {
   sortOrder: 0,
 }
 
+describe('app settings and themes', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+    vi.restoreAllMocks()
+    delete document.documentElement.dataset.theme
+  })
+
+  it('opens app settings without a project, switches themes and restores the saved choice', () => {
+    const app = createAppApiStub()
+    const view = render(<App app={app} />)
+    const opener = screen.getByRole('button', { name: 'App Settings' })
+    expect(opener.classList.contains('no-drag')).toBe(true)
+    opener.focus()
+    fireEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const select = within(dialog).getByRole('combobox', { name: 'Theme' })
+    expect(document.activeElement).toBe(select)
+    expect((select as HTMLSelectElement).value).toBe('default')
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['default', 'default-beta-1'])
+    expect(document.documentElement.dataset.theme).toBe('default')
+    fireEvent.change(select, { target: { value: 'default-beta-1' } })
+    expect(document.documentElement.dataset.theme).toBe('default-beta-1')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default-beta-1')
+    // Tab cycles the four dialog controls: theme select → font size →
+    // chat-switch checkbox → close button → back to the theme select.
+    fireEvent.keyDown(select, { key: 'Tab' })
+    expect(document.activeElement).toBe(
+      within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize),
+    )
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsChatSwitch))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(within(dialog).getByRole('button'))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(select)
+    fireEvent.keyDown(select, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    view.unmount()
+    render(<App app={app} />)
+    expect(document.documentElement.dataset.theme).toBe('default-beta-1')
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const restored = screen.getByRole('combobox', { name: 'Theme' })
+    expect((restored as HTMLSelectElement).value).toBe('default-beta-1')
+    fireEvent.change(restored, { target: { value: 'default' } })
+    expect(document.documentElement.dataset.theme).toBe('default')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default')
+    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+    expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
+  })
+
+  it('uses default for an unknown saved theme', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'removed-theme')
+    render(<App app={createAppApiStub()} />)
+    expect(document.documentElement.dataset.theme).toBe('default')
+  })
+
+  it('shows a storage error and keeps the current theme when saving fails', () => {
+    render(<App app={createAppApiStub()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('Storage unavailable')
+    })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Theme' }), {
+      target: { value: 'default-beta-1' },
+    })
+    expect(screen.getByRole('alert').textContent).toBe('Failed to save the theme.')
+    expect(document.documentElement.dataset.theme).toBe('default')
+  })
+
+  it('shows a read error while keeping the default theme usable', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('Storage unavailable')
+    })
+    render(<App app={createAppApiStub()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    expect(screen.getByRole('alert').textContent).toBe('Failed to load the saved theme.')
+    expect(document.documentElement.dataset.theme).toBe('default')
+  })
+
+  /**
+   * Font sizes of the terminals still mounted (mockTerminalInstances keeps
+   * disposed entries from earlier tests in this describe; App's beforeEach
+   * does not reset them).
+   */
+  function aliveFontSizeOptions(): number[] {
+    return mockTerminalInstances
+      .filter((terminal) => !terminal.disposed)
+      .map((terminal) => (terminal.options as { fontSize: number }).fontSize)
+  }
+
+  it('persists the terminal font size and applies it live to every mounted terminal', async () => {
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+    // The second chat's view mounts on selection; the first stays mounted
+    // (hidden), so the switch exercises the live apply on hidden views.
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
+    expect(aliveFontSizeOptions()).toEqual([13, 13])
+
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const select = within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize)
+    expect((select as HTMLSelectElement).value).toBe('13')
+
+    fireEvent.change(select, { target: { value: '16' } })
+    expect(localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY)).toBe('16')
+    // Both mounted views — the hidden one included — pick the size up live.
+    expect(aliveFontSizeOptions()).toEqual([16, 16])
+  })
+
+  it('restores the saved terminal font size and falls back to the default for junk', async () => {
+    localStorage.setItem(TERMINAL_FONT_SIZE_STORAGE_KEY, '16')
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+    expect(aliveFontSizeOptions()).toEqual([16])
+
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    expect(
+      (within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize) as HTMLSelectElement).value,
+    ).toBe('16')
+    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+    cleanup()
+
+    localStorage.setItem(TERMINAL_FONT_SIZE_STORAGE_KEY, 'not-a-number')
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
+    expect(aliveFontSizeOptions()).toEqual([13])
+  })
+
+  function renderTwoChats(app: AppApi): Promise<void> {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    render(<App app={app} />)
+    return waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+  }
+
+  it('Ctrl+Tab switches to the next chat of the active project and persists the selection', async () => {
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+    // The chord is app-level: it never reaches the PTY input (NEKODE-2).
+    expect(app.terminals.write).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl+Shift+Tab switches to the previous chat and wraps around', async () => {
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+
+    fireEvent.keyDown(window, {
+      code: 'Tab',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2'),
+    )
+
+    fireEvent.keyDown(window, {
+      code: 'Tab',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't1'),
+    )
+  })
+
+  it('turning the chat switch off in App Settings disables the chord', async () => {
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const checkbox = within(dialog).getByTestId(TEST_ID.settingsChatSwitch) as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+    fireEvent.click(checkbox)
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.chatSwitchEnabled, '0'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+    expect(app.terminals.create).not.toHaveBeenCalledWith('t2', projectA.path)
+  })
+})
+
 describe('action row and settings', () => {
   let app: AppApi
   beforeEach(() => {
@@ -177,10 +392,13 @@ describe('action row and settings', () => {
     // Paste-only default (spec handoff-resume-flow Behaviour 3): only Stop and
     // Continue write to the PTY; Handoff fills the prompt input in English and
     // Resume opens the handoff picker (unconfigured here -> modal only).
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(2))
+    // Continue is a split-write submission: the line, then the CR (0 ms gap
+    // under tests).
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(3))
     expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
       ['t1', '\x03'],
-      ['t1', 'Continue\r'],
+      ['t1', 'Continue'],
+      ['t1', '\r'],
     ])
     expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
       'Write a handoff',
@@ -214,7 +432,9 @@ describe('action row and settings', () => {
       ),
     )
     fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff\r'))
+    // Split-write submission: the line, then the CR as its own write.
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff'))
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
     expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
@@ -224,9 +444,10 @@ describe('action row and settings', () => {
     await waitFor(() =>
       expect(app.terminals.write).toHaveBeenCalledWith(
         't1',
-        'Resume from handoff D:/code/demo/.agents/handoffs/2026-10-01-auth.md\r',
+        'Resume from handoff D:/code/demo/.agents/handoffs/2026-10-01-auth.md',
       ),
     )
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
   })
 
@@ -554,8 +775,9 @@ describe('action row and settings', () => {
     await act(async () => {
       finishSpawn?.('t2')
     })
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t2', 'pnpm dev\r'))
-    expect(vi.mocked(app.terminals.write).mock.calls.filter(([id]) => id === 't2')).toHaveLength(1)
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t2', 'pnpm dev'))
+    expect(app.terminals.write).toHaveBeenCalledWith('t2', '\r')
+    expect(vi.mocked(app.terminals.write).mock.calls.filter(([id]) => id === 't2')).toHaveLength(2)
     const subscribedAt = vi.mocked(app.terminals.onData).mock.invocationCallOrder[
       vi.mocked(app.terminals.onData).mock.calls.findIndex(([id]) => id === 't2')
     ]
@@ -595,7 +817,9 @@ describe('action row and settings', () => {
     )
     expect(screen.getByTestId(testIdFor.chatRow('t2'))).toBeTruthy()
     expect(vi.mocked(app.chats.remove)).not.toHaveBeenCalled()
-    expect(vi.mocked(app.terminals.write).mock.calls).toContainEqual(['t2', 'pnpm dev\r'])
+    // Split-write submission: the line, then the CR as its own write.
+    expect(vi.mocked(app.terminals.write).mock.calls).toContainEqual(['t2', 'pnpm dev'])
+    expect(vi.mocked(app.terminals.write).mock.calls).toContainEqual(['t2', '\r'])
   })
 
   it('delivers a bottom-terminal command into a new bottom tab after it is ready, without changing the selected chat', async () => {
@@ -652,11 +876,16 @@ describe('action row and settings', () => {
     await act(async () => {
       finishSpawn?.('bottom:p1:tab-1')
     })
-    // Exact bytes: command plus CR 0x0D, exactly once.
+    // Exact bytes: the command, then CR 0x0D as its own write (split-write
+    // submission), each exactly once.
     await waitFor(() =>
-      expect(app.terminals.write).toHaveBeenCalledWith('bottom:p1:tab-1', 'pnpm test\r'),
+      expect(app.terminals.write).toHaveBeenCalledWith('bottom:p1:tab-1', 'pnpm test'),
     )
-    expect(vi.mocked(app.terminals.write).mock.calls).toEqual([['bottom:p1:tab-1', 'pnpm test\r']])
+    expect(app.terminals.write).toHaveBeenCalledWith('bottom:p1:tab-1', '\r')
+    expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
+      ['bottom:p1:tab-1', 'pnpm test'],
+      ['bottom:p1:tab-1', '\r'],
+    ])
     const subscribedAt = vi.mocked(app.terminals.onData).mock.invocationCallOrder[
       vi.mocked(app.terminals.onData).mock.calls.findIndex(([id]) => id === 'bottom:p1:tab-1')
     ]
@@ -750,6 +979,51 @@ describe('action row and settings', () => {
         ),
       ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Test', 'Actions']),
     )
+  })
+
+  it('derives the icon picker mode from the stored icon and saves presets and emoji', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    const select = screen.getByTestId(TEST_ID.settingsActionIconSelect)
+    // Null icon ("none") is the default; the emoji input stays hidden.
+    expect((select as HTMLSelectElement).value).toBe('none')
+    expect(screen.queryByTestId(TEST_ID.settingsActionIconEmoji)).toBeNull()
+    // A preset name re-opens as that preset and saves the name back.
+    fireEvent.change(select, { target: { value: 'build' } })
+    expect((select as HTMLSelectElement).value).toBe('build')
+    expect(screen.queryByTestId(TEST_ID.settingsActionIconEmoji)).toBeNull()
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Build' } })
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm build' } })
+    vi.mocked(app.actions.create).mockResolvedValue({ ...buildAction, icon: 'build' })
+    vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, icon: 'build' }])
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.actions.create).toHaveBeenCalledWith(expect.objectContaining({ icon: 'build' })),
+    )
+    // The action row renders the preset as a glyph, not as text.
+    const row = await screen.findByRole('button', { name: 'Build' })
+    expect(row.querySelector('svg')).not.toBeNull()
+  })
+
+  it('reopens a non-palette icon value as the custom emoji mode', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, icon: '🚀' }])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    const select = screen.getByTestId(TEST_ID.settingsActionIconSelect)
+    expect((select as HTMLSelectElement).value).toBe('custom')
+    const emojiInput = screen.getByTestId(TEST_ID.settingsActionIconEmoji) as HTMLInputElement
+    expect(emojiInput.value).toBe('🚀')
+    // The emoji renders literally on the action row, aria-hidden (excluded
+    // from the accessible name); the only svg is the status glyph.
+    const row = screen.getByRole('button', { name: 'Build' })
+    expect(row.textContent).toContain('🚀')
+    expect(row.querySelectorAll('svg')).toHaveLength(1)
   })
 
   it('validates the form and reflects saved actions immediately', async () => {
@@ -930,8 +1204,9 @@ describe('application shell', () => {
 
   it('offers an Add Project affordance and resizable handles', () => {
     render(<App app={app} />)
+    expect(getByTestIdString(TEST_ID.projectsHeader).textContent).toBe('Projects')
     const addProject = getByTestIdString(TEST_ID.addProjectButton)
-    expect(addProject.textContent).toBe('Add Project')
+    expect(addProject.getAttribute('aria-label')).toBe('Add Project')
     expect(screen.getByTestId(TEST_ID.leftResizeHandle)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.bottomResizeHandle)).toBeTruthy()
   })
@@ -1113,6 +1388,36 @@ describe('project and chat data flow', () => {
     const notice = await screen.findByTestId(TEST_ID.actionNotice)
     expect(notice.textContent).toContain('Project not found.')
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
+  })
+
+  it('project context menu offers Open in file explorer and calls files.openRoot', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    render(<App app={app} />)
+
+    fireEvent.contextMenu(await screen.findByTestId(testIdFor.projectRow('p1')))
+    const menu = await screen.findByTestId(TEST_ID.projectContextMenu)
+    expect(menu.textContent).toContain('Open in file explorer')
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open in file explorer' }))
+    await waitFor(() => expect(app.files.openRoot).toHaveBeenCalledWith('p1'))
+    // The menu closes after the action runs.
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.projectContextMenu)).toBeNull())
+  })
+
+  it('open-in-file-explorer failures surface the typed error message as a notice', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.files.openRoot).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'not_found',
+      message: 'Project not found.',
+    })
+
+    render(<App app={app} />)
+    fireEvent.contextMenu(await screen.findByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in file explorer' }))
+
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toContain('Project not found.')
   })
 
   it('remove-project: falls back to the default empty state and drops removed data', async () => {

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { ActionControl, ActionInput, AppApi } from '../../../../shared/ipc-contract'
 import { projectHandoffDirKey } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { ACTION_ICON_NAMES, ACTION_NONE, actionIconGlyph } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 
 interface Props {
@@ -45,6 +46,21 @@ function emptyInput(projectId: string | null, sortOrder: number): ActionInput {
     sortOrder,
   }
 }
+
+/** Icon picker mode derived from the stored value: a palette name selects
+    that preset, any other text is a custom emoji, null is "none". */
+function iconModeOf(icon: string | null): string {
+  if (icon === null) return ACTION_NONE
+  if (actionIconGlyph(icon) !== null) return icon
+  return 'custom'
+}
+
+/** Icon names rendered for the picker, ordered like the button palette. */
+const ICON_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: ACTION_NONE, label: 'None' },
+  ...ACTION_ICON_NAMES.map((name) => ({ value: name, label: name })),
+  { value: 'custom', label: 'Custom (emoji)' },
+]
 
 export function ActionSettings({
   app,
@@ -355,13 +371,42 @@ export function ActionSettings({
               />
             </label>
             <label>
-              Icon (optional)
-              <input
+              Icon
+              <select
                 className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                value={form.icon ?? ''}
-                onChange={(event) => setForm({ ...form, icon: event.target.value || null })}
-              />
+                value={iconModeOf(form.icon)}
+                data-testid={TEST_ID.settingsActionIconSelect}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setForm({
+                    ...form,
+                    icon: value === ACTION_NONE || value === 'custom' ? null : value,
+                  })
+                }}
+              >
+                {ICON_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
+            {iconModeOf(form.icon) === 'custom' ? (
+              <label>
+                Icon emoji
+                <input
+                  className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                  value={form.icon ?? ''}
+                  placeholder="e.g. 🚀"
+                  data-testid={TEST_ID.settingsActionIconEmoji}
+                  onChange={(event) => setForm({ ...form, icon: event.target.value || null })}
+                />
+              </label>
+            ) : null}
+            <p className="text-ink-muted">
+              Icon: pick a preset Lucide glyph, or choose Custom and paste any emoji. Leave None for
+              no icon.
+            </p>
             <label>
               Command
               <input
@@ -370,6 +415,13 @@ export function ActionSettings({
                 onChange={(event) => setForm({ ...form, command: event.target.value })}
               />
             </label>
+            {/* Placed outside the label on purpose: label text feeds the
+                accessible name, and tests select the input by the exact
+                label "Command" (ui-polish skill). */}
+            <p className="text-ink-muted">
+              Windows runs background actions through cmd.exe: invoke PowerShell scripts explicitly,
+              e.g. powershell -NoProfile -ExecutionPolicy Bypass -File script.ps1
+            </p>
             <label>
               Working Directory (project root by default)
               <input

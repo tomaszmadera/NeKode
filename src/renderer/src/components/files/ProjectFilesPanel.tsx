@@ -4,16 +4,15 @@ import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
-import { AppBrand } from '../layout/AppBrand'
 import { NoticeBanner } from '../layout/NoticeBanner'
 import { ResizeHandle } from '../layout/ResizeHandle'
 import { FileTree } from './FileTree'
 import type { ProjectFilesSession } from './files-types'
 
-// Left panel of Project Files mode (spec Behaviour 4): the application brand
-// (AppBrand, same strip as the default navigation), the project name, an
-// icon-only back affordance (tooltip "Back to Projects") and the project's
-// file tree. The tree area carries the inline error state (missing/unreadable
+// Left panel of Project Files mode (spec Behaviour 4): a header with the
+// project name and an icon-only back affordance (tooltip "Back to Projects"),
+// then the project's file tree. The application brand lives in the window
+// title bar. The tree area carries the inline error state (missing/unreadable
 // project directory — the rest of the app keeps working and the back
 // affordance always exits, spec Errors).
 
@@ -47,11 +46,10 @@ export function ProjectFilesPanel({
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >
-      {/* Window drag surface (title bar): the top strip is the base app
-          background; the back button opts out of dragging. Fixed 40px height
-          and padding so the strip matches the default navigation header. */}
+      {/* Header strip one level below the window title bar: the back
+          affordance opts out of dragging. Fixed 40px height and padding so
+          the strip matches the tab strip. */}
       <div className="drag-region flex h-10 items-center gap-2 bg-app px-4">
-        <AppBrand />
         <button
           type="button"
           className="no-drag flex items-center rounded p-1 text-ink-secondary hover:bg-highlight hover:text-ink"

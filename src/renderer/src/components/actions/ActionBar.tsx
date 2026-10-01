@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActionControl, ActionExecution, AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { cn } from '../../lib/cn'
-import { Icon, type LucideIcon } from '../../lib/icons'
+import { actionIconGlyph, Icon, type LucideIcon } from '../../lib/icons'
+import { writeSubmitLine } from '../../lib/pty-submit'
 import { TEST_ID } from '../../lib/test-ids'
 
 interface ActionBarProps {
@@ -39,11 +40,16 @@ const fixed: Array<{ label: string; action: FixedAction; icon: LucideIcon }> = [
   { label: 'Continue', action: 'continue', icon: Icon.continue },
 ]
 
-/** Status glyph per action state (design doc 10: status icons 13-14px). */
+/**
+ * Status glyph per action state (design doc 10: status icons 13-14px).
+ * Completion intentionally reverts to the idle glyph: the persisted run
+ * state survives app restarts, so a success checkmark would never go
+ * away; the tooltip (exit code, completed at) carries the result.
+ */
 const statusIcons: Record<'idle' | 'running' | 'success' | 'failed', LucideIcon> = {
   idle: Icon.run,
   running: Icon.running,
-  success: Icon.check,
+  success: Icon.run,
   failed: Icon.fail,
 }
 
@@ -88,6 +94,14 @@ export function ActionBar({
   const visible = actions.filter(
     (action) => action.scope === 'global' || action.projectId === projectId,
   )
+  // Pending Continue CR timer (split-write submission); cancelled on unmount.
+  const cancelContinueCrRef = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    return () => {
+      cancelContinueCrRef.current?.()
+      cancelContinueCrRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -169,6 +183,9 @@ export function ActionBar({
   // Stop/Continue write straight to the PTY; Handoff/Resume go through the
   // host (prompt-input paste, or direct send with auto-send on). Resume opens
   // the handoff picker instead of pasting a fixed command (spec Behaviour 4).
+  // Continue submits through the split-write helper (lib/pty-submit.ts): a
+  // single `Continue\r` chunk parses as an unterminated bracketed paste in
+  // prompt_toolkit agent TUIs and never reaches the agent.
   function runFixed(action: FixedAction): void {
     if (!activeChatId || !chatIsLive) return
     if (action === 'handoff') {
@@ -178,7 +195,10 @@ export function ActionBar({
     } else if (action === 'stop') {
       void sendFixed('\x03')
     } else {
-      void sendFixed('Continue\r')
+      cancelContinueCrRef.current?.()
+      cancelContinueCrRef.current = writeSubmitLine((data) => {
+        void sendFixed(data)
+      }, 'Continue')
     }
   }
 
@@ -248,7 +268,14 @@ export function ActionBar({
       {visible.map((action) => {
         const state = states[action.id]
         const status = state?.status ?? 'idle'
-        const StatusIcon = statusIcons[status]
+        // A preset icon name renders as its Lucide glyph; any other stored
+        // value (custom emoji) stays literal text before the title. The
+        // capitalized alias keeps JSX from reading the variable as a DOM tag.
+        // The action's own icon (preset glyph or emoji) IS the run-state
+        // glyph: it carries the state color and the running spin. The
+        // generic status glyph (idle/run, failed) renders only when no
+        // custom icon is set — never both (double-icon fix).
+        const StateIcon = actionIconGlyph(action.icon) ?? statusIcons[status]
         const details = [
           action.command,
           state?.exitCode !== null && state?.exitCode !== undefined
@@ -268,7 +295,6 @@ export function ActionBar({
             data-status={status}
             className={cn(
               'flex shrink-0 items-center gap-1.5 self-stretch rounded-md bg-button px-3 text-xs hover:bg-button-hover disabled:text-ink-disabled',
-              status === 'success' && 'text-success',
               status === 'failed' && 'text-error',
               status === 'running' && 'text-info',
               status === 'idle' && 'text-ink',
@@ -277,12 +303,16 @@ export function ActionBar({
               void execute(action)
             }}
           >
-            <StatusIcon
+            <StateIcon
               size={14}
               aria-hidden
               className={cn(status === 'running' && 'animate-spin')}
             />
-            {action.icon ? `${action.icon} ` : null}
+            {!actionIconGlyph(action.icon) && action.icon ? (
+              <span aria-hidden="true" className={cn(status === 'running' && 'animate-spin')}>
+                {action.icon}
+              </span>
+            ) : null}
             {action.title}
           </button>
         )

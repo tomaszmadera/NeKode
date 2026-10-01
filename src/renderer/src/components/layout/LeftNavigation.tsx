@@ -5,14 +5,14 @@ import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { AppBrand } from './AppBrand'
 import { NoticeBanner } from './NoticeBanner'
 import { ResizeHandle } from './ResizeHandle'
 
-// Left navigation (UX-UI §9–10): project rows expand to their chat lists,
-// with Add Project and a New Chat button under the active project. New Chat
-// creates the chat immediately (no naming form — the name is the shell's
-// display label, spec Behaviour 3).
+// Left navigation (UX-UI §9-10): a "Projects" section header carries the
+// icon-only Add Project button (user decision 2026-10-01); project rows
+// expand to their chat lists with a New Chat button under the active
+// project. New Chat creates the chat immediately (no naming form: the name
+// is the shell's display label, spec Behaviour 3).
 //
 // Project Files entry (spec Behaviour 1): the row shows a "Files" action on
 // hover/focus (tooltip "Show project files"); clicking the row itself only
@@ -43,6 +43,8 @@ interface LeftNavigationProps {
   onOpenProjectSettings: (projectId: string) => void
   /** Creates a chat immediately with the shell-derived name (no form). */
   onCreateChat: (projectId: string) => Promise<boolean>
+  /** Opens the project root in the OS file explorer. */
+  onOpenInFileExplorer: (projectId: string) => void
   notice: string | null
 }
 
@@ -70,6 +72,7 @@ export function LeftNavigation({
   onOpenProjectFiles,
   onOpenProjectSettings,
   onCreateChat,
+  onOpenInFileExplorer,
   notice,
 }: LeftNavigationProps): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
@@ -103,24 +106,31 @@ export function LeftNavigation({
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >
-      {/* Window drag surface (title bar): the top strip is the base app
-          background; the button opts out of dragging. Fixed 40px height so the
-          header matches the tab strip; the 32px control centers in it. The
-          strip carries the application brand (AppBrand) like other desktop
-          apps; the project list below it needs no "Projects" label. */}
-      <div className="drag-region flex h-10 items-center justify-between bg-app px-4">
-        <AppBrand />
+      {/* The brand strip left with the window title bar (user decision
+          2026-10-01); the panel starts with the notices and Projects header. */}
+      <NoticeBanner notice={notice} />
+      {/* Section header (user decision 2026-10-01): "Projects" title with an
+          icon-only Add Project button on the right. Title sized like the
+          project rows (text-sm), with extra breathing room below the window
+          title bar (user request 2026-10-01). */}
+      <div className="mt-2 flex h-8 shrink-0 items-center justify-between px-4">
+        <span
+          className="text-sm font-medium uppercase tracking-wide text-projects-header"
+          data-testid={TEST_ID.projectsHeader}
+        >
+          Projects
+        </span>
         <button
           type="button"
-          className="no-drag flex h-control items-center gap-1.5 rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover"
+          className="flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink"
           data-testid={TEST_ID.addProjectButton}
+          aria-label="Add Project"
+          title="Add Project"
           onClick={onAddProject}
         >
-          <Icon.projectAdd size={14} aria-hidden />
-          Add Project
+          <Icon.plus size={14} aria-hidden />
         </button>
       </div>
-      <NoticeBanner notice={notice} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {projects.length === 0 ? (
           <p
@@ -136,10 +146,13 @@ export function LeftNavigation({
               const isSelected = project.id === selectedProjectId
               const chats = chatsByProject[project.id] ?? []
               return (
-                <li key={project.id} className="py-0.5">
+                <li key={project.id} className="py-1">
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
-                    className="flex items-center rounded px-1 py-1"
+                    className={cn(
+                      'flex items-center rounded-md px-1 py-1.5',
+                      isSelected && 'bg-highlight',
+                    )}
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
                     onContextMenu={(event) => {
@@ -158,7 +171,7 @@ export function LeftNavigation({
                   >
                     <button
                       type="button"
-                      className="flex items-center rounded px-1 py-0.5 text-ink-secondary hover:bg-highlight hover:text-ink"
+                      className="flex items-center rounded px-1 py-1 text-ink-secondary hover:bg-highlight hover:text-ink"
                       data-testid={testIdFor.projectToggle(project.id)}
                       aria-expanded={isExpanded}
                       aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${project.name}`}
@@ -172,7 +185,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="min-w-0 flex-1 truncate rounded pr-1 py-0.5 text-left text-sm uppercase text-project-title"
+                      className="min-w-0 flex-1 truncate rounded pr-1 py-1 text-left text-sm uppercase text-project-title"
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
                       onClick={() => onSelectProject(project.id)}
@@ -181,7 +194,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="ml-1 flex items-center rounded px-1.5 py-0.5 text-ink-muted hover:bg-highlight hover:text-ink"
+                      className="ml-1 flex items-center rounded px-1.5 py-1 text-ink-muted hover:bg-highlight hover:text-ink"
                       data-testid={testIdFor.projectFiles(project.id)}
                       title="Show project files"
                       aria-label={`Show project files for ${project.name}`}
@@ -193,9 +206,14 @@ export function LeftNavigation({
                   {isExpanded ? (
                     /* Full-width rows, no vertical guide line: the chat
                        highlight reads across the whole list width. */
-                    <div data-testid={testIdFor.projectChats(project.id)}>
+                    /* Constant hairline gap under the project tile (user
+                       request 2026-10-01): ~3px (nearest scale step, 4px)
+                       between the tile's highlight and any highlight below,
+                       selected first chat included — always, not only when
+                       the first chat is selected. */
+                    <div className="mt-1" data-testid={testIdFor.projectChats(project.id)}>
                       {chats.length === 0 ? (
-                        <p className="px-1 py-1 text-xs leading-relaxed text-ink-muted">
+                        <p className="py-1 pl-6 pr-2 text-xs leading-relaxed text-ink-muted">
                           No chats yet.
                         </p>
                       ) : (
@@ -207,7 +225,7 @@ export function LeftNavigation({
                                 <button
                                   type="button"
                                   className={cn(
-                                    'flex w-full items-center gap-1.5 rounded pb-1 pl-6 pr-2 pt-1 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink',
+                                    'flex w-full items-center gap-1.5 rounded-md pb-2.5 pl-6 pr-2 pt-2.5 text-left text-xs text-chat-title hover:bg-highlight hover:text-ink',
                                     isChatSelected && 'bg-highlight text-ink',
                                   )}
                                   data-testid={testIdFor.chatRow(chat.id)}
@@ -225,7 +243,7 @@ export function LeftNavigation({
                       {isSelected ? (
                         <button
                           type="button"
-                          className="mt-1 flex w-full items-center gap-1.5 rounded pb-1 pl-6 pr-2 pt-1 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                          className="mt-1 flex w-full items-center gap-1.5 rounded-md pb-2.5 pl-6 pr-2 pt-2.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
                           data-testid={TEST_ID.newChatButton}
                           onClick={() => {
                             void onCreateChat(project.id)
@@ -251,6 +269,10 @@ export function LeftNavigation({
           onRemoveProject={(projectId) => {
             setContextMenu(null)
             onRemoveProject(projectId)
+          }}
+          onOpenInFileExplorer={(projectId) => {
+            setContextMenu(null)
+            onOpenInFileExplorer(projectId)
           }}
           onOpenProjectSettings={(projectId) => {
             setContextMenu(null)
@@ -281,12 +303,14 @@ function ContextMenuOverlay({
   projectName,
   onClose,
   onRemoveProject,
+  onOpenInFileExplorer,
   onOpenProjectSettings,
 }: {
   state: ContextMenuState
   projectName: string
   onClose: () => void
   onRemoveProject: (projectId: string) => void
+  onOpenInFileExplorer: (projectId: string) => void
   onOpenProjectSettings: (projectId: string) => void
 }): React.JSX.Element {
   return (
@@ -322,6 +346,14 @@ function ContextMenuOverlay({
           onClick={() => onOpenProjectSettings(state.projectId)}
         >
           Project Settings
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          onClick={() => onOpenInFileExplorer(state.projectId)}
+        >
+          Open in file explorer
         </button>
         <button
           type="button"

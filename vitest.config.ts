@@ -5,6 +5,10 @@ import { defineConfig } from 'vitest/config'
 // renderer components).
 export default defineConfig({
   test: {
+    // Renderer tests assert PTY writes synchronously, so the split-write
+    // submit gap (lib/pty-submit.ts) must be 0 under jsdom; production never
+    // sets this override (env.d.ts Window declaration).
+    setupFiles: ['./src/renderer/src/test/vitest-setup.ts'],
     projects: [
       {
         test: {

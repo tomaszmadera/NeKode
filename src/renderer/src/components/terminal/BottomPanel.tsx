@@ -29,6 +29,8 @@ interface BottomPanelProps {
   onSessionReady: (tabId: string) => void
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
   onResizeNudge: (delta: number) => void
+  /** Terminal font size (App Settings), applied live to every bottom view. */
+  terminalFontSize?: number
 }
 
 export function BottomPanel({
@@ -47,6 +49,7 @@ export function BottomPanel({
   onSessionReady,
   onResizeStart,
   onResizeNudge,
+  terminalFontSize,
 }: BottomPanelProps): React.JSX.Element {
   const visibleTabs =
     activeProjectId === null ? [] : tabs.filter((tab) => tab.projectId === activeProjectId)
@@ -130,6 +133,7 @@ export function BottomPanel({
                 cwd={tab.cwd}
                 visible={visible}
                 focused={visible}
+                terminalFontSize={terminalFontSize}
                 onExit={() => onExit(tab.id)}
                 onClose={() => onCloseTab(tab.id)}
                 onSpawnError={(message) => onSpawnError(tab.id, message)}

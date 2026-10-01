@@ -7,31 +7,38 @@
 import {
   ArrowLeft,
   Bot,
+  Bug,
   Check,
   ChevronDown,
   ChevronRight,
   CircleCheck,
   CircleX,
   Container,
+  Database,
   ExternalLink,
   Eye,
   FastForward,
   File,
   Files,
+  FlaskConical,
   Folder,
   FolderOpen,
   FolderPlus,
   Forward,
   GitBranch,
+  Globe,
+  Hammer,
   LoaderCircle,
   type LucideIcon,
   MessageSquare,
   Mic,
+  Package,
   PanelLeft,
   PanelRight,
   Play,
   Plus,
   RefreshCw,
+  Rocket,
   Search,
   Send,
   Settings,
@@ -39,11 +46,13 @@ import {
   SquareKanban,
   SquareTerminal,
   X,
+  Zap,
 } from 'lucide-react'
 
 export const Icon = {
   agent: Bot,
   back: ArrowLeft,
+  build: Hammer,
   chat: MessageSquare,
   check: CircleCheck,
   checkSmall: Check,
@@ -52,6 +61,7 @@ export const Icon = {
   close: X,
   container: Container,
   continue: FastForward,
+  database: Database,
   dictation: Mic,
   directory: FolderOpen,
   external: ExternalLink,
@@ -59,10 +69,14 @@ export const Icon = {
   file: File,
   files: Files,
   git: GitBranch,
+  globe: Globe,
   handoff: Forward,
   kanban: SquareKanban,
   panelLeft: PanelLeft,
   panelRight: PanelRight,
+  bug: Bug,
+  deploy: Rocket,
+  package: Package,
   plus: Plus,
   preview: Eye,
   projects: Folder,
@@ -76,7 +90,44 @@ export const Icon = {
   settings: Settings,
   stop: Square,
   terminal: SquareTerminal,
+  test: FlaskConical,
+  timer: Zap,
+  web: Globe,
 } satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof Icon
 export type { LucideIcon }
+
+/**
+ * Preset glyphs offered by the Action Settings icon picker (center-layout-
+ * tabs-actions spec Behaviour 8): each entry is an Icon key, so the palette
+ * can only grow with the semantic set. ACTION_NONE keeps "no icon" as an
+ * explicit picker choice.
+ */
+export const ACTION_ICON_NAMES = [
+  'run',
+  'stop',
+  'preview',
+  'continue',
+  'retry',
+  'build',
+  'test',
+  'bug',
+  'deploy',
+  'web',
+  'terminal',
+  'database',
+  'package',
+  'timer',
+] as const satisfies ReadonlyArray<IconName>
+
+export const ACTION_NONE: 'none' = 'none'
+
+/** Resolve a stored icon value: a palette name renders as a Lucide glyph. */
+export function actionIconGlyph(value: string | null): LucideIcon | null {
+  if (value === null) return null
+  if ((ACTION_ICON_NAMES as readonly string[]).includes(value)) {
+    return Icon[value as IconName]
+  }
+  return null
+}

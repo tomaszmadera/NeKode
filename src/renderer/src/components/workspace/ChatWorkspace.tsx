@@ -65,6 +65,8 @@ interface ChatWorkspaceProps {
    */
   forceStartNewChat?: boolean
   terminalCwds?: Record<string, string>
+  /** Terminal font size (App Settings); remounts nothing — see ChatTerminal. */
+  terminalFontSize?: number
   onSessionStatus?: (chatId: string, live: boolean) => void
   onSessionReady?: (chatId: string) => void
   /**
@@ -93,6 +95,7 @@ export function ChatWorkspace({
   onStartNewChat,
   forceStartNewChat = false,
   terminalCwds = {},
+  terminalFontSize,
   onSessionStatus,
   onSessionReady,
   promptInjection = null,
@@ -265,6 +268,7 @@ export function ChatWorkspace({
                 chatId={chatId}
                 cwd={record.cwd}
                 visible={chatId === selectedChatId}
+                terminalFontSize={terminalFontSize}
                 onExit={() => handleExit(chatId)}
                 onClose={() => handleExit(chatId)}
                 onSpawnError={(message) => handleSpawnError(chatId, message)}

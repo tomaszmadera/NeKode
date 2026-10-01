@@ -2,11 +2,28 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import type React from 'react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { writeSubmitLine } from '../../lib/pty-submit'
+import { DEFAULT_TERMINAL_FONT_SIZE } from '../../lib/terminal-font'
+import { themeColor } from '../lib/theme-color'
 import { isBottomPanelChord } from './bottom-panel-chord'
+import { chatSwitchDirection } from './chat-switch-chord'
 import { type PromptInjection, PromptInput } from './PromptInput'
+import { TerminalContextMenu } from './TerminalContextMenu'
+
+interface Clipboard {
+  writeText(text: string): Promise<void>
+  readText(): Promise<string>
+}
+
+/** Renderer clipboard (typed locally so tests can stub navigator.clipboard). */
+function navigatorClipboard(): Clipboard | null {
+  return typeof navigator !== 'undefined' && navigator.clipboard !== null
+    ? navigator.clipboard
+    : null
+}
 
 // One xterm.js view per chat session (UX-UI §17). The view owns the xterm
 // instance and the bridge subscriptions; the PTY itself lives in the main
@@ -33,6 +50,13 @@ interface ChatTerminalProps {
   injected?: PromptInjection | null
   /** Reports consumption so the host can drop the pending injection. */
   onInjected?: () => void
+  /**
+   * Terminal font size (App Settings). Applied at mount and, through the
+   * option-freeze effect below, live to already-open sessions — xterm reflows
+   * the buffer and this view refits and reports the new grid to the PTY.
+   * Session identity and the PTY are untouched.
+   */
+  terminalFontSize?: number
   /**
    * `Ctrl+D` at an empty input line outside full-screen programs: the
    * shortcut is intercepted and the chat closes through the same flow as a
@@ -90,9 +114,13 @@ export function ChatTerminal({
   onReady,
   injected = null,
   onInjected,
+  terminalFontSize,
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  // Right-click menu state; null = closed. Coordinates are viewport-relative
+  // (clientX/clientY), matching the fixed-position overlay.
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   // Latest PTY writer for the prompt input below the terminal (assigned inside
   // the mount effect; null outside it). A submission is Enter semantics: the
   // line plus CR goes to the PTY and the Ctrl+D prompt base is re-collected
@@ -104,6 +132,12 @@ export function ChatTerminal({
   const onCloseRef = useRef(onClose)
   const onSpawnErrorRef = useRef(onSpawnError)
   const onReadyRef = useRef(onReady)
+  // Live copy/paste entry points of the mounted terminal, for the right-click
+  // menu rendered outside the mount effect. Null while unmounted.
+  const clipboardRef = useRef<{ copy: () => boolean; paste: () => void } | null>(null)
+  // Mount effect's fit+PTY-resize routine, reused by the live font-size
+  // effect (refit after xterm reflows at the new size). Null while unmounted.
+  const fitRef = useRef<(() => void) | null>(null)
   appRef.current = app
   onExitRef.current = onExit
   onCloseRef.current = onClose
@@ -119,13 +153,17 @@ export function ChatTerminal({
     const terminal = new Terminal({
       convertEol: true,
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE,
       fontFamily: '"Recursive Mono Casual", Consolas, "Courier New", monospace',
+      // Terminal palette follows the active theme tokens (default-beta-1 is
+      // darker than default); fallbacks keep jsdom tests (no CSS cascade)
+      // on the default palette. Picked up at mount; switching themes while a
+      // session is open applies on its next open.
       theme: {
-        background: 'rgb(13 15 26)',
-        foreground: 'rgb(202 203 209)',
-        cursor: 'rgb(202 203 209)',
-        selectionBackground: 'rgb(49 66 95)',
+        background: themeColor('--color-terminal', 'rgb(13 15 26)'),
+        foreground: themeColor('--color-ink', 'rgb(202 203 209)'),
+        cursor: themeColor('--color-ink', 'rgb(202 203 209)'),
+        selectionBackground: themeColor('--color-scrollbar', 'rgb(49 66 95)'),
       },
     })
     const fitAddon = new FitAddon()
@@ -156,6 +194,45 @@ export function ChatTerminal({
     const unsubscribeExit = appRef.current.terminals.onExit(chatId, (exitCode) => {
       onExitRef.current(exitCode)
     })
+
+    // --- Copy/paste (renderer clipboard + xterm selection) ------------------
+    // xterm.js has no built-in copy/paste chords and Electron shows no context
+    // menu by default, so both are wired here. Ctrl+C with a selection copies
+    // instead of sending SIGINT (selection abort is the Windows-terminal
+    // convention); without a selection it still aborts the line. The
+    // Shift-carrying chords are always copy/paste. Paste writes to the PTY
+    // through the same onData path as typing, so the Ctrl+D prompt-base
+    // tracker sees it exactly like keyboard input.
+    function copySelection(): boolean {
+      if (!terminal.hasSelection()) {
+        return false
+      }
+      void navigatorClipboard()
+        ?.writeText(terminal.getSelection())
+        .catch(() => undefined)
+      return true
+    }
+
+    function pasteClipboard(): void {
+      const clipboard = navigatorClipboard()
+      if (clipboard === null) {
+        return
+      }
+      void clipboard
+        .readText()
+        .then((text) => {
+          if (text.length > 0) {
+            terminal.paste(text)
+          }
+        })
+        .catch(() => undefined)
+    }
+
+    // The right-click menu lives outside this effect; it reaches the live
+    // terminal's copy/paste through this ref (nulled on cleanup).
+    clipboardRef.current = { copy: copySelection, paste: pasteClipboard }
+    // The live font-size effect reuses this fit+resize routine (nulled below).
+    fitRef.current = fitAndResize
 
     // --- Ctrl+D emptiness gate (spec Behaviour 11 / AC9) --------------------
     // The cursor row as the user sees it: `before` is the visible text in
@@ -219,10 +296,17 @@ export function ChatTerminal({
     // The submitted bytes never pass through xterm's onData, so the handler
     // above would never see the reset; thawing here lets the next writeParsed
     // after the shell redraws its prompt re-collect the base, keeping the
-    // Ctrl+D emptiness gate reading the fresh empty line.
+    // Ctrl+D emptiness gate reading the fresh empty line. The line and its CR
+    // go through the split-write helper (see lib/pty-submit.ts): a single
+    // `line\r` chunk parses as an unterminated bracketed paste in
+    // prompt_toolkit TUIs (Hermes Agent) and never submits.
+    let cancelSubmitCr: (() => void) | undefined
     function submitPromptLine(line: string): void {
       baseFrozen = false
-      void appRef.current.terminals.write(chatId, `${line}\r`).catch(() => undefined)
+      cancelSubmitCr?.()
+      cancelSubmitCr = writeSubmitLine((data) => {
+        void appRef.current.terminals.write(chatId, data).catch(() => undefined)
+      }, line)
     }
     sendRef.current = submitPromptLine
 
@@ -264,11 +348,49 @@ export function ChatTerminal({
       if (isBottomPanelChord(event)) {
         return false
       }
+      // The Ctrl+Tab chat-switch chord is the same: the app consumes it and
+      // nothing reaches the shell (NEKODE-2).
+      if (chatSwitchDirection(event) !== null) {
+        return false
+      }
       if (event.type !== 'keydown') {
         return true
       }
       // AltGr characters (ctrlKey and altKey both true) are never a shortcut.
       const ctrlOnly = event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+      // Copy/paste chords (Ctrl+C/Ctrl+Shift+C/Ctrl+Shift/V forms below). The
+      // plain Ctrl+C copy only wins while text is selected; otherwise it keeps
+      // its abort-line meaning (resetBytePending, as before this feature).
+      const isCopyChord =
+        (event.code === 'KeyC' || event.key === 'c' || event.key === 'C') &&
+        event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey
+      if (isCopyChord && (event.shiftKey || terminal.hasSelection()) && event.type === 'keydown') {
+        if (copySelection()) {
+          return false
+        }
+      }
+      // Paste chords (Ctrl+V / Ctrl+Shift+V) write the clipboard into the PTY
+      // through xterm.paste — the same onData path as typing. Intercepted so
+      // the raw \x16 byte never reaches the shell: the Windows edit mode would
+      // paste a second time on top of ours. Inside a full-screen program
+      // (alternate buffer) the chords pass through untouched — Ctrl+V keeps
+      // its program meaning there (e.g. vim visual block).
+      const isPasteChord =
+        (event.code === 'KeyV' || event.key === 'v' || event.key === 'V') &&
+        event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey
+      if (isPasteChord && event.type === 'keydown' && terminal.buffer.active.type !== 'alternate') {
+        // Cancel the browser default action, not only xterm's handling: the
+        // handler's `false` return stops xterm but not Chromium's Ctrl+V
+        // paste, whose native `paste` event on the hidden helper textarea
+        // made xterm paste a second time (user report 2026-10-01).
+        event.preventDefault()
+        pasteClipboard()
+        return false
+      }
       // Line resets (keydown only — a pasted newline is content, never an
       // Enter): Enter submits, Ctrl+C aborts. The base may move again and is
       // re-collected from the next drawn prompt.
@@ -360,8 +482,12 @@ export function ChatTerminal({
 
     return () => {
       disposed = true
+      cancelSubmitCr?.()
+      cancelSubmitCr = undefined
       terminalRef.current = null
       sendRef.current = null
+      clipboardRef.current = null
+      fitRef.current = null
       cleanupResize()
       unsubscribeData()
       unsubscribeExit()
@@ -371,7 +497,7 @@ export function ChatTerminal({
     }
     // Session identity is fixed per mount; the host remounts (new generation)
     // when a dead session must be replaced.
-  }, [chatId, cwd])
+  }, [chatId, cwd, terminalFontSize])
 
   useEffect(() => {
     if (!focused) {
@@ -380,27 +506,75 @@ export function ChatTerminal({
     terminalRef.current?.focus()
   }, [focused])
 
+  // Live font-size changes (App Settings): every mounted view — hidden ones
+  // included — applies the size through xterm's option API and then refits
+  // through the mount effect's fitAndResize (refit + PTY grid report). The
+  // first run sees the option already at the mount value and skips. A null
+  // ref (mid-remount) waits for the next effect pass; xterm itself reflows
+  // the scrollback when the option lands, so no session state is touched.
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (terminal === null || terminalFontSize === undefined) {
+      return
+    }
+    if (terminal.options.fontSize === terminalFontSize) {
+      return
+    }
+    terminal.options.fontSize = terminalFontSize
+    fitRef.current?.()
+  }, [terminalFontSize])
+
   return (
-    <div
-      className="h-full w-full bg-terminal outline-none"
-      data-testid={`terminal-canvas-${chatId}`}
-      tabIndex={-1}
-      style={{ display: visible ? 'block' : 'none' }}
-    >
-      {/* One uniform 12px inset around the whole terminal window: the prompt
-          frame aligns with the terminal text edges, and bottom, side and top
-          margins read as one padding (user feedback 2026-10-01). The fit host
-          itself must stay paddingless: FitAddon measures only the host box,
-          so host padding made the xterm screen overflow it and the last text
-          row touched the prompt frame (measured 0.9px gap). */}
-      <div className="flex h-full w-full flex-col p-3">
-        <div ref={containerRef} className="min-h-0 flex-1" />
-        <PromptInput
-          onSubmit={(line) => sendRef.current?.(line)}
-          injected={injected}
-          onInjected={onInjected}
-        />
+    <>
+      {/* Right-click copy/paste menu over the terminal view. onContextMenu
+          also covers xterm's textarea, so it fires even while the view keeps
+          keyboard focus. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the view hosts the context-menu gesture (right click); the menu items are real buttons and the menu closes on Escape. */}
+      <div
+        className="h-full w-full bg-terminal outline-none"
+        data-testid={`terminal-canvas-${chatId}`}
+        tabIndex={-1}
+        style={{ display: visible ? 'block' : 'none' }}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setContextMenu({ x: event.clientX, y: event.clientY })
+        }}
+      >
+        {/* One uniform 12px inset around the whole terminal window: the prompt
+            frame aligns with the terminal text edges, and bottom, side and top
+            margins read as one padding (user feedback 2026-10-01). The fit host
+            itself must stay paddingless: FitAddon measures only the host box,
+            so host padding made the xterm screen overflow it and the last text
+            row touched the prompt frame (measured 0.9px gap). */}
+        <div className="flex h-full w-full flex-col p-3">
+          <div ref={containerRef} className="min-h-0 flex-1" />
+          <PromptInput
+            onSubmit={(line) => sendRef.current?.(line)}
+            injected={injected}
+            onInjected={onInjected}
+          />
+        </div>
       </div>
-    </div>
+      {contextMenu !== null ? (
+        <TerminalContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          hasSelection={(terminalRef.current?.hasSelection() ?? false) && visible}
+          onCopy={() => {
+            clipboardRef.current?.copy()
+            setContextMenu(null)
+          }}
+          onPaste={() => {
+            clipboardRef.current?.paste()
+            setContextMenu(null)
+          }}
+          onSelectAll={() => {
+            terminalRef.current?.selectAll()
+            setContextMenu(null)
+          }}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
+    </>
   )
 }

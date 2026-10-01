@@ -7,6 +7,10 @@ export const TEST_ID = {
   tabStrip: 'tab-strip',
   tabTerminal: 'tab-terminal',
   tabNewChat: 'tab-new-chat',
+  /** Context menu of a file tab (right click / ContextMenu key / Shift+F10). */
+  tabContextMenu: 'tab-context-menu',
+  tabContextCopyRelative: 'tab-context-copy-relative',
+  tabContextCopyAbsolute: 'tab-context-copy-absolute',
   actionRowSlot: 'action-row-slot',
   statusBar: 'status-bar',
   statusProjectName: 'status-project-name',
@@ -26,6 +30,7 @@ export const TEST_ID = {
   leftResizeHandle: 'resize-handle-left',
   bottomResizeHandle: 'resize-handle-bottom',
   projectList: 'project-list',
+  projectsHeader: 'projects-header',
   emptyProjectList: 'project-list-empty',
   addProjectButton: 'add-project-button',
   welcomeSurface: 'welcome-surface',
@@ -50,6 +55,10 @@ export const TEST_ID = {
   filePreviewBinary: 'file-preview-binary',
   filePreviewOpenExternal: 'file-preview-open-external',
   filePreviewMonaco: 'file-preview-monaco',
+  /** Right-click menu of the read-only file preview (Copy / Select All). */
+  editorContextMenu: 'editor-context-menu',
+  editorContextCopy: 'editor-context-copy',
+  editorContextSelectAll: 'editor-context-select-all',
   terminalPromptInput: 'terminal-prompt-input',
   terminalPromptSend: 'terminal-prompt-send',
   terminalPromptDictation: 'terminal-prompt-dictation',
@@ -64,10 +73,21 @@ export const TEST_ID = {
   handoffPickerEntry: 'handoff-picker-entry',
   settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
+  /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
+  settingsChatSwitch: 'settings-chat-switch',
   settingsHandoffDir: 'settings-handoff-dir',
   settingsHandoffDirBrowse: 'settings-handoff-dir-browse',
   settingsHandoffDirSave: 'settings-handoff-dir-save',
   settingsHandoffDirSaved: 'settings-handoff-dir-saved',
+  /** Action form icon picker: preset select and the custom-emoji input. */
+  settingsActionIconSelect: 'settings-action-icon-select',
+  settingsActionIconEmoji: 'settings-action-icon-emoji',
+  /** App Settings: terminal font size select. */
+  settingsTerminalFontSize: 'settings-terminal-font-size',
+  terminalContextMenu: 'terminal-context-menu',
+  terminalContextCopy: 'terminal-context-copy',
+  terminalContextPaste: 'terminal-context-paste',
+  terminalContextSelectAll: 'terminal-context-select-all',
 } as const
 
 /** Test ids that depend on record ids (projects/chats/sessions/paths). */

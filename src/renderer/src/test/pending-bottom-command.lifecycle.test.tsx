@@ -66,6 +66,7 @@ function createAppApiStub(): AppApi {
       list: vi.fn().mockResolvedValue([]),
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
+      openRoot: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
@@ -272,10 +273,15 @@ describe('staged bottom-terminal commands do not outlive their tab', () => {
 
     fireEvent.click(screen.getByTestId(TEST_ID.bottomTerminalRetry))
     // The retry remounts the terminal view; its ready event delivers the
-    // staged command exactly once (contract: command + CR, once).
+    // staged command exactly once (split-write submission: the line, then
+    // the CR as its own write).
     await waitFor(() =>
-      expect(app.terminals.write).toHaveBeenCalledWith('bottom:p1:tab-1', 'pnpm test\r'),
+      expect(app.terminals.write).toHaveBeenCalledWith('bottom:p1:tab-1', 'pnpm test'),
     )
-    expect(vi.mocked(app.terminals.write).mock.calls).toEqual([['bottom:p1:tab-1', 'pnpm test\r']])
+    expect(app.terminals.write).toHaveBeenCalledWith('bottom:p1:tab-1', '\r')
+    expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
+      ['bottom:p1:tab-1', 'pnpm test'],
+      ['bottom:p1:tab-1', '\r'],
+    ])
   })
 })

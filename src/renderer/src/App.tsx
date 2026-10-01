@@ -16,8 +16,10 @@ import { HandoffPicker } from './components/actions/HandoffPicker'
 import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
+import { AppBrand } from './components/layout/AppBrand'
 import { LeftNavigation } from './components/layout/LeftNavigation'
 import { StatusBar } from './components/layout/StatusBar'
+import { AppSettings } from './components/settings/AppSettings'
 import { TabStrip } from './components/tabs/TabStrip'
 import {
   activateTab,
@@ -42,6 +44,7 @@ import {
   retryBottomTab,
   selectBottomTab,
 } from './components/terminal/bottom-tabs'
+import { chatSwitchDirection } from './components/terminal/chat-switch-chord'
 import { ChatWorkspace } from './components/workspace/ChatWorkspace'
 import {
   BOTTOM_REGION_SIZE,
@@ -50,7 +53,15 @@ import {
   type RegionSizeLimits,
   useResizableRegion,
 } from './hooks/useResizableRegion'
+import { Icon } from './lib/icons'
+import { writeSubmitLine } from './lib/pty-submit'
+import {
+  DEFAULT_TERMINAL_FONT_SIZE,
+  parseTerminalFontSize,
+  TERMINAL_FONT_SIZE_STORAGE_KEY,
+} from './lib/terminal-font'
 import { TEST_ID, testIdFor } from './lib/test-ids'
+import { isThemeId, THEME_STORAGE_KEY, type ThemeId } from './lib/theme'
 
 // Re-exported so existing imports keep working; the definitions live in
 // lib/test-ids.ts to break the App ↔ component import cycle.
@@ -127,6 +138,45 @@ function mergeFetchedChats(
 }
 
 export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
+  const [appSettingsOpen, setAppSettingsOpen] = useState(false)
+  const [themeState, setThemeState] = useState<{ theme: ThemeId; error: string | null }>(() => {
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_KEY)
+      return { theme: isThemeId(saved) ? saved : 'default', error: null }
+    } catch {
+      return { theme: 'default', error: 'Failed to load the saved theme.' }
+    }
+  })
+  const [terminalFontSize, setTerminalFontSize] = useState<number>(() => {
+    try {
+      return parseTerminalFontSize(localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY))
+    } catch {
+      return DEFAULT_TERMINAL_FONT_SIZE
+    }
+  })
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeState.theme
+  }, [themeState.theme])
+
+  function handleThemeChange(theme: ThemeId): void {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme)
+      setThemeState({ theme, error: null })
+    } catch {
+      setThemeState((previous) => ({ ...previous, error: 'Failed to save the theme.' }))
+    }
+  }
+
+  function handleTerminalFontSizeChange(size: number): void {
+    setTerminalFontSize(size)
+    try {
+      localStorage.setItem(TERMINAL_FONT_SIZE_STORAGE_KEY, String(size))
+    } catch {
+      // The live terminals keep the new size; persistence is best effort.
+    }
+  }
+
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [chatsByProject, setChatsByProject] = useState<Record<string, ChatInfo[]>>({})
   // Projects whose chat list finished loading. The "Start new chat" empty
@@ -144,6 +194,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // Handoff/Resume delivery (spec handoff-resume-flow): auto-send default off
   // (paste into the prompt input), the setting is application-global.
   const [autoSendHandoff, setAutoSendHandoff] = useState(false)
+  // Ctrl+Tab chat switching (NEKODE-2): enabled unless explicitly turned off.
+  const [chatSwitchEnabled, setChatSwitchEnabled] = useState(true)
   const [handoffPickerOpen, setHandoffPickerOpen] = useState(false)
   // Pending prompt-input fill addressed to one chat (paste-only delivery).
   const [promptInjection, setPromptInjection] = useState<{
@@ -242,6 +294,22 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     }
   }, [app])
 
+  // Ctrl+Tab chat switch on/off (NEKODE-2): missing or '1' means enabled.
+  useEffect(() => {
+    let alive = true
+    void app.state
+      .get(APP_STATE_KEY.chatSwitchEnabled)
+      .then((value) => {
+        if (alive) setChatSwitchEnabled(value !== '0')
+      })
+      .catch((error: unknown) => {
+        if (alive) setNotice(errorMessage(error, 'Failed to load settings.'))
+      })
+    return () => {
+      alive = false
+    }
+  }, [app])
+
   const handleAutoSendChange = useCallback(
     (next: boolean): void => {
       setAutoSendHandoff(next)
@@ -254,17 +322,36 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app],
   )
 
+  const handleChatSwitchChange = useCallback(
+    (next: boolean): void => {
+      setChatSwitchEnabled(next)
+      void app.state
+        .set(APP_STATE_KEY.chatSwitchEnabled, next ? '1' : '0')
+        .catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to save the setting.'))
+        })
+    },
+    [app],
+  )
+
   // Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): auto-send
   // writes the English command plus CR straight to the PTY; the default paste
-  // mode fills the addressed chat's prompt input and waits for the user.
+  // mode fills the addressed chat's prompt input and waits for the user. The
+  // CR goes through the split-write helper (lib/pty-submit.ts) — a single
+  // `command\r` burst parses as an unterminated bracketed paste in
+  // prompt_toolkit agent TUIs (Hermes Agent): text lands in the input box,
+  // the CR is swallowed, nothing sends.
   const handlePromptCommand = useCallback(
     (text: string): void => {
       const chatId = selectionRef.current.chatId
       if (chatId === null || !liveChatIds.has(chatId)) return
       if (autoSendHandoff) {
-        void app.terminals.write(chatId, `${text}\r`).catch((error: unknown) => {
-          setNotice(errorMessage(error, 'Failed to send the command.'))
-        })
+        const appApi = app
+        writeSubmitLine((data) => {
+          void appApi.terminals.write(chatId, data).catch((error: unknown) => {
+            setNotice(errorMessage(error, 'Failed to send the command.'))
+          })
+        }, text)
         return
       }
       promptInjectionNonceRef.current += 1
@@ -293,23 +380,29 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       const command = pendingTerminalCommandsRef.current[chatId]
       if (command === undefined) return
       delete pendingTerminalCommandsRef.current[chatId]
-      void app.terminals.write(chatId, `${command}\r`).catch((error: unknown) => {
-        setNotice(errorMessage(error, 'Failed to write the action command.'))
-      })
+      // Split-write submission (lib/pty-submit.ts): the CR must arrive as its
+      // own chunk, or prompt_toolkit agent TUIs parse the burst as a paste.
+      writeSubmitLine((data) => {
+        void app.terminals.write(chatId, data).catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to write the action command.'))
+        })
+      }, command)
     },
     [app],
   )
 
-  // Ready callback for bottom-tab terminals: identical delivery contract —
-  // the command plus one CR (0x0D), written once, after subscription.
+  // Ready callback for bottom-tab terminals: same delivery contract as chat
+  // sessions — the command, then one CR (0x0D) after the submit gap.
   const handleBottomSessionReady = useCallback(
     (tabId: string): void => {
       const command = pendingBottomCommandsRef.current[tabId]
       if (command === undefined) return
       delete pendingBottomCommandsRef.current[tabId]
-      void app.terminals.write(tabId, `${command}\r`).catch((error: unknown) => {
-        setNotice(errorMessage(error, 'Failed to write the action command.'))
-      })
+      writeSubmitLine((data) => {
+        void app.terminals.write(tabId, data).catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to write the action command.'))
+        })
+      }, command)
     },
     [app],
   )
@@ -541,6 +634,29 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [persistSelection, updateTabsSession],
   )
 
+  // Ctrl+Tab / Ctrl+Shift+Tab chat switching within the active project
+  // (NEKODE-2). The switcher reuses the full select path, so persistence,
+  // nonce and tab activation behave exactly like a click on the chat row.
+  const handleSwitchChat = useCallback(
+    (direction: 1 | -1): void => {
+      const projectId = selectionRef.current.projectId
+      if (projectId === null) {
+        return
+      }
+      const chats = chatsByProjectRef.current[projectId]
+      if (chats === undefined || chats.length === 0) {
+        return
+      }
+      const currentId = selectionRef.current.chatId
+      const currentIndex =
+        currentId === null ? -1 : chats.findIndex((chat) => chat.id === currentId)
+      const base = currentIndex === -1 ? (direction === 1 ? -1 : 0) : currentIndex
+      const next = chats[(base + direction + chats.length) % chats.length]
+      handleSelectChat(projectId, next.id)
+    },
+    [handleSelectChat],
+  )
+
   const handleToggleProject = useCallback(
     (projectId: string): void => {
       const isExpanded = expandedProjectIds.has(projectId)
@@ -585,6 +701,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       }
     })()
   }, [app, applyChatsUpdate, persistSelection])
+
+  // Open in file explorer (context menu): the OS file manager on the
+  // registered project root. Failures surface as notices, the selection and
+  // project data stay untouched.
+  const handleOpenInFileExplorer = useCallback(
+    (projectId: string): void => {
+      void app.files.openRoot(projectId).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to open the project directory.'))
+      })
+    },
+    [app],
+  )
 
   const handleRemoveProject = useCallback(
     (projectId: string): void => {
@@ -1109,6 +1237,39 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     }
   }, [])
 
+  // Ctrl+Tab / Ctrl+Shift+Tab chat switching (NEKODE-2), capture phase so it
+  // wins over focus traversal even inside a focused terminal, and never
+  // reaches a PTY (ChatTerminal swallows the chord in its custom key handler).
+  const switchChatRef = useRef(handleSwitchChat)
+  switchChatRef.current = handleSwitchChat
+  const chatSwitchEnabledRef = useRef(chatSwitchEnabled)
+  chatSwitchEnabledRef.current = chatSwitchEnabled
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat) {
+        return
+      }
+      const direction = chatSwitchDirection(event)
+      if (direction === null) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      if (document.querySelector('[aria-modal="true"]') !== null) {
+        return
+      }
+      if (!chatSwitchEnabledRef.current) {
+        return
+      }
+      switchChatRef.current(direction)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [])
+
   const leftRegion = useResizableRegion({
     axis: 'x',
     minSize: LEFT_REGION_SIZE.min,
@@ -1211,7 +1372,25 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       className="flex h-screen w-screen flex-col overflow-hidden bg-app text-ink antialiased"
       data-testid={TEST_ID.appShell}
     >
-      <div className="flex min-h-0 flex-1">
+      {/* Window title bar (user decision 2026-10-01): one continuous
+          full-width drag strip; the brand on the left, Windows caption
+          buttons overlay the top-right corner. Tab strip and panel headers
+          sit one level below. */}
+      <div className="drag-region flex h-10 shrink-0 items-center bg-app px-4">
+        <AppBrand />
+        <button
+          type="button"
+          aria-label="App Settings"
+          title="App Settings"
+          className="no-drag ml-3 flex h-7 w-7 items-center justify-center rounded-md text-ink-muted hover:bg-highlight hover:text-ink focus-visible:outline focus-visible:outline-info"
+          onClick={() => setAppSettingsOpen(true)}
+        >
+          <Icon.settings size={16} aria-hidden />
+        </button>
+      </div>
+      {/* The hairline under the title bar is owned by the content row
+          (border-t, design doc 26.2 convention), not by the strip itself. */}
+      <div className="flex min-h-0 flex-1 border-t border-edge">
         {filesProject !== null ? (
           <ProjectFilesPanel
             width={leftWidth}
@@ -1241,6 +1420,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             onAddProject={handleAddProject}
             onRemoveProject={handleRemoveProject}
             onOpenProjectFiles={handleOpenProjectFiles}
+            onOpenInFileExplorer={handleOpenInFileExplorer}
             onOpenProjectSettings={(projectId) => {
               setActionSettingsProjectId(projectId)
               setActionSettingsOpen(true)
@@ -1258,6 +1438,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           <TabStrip
             chatName={activeChat?.name ?? null}
             openFiles={tabsSession.openFiles}
+            projectRoot={tabProject?.path ?? null}
             active={activeTab}
             onSelectTab={handleSelectTab}
             onCloseFile={handleCloseFileTab}
@@ -1335,6 +1516,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 selectionNonce={selectionNonce}
                 forceStartNewChat={chatSurfaceDiverged}
                 terminalCwds={terminalCwds}
+                terminalFontSize={terminalFontSize}
                 onSessionStatus={handleSessionStatus}
                 onSessionReady={handleSessionReady}
                 onChatClosed={handleChatClosed}
@@ -1350,6 +1532,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           Right Panel
         </div>
       </div>
+      {appSettingsOpen ? (
+        <AppSettings
+          theme={themeState.theme}
+          chatSwitch={chatSwitchEnabled}
+          error={themeState.error}
+          onThemeChange={handleThemeChange}
+          onChatSwitchChange={handleChatSwitchChange}
+          terminalFontSize={terminalFontSize}
+          onTerminalFontSizeChange={handleTerminalFontSizeChange}
+          onClose={() => setAppSettingsOpen(false)}
+        />
+      ) : null}
       {actionSettingsOpen ? (
         <ActionSettings
           app={app}
@@ -1385,6 +1579,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         height={bottomHeight}
         activeProjectId={tabProjectId}
         tabs={allBottomTabs(bottomTabs)}
+        terminalFontSize={terminalFontSize}
         activeTabId={
           tabProjectId === null ? null : (bottomTabs.byProject[tabProjectId]?.activeId ?? null)
         }
