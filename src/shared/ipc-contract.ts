@@ -97,11 +97,37 @@ export type FilePreview =
 
 // One regular file in a project's configured handoff directory (spec
 // handoff-resume-flow Data/API), newest first. `path` is the resolved
-// absolute path: it is what the Resume paste names in its command.
+// absolute path; the Resume command composes the project-relative form from
+// it (shared `relativeToProject`, absolute when outside the root).
 export interface HandoffEntry {
   name: string
   path: string
   modifiedAt: string
+}
+
+function toPosixSlashes(path: string): string {
+  return path.replace(/\\/g, '/')
+}
+
+/**
+ * Project-root-relative '/'-separated form of an absolute path, or null when
+ * the path lies outside the root (the absolute form stays the fallback).
+ * Segment-boundary prefix match: a sibling directory sharing only the root's
+ * string prefix never resolves. The root itself resolves to ''. The match is
+ * case-sensitive: on a case-insensitive volume a casing mismatch degrades to
+ * the absolute form (correct, just not the shorter display).
+ */
+export function relativeToProject(projectRoot: string, absolutePath: string): string | null {
+  const root = toPosixSlashes(projectRoot).replace(/\/+$/, '')
+  const target = toPosixSlashes(absolutePath)
+  if (target === root) {
+    return ''
+  }
+  const prefix = `${root}/`
+  if (!target.startsWith(prefix)) {
+    return null
+  }
+  return target.slice(prefix.length)
 }
 
 // Channel names mirror the spec Data/API bridge. terminals:terminate accepts

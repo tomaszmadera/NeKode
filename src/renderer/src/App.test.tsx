@@ -549,10 +549,11 @@ describe('action row and settings', () => {
     await screen.findByTestId(TEST_ID.handoffPicker)
     await waitFor(() => expect(app.handoffs.list).toHaveBeenCalledWith('p1'))
     fireEvent.click(screen.getAllByTestId(TEST_ID.handoffPickerEntry)[0])
+    // Auto-send uses the same project-relative command text as the paste.
     await waitFor(() =>
       expect(app.terminals.write).toHaveBeenCalledWith(
         't1',
-        'Resume from handoff D:/code/demo/.agents/handoffs/2026-10-01-auth.md',
+        'Resume from handoff .agents/handoffs/2026-10-01-auth.md',
       ),
     )
     expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
@@ -596,10 +597,12 @@ describe('action row and settings', () => {
       .getAllByTestId(TEST_ID.handoffPickerEntry)
       .map((entry) => entry.textContent)
     expect(names[0]).toContain('newest.md')
+    // The row displays the project-relative path (spec Required tests).
+    expect(names[0]).toContain('.agents/handoffs/newest.md')
     fireEvent.click(screen.getAllByTestId(TEST_ID.handoffPickerEntry)[0])
     await waitFor(() =>
       expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
-        'Resume from handoff D:/code/demo/.agents/handoffs/newest.md',
+        'Resume from handoff .agents/handoffs/newest.md',
       ),
     )
     expect(app.terminals.write).not.toHaveBeenCalled()
@@ -655,12 +658,26 @@ describe('action row and settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
     await screen.findByText('Project Settings')
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
+    // The picked directory stores relative to the project root.
     await waitFor(() =>
       expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
-        'D:/code/demo/.agents/handoffs',
+        '.agents/handoffs',
       ),
     )
     expect(app.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code/demo')
+  })
+
+  it('browse stores the absolute path when the picked directory lies outside the project root', async () => {
+    await renderSelectedChat()
+    vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/elsewhere/handoffs')
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    await screen.findByText('Project Settings')
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
+    await waitFor(() =>
+      expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
+        'D:/elsewhere/handoffs',
+      ),
+    )
   })
 
   it('browse falls back to the project root while the current value is relative', async () => {
@@ -674,7 +691,7 @@ describe('action row and settings', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
     await waitFor(() =>
       expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
-        'D:/code/demo/handoffs',
+        'handoffs',
       ),
     )
     // The picker takes null or absolute only: the relative draft falls back

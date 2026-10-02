@@ -1,7 +1,7 @@
 import type React from 'react'
 import { useEffect, useState } from 'react'
 import type { ActionControl, ActionInput, AppApi } from '../../../../shared/ipc-contract'
-import { projectHandoffDirKey } from '../../../../shared/ipc-contract'
+import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { ACTION_ICON_NAMES, ACTION_NONE, actionIconGlyph } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
@@ -131,13 +131,18 @@ export function ActionSettings({
   async function browseHandoffDir(): Promise<void> {
     // The picker's defaultPath must be null or absolute (validator rule): a
     // relative current value falls back to the project root, like the empty
-    // case (spec Behaviour 6: current value or project root).
+    // case (spec Behaviour 6: current value or project root). The confirmed
+    // directory stores relative to the project root when it lies inside it
+    // (absolute otherwise): the relative form is the norm for this setting.
     const current = handoffDir.trim()
     const fallback = current.length > 0 && isAbsolutePath(current) ? current : projectPath
     try {
       const picked = await app.dialogs.pickDirectory(fallback)
       if (picked !== null) {
-        setHandoffDir(picked)
+        // The root itself (relative form '') stores absolute: an empty stored
+        // value means unconfigured, so Browse never produces one.
+        const relative = projectPath !== null ? relativeToProject(projectPath, picked) : null
+        setHandoffDir(relative !== null && relative.length > 0 ? relative : picked)
         setHandoffDirSaved(false)
       }
     } catch (cause) {
@@ -233,7 +238,7 @@ export function ActionSettings({
           {projectId !== null ? (
             <div className="mt-2">
               <label>
-                Handoff directory (absolute, or relative to the project root)
+                Handoff directory (relative to the project root, or absolute)
                 <div className="mt-1 flex gap-2">
                   <input
                     className="min-w-0 flex-1 rounded-sm bg-highlight p-1"

@@ -111,6 +111,12 @@ export class HandoffsService {
       if (entry.kind === 'directory') {
         continue
       }
+      // README.md never lists as a handoff candidate; case-folded like the
+      // FilesService directory exclusions (the target filesystem on Windows
+      // is case-insensitive).
+      if (entry.name.toLowerCase() === 'readme.md') {
+        continue
+      }
       // Symlinks classify by their target; broken links are skipped.
       const filePath = posix.join(dir, entry.name)
       const stats = await this.#fs.stat(filePath)

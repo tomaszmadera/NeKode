@@ -1,21 +1,24 @@
 import type React from 'react'
 import { useEffect, useState } from 'react'
 import type { AppApi, HandoffEntry } from '../../../../shared/ipc-contract'
-import { projectHandoffDirKey } from '../../../../shared/ipc-contract'
+import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { TEST_ID } from '../../lib/test-ids'
 
 // Resume handoff picker (spec handoff-resume-flow Behaviour 4-5): the list
 // loads lazily at open - one state read for the configured directory plus one
-// handoffs:list call. Selecting an entry hands the English command (with the
-// resolved absolute path) to the host, which pastes it into the prompt input
-// or sends it straight when auto-send is on. The picker never reads file
-// content and never persists anything.
+// handoffs:list call. Selecting an entry hands the English command (naming
+// the file relative to the project root; absolute when it lies outside it)
+// to the host, which pastes it into the prompt input or sends it straight
+// when auto-send is on. The picker never reads file content and never
+// persists anything.
 
 interface HandoffPickerProps {
   app: AppApi
   /** Active tab project; the picker opens only with a project bound. */
   projectId: string
+  /** Project root: relative display paths and Resume commands against it. */
+  projectPath: string | null
   /** Delivers the composed Resume command (paste or auto-send upstream). */
   onPick: (text: string) => void
   /** Opens Project Settings for this project (unconfigured state). */
@@ -26,8 +29,16 @@ interface HandoffPickerProps {
 /** Plain fallback command (no path): the agent finds the handoff itself. */
 const PLAIN_RESUME_COMMAND = 'Resume from handoff'
 
-function resumeCommand(entry: HandoffEntry): string {
-  return `Resume from handoff ${entry.path}`
+/** Project-root-relative path when inside the root; absolute otherwise. */
+function displayPath(entry: HandoffEntry, projectPath: string | null): string {
+  if (projectPath === null) {
+    return entry.path
+  }
+  return relativeToProject(projectPath, entry.path) ?? entry.path
+}
+
+function resumeCommand(entry: HandoffEntry, projectPath: string | null): string {
+  return `Resume from handoff ${displayPath(entry, projectPath)}`
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -37,6 +48,7 @@ function errorMessage(error: unknown, fallback: string): string {
 export function HandoffPicker({
   app,
   projectId,
+  projectPath,
   onPick,
   onConfigure,
   onClose,
@@ -156,10 +168,16 @@ export function HandoffPicker({
                     title={entry.path}
                     data-testid={TEST_ID.handoffPickerEntry}
                     onClick={() => {
-                      pick(resumeCommand(entry))
+                      pick(resumeCommand(entry, projectPath))
                     }}
                   >
                     <span className="min-w-0 flex-1 truncate font-medium">{entry.name}</span>
+                    <span
+                      className="shrink-0 text-ink-muted"
+                      title={displayPath(entry, projectPath)}
+                    >
+                      {displayPath(entry, projectPath)}
+                    </span>
                     <span className="shrink-0 text-ink-muted">
                       {new Date(entry.modifiedAt).toLocaleString()}
                     </span>
