@@ -35,6 +35,15 @@ interface LeftNavigationProps {
   selectedChatId: string | null
   /** Chats currently showing the attention badge (chat id → tooltip data). */
   attention: Record<string, { message: string | null }>
+  /**
+   * Attention surfacing gates (attention-alert-settings spec): the badge
+   * toggle hides unselected chats' dots while the state itself survives
+   * (re-enabling re-renders without a new signal); the active-indicator
+   * toggle shows the selected chat's dot. Gating here keeps LeftNavigation
+   * presentation-only.
+   */
+  attentionBadgeEnabled: boolean
+  attentionActiveIndicatorEnabled: boolean
   onSelectProject: (projectId: string) => void
   onToggleProject: (projectId: string) => void
   onSelectChat: (projectId: string, chatId: string) => void
@@ -70,6 +79,8 @@ export function LeftNavigation({
   selectedProjectId,
   selectedChatId,
   attention,
+  attentionBadgeEnabled,
+  attentionActiveIndicatorEnabled,
   onSelectProject,
   onToggleProject,
   onSelectChat,
@@ -244,11 +255,20 @@ export function LeftNavigation({
                           {chats.map((chat) => {
                             const isChatSelected = chat.id === selectedChatId && isSelected
                             // Attention badge (chat attention badge spec
-                            // Behaviour 5): an amber dot next to the chat
-                            // name, with the OSC 9 message as its tooltip.
-                            // A collapsed project hides the badge with the
-                            // whole list (no promotion to the project row).
+                            // Behaviour 5, gated by attention-alert-settings):
+                            // an amber dot next to the chat name, with the
+                            // OSC 9 message as its tooltip. Unselected chats
+                            // show it when the badge toggle is on; the
+                            // SELECTED chat shows it only when the
+                            // active-indicator toggle is on. A collapsed
+                            // project hides the badge with the whole list
+                            // (no promotion to the project row).
                             const attentionState = attention[chat.id]
+                            const badgeVisible =
+                              attentionState !== undefined &&
+                              (isChatSelected
+                                ? attentionActiveIndicatorEnabled
+                                : attentionBadgeEnabled)
                             const badgeTitle =
                               attentionState === undefined
                                 ? undefined
@@ -267,7 +287,7 @@ export function LeftNavigation({
                                 >
                                   <Icon.chat size={12} aria-hidden className="shrink-0" />
                                   <span className="min-w-0 truncate">{chat.name}</span>
-                                  {attentionState !== undefined ? (
+                                  {badgeVisible ? (
                                     <span
                                       role="img"
                                       className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning"

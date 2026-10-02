@@ -27,16 +27,16 @@ When an agent CLI running inside a chat terminal (Claude Code, Codex CLI, OpenCo
 - Distinguishing why the agent rang (permission prompt vs finished turn): the badge is one state.
 - Parsing screen content, prompts, or agent TUI rendering to infer attention.
 - Reading, writing, or verifying agent CLIs' configuration files. Absence of a configured signal source is not an app error and is not surfaced.
-- Sounds, OS notifications, window flash, tray indicators, or a counter badge on the project row.
+- OS notifications, window flash, tray indicators, or a counter badge on the project row. The audible chime and the on/off toggles for badge, indicator, and chime are the attention-alert-settings feature (`docs/features/attention-alert-settings/spec.md`).
 - Badges for bottom-panel tabs; persistence of attention state across application runs.
-- New IPC channels, database tables, or `app_state` keys.
+- New IPC channels or database tables. The settings keys that gate badge/indicator visibility live in `attention-alert-settings`; the attention state itself stays out of `app_state`.
 
 ## Behaviour
 
 1. The only monitored streams are chat terminals' PTY output. Detection is passive: bytes reach the xterm view unchanged, and detection never consumes, blocks, delays, or rewrites them.
 2. A BEL (0x07) that the terminal parser reports as a bell raises attention for that chat. A BEL that merely terminates another escape sequence (for example a window-title set) must not: the detector relies on the terminal's parser callbacks, never on counting bytes in the raw stream.
 3. An OSC 9 notification (`ESC ] 9 ; <message>` terminated by BEL or ST) raises attention for that chat. The message text is kept for the tooltip, truncated to 120 characters. An empty message keeps the badge without a tooltip. An unterminated (malformed) OSC 9 raises nothing.
-4. A signal received while the chat is not selected sets the attention state. A signal received while the chat is selected is ignored: the user is already looking at it.
+4. A signal received while the chat is selected sets the attention state only when the active-chat indicator toggle (attention-alert-settings feature) is on — its default — so the row can show the indicator; with that toggle off the signal is ignored: the user is already looking at the chat. Visibility of the resulting dot is governed by the attention-alert-settings toggles, not by this spec.
 5. The badge shows on the chat's row in the left tree, next to the chat name, as an amber dot (Design-System §2.4). When message text exists, the badge tooltip shows it. A collapsed project hides the badge until expanded; no badge is promoted to the project row.
 6. The attention state clears when the user selects the chat, or when input is delivered to that chat's PTY through the app (typed, pasted, or submitted — any successful `terminals:write` for that chat id). Once cleared it stays clear until a new signal.
 7. Closing the chat removes the chat and its attention state with it (exit close flow unchanged). A replaced session generation starts with no attention state.
@@ -56,7 +56,7 @@ none (local single-user application).
 
 ## Data / API
 
-No IPC changes, no database tables, no `app_state` keys. In-memory renderer state keyed by chat id (chat id → `{ message: string | null }`). xterm APIs used: `onBell`, `registerOscHandler(9)`.
+No IPC changes, no database tables, no `app_state` keys for the attention state itself (in-memory renderer state keyed by chat id: chat id → `{ message: string | null }`; the visibility toggles that read this state are persisted under the attention-alert-settings feature's keys). xterm APIs used: `onBell`, `registerOscHandler(9)`.
 
 ## Edge cases
 

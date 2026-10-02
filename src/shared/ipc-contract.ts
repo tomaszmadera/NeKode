@@ -180,6 +180,14 @@ export const APP_STATE_KEY = {
   autoSendHandoffResume: 'handoffResume.autoSend',
   /** '0' disables the Ctrl+Tab chat switch; missing or '1' means enabled. */
   chatSwitchEnabled: 'chatSwitch.enabled',
+  /** '0' hides attention badges on unselected chat rows; missing or '1' means shown. */
+  attentionBadgeEnabled: 'attention.badgeEnabled',
+  /** '0' silences the attention chime for unselected chats; missing or '1' means on. */
+  attentionChimeEnabled: 'attention.chimeEnabled',
+  /** '0' silences the attention chime for the selected chat; missing or '1' means on. */
+  attentionActiveChimeEnabled: 'attention.activeChimeEnabled',
+  /** '0' hides the attention indicator on the selected chat's row; missing or '1' means shown. */
+  attentionActiveIndicatorEnabled: 'attention.activeIndicatorEnabled',
 } as const
 
 /**

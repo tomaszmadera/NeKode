@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import type { AttentionSettings } from '../../lib/attention-settings'
 import { Icon } from '../../lib/icons'
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -15,6 +16,10 @@ interface AppSettingsProps {
   error: string | null
   onThemeChange: (theme: ThemeId) => void
   onChatSwitchChange: (next: boolean) => void
+  /** Attention alert toggles (attention-alert-settings spec), all default on. */
+  attentionSettings: AttentionSettings
+  /** One handler for all four toggles; the key names the setting. */
+  onAttentionSettingChange: (key: keyof AttentionSettings, next: boolean) => void
   terminalFontSize: number
   onTerminalFontSizeChange: (size: number) => void
   onClose: () => void
@@ -54,6 +59,8 @@ export function AppSettings({
   error,
   onThemeChange,
   onChatSwitchChange,
+  attentionSettings,
+  onAttentionSettingChange,
   terminalFontSize,
   onTerminalFontSizeChange,
   onClose,
@@ -62,6 +69,10 @@ export function AppSettings({
   const selectRef = useRef<HTMLSelectElement>(null)
   const fontSizeRef = useRef<HTMLSelectElement>(null)
   const chatSwitchRef = useRef<HTMLInputElement>(null)
+  const attentionBadgeRef = useRef<HTMLInputElement>(null)
+  const attentionActiveIndicatorRef = useRef<HTMLInputElement>(null)
+  const attentionChimeRef = useRef<HTMLInputElement>(null)
+  const attentionActiveChimeRef = useRef<HTMLInputElement>(null)
   const generalTabRef = useRef<HTMLButtonElement>(null)
   const shortcutsTabRef = useRef<HTMLButtonElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -92,6 +103,10 @@ export function AppSettings({
               selectRef.current,
               fontSizeRef.current,
               chatSwitchRef.current,
+              attentionBadgeRef.current,
+              attentionActiveIndicatorRef.current,
+              attentionChimeRef.current,
+              attentionActiveChimeRef.current,
               generalTabRef.current,
               shortcutsTabRef.current,
               closeRef.current,
@@ -216,6 +231,70 @@ export function AppSettings({
                 }}
               />
               Switch chats with Ctrl+Tab
+            </label>
+            <label
+              htmlFor="app-attention-badge"
+              className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
+            >
+              <input
+                ref={attentionBadgeRef}
+                id="app-attention-badge"
+                type="checkbox"
+                checked={attentionSettings.badge}
+                data-testid={TEST_ID.settingsAttentionBadge}
+                onChange={(event) => {
+                  onAttentionSettingChange('badge', event.target.checked)
+                }}
+              />
+              Show attention badges on chat rows
+            </label>
+            <label
+              htmlFor="app-attention-active-indicator"
+              className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
+            >
+              <input
+                ref={attentionActiveIndicatorRef}
+                id="app-attention-active-indicator"
+                type="checkbox"
+                checked={attentionSettings.activeIndicator}
+                data-testid={TEST_ID.settingsAttentionActiveIndicator}
+                onChange={(event) => {
+                  onAttentionSettingChange('activeIndicator', event.target.checked)
+                }}
+              />
+              Show an attention indicator on the active chat's row
+            </label>
+            <label
+              htmlFor="app-attention-chime"
+              className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
+            >
+              <input
+                ref={attentionChimeRef}
+                id="app-attention-chime"
+                type="checkbox"
+                checked={attentionSettings.chime}
+                data-testid={TEST_ID.settingsAttentionChime}
+                onChange={(event) => {
+                  onAttentionSettingChange('chime', event.target.checked)
+                }}
+              />
+              Play a chime when a background chat needs attention
+            </label>
+            <label
+              htmlFor="app-attention-active-chime"
+              className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
+            >
+              <input
+                ref={attentionActiveChimeRef}
+                id="app-attention-active-chime"
+                type="checkbox"
+                checked={attentionSettings.activeChime}
+                data-testid={TEST_ID.settingsAttentionActiveChime}
+                onChange={(event) => {
+                  onAttentionSettingChange('activeChime', event.target.checked)
+                }}
+              />
+              Play a chime when the active chat needs attention
             </label>
           </div>
         ) : (

@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
+import { DEFAULT_ATTENTION_SETTINGS } from '../../lib/attention-settings'
+import { playAttentionChime } from '../../lib/chime'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
@@ -16,6 +18,10 @@ import { ChatWorkspace } from './ChatWorkspace'
 
 vi.mock('@xterm/xterm', () => import('../../test/xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('../../test/fit-addon-mock'))
+// The chime is stubbed at its module boundary: component tests assert call
+// gating only; the real Web Audio path has no jsdom AudioContext (its guard
+// behavior is covered in chime.test.ts).
+vi.mock('../../lib/chime', () => ({ playAttentionChime: vi.fn() }))
 
 const projectA: ProjectInfo = {
   id: 'p1',
@@ -143,6 +149,7 @@ function workspaceProps(
     selectionNonce: options.selectionNonce,
     attention: {},
     onAttentionChange: vi.fn(),
+    attentionSettings: DEFAULT_ATTENTION_SETTINGS,
     onChatClosed: vi.fn(),
     onStartNewChat: vi.fn(),
   }
@@ -156,6 +163,7 @@ describe('ChatWorkspace session host', () => {
 
   afterEach(() => {
     cleanup()
+    vi.mocked(playAttentionChime).mockClear()
   })
 
   it('shows the welcome surface until a chat is selected, then opens the workspace', async () => {
@@ -438,7 +446,10 @@ describe('ChatWorkspace session host', () => {
   // empty attention, so each test drives the state through a controlled
   // onAttentionChange spy and feeds it back on rerender.
   describe('chat attention', () => {
-    async function renderTwoChatWorkspace(bundle: AppMockBundle): Promise<{
+    async function renderTwoChatWorkspace(
+      bundle: AppMockBundle,
+      attentionSettings = DEFAULT_ATTENTION_SETTINGS,
+    ): Promise<{
       view: RenderResult
       onAttentionChange: Mock<(attention: Record<string, { message: string | null }>) => void>
     }> {
@@ -446,6 +457,7 @@ describe('ChatWorkspace session host', () => {
       const view = render(
         <ChatWorkspace
           {...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })}
+          attentionSettings={attentionSettings}
           onAttentionChange={onAttentionChange}
         />,
       )
@@ -455,6 +467,7 @@ describe('ChatWorkspace session host', () => {
       view.rerender(
         <ChatWorkspace
           {...workspaceProps(bundle, { chatId: 't2', selectionNonce: 2 })}
+          attentionSettings={attentionSettings}
           onAttentionChange={onAttentionChange}
         />,
       )
@@ -502,17 +515,86 @@ describe('ChatWorkspace session host', () => {
       )
     })
 
-    it('AC4: a signal on the selected chat does not set the state', async () => {
+    it('AC4 (attention-alert-settings): a signal on the selected chat marks it and chimes by default', async () => {
       const bundle = createAppMock()
       const { onAttentionChange } = await renderTwoChatWorkspace(bundle)
 
       act(() => {
-        bundle.emitData('t2', '\x07')
         bundle.emitData('t2', '\x1b]9;while watched\x07')
       })
-      // The eviction prune (fresh chatsByProject identity on rerender) ran
-      // once with the unchanged state; no signal call ever followed.
+      // The active-indicator default is ON: the selected chat's signal sets
+      // state so its row can show the indicator dot (spec Behaviour 3).
+      expect(onAttentionChange).toHaveBeenLastCalledWith({
+        t2: { message: 'while watched' },
+      })
+      expect(playAttentionChime).toHaveBeenCalledTimes(1)
+    })
+
+    it('AC3 (attention-alert-settings): active-indicator off suppresses the selected chat state, chime still fires', async () => {
+      const bundle = createAppMock()
+      const { onAttentionChange } = await renderTwoChatWorkspace(bundle, {
+        ...DEFAULT_ATTENTION_SETTINGS,
+        activeIndicator: false,
+      })
+
+      act(() => {
+        bundle.emitData('t2', '\x07')
+      })
       expect(onAttentionChange).toHaveBeenCalledTimes(0)
+      expect(playAttentionChime).toHaveBeenCalledTimes(1)
+    })
+
+    it('AC4 (attention-alert-settings): active chime off silences the selected chat, indicator still marks', async () => {
+      const bundle = createAppMock()
+      const { onAttentionChange } = await renderTwoChatWorkspace(bundle, {
+        ...DEFAULT_ATTENTION_SETTINGS,
+        activeChime: false,
+      })
+
+      act(() => {
+        bundle.emitData('t2', '\x07')
+      })
+      expect(onAttentionChange).toHaveBeenLastCalledWith({ t2: { message: null } })
+      expect(playAttentionChime).not.toHaveBeenCalled()
+    })
+
+    it('AC5 (attention-alert-settings): background chime off silences hidden-chat signals, state still marks', async () => {
+      const bundle = createAppMock()
+      const { onAttentionChange } = await renderTwoChatWorkspace(bundle, {
+        ...DEFAULT_ATTENTION_SETTINGS,
+        chime: false,
+      })
+
+      act(() => {
+        bundle.emitData('t1', '\x07')
+      })
+      expect(onAttentionChange).toHaveBeenLastCalledWith({ t1: { message: null } })
+      expect(playAttentionChime).not.toHaveBeenCalled()
+    })
+
+    it('AC6 (attention-alert-settings): clearing a badge never chimes', async () => {
+      const bundle = createAppMock()
+      const { view } = await renderTwoChatWorkspace(bundle)
+      act(() => {
+        bundle.emitData('t1', '\x07')
+      })
+      const chimesAfterSignal = vi.mocked(playAttentionChime).mock.calls.length
+      expect(chimesAfterSignal).toBe(1)
+
+      // Delivered input clears t1's state — and must not sound.
+      rerenderWith(
+        view,
+        bundle,
+        { chatId: 't2', selectionNonce: 2, attention: { t1: { message: null } } },
+        vi.fn(),
+      )
+      const hiddenInput = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
+        TEST_ID.terminalPromptInput,
+      )
+      fireEvent.change(hiddenInput, { target: { value: 'go on' } })
+      fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
+      await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', 'go on'))
+      expect(vi.mocked(playAttentionChime).mock.calls.length).toBe(chimesAfterSignal)
     })
 
     it('AC5: selecting a badged chat clears its badge', async () => {

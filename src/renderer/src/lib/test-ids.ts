@@ -79,6 +79,11 @@ export const TEST_ID = {
   settingsAutoSend: 'settings-auto-send',
   /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
   settingsChatSwitch: 'settings-chat-switch',
+  /** App Settings: attention alert toggles (attention-alert-settings spec). */
+  settingsAttentionBadge: 'settings-attention-badge',
+  settingsAttentionActiveIndicator: 'settings-attention-active-indicator',
+  settingsAttentionChime: 'settings-attention-chime',
+  settingsAttentionActiveChime: 'settings-attention-active-chime',
   /** App Settings: General tab button. */
   settingsGeneralTab: 'settings-general-tab',
   /** App Settings: Shortcuts tab button. */

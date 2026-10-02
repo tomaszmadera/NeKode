@@ -54,6 +54,12 @@ import {
   type RegionSizeLimits,
   useResizableRegion,
 } from './hooks/useResizableRegion'
+import {
+  ATTENTION_SETTING_KEYS,
+  type AttentionSettings,
+  DEFAULT_ATTENTION_SETTINGS,
+  parseAttentionSettings,
+} from './lib/attention-settings'
 import type { ChatAttention } from './lib/chat-attention'
 import { isNewChatChord } from './lib/new-chat-chord'
 import { writeSubmitLine } from './lib/pty-submit'
@@ -198,6 +204,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [autoSendHandoff, setAutoSendHandoff] = useState(false)
   // Ctrl+Tab chat switching (NEKODE-2): enabled unless explicitly turned off.
   const [chatSwitchEnabled, setChatSwitchEnabled] = useState(true)
+  // Attention alert settings (attention-alert-settings spec): all four
+  // default on; the persisted off-switches load once and apply live.
+  const [attentionSettings, setAttentionSettings] = useState<AttentionSettings>(
+    DEFAULT_ATTENTION_SETTINGS,
+  )
   const [handoffPickerOpen, setHandoffPickerOpen] = useState(false)
   // Pending prompt-input fill addressed to one chat (paste-only delivery).
   const [promptInjection, setPromptInjection] = useState<{
@@ -338,6 +349,45 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     },
     [app],
   )
+
+  // Attention alert settings (attention-alert-settings spec): one setter per
+  // toggle-key; the settings apply live from the set state and persist
+  // best-effort (failures surface on the notice banner like other settings).
+  const handleAttentionSettingChange = useCallback(
+    (key: keyof AttentionSettings, next: boolean): void => {
+      setAttentionSettings((previous) => ({ ...previous, [key]: next }))
+      void app.state.set(ATTENTION_SETTING_KEYS[key], next ? '1' : '0').catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to save the setting.'))
+      })
+    },
+    [app],
+  )
+
+  // Load the four persisted attention off-switches once ('0' = off, missing
+  // or anything else = on). A failed read keeps the defaults (all on) and
+  // surfaces like every other settings load.
+  useEffect(() => {
+    let alive = true
+    const keys = ATTENTION_SETTING_KEYS
+    void Promise.all([
+      app.state.get(keys.badge),
+      app.state.get(keys.chime),
+      app.state.get(keys.activeChime),
+      app.state.get(keys.activeIndicator),
+    ])
+      .then(([badge, chime, activeChime, activeIndicator]) => {
+        if (alive)
+          setAttentionSettings(
+            parseAttentionSettings({ badge, chime, activeChime, activeIndicator }),
+          )
+      })
+      .catch((error: unknown) => {
+        if (alive) setNotice(errorMessage(error, 'Failed to load settings.'))
+      })
+    return () => {
+      alive = false
+    }
+  }, [app])
 
   // Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): auto-send
   // writes the English command plus CR straight to the PTY; the default paste
@@ -1479,6 +1529,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             selectedProjectId={selectedProjectId}
             selectedChatId={selectedChatId}
             attention={chatAttention}
+            attentionBadgeEnabled={attentionSettings.badge}
+            attentionActiveIndicatorEnabled={attentionSettings.activeIndicator}
             onSelectProject={handleSelectProject}
             onToggleProject={handleToggleProject}
             onSelectChat={handleSelectChat}
@@ -1583,6 +1635,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 selectionNonce={selectionNonce}
                 attention={chatAttention}
                 onAttentionChange={setChatAttention}
+                attentionSettings={attentionSettings}
                 forceStartNewChat={chatSurfaceDiverged}
                 terminalCwds={terminalCwds}
                 terminalFontSize={terminalFontSize}
@@ -1608,6 +1661,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           error={themeState.error}
           onThemeChange={handleThemeChange}
           onChatSwitchChange={handleChatSwitchChange}
+          attentionSettings={attentionSettings}
+          onAttentionSettingChange={handleAttentionSettingChange}
           terminalFontSize={terminalFontSize}
           onTerminalFontSizeChange={handleTerminalFontSizeChange}
           onClose={() => setAppSettingsOpen(false)}
