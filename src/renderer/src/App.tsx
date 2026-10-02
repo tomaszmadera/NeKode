@@ -1143,7 +1143,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   }, [createBottomTab])
 
   const handleCloseBottomTab = useCallback(
-    (tabId: string): void => {
+    (tabId: string, options?: { viaShortcut?: boolean }): void => {
       void (async () => {
         try {
           await app.terminals.terminate(tabId)
@@ -1151,8 +1151,31 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           setNotice(errorMessage(error, 'Failed to close the terminal.'))
           return
         }
+        // A Ctrl+D close hides the panel when its project has no tabs left to
+        // show (spec Behaviour 9, NEKODE-19). The visibleTabs rule of
+        // BottomPanel (null project -> no tabs) applies too, so a shortcut
+        // close without an active project also hides instead of emptying.
+        // Hide runs after the removal below: it closes over the pre-removal
+        // tabs, mirrors of the same tick. X-button and shell exits keep
+        // Behaviour 9: the panel stays open and empty.
+        const viaShortcut = options?.viaShortcut === true
+        const projectOfRemoved = Object.entries(bottomTabsRef.current.byProject).find(([, s]) =>
+          s.tabs.some((tab) => tab.id === tabId),
+        )
         delete pendingBottomCommandsRef.current[tabId]
         setBottomTabs((previous) => closeBottomTab(previous, tabId))
+        if (viaShortcut) {
+          const activeProjectId = tabProjectIdRef.current
+          const remainingVisible =
+            activeProjectId === null
+              ? []
+              : (projectOfRemoved?.[1].tabs ?? []).filter(
+                  (tab) => tab.projectId === activeProjectId,
+                )
+          if (remainingVisible.length <= 1) {
+            hideBottomRef.current()
+          }
+        }
       })()
     },
     [app],

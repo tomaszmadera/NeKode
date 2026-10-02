@@ -402,6 +402,60 @@ describe('bottom auxiliary terminal panel', () => {
     expect(app.chats.remove).not.toHaveBeenCalled()
   })
 
+  function pressBottomKey(
+    terminal: (typeof mockTerminalInstances)[number],
+    init: KeyboardEventInit,
+  ): boolean {
+    const handler = terminal.keyHandler
+    expect(handler).not.toBeNull()
+    return (handler as (event: KeyboardEvent) => boolean)(
+      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }),
+    )
+  }
+
+  function lastBottomTerminal(): (typeof mockTerminalInstances)[number] {
+    // Creation order: the chat terminal mounts first, bottom tabs follow.
+    return mockTerminalInstances[mockTerminalInstances.length - 1]
+  }
+
+  it('Ctrl+D on the last tab hides the panel (Behaviour 9, NEKODE-19)', async () => {
+    await renderSelectedProject()
+    pressChord()
+    await screen.findByRole('button', { name: 'PowerShell' })
+    const calls = vi.mocked(app.terminals.create).mock.calls
+    const tabId = calls.map(([id]) => id).find((id) => id.startsWith('bottom:'))
+    expect(tabId).toBeTypeOf('string')
+    const terminal = lastBottomTerminal()
+    await waitFor(() => expect(terminal.keyHandler).not.toBeNull())
+    expect(bottomRegion().style.display).not.toBe('none')
+
+    expect(pressBottomKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(bottomRegion().style.display).toBe('none'))
+    expect(app.terminals.terminate).toHaveBeenCalledWith(tabId)
+    expect(screen.queryByTestId(testIdFor.bottomTab(tabId ?? ''))).toBeNull()
+    // The hide went through the toggle's persistence path (Behaviour 2).
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.bottomRegionOpen, '0')
+    expect(screen.getByTestId(testIdFor.chatRow('t1'))).toBeTruthy()
+  })
+
+  it('Ctrl+D with a sibling tab left removes only that tab and keeps the panel open', async () => {
+    await renderSelectedProject()
+    pressChord()
+    await screen.findByRole('button', { name: 'PowerShell' })
+    fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: 'PowerShell' })).toHaveLength(2),
+    )
+    const [, second] = bottomTabIds()
+    const terminal = lastBottomTerminal()
+    await waitFor(() => expect(terminal.keyHandler).not.toBeNull())
+    expect(pressBottomKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.bottomTab(second ?? ''))).toBeNull())
+    expect(bottomRegion().style.display).not.toBe('none')
+    expect(screen.getByTestId(testIdFor.bottomTab(bottomTabIds()[0] ?? ''))).toBeTruthy()
+    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.bottomRegionOpen, '0')
+  })
+
   it('shows the empty-project notice and does not create a tab without a project', async () => {
     render(<App app={app} />)
     await waitFor(() => expect(app.projects.list).toHaveBeenCalled())
