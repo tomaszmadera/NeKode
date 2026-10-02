@@ -1,0 +1,36 @@
+# CI dla NeKode: lint + typecheck + testy, to samo polecenie co lokalnie.
+# Zob. docs/development/ci.md (wyjasnienie co, kiedy i na jakim systemie).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify (lint, typecheck, tests)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm (version from packageManager field)
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 24 (with pnpm store cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify (biome lint + tsc typecheck + vitest)
+        run: pnpm run verify
