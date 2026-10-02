@@ -1,12 +1,14 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
+import type { AttentionSettings } from '../../lib/attention-settings'
 import {
   type ChatAttention,
   clearAttention,
   markAttention,
   pruneAttention,
 } from '../../lib/chat-attention'
+import { playAttentionChime } from '../../lib/chime'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ChatTerminal } from '../terminal/ChatTerminal'
 import type { PromptInjection } from '../terminal/PromptInput'
@@ -92,6 +94,15 @@ interface ChatWorkspaceProps {
   attention: Record<string, ChatAttention>
   /** Reports attention-state changes so the host can render the badges. */
   onAttentionChange: (attention: Record<string, ChatAttention>) => void
+  /**
+   * Attention alert settings (attention-alert-settings spec): the chime
+   * toggles gate the sound at this signal entry point; the active-indicator
+   * toggle gates whether the SELECTED chat's signals set state at all. The
+   * background badge toggle does not live here — it gates rendering in the
+   * left navigation, so the state survives toggle flips and a re-enabled
+   * badge re-renders without a new signal (spec AC2/AC8).
+   */
+  attentionSettings: AttentionSettings
 }
 
 function freshRecord(cwd: string): SessionRecord {
@@ -117,6 +128,7 @@ export function ChatWorkspace({
   onPromptInjected,
   attention,
   onAttentionChange,
+  attentionSettings,
 }: ChatWorkspaceProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Record<string, SessionRecord>>({})
   // Chats whose exit already started the close flow (guards duplicate exits).
@@ -129,15 +141,32 @@ export function ChatWorkspace({
   attentionRef.current = attention
   const selectedChatIdRef = useRef(selectedChatId)
   selectedChatIdRef.current = selectedChatId
+  // Latest attention settings without re-subscribing the signal path.
+  const attentionSettingsRef = useRef(attentionSettings)
+  attentionSettingsRef.current = attentionSettings
 
-  /** A signal from one of this workspace's terminals. Selected chats stay
-   * suppressed (Behaviour 4 — the user is already looking at them); a signal
-   * while hidden sets the badge (AC10). Everything keys by chat id, so one
-   * chat's signal never touches another chat's state (AC9). */
+  /** A signal from one of this workspace's terminals. A hidden chat's signal
+   * always marks the chat; the SELECTED chat's signal marks it too, but only
+   * while the active-indicator toggle is on — the user asked for a visible
+   * indicator there (attention-alert-settings spec Behaviour 3); with the
+   * toggle off the old suppression applies (the user is already looking at
+   * the chat). Both chime toggles fire here, at the signal entry point.
+   * Everything keys by chat id, so one chat's signal never touches another
+   * chat's state (AC9). */
   const handleAttention = useCallback(
     (chatId: string, message: string | null): void => {
-      if (selectedChatIdRef.current === chatId) {
+      const isActiveChat = selectedChatIdRef.current === chatId
+      if (isActiveChat) {
+        if (attentionSettingsRef.current.activeIndicator) {
+          onAttentionChange(markAttention(attentionRef.current, chatId, message))
+        }
+        if (attentionSettingsRef.current.activeChime) {
+          playAttentionChime()
+        }
         return
+      }
+      if (attentionSettingsRef.current.chime) {
+        playAttentionChime()
       }
       onAttentionChange(markAttention(attentionRef.current, chatId, message))
     },

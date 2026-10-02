@@ -8,6 +8,7 @@ import {
   projectHandoffDirKey,
 } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
+import { playAttentionChime } from './lib/chime'
 import { TERMINAL_FONT_SIZE_STORAGE_KEY } from './lib/terminal-font'
 import { THEME_STORAGE_KEY } from './lib/theme'
 import { resetMockFitAddons } from './test/fit-addon-mock'
@@ -17,6 +18,10 @@ import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 // the chat workspace in jsdom (the wiring is asserted in ChatTerminal.test).
 vi.mock('@xterm/xterm', () => import('./test/xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('./test/fit-addon-mock'))
+// The chime is stubbed at its module boundary: App-level tests assert the
+// attention-alert gating (call/no-call per toggle); the real Web Audio guard
+// behavior is covered in chime.test.ts.
+vi.mock('./lib/chime', () => ({ playAttentionChime: vi.fn() }))
 
 function createAppApiStub(): AppApi {
   return {
@@ -174,15 +179,28 @@ describe('app settings and themes', () => {
     fireEvent.change(select, { target: { value: 'default-beta-1' } })
     expect(document.documentElement.dataset.theme).toBe('default-beta-1')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default-beta-1')
-    // Tab cycles the six visible dialog controls: theme select → font size →
-    // chat-switch checkbox → General tab → Shortcuts tab → close button →
-    // back to the theme select.
+    // Tab cycles the ten visible dialog controls: theme select → font size →
+    // chat-switch checkbox → attention badge → active indicator →
+    // background chime → active chime → General tab → Shortcuts tab →
+    // close button → back to the theme select.
     fireEvent.keyDown(select, { key: 'Tab' })
     expect(document.activeElement).toBe(
       within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize),
     )
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
     expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsChatSwitch))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsAttentionBadge))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(
+      within(dialog).getByTestId(TEST_ID.settingsAttentionActiveIndicator),
+    )
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsAttentionChime))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(
+      within(dialog).getByTestId(TEST_ID.settingsAttentionActiveChime),
+    )
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
     expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsGeneralTab))
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
@@ -2309,6 +2327,7 @@ describe('chat attention badge (end to end through App)', () => {
     dataListenersByChat = new Map()
     resetMockTerminals()
     resetMockFitAddons()
+    vi.mocked(playAttentionChime).mockClear()
     vi.mocked(app.terminals.onData).mockImplementation(
       (chatId: string, callback: (data: string) => void) => {
         const listeners = dataListenersByChat.get(chatId) ?? new Set()
@@ -2386,11 +2405,197 @@ describe('chat attention badge (end to end through App)', () => {
     await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull())
   })
 
-  it('AC4: a signal in the selected chat sets no badge', async () => {
+  it('AC1: defaults on — hidden-chat signal badges and chimes; active-chat signal indicators and chimes', async () => {
+    await renderTwoChats()
+    // Hidden chat t1: badge + chime.
+    emitData('t1', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+    expect(playAttentionChime).toHaveBeenCalledTimes(1)
+
+    // Active chat t2: indicator dot + chime (attention-alert-settings spec
+    // Behaviour 3-4; the dot is the same amber element, gated, not new UI).
+    emitData('t2', '\x1b]9;watched\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
+    expect(playAttentionChime).toHaveBeenCalledTimes(2)
+
+    // Structure assertion (AC7): attention STATE never persists — the only
+    // attention.* app_state writes are the settings toggles themselves.
+    const stateKeys = vi.mocked(app.state.set).mock.calls.map(([key]) => key)
+    expect(stateKeys.filter((key) => key.startsWith('attention.'))).toEqual([])
+  })
+
+  it('AC2: badge toggle off hides hidden-chat dots, chime still fires, and re-enabling re-renders the existing state', async () => {
+    await renderTwoChats()
+    emitData('t1', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const badgeToggle = within(dialog).getByTestId(
+      TEST_ID.settingsAttentionBadge,
+    ) as HTMLInputElement
+    expect(badgeToggle.checked).toBe(true)
+    fireEvent.click(badgeToggle)
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.attentionBadgeEnabled, '0'),
+    )
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull())
+    // The state-setting channel still sounds.
+    expect(playAttentionChime).toHaveBeenCalled()
+
+    // Re-enabling re-renders the still-held state without any new signal.
+    fireEvent.click(badgeToggle)
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.attentionBadgeEnabled, '1'),
+    )
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+  })
+
+  it('AC3: active-indicator toggle off removes the active chat dot live and keeps the active chime', async () => {
     await renderTwoChats()
     emitData('t2', '\x07')
-    emitData('t2', '\x1b]9;while watched\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const indicatorToggle = within(dialog).getByTestId(
+      TEST_ID.settingsAttentionActiveIndicator,
+    ) as HTMLInputElement
+    expect(indicatorToggle.checked).toBe(true)
+    fireEvent.click(indicatorToggle)
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(
+        APP_STATE_KEY.attentionActiveIndicatorEnabled,
+        '0',
+      ),
+    )
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull())
+    // A fresh active-chat signal still sounds the active chime.
+    const chimesBefore = vi.mocked(playAttentionChime).mock.calls.length
+    emitData('t2', '\x1b]9;again\x07')
+    await waitFor(() =>
+      expect(vi.mocked(playAttentionChime).mock.calls.length).toBe(chimesBefore + 1),
+    )
     expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull()
+  })
+
+  it('AC4: active-chime toggle off silences active-chat signals, indicator still shows', async () => {
+    await renderTwoChats()
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const activeChimeToggle = within(dialog).getByTestId(
+      TEST_ID.settingsAttentionActiveChime,
+    ) as HTMLInputElement
+    expect(activeChimeToggle.checked).toBe(true)
+    fireEvent.click(activeChimeToggle)
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.attentionActiveChimeEnabled, '0'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+
+    emitData('t2', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
+    expect(playAttentionChime).not.toHaveBeenCalled()
+  })
+
+  it('AC5: background-chime toggle off silences hidden-chat signals, badge still shows', async () => {
+    await renderTwoChats()
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const chimeToggle = within(dialog).getByTestId(
+      TEST_ID.settingsAttentionChime,
+    ) as HTMLInputElement
+    expect(chimeToggle.checked).toBe(true)
+    fireEvent.click(chimeToggle)
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.attentionChimeEnabled, '0'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+
+    emitData('t1', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+    expect(playAttentionChime).not.toHaveBeenCalled()
+  })
+
+  it('AC6: a chime fires per state-setting signal and never on clears', async () => {
+    await renderTwoChats()
+    emitData('t1', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+    expect(playAttentionChime).toHaveBeenCalledTimes(1)
+
+    // Delivered input clears the state — no sound for a clear.
+    const hiddenInput = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
+      TEST_ID.terminalPromptInput,
+    )
+    fireEvent.change(hiddenInput, { target: { value: 'go on' } })
+    fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull())
+    expect(playAttentionChime).toHaveBeenCalledTimes(1)
+  })
+
+  it('AC7: persisted off-switches load at startup and gate badge and chime; other toggles keep defaults', async () => {
+    app = createAppApiStub()
+    dataListenersByChat = new Map()
+    resetMockTerminals()
+    resetMockFitAddons()
+    vi.mocked(app.terminals.onData).mockImplementation(
+      (chatId: string, callback: (data: string) => void) => {
+        const listeners = dataListenersByChat.get(chatId) ?? new Set()
+        listeners.add(callback)
+        dataListenersByChat.set(chatId, listeners)
+        return () => {
+          listeners.delete(callback)
+        }
+      },
+    )
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : key === APP_STATE_KEY.attentionBadgeEnabled
+            ? '0'
+            : key === APP_STATE_KEY.attentionChimeEnabled
+              ? '0'
+              : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
+
+    // The hydrated off state is observable on the toggles themselves.
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    expect(
+      (within(dialog).getByTestId(TEST_ID.settingsAttentionBadge) as HTMLInputElement).checked,
+    ).toBe(false)
+    expect(
+      (within(dialog).getByTestId(TEST_ID.settingsAttentionChime) as HTMLInputElement).checked,
+    ).toBe(false)
+    expect(
+      (within(dialog).getByTestId(TEST_ID.settingsAttentionActiveChime) as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+
+    // Hidden chat: badge gated off AND chime gated off.
+    emitData('t1', '\x07')
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
+    expect(playAttentionChime).not.toHaveBeenCalled()
+    // Active chat: defaults still on — indicator + active chime.
+    emitData('t2', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
+    expect(playAttentionChime).toHaveBeenCalledTimes(1)
+  })
+
+  it('AC4: a signal in the selected chat sets its indicator state (visible by default)', async () => {
+    await renderTwoChats()
+    emitData('t2', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
   })
 
   it('AC9: a signal on one chat never badges another chat', async () => {
