@@ -130,6 +130,7 @@ const projectNoRuntime: ProjectInfo = {
 }
 const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
 const chatTwo: ChatInfo = { id: 't2', projectId: 'p1', name: 'Second chat' }
+const chatOtherProject: ChatInfo = { id: 'u1', projectId: 'p2', name: 'Other project chat' }
 const buildAction: ActionControl = {
   id: 'a1',
   scope: 'project',
@@ -338,7 +339,34 @@ describe('app settings and themes', () => {
     return waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
   }
 
-  it('Ctrl+Tab switches to the next chat of the active project and persists the selection', async () => {
+  // Two projects, both with loaded chats, selection in the first project.
+  // hydrate loads only the selected project, so p2's chats enter through the
+  // expand path (the same route a user's first tree expansion takes): the
+  // click on the p2 title selects p2 (dropping the chat), then selecting
+  // chat t1 restores the p1/t1 selection while p2 stays expanded.
+  async function renderTwoProjectsWithChats(app: AppApi): Promise<void> {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectNoRuntime])
+    vi.mocked(app.chats.list).mockImplementation(async (projectId: string) =>
+      projectId === 'p1' ? [chatOne, chatTwo] : [chatOtherProject],
+    )
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    await screen.findByTestId(testIdFor.chatRow('u1'))
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.selectedChatId, 't1'),
+    )
+  }
+
+  it('Ctrl+Tab switches to the next chat across all projects and persists the selection', async () => {
     const app = createAppApiStub()
     await renderTwoChats(app)
 
@@ -375,6 +403,81 @@ describe('app settings and themes', () => {
     await waitFor(() =>
       expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't1'),
     )
+  })
+
+  it('Ctrl+Tab crosses the project boundary and makes the target project active', async () => {
+    const app = createAppApiStub()
+    await renderTwoProjectsWithChats(app)
+
+    // t1 -> t2 stays within p1...
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2'),
+    )
+    // ...t2 -> u1 crosses into p2 through the same chord.
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() =>
+      expect(app.terminals.create).toHaveBeenCalledWith('u1', projectNoRuntime.path),
+    )
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p2')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 'u1')
+    expect(screen.getByTestId(testIdFor.chatRow('u1')).getAttribute('data-selected')).toBe('true')
+    expect(screen.getByTestId(testIdFor.projectSelect('p2')).getAttribute('aria-expanded')).toBe(
+      'true',
+    )
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Plain')
+  })
+
+  it('Ctrl+Shift+Tab wraps backwards across the global list into the previous project', async () => {
+    const app = createAppApiStub()
+    await renderTwoProjectsWithChats(app)
+
+    // t1 is the first chat of the global list: backwards wraps into p2.
+    fireEvent.keyDown(window, {
+      code: 'Tab',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await waitFor(() =>
+      expect(app.terminals.create).toHaveBeenCalledWith('u1', projectNoRuntime.path),
+    )
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p2')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 'u1')
+    expect(screen.getByTestId(testIdFor.chatRow('u1')).getAttribute('data-selected')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Plain')
+  })
+
+  it('Ctrl+Tab without any selection is a no-op', async () => {
+    const app = createAppApiStub()
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    render(<App app={app} />)
+    await waitFor(() => expect(app.projects.list).toHaveBeenCalled())
+
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+
+    expect(app.chats.list).not.toHaveBeenCalled()
+    expect(app.terminals.create).not.toHaveBeenCalled()
+  })
+
+  it('turning the chat switch off also blocks cross-project switching', async () => {
+    const app = createAppApiStub()
+    await renderTwoProjectsWithChats(app)
+
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const checkbox = within(dialog).getByTestId(TEST_ID.settingsChatSwitch) as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+    fireEvent.click(checkbox)
+    await waitFor(() =>
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.chatSwitchEnabled, '0'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+    expect(app.terminals.create).not.toHaveBeenCalledWith('u1', projectNoRuntime.path)
   })
 
   it('turning the chat switch off in App Settings disables the chord', async () => {
@@ -2186,5 +2289,156 @@ describe('stale chat list responses', () => {
       resolveStaleList([chatOne])
     })
     expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull()
+  })
+})
+
+describe('chat attention badge (end to end through App)', () => {
+  let app: AppApi
+  let dataListenersByChat: Map<string, Set<(data: string) => void>>
+
+  function emitData(chatId: string, data: string): void {
+    act(() => {
+      for (const listener of [...(dataListenersByChat.get(chatId) ?? [])]) {
+        listener(data)
+      }
+    })
+  }
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    dataListenersByChat = new Map()
+    resetMockTerminals()
+    resetMockFitAddons()
+    vi.mocked(app.terminals.onData).mockImplementation(
+      (chatId: string, callback: (data: string) => void) => {
+        const listeners = dataListenersByChat.get(chatId) ?? new Set()
+        listeners.add(callback)
+        dataListenersByChat.set(chatId, listeners)
+        return () => {
+          listeners.delete(callback)
+        }
+      },
+    )
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  /** Selected project p1 with chats t1+t2, t1 selected (its view live). */
+  async function renderTwoChats(): Promise<void> {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    // Switch to t2 so BOTH views are mounted (t1 hidden, still detecting).
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
+  }
+
+  it('AC10 + badge: a BEL in the hidden chat shows the badge with no tooltip; OSC 9 carries the truncated message', async () => {
+    await renderTwoChats()
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
+
+    emitData('t1', '\x07')
+    const badge = await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+    expect(badge.getAttribute('title')).toBe('Needs attention')
+
+    // A newer OSC 9 message replaces the tooltip text, truncated to 120.
+    const long = 'x'.repeat(200)
+    emitData('t1', `\x1b]9;${long}\x07`)
+    await waitFor(() => expect(badge.getAttribute('title')).toBe('x'.repeat(120)))
+  })
+
+  it('AC2: a window-title sequence terminated by BEL shows no badge', async () => {
+    await renderTwoChats()
+    emitData('t1', '\x1b]0;PS D:\\code\\demo\x07')
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
+  })
+
+  it('AC5: selecting the badged chat clears its badge', async () => {
+    await renderTwoChats()
+    emitData('t1', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull())
+  })
+
+  it('AC6: submitting input to the badged chat through the app clears its badge and writes the PTY', async () => {
+    await renderTwoChats()
+    emitData('t1', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+
+    const hiddenInput = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
+      TEST_ID.terminalPromptInput,
+    )
+    fireEvent.change(hiddenInput, { target: { value: 'go on' } })
+    fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'go on'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull())
+  })
+
+  it('AC4: a signal in the selected chat sets no badge', async () => {
+    await renderTwoChats()
+    emitData('t2', '\x07')
+    emitData('t2', '\x1b]9;while watched\x07')
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull()
+  })
+
+  it('AC9: a signal on one chat never badges another chat', async () => {
+    await renderTwoChats()
+    emitData('t1', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull()
+  })
+
+  it('AC7: BEL and OSC 9 in a bottom-panel tab set no chat badge', async () => {
+    await renderTwoChats()
+    const openBefore = getByTestIdString(TEST_ID.bottomRegion).style.display !== 'none'
+    fireEvent.keyDown(window, {
+      code: 'Backquote',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await waitFor(() => {
+      expect(getByTestIdString(TEST_ID.bottomRegion).style.display).not.toBe('none')
+      expect(app.terminals.create).toHaveBeenCalledWith(
+        expect.stringMatching(/^bottom:/),
+        projectA.path,
+      )
+    })
+    const bottomTabId = vi
+      .mocked(app.terminals.create)
+      .mock.calls.map(([id]) => id)
+      .find((id) => id.startsWith('bottom:')) as string
+
+    emitData(bottomTabId, '\x07\x1b]9;bottom noise\x07')
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull()
+    expect(openBefore).toBe(false)
+  })
+
+  it('AC8: attention is in-memory only — restart shows no badges and no persistence calls are made for it', async () => {
+    await renderTwoChats()
+    emitData('t1', '\x07')
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+
+    cleanup()
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
+    // Structure assertion: the feature's only persistence-adjacent surface
+    // would be app.state — the badge lifecycle never touches it.
+    const stateKeys = vi.mocked(app.state.set).mock.calls.map(([key]) => key)
+    expect(stateKeys).not.toContain('chatAttention')
   })
 })

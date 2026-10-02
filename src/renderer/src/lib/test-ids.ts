@@ -59,6 +59,8 @@ export const TEST_ID = {
   editorContextMenu: 'editor-context-menu',
   editorContextCopy: 'editor-context-copy',
   editorContextSelectAll: 'editor-context-select-all',
+  /** Chat row attention badge (chat attention badge spec Behaviour 5). */
+  chatAttentionBadge: 'chat-attention-badge',
   terminalPromptInput: 'terminal-prompt-input',
   terminalPromptSend: 'terminal-prompt-send',
   terminalPromptDictation: 'terminal-prompt-dictation',
@@ -107,6 +109,8 @@ export const testIdFor = {
   projectFiles: (projectId: string): string => `project-files-${projectId}`,
   removeProject: (projectId: string): string => `remove-project-${projectId}`,
   chatRow: (chatId: string): string => `chat-row-${chatId}`,
+  /** Attention badge dot on a chat row (chat attention badge spec). */
+  chatAttentionBadge: (chatId: string): string => `chat-attention-badge-${chatId}`,
   terminalView: (chatId: string): string => `terminal-view-${chatId}`,
   bottomTab: (tabId: string): string => `bottom-tab-${tabId}`,
   bottomTabClose: (tabId: string): string => `bottom-tab-close-${tabId}`,

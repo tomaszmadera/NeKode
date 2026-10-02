@@ -6,6 +6,9 @@
   --color-app: rgb(11 13 31);
   --color-panel: rgb(26 29 44);
   --color-highlight: rgb(31 44 63);
+  /* Row hover: the left-nav project row carries its hover fill at rest, one
+     step dimmer than selection (design doc 14, 2026-10-02). */
+  --color-row-hover: rgb(28 35 52);
   --color-button: rgb(30 42 66);
   --color-button-hover: rgb(38 52 80);
   --color-tab-inactive: rgb(25 29 41);

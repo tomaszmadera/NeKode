@@ -33,6 +33,8 @@ interface LeftNavigationProps {
   expandedProjectIds: ReadonlySet<string>
   selectedProjectId: string | null
   selectedChatId: string | null
+  /** Chats currently showing the attention badge (chat id → tooltip data). */
+  attention: Record<string, { message: string | null }>
   onSelectProject: (projectId: string) => void
   onToggleProject: (projectId: string) => void
   onSelectChat: (projectId: string, chatId: string) => void
@@ -67,6 +69,7 @@ export function LeftNavigation({
   expandedProjectIds,
   selectedProjectId,
   selectedChatId,
+  attention,
   onSelectProject,
   onToggleProject,
   onSelectChat,
@@ -156,11 +159,15 @@ export function LeftNavigation({
                       narrow left accent stripe when selected; overflow-hidden
                       clips the stripe to the radius. Stripe is decorative;
                       selection stays announced by data-selected. */}
+                  {/* Hover-at-rest (user decision 2026-10-02): an unselected
+                      project row already shows a slightly dimmer highlight in
+                      the same footprint as selection, so hover cannot resize
+                      the tile. Selection keeps the brighter --color-highlight. */}
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'relative flex items-center overflow-hidden rounded-md px-1 py-1.5',
-                      isSelected && 'bg-highlight',
+                      'relative flex items-center overflow-hidden rounded-md px-1 py-1.5 transition-colors',
+                      isSelected ? 'bg-highlight' : 'hover:bg-row-hover',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
@@ -193,7 +200,7 @@ export function LeftNavigation({
                         unfolds in place, keeping the active chat intact. */}
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center rounded px-1 py-1 text-left text-sm text-project-title transition-colors hover:bg-highlight"
+                      className="flex min-w-0 flex-1 items-center rounded px-1 py-1 text-left text-sm text-project-title"
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
                       aria-expanded={isExpanded}
@@ -236,13 +243,23 @@ export function LeftNavigation({
                         <ul className="flex flex-col gap-1">
                           {chats.map((chat) => {
                             const isChatSelected = chat.id === selectedChatId && isSelected
+                            // Attention badge (chat attention badge spec
+                            // Behaviour 5): an amber dot next to the chat
+                            // name, with the OSC 9 message as its tooltip.
+                            // A collapsed project hides the badge with the
+                            // whole list (no promotion to the project row).
+                            const attentionState = attention[chat.id]
+                            const badgeTitle =
+                              attentionState === undefined
+                                ? undefined
+                                : (attentionState.message ?? 'Needs attention')
                             return (
                               <li key={chat.id} className="pl-6">
                                 <button
                                   type="button"
                                   className={cn(
-                                    'flex w-full items-center gap-1.5 rounded-md py-3 pl-3 pr-2 text-left text-xs text-chat-title hover:bg-highlight',
-                                    isChatSelected && 'bg-highlight text-ink',
+                                    'flex w-full items-center gap-1.5 rounded-md py-3 pl-3 pr-2 text-left text-xs text-chat-title',
+                                    isChatSelected ? 'bg-highlight text-ink' : 'hover:bg-row-hover',
                                   )}
                                   data-testid={testIdFor.chatRow(chat.id)}
                                   data-selected={isChatSelected ? 'true' : 'false'}
@@ -250,6 +267,15 @@ export function LeftNavigation({
                                 >
                                   <Icon.chat size={12} aria-hidden className="shrink-0" />
                                   <span className="min-w-0 truncate">{chat.name}</span>
+                                  {attentionState !== undefined ? (
+                                    <span
+                                      role="img"
+                                      className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning"
+                                      data-testid={testIdFor.chatAttentionBadge(chat.id)}
+                                      title={badgeTitle}
+                                      aria-label={`${chat.name} needs attention`}
+                                    />
+                                  ) : null}
                                 </button>
                               </li>
                             )
@@ -262,7 +288,7 @@ export function LeftNavigation({
                         <div className="mt-1 pl-6">
                           <button
                             type="button"
-                            className="flex w-full items-center gap-1.5 rounded-md py-3 pl-3 pr-2 text-left text-xs text-ink-secondary hover:bg-highlight"
+                            className="flex w-full items-center gap-1.5 rounded-md py-3 pl-3 pr-2 text-left text-xs text-ink-secondary hover:bg-row-hover"
                             data-testid={TEST_ID.newChatButton}
                             onClick={() => {
                               void onCreateChat(project.id)

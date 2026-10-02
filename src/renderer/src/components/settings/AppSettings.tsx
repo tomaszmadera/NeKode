@@ -30,8 +30,8 @@ const SHORTCUT_SECTIONS: Array<{ heading: string; rows: Array<[string, string]> 
     heading: 'Global',
     rows: [
       ['Ctrl+N', 'Start a new chat in the active project'],
-      ['Ctrl+Tab', 'Switch to the next chat'],
-      ['Ctrl+Shift+Tab', 'Switch to the previous chat'],
+      ['Ctrl+Tab', 'Switch to the next chat (across projects)'],
+      ['Ctrl+Shift+Tab', 'Switch to the previous chat (across projects)'],
       ['Ctrl+`', 'Show or hide the bottom terminal panel'],
       ['Escape', 'Close dialogs and menus'],
     ],

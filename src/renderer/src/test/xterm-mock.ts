@@ -74,10 +74,30 @@ export class MockTerminal {
   loadedAddons: unknown[] = []
   disposed = false
   buffer = { active: new MockBuffer() }
+  /** Real xterm exposes parser callbacks on `terminal.parser` (IParser). */
+  parser = {
+    registerOscHandler: (id: number, handler: (data: string) => boolean): { dispose(): void } =>
+      this.registerOscHandler(id, handler),
+  }
   /** The registered custom key handler (Ctrl+D interception, spec AC9). */
   keyHandler: ((event: KeyboardEvent) => boolean) | null = null
   private dataListeners = new Set<(data: string) => void>()
   private writeParsedListeners = new Set<() => void>()
+  // --- Parser state for the bell/OSC callbacks (chat attention detection) ---
+  private bellListeners = new Set<() => void>()
+  private oscHandlers = new Map<number, (data: string) => boolean>()
+  // A tiny VT parser slice over the written stream: ground text, ESC-prefixed
+  // sequences and OSC strings. It exists so tests can trust the SAME semantics
+  // the production detector relies on: a BEL that the parser reports as a bell
+  // fires `onBell`; a BEL that merely terminates an OSC string never does
+  // (spec AC2 — the discriminator against raw byte scanning).
+  private parseState: 'ground' | 'esc' | 'oscId' | 'oscBody' = 'ground'
+  private oscId = ''
+  private oscBody = ''
+  // ESC seen inside an OSC string: the next byte either completes an ST
+  // terminator (ESC \) or cancels the string (malformed, no dispatch). The
+  // flag survives write boundaries, like every other parser state here.
+  private oscSawEsc = false
 
   constructor(options?: unknown) {
     this.options = options
@@ -90,12 +110,129 @@ export class MockTerminal {
 
   write = vi.fn((data: unknown): void => {
     this.written.push(data)
+    if (typeof data === 'string') {
+      this.feedParser(data)
+    }
     // Real xterm fires this once the written data has been parsed into the
     // buffer; the mock parses synchronously (tests set the rows first).
     for (const listener of [...this.writeParsedListeners]) {
       listener()
     }
   })
+
+  /** Parser callbacks: standalone BEL (onBell) and OSC `id` strings. */
+  onBell = vi.fn((listener: () => void): { dispose(): void } => {
+    this.bellListeners.add(listener)
+    return {
+      dispose: () => {
+        this.bellListeners.delete(listener)
+      },
+    }
+  })
+
+  registerOscHandler = vi.fn(
+    (id: number, handler: (data: string) => boolean): { dispose(): void } => {
+      this.oscHandlers.set(id, handler)
+      return {
+        dispose: () => {
+          this.oscHandlers.delete(id)
+        },
+      }
+    },
+  )
+
+  /**
+   * Minimal VT parsing over the written stream, holding exactly the semantics
+   * the attention detector relies on: ground BEL fires `onBell`, a BEL or
+   * ESC \ (ST) terminating an OSC string dispatches it (BEL here is the
+   * terminator, never a bell), ESC-prefixed sequences swallow their final
+   * byte, and an unterminated OSC string dispatches nothing (spec AC3).
+   */
+  private feedParser(data: string): void {
+    for (const char of data) {
+      const code = char.charCodeAt(0)
+      if (this.parseState === 'oscBody') {
+        if (this.oscSawEsc) {
+          this.oscSawEsc = false
+          if (code === 0x5c) {
+            // ESC \ = ST terminator: dispatch the string.
+            this.dispatchOsc()
+          }
+          // Any other byte after ESC cancels the string (malformed).
+          this.parseState = 'ground'
+          continue
+        }
+        if (code === 0x07) {
+          // BEL terminator: dispatch; this BEL is never a bell.
+          this.dispatchOsc()
+          continue
+        }
+        if (code === 0x1b) {
+          this.oscSawEsc = true
+          continue
+        }
+        this.oscBody += char
+        continue
+      }
+      if (this.parseState === 'oscId') {
+        if (code === 0x3b) {
+          this.parseState = 'oscBody'
+          continue
+        }
+        if (code === 0x07) {
+          // An id-only OSC terminated by BEL still dispatches (empty string).
+          this.dispatchOsc()
+          continue
+        }
+        if (code === 0x1b) {
+          this.oscSawEsc = true
+          this.parseState = 'oscBody'
+          continue
+        }
+        if (code >= 0x30 && code <= 0x39) {
+          this.oscId += char
+          continue
+        }
+        // Anything else is malformed: back to ground, nothing dispatched.
+        this.parseState = 'ground'
+        continue
+      }
+      if (this.parseState === 'esc') {
+        // The byte after ESC ends the sequence. ']' opens an OSC string (the
+        // parser then reads its numeric id); anything else is a two-byte
+        // escape whose final byte is never ground content.
+        if (code === 0x5d) {
+          this.parseState = 'oscId'
+          this.oscId = ''
+          this.oscBody = ''
+          continue
+        }
+        this.parseState = 'ground'
+        continue
+      }
+      // ground:
+      if (code === 0x07) {
+        for (const listener of [...this.bellListeners]) {
+          listener()
+        }
+      } else if (code === 0x1b) {
+        this.parseState = 'esc'
+      }
+    }
+  }
+
+  private dispatchOsc(): void {
+    const id = Number.parseInt(this.oscId, 10)
+    const body = this.oscBody
+    this.parseState = 'ground'
+    this.oscId = ''
+    this.oscBody = ''
+    this.oscSawEsc = false
+    const handler = Number.isNaN(id) ? undefined : this.oscHandlers.get(id)
+    if (handler !== undefined) {
+      handler(body)
+    }
+  }
 
   /** Fires after written data has been parsed into the buffer. */
   onWriteParsed = vi.fn((listener: () => void): { dispose(): void } => {
@@ -167,6 +304,8 @@ export class MockTerminal {
     this.disposed = true
     this.dataListeners.clear()
     this.writeParsedListeners.clear()
+    this.bellListeners.clear()
+    this.oscHandlers.clear()
   })
 
   /** Simulates the user typing into the terminal. */
