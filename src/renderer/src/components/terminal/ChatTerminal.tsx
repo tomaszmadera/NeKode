@@ -66,8 +66,11 @@ interface ChatTerminalProps {
    * REPL) runs — leaving such a program is `exit()`/Ctrl+Z+Enter, not this
    * shortcut. On a non-empty line `Ctrl+D` emulates `delete-char`;
    * `Ctrl+U` clears the whole input line (see the key handler below).
+   * Shortcut closes pass `viaShortcut` so the bottom-panel host can hide the
+   * panel when this was its last tab (spec Behaviour 9, NEKODE-19); chat
+   * terminals ignore the flag.
    */
-  onClose: () => void
+  onClose: (options?: { viaShortcut?: boolean }) => void
   /** Spawn failure (e.g. project directory missing): typed error state. */
   onSpawnError: (message: string) => void
   onReady?: () => void
@@ -416,7 +419,7 @@ export function ChatTerminal({
       }
       if (isCtrlD) {
         if (isInputLineEmpty()) {
-          onCloseRef.current()
+          onCloseRef.current({ viaShortcut: true })
           return false
         }
         sendToPty('\x1b[3~')

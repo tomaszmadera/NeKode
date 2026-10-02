@@ -662,6 +662,18 @@ describe('ChatTerminal lifecycle', () => {
     expect(vi.mocked(bundle.app.terminals.write).mock.calls.length).toBe(writesBefore)
   })
 
+  it('a shortcut close reports viaShortcut so the host can tell it from an exit', async () => {
+    const onClose = vi.fn()
+    const { terminal, bundle } = renderTerminal(onClose)
+    showPrompt(terminal, bundle)
+
+    // The bottom-panel host hides the panel when the shortcut closed its last
+    // tab (bottom-auxiliary-terminal spec Behaviour 9, NEKODE-19); exit and
+    // X-button closes carry no flag and keep the panel open.
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+    expect(onClose).toHaveBeenCalledWith({ viaShortcut: true })
+  })
+
   it('focus reports before the first prompt do not block Ctrl+D on an empty line', async () => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)

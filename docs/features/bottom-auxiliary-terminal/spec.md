@@ -45,7 +45,7 @@ Give the developer a full-width auxiliary terminal panel above the status bar, w
 6. Bottom tabs belong to the project that was active when they were created. They are not chats and they do not appear in the left tree. Switching projects shows that project's own tabs and active tab. Tabs of other projects stay alive, with scrollback, while hidden. Tabs are not restored after an application restart: the open flag and height are, the tab list is not. A restored open panel with no tabs shows the empty state.
 7. `New terminal` creates a tab immediately, with no naming form. The label is the platform shell display name (for example `PowerShell` on Windows). Duplicate labels in one project are allowed. The identity of a tab is its id. The PTY is the platform shell, cwd is that project's path, and there is at most one PTY per tab.
 8. With no active project, the panel can still open and shows an empty state. `New terminal` creates nothing and shows the notice `Select or add a project before starting a terminal.` `Ctrl + `` in that state only toggles visibility and does not create a tab.
-9. Each tab has a close control. Closing a tab, or the shell exiting, terminates that tab's PTY, disposes its view, and removes the tab. The next tab in creation order becomes active, or the previous one when the closed tab was last. Closing the last tab leaves the panel open on an empty state with `New terminal`. It does not change the selected chat.
+9. Each tab has a close control. Closing a tab, or the shell exiting, terminates that tab's PTY, disposes its view, and removes the tab. The next tab in creation order becomes active, or the previous one when the closed tab was last. Closing the last tab leaves the panel open on an empty state with `New terminal`, except when the close came from the `Ctrl+D` shortcut: that hides the panel (NEKODE-19), through the same hide flow as the toggle. It does not change the selected chat.
 10. The input contract of a chat terminal applies inside a bottom terminal: `Ctrl+D` at an empty input line outside the alternate buffer closes the tab; on a non-empty line it is `delete-char`; `Ctrl+U` removes the whole input line, including text behind the cursor; both pass through in the alternate buffer. Raw `Ctrl+D` and `Ctrl+U` are not forwarded outside the alternate buffer. There is no "session ended" state.
 11. Switching bottom tabs, or hiding the panel, keeps every bottom PTY and its scrollback for the rest of the application run. Quitting the application terminates every bottom PTY and is not a tab-close: it does not remove chats. Removing a project terminates that project's bottom PTYs and drops its tabs.
 12. If the project directory is missing when a tab spawns, that tab shows an explicit error state and a retry. There is no silent retry loop. Other tabs and the chat terminals are unchanged.
@@ -93,7 +93,7 @@ Typed IPC:
 
 - No project: toggle still works; create does not (Behaviour 8).
 - Hidden panel, project already has tabs: toggle does not create another tab (Behaviour 5).
-- Open panel, last tab closed: panel stays open and empty (Behaviour 9).
+- Open panel, last tab closed: panel stays open and empty (Behaviour 9). A last tab closed by the `Ctrl+D` shortcut instead hides the panel (Behaviour 9, NEKODE-19).
 - Project switch while a bottom command is running: that tab keeps running under its own project and is hidden until that project is active again (Behaviour 6).
 - Restart: open flag and height return; tabs and PTY processes do not (Behaviour 6).
 - Quit while bottom terminals are running: PTYs die; chats remain (Behaviour 11).
@@ -127,7 +127,7 @@ Typed IPC:
 
 ## Required tests
 
-- Renderer: toggle on `event.code === 'Backquote'` with Ctrl does not call `terminals:write`; Shift+Ctrl+Backquote and an open modal do not toggle; hide keeps session state; open focuses the bottom terminal; empty project notice; create, switch, and close tabs; per-project retention inside one run; no tabs restored from a restarted state fixture; close-last shows `New terminal`; fixed chat buttons still write to the chat id.
+- Renderer: toggle on `event.code === 'Backquote'` with Ctrl does not call `terminals:write`; Shift+Ctrl+Backquote and an open modal do not toggle; hide keeps session state; open focuses the bottom terminal; empty project notice; create, switch, and close tabs; per-project retention inside one run; no tabs restored from a restarted state fixture; close-last shows `New terminal`; close-last via `Ctrl+D` hides the panel (NEKODE-19), `Ctrl+D` with a sibling tab keeps it; fixed chat buttons still write to the chat id.
 - Renderer or service: `bottom-terminal` execute opens the panel, creates one bottom tab, does not create a chat, and writes the exact command bytes plus 0x0D after ready. Confirmation cancel and a missing directory create no tab. A mutated CR byte fails the command assertion.
 - Main: migration on an empty database and on a database that already has `background` and `new-terminal` rows accepts `bottom-terminal` and leaves old rows unchanged. IPC validation accepts `bottom-terminal` and still rejects an unknown mode.
 - Terminal service, fake PTY: a bottom tab id can create, write, resize, and exit without affecting a chat id. Project removal and quit terminate only the PTYs they own. Quit does not remove chats.

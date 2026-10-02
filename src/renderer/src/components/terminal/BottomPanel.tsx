@@ -21,7 +21,8 @@ interface BottomPanelProps {
   activeTabId: string | null
   onNewTerminal: () => void
   onSelectTab: (tabId: string) => void
-  onCloseTab: (tabId: string) => void
+  /** X-button close passes no options; a Ctrl+D close passes `viaShortcut`. */
+  onCloseTab: (tabId: string, options?: { viaShortcut?: boolean }) => void
   onExit: (tabId: string) => void
   onSpawnError: (tabId: string, message: string) => void
   onRetry: (tabId: string) => void
@@ -135,7 +136,7 @@ export function BottomPanel({
                 focused={visible}
                 terminalFontSize={terminalFontSize}
                 onExit={() => onExit(tab.id)}
-                onClose={() => onCloseTab(tab.id)}
+                onClose={(options) => onCloseTab(tab.id, options)}
                 onSpawnError={(message) => onSpawnError(tab.id, message)}
                 onReady={() => onSessionReady(tab.id)}
               />
