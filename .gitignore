@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.eggs/
+
+# Environment
+.env
+.agents/.env
+.env.local
+.env.*.local
+
+# Build & cache
+dist/
+build/
+out/
+.next/
+.nuxt/
+.turbo/
+.cache/
+.pytest_cache/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+tmp/
+temp/
+_inbox/
+*.log
+
+# IDE & editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local agent harness (not published)
+.agents/
+.claude/
+.codex/
+.grok/
+.opencode/
+AGENTS.md
+CLAUDE.md
+opencode.json
+skills-lock.json
+docs/development/agent-skills.md
+docs/references/mockups/archived/
+docs/operations/github-publication-plan.md

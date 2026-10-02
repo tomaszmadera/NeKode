@@ -1,0 +1,19 @@
+# electron-builder configuration (added 2026-09-24, stack-update-hardening).
+# Everything else uses electron-builder defaults (installer format and
+# distribution strategy unchanged). Only native-module handling is explicit:
+#
+# npmRebuild: false - both native dependencies ship ABI-stable N-API prebuilds
+#   (better-sqlite3 13.x: prebuilds/*.node incl. win32-x64; node-pty 1.1.0:
+#   prebuilds/win32-x64 staged into build/Release by its install script).
+#   Rebuilding them for Electron would require VS C++ Build Tools (not
+#   available on this host) and is not needed for N-API modules.
+npmRebuild: false
+
+# Windows application icon (added 2026-10-01, user request): the branded cat
+# tile rasterized from src/renderer/src/assets/brand/cat-icon-tile.svg
+# (16-256px; regenerate with ImageMagick `-define icon:auto-resize`) as the
+# exe icon; Windows derives the taskbar icon from it in packaged builds, and
+# the NSIS installer/uninstaller icons fall back to the application icon. The
+# same file is the dev window icon (BrowserWindow icon in src/main/index.ts).
+win:
+  icon: resources/icon.ico
