@@ -92,6 +92,7 @@ testową rób przez `app.setPath('userData', ...)`, nie przez środowisko.
 - `pnpm lint` / `pnpm format` — Biome 2: statyczna analiza i formatowanie.
 - `pnpm run typecheck` — `tsc --noEmit` dla tsconfig.node.json i tsconfig.web.json.
 - `pnpm run build:unpack` / `pnpm run build:win` — paczka / instalator Windows.
+- CI: GitHub Actions biega automatycznie na każdym pull requestcie i pushu na `main` (`pnpm install --frozen-lockfile` + `pnpm run verify` na `windows-latest`); jak to działa i jak czytać wynik: [ci.md](ci.md).
 
 ## 5. Moduły natywne i diagnostyka
 
