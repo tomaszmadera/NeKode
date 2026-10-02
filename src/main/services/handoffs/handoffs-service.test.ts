@@ -111,6 +111,23 @@ describe('handoffs service', () => {
     expect(entries).toEqual([])
   })
 
+  it('excludes README.md from the listing case-insensitively', async () => {
+    const dir = 'D:/code/demo/h'
+    const handoffs = service({
+      configured: 'h',
+      entries: {
+        [dir]: [
+          { name: 'README.md', kind: 'file' },
+          { name: 'readme.md', kind: 'file' },
+          { name: 'a.md', kind: 'file' },
+        ],
+      },
+      mtimes: { [`${dir}/README.md`]: 9, [`${dir}/readme.md`]: 8, [`${dir}/a.md`]: 7 },
+    })
+    const entries = await handoffs.list('p1')
+    expect(entries.map((entry) => entry.name)).toEqual(['a.md'])
+  })
+
   it('breaks mtime ties by case-insensitive name order', async () => {
     const dir = 'D:/code/demo/h'
     const handoffs = service({

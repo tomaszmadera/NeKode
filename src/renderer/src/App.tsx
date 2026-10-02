@@ -1593,6 +1593,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         <HandoffPicker
           app={app}
           projectId={tabProjectId}
+          projectPath={projects.find((project) => project.id === tabProjectId)?.path ?? null}
           onPick={handlePromptCommand}
           onConfigure={() => {
             setHandoffPickerOpen(false)
