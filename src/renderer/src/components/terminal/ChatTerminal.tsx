@@ -73,6 +73,15 @@ interface ChatTerminalProps {
   onClose: (options?: { viaShortcut?: boolean }) => void
   /** Spawn failure (e.g. project directory missing): typed error state. */
   onSpawnError: (message: string) => void
+  /**
+   * Attention signals parsed from this terminal's stream (chat attention
+   * badge spec Behaviour 2-3): BEL as a standalone bell, or an OSC 9
+   * notification with its message text (null for an empty one). Detection is
+   * passive — these callbacks never consume, block or rewrite stream data.
+   */
+  onAttention?: (signal: { message: string | null }) => void
+  /** Delivered input to THIS chat's PTY (attention spec Behaviour 6 / AC6). */
+  onInputDelivered?: () => void
   onReady?: () => void
 }
 
@@ -115,6 +124,8 @@ export function ChatTerminal({
   onExit,
   onClose,
   onSpawnError,
+  onAttention,
+  onInputDelivered,
   onReady,
   injected = null,
   onInjected,
@@ -135,6 +146,8 @@ export function ChatTerminal({
   const onExitRef = useRef(onExit)
   const onCloseRef = useRef(onClose)
   const onSpawnErrorRef = useRef(onSpawnError)
+  const onAttentionRef = useRef(onAttention)
+  const onInputDeliveredRef = useRef(onInputDelivered)
   const onReadyRef = useRef(onReady)
   // Live copy/paste entry points of the mounted terminal, for the right-click
   // menu rendered outside the mount effect. Null while unmounted.
@@ -146,6 +159,8 @@ export function ChatTerminal({
   onExitRef.current = onExit
   onCloseRef.current = onClose
   onSpawnErrorRef.current = onSpawnError
+  onAttentionRef.current = onAttention
+  onInputDeliveredRef.current = onInputDelivered
   onReadyRef.current = onReady
 
   useEffect(() => {
@@ -197,6 +212,22 @@ export function ChatTerminal({
     })
     const unsubscribeExit = appRef.current.terminals.onExit(chatId, (exitCode) => {
       onExitRef.current(exitCode)
+    })
+
+    // --- Attention detection (chat attention badge spec Behaviour 2-3) ------
+    // Parser callbacks only: the terminal's own parser discriminates a
+    // standalone BEL (onBell) from a BEL that merely terminates another
+    // escape sequence (spec AC2), and delivers OSC 9 strings with their
+    // message text for the tooltip. The subscriptions are passive — the data
+    // path above stays untouched and never observes or rewrites these bytes.
+    const unsubscribeBell = terminal.onBell(() => {
+      onAttentionRef.current?.({ message: null })
+    })
+    const unsubscribeOsc9 = terminal.parser.registerOscHandler(9, (data) => {
+      onAttentionRef.current?.({ message: data.length > 0 ? data : null })
+      // No handler consumes the string; false leaves other handlers free to
+      // act (none are expected — the app never chains OSC 9 consumers).
+      return false
     })
 
     // --- Copy/paste (renderer clipboard + xterm selection) ------------------
@@ -280,6 +311,10 @@ export function ChatTerminal({
     const inputSubscription = terminal.onData((data) => {
       const isFocusReport = data === '\x1b[I' || data === '\x1b[O'
       if (!isFocusReport) {
+        // Delivered input (typed) clears this chat's attention badge
+        // (attention spec Behaviour 6 / AC6). Focus reports are xterm's own
+        // bytes, never user attention.
+        onInputDeliveredRef.current?.()
         const isResetByte = data === '\r' || data === '\n' || data === '\x03'
         if (!(resetBytePending && isResetByte)) {
           baseFrozen = true
@@ -293,6 +328,7 @@ export function ChatTerminal({
     // freezes the prompt base exactly like real input bytes do.
     function sendToPty(data: string): void {
       baseFrozen = true
+      onInputDeliveredRef.current?.()
       void appRef.current.terminals.write(chatId, data).catch(() => undefined)
     }
 
@@ -307,6 +343,9 @@ export function ChatTerminal({
     let cancelSubmitCr: (() => void) | undefined
     function submitPromptLine(line: string): void {
       baseFrozen = false
+      // The prompt-input submission is delivered input too (attention spec
+      // Behaviour 6 / AC6): submitted, pasted, typed — any write clears.
+      onInputDeliveredRef.current?.()
       cancelSubmitCr?.()
       cancelSubmitCr = writeSubmitLine((data) => {
         void appRef.current.terminals.write(chatId, data).catch(() => undefined)
@@ -500,6 +539,8 @@ export function ChatTerminal({
       cleanupResize()
       unsubscribeData()
       unsubscribeExit()
+      unsubscribeBell.dispose()
+      unsubscribeOsc9.dispose()
       writeParsedSubscription.dispose()
       inputSubscription.dispose()
       terminal.dispose()

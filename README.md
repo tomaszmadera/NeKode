@@ -10,9 +10,25 @@ Early development (beta). The app runs in dev mode and builds an NSIS installer.
 
 - Local project management and work context: path, detected runtimes, current branch, and Git status.
 - Chats as terminal sessions (node-pty + xterm.js), one main terminal per chat, with session preservation when switching chats.
+- Chat attention badge: when an agent CLI in a (deselected) chat rings the terminal bell or emits an OSC 9 notification, the chat row shows an amber dot — with the OSC 9 message as its tooltip. Cleared by selecting the chat or typing into it.
 - Project file browsing: directory tree and read-only preview in the Monaco Editor.
 - Project action bar: fixed `Handoff | Resume` and `Stop | Continue` actions plus configurable command buttons.
 - Persistence in SQLite (better-sqlite3).
+
+## Agent notification setup (attention badge)
+
+The attention badge only works if the agent CLI actually emits a signal. This is per-agent configuration — the app never edits it:
+
+- **Codex CLI**: `~/.codex/config.toml` → `[tui] notifications` with `notification_method = "bel"` or `"osc9"`.
+- **Claude Code**: `~/.claude/settings.json` → `"preferredNotifChannel": "terminal_bell"`.
+- **Hermes Agent**: off by default. Enable with:
+  ```
+  hermes config set display.bell_on_complete true   # bell + OSC 9 when a turn ends
+  hermes config set display.bell_on_prompt true     # bell + OSC 9 on blocking prompts (clarify/approval)
+  ```
+  (per profile; run inside the profile, e.g. with `HERMES_HOME` pointing at it).
+
+Detection is passive (xterm parser callbacks: `onBell`, OSC 9); unconfigured agents simply never light the badge. See `docs/features/chat-attention-badge/spec.md` for the full contract.
 
 ## Requirements
 

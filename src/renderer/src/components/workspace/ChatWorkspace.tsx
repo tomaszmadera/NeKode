@@ -1,6 +1,12 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
+import {
+  type ChatAttention,
+  clearAttention,
+  markAttention,
+  pruneAttention,
+} from '../../lib/chat-attention'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ChatTerminal } from '../terminal/ChatTerminal'
 import type { PromptInjection } from '../terminal/PromptInput'
@@ -77,6 +83,15 @@ interface ChatWorkspaceProps {
   promptInjection?: { chatId: string; text: string; nonce: number } | null
   /** Reports consumption (with the injection nonce) to the host. */
   onPromptInjected?: (nonce: number) => void
+  /**
+   * Chats currently showing the attention badge (chat attention badge spec),
+   * owned by the host: the badges render in the left navigation, while the
+   * terminals that detect the signals and the writes that clear them live in
+   * this subtree.
+   */
+  attention: Record<string, ChatAttention>
+  /** Reports attention-state changes so the host can render the badges. */
+  onAttentionChange: (attention: Record<string, ChatAttention>) => void
 }
 
 function freshRecord(cwd: string): SessionRecord {
@@ -100,10 +115,46 @@ export function ChatWorkspace({
   onSessionReady,
   promptInjection = null,
   onPromptInjected,
+  attention,
+  onAttentionChange,
 }: ChatWorkspaceProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Record<string, SessionRecord>>({})
   // Chats whose exit already started the close flow (guards duplicate exits).
   const closingChatIdsRef = useRef<Set<string>>(new Set())
+
+  // Attention state (chat attention badge spec) is host-owned; the workspace
+  // reads the fresh copy through a ref so signal/clear callbacks never act on
+  // a stale render snapshot.
+  const attentionRef = useRef(attention)
+  attentionRef.current = attention
+  const selectedChatIdRef = useRef(selectedChatId)
+  selectedChatIdRef.current = selectedChatId
+
+  /** A signal from one of this workspace's terminals. Selected chats stay
+   * suppressed (Behaviour 4 — the user is already looking at them); a signal
+   * while hidden sets the badge (AC10). Everything keys by chat id, so one
+   * chat's signal never touches another chat's state (AC9). */
+  const handleAttention = useCallback(
+    (chatId: string, message: string | null): void => {
+      if (selectedChatIdRef.current === chatId) {
+        return
+      }
+      onAttentionChange(markAttention(attentionRef.current, chatId, message))
+    },
+    [onAttentionChange],
+  )
+
+  /** Clearing: on chat selection (AC5) and on any delivered input (AC6).
+   * Reports only real changes — an unchanged state is not a report. */
+  const clearChatAttention = useCallback(
+    (chatId: string): void => {
+      const cleared = clearAttention(attentionRef.current, chatId)
+      if (cleared !== attentionRef.current) {
+        onAttentionChange(cleared)
+      }
+    },
+    [onAttentionChange],
+  )
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null
 
@@ -192,7 +243,27 @@ export function ChatWorkspace({
       }
       return evicted ? kept : previous
     })
-  }, [chatsByProject])
+    // Closing the chat removes its attention state with it (Behaviour 7).
+    const pruned = pruneAttention(attentionRef.current, (chatId) =>
+      Object.values(chatsByProject).some((chats) => chats.some((chat) => chat.id === chatId)),
+    )
+    // Report only real changes: identity means nothing was pruned.
+    if (pruned !== attentionRef.current) {
+      onAttentionChange(pruned)
+    }
+  }, [chatsByProject, onAttentionChange])
+
+  // Selecting a chat clears its attention badge (Behaviour 6 / AC5): the user
+  // is looking at it, so the badge has nothing left to say. The clearing rides
+  // the selection change itself — no extra flag, no race with a signal that
+  // arrives before the selection lands (a post-clear signal re-marks through
+  // the handleAttention guard, which reads the fresh selectedChatIdRef).
+  useEffect(() => {
+    if (selectedChatId === null) {
+      return
+    }
+    clearChatAttention(selectedChatId)
+  }, [selectedChatId, clearChatAttention])
 
   // Terminal exit closes the chat (spec Behaviour 11): dispose the terminal
   // view (dropping the session record unmounts it) and hand the close flow to
@@ -272,6 +343,8 @@ export function ChatWorkspace({
                 onExit={() => handleExit(chatId)}
                 onClose={() => handleExit(chatId)}
                 onSpawnError={(message) => handleSpawnError(chatId, message)}
+                onAttention={(signal) => handleAttention(chatId, signal.message)}
+                onInputDelivered={() => clearChatAttention(chatId)}
                 onReady={() => {
                   onSessionStatusRef.current?.(chatId, true)
                   onSessionReadyRef.current?.(chatId)

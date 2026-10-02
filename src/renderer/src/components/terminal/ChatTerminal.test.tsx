@@ -1229,4 +1229,123 @@ describe('ChatTerminal lifecycle', () => {
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  // --- Attention detection wiring (chat attention badge spec) --------------
+  // ChatTerminal owns only the parser subscriptions and the delivered-input
+  // report; the state lives in the workspace (integration there and in
+  // App.test). Here the raw stream forms reach the terminal view directly.
+  describe('attention detection', () => {
+    function renderTerminalWithAttention(onClose = vi.fn()): {
+      terminal: (typeof mockTerminalInstances)[number]
+      bundle: AppMockBundle
+      onAttention: ReturnType<typeof vi.fn>
+      onInputDelivered: ReturnType<typeof vi.fn>
+    } {
+      const onAttention = vi.fn()
+      const onInputDelivered = vi.fn()
+      const bundle = createAppMock()
+      render(
+        <ChatTerminal
+          app={bundle.app}
+          chatId="t1"
+          cwd="D:/code/demo"
+          visible
+          onExit={() => undefined}
+          onClose={onClose}
+          onSpawnError={() => undefined}
+          onAttention={onAttention}
+          onInputDelivered={onInputDelivered}
+        />,
+      )
+      return {
+        terminal: mockTerminalInstances[mockTerminalInstances.length - 1],
+        bundle,
+        onAttention,
+        onInputDelivered,
+      }
+    }
+
+    it('AC1: a standalone BEL reports attention', () => {
+      const { bundle, onAttention } = renderTerminalWithAttention()
+      act(() => {
+        bundle.emitData('agent done\x07')
+      })
+      expect(onAttention).toHaveBeenCalledTimes(1)
+      expect(onAttention).toHaveBeenCalledWith({ message: null })
+    })
+
+    it('AC2: a window-title sequence terminated by BEL is not attention (parser discriminates)', () => {
+      const { bundle, onAttention } = renderTerminalWithAttention()
+      act(() => {
+        // The exact false-positive source: PowerShell setting its title.
+        bundle.emitData('\x1b]0;PS D:\\code\\demo\x07')
+      })
+      expect(onAttention).not.toHaveBeenCalled()
+    })
+
+    it('AC2: the discriminator fails when detection counts raw BEL bytes', () => {
+      const { terminal, bundle, onAttention } = renderTerminalWithAttention()
+      // Pinned so the mock cannot silently drift toward byte scanning: if the
+      // parser ever reports this title-set BEL as a bell, a raw-byte detector
+      // would pass this suite while the production behavior breaks (spec
+      // Business rules). The consumer assertion keeps this test discriminating
+      // even though ChatTerminal itself forwards both callback shapes.
+      const bellSpy = vi.fn()
+      terminal.onBell(bellSpy)
+      act(() => {
+        bundle.emitData('\x1b]2;title\x07after')
+      })
+      expect(bellSpy).not.toHaveBeenCalled()
+      expect(onAttention).not.toHaveBeenCalled()
+    })
+
+    it('AC3: OSC 9 with a message reports the text; empty message reports null; unterminated reports nothing', () => {
+      const { bundle, onAttention } = renderTerminalWithAttention()
+      act(() => {
+        bundle.emitData('\x1b]9;Claude needs your permission\x07')
+      })
+      expect(onAttention).toHaveBeenCalledTimes(1)
+      expect(onAttention).toHaveBeenCalledWith({ message: 'Claude needs your permission' })
+
+      act(() => {
+        bundle.emitData('\x1b]9;\x07')
+      })
+      expect(onAttention).toHaveBeenCalledTimes(2)
+      expect(onAttention).toHaveBeenCalledWith({ message: null })
+
+      act(() => {
+        bundle.emitData('\x1b]9;never terminated')
+      })
+      expect(onAttention).toHaveBeenCalledTimes(2)
+    })
+
+    it('AC3: ST-terminated OSC 9 (ESC \\) reports attention and leaves no residue', () => {
+      const { bundle, onAttention } = renderTerminalWithAttention()
+      act(() => {
+        bundle.emitData('\x1b]9;done\x1b\\next prompt stays text')
+      })
+      expect(onAttention).toHaveBeenCalledTimes(1)
+      expect(onAttention).toHaveBeenCalledWith({ message: 'done' })
+    })
+
+    it('detection is passive: BEL and OSC bytes reach the terminal view unchanged', () => {
+      const { terminal, bundle } = renderTerminalWithAttention()
+      act(() => {
+        bundle.emitData('\x1b]9;notify\x07tail\x07')
+      })
+      expect(terminal.written).toContain('\x1b]9;notify\x07tail\x07')
+    })
+
+    it('AC6: typed input reports delivered input; focus reports do not', () => {
+      const { terminal, onInputDelivered } = renderTerminalWithAttention()
+      act(() => {
+        terminal.emitInput('abc')
+      })
+      expect(onInputDelivered).toHaveBeenCalledTimes(1)
+      act(() => {
+        terminal.emitInput('\x1b[I')
+      })
+      expect(onInputDelivered).toHaveBeenCalledTimes(1)
+    })
+  })
 })

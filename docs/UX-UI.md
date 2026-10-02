@@ -1547,8 +1547,8 @@ Required (implemented):
 
 ```text
 Ctrl + `          Toggle bottom terminal
-Ctrl + Tab        Next chat
-Ctrl + Shift+Tab  Previous chat
+Ctrl + Tab        Next chat (across all projects)
+Ctrl + Shift+Tab  Previous chat (across all projects)
 Ctrl + N          New chat in the active project (full create path: created,
                   selected, terminal shown; no-op with a notice without an
                   active project)

@@ -126,6 +126,7 @@ theme-aware.
 | `--color-app` | `rgb(11 13 31)` | Main application background |
 | `--color-panel` | `rgb(26 29 44)` | Left and right panels, tab strip, status bar, dialogs |
 | `--color-highlight` | `rgb(31 44 63)` | Highlight and selection inside panels |
+| `--color-row-hover` | `rgb(28 35 52)` | Left-nav row hover (project, chat, New Chat; dimmer than selection) |
 | `--color-button` | `rgb(30 42 66)` | Command buttons and the active tab |
 | `--color-button-hover` | `rgb(38 52 80)` | Button hover (derived) |
 | `--color-tab-inactive` | `rgb(25 29 41)` | Inactive tab background |
@@ -537,10 +538,14 @@ tiles, `mt-1` between the project tile and the chat list), so adjacent
 highlights never merge. Chat tiles and the New Chat control are indented by
 `pl-6` (24px) with a 12px inner padding (`pl-3`), and their highlight and
 hover fills stay inside that indent — they never reach under the project
-tile's alignment axis. Hover on any row shows the same highlight fill as
-selection and does not change the text color (user decision 2026-10-02;
+tile's alignment axis. Hover on any row shows the selection fill's footprint
+and does not change the text color (user decision 2026-10-02;
 previously the project name had no hover background and chat hovers lightened
-the text). The chat list has no vertical guide line and
+the text). The project row carries its hover fill on the whole row container —
+the same footprint as selection — and chat tiles and the New Chat row hover
+one step dimmer as well (`--color-row-hover`, revised 2026-10-02): hovering
+never changes a tile's size, and the brighter `--color-highlight` remains the
+selected row's fill only. The chat list has no vertical guide line and
 its rows span the full list width; the selected chat keeps the highlight
 background (`--color-highlight`) across that full width. The `+ New Chat`
 affordance is a row matching the chat rows: same height, the plus icon in
@@ -806,7 +811,8 @@ Do not remove keyboard focus indicators.
 Cursor (user decision 2026-09-29): every enabled button shows the hand
 cursor (`cursor: pointer` on `button:not(:disabled)`, `index.css`); disabled
 controls keep `not-allowed`. Hover backgrounds stay per component (section
-14): the project name row gives no hover background.
+14): left-nav rows hover one step dimmer than selection
+(`--color-row-hover`).
 
 ---
 

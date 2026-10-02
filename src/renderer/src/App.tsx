@@ -54,6 +54,7 @@ import {
   type RegionSizeLimits,
   useResizableRegion,
 } from './hooks/useResizableRegion'
+import type { ChatAttention } from './lib/chat-attention'
 import { isNewChatChord } from './lib/new-chat-chord'
 import { writeSubmitLine } from './lib/pty-submit'
 import {
@@ -207,6 +208,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const promptInjectionNonceRef = useRef(0)
   const [liveChatIds, setLiveChatIds] = useState<ReadonlySet<string>>(new Set())
   const [terminalCwds, setTerminalCwds] = useState<Record<string, string>>({})
+  // Per-chat attention badges (chat attention badge spec): in-memory for one
+  // run (AC8), keyed by chat id, rendered by the left navigation.
+  const [chatAttention, setChatAttention] = useState<Record<string, ChatAttention>>({})
   const pendingTerminalCommandsRef = useRef<Record<string, string>>({})
   // Bottom-terminal action commands waiting for their new tab's terminal to
   // become ready. Keyed by bottom tab id; consumed exactly once (AC10).
@@ -635,25 +639,34 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [persistSelection, updateTabsSession],
   )
 
-  // Ctrl+Tab / Ctrl+Shift+Tab chat switching within the active project
-  // (NEKODE-2). The switcher reuses the full select path, so persistence,
-  // nonce and tab activation behave exactly like a click on the chat row.
+  // Ctrl+Tab / Ctrl+Shift+Tab chat switching across all projects
+  // (NEKODE-18). The switcher reuses the full select path, so persistence,
+  // nonce, tree selection and tab activation behave exactly like a click on
+  // the chat row — including making the chat's project the active one.
+  // Chats of projects whose list was never loaded cannot participate: the
+  // chord stays synchronous and does not fetch.
   const handleSwitchChat = useCallback(
     (direction: 1 | -1): void => {
       const projectId = selectionRef.current.projectId
       if (projectId === null) {
         return
       }
-      const chats = chatsByProjectRef.current[projectId]
-      if (chats === undefined || chats.length === 0) {
+      const chatsByProject = chatsByProjectRef.current
+      const flat: Array<{ projectId: string; chatId: string }> = []
+      for (const project of projectsRef.current) {
+        for (const chat of chatsByProject[project.id] ?? []) {
+          flat.push({ projectId: project.id, chatId: chat.id })
+        }
+      }
+      if (flat.length === 0) {
         return
       }
       const currentId = selectionRef.current.chatId
       const currentIndex =
-        currentId === null ? -1 : chats.findIndex((chat) => chat.id === currentId)
+        currentId === null ? -1 : flat.findIndex((entry) => entry.chatId === currentId)
       const base = currentIndex === -1 ? (direction === 1 ? -1 : 0) : currentIndex
-      const next = chats[(base + direction + chats.length) % chats.length]
-      handleSelectChat(projectId, next.id)
+      const next = flat[(base + direction + flat.length) % flat.length]
+      handleSelectChat(next.projectId, next.chatId)
     },
     [handleSelectChat],
   )
@@ -1261,7 +1274,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     }
   }, [])
 
-  // Ctrl+Tab / Ctrl+Shift+Tab chat switching (NEKODE-2), capture phase so it
+  // Ctrl+Tab / Ctrl+Shift+Tab chat switching across all projects (NEKODE-18),
+  // capture phase so it
   // wins over focus traversal even inside a focused terminal, and never
   // reaches a PTY (ChatTerminal swallows the chord in its custom key handler).
   const switchChatRef = useRef(handleSwitchChat)
@@ -1464,6 +1478,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             expandedProjectIds={expandedProjectIds}
             selectedProjectId={selectedProjectId}
             selectedChatId={selectedChatId}
+            attention={chatAttention}
             onSelectProject={handleSelectProject}
             onToggleProject={handleToggleProject}
             onSelectChat={handleSelectChat}
@@ -1566,6 +1581,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 selectedProjectId={selectedProjectId}
                 selectedChatId={chatSurfaceDiverged ? null : selectedChatId}
                 selectionNonce={selectionNonce}
+                attention={chatAttention}
+                onAttentionChange={setChatAttention}
                 forceStartNewChat={chatSurfaceDiverged}
                 terminalCwds={terminalCwds}
                 terminalFontSize={terminalFontSize}

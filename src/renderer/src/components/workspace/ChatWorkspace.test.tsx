@@ -1,5 +1,6 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RenderResult } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
@@ -140,6 +141,8 @@ function workspaceProps(
     selectedProjectId: 'p1',
     selectedChatId: options.chatId,
     selectionNonce: options.selectionNonce,
+    attention: {},
+    onAttentionChange: vi.fn(),
     onChatClosed: vi.fn(),
     onStartNewChat: vi.fn(),
   }
@@ -427,5 +430,148 @@ describe('ChatWorkspace session host', () => {
     )
     expect(screen.getByTestId(TEST_ID.startNewChatState)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
+  })
+
+  // --- Attention state (chat attention badge spec) --------------------------
+  // The workspace owns signal/clear wiring for every mounted (hidden included)
+  // chat view; the host renders the state. A fresh workspaceProps() carries
+  // empty attention, so each test drives the state through a controlled
+  // onAttentionChange spy and feeds it back on rerender.
+  describe('chat attention', () => {
+    async function renderTwoChatWorkspace(bundle: AppMockBundle): Promise<{
+      view: RenderResult
+      onAttentionChange: Mock<(attention: Record<string, { message: string | null }>) => void>
+    }> {
+      const onAttentionChange = vi.fn()
+      const view = render(
+        <ChatWorkspace
+          {...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })}
+          onAttentionChange={onAttentionChange}
+        />,
+      )
+      await waitFor(() => expect(bundle.app.terminals.create).toHaveBeenCalledTimes(1))
+      // Select the second chat: the first stays mounted (hidden) and keeps
+      // detecting — the retention contract this feature leans on.
+      view.rerender(
+        <ChatWorkspace
+          {...workspaceProps(bundle, { chatId: 't2', selectionNonce: 2 })}
+          onAttentionChange={onAttentionChange}
+        />,
+      )
+      await waitFor(() => expect(bundle.app.terminals.create).toHaveBeenCalledTimes(2))
+      return { view, onAttentionChange }
+    }
+
+    function rerenderWith(
+      view: RenderResult,
+      bundle: AppMockBundle,
+      options: { chatId: string; selectionNonce: number; attention: Record<string, unknown> },
+      onAttentionChange: Mock<(attention: Record<string, { message: string | null }>) => void>,
+    ): void {
+      view.rerender(
+        <ChatWorkspace
+          {...workspaceProps(bundle, {
+            chatId: options.chatId,
+            selectionNonce: options.selectionNonce,
+          })}
+          attention={options.attention as Record<string, { message: string | null }>}
+          onAttentionChange={onAttentionChange}
+        />,
+      )
+    }
+
+    it('AC10 + AC9: a signal on a hidden chat marks exactly that chat', async () => {
+      const bundle = createAppMock()
+      const { onAttentionChange } = await renderTwoChatWorkspace(bundle)
+
+      act(() => {
+        bundle.emitData('t1', '\x07')
+      })
+      expect(onAttentionChange).toHaveBeenLastCalledWith({ t1: { message: null } })
+
+      act(() => {
+        bundle.emitData('t1', '\x1b]9;needs permission\x07')
+      })
+      // A newer OSC 9 message replaces the tooltip text (Edge cases).
+      expect(onAttentionChange).toHaveBeenLastCalledWith({
+        t1: { message: 'needs permission' },
+      })
+      // Never a second chat's entry: the key is the chat id only.
+      expect(onAttentionChange).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ t2: expect.anything() }),
+      )
+    })
+
+    it('AC4: a signal on the selected chat does not set the state', async () => {
+      const bundle = createAppMock()
+      const { onAttentionChange } = await renderTwoChatWorkspace(bundle)
+
+      act(() => {
+        bundle.emitData('t2', '\x07')
+        bundle.emitData('t2', '\x1b]9;while watched\x07')
+      })
+      // The eviction prune (fresh chatsByProject identity on rerender) ran
+      // once with the unchanged state; no signal call ever followed.
+      expect(onAttentionChange).toHaveBeenCalledTimes(0)
+    })
+
+    it('AC5: selecting a badged chat clears its badge', async () => {
+      const bundle = createAppMock()
+      const { view } = await renderTwoChatWorkspace(bundle)
+      act(() => {
+        bundle.emitData('t1', '\x07')
+      })
+
+      const selectSpy = vi.fn()
+      rerenderWith(
+        view,
+        bundle,
+        { chatId: 't1', selectionNonce: 3, attention: { t1: { message: null } } },
+        selectSpy,
+      )
+      await waitFor(() => expect(selectSpy).toHaveBeenLastCalledWith({}))
+    })
+
+    it('AC6: submitting input to a badged chat clears its badge and writes the PTY', async () => {
+      const bundle = createAppMock()
+      const { view } = await renderTwoChatWorkspace(bundle)
+      act(() => {
+        bundle.emitData('t1', '\x07')
+      })
+      const writeSpy = vi.fn()
+      rerenderWith(
+        view,
+        bundle,
+        { chatId: 't2', selectionNonce: 2, attention: { t1: { message: null } } },
+        writeSpy,
+      )
+
+      // The hidden chat's prompt input is mounted and addressable: submitting
+      // there is delivered input for exactly that chat.
+      const hiddenInput = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
+        TEST_ID.terminalPromptInput,
+      )
+      fireEvent.change(hiddenInput, { target: { value: 'go on' } })
+      fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
+      await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', 'go on'))
+      expect(writeSpy).toHaveBeenLastCalledWith({})
+    })
+
+    it('Behaviour 7: removing the chat removes its attention state with it', async () => {
+      const bundle = createAppMock()
+      const { view } = await renderTwoChatWorkspace(bundle)
+      const state = { t1: { message: null } }
+
+      const removeSpy = vi.fn()
+      view.rerender(
+        <ChatWorkspace
+          {...workspaceProps(bundle, { chatId: 't2', selectionNonce: 2 })}
+          chatsByProject={{ p1: [chatTwo] }}
+          attention={state as Record<string, { message: string | null }>}
+          onAttentionChange={removeSpy}
+        />,
+      )
+      await waitFor(() => expect(removeSpy).toHaveBeenLastCalledWith({}))
+    })
   })
 })
