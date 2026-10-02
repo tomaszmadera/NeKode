@@ -1,0 +1,165 @@
+@import "tailwindcss";
+@import "./theme.css";
+
+/* Recursive variable font (SIL OFL, see fonts/OFL.txt): one file serves two
+   families through the MONO and CASL axes. Source: @fontsource-variable/recursive
+   5.3.0 (latin + latin-ext subsets). The @font-face descriptors apply on canvas
+   too, which is what xterm draws with. */
+@font-face {
+  font-family: "Recursive Sans Casual";
+  src: url("./fonts/recursive-latin-full-normal.woff2") format("woff2-variations");
+  font-weight: 300 1000;
+  font-style: oblique 0deg 15deg;
+  font-display: swap;
+  font-variation-settings:
+    "MONO" 0,
+    "CASL" 1;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Recursive Sans Casual";
+  src: url("./fonts/recursive-latin-ext-full-normal.woff2") format("woff2-variations");
+  font-weight: 300 1000;
+  font-style: oblique 0deg 15deg;
+  font-display: swap;
+  font-variation-settings:
+    "MONO" 0,
+    "CASL" 1;
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Recursive Mono Casual";
+  src: url("./fonts/recursive-latin-full-normal.woff2") format("woff2-variations");
+  font-weight: 300 1000;
+  font-style: oblique 0deg 15deg;
+  font-display: swap;
+  font-variation-settings:
+    "MONO" 1,
+    "CASL" 1;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Recursive Mono Casual";
+  src: url("./fonts/recursive-latin-ext-full-normal.woff2") format("woff2-variations");
+  font-weight: 300 1000;
+  font-style: oblique 0deg 15deg;
+  font-display: swap;
+  font-variation-settings:
+    "MONO" 1,
+    "CASL" 1;
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--color-app);
+  color: var(--color-ink);
+  font-family:
+    "Recursive Sans Casual", Inter, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+/* Scrollbars: themed from tokens (design doc 4) and rendered only when the
+   content overflows. xterm.css forces `overflow-y: scroll` on the terminal
+   viewport, which draws a permanent gutter in the main panel even with an
+   empty scrollback; the override below restores hide-when-empty. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: var(--radius-pill);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-active);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Doubled class raises specificity above xterm.css's own
+   `.xterm .xterm-viewport` rule, so the override wins regardless of the
+   bundle order of the two stylesheets. */
+.xterm .xterm-viewport.xterm-viewport {
+  overflow-y: auto;
+}
+
+/* Custom title bar (design doc 26.2): the top strips of the app are the
+   window drag surface (titleBarStyle: 'hidden' + titleBarOverlay in the main
+   process); interactive children opt out so clicks land on the control. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Click affordance (user request 2026-09-29): the hand cursor on every
+   enabled button. Disabled buttons keep their own cursor (the
+   cursor-not-allowed utilities) because they never match :not(:disabled). */
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+/* Project Files panel entry and the returning Projects list (user requests
+   2026-09-29): the files panel slides in right-to-left once per mount, the
+   Projects list mirrors it left-to-right after leaving Project Files.
+   Duration and easing from the design doc 24 panel-expansion band; users who
+   opt out of motion get the plain swap. */
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-from-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.slide-in-from-right {
+  animation: slide-in-from-right 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.slide-in-from-left {
+  animation: slide-in-from-left 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-in-from-right,
+  .slide-in-from-left {
+    animation: none;
+  }
+}

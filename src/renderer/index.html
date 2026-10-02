@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      CSP: strict for production. Documented dev carve-outs (same tag in both
+      modes - meta CSP cannot vary by mode without extra build plumbing):
+      - connect-src ws://localhost:* : Vite HMR websocket in dev only (localhost).
+      - style-src 'unsafe-inline' : React inline style props + Tailwind runtime
+        style injection.
+      - worker-src blob: : Monaco/xterm workers when those views land.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws://localhost:*; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NeKode</title>
+  </head>
+  <body class="bg-neutral-950 text-neutral-100 select-none overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

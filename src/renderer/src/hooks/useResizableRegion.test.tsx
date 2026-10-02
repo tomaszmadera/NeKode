@@ -1,0 +1,284 @@
+import { act, cleanup, render, screen } from '@testing-library/react'
+import type React from 'react'
+import { useState } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AppApi } from '../../../shared/ipc-contract'
+import { emptyGitWorktree } from '../../../shared/ipc-contract'
+import { App, TEST_ID } from '../App'
+import { BOTTOM_REGION_SIZE, useResizableRegion } from './useResizableRegion'
+
+// App renders the chat workspace (xterm) in Stage 3; keep jsdom free of the
+// real xterm canvas here as well.
+vi.mock('@xterm/xterm', () => import('../test/xterm-mock'))
+vi.mock('@xterm/addon-fit', () => import('../test/fit-addon-mock'))
+
+// jsdom (v30) ships a PointerEvent constructor but no
+// Element.setPointerCapture; the hook guards the latter, the tests
+// exercise the former.
+
+function createAppApiStub(): AppApi {
+  return {
+    actions: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+      status: vi.fn(),
+    },
+    projects: {
+      list: vi.fn().mockResolvedValue([]),
+      add: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    },
+    chats: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    },
+    state: {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
+    },
+    terminals: {
+      create: vi.fn().mockResolvedValue('term-1'),
+      write: vi.fn().mockResolvedValue(undefined),
+      resize: vi.fn().mockResolvedValue(undefined),
+      shellName: vi.fn().mockResolvedValue('PowerShell'),
+      terminate: vi.fn().mockResolvedValue(undefined),
+      onData: vi.fn().mockReturnValue(() => undefined),
+      onExit: vi.fn().mockReturnValue(() => undefined),
+    },
+    git: {
+      getStatus: vi
+        .fn()
+        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
+    },
+    files: {
+      list: vi.fn().mockResolvedValue([]),
+      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
+      openExternal: vi.fn().mockResolvedValue(undefined),
+      openRoot: vi.fn().mockResolvedValue(undefined),
+    },
+    handoffs: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+    dialogs: {
+      pickDirectory: vi.fn().mockResolvedValue(null),
+    },
+  }
+}
+
+function firePointer(
+  element: Element,
+  type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
+  coordinates: { clientX?: number; clientY?: number } = {},
+  pointerOptions: { isPrimary?: boolean; button?: number } = {},
+): void {
+  act(() => {
+    element.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        isPrimary: true,
+        button: 0,
+        pointerId: 1,
+        ...coordinates,
+        ...pointerOptions,
+      }),
+    )
+  })
+}
+
+describe('useResizableRegion (via App shell)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  function getHandle(testId: string): HTMLElement {
+    const handle = screen.getByTestId(testId)
+    expect(handle).toBeTruthy()
+    return handle
+  }
+
+  it('resizes the left region by dragging (pointerdown → move → up)', () => {
+    render(<App app={app} />)
+    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    expect((leftNav as HTMLElement).style.width).toBe('280px')
+
+    const handle = getHandle(TEST_ID.leftResizeHandle)
+    firePointer(handle, 'pointerdown', { clientX: 280 })
+    firePointer(handle, 'pointermove', { clientX: 350 })
+    firePointer(handle, 'pointerup', { clientX: 350 })
+
+    expect((leftNav as HTMLElement).style.width).toBe('350px')
+  })
+
+  it('resizes the bottom region against window.innerHeight and clamps to min', () => {
+    const { getByTestId } = render(<YAxisHarness />)
+    const region = getByTestId('harness-bottom-region') as HTMLElement
+    const handle = getByTestId('harness-handle')
+
+    expect(region.style.height).toBe('220px')
+
+    // First move is a real change (768 - 528 = 240 > initial 220): the size
+    // must move, proving the move path is not a no-op at the initial size.
+    firePointer(handle, 'pointerdown', { clientY: 600 })
+    firePointer(handle, 'pointermove', { clientY: 528 })
+    expect(region.style.height).toBe('240px')
+
+    firePointer(handle, 'pointermove', { clientY: 700 }) // 768 - 700 = 68 < 160
+    expect(region.style.height).toBe('160px')
+
+    firePointer(handle, 'pointerup', { clientY: 700 })
+    expect(region.style.height).toBe('160px')
+  })
+
+  it('persists (onResizeEnd) only on drag end with an actual size change', () => {
+    const resizeEnds: number[] = []
+    const { getByTestId } = render(<YAxisHarness onResizeEnd={(size) => resizeEnds.push(size)} />)
+    const handle = getByTestId('harness-handle')
+
+    firePointer(handle, 'pointerdown', { clientY: 600 })
+    firePointer(handle, 'pointermove', { clientY: 528 })
+    firePointer(handle, 'pointermove', { clientY: 520 })
+    expect(resizeEnds).toEqual([]) // not during the drag
+
+    firePointer(handle, 'pointerup', { clientY: 520 })
+    expect(resizeEnds).toEqual([248]) // 768 - 520, once, on change
+
+    // Zero-move click: no persistence at all.
+    firePointer(handle, 'pointerdown', { clientY: 600 })
+    firePointer(handle, 'pointerup', { clientY: 600 })
+    expect(resizeEnds).toEqual([248])
+  })
+
+  it('ignores non-primary and non-left-button pointerdown (multi-touch/button guard)', () => {
+    render(<App app={app} />)
+    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    const handle = getHandle(TEST_ID.leftResizeHandle)
+
+    firePointer(handle, 'pointerdown', { clientX: 280 }, { isPrimary: false })
+    firePointer(handle, 'pointermove', { clientX: 400 })
+    expect((leftNav as HTMLElement).style.width).toBe('280px')
+
+    firePointer(handle, 'pointerdown', { clientX: 280 }, { button: 2 })
+    firePointer(handle, 'pointermove', { clientX: 400 })
+    expect((leftNav as HTMLElement).style.width).toBe('280px')
+  })
+
+  it('a second (multi-touch) pointerdown ends the first drag instead of stacking', () => {
+    render(<App app={app} />)
+    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    const handle = getHandle(TEST_ID.leftResizeHandle)
+
+    firePointer(handle, 'pointerdown', { clientX: 280 })
+    firePointer(handle, 'pointermove', { clientX: 320 })
+    expect((leftNav as HTMLElement).style.width).toBe('320px')
+
+    // Non-primary pointerdown force-ends the active drag (no stacked drags).
+    firePointer(handle, 'pointerdown', { clientX: 280 }, { isPrimary: false })
+    firePointer(handle, 'pointermove', { clientX: 450 })
+    expect((leftNav as HTMLElement).style.width).toBe('320px')
+  })
+
+  it('ignores pointermove before pointerdown', () => {
+    render(<App app={app} />)
+    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    firePointer(getHandle(TEST_ID.leftResizeHandle), 'pointermove', { clientX: 400 })
+    expect((leftNav as HTMLElement).style.width).toBe('280px')
+  })
+
+  it('ends the drag on pointercancel (subsequent moves do not resize)', () => {
+    render(<App app={app} />)
+    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    const handle = getHandle(TEST_ID.leftResizeHandle)
+    firePointer(handle, 'pointerdown', { clientX: 280 })
+    firePointer(handle, 'pointermove', { clientX: 320 })
+    expect((leftNav as HTMLElement).style.width).toBe('320px')
+
+    firePointer(handle, 'pointercancel', { clientX: 320 })
+    firePointer(handle, 'pointermove', { clientX: 450 })
+    firePointer(handle, 'pointermove', { clientX: 460 })
+    expect((leftNav as HTMLElement).style.width).toBe('320px')
+  })
+
+  it('ends the drag on lostpointercapture', () => {
+    render(<App app={app} />)
+    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    const handle = getHandle(TEST_ID.leftResizeHandle)
+    firePointer(handle, 'pointerdown', { clientX: 280 })
+    firePointer(handle, 'pointermove', { clientX: 330 })
+    expect((leftNav as HTMLElement).style.width).toBe('330px')
+    act(() => {
+      handle.dispatchEvent(new Event('lostpointercapture'))
+    })
+    firePointer(handle, 'pointermove', { clientX: 470 })
+    expect((leftNav as HTMLElement).style.width).toBe('330px')
+  })
+
+  it('stops dragging after pointerup (no resize on later moves)', () => {
+    render(<App app={app} />)
+    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    const handle = getHandle(TEST_ID.leftResizeHandle)
+    firePointer(handle, 'pointerdown', { clientX: 280 })
+    firePointer(handle, 'pointermove', { clientX: 300 })
+    firePointer(handle, 'pointerup', { clientX: 300 })
+    expect((leftNav as HTMLElement).style.width).toBe('300px')
+
+    firePointer(handle, 'pointermove', { clientX: 420 })
+    expect((leftNav as HTMLElement).style.width).toBe('300px')
+  })
+
+  it('cleans up an active drag on unmount (moves after unmount are inert)', () => {
+    // Note: this is a smoke test — jsdom cannot discriminate real capture
+    // retargeting; it only proves listeners do not throw on detached nodes.
+    const { unmount } = render(<App app={app} />)
+    const handle = getHandle(TEST_ID.leftResizeHandle)
+    firePointer(handle, 'pointerdown', { clientX: 280 })
+    firePointer(handle, 'pointermove', { clientX: 310 })
+    unmount()
+
+    // Dispatching on a detached node must not throw or re-enter React.
+    expect(() => {
+      handle.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+        }),
+      )
+    }).not.toThrow()
+  })
+})
+
+// App hides the bottom region in Stage 2, so the y-axis behaviour
+// (clientY measured against window.innerHeight) is exercised through a
+// minimal harness with the same controlled wiring App uses.
+function YAxisHarness({
+  onResizeEnd = () => undefined,
+}: {
+  onResizeEnd?: (size: number) => void
+}): React.JSX.Element {
+  const [size, setSize] = useState(BOTTOM_REGION_SIZE.default)
+  const bottomRegion = useResizableRegion({
+    axis: 'y',
+    minSize: BOTTOM_REGION_SIZE.min,
+    maxSize: BOTTOM_REGION_SIZE.max,
+    size,
+    onSizeChange: setSize,
+    onResizeEnd,
+  })
+
+  return (
+    <div data-testid="harness-bottom-region" style={{ height: size }}>
+      <div data-testid="harness-handle" onPointerDown={bottomRegion.startResize} />
+    </div>
+  )
+}
