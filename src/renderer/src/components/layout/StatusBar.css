@@ -1,0 +1,4 @@
+.status-bar-section {
+  border-left: 1px solid var(--color-divider);
+  padding-left: 0.75rem;
+}

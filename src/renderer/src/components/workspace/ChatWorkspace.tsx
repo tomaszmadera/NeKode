@@ -67,6 +67,11 @@ interface ChatWorkspaceProps {
    */
   onStartNewChat: () => void
   /**
+   * Welcome surface's contextual primary action (Add project): the host's
+   * existing add-project flow, forwarded so the button never duplicates it.
+   */
+  onAddProject: () => void
+  /**
    * Files-mode divergence: no active chat belongs to the tab-strip project,
    * so the terminal surface shows the Behaviour 2 "Start new chat" empty
    * state regardless of the chat lists (spec Behaviour 2).
@@ -75,6 +80,7 @@ interface ChatWorkspaceProps {
   terminalCwds?: Record<string, string>
   /** Terminal font size (App Settings); remounts nothing — see ChatTerminal. */
   terminalFontSize?: number
+  terminalCtrlVPaste?: boolean
   onSessionStatus?: (chatId: string, live: boolean) => void
   onSessionReady?: (chatId: string) => void
   /**
@@ -119,9 +125,11 @@ export function ChatWorkspace({
   selectionNonce,
   onChatClosed,
   onStartNewChat,
+  onAddProject,
   forceStartNewChat = false,
   terminalCwds = {},
   terminalFontSize,
+  terminalCtrlVPaste,
   onSessionStatus,
   onSessionReady,
   promptInjection = null,
@@ -369,6 +377,7 @@ export function ChatWorkspace({
                 cwd={record.cwd}
                 visible={chatId === selectedChatId}
                 terminalFontSize={terminalFontSize}
+                terminalCtrlVPaste={terminalCtrlVPaste}
                 onExit={() => handleExit(chatId)}
                 onClose={() => handleExit(chatId)}
                 onSpawnError={(message) => handleSpawnError(chatId, message)}
@@ -394,8 +403,19 @@ export function ChatWorkspace({
             </div>
           )
         })}
-        {showStartNewChat ? <StartNewChatSurface onStartNewChat={onStartNewChat} /> : null}
-        {selectedChatId === null && !showStartNewChat ? <WelcomeSurface /> : null}
+        {showStartNewChat ? (
+          <StartNewChatSurface
+            projectName={selectedProject?.name}
+            onStartNewChat={onStartNewChat}
+          />
+        ) : null}
+        {selectedChatId === null && !showStartNewChat ? (
+          <WelcomeSurface
+            onAddProject={onAddProject}
+            projectName={selectedProject?.name}
+            onNewChat={onStartNewChat}
+          />
+        ) : null}
       </div>
     </div>
   )

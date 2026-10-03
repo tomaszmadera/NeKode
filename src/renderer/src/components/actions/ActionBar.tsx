@@ -252,7 +252,7 @@ export function ActionBar({
                 <button
                   type="button"
                   disabled={!chatIsLive || !activeChatId}
-                  className="flex items-center gap-1.5 bg-button px-3 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
+                  className="flex items-center gap-1.5 bg-button px-3 text-sm text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
                   onClick={() => {
                     runFixed(item.action)
                   }}
@@ -294,7 +294,7 @@ export function ActionBar({
             title={details}
             data-status={status}
             className={cn(
-              'flex shrink-0 items-center gap-1.5 self-stretch rounded-md bg-button px-3 text-xs hover:bg-button-hover disabled:text-ink-disabled',
+              'flex shrink-0 items-center gap-1.5 self-stretch rounded-md bg-button px-3 text-sm hover:bg-button-hover disabled:text-ink-disabled',
               status === 'failed' && 'text-error',
               status === 'running' && 'text-info',
               status === 'idle' && 'text-ink',

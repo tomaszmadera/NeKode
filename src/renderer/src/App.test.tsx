@@ -10,6 +10,7 @@ import {
 import { App, TEST_ID, testIdFor } from './App'
 import { playAttentionChime } from './lib/chime'
 import { TERMINAL_FONT_SIZE_STORAGE_KEY } from './lib/terminal-font'
+import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { THEME_STORAGE_KEY } from './lib/theme'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
@@ -150,6 +151,34 @@ const buildAction: ActionControl = {
 }
 
 describe('app settings and themes', () => {
+  it('defaults project names to uppercase and persists the original-case preference', async () => {
+    const app = createAppApiStub()
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    const view = render(<App app={app} />)
+    const row = await screen.findByTestId(testIdFor.projectSelect('p1'))
+    expect(row.textContent).toBe('DEMO')
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const toggle = screen.getByRole('checkbox', {
+      name: 'Uppercase project names in the tree',
+    }) as HTMLInputElement
+    expect(toggle.checked).toBe(true)
+    fireEvent.click(toggle)
+    expect(row.textContent).toBe('Demo')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.projectNamesUppercase, '0')
+    view.unmount()
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.projectNamesUppercase ? '0' : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.projectSelect('p1')).textContent).toBe('Demo'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Uppercase project names in the tree' }))
+    expect(screen.getByTestId(testIdFor.projectSelect('p1')).textContent).toBe('DEMO')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.projectNamesUppercase, '1')
+  })
+
   beforeEach(() => {
     localStorage.clear()
   })
@@ -179,8 +208,8 @@ describe('app settings and themes', () => {
     fireEvent.change(select, { target: { value: 'default-beta-1' } })
     expect(document.documentElement.dataset.theme).toBe('default-beta-1')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default-beta-1')
-    // Tab cycles the ten visible dialog controls: theme select → font size →
-    // chat-switch checkbox → attention badge → active indicator →
+    // Tab cycles the visible dialog controls: theme select → font size →
+    // chat-switch checkbox → terminal paste → attention badge → active indicator →
     // background chime → active chime → General tab → Shortcuts tab →
     // close button → back to the theme select.
     fireEvent.keyDown(select, { key: 'Tab' })
@@ -188,7 +217,15 @@ describe('app settings and themes', () => {
       within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize),
     )
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole('checkbox', { name: 'Uppercase project names in the tree' }),
+    )
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
     expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsChatSwitch))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole('checkbox', { name: 'Use Ctrl+V to paste text in terminals' }),
+    )
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
     expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsAttentionBadge))
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
@@ -303,6 +340,60 @@ describe('app settings and themes', () => {
       .map((terminal) => (terminal.options as { fontSize: number }).fontSize)
   }
 
+  it('defaults Ctrl+V paste on, applies the toggle to live chat and bottom terminals, and restores it', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        readText: vi.fn().mockResolvedValue(''),
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    })
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
+    fireEvent.keyDown(window, { code: 'Backquote', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(3))
+    const terminals = mockTerminalInstances.filter((terminal) => !terminal.disposed)
+    expect(terminals).toHaveLength(3)
+    for (const terminal of terminals) terminal.buffer.active.type = 'alternate'
+
+    const pressCtrlV = (terminal: (typeof terminals)[number]): boolean | undefined =>
+      terminal.keyHandler?.(
+        new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, cancelable: true }),
+      )
+    act(() => {
+      for (const terminal of terminals) expect(pressCtrlV(terminal)).toBe(false)
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const checkbox = within(dialog).getByRole('checkbox', {
+      name: 'Use Ctrl+V to paste text in terminals',
+    }) as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+    fireEvent.click(checkbox)
+    expect(localStorage.getItem(TERMINAL_CTRL_V_PASTE_STORAGE_KEY)).toBe('0')
+    act(() => {
+      for (const terminal of terminals) expect(pressCtrlV(terminal)).toBe(true)
+    })
+    expect(app.terminals.create).toHaveBeenCalledTimes(3)
+    expect(terminals.every((terminal) => !terminal.disposed)).toBe(true)
+    cleanup()
+
+    await renderTwoChats(app)
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const restoredCheckbox = screen.getByRole('checkbox', {
+      name: 'Use Ctrl+V to paste text in terminals',
+    }) as HTMLInputElement
+    expect(restoredCheckbox.checked).toBe(false)
+    const restoredTerminal = mockTerminalInstances.filter((terminal) => !terminal.disposed)[0]
+    restoredTerminal.buffer.active.type = 'alternate'
+    act(() => expect(pressCtrlV(restoredTerminal)).toBe(true))
+    fireEvent.click(restoredCheckbox)
+    expect(localStorage.getItem(TERMINAL_CTRL_V_PASTE_STORAGE_KEY)).toBe('1')
+    act(() => expect(pressCtrlV(restoredTerminal)).toBe(false))
+  })
+
   it('persists the terminal font size and applies it live to every mounted terminal', async () => {
     const app = createAppApiStub()
     await renderTwoChats(app)
@@ -310,12 +401,12 @@ describe('app settings and themes', () => {
     // (hidden), so the switch exercises the live apply on hidden views.
     fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
-    expect(aliveFontSizeOptions()).toEqual([13, 13])
+    expect(aliveFontSizeOptions()).toEqual([15, 15])
 
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const select = within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize)
-    expect((select as HTMLSelectElement).value).toBe('13')
+    expect((select as HTMLSelectElement).value).toBe('15')
 
     fireEvent.change(select, { target: { value: '16' } })
     expect(localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY)).toBe('16')
@@ -340,7 +431,7 @@ describe('app settings and themes', () => {
     localStorage.setItem(TERMINAL_FONT_SIZE_STORAGE_KEY, 'not-a-number')
     render(<App app={app} />)
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
-    expect(aliveFontSizeOptions()).toEqual([13])
+    expect(aliveFontSizeOptions()).toEqual([15])
   })
 
   function renderTwoChats(app: AppApi): Promise<void> {
@@ -1484,7 +1575,7 @@ describe('project and chat data flow', () => {
 
     render(<App app={app} />)
     const row = await screen.findByTestId(testIdFor.projectRow('p1'))
-    expect(row.textContent).toContain('Demo')
+    expect(row.textContent).toContain('DEMO')
     expect(screen.queryByTestId(TEST_ID.emptyProjectList)).toBeNull()
 
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
@@ -1536,6 +1627,17 @@ describe('project and chat data flow', () => {
     expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
     expect(app.projects.list).toHaveBeenCalledTimes(1)
     expect(app.state.set).not.toHaveBeenCalled()
+  })
+
+  it('welcome surface: the primary action reuses the add-project flow', async () => {
+    vi.mocked(app.projects.add).mockResolvedValue(null)
+
+    render(<App app={app} />)
+    const welcome = getByTestIdString(TEST_ID.welcomeSurface)
+    // The illustration layer is decorative: never announced to screen readers.
+    expect(welcome.querySelector('[aria-hidden="true"]')).toBeTruthy()
+    fireEvent.click(screen.getByTestId(TEST_ID.welcomeAddProjectButton))
+    await waitFor(() => expect(app.projects.add).toHaveBeenCalledTimes(1))
   })
 
   it('add-project: failures surface the typed error message', async () => {
@@ -2088,7 +2190,7 @@ describe('chat closing on terminal exit (Stage 4)', () => {
     emitExit('t1', 0)
     await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
     const emptyState = await screen.findByTestId(TEST_ID.startNewChatState)
-    expect(emptyState.textContent).toContain('No chats in this project')
+    expect(emptyState.textContent).toContain(`Welcome to ${projectA.name}`)
     expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
 

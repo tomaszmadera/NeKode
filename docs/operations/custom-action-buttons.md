@@ -34,9 +34,19 @@ Pole **Icon** daje dwa tryby wyboru:
 `None` = bez ikony; przycisk pokazuje wtedy tylko znacznik statusu (idle /
 running / failed) i tytuł. Wybór nie wpływa na wykonanie komendy.
 
+## Run with PowerShell NoProfile
+
+Checkbox na dole formularza dokleja prefiks
+`powershell -NoProfile -ExecutionPolicy Bypass -File`.
+W polu Command wpisz ścieżkę skryptu i jego argumenty, np. `./scripts/start.ps1`.
+Ścieżkę ze spacjami umieść w cudzysłowach.
+Opcja działa dla każdego Run In. Przy edycji zapisanej akcji formularz pokazuje
+oryginalne polecenie i zaznaczony checkbox; odznaczenie usuwa opakowanie PowerShell.
+Przy edycji polecenia z tym prefiksem checkbox jest automatycznie zaznaczony.
+
 ## Ważne
 
-- **Nie wpisuj** `./scripts/start.ps1` — pole Command jest odpalane przez
+- Przy odznaczonym **Run with PowerShell NoProfile** pole Command jest odpalane przez
   `cmd.exe` (`spawn` z `shell: true`), a cmd nie wykona .ps1 bezpośrednio.
   Dlatego komenda opakowuje skrypt w `powershell -NoProfile -ExecutionPolicy Bypass -File ...`.
 - Run In = **Background**: `start.ps1` sam odpala `pnpm run dev` w tle

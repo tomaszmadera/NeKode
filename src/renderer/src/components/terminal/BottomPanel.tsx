@@ -32,6 +32,7 @@ interface BottomPanelProps {
   onResizeNudge: (delta: number) => void
   /** Terminal font size (App Settings), applied live to every bottom view. */
   terminalFontSize?: number
+  terminalCtrlVPaste?: boolean
 }
 
 export function BottomPanel({
@@ -51,6 +52,7 @@ export function BottomPanel({
   onResizeStart,
   onResizeNudge,
   terminalFontSize,
+  terminalCtrlVPaste,
 }: BottomPanelProps): React.JSX.Element {
   const visibleTabs =
     activeProjectId === null ? [] : tabs.filter((tab) => tab.projectId === activeProjectId)
@@ -135,6 +137,7 @@ export function BottomPanel({
                 visible={visible}
                 focused={visible}
                 terminalFontSize={terminalFontSize}
+                terminalCtrlVPaste={terminalCtrlVPaste}
                 onExit={() => onExit(tab.id)}
                 onClose={(options) => onCloseTab(tab.id, options)}
                 onSpawnError={(message) => onSpawnError(tab.id, message)}
