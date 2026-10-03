@@ -581,7 +581,10 @@ describe('ChatTerminal lifecycle', () => {
     return { allowed: (handler as (event: KeyboardEvent) => boolean)(event), event }
   }
 
-  function renderTerminal(onClose: () => void): {
+  function renderTerminal(
+    onClose: () => void,
+    terminalCtrlVPaste?: boolean,
+  ): {
     terminal: (typeof mockTerminalInstances)[number]
     bundle: AppMockBundle
   } {
@@ -595,6 +598,7 @@ describe('ChatTerminal lifecycle', () => {
         onExit={() => undefined}
         onClose={onClose}
         onSpawnError={() => undefined}
+        terminalCtrlVPaste={terminalCtrlVPaste}
       />,
     )
     return { terminal: mockTerminalInstances[mockTerminalInstances.length - 1], bundle }
@@ -976,8 +980,7 @@ describe('ChatTerminal lifecycle', () => {
   // Copy/paste (terminal-context feature): Ctrl+C with a selection copies
   // instead of aborting; Ctrl+Shift+C/V are always copy/paste; Ctrl+V/Ctrl+
   // Shift+V paste the clipboard into the PTY through xterm.paste (the same
-  // onData path as typing); the chords stay alive inside full-screen programs
-  // only for copy — paste passes through there.
+  // onData path as typing), including full-screen programs by default.
   describe('copy/paste chords', () => {
     function stubClipboard(): {
       writeText: ReturnType<typeof vi.fn>
@@ -1119,17 +1122,43 @@ describe('ChatTerminal lifecycle', () => {
       expect(event.defaultPrevented).toBe(true)
     })
 
-    it('Ctrl+V inside a full-screen program (alternate buffer) passes through untouched', async () => {
-      const clipboard = stubClipboard()
-      const { terminal, bundle } = renderTerminal(vi.fn())
-      showPrompt(terminal, bundle)
-      terminal.buffer.active.type = 'alternate'
+    it.each([false, true])(
+      'full-screen text paste with Shift=%s happens once',
+      async (shiftKey) => {
+        stubClipboard()
+        const { terminal, bundle } = renderTerminal(vi.fn())
+        showPrompt(terminal, bundle)
+        terminal.buffer.active.type = 'alternate'
 
-      expect(pressKey(terminal, { key: 'v', ctrlKey: true })).toBe(true)
-      expect(clipboard.readText).not.toHaveBeenCalled()
-      expect(terminal.paste).not.toHaveBeenCalled()
-      expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', 'pasted text')
-    })
+        const { allowed, event } = pressKeyEvent(terminal, { key: 'v', ctrlKey: true, shiftKey })
+        expect(allowed).toBe(false)
+        expect(event.defaultPrevented).toBe(true)
+        await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith('pasted text'))
+        expect(terminal.paste).toHaveBeenCalledTimes(1)
+        expect(vi.mocked(bundle.app.terminals.write).mock.calls.map(([, data]) => data)).toEqual([
+          'pasted text',
+        ])
+      },
+    )
+
+    it.each([false, true])(
+      'with Ctrl+V interception disabled, full-screen Shift=%s uses the expected path',
+      async (shiftKey) => {
+        const clipboard = stubClipboard()
+        const { terminal } = renderTerminal(vi.fn(), false)
+        terminal.buffer.active.type = 'alternate'
+
+        const { allowed, event } = pressKeyEvent(terminal, { key: 'v', ctrlKey: true, shiftKey })
+        expect(allowed).toBe(!shiftKey)
+        expect(event.defaultPrevented).toBe(shiftKey)
+        if (shiftKey) {
+          await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith('pasted text'))
+        } else {
+          expect(clipboard.readText).not.toHaveBeenCalled()
+          expect(terminal.paste).not.toHaveBeenCalled()
+        }
+      },
+    )
 
     it('right-click opens the Copy/Paste/Select All menu and its items act', async () => {
       const clipboard = stubClipboard()

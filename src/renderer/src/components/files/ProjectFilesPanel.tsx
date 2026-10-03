@@ -10,7 +10,7 @@ import { FileTree } from './FileTree'
 import type { ProjectFilesSession } from './files-types'
 
 // Left panel of Project Files mode (spec Behaviour 4): a header with the
-// project name and an icon-only back affordance (tooltip "Back to Projects"),
+// project name and a labelled "Back to Projects" button,
 // then the project's file tree. The application brand lives in the window
 // title bar. The tree area carries the inline error state (missing/unreadable
 // project directory — the rest of the app keeps working and the back
@@ -50,19 +50,19 @@ export function ProjectFilesPanel({
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >
-      {/* Header strip one level below the window title bar: the back
-          affordance opts out of dragging. Fixed 40px height and padding so
-          the strip matches the tab strip. */}
-      <div className="drag-region flex h-10 items-center gap-2 bg-app px-4">
+      {/* Separate rows keep the destination readable at the minimum panel
+          width. The back button opts out of window dragging. */}
+      <div className="drag-region flex shrink-0 flex-col gap-2 bg-app px-4 py-2">
         <button
           type="button"
-          className="no-drag flex items-center rounded p-1 text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="no-drag flex items-center gap-1.5 self-start rounded-md border border-edge bg-panel px-2 py-1.5 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           data-testid={TEST_ID.filesBackButton}
           aria-label="Back to Projects"
           title="Back to Projects"
           onClick={onBack}
         >
           <Icon.back size={12} aria-hidden />
+          Back to Projects
         </button>
         <span
           className="min-w-0 truncate text-xs font-medium text-ink"

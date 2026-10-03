@@ -180,6 +180,8 @@ export const APP_STATE_KEY = {
   autoSendHandoffResume: 'handoffResume.autoSend',
   /** '0' disables the Ctrl+Tab chat switch; missing or '1' means enabled. */
   chatSwitchEnabled: 'chatSwitch.enabled',
+  /** '0' keeps original project names in the tree; missing or '1' means uppercase. */
+  projectNamesUppercase: 'projects.namesUppercase',
   /** '0' hides attention badges on unselected chat rows; missing or '1' means shown. */
   attentionBadgeEnabled: 'attention.badgeEnabled',
   /** '0' silences the attention chime for unselected chats; missing or '1' means on. */

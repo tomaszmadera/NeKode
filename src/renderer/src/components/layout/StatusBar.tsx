@@ -9,6 +9,7 @@ import type {
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
+import './StatusBar.css'
 
 // Status bar at the very bottom of the window (UX-UI §14): the project
 // context relocated from the removed center context header — project name,
@@ -108,14 +109,17 @@ export function StatusBar({ app, project }: StatusBarProps): React.JSX.Element {
             {project.name}
           </span>
           <span
-            className="min-w-0 truncate text-ink-muted"
+            className="status-bar-section min-w-0 truncate font-mono text-ink-muted"
             data-testid={TEST_ID.statusProjectPath}
             title={project.path}
           >
             {project.path}
           </span>
           {visibleLabels.length > 0 ? (
-            <span className="flex shrink-0 items-center gap-1" data-testid={TEST_ID.statusRuntimes}>
+            <span
+              className="status-bar-section flex shrink-0 items-center gap-1"
+              data-testid={TEST_ID.statusRuntimes}
+            >
               {visibleLabels.map((label) => (
                 <span key={label} className="rounded bg-highlight px-1.5 py-0.5 text-ink-secondary">
                   {label}
@@ -147,22 +151,29 @@ function GitSection({ status }: { status: GitStatus | null }): React.JSX.Element
     // Degraded "no git" state (not a repository, git missing, any failure):
     // no branch, neutral status — never an error banner.
     return (
-      <span className="shrink-0 text-ink-disabled" data-testid={TEST_ID.statusGitNone}>
+      <span
+        className="status-bar-section shrink-0 text-ink-disabled"
+        data-testid={TEST_ID.statusGitNone}
+      >
         no git
       </span>
     )
   }
+  const { worktree } = status
+  const changes = worktree.modified + worktree.added + worktree.deleted + worktree.untracked
+  const statusColor =
+    worktree.conflicts > 0 ? 'text-error' : changes > 0 ? 'text-warning' : 'text-success'
   return (
     <>
       <span
-        className="flex shrink-0 items-center gap-1 text-ink-secondary"
+        className="status-bar-section flex shrink-0 items-center gap-1 font-mono text-ink-secondary"
         data-testid={TEST_ID.statusGitBranch}
       >
         <Icon.git size={12} aria-hidden />
         {status.branch}
       </span>
       <span
-        className="shrink-0 text-ink-muted"
+        className={`shrink-0 ${statusColor}`}
         data-testid={TEST_ID.statusGitStatus}
         title={gitHoverDetails(status.worktree)}
       >

@@ -13,6 +13,8 @@ import { isThemeId, THEMES, type ThemeId } from '../../lib/theme'
 interface AppSettingsProps {
   theme: ThemeId
   chatSwitch: boolean
+  projectNamesUppercase: boolean
+  onProjectNamesUppercaseChange: (next: boolean) => void
   error: string | null
   onThemeChange: (theme: ThemeId) => void
   onChatSwitchChange: (next: boolean) => void
@@ -22,6 +24,8 @@ interface AppSettingsProps {
   onAttentionSettingChange: (key: keyof AttentionSettings, next: boolean) => void
   terminalFontSize: number
   onTerminalFontSizeChange: (size: number) => void
+  terminalCtrlVPaste: boolean
+  onTerminalCtrlVPasteChange: (next: boolean) => void
   onClose: () => void
 }
 
@@ -46,7 +50,7 @@ const SHORTCUT_SECTIONS: Array<{ heading: string; rows: Array<[string, string]> 
     rows: [
       ['Ctrl+C', 'Copy the selection, or abort the input line'],
       ['Ctrl+Shift+C', 'Copy the selection'],
-      ['Ctrl+V / Ctrl+Shift+V', 'Paste into the terminal'],
+      ['Ctrl+V / Ctrl+Shift+V', 'Paste text (Ctrl+V in full-screen programs is configurable)'],
       ['Ctrl+D', 'Close the chat at an empty prompt, otherwise delete a character'],
       ['Ctrl+U', 'Clear the input line'],
     ],
@@ -56,6 +60,8 @@ const SHORTCUT_SECTIONS: Array<{ heading: string; rows: Array<[string, string]> 
 export function AppSettings({
   theme,
   chatSwitch,
+  projectNamesUppercase,
+  onProjectNamesUppercaseChange,
   error,
   onThemeChange,
   onChatSwitchChange,
@@ -63,12 +69,16 @@ export function AppSettings({
   onAttentionSettingChange,
   terminalFontSize,
   onTerminalFontSizeChange,
+  terminalCtrlVPaste,
+  onTerminalCtrlVPasteChange,
   onClose,
 }: AppSettingsProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const selectRef = useRef<HTMLSelectElement>(null)
   const fontSizeRef = useRef<HTMLSelectElement>(null)
   const chatSwitchRef = useRef<HTMLInputElement>(null)
+  const projectNamesUppercaseRef = useRef<HTMLInputElement>(null)
+  const terminalCtrlVPasteRef = useRef<HTMLInputElement>(null)
   const attentionBadgeRef = useRef<HTMLInputElement>(null)
   const attentionActiveIndicatorRef = useRef<HTMLInputElement>(null)
   const attentionChimeRef = useRef<HTMLInputElement>(null)
@@ -102,7 +112,9 @@ export function AppSettings({
           ? [
               selectRef.current,
               fontSizeRef.current,
+              projectNamesUppercaseRef.current,
               chatSwitchRef.current,
+              terminalCtrlVPasteRef.current,
               attentionBadgeRef.current,
               attentionActiveIndicatorRef.current,
               attentionChimeRef.current,
@@ -217,6 +229,19 @@ export function AppSettings({
               ))}
             </select>
             <label
+              htmlFor="app-project-names-uppercase"
+              className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
+            >
+              <input
+                ref={projectNamesUppercaseRef}
+                id="app-project-names-uppercase"
+                type="checkbox"
+                checked={projectNamesUppercase}
+                onChange={(event) => onProjectNamesUppercaseChange(event.target.checked)}
+              />
+              Uppercase project names in the tree
+            </label>
+            <label
               htmlFor="app-chat-switch"
               className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
             >
@@ -232,6 +257,23 @@ export function AppSettings({
               />
               Switch chats with Ctrl+Tab
             </label>
+            <label
+              htmlFor="app-terminal-ctrl-v-paste"
+              className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
+            >
+              <input
+                ref={terminalCtrlVPasteRef}
+                id="app-terminal-ctrl-v-paste"
+                type="checkbox"
+                checked={terminalCtrlVPaste}
+                onChange={(event) => onTerminalCtrlVPasteChange(event.target.checked)}
+                aria-describedby="app-terminal-ctrl-v-paste-help"
+              />
+              Use Ctrl+V to paste text in terminals
+            </label>
+            <p id="app-terminal-ctrl-v-paste-help" className="mt-1 text-xs text-ink-muted">
+              When off, full-screen programs handle Ctrl+V. Ctrl+Shift+V always pastes text.
+            </p>
             <label
               htmlFor="app-attention-badge"
               className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"

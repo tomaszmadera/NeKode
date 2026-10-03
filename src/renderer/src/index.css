@@ -163,3 +163,58 @@ button:not(:disabled) {
     animation: none;
   }
 }
+
+/* Illustrated center-surface empty states (welcome-bkg.png illustration) -----
+   Shared backdrop of the welcome surface and the "No chats in this project"
+   empty state (IllustratedSurface). The artwork is a FULL-BLEED background:
+   cover-sized, center-anchored, so it fills the workspace to every edge with
+   no letterbox and no edge fades. The cover crop only ever eats sky and the
+   dark floor within the app's real aspect-ratio range, and narrow surfaces
+   crop only the sides. With the center anchor the cat's mouth (52% of the
+   image) lands around the workspace's vertical center at every aspect ratio.
+   .artwork-content anchors to the illustration's WAVE CREST (57% of the
+   scaled image height — where its dark text area begins), so the heading
+   starts just below the horizon and never covers the face. Cover geometry:
+   scaled image height = min(100cqh, 62.54cqw), top offset = (100cqh − that)/2,
+   so crest y = 50cqh + 0.07 × min(100cqh, 62.54cqw). No fixed pixel offsets.
+   The content strip scrolls if a very short workspace cannot fit it (the
+   illustration is decorative; heading and action take priority).
+   The surface is a SIZE container: type, spacing and the compact tweaks
+   follow the actual workspace (center column minus sidebar / bottom panel),
+   not the OS window. */
+.artwork-root {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  container-type: size;
+  container-name: welcome;
+}
+
+.artwork-content {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(50cqh + 0.07 * min(100cqh, 62.54cqw) + clamp(6px, 1.2cqh, 16px));
+  bottom: 0;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  padding-inline: clamp(16px, 4cqw, 48px);
+}
+
+/* Compact presentation: the workspace (not the window) is narrow — sidebar
+   open on a small window — or short. Two separate @container blocks (the
+   production CSS optimizer drops a comma-separated condition list). The
+   cover-sized artwork needs no restacking (it fills any frame); the compact
+   tweak is tighter horizontal padding so the wrapped text keeps line length
+   readable. */
+@container welcome (max-width: 660px) {
+  .artwork-content {
+    padding-inline: 12px;
+  }
+}
+
+@container welcome (max-height: 560px) {
+  .artwork-content {
+    padding-inline: 12px;
+  }
+}

@@ -55,7 +55,7 @@
 
   /* Control scale: one control height shared by filled buttons and inputs,
      matched to the visible tab height (design doc 7, 11). */
-  --spacing-control: 2rem;
+  --spacing-control: 2.625rem;
 
   /* Terminal-facing mono stack (design doc 6.2). Keep the xterm fontFamily in
      ChatTerminal.tsx in sync with this list. */

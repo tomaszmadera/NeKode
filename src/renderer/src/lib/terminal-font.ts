@@ -4,7 +4,7 @@
 
 export const TERMINAL_FONT_SIZE_MIN = 8
 export const TERMINAL_FONT_SIZE_MAX = 32
-export const DEFAULT_TERMINAL_FONT_SIZE = 13
+export const DEFAULT_TERMINAL_FONT_SIZE = 15
 export const TERMINAL_FONT_SIZE_STORAGE_KEY = 'nekode.terminal-font-size.v1'
 
 /** Every selectable size, ascending (the App Settings select options). */

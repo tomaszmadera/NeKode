@@ -152,6 +152,7 @@ function workspaceProps(
     attentionSettings: DEFAULT_ATTENTION_SETTINGS,
     onChatClosed: vi.fn(),
     onStartNewChat: vi.fn(),
+    onAddProject: vi.fn(),
   }
 }
 
@@ -173,6 +174,11 @@ describe('ChatWorkspace session host', () => {
     expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.chatWorkspace)).toBeNull()
     expect(bundle.app.terminals.create).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading').textContent).toBe('Welcome to Demo')
+    expect(screen.getByText("Start a new chat to work in this project's directory.")).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
+    expect(props.onStartNewChat).toHaveBeenCalledTimes(1)
+    expect(props.onAddProject).not.toHaveBeenCalled()
 
     rerender(<ChatWorkspace {...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })} />)
     expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()

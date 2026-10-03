@@ -178,7 +178,7 @@ Use borders mainly for structure, not decoration.
 The double-button divider is the toolbar-standard single hairline
 (2026-09-29, replacing an earlier two-tone groove the user found too
 intense): 1px wide, vertically centered, and shorter than the buttons
-(`16px` in the `32px` control height), in `--color-divider`. The segment
+(`16px` in the `42px` control height), in `--color-divider`. The segment
 group carries the button surface (`--color-button`) behind the whole
 divider column, so no dark gap shows above and below the hairline and the
 group reads as one component.
@@ -223,8 +223,13 @@ Recursive is bundled locally under the SIL Open Font License (`src/renderer/src/
 | Body | 13px | 400 | 19px |
 | Compact UI | 12px | 500 | 16px |
 | Metadata | 11px | 500 | 15px |
-| Terminal | 12.5–13px | 400 | 19–20px |
+| Terminal (default) | 15px | 400 | xterm default |
 | Large status heading | 14px | 600 | 19px |
+
+Workspace navigation and actions (user decision 2026-10-03): the Projects
+heading, project/chat names, New Chat controls, center tabs and action-row
+button labels share Recursive Sans Casual at 14px, weight 400 and 20px line
+height (`text-sm`). The Projects heading uses normal letter spacing.
 
 Avoid oversized headings. NeKode should feel like a workspace, not a content site.
 
@@ -282,13 +287,14 @@ Recommended component spacing:
 - major section gap: `16px`
 
 Control height: filled buttons and input frames share one height token,
-`--spacing-control` (2rem = 32px), matched to the visible tab height (the tab
-strip is `36px` minus its `4px` top padding). Ghost inline controls (row
+`--spacing-control` (2.625rem = 42px, user decision 2026-10-03), matched to
+the visible tab height (the tab strip is `50px` minus its `8px` top padding)
+and project/chat tiles. This is a 31.25% increase from 32px. Ghost inline controls (row
 actions, tab close, tree chevrons) keep row scale.
 
 Implemented (2026-09-28): the action row pads its controls (`8px` above,
 below and at the sides, one grid step on each axis) instead of stretching
-them flush to the row borders, so filled buttons keep the `32px` control
+them flush to the row borders, so filled buttons keep the shared control
 height with visible breathing room.
 
 ---
@@ -384,10 +390,10 @@ glyph change stays a one-file edit. Icons inherit `currentColor` and carry
 Recommended height:
 
 - compact: `28px`
-- default: `30–32px`
+- default: `42px` (user decision 2026-10-03)
 
 Implemented (2026-09-28): filled `--color-button` actions use the shared
-`--spacing-control` height (32px), the same visual height as tabs; toolbar
+`--spacing-control` height (42px), the same visual height as tabs and project/chat tiles; toolbar
 buttons stretch to their bar (`self-stretch`), standalone buttons use the
 token directly. Ghost row controls stay compact.
 
@@ -531,8 +537,8 @@ Selected chat:
 Implemented (2026-09-28, revised 2026-10-02): project rows render in sentence
 case (14px), and every chat row carries the chat bubble icon (`Icon.chat`, 12px)
 before the shell display name. Left-navigation metrics (2026-10-02 polish): the
-project row is a 40px tile (`py-1.5` row around the name button's `py-1`);
-chat rows are equal-height 40px tiles (`py-3`), level with the
+project row and chat rows use the shared `h-control` height (42px since
+2026-10-03), including the New Chat control, level with the
 project tile; all vertical gaps are the same 4px step (`ul gap-1` between chat
 tiles, `mt-1` between the project tile and the chat list), so adjacent
 highlights never merge. Chat tiles and the New Chat control are indented by
@@ -578,7 +584,7 @@ background: var(--color-terminal);
 Typography:
 
 - monospace,
-- 12.5–13px,
+- 15px by default (App Settings allows 8-32px; saved choices are preserved),
 - 1.5-ish line height.
 
 Color mapping:
@@ -919,9 +925,14 @@ one level below, so nothing interactive sits under the caption buttons and
 the tab strip needs no `env(titlebar-area-width)` inset anymore. The tab
 strip shares the action row's metrics (2026-09-29):
 `px-2 pt-2` insets, so the first tab's left edge aligns with the first
-action-row button and the tabs keep the 32px control height inside the 40px
-strip. The title bar, tab strip and Files header share that 40px height
-(2026-09-29): the Files header is a fixed `h-10` strip that centers its
+action-row button. Since 2026-10-03 tabs use the shared 42px control height
+inside a 50px strip (`--spacing-control` plus 8px top padding).
+The Projects header height is 47px (`--spacing-control` plus 5px), with an 8px
+top margin and 4px first-project inset. The first project tile therefore
+starts 59px below the content row, matching the action buttons after the
+50px tab strip, 1px border and 8px padding (without an error notice).
+The title bar
+and Files header keep their 40px height: the Files header is a fixed `h-10` strip that centers its
 controls (the back row). The
 hairline under the tab strip is owned by the action row
 (`border-t`), not by the tab strip: the 36px overlay strip paints over a

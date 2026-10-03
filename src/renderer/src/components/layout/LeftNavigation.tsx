@@ -10,7 +10,7 @@ import { ResizeHandle } from './ResizeHandle'
 
 // Left navigation (UX-UI §9-10): a "Projects" section header carries the
 // icon-only Add Project button (user decision 2026-10-01); project rows
-// expand to their chat lists with a New Chat button under the active
+// expand to their chat lists with a New Chat button under each expanded
 // project. New Chat creates the chat immediately (no naming form: the name
 // is the shell's display label, spec Behaviour 3).
 //
@@ -29,6 +29,7 @@ interface LeftNavigationProps {
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
   onResizeNudge: (delta: number) => void
   projects: ProjectInfo[]
+  projectNamesUppercase?: boolean
   chatsByProject: Record<string, ChatInfo[]>
   expandedProjectIds: ReadonlySet<string>
   selectedProjectId: string | null
@@ -74,6 +75,7 @@ export function LeftNavigation({
   onResizeStart,
   onResizeNudge,
   projects,
+  projectNamesUppercase = true,
   chatsByProject,
   expandedProjectIds,
   selectedProjectId,
@@ -129,13 +131,11 @@ export function LeftNavigation({
       <NoticeBanner notice={notice} />
       {/* Section header (user decision 2026-10-01): "Projects" title with an
           icon-only Add Project button on the right. Title sized like the
-          project rows (text-sm), with extra breathing room below the window
-          title bar (user request 2026-10-01). */}
-      <div className="mt-2 flex h-8 shrink-0 items-center justify-between px-4">
-        <span
-          className="text-sm font-medium tracking-wide text-projects-header"
-          data-testid={TEST_ID.projectsHeader}
-        >
+          project rows (text-sm). Its height aligns the first project tile
+          with the action buttons: header + 8px margin + 4px list inset =
+          tab strip + 1px action-row border + 8px action-row padding. */}
+      <div className="mt-2 flex h-[calc(var(--spacing-control)+0.3125rem)] shrink-0 items-center justify-between px-4">
+        <span className="text-sm text-projects-header" data-testid={TEST_ID.projectsHeader}>
           Projects
         </span>
         <button
@@ -177,7 +177,7 @@ export function LeftNavigation({
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'relative flex items-center overflow-hidden rounded-md px-1 py-1.5 transition-colors',
+                      'relative flex h-control items-center overflow-hidden rounded-md px-1 py-1.5 transition-colors',
                       isSelected ? 'bg-highlight' : 'hover:bg-row-hover',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
@@ -211,7 +211,7 @@ export function LeftNavigation({
                         unfolds in place, keeping the active chat intact. */}
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center rounded px-1 py-1 text-left text-sm text-project-title"
+                      className="flex min-w-0 flex-1 items-center self-stretch rounded px-1 py-1 text-left text-sm text-project-title"
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
                       aria-expanded={isExpanded}
@@ -228,7 +228,9 @@ export function LeftNavigation({
                       ) : (
                         <Icon.chevronRight size={12} aria-hidden className="mr-1 shrink-0" />
                       )}
-                      <span className="min-w-0 truncate">{project.name}</span>
+                      <span className="min-w-0 truncate">
+                        {projectNamesUppercase ? project.name.toUpperCase() : project.name}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -278,7 +280,7 @@ export function LeftNavigation({
                                 <button
                                   type="button"
                                   className={cn(
-                                    'flex w-full items-center gap-1.5 rounded-md py-3 pl-3 pr-2 text-left text-xs text-chat-title',
+                                    'flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-chat-title',
                                     isChatSelected ? 'bg-highlight text-ink' : 'hover:bg-row-hover',
                                   )}
                                   data-testid={testIdFor.chatRow(chat.id)}
@@ -302,23 +304,20 @@ export function LeftNavigation({
                           })}
                         </ul>
                       )}
-                      {isSelected ? (
-                        /* Same indent axis and metrics as the chat tiles
-                           (2026-10-02 polish): pl-6 wrapper, py-3, pl-1.5. */
-                        <div className="mt-1 pl-6">
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-1.5 rounded-md py-3 pl-3 pr-2 text-left text-xs text-ink-secondary hover:bg-row-hover"
-                            data-testid={TEST_ID.newChatButton}
-                            onClick={() => {
-                              void onCreateChat(project.id)
-                            }}
-                          >
-                            <Icon.plus size={12} aria-hidden className="shrink-0" />
-                            New Chat
-                          </button>
-                        </div>
-                      ) : null}
+                      {/* Same indent axis and shared control height as the chat tiles. */}
+                      <div className="mt-1 pl-6">
+                        <button
+                          type="button"
+                          className="flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-ink-secondary hover:bg-row-hover"
+                          data-testid={TEST_ID.newChatButton}
+                          onClick={() => {
+                            void onCreateChat(project.id)
+                          }}
+                        >
+                          <Icon.plus size={12} aria-hidden className="shrink-0" />
+                          New Chat
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                 </li>

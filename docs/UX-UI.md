@@ -948,6 +948,11 @@ Clone Repository
 
 # 32. Project Settings
 
+App Settings -> General includes "Uppercase project names in the tree"
+(NEKODE-10), enabled by default. It changes only project labels in the
+navigation tree; disabling it restores the original folder-name spelling.
+The choice persists as `projects.namesUppercase` (`1` on, `0` off).
+
 Application settings are separate from Project Settings. The App Settings
 opener (gear icon with the label "App Settings") sits at the very bottom of
 the left panel (user decision 2026-10-02, after Zed), in both modes that host
@@ -1565,6 +1570,13 @@ terminals): Ctrl+C copy-or-abort, Ctrl+Shift+C copy, Ctrl+V / Ctrl+Shift+V
 paste, Ctrl+D close-chat-at-empty-prompt / delete-char, Ctrl+U clear input
 line (see the terminal sections for the exact gates).
 
+App Settings -> General has "Use Ctrl+V to paste text in terminals", enabled
+by default and saved locally. It applies immediately to chat and bottom-panel
+terminals, including full-screen programs such as Codex. Disabling it lets
+full-screen programs handle Ctrl+V themselves (for example, Vim block
+selection); Ctrl+V still pastes at a shell prompt. Ctrl+Shift+V always pastes
+text. Both paste chords use the terminal's text-paste path and insert once.
+
 Recommended future:
 
 ```text
@@ -1603,7 +1615,7 @@ Recommended UI sizing:
 ```text
 Main UI:        13–14 px
 Secondary text: 12–13 px
-Terminal:       13–14 px
+Terminal:       15 px default (configurable: 8-32 px)
 Project title:  14–15 px
 ```
 

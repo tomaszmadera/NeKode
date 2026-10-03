@@ -44,6 +44,8 @@ export const TEST_ID = {
   terminalRetry: 'terminal-retry',
   startNewChatState: 'start-new-chat-state',
   startNewChatButton: 'start-new-chat-button',
+  /** Welcome illustration surface: contextual add-project primary action. */
+  welcomeAddProjectButton: 'welcome-add-project-button',
   projectContextMenu: 'project-context-menu',
   projectFilesPanel: 'project-files-panel',
   filesBackButton: 'files-back-button',

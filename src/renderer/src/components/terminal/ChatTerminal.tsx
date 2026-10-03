@@ -58,6 +58,8 @@ interface ChatTerminalProps {
    * Session identity and the PTY are untouched.
    */
   terminalFontSize?: number
+  /** Ctrl+V pastes text in full-screen programs; defaults on and applies live. */
+  terminalCtrlVPaste?: boolean
   /**
    * `Ctrl+D` at an empty input line outside full-screen programs: the
    * shortcut is intercepted and the chat closes through the same flow as a
@@ -130,6 +132,7 @@ export function ChatTerminal({
   injected = null,
   onInjected,
   terminalFontSize,
+  terminalCtrlVPaste = true,
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -149,6 +152,7 @@ export function ChatTerminal({
   const onAttentionRef = useRef(onAttention)
   const onInputDeliveredRef = useRef(onInputDelivered)
   const onReadyRef = useRef(onReady)
+  const terminalCtrlVPasteRef = useRef(terminalCtrlVPaste)
   // Live copy/paste entry points of the mounted terminal, for the right-click
   // menu rendered outside the mount effect. Null while unmounted.
   const clipboardRef = useRef<{ copy: () => boolean; paste: () => void } | null>(null)
@@ -162,6 +166,7 @@ export function ChatTerminal({
   onAttentionRef.current = onAttention
   onInputDeliveredRef.current = onInputDelivered
   onReadyRef.current = onReady
+  terminalCtrlVPasteRef.current = terminalCtrlVPaste
 
   useEffect(() => {
     const container = containerRef.current
@@ -422,15 +427,21 @@ export function ChatTerminal({
       // Paste chords (Ctrl+V / Ctrl+Shift+V) write the clipboard into the PTY
       // through xterm.paste — the same onData path as typing. Intercepted so
       // the raw \x16 byte never reaches the shell: the Windows edit mode would
-      // paste a second time on top of ours. Inside a full-screen program
-      // (alternate buffer) the chords pass through untouched — Ctrl+V keeps
-      // its program meaning there (e.g. vim visual block).
+      // paste a second time on top of ours. Ctrl+Shift+V always pastes text.
+      // Ctrl+V does too by default, including inside full-screen programs:
+      // forwarding the raw chord to Codex triggers image paste. Turning the
+      // setting off restores program-owned Ctrl+V in the alternate buffer.
       const isPasteChord =
         (event.code === 'KeyV' || event.key === 'v' || event.key === 'V') &&
         event.ctrlKey &&
         !event.altKey &&
         !event.metaKey
-      if (isPasteChord && event.type === 'keydown' && terminal.buffer.active.type !== 'alternate') {
+      if (
+        isPasteChord &&
+        (event.shiftKey ||
+          terminalCtrlVPasteRef.current ||
+          terminal.buffer.active.type !== 'alternate')
+      ) {
         // Cancel the browser default action, not only xterm's handling: the
         // handler's `false` return stops xterm but not Chromium's Ctrl+V
         // paste, whose native `paste` event on the hidden helper textarea

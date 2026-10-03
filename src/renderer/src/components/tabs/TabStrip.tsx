@@ -83,10 +83,10 @@ export function TabStrip({
 
   return (
     <nav
-      className="drag-region flex h-10 shrink-0 items-stretch bg-app px-2 pt-2"
+      className="drag-region flex h-[calc(var(--spacing-control)+0.5rem)] shrink-0 items-stretch bg-app px-2 pt-2"
       // The strip shares the action row's metrics (round 4, design doc 26.2):
       // 8px left and top insets so the first tab aligns with the first button
-      // below; the extra strip height keeps the 32px tab size. The Windows
+      // below; the extra strip height keeps the shared control height. The Windows
       // caption buttons sit in the window title bar above this strip (user
       // decision 2026-10-01), so no caption-button inset is needed here.
       data-testid={TEST_ID.tabStrip}
@@ -94,7 +94,7 @@ export function TabStrip({
       <button
         type="button"
         className={cn(
-          'no-drag flex max-w-48 items-center gap-1 rounded-t-md px-3 text-xs text-ink-secondary hover:text-ink',
+          'no-drag flex max-w-48 items-center gap-1 rounded-t-md px-3 text-sm text-ink-secondary hover:text-ink',
           active.kind === 'terminal'
             ? 'bg-button text-ink'
             : 'border border-edge bg-tab-inactive hover:bg-highlight',
@@ -152,7 +152,7 @@ export function TabStrip({
             <button
               type="button"
               className={cn(
-                'flex max-w-48 items-center px-3 text-xs text-ink-secondary hover:text-ink',
+                'flex max-w-48 items-center px-3 text-sm text-ink-secondary hover:text-ink',
                 isActive && 'text-ink',
               )}
               onClick={() => onSelectTab({ kind: 'file', path })}
@@ -182,7 +182,7 @@ export function TabStrip({
       <div className="flex-1" />
       <button
         type="button"
-        className="no-drag flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+        className="no-drag flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-sm text-ink-secondary hover:bg-highlight hover:text-ink"
         data-testid={TEST_ID.tabNewChat}
         onClick={onNewChat}
       >

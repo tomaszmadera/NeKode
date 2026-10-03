@@ -68,6 +68,7 @@ import {
   parseTerminalFontSize,
   TERMINAL_FONT_SIZE_STORAGE_KEY,
 } from './lib/terminal-font'
+import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { TEST_ID, testIdFor } from './lib/test-ids'
 import { isThemeId, THEME_STORAGE_KEY, type ThemeId } from './lib/theme'
 
@@ -167,6 +168,29 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     document.documentElement.dataset.theme = themeState.theme
   }, [themeState.theme])
 
+  const [terminalPasteState, setTerminalPasteState] = useState<{
+    enabled: boolean
+    error: string | null
+  }>(() => {
+    try {
+      return {
+        enabled: localStorage.getItem(TERMINAL_CTRL_V_PASTE_STORAGE_KEY) !== '0',
+        error: null,
+      }
+    } catch {
+      return { enabled: true, error: 'Failed to load the saved terminal paste setting.' }
+    }
+  })
+
+  function handleTerminalCtrlVPasteChange(enabled: boolean): void {
+    try {
+      localStorage.setItem(TERMINAL_CTRL_V_PASTE_STORAGE_KEY, enabled ? '1' : '0')
+      setTerminalPasteState({ enabled, error: null })
+    } catch {
+      setTerminalPasteState({ enabled, error: 'Failed to save the terminal paste setting.' })
+    }
+  }
+
   function handleThemeChange(theme: ThemeId): void {
     try {
       localStorage.setItem(THEME_STORAGE_KEY, theme)
@@ -204,6 +228,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [autoSendHandoff, setAutoSendHandoff] = useState(false)
   // Ctrl+Tab chat switching (NEKODE-2): enabled unless explicitly turned off.
   const [chatSwitchEnabled, setChatSwitchEnabled] = useState(true)
+  const [projectNamesUppercase, setProjectNamesUppercase] = useState(true)
+  const projectNamesUppercaseTouchedRef = useRef(false)
   // Attention alert settings (attention-alert-settings spec): all four
   // default on; the persisted off-switches load once and apply live.
   const [attentionSettings, setAttentionSettings] = useState<AttentionSettings>(
@@ -343,6 +369,36 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setChatSwitchEnabled(next)
       void app.state
         .set(APP_STATE_KEY.chatSwitchEnabled, next ? '1' : '0')
+        .catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to save the setting.'))
+        })
+    },
+    [app],
+  )
+
+  useEffect(() => {
+    let alive = true
+    void app.state
+      .get(APP_STATE_KEY.projectNamesUppercase)
+      .then((value) => {
+        if (alive && !projectNamesUppercaseTouchedRef.current) {
+          setProjectNamesUppercase(value !== '0')
+        }
+      })
+      .catch((error: unknown) => {
+        if (alive) setNotice(errorMessage(error, 'Failed to load settings.'))
+      })
+    return () => {
+      alive = false
+    }
+  }, [app])
+
+  const handleProjectNamesUppercaseChange = useCallback(
+    (next: boolean): void => {
+      projectNamesUppercaseTouchedRef.current = true
+      setProjectNamesUppercase(next)
+      void app.state
+        .set(APP_STATE_KEY.projectNamesUppercase, next ? '1' : '0')
         .catch((error: unknown) => {
           setNotice(errorMessage(error, 'Failed to save the setting.'))
         })
@@ -1524,6 +1580,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             onResizeStart={leftRegion.startResize}
             onResizeNudge={leftRegion.nudge}
             projects={projects}
+            projectNamesUppercase={projectNamesUppercase}
             chatsByProject={chatsByProject}
             expandedProjectIds={expandedProjectIds}
             selectedProjectId={selectedProjectId}
@@ -1639,10 +1696,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 forceStartNewChat={chatSurfaceDiverged}
                 terminalCwds={terminalCwds}
                 terminalFontSize={terminalFontSize}
+                terminalCtrlVPaste={terminalPasteState.enabled}
                 onSessionStatus={handleSessionStatus}
                 onSessionReady={handleSessionReady}
                 onChatClosed={handleChatClosed}
                 onStartNewChat={handleStartNewChat}
+                onAddProject={handleAddProject}
                 promptInjection={promptInjection}
                 onPromptInjected={handlePromptInjected}
               />
@@ -1658,13 +1717,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         <AppSettings
           theme={themeState.theme}
           chatSwitch={chatSwitchEnabled}
-          error={themeState.error}
+          projectNamesUppercase={projectNamesUppercase}
+          onProjectNamesUppercaseChange={handleProjectNamesUppercaseChange}
+          error={themeState.error ?? terminalPasteState.error}
           onThemeChange={handleThemeChange}
           onChatSwitchChange={handleChatSwitchChange}
           attentionSettings={attentionSettings}
           onAttentionSettingChange={handleAttentionSettingChange}
           terminalFontSize={terminalFontSize}
           onTerminalFontSizeChange={handleTerminalFontSizeChange}
+          terminalCtrlVPaste={terminalPasteState.enabled}
+          onTerminalCtrlVPasteChange={handleTerminalCtrlVPasteChange}
           onClose={() => setAppSettingsOpen(false)}
         />
       ) : null}
@@ -1705,6 +1768,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         activeProjectId={tabProjectId}
         tabs={allBottomTabs(bottomTabs)}
         terminalFontSize={terminalFontSize}
+        terminalCtrlVPaste={terminalPasteState.enabled}
         activeTabId={
           tabProjectId === null ? null : (bottomTabs.byProject[tabProjectId]?.activeId ?? null)
         }

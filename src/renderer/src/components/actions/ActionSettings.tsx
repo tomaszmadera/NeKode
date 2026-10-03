@@ -19,6 +19,19 @@ interface Props {
   onClose: () => void
 }
 
+const POWERSHELL_PREFIX = 'powershell -NoProfile -ExecutionPolicy Bypass -File '
+
+function powerShellCommand(command: string): string {
+  return POWERSHELL_PREFIX + command
+}
+
+function actionCommand(command: string): { command: string; powerShell: boolean } {
+  if (command.startsWith(POWERSHELL_PREFIX)) {
+    return { command: command.slice(POWERSHELL_PREFIX.length), powerShell: true }
+  }
+  return { command, powerShell: false }
+}
+
 function nextSortOrder(actions: ActionControl[]): number {
   let max = -1
   for (const action of actions) {
@@ -74,6 +87,7 @@ export function ActionSettings({
 }: Props): React.JSX.Element {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ActionInput | null>(null)
+  const [runWithPowerShell, setRunWithPowerShell] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const visible = actions.filter(
     (action) => action.scope === 'global' || action.projectId === projectId,
@@ -151,13 +165,15 @@ export function ActionSettings({
   }
 
   function edit(action: ActionControl): void {
+    const decoded = actionCommand(action.command)
+    setRunWithPowerShell(decoded.powerShell)
     setEditingId(action.id)
     setForm({
       scope: action.scope,
       projectId: action.projectId,
       title: action.title,
       icon: action.icon,
-      command: action.command,
+      command: decoded.command,
       cwd: action.cwd,
       runMode: action.runMode,
       confirm: action.confirm,
@@ -173,8 +189,12 @@ export function ActionSettings({
       return
     }
     try {
-      if (editingId) await app.actions.update(editingId, form)
-      else await app.actions.create(form)
+      const input = {
+        ...form,
+        command: runWithPowerShell ? powerShellCommand(form.command) : form.command,
+      }
+      if (editingId) await app.actions.update(editingId, input)
+      else await app.actions.create(input)
       await onRefresh()
       setForm(null)
       setEditingId(null)
@@ -297,8 +317,11 @@ export function ActionSettings({
             >
               <div className="min-w-0 flex-1">
                 <div className="font-medium">{action.title}</div>
-                <div className="truncate text-ink-secondary" title={action.command}>
-                  {action.command}
+                <div
+                  className="truncate text-ink-secondary"
+                  title={actionCommand(action.command).command}
+                >
+                  {actionCommand(action.command).command}
                 </div>
                 <div className="text-ink-muted">
                   {action.runMode === 'background'
@@ -334,6 +357,7 @@ export function ActionSettings({
           onClick={() => {
             setEditingId(null)
             setForm(emptyInput(projectId, nextSortOrder(actions)))
+            setRunWithPowerShell(false)
             setError(null)
           }}
         >
@@ -420,13 +444,6 @@ export function ActionSettings({
                 onChange={(event) => setForm({ ...form, command: event.target.value })}
               />
             </label>
-            {/* Placed outside the label on purpose: label text feeds the
-                accessible name, and tests select the input by the exact
-                label "Command" (ui-polish skill). */}
-            <p className="text-ink-muted">
-              Windows runs background actions through cmd.exe: invoke PowerShell scripts explicitly,
-              e.g. powershell -NoProfile -ExecutionPolicy Bypass -File script.ps1
-            </p>
             <label>
               Working Directory (project root by default)
               <input
@@ -456,6 +473,14 @@ export function ActionSettings({
                 onChange={(event) => setForm({ ...form, confirm: event.target.checked })}
               />
               Ask for confirmation
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={runWithPowerShell}
+                onChange={(event) => setRunWithPowerShell(event.target.checked)}
+              />
+              Run with PowerShell NoProfile
             </label>
             {error ? (
               <p role="alert" className="text-error">
