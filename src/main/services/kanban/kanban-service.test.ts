@@ -90,6 +90,7 @@ describe('KanbanService config', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(AppError)
       expect((error as AppError).code).toBe('not_found')
+      expect((error as AppError).message).toContain('ghost')
     }
   })
 
@@ -271,6 +272,10 @@ describe('KanbanService actions', () => {
     await expect(service.listBoard('p1')).rejects.toMatchObject({
       code: 'validation',
       message: expect.stringContaining('adapter'),
+    })
+    // Behaviour 9 / AC9: the rejection names the project.
+    await expect(service.listBoard('p1')).rejects.toMatchObject({
+      message: expect.stringContaining('"p1"'),
     })
   })
 
@@ -510,7 +515,9 @@ describe('KanbanService actions', () => {
         store: { 'project.kanbanAdapter:p1': 'demo' },
         hostError: new AdapterError('network', 'dns failed'),
       })
-      await expect(adapter.service.listBoard('p1')).rejects.toMatchObject({ code: 'adapter' })
+      // The adapter's own code is surfaced verbatim (spec Errors), not
+      // collapsed into the generic 'adapter' code.
+      await expect(adapter.service.listBoard('p1')).rejects.toMatchObject({ code: 'network' })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

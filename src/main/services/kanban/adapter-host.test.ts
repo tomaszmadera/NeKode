@@ -8,6 +8,7 @@ import {
   AdapterHost,
   type AdapterHostError,
   type AdapterRequest,
+  MAX_STDOUT_BYTES,
 } from './adapter-host'
 
 // Adapter host protocol matrix (spec kanban-adapter-interface Required tests,
@@ -27,10 +28,39 @@ afterEach(() => {
 function fixture(
   name: string,
   body: string,
-): { dir: string; invocation: { command: string; args: string[] } } {
+): { id: string; dir: string; invocation: { command: string; args: string[] } } {
   const file = join(dir, name)
   writeFileSync(file, body)
-  return { dir, invocation: { command: process.execPath, args: [file] } }
+  return {
+    id: 'fixture-adapter',
+    dir,
+    invocation: { command: process.execPath, args: [file] },
+  }
+}
+
+/** Probes whether a pid is still present in the process table. */
+function isProcessAlive(pid: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const check = spawn(process.execPath, ['-e', `process.kill(${pid}, 0); console.log('alive')`], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    let out = ''
+    check.stdout?.on('data', (chunk: Buffer) => {
+      out += chunk.toString('utf8')
+    })
+    check.once('exit', (code) => resolve(code === 0 && out.includes('alive')))
+  })
+}
+
+/** Waits for a killed pid to leave the process table (kill is async). */
+async function waitForProcessExit(pid: number, attempts = 20): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (!(await isProcessAlive(pid))) {
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return false
 }
 
 const request: AdapterRequest = {
@@ -103,6 +133,50 @@ describe('AdapterHost', () => {
     await expect(host.invoke(adapter, request)).rejects.toMatchObject({ kind: 'protocol' })
   })
 
+  it('rejects invalid UTF-8 on stdout as a typed protocol error', async () => {
+    // Raw invalid bytes: chunk.toString('utf8') would silently replace them
+    // with U+FFFD; the fatal decoder must surface the typed protocol error.
+    const adapter = fixture(
+      'badutf8.cjs',
+      `process.stdout.write(Buffer.from([0x7b, 0xff, 0xfe, 0x0a]))`,
+    )
+    const host = new AdapterHost()
+    await expect(host.invoke(adapter, request)).rejects.toMatchObject({
+      kind: 'protocol',
+      message: expect.stringContaining('UTF-8'),
+    })
+  })
+
+  it('rejects stdout above MAX_STDOUT_BYTES as a typed protocol error', async () => {
+    const size = MAX_STDOUT_BYTES + 64 * 1024
+    const adapter = fixture(
+      'huge.cjs',
+      `process.stdout.write(Buffer.alloc(${size}, 0x61)); process.exit(0)`,
+    )
+    const host = new AdapterHost()
+    await expect(host.invoke(adapter, request)).rejects.toMatchObject({
+      kind: 'protocol',
+      message: expect.stringContaining('exceeded'),
+    })
+  })
+
+  it('maps a stdin write failure on an exited adapter to a typed protocol error', async () => {
+    // The adapter closes stdin without reading and exits; a request larger
+    // than the pipe buffer makes the write fail (EPIPE). Without the stdin
+    // 'error' listener this raises an uncaught exception in the host process.
+    const adapter = fixture('noread.cjs', `process.stdin.destroy(); process.exit(0)`)
+    const host = new AdapterHost()
+    const bigConfig = Object.fromEntries(
+      Array.from({ length: 8 }, (_, index) => [`k${index}`, 'x'.repeat(256 * 1024)]),
+    )
+    const error = await host
+      .invoke(adapter, { ...request, config: bigConfig })
+      .catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as { kind?: string }).kind).toBe('protocol')
+    expect((error as Error).message).toContain('stdin')
+  })
+
   it('rejects ok:true with a nonzero exit code', async () => {
     const adapter = fixture(
       'badexit.cjs',
@@ -129,7 +203,11 @@ describe('AdapterHost', () => {
     const host = new AdapterHost()
     await expect(
       host.invoke(
-        { dir, invocation: { command: 'definitely-not-a-real-command-xyz', args: [] } },
+        {
+          id: 'missing-adapter',
+          dir,
+          invocation: { command: 'definitely-not-a-real-command-xyz', args: [] },
+        },
         request,
       ),
     ).rejects.toMatchObject({
@@ -138,12 +216,37 @@ describe('AdapterHost', () => {
     })
   })
 
+  it('names the adapter and the command in the ENOENT error', async () => {
+    const host = new AdapterHost()
+    await expect(
+      host.invoke(
+        {
+          id: 'missing-adapter',
+          dir,
+          invocation: { command: 'definitely-not-a-real-command-xyz', args: [] },
+        },
+        request,
+      ),
+    ).rejects.toMatchObject({
+      kind: 'protocol',
+      message: expect.stringContaining('missing-adapter'),
+    })
+  })
+
   it('times out and rejects quickly when the adapter sleeps past the limit', async () => {
     const sleeper = `setInterval(() => {}, 1000)`
     const adapter = fixture('sleep.cjs', sleeper)
     const host = new AdapterHost({ timeoutMs: 150 })
     const started = Date.now()
-    await expect(host.invoke(adapter, request)).rejects.toMatchObject({ kind: 'timeout' })
+    // Behaviour 5: the timeout error names the adapter and the action.
+    await expect(host.invoke(adapter, request)).rejects.toMatchObject({
+      kind: 'timeout',
+      message: expect.stringContaining('fixture-adapter'),
+    })
+    await expect(host.invoke(adapter, request)).rejects.toMatchObject({
+      kind: 'timeout',
+      message: expect.stringContaining('(test)'),
+    })
     expect(Date.now() - started).toBeLessThan(5000)
   })
 
@@ -171,29 +274,47 @@ describe('AdapterHost', () => {
     await expect(host.invoke(adapter, request)).rejects.toMatchObject({ kind: 'timeout' })
     expect(adapterPid).not.toBeNull()
     // The killed pid must disappear from the process table.
-    const alive = (pid: number): Promise<boolean> =>
-      new Promise((resolve) => {
-        const check = spawn(
-          process.execPath,
-          ['-e', `process.kill(${pid}, 0); console.log('alive')`],
-          {
-            stdio: ['ignore', 'pipe', 'ignore'],
-          },
-        )
-        let out = ''
-        check.stdout?.on('data', (chunk: Buffer) => {
-          out += chunk.toString('utf8')
-        })
-        check.once('exit', (code) => resolve(code === 0 && out.includes('alive')))
+    expect(await waitForProcessExit(adapterPid as unknown as number)).toBe(true)
+  })
+
+  it('reports the typed timeout for a large request to a hanging adapter (stdin EPIPE must not mask it)', async () => {
+    // Regression (finding 1): a request larger than the OS pipe buffer leaves
+    // stdin.write pending; when the host's own timeout kills the tree, closing
+    // stdin raises EPIPE on that pending write. The stdin error must not mask
+    // the typed `timeout` error Behaviour 5 requires (adapter + action named).
+    const pidSleeper = `console.error('PID:' + process.pid); setInterval(() => {}, 1000)`
+    const adapter = fixture('bigsleep.cjs', pidSleeper)
+    let adapterPid: number | null = null
+    const wrappedSpawn = ((
+      command: string,
+      args: string[],
+      options: Parameters<typeof spawn>[2],
+    ) => {
+      const child = spawn(command, args, options)
+      child.stderr?.on('data', (chunk: Buffer) => {
+        const match = /PID:(\d+)/.exec(chunk.toString('utf8'))
+        if (match) {
+          adapterPid = Number(match[1])
+        }
       })
-    let gone = false
-    for (let attempt = 0; attempt < 20 && !gone; attempt += 1) {
-      gone = !(await alive(adapterPid as unknown as number))
-      if (!gone) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-    }
-    expect(gone).toBe(true)
+      return child
+    }) as typeof spawn
+    const host = new AdapterHost({ timeoutMs: 200, spawnProcess: wrappedSpawn })
+    // ~2 MB: comfortably beyond any pipe buffer, so the write pends until the
+    // timeout's killTree closes stdin and the pending write fails.
+    const bigConfig = Object.fromEntries(
+      Array.from({ length: 8 }, (_, index) => [`k${index}`, 'x'.repeat(256 * 1024)]),
+    )
+    const error = await host
+      .invoke(adapter, { ...request, config: bigConfig })
+      .catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as { kind?: string }).kind).toBe('timeout')
+    expect((error as Error).message).toContain('fixture-adapter')
+    expect((error as Error).message).toContain('(test)')
+    expect(adapterPid).not.toBeNull()
+    // No orphaned process: the timeout kill must take the whole tree.
+    expect(await waitForProcessExit(adapterPid as unknown as number)).toBe(true)
   })
 
   it('never leaks config values onto the command line (argv assertion)', async () => {

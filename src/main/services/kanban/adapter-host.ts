@@ -32,6 +32,8 @@ export interface AdapterRequest {
 }
 
 export interface AdapterInvocation {
+  /** Manifest adapter id; surfaces in typed error messages (spec Behaviour 5). */
+  id: string
   dir: string
   invocation: { command: string; args: string[] }
 }
@@ -64,7 +66,9 @@ export function toAppError(error: unknown, channel: string): AppError {
     return new AppError(error.kind, error.message, channel)
   }
   if (error instanceof AdapterError) {
-    return new AppError('adapter', error.message, channel)
+    // Surface the adapter's own code (auth|network|notFound|config|internal)
+    // verbatim, per spec Errors/Edge cases — main adds no interpretation.
+    return new AppError(error.code, error.message, channel)
   }
   throw error
 }
@@ -139,7 +143,7 @@ export class AdapterHost {
       // Synchronous spawn failure; ENOENT normally arrives via 'error'.
       throw new AdapterHostError(
         'protocol',
-        `Adapter command not found: ${adapter.invocation.command}`,
+        `Adapter "${adapter.id}" command not found: ${adapter.invocation.command}`,
       )
     }
 
@@ -148,27 +152,57 @@ export class AdapterHost {
       startError = error
     })
 
+    // stdout is decoded with a fatal UTF-8 decoder so invalid bytes surface as
+    // the typed protocol error Behaviour 3 mandates (chunk.toString would
+    // silently replace them with U+FFFD). The cap is enforced in bytes and
+    // stops accumulation, killing the tree once it trips (Behaviour 3).
+    const decoder = new TextDecoder('utf-8', { fatal: true })
     let stdout = ''
-    let stderr = ''
+    let stdoutBytes = 0
     let oversized = false
+    let invalidEncoding = false
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8')
-      if (stdout.length > MAX_STDOUT_BYTES) {
+      if (oversized || invalidEncoding) {
+        return
+      }
+      stdoutBytes += chunk.length
+      if (stdoutBytes > MAX_STDOUT_BYTES) {
         oversized = true
+        killTree(child)
+        return
+      }
+      try {
+        stdout += decoder.decode(chunk, { stream: true })
+      } catch {
+        invalidEncoding = true
+        killTree(child)
       }
     })
+    let stderr = ''
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString('utf8')
     })
 
-    // Write the single request object, then close stdin (Behaviour 3).
+    // Write the single request object, then close stdin (Behaviour 3). A write
+    // to an already-exited adapter raises on the stdin stream (EPIPE), not on
+    // the ChildProcess, so the stream carries its own error listener; the
+    // failure becomes a typed protocol error instead of an uncaught exception
+    // while the framing stays exactly one JSON object followed by EOF.
     const stdin = child.stdin
     if (stdin === null) {
       killTree(child)
-      throw new AdapterHostError('protocol', 'Adapter stdin is unavailable.')
+      throw new AdapterHostError('protocol', `Adapter "${adapter.id}" stdin is unavailable.`)
     }
-    stdin.write(Buffer.from(JSON.stringify(request), 'utf8'))
-    stdin.end()
+    let stdinError: Error | null = null
+    stdin.on('error', (error: Error) => {
+      stdinError = error
+    })
+    try {
+      stdin.write(Buffer.from(JSON.stringify(request), 'utf8'))
+      stdin.end()
+    } catch (error) {
+      stdinError = error instanceof Error ? error : new Error(String(error))
+    }
 
     let timedOut = false
     const timer = setTimeout(() => {
@@ -182,25 +216,57 @@ export class AdapterHost {
     })
     clearTimeout(timer)
 
+    // Flush any buffered partial multibyte sequence so a truncated trailing
+    // character is also detected as invalid UTF-8.
+    if (!oversized && !invalidEncoding && !timedOut) {
+      try {
+        stdout += decoder.decode()
+      } catch {
+        invalidEncoding = true
+      }
+    }
+
     if (startError !== null) {
       if ((startError as NodeJS.ErrnoException).code === 'ENOENT') {
         throw new AdapterHostError(
           'protocol',
-          `Adapter command not found: ${adapter.invocation.command}`,
+          `Adapter "${adapter.id}" command not found: ${adapter.invocation.command}`,
         )
       }
-      throw new AdapterHostError('protocol', `Adapter failed to start: ${String(startError)}`)
+      throw new AdapterHostError(
+        'protocol',
+        `Adapter "${adapter.id}" failed to start: ${String(startError)}`,
+      )
+    }
+    // Ordering matters: a host-imposed timeout kills the tree, which closes
+    // stdin, so any still-pending large write then fails (EPIPE) on our own
+    // kill. Reporting that as a stdin write failure would mask the typed
+    // `timeout` error spec Behaviour 5 requires (naming the adapter and
+    // action), so the timeout is evaluated first. A genuine stdin write
+    // failure — the adapter exited without reading, no timeout — still falls
+    // through to the typed protocol error below instead of an uncaught throw.
+    if (timedOut) {
+      throw new AdapterHostError(
+        'timeout',
+        `Adapter "${adapter.id}" timed out after ${this.#timeoutMs} ms (${request.action}).${stderrTail(stderr)}`,
+      )
     }
     if (oversized) {
       throw new AdapterHostError(
         'protocol',
-        `Adapter stdout exceeded ${MAX_STDOUT_BYTES} bytes.${stderrTail(stderr)}`,
+        `Adapter "${adapter.id}" stdout exceeded ${MAX_STDOUT_BYTES} bytes.${stderrTail(stderr)}`,
       )
     }
-    if (timedOut) {
+    if (invalidEncoding) {
       throw new AdapterHostError(
-        'timeout',
-        `Adapter timed out after ${this.#timeoutMs} ms (${request.action}).${stderrTail(stderr)}`,
+        'protocol',
+        `Adapter "${adapter.id}" output is not valid UTF-8.${stderrTail(stderr)}`,
+      )
+    }
+    if (stdinError !== null) {
+      throw new AdapterHostError(
+        'protocol',
+        `Adapter "${adapter.id}" stdin write failed: ${stdinError.message}.${stderrTail(stderr)}`,
       )
     }
 

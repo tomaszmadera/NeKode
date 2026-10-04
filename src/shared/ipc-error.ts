@@ -15,6 +15,14 @@ export type AppErrorCode =
   | 'timeout'
   | 'protocol'
   | 'adapter'
+  // Adapter-reported failure codes (spec kanban-adapter-interface Errors):
+  // surfaced verbatim through toAppError so the renderer sees the adapter's
+  // own typed code, not a collapsed generic 'adapter'.
+  | 'auth'
+  | 'network'
+  | 'notFound'
+  | 'config'
+  | 'internal'
   | 'unknown'
 
 const APP_ERROR_CODES: readonly AppErrorCode[] = [
@@ -25,6 +33,11 @@ const APP_ERROR_CODES: readonly AppErrorCode[] = [
   'timeout',
   'protocol',
   'adapter',
+  'auth',
+  'network',
+  'notFound',
+  'config',
+  'internal',
   'unknown',
 ]
 
