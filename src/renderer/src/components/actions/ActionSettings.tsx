@@ -257,7 +257,7 @@ export function ActionSettings({
           role="dialog"
           aria-modal="true"
           aria-label="Project Settings"
-          className="max-h-[85vh] w-[min(36rem,90vw)] overflow-y-auto rounded-lg border border-edge bg-panel p-5 shadow-xl"
+          className="flex h-[min(42rem,90dvh)] w-[min(56rem,94vw)] flex-col overflow-hidden rounded-lg border border-edge bg-panel p-4 shadow-xl sm:p-5"
         >
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold">Project Settings</h2>
@@ -270,319 +270,345 @@ export function ActionSettings({
               Close
             </button>
           </div>
-          <div role="tablist" aria-label="Settings sections" className="mt-3 flex gap-1">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'shell'}
-              data-testid={TEST_ID.settingsShellTab}
-              className={
-                activeTab === 'shell'
-                  ? 'rounded-md bg-button px-3 py-1 text-sm text-ink'
-                  : 'rounded-md px-3 py-1 text-sm text-ink-secondary hover:bg-highlight hover:text-ink'
-              }
-              onClick={() => setActiveTab('shell')}
+          {/* Same shell as App Settings (user decision 2026-10-04): fixed dialog
+              size, vertical tab column on the left, only the content pane
+              scrolls. Tab test IDs stay on the tab buttons. */}
+          <div className="mt-4 flex min-h-0 flex-1 gap-3 sm:gap-5">
+            <div
+              role="tablist"
+              aria-label="Settings sections"
+              aria-orientation="vertical"
+              className="flex w-24 shrink-0 flex-col gap-1 border-r border-edge pr-3 sm:w-36"
             >
-              Shell
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'actions'}
-              data-testid={TEST_ID.settingsActionsTab}
-              className={
-                activeTab === 'actions'
-                  ? 'rounded-md bg-button px-3 py-1 text-sm text-ink'
-                  : 'rounded-md px-3 py-1 text-sm text-ink-secondary hover:bg-highlight hover:text-ink'
-              }
-              onClick={() => setActiveTab('actions')}
+              {(['shell', 'actions'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  id={`settings-tab-${tab}`}
+                  aria-controls={`settings-panel-${tab}`}
+                  aria-selected={activeTab === tab}
+                  data-testid={
+                    tab === 'shell' ? TEST_ID.settingsShellTab : TEST_ID.settingsActionsTab
+                  }
+                  className={`rounded-md px-3 py-2 text-left text-sm ${activeTab === tab ? 'bg-button text-ink' : 'text-ink-secondary hover:bg-highlight hover:text-ink'}`}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {tab === 'shell' ? 'Shell' : 'Actions & Configuration'}
+                </button>
+              ))}
+            </div>
+            {(['shell', 'actions'] as const)
+              .filter((tab) => tab !== activeTab)
+              .map((tab) => (
+                <div
+                  key={tab}
+                  role="tabpanel"
+                  id={`settings-panel-${tab}`}
+                  aria-labelledby={`settings-tab-${tab}`}
+                  hidden
+                />
+              ))}
+            <div
+              role="tabpanel"
+              id={`settings-panel-${activeTab}`}
+              aria-labelledby={`settings-tab-${activeTab}`}
+              className="min-w-0 flex-1 overflow-y-auto pr-1"
             >
-              Actions &amp; Configuration
-            </button>
-          </div>
-          {activeTab === 'shell' ? (
-            <ShellTab app={app} projectId={projectId} />
-          ) : (
-            <>
-              {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is
+              {activeTab === 'shell' ? (
+                <ShellTab app={app} projectId={projectId} />
+              ) : (
+                <>
+                  {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is
             application-global; the handoff directory is per project. */}
-              <div className="mt-4 text-xs" data-testid={TEST_ID.settingsConfigSection}>
-                <h3 className="border-b border-edge pb-2 text-sm font-semibold">Configuration</h3>
-                <label className="mt-2 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={autoSend}
-                    data-testid={TEST_ID.settingsAutoSend}
-                    onChange={(event) => {
-                      onAutoSendChange(event.target.checked)
-                    }}
-                  />
-                  Auto-send after Handoff/Resume
-                </label>
-                {projectId !== null ? (
-                  <div className="mt-2">
-                    <label>
-                      Handoff directory (relative to the project root, or absolute)
-                      <div className="mt-1 flex gap-2">
-                        <input
-                          className="min-w-0 flex-1 rounded-sm bg-highlight p-1"
-                          value={handoffDir}
-                          placeholder="e.g. .agents/handoffs"
-                          data-testid={TEST_ID.settingsHandoffDir}
-                          onChange={(event) => {
-                            setHandoffDir(event.target.value)
-                            setHandoffDirSaved(false)
-                          }}
-                        />
+                  <div className="mt-4 text-xs" data-testid={TEST_ID.settingsConfigSection}>
+                    <h3 className="border-b border-edge pb-2 text-sm font-semibold">
+                      Configuration
+                    </h3>
+                    <label className="mt-2 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={autoSend}
+                        data-testid={TEST_ID.settingsAutoSend}
+                        onChange={(event) => {
+                          onAutoSendChange(event.target.checked)
+                        }}
+                      />
+                      Auto-send after Handoff/Resume
+                    </label>
+                    {projectId !== null ? (
+                      <div className="mt-2">
+                        <label>
+                          Handoff directory (relative to the project root, or absolute)
+                          <div className="mt-1 flex gap-2">
+                            <input
+                              className="min-w-0 flex-1 rounded-sm bg-highlight p-1"
+                              value={handoffDir}
+                              placeholder="e.g. .agents/handoffs"
+                              data-testid={TEST_ID.settingsHandoffDir}
+                              onChange={(event) => {
+                                setHandoffDir(event.target.value)
+                                setHandoffDirSaved(false)
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover"
+                              data-testid={TEST_ID.settingsHandoffDirBrowse}
+                              onClick={() => {
+                                void browseHandoffDir()
+                              }}
+                            >
+                              Browse
+                            </button>
+                          </div>
+                        </label>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            aria-label="Save handoff directory"
+                            className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
+                            data-testid={TEST_ID.settingsHandoffDirSave}
+                            onClick={() => {
+                              void saveHandoffDir()
+                            }}
+                          >
+                            Save
+                          </button>
+                          {handoffDirSaved ? (
+                            <span
+                              className="text-success"
+                              data-testid={TEST_ID.settingsHandoffDirSaved}
+                            >
+                              Saved
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    {configError ? (
+                      <p role="alert" className="mt-2 text-error">
+                        {configError}
+                      </p>
+                    ) : null}
+                  </div>
+                  <h3 className="mt-4 border-b border-edge pb-2 text-sm font-semibold">Actions</h3>
+                  <ul className="mt-2 space-y-2">
+                    {visible.map((action) => (
+                      <li
+                        key={action.id}
+                        className="flex items-center gap-2 rounded border border-edge px-2 py-1 text-xs"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium">{action.title}</div>
+                          <div
+                            className="truncate text-ink-secondary"
+                            title={actionCommand(action.command).command}
+                          >
+                            {actionCommand(action.command).command}
+                          </div>
+                          <div className="text-ink-muted">
+                            {action.runMode === 'background'
+                              ? 'Background'
+                              : action.runMode === 'bottom-terminal'
+                                ? 'Bottom terminal'
+                                : 'New terminal'}{' '}
+                            · {action.scope}
+                          </div>
+                        </div>
                         <button
                           type="button"
-                          className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover"
-                          data-testid={TEST_ID.settingsHandoffDirBrowse}
+                          className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                          onClick={() => edit(action)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error"
                           onClick={() => {
-                            void browseHandoffDir()
+                            void remove(action.id)
                           }}
                         >
-                          Browse
+                          Delete
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    className="mt-3 h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
+                    onClick={() => {
+                      setEditingId(null)
+                      setForm(emptyInput(projectId, nextSortOrder(actions)))
+                      setRunWithPowerShell(false)
+                      setError(null)
+                    }}
+                  >
+                    Add Action
+                  </button>
+                  {form !== null ? (
+                    <form
+                      className="mt-4 grid gap-3 text-xs"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        void save()
+                      }}
+                    >
+                      <h4 className="font-semibold">{editingId ? 'Edit Action' : 'Add Action'}</h4>
+                      <label>
+                        Scope
+                        <select
+                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                          value={form.scope}
+                          onChange={(event) =>
+                            setForm({
+                              ...form,
+                              scope: event.target.value as ActionInput['scope'],
+                              projectId: event.target.value === 'global' ? null : projectId,
+                            })
+                          }
+                        >
+                          <option value="project" disabled={projectId === null}>
+                            Project
+                          </option>
+                          <option value="global">Global</option>
+                        </select>
+                      </label>
+                      <label>
+                        Title
+                        <input
+                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                          value={form.title}
+                          onChange={(event) => setForm({ ...form, title: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Icon
+                        <select
+                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                          value={iconModeOf(form.icon)}
+                          data-testid={TEST_ID.settingsActionIconSelect}
+                          onChange={(event) => {
+                            const value = event.target.value
+                            setForm({
+                              ...form,
+                              icon: value === ACTION_NONE || value === 'custom' ? null : value,
+                            })
+                          }}
+                        >
+                          {ICON_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {iconModeOf(form.icon) === 'custom' ? (
+                        <label>
+                          Icon emoji
+                          <input
+                            className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                            value={form.icon ?? ''}
+                            placeholder="e.g. 🚀"
+                            data-testid={TEST_ID.settingsActionIconEmoji}
+                            onChange={(event) =>
+                              setForm({ ...form, icon: event.target.value || null })
+                            }
+                          />
+                        </label>
+                      ) : null}
+                      <p className="text-ink-muted">
+                        Icon: pick a preset Lucide glyph, or choose Custom and paste any emoji.
+                        Leave None for no icon.
+                      </p>
+                      <label>
+                        Command
+                        <input
+                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                          value={form.command}
+                          onChange={(event) => setForm({ ...form, command: event.target.value })}
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={runWithPowerShell}
+                          onChange={(event) => setRunWithPowerShell(event.target.checked)}
+                        />
+                        Run with{' '}
+                        <code className="min-w-0 rounded-sm bg-highlight px-1 font-mono">
+                          {POWERSHELL_PREFIX.trim()}
+                        </code>
+                      </label>
+                      <label>
+                        Working Directory (project root by default)
+                        <input
+                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                          value={form.cwd ?? ''}
+                          onChange={(event) =>
+                            setForm({ ...form, cwd: event.target.value || null })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Run In
+                        <select
+                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                          value={form.runMode}
+                          onChange={(event) =>
+                            setForm({
+                              ...form,
+                              runMode: event.target.value as ActionInput['runMode'],
+                            })
+                          }
+                        >
+                          <option value="background">Background</option>
+                          <option value="new-terminal">New terminal</option>
+                          <option value="bottom-terminal">Bottom terminal</option>
+                        </select>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={form.confirm}
+                          onChange={(event) => setForm({ ...form, confirm: event.target.checked })}
+                        />
+                        Ask for confirmation
+                      </label>
+                      {error ? (
+                        <p role="alert" className="text-error">
+                          {error}
+                        </p>
+                      ) : null}
+                      <div className="flex gap-2">
+                        <button
+                          type="submit"
+                          className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="h-control rounded-md px-4 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                          onClick={() => {
+                            setForm(null)
+                            setError(null)
+                          }}
+                        >
+                          Cancel
                         </button>
                       </div>
-                    </label>
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label="Save handoff directory"
-                        className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
-                        data-testid={TEST_ID.settingsHandoffDirSave}
-                        onClick={() => {
-                          void saveHandoffDir()
-                        }}
-                      >
-                        Save
-                      </button>
-                      {handoffDirSaved ? (
-                        <span
-                          className="text-success"
-                          data-testid={TEST_ID.settingsHandoffDirSaved}
-                        >
-                          Saved
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-                {configError ? (
-                  <p role="alert" className="mt-2 text-error">
-                    {configError}
-                  </p>
-                ) : null}
-              </div>
-              <h3 className="mt-4 border-b border-edge pb-2 text-sm font-semibold">Actions</h3>
-              <ul className="mt-2 space-y-2">
-                {visible.map((action) => (
-                  <li
-                    key={action.id}
-                    className="flex items-center gap-2 rounded border border-edge px-2 py-1 text-xs"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium">{action.title}</div>
-                      <div
-                        className="truncate text-ink-secondary"
-                        title={actionCommand(action.command).command}
-                      >
-                        {actionCommand(action.command).command}
-                      </div>
-                      <div className="text-ink-muted">
-                        {action.runMode === 'background'
-                          ? 'Background'
-                          : action.runMode === 'bottom-terminal'
-                            ? 'Bottom terminal'
-                            : 'New terminal'}{' '}
-                        · {action.scope}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
-                      onClick={() => edit(action)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error"
-                      onClick={() => {
-                        void remove(action.id)
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                className="mt-3 h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
-                onClick={() => {
-                  setEditingId(null)
-                  setForm(emptyInput(projectId, nextSortOrder(actions)))
-                  setRunWithPowerShell(false)
-                  setError(null)
-                }}
-              >
-                Add Action
-              </button>
-              {form !== null ? (
-                <form
-                  className="mt-4 grid gap-3 text-xs"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    void save()
-                  }}
-                >
-                  <h4 className="font-semibold">{editingId ? 'Edit Action' : 'Add Action'}</h4>
-                  <label>
-                    Scope
-                    <select
-                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                      value={form.scope}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          scope: event.target.value as ActionInput['scope'],
-                          projectId: event.target.value === 'global' ? null : projectId,
-                        })
-                      }
-                    >
-                      <option value="project" disabled={projectId === null}>
-                        Project
-                      </option>
-                      <option value="global">Global</option>
-                    </select>
-                  </label>
-                  <label>
-                    Title
-                    <input
-                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                      value={form.title}
-                      onChange={(event) => setForm({ ...form, title: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    Icon
-                    <select
-                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                      value={iconModeOf(form.icon)}
-                      data-testid={TEST_ID.settingsActionIconSelect}
-                      onChange={(event) => {
-                        const value = event.target.value
-                        setForm({
-                          ...form,
-                          icon: value === ACTION_NONE || value === 'custom' ? null : value,
-                        })
-                      }}
-                    >
-                      {ICON_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {iconModeOf(form.icon) === 'custom' ? (
-                    <label>
-                      Icon emoji
-                      <input
-                        className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                        value={form.icon ?? ''}
-                        placeholder="e.g. 🚀"
-                        data-testid={TEST_ID.settingsActionIconEmoji}
-                        onChange={(event) => setForm({ ...form, icon: event.target.value || null })}
-                      />
-                    </label>
-                  ) : null}
-                  <p className="text-ink-muted">
-                    Icon: pick a preset Lucide glyph, or choose Custom and paste any emoji. Leave
-                    None for no icon.
-                  </p>
-                  <label>
-                    Command
-                    <input
-                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                      value={form.command}
-                      onChange={(event) => setForm({ ...form, command: event.target.value })}
-                    />
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={runWithPowerShell}
-                      onChange={(event) => setRunWithPowerShell(event.target.checked)}
-                    />
-                    Run with{' '}
-                    <code className="min-w-0 rounded-sm bg-highlight px-1 font-mono">
-                      {POWERSHELL_PREFIX.trim()}
-                    </code>
-                  </label>
-                  <label>
-                    Working Directory (project root by default)
-                    <input
-                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                      value={form.cwd ?? ''}
-                      onChange={(event) => setForm({ ...form, cwd: event.target.value || null })}
-                    />
-                  </label>
-                  <label>
-                    Run In
-                    <select
-                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                      value={form.runMode}
-                      onChange={(event) =>
-                        setForm({ ...form, runMode: event.target.value as ActionInput['runMode'] })
-                      }
-                    >
-                      <option value="background">Background</option>
-                      <option value="new-terminal">New terminal</option>
-                      <option value="bottom-terminal">Bottom terminal</option>
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={form.confirm}
-                      onChange={(event) => setForm({ ...form, confirm: event.target.checked })}
-                    />
-                    Ask for confirmation
-                  </label>
-                  {error ? (
-                    <p role="alert" className="text-error">
+                    </form>
+                  ) : error ? (
+                    <p role="alert" className="mt-2 text-xs text-error">
                       {error}
                     </p>
                   ) : null}
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      className="h-control rounded-md px-4 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
-                      onClick={() => {
-                        setForm(null)
-                        setError(null)
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : error ? (
-                <p role="alert" className="mt-2 text-xs text-error">
-                  {error}
-                </p>
-              ) : null}
-            </>
-          )}
+                </>
+              )}
+            </div>
+          </div>
         </section>
       </div>
     </>
