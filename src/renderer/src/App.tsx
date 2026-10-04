@@ -1208,7 +1208,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       }
       let label: string
       try {
-        label = (await app.terminals.shellName()).trim()
+        // The label resolves the project's stored shell choice (spec
+        // project-shell-selection): e.g. "WSL: Ubuntu-24.04" for a WSL-bound
+        // project, the platform default name otherwise.
+        label = (await app.terminals.shellName(projectId)).trim()
       } catch (error) {
         if (removedProjectIdsRef.current.has(projectId)) {
           dropStagedCommand()

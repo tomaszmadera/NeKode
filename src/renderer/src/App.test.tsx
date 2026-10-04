@@ -62,6 +62,13 @@ function createAppApiStub(): AppApi {
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
       shellName: vi.fn().mockResolvedValue('PowerShell'),
+      // Shell tab detection (spec project-shell-selection): the Project
+      // Settings modal opens on the Shell tab and runs one detection.
+      shellDetect: vi.fn().mockResolvedValue([
+        { id: 'default', label: 'PowerShell' },
+        { id: 'wsl:Ubuntu-24.04', label: 'WSL: Ubuntu-24.04' },
+      ]),
+      shellAddCustom: vi.fn().mockResolvedValue({ id: 'custom:D:\\sh.exe', label: 'sh.exe' }),
       terminate: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn().mockReturnValue(() => undefined),
       onExit: vi.fn().mockReturnValue(() => undefined),
@@ -177,6 +184,18 @@ describe('app settings and themes', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Uppercase project names in the tree' }))
     expect(screen.getByTestId(testIdFor.projectSelect('p1')).textContent).toBe('DEMO')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.projectNamesUppercase, '1')
+  })
+
+  it('closes the app settings dialog on a backdrop mouse down', () => {
+    const app = createAppApiStub()
+    render(<App app={app} />)
+    fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    // A mouse down inside the dialog never closes it; the dimmed backdrop does.
+    fireEvent.mouseDown(dialog)
+    expect(screen.getByRole('dialog', { name: 'App Settings' })).toBeTruthy()
+    fireEvent.mouseDown(dialog.parentElement as HTMLElement)
+    expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
   })
 
   beforeEach(() => {
@@ -844,10 +863,47 @@ describe('action row and settings', () => {
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
   })
 
+  it('closes the resume picker on a backdrop mouse down', async () => {
+    await renderSelectedChat()
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    const dialog = await screen.findByTestId(TEST_ID.handoffPicker)
+    // A mouse down inside the dialog never closes it; the dimmed backdrop does.
+    fireEvent.mouseDown(dialog)
+    expect(screen.getByTestId(TEST_ID.handoffPicker)).toBeTruthy()
+    fireEvent.mouseDown(dialog.parentElement as HTMLElement)
+    expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
+  })
+
+  it('keeps project settings open for inside clicks and closes on backdrop or Escape', async () => {
+    await renderSelectedChat()
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Project Settings' })
+    // An unsaved edit plus a mouse down inside the dialog: it stays open.
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsHandoffDir), {
+      target: { value: '.agents/handoffs' },
+    })
+    fireEvent.mouseDown(dialog)
+    expect(screen.getByRole('dialog', { name: 'Project Settings' })).toBeTruthy()
+    expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
+      '.agents/handoffs',
+    )
+    // The dimmed backdrop closes it, and so does Escape anywhere on the page.
+    fireEvent.mouseDown(dialog.parentElement as HTMLElement)
+    expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    await screen.findByRole('dialog', { name: 'Project Settings' })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
+  })
+
   it('project settings edits auto-send and the per-project handoff directory', async () => {
     await renderSelectedChat()
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
     await screen.findByText('Project Settings')
+    // The modal opens on the Shell tab; the Configuration section lives on
+    // Actions & Configuration.
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
 
     const autoSend = screen.getByTestId(TEST_ID.settingsAutoSend) as HTMLInputElement
     expect(autoSend.checked).toBe(false)
@@ -869,6 +925,7 @@ describe('action row and settings', () => {
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/.agents/handoffs')
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
     await screen.findByText('Project Settings')
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
     // The picked directory stores relative to the project root.
     await waitFor(() =>
@@ -884,6 +941,7 @@ describe('action row and settings', () => {
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/elsewhere/handoffs')
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
     await screen.findByText('Project Settings')
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
     await waitFor(() =>
       expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
@@ -897,6 +955,7 @@ describe('action row and settings', () => {
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/handoffs')
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
     await screen.findByText('Project Settings')
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.change(screen.getByTestId(TEST_ID.settingsHandoffDir), {
       target: { value: '.agents/handoffs' },
     })
@@ -1323,6 +1382,7 @@ describe('action row and settings', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
     const select = screen.getByTestId(TEST_ID.settingsActionIconSelect)
     // Null icon ("none") is the default; the emoji input stays hidden.
@@ -1351,6 +1411,7 @@ describe('action row and settings', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     const select = screen.getByTestId(TEST_ID.settingsActionIconSelect)
     expect((select as HTMLSelectElement).value).toBe('custom')
@@ -1368,6 +1429,7 @@ describe('action row and settings', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(screen.getByRole('alert').textContent).toContain('Title and command')
@@ -1389,6 +1451,7 @@ describe('action row and settings', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
     const runIn = screen.getByLabelText('Run In') as HTMLSelectElement
     expect([...runIn.options].map((option) => option.value)).toEqual([
@@ -1424,6 +1487,7 @@ describe('action row and settings', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } })
     vi.mocked(app.actions.update).mockResolvedValue({ ...buildAction, title: 'Test' })
@@ -1444,6 +1508,7 @@ describe('action row and settings', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     // 'Gone' also names the action-bar button; the row lives in the dialog.
     const goneRow = within(screen.getByRole('dialog')).getByText('Gone').closest('li')
     expect(goneRow).toBeTruthy()

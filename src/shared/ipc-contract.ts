@@ -105,6 +105,120 @@ export interface HandoffEntry {
   modifiedAt: string
 }
 
+// Shell selection (spec project-shell-selection): the stored per-project
+// setting value is one opaque choice id — `default`, a detected shell
+// (`powershell`, `pwsh`, `cmd`, `gitbash`, `wsl:<distro>`) or a user-added
+// executable path (`custom:<absolute path>`). The renderer only ever sends
+// ids; main resolves every id to an executable at spawn/label time and falls
+// back to the platform default when the id no longer resolves.
+export type ShellChoice =
+  | 'default'
+  | 'powershell'
+  | 'pwsh'
+  | 'cmd'
+  | 'gitbash'
+  | `wsl:${string}`
+  | `custom:${string}`
+
+/** One selectable shell as shown in the Shell settings tab. */
+export interface ShellInfo {
+  id: ShellChoice
+  /** Display label (e.g. "PowerShell", "WSL: Ubuntu-24.04", "bash"). */
+  label: string
+}
+
+// ---------------------------------------------------------------------------
+// Kanban adapter integration (spec kanban-adapter-interface). Adapter plugins
+// are external user-installed processes; the shapes below are the app-side
+// normalized contract only — no backend knowledge lives in the renderer.
+// ---------------------------------------------------------------------------
+
+/** Plane-compatible state groups; every adapter maps its backend onto these. */
+export type KanbanStateGroup = 'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled'
+
+export const KANBAN_STATE_GROUPS: readonly KanbanStateGroup[] = [
+  'backlog',
+  'unstarted',
+  'started',
+  'completed',
+  'cancelled',
+]
+
+export interface KanbanState {
+  id: string
+  name: string
+  group: KanbanStateGroup
+  /** Adapter-provided sort key; the board orders columns by it. */
+  order: number
+}
+
+export type KanbanPriority = 'urgent' | 'high' | 'medium' | 'low'
+
+export const KANBAN_PRIORITIES: readonly KanbanPriority[] = ['urgent', 'high', 'medium', 'low']
+
+export interface WorkItem {
+  /** Stable human-readable reference, e.g. `NEKODE-16`. */
+  ref: string
+  /** Backend-native id, opaque to the UI. */
+  id: string
+  title: string
+  description: string | null
+  stateId: string
+  stateName: string
+  stateGroup: KanbanStateGroup
+  priority: KanbanPriority | null
+  assignee: string | null
+  url: string | null
+  updatedAt: string | null
+}
+
+export interface KanbanBoard {
+  states: KanbanState[]
+  items: WorkItem[]
+}
+
+export type KanbanConfigFieldType = 'string' | 'secret' | 'select' | 'boolean'
+
+export interface KanbanConfigField {
+  key: string
+  label: string
+  type: KanbanConfigFieldType
+  required: boolean
+  /** `select` fields only: the allowed values (at least one). */
+  options?: string[]
+  default?: string | boolean
+}
+
+export interface KanbanAdapterInfo {
+  id: string
+  name: string
+  configSchema: KanbanConfigField[]
+}
+
+/** kanban:getConfig result: secret values never leave main (spec Business rules). */
+export interface KanbanProjectConfig {
+  adapterId: string | null
+  /** Stored non-secret values; secret fields read as null. */
+  values: Record<string, string | null>
+  /** Secret keys that hold a stored value (the UI shows "stored", never the value). */
+  secretKeys: string[]
+}
+
+export interface KanbanCreateInput {
+  title: string
+  description?: string
+  /** State name or group alias; resolved by the adapter, never by main. */
+  stateRef?: string
+  priority?: KanbanPriority
+}
+
+export interface KanbanUpdatePatch {
+  title?: string
+  description?: string
+  stateRef?: string
+  priority?: KanbanPriority
+}
+
 function toPosixSlashes(path: string): string {
   return path.replace(/\\/g, '/')
 }
@@ -148,6 +262,9 @@ export const IPC_CHANNEL = {
   terminalsResize: 'terminals:resize',
   terminalsTerminate: 'terminals:terminate',
   terminalsShellName: 'terminals:shellName',
+  terminalsShellList: 'terminals:shellList',
+  terminalsShellDetect: 'terminals:shellDetect',
+  terminalsShellAddCustom: 'terminals:shellAddCustom',
   terminalsData: 'terminals:data',
   terminalsExit: 'terminals:exit',
   gitStatus: 'git:status',
@@ -163,6 +280,13 @@ export const IPC_CHANNEL = {
   actionsStatus: 'actions:status',
   handoffsList: 'handoffs:list',
   dialogsPickDirectory: 'dialogs:pickDirectory',
+  kanbanAdaptersList: 'kanban:adaptersList',
+  kanbanGetConfig: 'kanban:getConfig',
+  kanbanSetConfig: 'kanban:setConfig',
+  kanbanTest: 'kanban:test',
+  kanbanListBoard: 'kanban:listBoard',
+  kanbanCreateItem: 'kanban:createItem',
+  kanbanUpdateItem: 'kanban:updateItem',
 } as const
 
 // Keys of the flat app_state key–value store (spec Data/API). Shared so the
@@ -190,6 +314,14 @@ export const APP_STATE_KEY = {
   attentionActiveChimeEnabled: 'attention.activeChimeEnabled',
   /** '0' hides the attention indicator on the selected chat's row; missing or '1' means shown. */
   attentionActiveIndicatorEnabled: 'attention.activeIndicatorEnabled',
+  /** Absolute adapters directory override; missing means `<userData>/kanban-adapters`. */
+  kanbanAdaptersDir: 'kanban.adaptersDir',
+  /**
+   * JSON array of absolute executable paths the user added as custom shells
+   * (spec project-shell-selection). App-level, shared across projects;
+   * re-validated (dead paths pruned) on every shell detection run.
+   */
+  customShells: 'shells.custom',
 } as const
 
 /**
@@ -199,6 +331,25 @@ export const APP_STATE_KEY = {
  */
 export function projectHandoffDirKey(projectId: string): string {
   return `project.handoffDir:${projectId}`
+}
+
+/** Per-project Kanban adapter binding key (spec kanban-adapter-interface Business rules). */
+export function projectKanbanAdapterKey(projectId: string): string {
+  return `project.kanbanAdapter:${projectId}`
+}
+
+/** Per-project Kanban adapter config JSON key (field values, secrets included). */
+export function projectKanbanConfigKey(projectId: string): string {
+  return `project.kanbanConfig:${projectId}`
+}
+
+/**
+ * Per-project shell choice key (spec project-shell-selection). The stored
+ * value is a `ShellChoice` id; empty or missing means `default` (the
+ * platform default shell, unchanged behavior).
+ */
+export function projectShellKey(projectId: string): string {
+  return `project.shell:${projectId}`
 }
 
 export interface AppApi {
@@ -233,10 +384,29 @@ export interface AppApi {
     write(chatId: string, data: string): Promise<void>
     resize(chatId: string, cols: number, rows: number): Promise<void>
     /**
-     * Platform shell display label (for example "PowerShell"). Bottom tabs
-     * take their label from this. It does not create a chat.
+     * Display label of the project's resolved shell (spec
+     * project-shell-selection): the stored per-project choice, or the
+     * platform default (e.g. "PowerShell") when unset/unresolvable. Bottom
+     * tabs take their label from this. It does not create a chat.
      */
-    shellName(): Promise<string>
+    shellName(projectId: string): Promise<string>
+    /**
+     * Cached shell list (spec project-shell-selection): `default` plus the
+     * last detection of this app run plus persisted custom entries. Never
+     * probes the machine — detection runs only via `shellDetect`.
+     */
+    shellList(): Promise<ShellInfo[]>
+    /**
+     * Runs one detection (the Shell settings tab calls this on entry):
+     * fixed-path probing plus one WSL enumeration in main, cache replaced,
+     * custom paths re-validated (dead pruned). Returns the full list.
+     */
+    shellDetect(): Promise<ShellInfo[]>
+    /**
+     * Validates an absolute executable path in main and adds it as a
+     * `custom:<path>` entry (persisted app-level). Rejects invalid input.
+     */
+    shellAddCustom(path: string): Promise<ShellInfo>
     /**
      * Terminates one bottom-tab PTY. Rejects any other id. Chat sessions and
      * application quit do not use this method.
@@ -280,6 +450,26 @@ export interface AppApi {
      * validation error; missing directory: not_found naming the path.
      */
     list(projectId: string): Promise<HandoffEntry[]>
+  }
+  kanban: {
+    /** Adapters discovered in the configured adapters directory (fresh scan). */
+    adaptersList(): Promise<KanbanAdapterInfo[]>
+    /** Binding + stored values; secret values read as null (never leave main). */
+    getConfig(projectId: string): Promise<KanbanProjectConfig>
+    /**
+     * Persists binding and field values. A missing (vs empty) secret entry
+     * keeps the stored secret; an empty string clears any stored value.
+     */
+    setConfig(
+      projectId: string,
+      config: { adapterId: string | null; values: Record<string, string> },
+    ): Promise<void>
+    /** Invokes the adapter's `test` action; `values` falls back to stored config. */
+    test(projectId: string, values?: Record<string, string>): Promise<void>
+    /** Normalized states + items of the bound adapter's backend. */
+    listBoard(projectId: string): Promise<KanbanBoard>
+    createItem(projectId: string, input: KanbanCreateInput): Promise<WorkItem>
+    updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem>
   }
   dialogs: {
     /**

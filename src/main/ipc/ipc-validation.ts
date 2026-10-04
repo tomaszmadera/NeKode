@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path'
 import { isBottomTabId } from '../../shared/bottom-tab-id'
-import type { ActionInput } from '../../shared/ipc-contract'
+import type { ActionInput, KanbanCreateInput, KanbanUpdatePatch } from '../../shared/ipc-contract'
+import { KANBAN_PRIORITIES } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import type { AppServices } from './service-registry'
 
@@ -121,6 +122,109 @@ function assertActionInput(value: unknown, label: string): asserts value is Acti
     fail(label, 'has inconsistent scope and projectId')
 }
 
+function assertKanbanValues(
+  value: unknown,
+  label: string,
+): asserts value is Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry !== 'string') {
+      fail(`${label}.${key}`, 'must be a string')
+    }
+  }
+}
+
+function assertOptionalKanbanValues(
+  value: unknown,
+  label: string,
+): asserts value is Record<string, string> | undefined {
+  if (value === undefined) {
+    return
+  }
+  assertKanbanValues(value, label)
+}
+
+function assertKanbanSetConfig(
+  value: unknown,
+  label: string,
+): asserts value is { adapterId: string | null; values: Record<string, string> } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+  const input = value as Record<string, unknown>
+  if (input.adapterId !== null && typeof input.adapterId !== 'string') {
+    fail(`${label}.adapterId`, 'must be a string or null')
+  }
+  assertKanbanValues(input.values, `${label}.values`)
+}
+
+function assertKanbanCreateInput(
+  value: unknown,
+  label: string,
+): asserts value is KanbanCreateInput {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+  const input = value as Record<string, unknown>
+  if (typeof input.title !== 'string' || !input.title.trim()) {
+    fail(`${label}.title`, 'must be non-empty')
+  }
+  if (input.description !== undefined && typeof input.description !== 'string') {
+    fail(`${label}.description`, 'must be a string')
+  }
+  if (
+    input.stateRef !== undefined &&
+    (typeof input.stateRef !== 'string' || !input.stateRef.trim())
+  ) {
+    fail(`${label}.stateRef`, 'must be non-empty')
+  }
+  if (
+    input.priority !== undefined &&
+    (typeof input.priority !== 'string' || !KANBAN_PRIORITIES.includes(input.priority as never))
+  ) {
+    fail(`${label}.priority`, `must be one of ${KANBAN_PRIORITIES.join('|')}`)
+  }
+}
+
+function assertKanbanUpdatePatch(
+  value: unknown,
+  label: string,
+): asserts value is KanbanUpdatePatch {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+  const input = value as Record<string, unknown>
+  const present = Object.keys(input)
+  if (present.length === 0) {
+    fail(label, 'must change at least one field')
+  }
+  for (const key of present) {
+    if (key !== 'title' && key !== 'description' && key !== 'stateRef' && key !== 'priority') {
+      fail(`${label}.${key}`, 'is not a patchable field')
+    }
+  }
+  if (input.title !== undefined && (typeof input.title !== 'string' || !input.title.trim())) {
+    fail(`${label}.title`, 'must be non-empty')
+  }
+  if (input.description !== undefined && typeof input.description !== 'string') {
+    fail(`${label}.description`, 'must be a string')
+  }
+  if (
+    input.stateRef !== undefined &&
+    (typeof input.stateRef !== 'string' || !input.stateRef.trim())
+  ) {
+    fail(`${label}.stateRef`, 'must be non-empty')
+  }
+  if (
+    input.priority !== undefined &&
+    (typeof input.priority !== 'string' || !KANBAN_PRIORITIES.includes(input.priority as never))
+  ) {
+    fail(`${label}.priority`, `must be one of ${KANBAN_PRIORITIES.join('|')}`)
+  }
+}
+
 function actionInputChannel(
   channel: string,
   withId: boolean,
@@ -235,7 +339,18 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel('terminals:resize', ['string', 'number', 'number'], (args) =>
       services.terminals.resize(args[0], args[1], args[2]),
     ),
-    serviceChannel('terminals:shellName', [], () => services.terminals.shellName()),
+    // Shell selection (spec project-shell-selection): shellName resolves the
+    // project's stored choice; shellList reads the cache (never probes);
+    // shellDetect runs one explicit detection (the Shell tab calls it on
+    // entry); shellAddCustom validates an absolute executable path in main.
+    serviceChannel('terminals:shellName', ['string'], (args) =>
+      services.terminals.shellName(args[0]),
+    ),
+    serviceChannel('terminals:shellList', [], () => services.terminals.shellList()),
+    serviceChannel('terminals:shellDetect', [], () => services.terminals.shellDetect()),
+    serviceChannel('terminals:shellAddCustom', ['path'], (args) =>
+      services.terminals.shellAddCustom(args[0]),
+    ),
     {
       channel: 'terminals:terminate',
       parse: (payload) => {
@@ -273,6 +388,63 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     // outside the project root by explicit user configuration, so unlike
     // files:* there is no containment rule here.
     serviceChannel('handoffs:list', ['string'], (args) => services.handoffs.list(args[0])),
+    // Kanban adapter channels (spec kanban-adapter-interface Data/API).
+    // adaptersList/getConfig/setConfig are synchronous app-side operations;
+    // test/listBoard/create/update invoke adapter processes (async).
+    serviceChannel('kanban:adaptersList', [], () => services.kanban.adaptersList()),
+    serviceChannel('kanban:getConfig', ['string'], (args) => services.kanban.getConfig(args[0])),
+    {
+      channel: 'kanban:setConfig',
+      parse: (payload) => {
+        requireArgs(payload, 2, 'kanban:setConfig')
+        assertString(payload[0], 'kanban:setConfig arg[0]')
+        assertKanbanSetConfig(payload[1], 'kanban:setConfig arg[1]')
+        return payload
+      },
+      invoke: (args) =>
+        services.kanban.setConfig(
+          args[0] as string,
+          args[1] as { adapterId: string | null; values: Record<string, string> },
+        ),
+    },
+    {
+      channel: 'kanban:test',
+      parse: (payload) => {
+        requireArgs(payload, 2, 'kanban:test')
+        assertString(payload[0], 'kanban:test arg[0]')
+        assertOptionalKanbanValues(payload[1], 'kanban:test arg[1]')
+        return payload
+      },
+      invoke: (args) =>
+        services.kanban.test(args[0] as string, args[1] as Record<string, string> | undefined),
+    },
+    serviceChannel('kanban:listBoard', ['string'], (args) => services.kanban.listBoard(args[0])),
+    {
+      channel: 'kanban:createItem',
+      parse: (payload) => {
+        requireArgs(payload, 2, 'kanban:createItem')
+        assertString(payload[0], 'kanban:createItem arg[0]')
+        assertKanbanCreateInput(payload[1], 'kanban:createItem arg[1]')
+        return payload
+      },
+      invoke: (args) => services.kanban.createItem(args[0] as string, args[1] as KanbanCreateInput),
+    },
+    {
+      channel: 'kanban:updateItem',
+      parse: (payload) => {
+        requireArgs(payload, 3, 'kanban:updateItem')
+        assertString(payload[0], 'kanban:updateItem arg[0]')
+        assertString(payload[1], 'kanban:updateItem arg[1]')
+        assertKanbanUpdatePatch(payload[2], 'kanban:updateItem arg[2]')
+        return payload
+      },
+      invoke: (args) =>
+        services.kanban.updateItem(
+          args[0] as string,
+          args[1] as string,
+          args[2] as KanbanUpdatePatch,
+        ),
+    },
     {
       channel: 'dialogs:pickDirectory',
       parse: (payload) => {

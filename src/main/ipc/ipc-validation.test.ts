@@ -31,6 +31,9 @@ function fakeServices(): AppServices {
       write: vi.fn(),
       resize: vi.fn(),
       shellName: vi.fn(() => 'PowerShell'),
+      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
       terminate: vi.fn(),
       terminateProjectBottom: vi.fn(),
       terminateAll: vi.fn(),
@@ -50,6 +53,16 @@ function fakeServices(): AppServices {
     },
     handoffs: {
       list: vi.fn(() => Promise.resolve([])),
+    },
+    kanban: {
+      adaptersList: vi.fn(() => []),
+      getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
+      setConfig: vi.fn(),
+      test: vi.fn(() => Promise.resolve()),
+      listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
+      createItem: vi.fn(() => Promise.resolve({} as never)),
+      updateItem: vi.fn(() => Promise.resolve({} as never)),
+      cleanupProject: vi.fn(),
     },
     dialogs: {
       pickDirectory: vi.fn(() => Promise.resolve(null)),
@@ -257,10 +270,27 @@ describe('ipc payload validation', () => {
     expect(() => terminate?.parse([])).toThrow(ValidationError)
     expect(services.terminals.terminate).toHaveBeenCalledTimes(1)
 
+    // Shell selection (spec project-shell-selection): shellName now takes the
+    // project id; list/detect take none; addCustom takes an absolute path.
     const shellName = channels.get('terminals:shellName')
-    expect(shellName?.parse([])).toEqual([])
-    expect(shellName?.invoke([])).toBe('PowerShell')
-    expect(() => shellName?.parse(['extra'])).toThrow(ValidationError)
+    expect(shellName?.parse(['p1'])).toEqual(['p1'])
+    expect(shellName?.invoke(['p1'])).toBe('PowerShell')
+    expect(services.terminals.shellName).toHaveBeenCalledWith('p1')
+    expect(() => shellName?.parse([])).toThrow(ValidationError)
+    const shellList = channels.get('terminals:shellList')
+    expect(shellList?.parse([])).toEqual([])
+    expect(shellList?.invoke([])).toEqual([{ id: 'default', label: 'PowerShell' }])
+    const shellDetect = channels.get('terminals:shellDetect')
+    expect(shellDetect?.parse([])).toEqual([])
+    expect(shellDetect?.invoke([])).toEqual([{ id: 'default', label: 'PowerShell' }])
+    const shellAddCustom = channels.get('terminals:shellAddCustom')
+    expect(shellAddCustom?.parse(['D:\\sh.exe'])).toEqual(['D:\\sh.exe'])
+    expect(shellAddCustom?.invoke(['D:\\sh.exe'])).toEqual({
+      id: 'custom:D:\\sh.exe',
+      label: 'sh.exe',
+    })
+    expect(() => shellAddCustom?.parse(['relative/sh.exe'])).toThrow(ValidationError)
+    expect(() => shellName?.parse(['extra', 'extra2'])).toThrow(ValidationError)
   })
 
   it('validates handoffs:list and dialogs:pickDirectory payloads', () => {

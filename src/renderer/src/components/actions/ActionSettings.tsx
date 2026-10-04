@@ -5,6 +5,7 @@ import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { ACTION_ICON_NAMES, ACTION_NONE, actionIconGlyph } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
+import { ShellTab } from '../settings/ShellTab'
 
 interface Props {
   app: AppApi
@@ -18,6 +19,8 @@ interface Props {
   onRefresh: () => Promise<void>
   onClose: () => void
 }
+
+type SettingsTabId = 'shell' | 'actions'
 
 const POWERSHELL_PREFIX = 'powershell -NoProfile -ExecutionPolicy Bypass -File '
 
@@ -85,6 +88,9 @@ export function ActionSettings({
   onRefresh,
   onClose,
 }: Props): React.JSX.Element {
+  // Tab state is renderer-local (spec project-shell-selection Stage 4): the
+  // Shell tab is the default, and each tab keeps its own unsaved edits.
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('shell')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ActionInput | null>(null)
   const [runWithPowerShell, setRunWithPowerShell] = useState(false)
@@ -218,300 +224,367 @@ export function ActionSettings({
     }
   }
 
+  // Escape closes the dialog from anywhere: the trigger button keeps focus
+  // when the dialog opens, so a dialog-level onKeyDown would never see the
+  // key (same window-level idiom as the context menus).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-      role="presentation"
-    >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label="Project Settings"
-        className="max-h-[85vh] w-[min(36rem,90vw)] overflow-y-auto rounded-lg border border-edge bg-panel p-5 shadow-xl"
+    <>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the backdrop hosts the dismiss gesture (mouse down outside the dialog); the dialog's controls are real buttons and inputs and it closes on Escape. */}
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+        role="presentation"
+        onMouseDown={(event) => {
+          // Backdrop dismiss: only a pointer-down on the dimmed area itself
+          // closes. mousedown (not click) survives a text-selection drag that
+          // releases outside the dialog; the target check keeps pointer-downs
+          // inside the dialog from closing it.
+          if (event.target === event.currentTarget) {
+            onClose()
+          }
+        }}
       >
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Project Settings</h2>
-          <button
-            type="button"
-            aria-label="Close settings"
-            className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
-        {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-label="Project Settings"
+          className="max-h-[85vh] w-[min(36rem,90vw)] overflow-y-auto rounded-lg border border-edge bg-panel p-5 shadow-xl"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold">Project Settings</h2>
+            <button
+              type="button"
+              aria-label="Close settings"
+              className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          </div>
+          <div role="tablist" aria-label="Settings sections" className="mt-3 flex gap-1">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'shell'}
+              data-testid={TEST_ID.settingsShellTab}
+              className={
+                activeTab === 'shell'
+                  ? 'rounded-md bg-button px-3 py-1 text-sm text-ink'
+                  : 'rounded-md px-3 py-1 text-sm text-ink-secondary hover:bg-highlight hover:text-ink'
+              }
+              onClick={() => setActiveTab('shell')}
+            >
+              Shell
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'actions'}
+              data-testid={TEST_ID.settingsActionsTab}
+              className={
+                activeTab === 'actions'
+                  ? 'rounded-md bg-button px-3 py-1 text-sm text-ink'
+                  : 'rounded-md px-3 py-1 text-sm text-ink-secondary hover:bg-highlight hover:text-ink'
+              }
+              onClick={() => setActiveTab('actions')}
+            >
+              Actions &amp; Configuration
+            </button>
+          </div>
+          {activeTab === 'shell' ? (
+            <ShellTab app={app} projectId={projectId} />
+          ) : (
+            <>
+              {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is
             application-global; the handoff directory is per project. */}
-        <div className="mt-4 text-xs" data-testid={TEST_ID.settingsConfigSection}>
-          <h3 className="border-b border-edge pb-2 text-sm font-semibold">Configuration</h3>
-          <label className="mt-2 flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={autoSend}
-              data-testid={TEST_ID.settingsAutoSend}
-              onChange={(event) => {
-                onAutoSendChange(event.target.checked)
-              }}
-            />
-            Auto-send after Handoff/Resume
-          </label>
-          {projectId !== null ? (
-            <div className="mt-2">
-              <label>
-                Handoff directory (relative to the project root, or absolute)
-                <div className="mt-1 flex gap-2">
+              <div className="mt-4 text-xs" data-testid={TEST_ID.settingsConfigSection}>
+                <h3 className="border-b border-edge pb-2 text-sm font-semibold">Configuration</h3>
+                <label className="mt-2 flex items-center gap-2">
                   <input
-                    className="min-w-0 flex-1 rounded-sm bg-highlight p-1"
-                    value={handoffDir}
-                    placeholder="e.g. .agents/handoffs"
-                    data-testid={TEST_ID.settingsHandoffDir}
+                    type="checkbox"
+                    checked={autoSend}
+                    data-testid={TEST_ID.settingsAutoSend}
                     onChange={(event) => {
-                      setHandoffDir(event.target.value)
-                      setHandoffDirSaved(false)
+                      onAutoSendChange(event.target.checked)
                     }}
                   />
-                  <button
-                    type="button"
-                    className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover"
-                    data-testid={TEST_ID.settingsHandoffDirBrowse}
-                    onClick={() => {
-                      void browseHandoffDir()
-                    }}
-                  >
-                    Browse
-                  </button>
-                </div>
-              </label>
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label="Save handoff directory"
-                  className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
-                  data-testid={TEST_ID.settingsHandoffDirSave}
-                  onClick={() => {
-                    void saveHandoffDir()
-                  }}
-                >
-                  Save
-                </button>
-                {handoffDirSaved ? (
-                  <span className="text-success" data-testid={TEST_ID.settingsHandoffDirSaved}>
-                    Saved
-                  </span>
+                  Auto-send after Handoff/Resume
+                </label>
+                {projectId !== null ? (
+                  <div className="mt-2">
+                    <label>
+                      Handoff directory (relative to the project root, or absolute)
+                      <div className="mt-1 flex gap-2">
+                        <input
+                          className="min-w-0 flex-1 rounded-sm bg-highlight p-1"
+                          value={handoffDir}
+                          placeholder="e.g. .agents/handoffs"
+                          data-testid={TEST_ID.settingsHandoffDir}
+                          onChange={(event) => {
+                            setHandoffDir(event.target.value)
+                            setHandoffDirSaved(false)
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover"
+                          data-testid={TEST_ID.settingsHandoffDirBrowse}
+                          onClick={() => {
+                            void browseHandoffDir()
+                          }}
+                        >
+                          Browse
+                        </button>
+                      </div>
+                    </label>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label="Save handoff directory"
+                        className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
+                        data-testid={TEST_ID.settingsHandoffDirSave}
+                        onClick={() => {
+                          void saveHandoffDir()
+                        }}
+                      >
+                        Save
+                      </button>
+                      {handoffDirSaved ? (
+                        <span
+                          className="text-success"
+                          data-testid={TEST_ID.settingsHandoffDirSaved}
+                        >
+                          Saved
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {configError ? (
+                  <p role="alert" className="mt-2 text-error">
+                    {configError}
+                  </p>
                 ) : null}
               </div>
-            </div>
-          ) : null}
-          {configError ? (
-            <p role="alert" className="mt-2 text-error">
-              {configError}
-            </p>
-          ) : null}
-        </div>
-        <h3 className="mt-4 border-b border-edge pb-2 text-sm font-semibold">Actions</h3>
-        <ul className="mt-2 space-y-2">
-          {visible.map((action) => (
-            <li
-              key={action.id}
-              className="flex items-center gap-2 rounded border border-edge px-2 py-1 text-xs"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="font-medium">{action.title}</div>
-                <div
-                  className="truncate text-ink-secondary"
-                  title={actionCommand(action.command).command}
-                >
-                  {actionCommand(action.command).command}
-                </div>
-                <div className="text-ink-muted">
-                  {action.runMode === 'background'
-                    ? 'Background'
-                    : action.runMode === 'bottom-terminal'
-                      ? 'Bottom terminal'
-                      : 'New terminal'}{' '}
-                  · {action.scope}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
-                onClick={() => edit(action)}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error"
-                onClick={() => {
-                  void remove(action.id)
-                }}
-              >
-                Delete
-              </button>
-            </li>
-          ))}
-        </ul>
-        <button
-          type="button"
-          className="mt-3 h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
-          onClick={() => {
-            setEditingId(null)
-            setForm(emptyInput(projectId, nextSortOrder(actions)))
-            setRunWithPowerShell(false)
-            setError(null)
-          }}
-        >
-          Add Action
-        </button>
-        {form !== null ? (
-          <form
-            className="mt-4 grid gap-3 text-xs"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void save()
-            }}
-          >
-            <h4 className="font-semibold">{editingId ? 'Edit Action' : 'Add Action'}</h4>
-            <label>
-              Scope
-              <select
-                className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                value={form.scope}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    scope: event.target.value as ActionInput['scope'],
-                    projectId: event.target.value === 'global' ? null : projectId,
-                  })
-                }
-              >
-                <option value="project" disabled={projectId === null}>
-                  Project
-                </option>
-                <option value="global">Global</option>
-              </select>
-            </label>
-            <label>
-              Title
-              <input
-                className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                value={form.title}
-                onChange={(event) => setForm({ ...form, title: event.target.value })}
-              />
-            </label>
-            <label>
-              Icon
-              <select
-                className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                value={iconModeOf(form.icon)}
-                data-testid={TEST_ID.settingsActionIconSelect}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setForm({
-                    ...form,
-                    icon: value === ACTION_NONE || value === 'custom' ? null : value,
-                  })
-                }}
-              >
-                {ICON_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
+              <h3 className="mt-4 border-b border-edge pb-2 text-sm font-semibold">Actions</h3>
+              <ul className="mt-2 space-y-2">
+                {visible.map((action) => (
+                  <li
+                    key={action.id}
+                    className="flex items-center gap-2 rounded border border-edge px-2 py-1 text-xs"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium">{action.title}</div>
+                      <div
+                        className="truncate text-ink-secondary"
+                        title={actionCommand(action.command).command}
+                      >
+                        {actionCommand(action.command).command}
+                      </div>
+                      <div className="text-ink-muted">
+                        {action.runMode === 'background'
+                          ? 'Background'
+                          : action.runMode === 'bottom-terminal'
+                            ? 'Bottom terminal'
+                            : 'New terminal'}{' '}
+                        · {action.scope}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                      onClick={() => edit(action)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error"
+                      onClick={() => {
+                        void remove(action.id)
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </li>
                 ))}
-              </select>
-            </label>
-            {iconModeOf(form.icon) === 'custom' ? (
-              <label>
-                Icon emoji
-                <input
-                  className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                  value={form.icon ?? ''}
-                  placeholder="e.g. 🚀"
-                  data-testid={TEST_ID.settingsActionIconEmoji}
-                  onChange={(event) => setForm({ ...form, icon: event.target.value || null })}
-                />
-              </label>
-            ) : null}
-            <p className="text-ink-muted">
-              Icon: pick a preset Lucide glyph, or choose Custom and paste any emoji. Leave None for
-              no icon.
-            </p>
-            <label>
-              Command
-              <input
-                className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                value={form.command}
-                onChange={(event) => setForm({ ...form, command: event.target.value })}
-              />
-            </label>
-            <label>
-              Working Directory (project root by default)
-              <input
-                className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                value={form.cwd ?? ''}
-                onChange={(event) => setForm({ ...form, cwd: event.target.value || null })}
-              />
-            </label>
-            <label>
-              Run In
-              <select
-                className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                value={form.runMode}
-                onChange={(event) =>
-                  setForm({ ...form, runMode: event.target.value as ActionInput['runMode'] })
-                }
-              >
-                <option value="background">Background</option>
-                <option value="new-terminal">New terminal</option>
-                <option value="bottom-terminal">Bottom terminal</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={form.confirm}
-                onChange={(event) => setForm({ ...form, confirm: event.target.checked })}
-              />
-              Ask for confirmation
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={runWithPowerShell}
-                onChange={(event) => setRunWithPowerShell(event.target.checked)}
-              />
-              Run with PowerShell NoProfile
-            </label>
-            {error ? (
-              <p role="alert" className="text-error">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
-              >
-                Save
-              </button>
+              </ul>
               <button
                 type="button"
-                className="h-control rounded-md px-4 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                className="mt-3 h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
                 onClick={() => {
-                  setForm(null)
+                  setEditingId(null)
+                  setForm(emptyInput(projectId, nextSortOrder(actions)))
+                  setRunWithPowerShell(false)
                   setError(null)
                 }}
               >
-                Cancel
+                Add Action
               </button>
-            </div>
-          </form>
-        ) : error ? (
-          <p role="alert" className="mt-2 text-xs text-error">
-            {error}
-          </p>
-        ) : null}
-      </section>
-    </div>
+              {form !== null ? (
+                <form
+                  className="mt-4 grid gap-3 text-xs"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void save()
+                  }}
+                >
+                  <h4 className="font-semibold">{editingId ? 'Edit Action' : 'Add Action'}</h4>
+                  <label>
+                    Scope
+                    <select
+                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                      value={form.scope}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          scope: event.target.value as ActionInput['scope'],
+                          projectId: event.target.value === 'global' ? null : projectId,
+                        })
+                      }
+                    >
+                      <option value="project" disabled={projectId === null}>
+                        Project
+                      </option>
+                      <option value="global">Global</option>
+                    </select>
+                  </label>
+                  <label>
+                    Title
+                    <input
+                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                      value={form.title}
+                      onChange={(event) => setForm({ ...form, title: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Icon
+                    <select
+                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                      value={iconModeOf(form.icon)}
+                      data-testid={TEST_ID.settingsActionIconSelect}
+                      onChange={(event) => {
+                        const value = event.target.value
+                        setForm({
+                          ...form,
+                          icon: value === ACTION_NONE || value === 'custom' ? null : value,
+                        })
+                      }}
+                    >
+                      {ICON_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {iconModeOf(form.icon) === 'custom' ? (
+                    <label>
+                      Icon emoji
+                      <input
+                        className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                        value={form.icon ?? ''}
+                        placeholder="e.g. 🚀"
+                        data-testid={TEST_ID.settingsActionIconEmoji}
+                        onChange={(event) => setForm({ ...form, icon: event.target.value || null })}
+                      />
+                    </label>
+                  ) : null}
+                  <p className="text-ink-muted">
+                    Icon: pick a preset Lucide glyph, or choose Custom and paste any emoji. Leave
+                    None for no icon.
+                  </p>
+                  <label>
+                    Command
+                    <input
+                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                      value={form.command}
+                      onChange={(event) => setForm({ ...form, command: event.target.value })}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={runWithPowerShell}
+                      onChange={(event) => setRunWithPowerShell(event.target.checked)}
+                    />
+                    Run with{' '}
+                    <code className="min-w-0 rounded-sm bg-highlight px-1 font-mono">
+                      {POWERSHELL_PREFIX.trim()}
+                    </code>
+                  </label>
+                  <label>
+                    Working Directory (project root by default)
+                    <input
+                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                      value={form.cwd ?? ''}
+                      onChange={(event) => setForm({ ...form, cwd: event.target.value || null })}
+                    />
+                  </label>
+                  <label>
+                    Run In
+                    <select
+                      className="mt-1 block w-full rounded-sm bg-highlight p-1"
+                      value={form.runMode}
+                      onChange={(event) =>
+                        setForm({ ...form, runMode: event.target.value as ActionInput['runMode'] })
+                      }
+                    >
+                      <option value="background">Background</option>
+                      <option value="new-terminal">New terminal</option>
+                      <option value="bottom-terminal">Bottom terminal</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.confirm}
+                      onChange={(event) => setForm({ ...form, confirm: event.target.checked })}
+                    />
+                    Ask for confirmation
+                  </label>
+                  {error ? (
+                    <p role="alert" className="text-error">
+                      {error}
+                    </p>
+                  ) : null}
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      className="h-control rounded-md px-4 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+                      onClick={() => {
+                        setForm(null)
+                        setError(null)
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : error ? (
+                <p role="alert" className="mt-2 text-xs text-error">
+                  {error}
+                </p>
+              ) : null}
+            </>
+          )}
+        </section>
+      </div>
+    </>
   )
 }

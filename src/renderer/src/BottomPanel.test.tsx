@@ -59,6 +59,13 @@ function createAppApiStub(): AppApi {
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
       shellName: vi.fn().mockResolvedValue('PowerShell'),
+      // Shell tab detection (spec project-shell-selection): Project Settings
+      // opens on the Shell tab and runs one detection on entry.
+      shellDetect: vi.fn().mockResolvedValue([
+        { id: 'default', label: 'PowerShell' },
+        { id: 'wsl:Ubuntu-24.04', label: 'WSL: Ubuntu-24.04' },
+      ]),
+      shellAddCustom: vi.fn().mockResolvedValue({ id: 'custom:D:\\sh.exe', label: 'sh.exe' }),
       terminate: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn().mockReturnValue(() => undefined),
       onExit: vi.fn().mockReturnValue(() => undefined),

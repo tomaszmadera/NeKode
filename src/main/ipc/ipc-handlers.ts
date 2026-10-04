@@ -1,5 +1,10 @@
 import { dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron'
-import { APP_STATE_KEY, IPC_CHANNEL, projectHandoffDirKey } from '../../shared/ipc-contract'
+import {
+  APP_STATE_KEY,
+  IPC_CHANNEL,
+  projectHandoffDirKey,
+  projectShellKey,
+} from '../../shared/ipc-contract'
 import { AppError, type AppErrorPayload, toTransportError } from '../../shared/ipc-error'
 import { type InvokeSenderInfo, isTrustedSender } from '../security/sender-guard'
 import { buildValidatedChannels, type ValidatedChannel } from './ipc-validation'
@@ -120,9 +125,12 @@ export function registerAppIpcHandlers(
     }
     const chatIds = services.chats.list(projectId).map((chat) => chat.id)
     const result = services.projects.remove(projectId)
-    // The removed project's handoff-directory setting has no owner anymore
-    // (spec handoff-resume-flow Behaviour 8); the FK cascade cannot reach it.
+    // The removed project's per-project settings have no owner anymore (spec
+    // handoff-resume-flow Behaviour 8, project-shell-selection Behaviour 9);
+    // the FK cascade cannot reach app_state keys.
     services.state.delete(projectHandoffDirKey(projectId))
+    services.state.delete(projectShellKey(projectId))
+    services.kanban.cleanupProject(projectId)
     services.actions.stopForProject(projectId)
     for (const chatId of chatIds) {
       services.terminals.terminate(chatId)
