@@ -17,7 +17,9 @@ export function PanelFooter({ onOpenAppSettings }: PanelFooterProps): React.JSX.
       <button
         type="button"
         // No hover fill (user request 2026-10-04): the label brightens only.
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
+        // w-fit keeps the hover target on the control itself (user report
+        // 2026-10-04): it must not span the whole footer strip.
+        className="flex w-fit items-center gap-2 rounded-md px-2 py-1.5 text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
         data-testid={TEST_ID.appSettingsButton}
         aria-label="App Settings"
         title="App Settings"
