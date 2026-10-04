@@ -818,7 +818,8 @@ describe('kanban:* channels (adapter integration)', () => {
   it('transports adapter failures with their typed codes and messages', async () => {
     const harness = createHarness()
     vi.mocked(harness.services.kanban.listBoard).mockRejectedValue(
-      new AppError('adapter', 'Plane rejected the token.', 'kanban:listItems'),
+      // Real adapter failures carry the adapter's own code (spec Errors).
+      new AppError('auth', 'Plane rejected the token.', 'kanban:listItems'),
     )
     try {
       await harness.invoke(IPC_CHANNEL.kanbanListBoard, ['p1'])
@@ -826,7 +827,7 @@ describe('kanban:* channels (adapter integration)', () => {
     } catch (error) {
       const message = (error as Error).message
       expect(message).toContain(APP_ERROR_MARKER)
-      expect(message).toContain('adapter')
+      expect(message).toContain('auth')
       expect(message).toContain('Plane rejected the token.')
     }
   })

@@ -45,4 +45,12 @@ describe('typed error transport', () => {
     expect(parseAppErrorPayload('plain error')).toBeNull()
     expect(parseAppErrorPayload(42)).toBeNull()
   })
+
+  it('keeps the adapter-reported failure codes typed through transport', () => {
+    // Finding: toAppError must surface the adapter's own code verbatim.
+    for (const code of ['auth', 'network', 'notFound', 'config', 'internal'] as const) {
+      const transport = toTransportError(new AppError(code, 'adapter said so'), 'kanban:test')
+      expect(parseAppErrorPayload(transport)?.code).toBe(code)
+    }
+  })
 })

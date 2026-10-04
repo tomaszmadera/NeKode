@@ -151,6 +151,8 @@ export function parseAdapterManifest(content: string, manifestPath: string): Kan
 /** Full invocation declaration carried alongside the public adapter info. */
 export interface DiscoveredAdapter {
   info: KanbanAdapterInfo
+  /** Adapter id (mirrors `info.id`); the host names it in typed errors. */
+  id: string
   /** Directory containing adapter.json; the spawn cwd. */
   dir: string
   invocation: { command: string; args: string[] }
@@ -211,7 +213,7 @@ export function discoverAdapters(dir: string): DiscoveryResult {
       continue
     }
     seenIds.set(info.id, manifestPath)
-    adapters.push({ info, dir: adapterDir, invocation })
+    adapters.push({ info, id: info.id, dir: adapterDir, invocation })
   }
   return { adapters, warnings }
 }

@@ -285,7 +285,7 @@ export class KanbanService {
   private assertProject(projectId: string): { path: string } {
     const project = this.#projects.get(projectId)
     if (project === null) {
-      throw new AppError('not_found', 'Project not found.', 'kanban')
+      throw new AppError('not_found', `Project "${projectId}" not found.`, 'kanban')
     }
     return project
   }
@@ -309,7 +309,7 @@ export class KanbanService {
     if (adapterId === null || adapterId.trim().length === 0) {
       throw new AppError(
         'validation',
-        'No Kanban adapter is configured for this project.',
+        `No Kanban adapter is configured for project "${projectId}".`,
         'kanban',
       )
     }
