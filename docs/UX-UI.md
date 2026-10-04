@@ -959,8 +959,7 @@ the left panel (user decision 2026-10-02, after Zed), in both modes that host
 the panel: the projects navigation and the project files view. It opens App
 Settings including when no project is selected or the project files view is
 open. The dialog has two tabs: **General** (theme selector: `default` shown
-as "NeKode Light", `default-beta-1` (the Cozy Dark palette: indigo surfaces,
-lavender primary accent) and `nekode-float` shown as "NeKode Float", which
+as "NeKode Flat" and `nekode-float` shown as "NeKode Float", which
 switches the shell to the floating layout: the title bar strip without its
 separating hairline (the app name stays at the top-left beside the Windows
 caption buttons), a detached rounded left panel with a gap to the center

@@ -103,12 +103,12 @@ This makes later theme variants possible without rewriting components.
 
 Implementation status (2026-10-01, updated 2026-10-04): `src/renderer/src/theme.css` imports the
 `default` tokens from `themes/default.css` (Tailwind v4 `@theme`) and the
-override themes from `themes/default-beta-1.css` and `themes/nekode-float.css`.
+override theme from `themes/nekode-float.css`.
 Every override theme covers every default token name (theme.test.ts asserts
 name parity against `default.css` for each override file, not value parity),
 so themes may diverge freely. Theme membership, display labels and the shell
 layout variant live in the registry `src/renderer/src/lib/theme.ts`:
-`default-beta-1` keeps the attached shell, `nekode-float` ("NeKode Float")
+`default` keeps the attached shell, `nekode-float` ("NeKode Float")
 clones the default palette except `--color-terminal`, which matches
 `--color-app`, and raises `--radius-lg` one step to 10px (user decision
 2026-10-04: the floating shell panels and the dialogs round at 10px). It

@@ -232,11 +232,11 @@ describe('app settings and themes', () => {
       within(select)
         .getAllByRole('option')
         .map((option) => option.textContent),
-    ).toEqual(['NeKode Light', 'default-beta-1', 'NeKode Float'])
+    ).toEqual(['NeKode Flat', 'NeKode Float'])
     expect(document.documentElement.dataset.theme).toBe('default')
-    fireEvent.change(select, { target: { value: 'default-beta-1' } })
-    expect(document.documentElement.dataset.theme).toBe('default-beta-1')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default-beta-1')
+    fireEvent.change(select, { target: { value: 'nekode-float' } })
+    expect(document.documentElement.dataset.theme).toBe('nekode-float')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
     const close = within(dialog).getByRole('button', { name: 'Close app settings' })
     close.focus()
     fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
@@ -259,10 +259,10 @@ describe('app settings and themes', () => {
     expect(document.activeElement).toBe(opener)
     view.unmount()
     render(<App app={app} />)
-    expect(document.documentElement.dataset.theme).toBe('default-beta-1')
+    expect(document.documentElement.dataset.theme).toBe('nekode-float')
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const restored = screen.getByRole('combobox', { name: 'Theme' })
-    expect((restored as HTMLSelectElement).value).toBe('default-beta-1')
+    expect((restored as HTMLSelectElement).value).toBe('nekode-float')
     fireEvent.change(restored, { target: { value: 'default' } })
     expect(document.documentElement.dataset.theme).toBe('default')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default')
@@ -342,7 +342,7 @@ describe('app settings and themes', () => {
       throw new Error('Storage unavailable')
     })
     fireEvent.change(screen.getByRole('combobox', { name: 'Theme' }), {
-      target: { value: 'default-beta-1' },
+      target: { value: 'nekode-float' },
     })
     expect(screen.getByRole('alert').textContent).toBe('Failed to save the theme.')
     expect(document.documentElement.dataset.theme).toBe('default')
