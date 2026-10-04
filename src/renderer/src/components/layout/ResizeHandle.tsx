@@ -42,7 +42,11 @@ export function ResizeHandle({
     <div
       className={
         axis === 'x'
-          ? 'h-1 w-full cursor-col-resize touch-none bg-edge hover:bg-highlight'
+          ? // Width handles sit on the region's right edge (user request
+            // 2026-10-04): a vertical strip reads as a width change; the
+            // former in-flow bottom bar read as a height change. The host
+            // region is the positioning context (`relative`).
+            'absolute inset-y-0 right-0 w-1 cursor-col-resize touch-none bg-edge hover:bg-highlight'
           : 'h-1 w-full cursor-row-resize touch-none bg-edge hover:bg-highlight'
       }
       onPointerDown={onResizeStart}

@@ -52,7 +52,7 @@ export function ProjectFilesPanel({
   return (
     <aside
       className={cn(
-        'slide-in-from-right flex shrink-0 flex-col bg-panel',
+        'slide-in-from-right relative flex shrink-0 flex-col bg-panel',
         // Floating theme: detached rounded panel (user request 2026-10-04),
         // same footprint as the floating LeftNavigation.
         floating ? 'm-2 overflow-hidden rounded-lg border border-edge' : 'border-r border-edge',

@@ -136,10 +136,10 @@ export function LeftNavigation({
   return (
     <aside
       className={cn(
-        'flex shrink-0 flex-col bg-panel',
+        'relative flex shrink-0 flex-col bg-panel',
         // Floating theme: the panel floats detached from the window edges
-        // (user request 2026-10-04); overflow-hidden clips the bottom resize
-        // strip and the notice banner to the rounded corners.
+        // (user request 2026-10-04); overflow-hidden clips the right-edge
+        // resize strip and the notice banner to the rounded corners.
         floating ? 'm-2 overflow-hidden rounded-lg border border-edge' : 'border-r border-edge',
         slideIn && 'slide-in-from-left',
       )}
@@ -302,7 +302,20 @@ export function LeftNavigation({
                             // While the close X occupies the row's right edge,
                             // the badge yields the same corner (they overlap).
                             return (
-                              <li key={chat.id} className="relative pl-6">
+                              /* The tile is the hover boundary: its leave hides
+                                 the X. The X is a sibling overlay of the row
+                                 button, so a row-level leave would fire the
+                                 moment the pointer reaches the control and
+                                 flicker hide/show (fixed 2026-10-04). */
+                              <li
+                                key={chat.id}
+                                className="relative pl-6"
+                                onMouseLeave={() => {
+                                  if (revealedChatId === chat.id) {
+                                    setRevealedChatId(null)
+                                  }
+                                }}
+                              >
                                 {/* Close control (user request 2026-10-04): an
                                     X on the shared 24px right-edge axis with
                                     Add Project and Show project files, centered
@@ -339,11 +352,6 @@ export function LeftNavigation({
                                   data-testid={testIdFor.chatRow(chat.id)}
                                   data-selected={isChatSelected ? 'true' : 'false'}
                                   onMouseEnter={() => setRevealedChatId(chat.id)}
-                                  onMouseLeave={() => {
-                                    if (revealedChatId === chat.id) {
-                                      setRevealedChatId(null)
-                                    }
-                                  }}
                                   onFocus={() => setRevealedChatId(chat.id)}
                                   onBlur={() => {
                                     if (revealedChatId === chat.id) {

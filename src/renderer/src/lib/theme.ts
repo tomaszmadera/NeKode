@@ -4,9 +4,9 @@
 //
 // Layout variants (App.tsx consumes the flag, the CSS files never do):
 // - `attached`: panels fill the window edge to edge under the title bar strip.
-// - `floating`: no title bar strip (the tab strip becomes the top drag
-//   surface), the left panel floats detached with rounded corners and the
-//   center content below the tab strip sits in a rounded frame.
+// - `floating`: the title bar strip stays (without its hairline), the left
+//   panel floats detached with rounded corners and the center content below
+//   the tab strip sits in a rounded frame with the tabs attached to its top.
 export const THEMES = {
   default: { label: 'NeKode Light', layout: 'attached' },
   'default-beta-1': { label: 'default-beta-1', layout: 'attached' },

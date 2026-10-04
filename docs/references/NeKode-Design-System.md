@@ -109,11 +109,16 @@ name parity against `default.css` for each override file, not value parity),
 so themes may diverge freely. Theme membership, display labels and the shell
 layout variant live in the registry `src/renderer/src/lib/theme.ts`:
 `default-beta-1` keeps the attached shell, `nekode-float` ("NeKode Float")
-clones the default palette but switches the shell to the floating layout:
-no title bar strip (the tab strip becomes the top drag surface and reserves
-room for the Windows caption buttons), a detached rounded left panel with a
-gap to the center column, and a rounded frame around the center content below
-the tab strip (App.tsx).
+clones the default palette except `--color-terminal`, which matches
+`--color-app`, and raises `--radius-lg` one step to 10px (user decision
+2026-10-04: the floating shell panels and the dialogs round at 10px). It
+switches the shell to the floating layout: the title bar
+strip without its separating hairline (the app name stays top-left beside
+the Windows caption buttons), a detached rounded left panel with a gap to
+the center column, and file tabs attached to the top of the rounded frame
+around the center content below the tab strip; the frame's top-left corner
+stays square where the first tab attaches (App.tsx, user decision
+2026-10-04).
 App Settings applies the selected theme
 through `data-theme` on the document root and saves its identifier in
 `localStorage` under `nekode.theme.v1`. Missing or unknown identifiers use
@@ -482,7 +487,7 @@ Active:
 
 Close icons should only appear on hover or active tabs if used.
 
-`+ New Chat` may use a compact button-like treatment at the far right of the tab row.
+`+ New Chat` may use a compact button-like treatment at the far right of the tab row. It carries no hover background, only a text-color shift (user decision 2026-10-04).
 
 ---
 
@@ -573,7 +578,11 @@ the chat-icon column (user decision 2026-09-29). Each chat row further
 carries a close control (user request 2026-10-04): an X on the row's right
 edge (`Icon.close`, 12px, the same corner metrics as the project row's
 `Files` action), revealed while the row is hovered or keyboard-focused and
-absent otherwise — the tile never resizes. While the X is shown, the
+absent otherwise — the tile never resizes; the hover boundary is the whole
+tile, so moving the pointer onto the X keeps it shown instead of flickering
+(fix 2026-10-04). On direct hover the control highlights like the `Files`
+action (`hover:bg-highlight`, text brightens to `--color-ink`). While the X
+is shown, the
 attention badge yields the same corner and returns when it hides. Clicking
 the X stages a modal confirmation dialog ("Close chat"); confirming runs the
 terminal-exit close flow (mvp-core-shell spec Behaviour 11), so the chat and
