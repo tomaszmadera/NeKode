@@ -7,8 +7,13 @@ import type {
   FilePreview,
   GitStatus,
   HandoffEntry,
+  KanbanAdapterInfo,
+  KanbanBoard,
+  KanbanProjectConfig,
   ProjectInfo,
+  ShellInfo,
   Unsubscribe,
+  WorkItem,
 } from '../shared/ipc-contract'
 import { IPC_CHANNEL } from '../shared/ipc-contract'
 import { parseAppErrorPayload } from '../shared/ipc-error'
@@ -81,7 +86,13 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       create: (chatId, cwd) => invoke<string>(IPC_CHANNEL.terminalsCreate, chatId, cwd),
       write: (chatId, data) => invoke<void>(IPC_CHANNEL.terminalsWrite, chatId, data),
       resize: (chatId, cols, rows) => invoke<void>(IPC_CHANNEL.terminalsResize, chatId, cols, rows),
-      shellName: () => invoke<string>(IPC_CHANNEL.terminalsShellName),
+      // Shell selection (spec project-shell-selection): the label resolves
+      // the project's stored choice; list reads the cache, detect runs one
+      // explicit detection, addCustom validates the path in main.
+      shellName: (projectId) => invoke<string>(IPC_CHANNEL.terminalsShellName, projectId),
+      shellList: () => invoke<ShellInfo[]>(IPC_CHANNEL.terminalsShellList),
+      shellDetect: () => invoke<ShellInfo[]>(IPC_CHANNEL.terminalsShellDetect),
+      shellAddCustom: (path) => invoke<ShellInfo>(IPC_CHANNEL.terminalsShellAddCustom, path),
       terminate: (bottomTabId) => invoke<void>(IPC_CHANNEL.terminalsTerminate, bottomTabId),
       onData: (chatId, callback) =>
         subscribe<string>(
@@ -112,6 +123,18 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
     },
     handoffs: {
       list: (projectId) => invoke<HandoffEntry[]>(IPC_CHANNEL.handoffsList, projectId),
+    },
+    kanban: {
+      adaptersList: () => invoke<KanbanAdapterInfo[]>(IPC_CHANNEL.kanbanAdaptersList),
+      getConfig: (projectId) => invoke<KanbanProjectConfig>(IPC_CHANNEL.kanbanGetConfig, projectId),
+      setConfig: (projectId, config) =>
+        invoke<void>(IPC_CHANNEL.kanbanSetConfig, projectId, config),
+      test: (projectId, values) => invoke<void>(IPC_CHANNEL.kanbanTest, projectId, values),
+      listBoard: (projectId) => invoke<KanbanBoard>(IPC_CHANNEL.kanbanListBoard, projectId),
+      createItem: (projectId, input) =>
+        invoke<WorkItem>(IPC_CHANNEL.kanbanCreateItem, projectId, input),
+      updateItem: (projectId, ref, patch) =>
+        invoke<WorkItem>(IPC_CHANNEL.kanbanUpdateItem, projectId, ref, patch),
     },
     dialogs: {
       pickDirectory: (defaultPath) =>

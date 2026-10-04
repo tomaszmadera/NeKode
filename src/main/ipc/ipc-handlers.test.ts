@@ -116,6 +116,9 @@ function createHarness(): Harness {
       write: vi.fn(),
       resize: vi.fn(),
       shellName: vi.fn(() => 'PowerShell'),
+      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
       terminate: vi.fn(),
       terminateProjectBottom: vi.fn(),
       terminateAll: vi.fn(),
@@ -141,6 +144,21 @@ function createHarness(): Harness {
     },
     handoffs: {
       list: vi.fn(() => Promise.resolve([])),
+    },
+    kanban: {
+      adaptersList: vi.fn(() => []),
+      getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
+      setConfig: vi.fn(),
+      test: vi.fn(() => Promise.resolve()),
+      listBoard: vi.fn(() =>
+        Promise.resolve({
+          states: [],
+          items: [],
+        }),
+      ),
+      createItem: vi.fn(() => Promise.resolve({} as never)),
+      updateItem: vi.fn(() => Promise.resolve({} as never)),
+      cleanupProject: vi.fn(),
     },
     dialogs: {
       pickDirectory: vi.fn(() => Promise.resolve(null)),
@@ -337,7 +355,15 @@ describe('registered ipc handlers', () => {
       ptys.push(pty)
       return pty
     }
-    const terminals = new TerminalService({ createPty, isDirectory: () => true })
+    // The registry surface needs the shell-selection methods (spec
+    // project-shell-selection); Object.assign adds them as own properties on
+    // top of the real TerminalService prototype methods.
+    const terminals = Object.assign(new TerminalService({ createPty, isDirectory: () => true }), {
+      shellName: vi.fn(() => 'PowerShell'),
+      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
+    })
     const chats = [
       { id: 't1', projectId: 'p1', name: 'a' },
       { id: 't2', projectId: 'p1', name: 'b' },
@@ -370,6 +396,16 @@ describe('registered ipc handlers', () => {
       },
       handoffs: {
         list: vi.fn(() => Promise.resolve([])),
+      },
+      kanban: {
+        adaptersList: vi.fn(() => []),
+        getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
+        setConfig: vi.fn(),
+        test: vi.fn(() => Promise.resolve()),
+        listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
+        createItem: vi.fn(() => Promise.resolve({} as never)),
+        updateItem: vi.fn(() => Promise.resolve({} as never)),
+        cleanupProject: vi.fn(),
       },
       dialogs: {
         pickDirectory: vi.fn(() => Promise.resolve(null)),
@@ -410,7 +446,15 @@ describe('registered ipc handlers', () => {
       ptys.push(pty)
       return pty
     }
-    const terminals = new TerminalService({ createPty, isDirectory: () => true })
+    // The registry surface needs the shell-selection methods (spec
+    // project-shell-selection); Object.assign adds them as own properties on
+    // top of the real TerminalService prototype methods.
+    const terminals = Object.assign(new TerminalService({ createPty, isDirectory: () => true }), {
+      shellName: vi.fn(() => 'PowerShell'),
+      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
+    })
     const bottomP1 = createBottomTabId('p1')
     const bottomP2 = createBottomTabId('p2')
     const chats = [
@@ -444,6 +488,16 @@ describe('registered ipc handlers', () => {
       },
       handoffs: {
         list: vi.fn(() => Promise.resolve([])),
+      },
+      kanban: {
+        adaptersList: vi.fn(() => []),
+        getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
+        setConfig: vi.fn(),
+        test: vi.fn(() => Promise.resolve()),
+        listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
+        createItem: vi.fn(() => Promise.resolve({} as never)),
+        updateItem: vi.fn(() => Promise.resolve({} as never)),
+        cleanupProject: vi.fn(),
       },
       dialogs: {
         pickDirectory: vi.fn(() => Promise.resolve(null)),
@@ -498,7 +552,15 @@ describe('registered ipc handlers', () => {
       ptys.push(pty)
       return pty
     }
-    const terminals = new TerminalService({ createPty, isDirectory: () => true })
+    // The registry surface needs the shell-selection methods (spec
+    // project-shell-selection); Object.assign adds them as own properties on
+    // top of the real TerminalService prototype methods.
+    const terminals = Object.assign(new TerminalService({ createPty, isDirectory: () => true }), {
+      shellName: vi.fn(() => 'PowerShell'),
+      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
+    })
     const services: AppServices = {
       actions: fakeActions(),
       projects: {
@@ -526,6 +588,16 @@ describe('registered ipc handlers', () => {
       },
       handoffs: {
         list: vi.fn(() => Promise.resolve([])),
+      },
+      kanban: {
+        adaptersList: vi.fn(() => []),
+        getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
+        setConfig: vi.fn(),
+        test: vi.fn(() => Promise.resolve()),
+        listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
+        createItem: vi.fn(() => Promise.resolve({} as never)),
+        updateItem: vi.fn(() => Promise.resolve({} as never)),
+        cleanupProject: vi.fn(),
       },
       dialogs: {
         pickDirectory: vi.fn(() => Promise.resolve(null)),
@@ -678,6 +750,84 @@ describe('files:* channels (project files view)', () => {
       const message = (error as Error).message
       expect(message).toContain(APP_ERROR_MARKER)
       expect(message).toContain('Failed to open the file externally.')
+    }
+  })
+})
+
+describe('kanban:* channels (adapter integration)', () => {
+  it('routes validated payloads to the kanban service', async () => {
+    const { services, invoke } = createHarness()
+    await invoke(IPC_CHANNEL.kanbanAdaptersList, [])
+    expect(services.kanban.adaptersList).toHaveBeenCalled()
+
+    await invoke(IPC_CHANNEL.kanbanGetConfig, ['p1'])
+    expect(services.kanban.getConfig).toHaveBeenCalledWith('p1')
+
+    const config = { adapterId: 'demo', values: { base_url: 'https://x', api_key: 'tok' } }
+    await invoke(IPC_CHANNEL.kanbanSetConfig, ['p1', config])
+    expect(services.kanban.setConfig).toHaveBeenCalledWith('p1', config)
+
+    await invoke(IPC_CHANNEL.kanbanTest, ['p1', { base_url: 'edited' }])
+    expect(services.kanban.test).toHaveBeenCalledWith('p1', { base_url: 'edited' })
+
+    await invoke(IPC_CHANNEL.kanbanListBoard, ['p1'])
+    expect(services.kanban.listBoard).toHaveBeenCalledWith('p1')
+
+    await invoke(IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'New item' }])
+    expect(services.kanban.createItem).toHaveBeenCalledWith('p1', { title: 'New item' })
+
+    await invoke(IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', { stateRef: 'done' }])
+    expect(services.kanban.updateItem).toHaveBeenCalledWith('p1', 'DEMO-1', { stateRef: 'done' })
+  })
+
+  it('projects:remove cleans the per-project kanban keys', () => {
+    const { services, invoke } = createHarness()
+    invoke(IPC_CHANNEL.projectsRemove, ['p1'])
+    expect(services.kanban.cleanupProject).toHaveBeenCalledWith('p1')
+  })
+
+  it('rejects invalid payloads before the service', () => {
+    const { services, invoke } = createHarness()
+    const cases: Array<[string, unknown[]]> = [
+      [IPC_CHANNEL.kanbanGetConfig, []],
+      [IPC_CHANNEL.kanbanGetConfig, [42]],
+      [IPC_CHANNEL.kanbanSetConfig, ['p1']],
+      [IPC_CHANNEL.kanbanSetConfig, ['p1', { adapterId: 7, values: {} }]],
+      [IPC_CHANNEL.kanbanSetConfig, ['p1', { adapterId: 'demo', values: { k: 1 } }]],
+      [IPC_CHANNEL.kanbanTest, ['p1', { k: 1 }]],
+      [IPC_CHANNEL.kanbanListBoard, []],
+      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: '' }]],
+      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x', priority: 'highest' }]],
+      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', {}]],
+      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', { bogus: 1 }]],
+      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', 'stateRef']],
+    ]
+    for (const [channel, payload] of cases) {
+      try {
+        invoke(channel, payload)
+        expect.unreachable(`validation must reject ${channel} ${JSON.stringify(payload)}`)
+      } catch (error) {
+        expect((error as Error).message).toContain(APP_ERROR_MARKER)
+        expect((error as Error).message).toContain('validation')
+      }
+    }
+    expect(services.kanban.setConfig).not.toHaveBeenCalled()
+    expect(services.kanban.listBoard).not.toHaveBeenCalled()
+  })
+
+  it('transports adapter failures with their typed codes and messages', async () => {
+    const harness = createHarness()
+    vi.mocked(harness.services.kanban.listBoard).mockRejectedValue(
+      new AppError('adapter', 'Plane rejected the token.', 'kanban:listItems'),
+    )
+    try {
+      await harness.invoke(IPC_CHANNEL.kanbanListBoard, ['p1'])
+      expect.unreachable('adapter failure must reject')
+    } catch (error) {
+      const message = (error as Error).message
+      expect(message).toContain(APP_ERROR_MARKER)
+      expect(message).toContain('adapter')
+      expect(message).toContain('Plane rejected the token.')
     }
   })
 })

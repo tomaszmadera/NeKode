@@ -7,8 +7,15 @@ import type {
   FilePreview,
   GitStatus,
   HandoffEntry,
+  KanbanAdapterInfo,
+  KanbanBoard,
+  KanbanCreateInput,
+  KanbanProjectConfig,
+  KanbanUpdatePatch,
   ProjectInfo,
+  ShellInfo,
   Unsubscribe,
+  WorkItem,
 } from '../../shared/ipc-contract'
 
 // Real service registry (Stage 2: persistence; Stage 3: terminals + git;
@@ -49,12 +56,22 @@ export interface AppServices {
     delete(key: string): void
   }
   terminals: {
-    /** Lazily spawns one PTY per chat (idempotent while the session lives). */
+    /**
+     * Lazily spawns one PTY per chat (idempotent while the session lives).
+     * Main resolves the id's project and spawns its stored shell (spec
+     * project-shell-selection); the renderer payload is unchanged.
+     */
     create(chatId: string, cwd: string): string
     write(chatId: string, data: string): void
     resize(chatId: string, cols: number, rows: number): void
-    /** Display label of the shell new sessions spawn. */
-    shellName(): string
+    /** Display label of the project's resolved shell (fallback: platform default). */
+    shellName(projectId: string): string
+    /** Cached shell list; never probes (spec project-shell-selection). */
+    shellList(): ShellInfo[]
+    /** One explicit detection run; replaces the cache, prunes dead custom paths. */
+    shellDetect(): ShellInfo[]
+    /** Validates and adds an absolute executable path as a custom shell. */
+    shellAddCustom(path: string): ShellInfo
     /**
      * Per-session teardown. The renderer bridge exposes this only for bottom
      * tab ids. Project removal and chat close call it in main.
@@ -86,6 +103,25 @@ export interface AppServices {
   handoffs: {
     /** Regular files of the project's configured handoff directory, newest first. */
     list(projectId: string): Promise<HandoffEntry[]>
+  }
+  kanban: {
+    /** Adapters discovered in the configured adapters directory (fresh scan). */
+    adaptersList(): KanbanAdapterInfo[]
+    /** Binding + stored values; secret values never leave main. */
+    getConfig(projectId: string): KanbanProjectConfig
+    /** Persists binding and values (empty string clears; missing secret key keeps). */
+    setConfig(
+      projectId: string,
+      config: { adapterId: string | null; values: Record<string, string> },
+    ): void
+    /** Adapter `test` invocation; optional unsaved-values override. */
+    test(projectId: string, values?: Record<string, string>): Promise<void>
+    /** Normalized states + items of the bound adapter's backend. */
+    listBoard(projectId: string): Promise<KanbanBoard>
+    createItem(projectId: string, input: KanbanCreateInput): Promise<WorkItem>
+    updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem>
+    /** Per-project key cleanup on projects:remove; not on the renderer bridge. */
+    cleanupProject(projectId: string): void
   }
   dialogs: {
     /**

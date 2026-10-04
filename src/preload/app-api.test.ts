@@ -90,7 +90,10 @@ describe('preload app api', () => {
     await api.terminals.create('t1', 'D:/code/demo')
     await api.terminals.write('t1', 'ls')
     await api.terminals.resize('t1', 80, 24)
-    await api.terminals.shellName()
+    await api.terminals.shellName('p1')
+    await api.terminals.shellList()
+    await api.terminals.shellDetect()
+    await api.terminals.shellAddCustom('D:/tools/nu.exe')
     await api.terminals.terminate('bottom:p1:tab-a')
     await api.git.getStatus('D:/code/demo')
     expect(ipc.invocations.map((i) => i.channel)).toEqual([
@@ -100,10 +103,15 @@ describe('preload app api', () => {
       IPC_CHANNEL.terminalsWrite,
       IPC_CHANNEL.terminalsResize,
       IPC_CHANNEL.terminalsShellName,
+      IPC_CHANNEL.terminalsShellList,
+      IPC_CHANNEL.terminalsShellDetect,
+      IPC_CHANNEL.terminalsShellAddCustom,
       IPC_CHANNEL.terminalsTerminate,
       IPC_CHANNEL.gitStatus,
     ])
-    expect(ipc.invocations[6]?.args).toEqual(['bottom:p1:tab-a'])
+    expect(ipc.invocations[5]?.args).toEqual(['p1'])
+    expect(ipc.invocations[8]?.args).toEqual(['D:/tools/nu.exe'])
+    expect(ipc.invocations[9]?.args).toEqual(['bottom:p1:tab-a'])
   })
 
   it('delivers terminal data events only for the matching chat', () => {

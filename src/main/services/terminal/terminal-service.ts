@@ -108,9 +108,12 @@ export class TerminalService {
   /**
    * Lazily spawns the chat's PTY on first attach. Idempotent per chatId while
    * the session is alive (one PTY per chat, spec Business rules); an exited
-   * session is replaced by a fresh process (spec Edge cases).
+   * session is replaced by a fresh process (spec Edge cases). The optional
+   * shell override (spec project-shell-selection) is resolved by the caller —
+   * main resolves the project's stored choice; absent means the service
+   * default (platform default, unchanged).
    */
-  create(chatId: string, cwd: string): string {
+  create(chatId: string, cwd: string, shell?: ShellSpec): string {
     if (this.#quitting) {
       throw new AppError('conflict', 'The application is closing.')
     }
@@ -133,11 +136,12 @@ export class TerminalService {
       )
     }
 
+    const shellSpec = shell ?? this.#shell
     let pty: PtyProcessLike
     try {
       pty = this.#createPty({
-        file: this.#shell.file,
-        args: [...this.#shell.args],
+        file: shellSpec.file,
+        args: [...shellSpec.args],
         cwd,
         cols: this.#cols,
         rows: this.#rows,

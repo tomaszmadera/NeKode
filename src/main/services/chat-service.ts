@@ -16,9 +16,12 @@ export interface ChatServiceDeps {
   /**
    * Display name for newly created chats (the platform shell, spec
    * Behaviour 3). Injectable for tests; defaults to the same shell
-   * configuration the PTY spawns with (process.platform-based).
+   * configuration the PTY spawns with (process.platform-based). The
+   * per-project form (spec project-shell-selection) receives the project id
+   * and resolves the project's stored shell choice in the composition root.
    */
   chatName?: () => string
+  chatNameForProject?: (projectId: string) => string
 }
 
 interface ChatRow {
@@ -39,10 +42,12 @@ function toInfo(row: ChatRow): ChatInfo {
 export class ChatService {
   private readonly db: Database.Database
   private readonly chatName: () => string
+  private readonly chatNameForProject: (projectId: string) => string
 
   constructor(deps: ChatServiceDeps) {
     this.db = deps.db
     this.chatName = deps.chatName ?? (() => shellDisplayName())
+    this.chatNameForProject = deps.chatNameForProject ?? (() => this.chatName())
   }
 
   list(projectId: string): ChatInfo[] {
@@ -56,11 +61,13 @@ export class ChatService {
 
   /**
    * Creates a chat with no naming form (spec Behaviour 3): the name is the
-   * platform shell's display label (e.g. "PowerShell" on win32) and may
-   * repeat within a project — the generated id is the identity.
+   * project's shell display label (spec project-shell-selection; the
+   * platform default, e.g. "PowerShell" on win32, when the project has no
+   * shell choice) and may repeat within a project — the generated id is the
+   * identity.
    */
   create(projectId: string): ChatInfo {
-    const name = this.chatName().trim()
+    const name = this.chatNameForProject(projectId).trim()
     if (name.length === 0) {
       throw new AppError('validation', 'Chat name must not be empty.', 'chats:create')
     }

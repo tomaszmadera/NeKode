@@ -96,6 +96,17 @@ export const TEST_ID = {
   settingsHandoffDirBrowse: 'settings-handoff-dir-browse',
   settingsHandoffDirSave: 'settings-handoff-dir-save',
   settingsHandoffDirSaved: 'settings-handoff-dir-saved',
+  /** Project Settings: Shell tab (spec project-shell-selection). */
+  settingsShellTab: 'settings-shell-tab',
+  /** Project Settings: Actions & Configuration tab. */
+  settingsActionsTab: 'settings-actions-tab',
+  /** Shell tab: detecting indicator, per-project select, custom path add. */
+  settingsShellDetecting: 'settings-shell-detecting',
+  settingsShellSelect: 'settings-shell-select',
+  settingsShellSave: 'settings-shell-save',
+  settingsShellSaved: 'settings-shell-saved',
+  settingsShellCustomInput: 'settings-shell-custom-input',
+  settingsShellCustomAdd: 'settings-shell-custom-add',
   /** Action form icon picker: preset select and the custom-emoji input. */
   settingsActionIconSelect: 'settings-action-icon-select',
   settingsActionIconEmoji: 'settings-action-icon-emoji',
