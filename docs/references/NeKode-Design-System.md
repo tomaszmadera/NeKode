@@ -101,11 +101,19 @@ Example:
 
 This makes later theme variants possible without rewriting components.
 
-Implementation status (2026-10-01): `src/renderer/src/theme.css` imports the
+Implementation status (2026-10-01, updated 2026-10-04): `src/renderer/src/theme.css` imports the
 `default` tokens from `themes/default.css` (Tailwind v4 `@theme`) and the
-`default-beta-1` overrides from `themes/default-beta-1.css`. The beta theme
-overrides every default token name with the Cozy Dark palette (theme.test.ts
-asserts name parity, not value parity), so the two themes may diverge freely.
+override themes from `themes/default-beta-1.css` and `themes/nekode-float.css`.
+Every override theme covers every default token name (theme.test.ts asserts
+name parity against `default.css` for each override file, not value parity),
+so themes may diverge freely. Theme membership, display labels and the shell
+layout variant live in the registry `src/renderer/src/lib/theme.ts`:
+`default-beta-1` keeps the attached shell, `nekode-float` ("NeKode Float")
+clones the default palette but switches the shell to the floating layout:
+no title bar strip (the tab strip becomes the top drag surface and reserves
+room for the Windows caption buttons), a detached rounded left panel with a
+gap to the center column, and a rounded frame around the center content below
+the tab strip (App.tsx).
 App Settings applies the selected theme
 through `data-theme` on the document root and saves its identifier in
 `localStorage` under `nekode.theme.v1`. Missing or unknown identifiers use

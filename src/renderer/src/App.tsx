@@ -75,7 +75,7 @@ import {
 } from './lib/terminal-font'
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { TEST_ID, testIdFor } from './lib/test-ids'
-import { isThemeId, THEME_STORAGE_KEY, type ThemeId } from './lib/theme'
+import { isThemeId, THEME_STORAGE_KEY, THEMES, type ThemeId } from './lib/theme'
 
 // Re-exported so existing imports keep working; the definitions live in
 // lib/test-ids.ts to break the App ↔ component import cycle.
@@ -1562,6 +1562,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // selectedProjectId (filesProjectId ?? selectedProjectId).
   const statusProject = tabProject
 
+  // Floating shell theme (NeKode Float): no title bar strip (the tab strip
+  // becomes the top drag surface), detached rounded left panel, center
+  // content below the tab strip framed in a rounded border. Attached themes
+  // keep the window-edge shell.
+  const floatingTheme = THEMES[themeState.theme].layout === 'floating'
+
   const handleNewTerminalAction = (execution: ActionExecution): void => {
     const chat = execution.chat
     const command = execution.terminalCommand
@@ -1624,16 +1630,29 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       {/* Window title bar (user decision 2026-10-01): one continuous
           full-width drag strip; the brand on the left, Windows caption
           buttons overlay the top-right corner. Tab strip and panel headers
-          sit one level below. */}
-      <div className="drag-region flex h-10 shrink-0 items-center bg-app px-4">
-        <AppBrand />
-      </div>
+          sit one level below. The floating theme (NeKode Float) drops the
+          strip entirely: the tab strip is then the top drag surface and the
+          caption buttons overlay its right end. */}
+      {floatingTheme ? null : (
+        <div
+          className="drag-region flex h-10 shrink-0 items-center bg-app px-4"
+          data-testid={TEST_ID.titleBar}
+        >
+          <AppBrand />
+        </div>
+      )}
       {/* The hairline under the title bar is owned by the content row
-          (border-t, design doc 26.2 convention), not by the strip itself. */}
-      <div className="flex min-h-0 flex-1 border-t border-edge">
+          (border-t, design doc 26.2 convention), not by the strip itself;
+          the floating theme has no strip and no hairline. */}
+      <div
+        className={
+          floatingTheme ? 'flex min-h-0 flex-1' : 'flex min-h-0 flex-1 border-t border-edge'
+        }
+      >
         {filesProject !== null ? (
           <ProjectFilesPanel
             width={leftWidth}
+            floating={floatingTheme}
             onResizeStart={leftRegion.startResize}
             onResizeNudge={leftRegion.nudge}
             project={filesProject}
@@ -1648,6 +1667,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         ) : (
           <LeftNavigation
             width={leftWidth}
+            floating={floatingTheme}
             slideIn={navSlideIn}
             onResizeStart={leftRegion.startResize}
             onResizeNudge={leftRegion.nudge}
@@ -1685,6 +1705,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               context that would otherwise paint over this column): the panel
               emerges from under the middle panel, never over it. */}
           <TabStrip
+            floating={floatingTheme}
             chatName={activeChat?.name ?? null}
             openFiles={tabsSession.openFiles}
             projectRoot={tabProject?.path ?? null}
@@ -1693,94 +1714,105 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             onCloseFile={handleCloseFileTab}
             onNewChat={handleTabNewChat}
           />
-          <ActionBar
-            app={app}
-            actions={actions}
-            projectId={tabProjectId}
-            activeChatId={activeChat?.id ?? null}
-            chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
-            onNewTerminal={handleNewTerminalAction}
-            onBottomTerminal={handleBottomTerminalAction}
-            onPromptCommand={handlePromptCommand}
-            onResume={() => {
-              if (tabProjectId !== null) {
-                setHandoffPickerOpen(true)
-              }
-            }}
-            onError={setNotice}
-            onSettings={() => {
-              setActionSettingsProjectId(tabProjectId)
-              setActionSettingsOpen(true)
-            }}
-          />
-          <main
-            ref={centerSurfaceRef}
-            tabIndex={-1}
-            className="flex min-h-0 flex-1 flex-col outline-none"
-            data-testid={TEST_ID.centerSurface}
+          {/* Floating theme: the content below the tab strip sits in a
+              rounded frame (user decision 2026-10-04) that keeps the tabs
+              outside; attached themes render this block flush. */}
+          <div
+            className={
+              floatingTheme
+                ? 'm-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-edge'
+                : 'flex min-h-0 flex-1 flex-col'
+            }
           >
-            {/* Every open file tab owns its preview view (hidden while another
+            <ActionBar
+              app={app}
+              actions={actions}
+              projectId={tabProjectId}
+              activeChatId={activeChat?.id ?? null}
+              chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
+              onNewTerminal={handleNewTerminalAction}
+              onBottomTerminal={handleBottomTerminalAction}
+              onPromptCommand={handlePromptCommand}
+              onResume={() => {
+                if (tabProjectId !== null) {
+                  setHandoffPickerOpen(true)
+                }
+              }}
+              onError={setNotice}
+              onSettings={() => {
+                setActionSettingsProjectId(tabProjectId)
+                setActionSettingsOpen(true)
+              }}
+            />
+            <main
+              ref={centerSurfaceRef}
+              tabIndex={-1}
+              className="flex min-h-0 flex-1 flex-col outline-none"
+              data-testid={TEST_ID.centerSurface}
+            >
+              {/* Every open file tab owns its preview view (hidden while another
                 tab is active): per-tab loading/fallback/error state survives
                 tab switches and never touches the other tabs (Behaviour 6–7). */}
-            {tabProject !== null
-              ? tabsSession.openFiles.map((path) => (
-                  <div
-                    key={path}
-                    className="flex min-h-0 flex-1 flex-col"
-                    style={{
-                      display:
-                        activeTab.kind === 'file' && activeTab.path === path ? 'flex' : 'none',
-                    }}
-                    data-testid={testIdFor.filePreviewPane(path)}
-                  >
-                    <FilePreview
-                      app={app}
-                      projectId={tabProject.id}
-                      relativePath={path}
-                      onOpenExternalError={handleFilesOpenExternalError}
-                    />
-                  </div>
-                ))
-              : null}
-            {/* Chat sessions stay mounted (hidden) while a file tab is active:
+              {tabProject !== null
+                ? tabsSession.openFiles.map((path) => (
+                    <div
+                      key={path}
+                      className="flex min-h-0 flex-1 flex-col"
+                      style={{
+                        display:
+                          activeTab.kind === 'file' && activeTab.path === path ? 'flex' : 'none',
+                      }}
+                      data-testid={testIdFor.filePreviewPane(path)}
+                    >
+                      <FilePreview
+                        app={app}
+                        projectId={tabProject.id}
+                        relativePath={path}
+                        onOpenExternalError={handleFilesOpenExternalError}
+                      />
+                    </div>
+                  ))
+                : null}
+              {/* Chat sessions stay mounted (hidden) while a file tab is active:
                 PTY processes and xterm scrollback survive tab switches and
                 mode round-trips (spec Behaviour 6 / AC2, AC11). In the
                 Files-mode divergence no active chat belongs to the tab-strip
                 project: the surface shows the Behaviour 2 empty state, never
                 another project's terminal. */}
-            <div
-              className="flex min-h-0 flex-1 flex-col"
-              style={{ display: activeTab.kind === 'terminal' ? 'flex' : 'none' }}
-              data-testid={TEST_ID.chatSurfaceHost}
-            >
-              <ChatWorkspace
-                app={app}
-                projects={projects}
-                chatsByProject={chatsByProject}
-                chatsLoaded={
-                  selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
-                }
-                selectedProjectId={selectedProjectId}
-                selectedChatId={chatSurfaceDiverged ? null : selectedChatId}
-                selectionNonce={selectionNonce}
-                attention={chatAttention}
-                onAttentionChange={setChatAttention}
-                attentionSettings={attentionSettings}
-                forceStartNewChat={chatSurfaceDiverged}
-                terminalCwds={terminalCwds}
-                terminalFontSize={terminalFontSize}
-                terminalFontFamilies={terminalFontState.families}
-                terminalCtrlVPaste={terminalPasteState.enabled}
-                onSessionStatus={handleSessionStatus}
-                onSessionReady={handleSessionReady}
-                onChatClosed={handleChatClosed}
-                onStartNewChat={handleStartNewChat}
-                onAddProject={handleAddProject}
-                promptInjection={promptInjection}
-                onPromptInjected={handlePromptInjected}
-              />
-            </div>
-          </main>
+              <div
+                className="flex min-h-0 flex-1 flex-col"
+                style={{ display: activeTab.kind === 'terminal' ? 'flex' : 'none' }}
+                data-testid={TEST_ID.chatSurfaceHost}
+              >
+                <ChatWorkspace
+                  app={app}
+                  projects={projects}
+                  chatsByProject={chatsByProject}
+                  chatsLoaded={
+                    selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
+                  }
+                  selectedProjectId={selectedProjectId}
+                  selectedChatId={chatSurfaceDiverged ? null : selectedChatId}
+                  selectionNonce={selectionNonce}
+                  attention={chatAttention}
+                  onAttentionChange={setChatAttention}
+                  attentionSettings={attentionSettings}
+                  forceStartNewChat={chatSurfaceDiverged}
+                  terminalCwds={terminalCwds}
+                  terminalFontSize={terminalFontSize}
+                  terminalFontFamilies={terminalFontState.families}
+                  terminalCtrlVPaste={terminalPasteState.enabled}
+                  onSessionStatus={handleSessionStatus}
+                  onSessionReady={handleSessionReady}
+                  onChatClosed={handleChatClosed}
+                  onStartNewChat={handleStartNewChat}
+                  onAddProject={handleAddProject}
+                  promptInjection={promptInjection}
+                  onPromptInjected={handlePromptInjected}
+                />
+              </div>
+            </main>
+          </div>
         </div>
         {/* Right region is a real five-region sibling (SDD §7), hidden by default. */}
         <div data-testid={TEST_ID.rightRegion} style={{ display: 'none' }}>

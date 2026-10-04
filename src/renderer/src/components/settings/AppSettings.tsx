@@ -4,7 +4,7 @@ import type { AttentionSettings } from '../../lib/attention-settings'
 import { Icon } from '../../lib/icons'
 import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID } from '../../lib/test-ids'
-import { isThemeId, THEMES, type ThemeId } from '../../lib/theme'
+import { isThemeId, THEME_IDS, THEMES, type ThemeId } from '../../lib/theme'
 import { FontsSettings } from './FontsSettings'
 
 interface AppSettingsProps {
@@ -230,9 +230,9 @@ export function AppSettings({
                     }}
                     className="mt-2 h-control w-full rounded-md border border-edge bg-app px-3 text-sm text-ink focus-visible:outline focus-visible:outline-info"
                   >
-                    {THEMES.map((id) => (
+                    {THEME_IDS.map((id) => (
                       <option key={id} value={id}>
-                        {id}
+                        {THEMES[id].label}
                       </option>
                     ))}
                   </select>

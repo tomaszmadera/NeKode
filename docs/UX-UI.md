@@ -958,9 +958,14 @@ opener (gear icon with the label "App Settings") sits at the very bottom of
 the left panel (user decision 2026-10-02, after Zed), in both modes that host
 the panel: the projects navigation and the project files view. It opens App
 Settings including when no project is selected or the project files view is
-open. The dialog has two tabs: **General** (theme selector: `default` and
-`default-beta-1` — the Cozy Dark palette: indigo surfaces, lavender primary
-accent; terminal font size; the "Switch chats with Ctrl+Tab" on/off switch)
+open. The dialog has two tabs: **General** (theme selector: `default` shown
+as "NeKode Light", `default-beta-1` (the Cozy Dark palette: indigo surfaces,
+lavender primary accent) and `nekode-float` shown as "NeKode Float", which
+switches the shell to the floating layout: no title bar strip (the tab strip
+becomes the window's top drag surface), a detached rounded left panel with a
+gap to the center column, and a rounded frame around the center content below
+the tab strip; terminal font size; the "Switch chats with Ctrl+Tab" on/off
+switch)
 and **Shortcuts** (read-only documentation of every global and terminal
 keyboard shortcut). Theme selection applies immediately and is remembered
 locally across application restarts. Escape or the close button dismisses the
