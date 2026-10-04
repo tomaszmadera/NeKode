@@ -23,6 +23,10 @@ import { ResizeHandle } from './ResizeHandle'
 
 interface LeftNavigationProps {
   width: number
+  /** Floating theme variant (lib/theme.ts): detached rounded panel with
+      margins around it and a gap to the center column, instead of the
+      window-edge column with a right hairline. */
+  floating?: boolean
   /** Mirrors the files panel's slide (left-to-right; only right after
       leaving Project Files). */
   slideIn?: boolean
@@ -77,6 +81,7 @@ interface ContextMenuState {
 
 export function LeftNavigation({
   width,
+  floating = false,
   slideIn = false,
   onResizeStart,
   onResizeNudge,
@@ -131,7 +136,11 @@ export function LeftNavigation({
   return (
     <aside
       className={cn(
-        'flex shrink-0 flex-col border-r border-edge bg-panel',
+        'flex shrink-0 flex-col bg-panel',
+        // Floating theme: the panel floats detached from the window edges
+        // (user request 2026-10-04); overflow-hidden clips the bottom resize
+        // strip and the notice banner to the rounded corners.
+        floating ? 'm-2 overflow-hidden rounded-lg border border-edge' : 'border-r border-edge',
         slideIn && 'slide-in-from-left',
       )}
       style={{ width }}

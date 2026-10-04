@@ -18,6 +18,10 @@ import type { ProjectFilesSession } from './files-types'
 
 interface ProjectFilesPanelProps {
   width: number
+  /** Floating theme variant (lib/theme.ts): detached rounded panel with
+      margins around it, instead of the window-edge column with a right
+      hairline. */
+  floating?: boolean
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
   onResizeNudge: (delta: number) => void
   project: ProjectInfo
@@ -34,6 +38,7 @@ interface ProjectFilesPanelProps {
 
 export function ProjectFilesPanel({
   width,
+  floating = false,
   onResizeStart,
   onResizeNudge,
   project,
@@ -46,7 +51,12 @@ export function ProjectFilesPanel({
 }: ProjectFilesPanelProps): React.JSX.Element {
   return (
     <aside
-      className={cn('slide-in-from-right flex shrink-0 flex-col border-r border-edge bg-panel')}
+      className={cn(
+        'slide-in-from-right flex shrink-0 flex-col bg-panel',
+        // Floating theme: detached rounded panel (user request 2026-10-04),
+        // same footprint as the floating LeftNavigation.
+        floating ? 'm-2 overflow-hidden rounded-lg border border-edge' : 'border-r border-edge',
+      )}
       style={{ width }}
       data-testid={TEST_ID.leftNav}
     >

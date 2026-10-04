@@ -3,6 +3,8 @@
 
 export const TEST_ID = {
   appShell: 'app-shell',
+  /** Window title bar strip (drag surface); absent in the floating theme. */
+  titleBar: 'title-bar',
   leftNav: 'region-left',
   tabStrip: 'tab-strip',
   tabTerminal: 'tab-terminal',

@@ -14,6 +14,9 @@ import { type TabId, TERMINAL_TAB } from './tabs-session'
 // ContextMenu key / Shift+F10) copying the file's relative and absolute path.
 
 interface TabStripProps {
+  /** Floating theme variant (lib/theme.ts): this strip is then the window's
+      top drag surface and reserves room for the Windows caption buttons. */
+  floating?: boolean
   /** Active chat's shell display name; null shows the neutral "Chat" label. */
   chatName: string | null
   /** Open file tabs of the active project, in open order. */
@@ -50,6 +53,7 @@ interface TabContextMenuState {
 }
 
 export function TabStrip({
+  floating = false,
   chatName,
   openFiles,
   projectRoot,
@@ -83,12 +87,18 @@ export function TabStrip({
 
   return (
     <nav
-      className="drag-region flex h-[calc(var(--spacing-control)+0.5rem)] shrink-0 items-stretch bg-app px-2 pt-2"
+      className={cn(
+        'drag-region flex h-[calc(var(--spacing-control)+0.5rem)] shrink-0 items-stretch bg-app pt-2',
+        floating ? 'pl-2 pr-[140px]' : 'px-2',
+      )}
       // The strip shares the action row's metrics (round 4, design doc 26.2):
       // 8px left and top insets so the first tab aligns with the first button
-      // below; the extra strip height keeps the shared control height. The Windows
-      // caption buttons sit in the window title bar above this strip (user
-      // decision 2026-10-01), so no caption-button inset is needed here.
+      // below; the extra strip height keeps the shared control height. In the
+      // attached themes the Windows caption buttons sit in the window title
+      // bar above this strip (user decision 2026-10-01). The floating theme
+      // has no title bar: this strip is the top drag surface and the caption
+      // buttons overlay its right end, so the strip reserves ~140px for the
+      // three overlay buttons.
       data-testid={TEST_ID.tabStrip}
     >
       <button

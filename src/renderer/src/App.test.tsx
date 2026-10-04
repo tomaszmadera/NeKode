@@ -232,7 +232,7 @@ describe('app settings and themes', () => {
       within(select)
         .getAllByRole('option')
         .map((option) => option.textContent),
-    ).toEqual(['default', 'default-beta-1'])
+    ).toEqual(['NeKode Light', 'default-beta-1', 'NeKode Float'])
     expect(document.documentElement.dataset.theme).toBe('default')
     fireEvent.change(select, { target: { value: 'default-beta-1' } })
     expect(document.documentElement.dataset.theme).toBe('default-beta-1')
@@ -274,6 +274,29 @@ describe('app settings and themes', () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'removed-theme')
     render(<App app={createAppApiStub()} />)
     expect(document.documentElement.dataset.theme).toBe('default')
+  })
+
+  it('floating theme drops the title bar, detaches the left panel and keeps the status bar', () => {
+    const app = createAppApiStub()
+    const view = render(<App app={app} />)
+    // Attached shell first: the title bar strip is present.
+    expect(screen.getByTestId(TEST_ID.titleBar)).toBeTruthy()
+    fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const select = within(dialog).getByRole('combobox', { name: 'Theme' })
+    fireEvent.change(select, { target: { value: 'nekode-float' } })
+    expect(document.documentElement.dataset.theme).toBe('nekode-float')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close app settings' }))
+    expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
+    // Floating shell (user decision 2026-10-04): no title bar strip, the left
+    // panel floats detached with rounded corners, the tab strip reserves room
+    // for the Windows caption buttons. The status bar stays in every theme.
+    expect(screen.queryByTestId(TEST_ID.titleBar)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.leftNav).className).toContain('rounded-lg')
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('pr-[140px]')
+    view.unmount()
   })
 
   it('Shortcuts tab documents the global and terminal chords, General keeps the controls', () => {
