@@ -10,7 +10,7 @@ Decyzja z 2026-10-02 (karta NEKODE-15). Obowiązuje trunk-based hybrydowy: jedna
 - Nazwa gałęzi roboczej: `nekode-<numer>-<krotki-opis>` (np. `nekode-20-terminal-shell-choice`), gdy praca ma kartę w backlogu; bez karty: `<krotki-opis>`.
 - Merge robi maintainer. Historia `main` pozostaje liniowa; obce PR-y wchodzą squashem (jeden commit na PR).
 - Obce PR-y: celują w `main`, z forków współpracowników. Merge po recenzji i zielonym CI.
-- Wydanie: tag na `main` przez `python .agents/skills/ci/scripts/ci.py release` (semver, strategia liniowa). Tag zawsze wskazuje commit na `main`; gałąź `develop` nie istnieje.
+- Wydanie: tag semver na `main` (strategia liniowa). Tag zawsze wskazuje commit na `main`; gałąź `develop` nie istnieje.
 
 ## Ochrona main na GitHubie
 

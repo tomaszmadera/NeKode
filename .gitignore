@@ -50,8 +50,6 @@ Desktop.ini
 .codex/
 .grok/
 .opencode/
-AGENTS.md
-CLAUDE.md
 opencode.json
 skills-lock.json
 docs/development/agent-skills.md
