@@ -95,6 +95,7 @@ app.whenReady().then(() => {
 
   const services = createServices({
     dbPath: join(app.getPath('userData'), 'nekode.db'),
+    userDataPath: app.getPath('userData'),
     // The single OS-facing action of the project-files feature (spec
     // Behaviour 11): open with the OS default application. '' = success.
     openExternal: (absolutePath) => shell.openPath(absolutePath),

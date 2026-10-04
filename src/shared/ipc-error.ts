@@ -7,13 +7,24 @@
 // (`APP_ERROR_MARKER + JSON payload`), and the preload bridge converts the
 // rejection back into a plain, structured AppErrorPayload object.
 
-export type AppErrorCode = 'validation' | 'not_found' | 'conflict' | 'sqlite' | 'unknown'
+export type AppErrorCode =
+  | 'validation'
+  | 'not_found'
+  | 'conflict'
+  | 'sqlite'
+  | 'timeout'
+  | 'protocol'
+  | 'adapter'
+  | 'unknown'
 
 const APP_ERROR_CODES: readonly AppErrorCode[] = [
   'validation',
   'not_found',
   'conflict',
   'sqlite',
+  'timeout',
+  'protocol',
+  'adapter',
   'unknown',
 ]
 
