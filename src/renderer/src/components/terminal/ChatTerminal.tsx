@@ -194,10 +194,10 @@ export function ChatTerminal({
       // A distinct initial stack ensures xterm remeasures after font loading,
       // even when the user keeps the default family and size.
       fontFamily: 'Consolas, "Courier New", monospace',
-      // Terminal palette follows the active theme tokens (default-beta-1 is
-      // darker than default); fallbacks keep jsdom tests (no CSS cascade)
-      // on the default palette. Picked up at mount; switching themes while a
-      // session is open applies on its next open.
+      // Terminal palette follows the active theme tokens; fallbacks keep
+      // jsdom tests (no CSS cascade) on the default palette. Picked up at
+      // mount; switching themes while a session is open applies on its next
+      // open.
       theme: {
         background: themeColor('--color-terminal', 'rgb(13 15 26)'),
         foreground: themeColor('--color-ink', 'rgb(202 203 209)'),

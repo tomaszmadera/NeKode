@@ -221,8 +221,8 @@ export function LeftNavigation({
                     }}
                   >
                     {isSelected ? (
-                      /* Narrow left accent stripe (NEKODE-3): lavender in
-                         default-beta-1, blue in default, from --color-accent. */
+                      /* Narrow left accent stripe (NEKODE-3): blue, from
+                         --color-accent. */
                       <span
                         aria-hidden
                         className="absolute inset-y-0 left-0 w-[3px] rounded-full bg-accent"

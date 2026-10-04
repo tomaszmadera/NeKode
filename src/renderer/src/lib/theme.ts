@@ -8,8 +8,7 @@
 //   panel floats detached with rounded corners and the center content below
 //   the tab strip sits in a rounded frame with the tabs attached to its top.
 export const THEMES = {
-  default: { label: 'NeKode Light', layout: 'attached' },
-  'default-beta-1': { label: 'default-beta-1', layout: 'attached' },
+  default: { label: 'NeKode Flat', layout: 'attached' },
   'nekode-float': { label: 'NeKode Float', layout: 'floating' },
 } as const
 
