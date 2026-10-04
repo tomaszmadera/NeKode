@@ -103,7 +103,6 @@ describe('KanbanService config', () => {
       'project.kanbanAdapter:p1': 'demo',
       'project.kanbanConfig:p1': JSON.stringify({ base_url: 'https://x', api_key: 'tok' }),
     }
-    const { service } = makeService()
     // schemaFor consults discovery; simulate by stubbing discovery through
     // the public surface instead: unknown adapter -> values still surface.
     const withStore = makeService({ store: stored })
@@ -305,7 +304,7 @@ describe('KanbanService actions', () => {
         }),
       )
       const { service, invoke } = makeService({ adaptersDir: dir, store: stored })
-      invoke.mockImplementationOnce(async (adapter: unknown, request: AdapterRequest) => {
+      invoke.mockImplementationOnce(async (_adapter: unknown, request: AdapterRequest) => {
         expect((request as AdapterRequest).action).toBe('listStates')
         return [state]
       })

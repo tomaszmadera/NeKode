@@ -328,7 +328,6 @@ export class KanbanService {
 
   private effectiveConfig(
     projectId: string,
-    adapter: DiscoveredAdapter,
     override?: Record<string, string>,
   ): Record<string, string> {
     if (override !== undefined) {
@@ -348,7 +347,7 @@ export class KanbanService {
   ): Promise<T> {
     this.assertProject(projectId)
     const adapter = this.boundAdapter(projectId)
-    const config = this.effectiveConfig(projectId, adapter, valuesOverride)
+    const config = this.effectiveConfig(projectId, valuesOverride)
     try {
       return await this.#host.invoke<T>(adapter, {
         protocolVersion: 1,

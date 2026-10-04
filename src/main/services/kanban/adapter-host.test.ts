@@ -40,7 +40,6 @@ const request: AdapterRequest = {
   params: {},
 }
 
-const okBody = `process.stdin.once('data', () => {}); process.stdin.resume(); console.log(JSON.stringify({ ok: true, data: { hello: 'world' } }))`
 const failBody = `process.stdin.once('data', () => {}); process.stdin.resume(); console.log(JSON.stringify({ ok: false, error: { code: 'auth', message: 'bad token' } })); process.exit(1)`
 
 describe('AdapterHost', () => {
