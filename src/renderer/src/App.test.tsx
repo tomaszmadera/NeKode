@@ -2374,6 +2374,137 @@ describe('chat closing on terminal exit (Stage 4)', () => {
   })
 })
 
+describe('chat row close control with confirmation (2026-10-04)', () => {
+  let app: AppApi
+
+  async function renderWithChats(chats: ChatInfo[], selectedChatId: string | null) {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue(chats)
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return selectedChatId
+      return null
+    })
+    render(<App app={app} />)
+    await screen.findByTestId(testIdFor.projectRow('p1'))
+    await screen.findByTestId(testIdFor.chatRow(chats[0]?.id ?? ''))
+  }
+
+  beforeEach(() => {
+    app = createAppApiStub()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('the hover X opens the confirmation dialog; nothing is removed before confirming', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+
+    // Hover reveals the row's close control (RTL: mouseOver drives React's
+    // onMouseEnter synthesis).
+    fireEvent.mouseOver(screen.getByTestId(testIdFor.chatRow('t1')))
+    const closeButton = screen.getByTestId(testIdFor.chatClose('t1'))
+    expect(closeButton).toBeTruthy()
+
+    fireEvent.click(closeButton)
+    const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
+    expect(dialog.textContent).toContain('First chat')
+    // The destructive action is gated: no removal, no tree change yet.
+    expect(app.chats.remove).not.toHaveBeenCalled()
+    expect(screen.getByTestId(testIdFor.chatRow('t1'))).toBeTruthy()
+
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
+    // The close continues like a terminal exit (spec Behaviour 11): the chat
+    // leaves the tree and the next chat is selected.
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull())
+    expect(getByTestIdString(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe('true')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+  })
+
+  it('cancel keeps the chat and the dialog does not linger', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+
+    fireEvent.mouseOver(screen.getByTestId(testIdFor.chatRow('t1')))
+    fireEvent.click(screen.getByTestId(testIdFor.chatClose('t1')))
+    await screen.findByTestId(TEST_ID.confirmDialog)
+
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogCancel))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    expect(screen.getByTestId(testIdFor.chatRow('t1'))).toBeTruthy()
+    expect(app.chats.remove).not.toHaveBeenCalled()
+  })
+
+  it('Escape dismisses the dialog without closing the chat', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+
+    fireEvent.mouseOver(screen.getByTestId(testIdFor.chatRow('t1')))
+    fireEvent.click(screen.getByTestId(testIdFor.chatClose('t1')))
+    const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    expect(screen.getByTestId(testIdFor.chatRow('t1'))).toBeTruthy()
+    expect(app.chats.remove).not.toHaveBeenCalled()
+  })
+
+  it('the close control on a background row neither selects it nor steals the selection', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
+
+    fireEvent.mouseOver(screen.getByTestId(testIdFor.chatRow('t2')))
+    fireEvent.click(screen.getByTestId(testIdFor.chatClose('t2')))
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    // The click never fell through to the row's own activation.
+    expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t2'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t2'))).toBeNull())
+    // A background close never steals the current selection (spec Behaviour 11).
+    expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+  })
+
+  it('the attention badge yields the corner while the close control is revealed', async () => {
+    const dataListenersByChat = new Map<string, Set<(data: string) => void>>()
+    vi.mocked(app.terminals.onData).mockImplementation(
+      (chatId: string, callback: (data: string) => void) => {
+        const listeners = dataListenersByChat.get(chatId) ?? new Set()
+        listeners.add(callback)
+        dataListenersByChat.set(chatId, listeners)
+        return () => {
+          listeners.delete(callback)
+        }
+      },
+    )
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+
+    // A BEL sets the attention badge on the viewed chat (OSC 9 semantics are
+    // exercised in the attention suite; a bare BEL suffices here).
+    act(() => {
+      for (const listener of [...(dataListenersByChat.get('t1') ?? [])]) {
+        listener('\x07')
+      }
+    })
+    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
+
+    // Keyboard focus reveals the close control: the badge yields the corner…
+    fireEvent.focus(screen.getByTestId(testIdFor.chatRow('t1')))
+    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
+    expect(screen.getByTestId(testIdFor.chatClose('t1'))).toBeTruthy()
+
+    // …and returns when the row loses focus again.
+    fireEvent.blur(screen.getByTestId(testIdFor.chatRow('t1')))
+    expect(screen.getByTestId(testIdFor.chatAttentionBadge('t1'))).toBeTruthy()
+  })
+})
+
 describe('stale chat list responses', () => {
   let app: AppApi
   let exitListenersByChat: Map<string, Set<(exitCode: number) => void>>

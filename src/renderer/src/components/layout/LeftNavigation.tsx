@@ -57,6 +57,12 @@ interface LeftNavigationProps {
   onCreateChat: (projectId: string) => Promise<boolean>
   /** Opens the project root in the OS file explorer. */
   onOpenInFileExplorer: (projectId: string) => void
+  /**
+   * Requests closing a chat from its row's close control (user request
+   * 2026-10-04): the host opens the confirmation dialog and, on confirm,
+   * runs the same close flow as a terminal exit (spec Behaviour 11).
+   */
+  onRequestCloseChat: (chatId: string) => void
   notice: string | null
   /** Bottom-of-panel strip (App Settings opener), rendered after the
       scrollable list and above the resize handle. */
@@ -92,10 +98,15 @@ export function LeftNavigation({
   onOpenProjectSettings,
   onCreateChat,
   onOpenInFileExplorer,
+  onRequestCloseChat,
   notice,
   children,
 }: LeftNavigationProps): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  // Chat row whose close control is revealed (row hover or keyboard focus).
+  // JS state instead of CSS :hover so the attention badge can yield the same
+  // corner while the X is visible.
+  const [revealedChatId, setRevealedChatId] = useState<string | null>(null)
 
   // Escape closes the context menu (the overlay handles pointer dismissal).
   useEffect(() => {
@@ -174,10 +185,14 @@ export function LeftNavigation({
                       project row already shows a slightly dimmer highlight in
                       the same footprint as selection, so hover cannot resize
                       the tile. Selection keeps the brighter --color-highlight. */}
+                  {/* Right axis (user request 2026-10-04): the row's content
+                      edge sits 8px from the panel edge (pr-2 after the 4px
+                      list inset), level with the header's Add Project button
+                      and the chat rows' right padding. */}
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'relative flex h-control items-center overflow-hidden rounded-md px-1 py-1.5 transition-colors',
+                      'relative flex h-control items-center overflow-hidden rounded-md pl-1 pr-2 py-1.5 transition-colors',
                       isSelected ? 'bg-highlight' : 'hover:bg-row-hover',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
@@ -234,7 +249,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="ml-1 flex items-center rounded px-1.5 py-1 text-ink-muted hover:bg-highlight hover:text-ink"
+                      className="ml-1 flex -translate-x-px items-center rounded px-1.5 py-1 text-ink-muted hover:bg-highlight hover:text-ink"
                       data-testid={testIdFor.projectFiles(project.id)}
                       title="Show project files"
                       aria-label={`Show project files for ${project.name}`}
@@ -275,8 +290,37 @@ export function LeftNavigation({
                               attentionState === undefined
                                 ? undefined
                                 : (attentionState.message ?? 'Needs attention')
+                            // While the close X occupies the row's right edge,
+                            // the badge yields the same corner (they overlap).
                             return (
-                              <li key={chat.id} className="pl-6">
+                              <li key={chat.id} className="relative pl-6">
+                                {/* Close control (user request 2026-10-04): an
+                                    X on the row's right edge while the row is
+                                    hovered or keyboard-focused. Absolutely
+                                    positioned so the tile never resizes; it
+                                    covers the row's right padding, never the
+                                    name. Clicking stages a confirmation
+                                    dialog — closing removes the chat with its
+                                    terminal (spec Behaviour 11). The badge
+                                    yields while the X is shown (same corner). */}
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    'absolute inset-y-0 right-1.5 z-10 h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink',
+                                    revealedChatId === chat.id ? 'flex' : 'hidden',
+                                  )}
+                                  data-testid={testIdFor.chatClose(chat.id)}
+                                  aria-label={`Close chat ${chat.name}`}
+                                  title="Close chat"
+                                  onClick={(event) => {
+                                    // The row's own activation must not fire
+                                    // behind this control.
+                                    event.stopPropagation()
+                                    onRequestCloseChat(chat.id)
+                                  }}
+                                >
+                                  <Icon.close size={12} aria-hidden />
+                                </button>
                                 <button
                                   type="button"
                                   className={cn(
@@ -285,11 +329,23 @@ export function LeftNavigation({
                                   )}
                                   data-testid={testIdFor.chatRow(chat.id)}
                                   data-selected={isChatSelected ? 'true' : 'false'}
+                                  onMouseEnter={() => setRevealedChatId(chat.id)}
+                                  onMouseLeave={() => {
+                                    if (revealedChatId === chat.id) {
+                                      setRevealedChatId(null)
+                                    }
+                                  }}
+                                  onFocus={() => setRevealedChatId(chat.id)}
+                                  onBlur={() => {
+                                    if (revealedChatId === chat.id) {
+                                      setRevealedChatId(null)
+                                    }
+                                  }}
                                   onClick={() => onSelectChat(project.id, chat.id)}
                                 >
                                   <Icon.chat size={12} aria-hidden className="shrink-0" />
                                   <span className="min-w-0 truncate">{chat.name}</span>
-                                  {badgeVisible ? (
+                                  {badgeVisible && revealedChatId !== chat.id ? (
                                     <span
                                       role="img"
                                       className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning"

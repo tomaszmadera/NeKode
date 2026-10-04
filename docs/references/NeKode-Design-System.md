@@ -536,7 +536,11 @@ Selected chat:
 
 Implemented (2026-09-28, revised 2026-10-02): project rows render in sentence
 case (14px), and every chat row carries the chat bubble icon (`Icon.chat`, 12px)
-before the shell display name. Left-navigation metrics (2026-10-02 polish): the
+before the shell display name. The project row's right content edge — the
+`Files` icon — sits 8px from the panel edge (`pr-2` after the 4px list
+inset, user decision 2026-10-04), on one vertical axis with the header's
+Add Project button and the chat rows' right padding. Left-navigation metrics
+(2026-10-02 polish): the
 project row and chat rows use the shared `h-control` height (42px since
 2026-10-03), including the New Chat control, level with the
 project tile; all vertical gaps are the same 4px step (`ul gap-1` between chat
@@ -555,9 +559,22 @@ selected row's fill only. The chat list has no vertical guide line and
 its rows span the full list width; the selected chat keeps the highlight
 background (`--color-highlight`) across that full width. The `+ New Chat`
 affordance is a row matching the chat rows: same height, the plus icon in
-the chat-icon column (user decision 2026-09-29). The project row's `Files`
-action is always visible (user decision 2026-09-29, previously
-hover-revealed), and entering Project Files slides the left panel in from
+the chat-icon column (user decision 2026-09-29). Each chat row further
+carries a close control (user request 2026-10-04): an X on the row's right
+edge (`Icon.close`, 12px, the same corner metrics as the project row's
+`Files` action), revealed while the row is hovered or keyboard-focused and
+absent otherwise — the tile never resizes. While the X is shown, the
+attention badge yields the same corner and returns when it hides. Clicking
+the X stages a modal confirmation dialog ("Close chat"); confirming runs the
+terminal-exit close flow (mvp-core-shell spec Behaviour 11), so the chat and
+its terminal are removed together; Cancel, Escape and the backdrop dismiss
+the dialog without touching the chat. The dialog follows the App Settings
+idiom (dimmed backdrop, centered panel, focus restored to the opener) and
+blocks the app-level shortcuts while open (`[aria-modal]` guard). The
+project row's `Files` action is always visible (user decision 2026-09-29,
+previously hover-revealed) and sits one pixel left of its neighbors' axis
+(`-translate-x-px`, user request 2026-10-04). Entering Project Files slides
+the left panel in from
 the right: 220ms `cubic-bezier(0.2, 0, 0, 1)` (`slide-in-from-right` in
 `index.css`, section 24 panel-expansion band; disabled under
 `prefers-reduced-motion`). The slide passes under the center column, never

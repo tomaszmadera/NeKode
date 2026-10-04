@@ -17,6 +17,7 @@ import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
 import { AppBrand } from './components/layout/AppBrand'
+import { ConfirmDialog } from './components/layout/ConfirmDialog'
 import { LeftNavigation } from './components/layout/LeftNavigation'
 import { PanelFooter } from './components/layout/PanelFooter'
 import { StatusBar } from './components/layout/StatusBar'
@@ -236,6 +237,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     DEFAULT_ATTENTION_SETTINGS,
   )
   const [handoffPickerOpen, setHandoffPickerOpen] = useState(false)
+  // Close-chat control on a chat row (user request 2026-10-04): the row's X
+  // requests the close; this dialog owns the destructive action.
+  const [chatToClose, setChatToClose] = useState<{
+    id: string
+    name: string
+  } | null>(null)
   // Pending prompt-input fill addressed to one chat (paste-only delivery).
   const [promptInjection, setPromptInjection] = useState<{
     chatId: string
@@ -1174,6 +1181,32 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app, applyChatsUpdate, persistSelection],
   )
 
+  // Close-chat control on a chat row (user request 2026-10-04): the row's X
+  // requests the close; the ConfirmDialog owns the destructive action — the
+  // same close flow as a terminal exit (spec Behaviour 11): removal from the
+  // tree and the database, successor selection included. Cancel/dismiss
+  // stages nothing.
+  const handleRequestCloseChat = useCallback((chatId: string): void => {
+    for (const chats of Object.values(chatsByProjectRef.current)) {
+      const chat = chats.find((item) => item.id === chatId)
+      if (chat !== undefined) {
+        setChatToClose({ id: chat.id, name: chat.name })
+        return
+      }
+    }
+    // The chat vanished (a parallel close flow): nothing to confirm.
+    setChatToClose(null)
+  }, [])
+
+  const handleCloseChatConfirmed = useCallback((): void => {
+    if (chatToClose === null) {
+      return
+    }
+    const chatId = chatToClose.id
+    setChatToClose(null)
+    handleChatClosed(chatId)
+  }, [chatToClose, handleChatClosed])
+
   // "Start new chat" empty state (spec Behaviour 11): create a chat
   // immediately for the tab-strip project (spec Behaviour 3 — no naming
   // form). In the Files-mode divergence this creates in the tab-strip
@@ -1603,6 +1636,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               setActionSettingsOpen(true)
             }}
             onCreateChat={handleCreateChat}
+            onRequestCloseChat={handleRequestCloseChat}
             notice={notice}
           >
             <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
@@ -1716,6 +1750,21 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           Right Panel
         </div>
       </div>
+      {chatToClose !== null ? (
+        /* Close-chat confirmation (user request 2026-10-04): the row's X only
+            requests the close; this dialog owns the destructive action.
+            Cancel / backdrop / Escape keep everything untouched. */
+        <ConfirmDialog
+          title="Close chat"
+          body={`Close "${chatToClose.name}"? Its terminal session ends and the chat is removed.`}
+          confirmLabel="Close chat"
+          destructive
+          onConfirm={handleCloseChatConfirmed}
+          onCancel={() => {
+            setChatToClose(null)
+          }}
+        />
+      ) : null}
       {appSettingsOpen ? (
         <AppSettings
           theme={themeState.theme}
