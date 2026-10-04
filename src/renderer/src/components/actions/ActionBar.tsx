@@ -317,12 +317,14 @@ export function ActionBar({
           </button>
         )
       })}
-      {/* Icon-only ghost control: no default fill, hover fill keeps it
-          discoverable; the accessible name and tooltip come from aria-label
-          and title since the visible label is gone. */}
+      {/* Icon-only ghost control: no fill at rest or on hover (user request
+          2026-10-04, the tab strip's New chat treatment): the icon brightens
+          from --color-ink-secondary to --color-ink. The accessible name and
+          tooltip come from aria-label and title since the visible label is
+          gone. */}
       <button
         type="button"
-        className="ml-auto flex shrink-0 items-center justify-center self-stretch rounded-md px-2 text-ink hover:bg-button-hover"
+        className="ml-auto flex shrink-0 items-center justify-center self-stretch rounded-md px-2 text-ink-secondary hover:text-ink"
         aria-label="Actions"
         title="Actions"
         onClick={onSettings}

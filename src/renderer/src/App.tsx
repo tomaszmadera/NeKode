@@ -1562,10 +1562,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // selectedProjectId (filesProjectId ?? selectedProjectId).
   const statusProject = tabProject
 
-  // Floating shell theme (NeKode Float): no title bar strip (the tab strip
-  // becomes the top drag surface), detached rounded left panel, center
-  // content below the tab strip framed in a rounded border. Attached themes
-  // keep the window-edge shell.
+  // Floating shell theme (NeKode Float): the title bar strip stays (without
+  // its hairline), the left panel floats detached with rounded corners and
+  // the center content below the tab strip sits in a rounded frame with the
+  // tabs attached to its top. Attached themes keep the window-edge shell.
   const floatingTheme = THEMES[themeState.theme].layout === 'floating'
 
   const handleNewTerminalAction = (execution: ActionExecution): void => {
@@ -1630,20 +1630,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       {/* Window title bar (user decision 2026-10-01): one continuous
           full-width drag strip; the brand on the left, Windows caption
           buttons overlay the top-right corner. Tab strip and panel headers
-          sit one level below. The floating theme (NeKode Float) drops the
-          strip entirely: the tab strip is then the top drag surface and the
-          caption buttons overlay its right end. */}
-      {floatingTheme ? null : (
-        <div
-          className="drag-region flex h-10 shrink-0 items-center bg-app px-4"
-          data-testid={TEST_ID.titleBar}
-        >
-          <AppBrand />
-        </div>
-      )}
+          sit one level below. Every theme keeps the strip (user decision
+          2026-10-04: the app name stays top-left beside the caption
+          buttons); the floating theme only drops the hairline under it. */}
+      <div
+        className="drag-region flex h-10 shrink-0 items-center bg-app px-4"
+        data-testid={TEST_ID.titleBar}
+      >
+        <AppBrand />
+      </div>
       {/* The hairline under the title bar is owned by the content row
           (border-t, design doc 26.2 convention), not by the strip itself;
-          the floating theme has no strip and no hairline. */}
+          the floating theme drops only the hairline. */}
       <div
         className={
           floatingTheme ? 'flex min-h-0 flex-1' : 'flex min-h-0 flex-1 border-t border-edge'
@@ -1705,7 +1703,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               context that would otherwise paint over this column): the panel
               emerges from under the middle panel, never over it. */}
           <TabStrip
-            floating={floatingTheme}
             chatName={activeChat?.name ?? null}
             openFiles={tabsSession.openFiles}
             projectRoot={tabProject?.path ?? null}
@@ -1716,11 +1713,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           />
           {/* Floating theme: the content below the tab strip sits in a
               rounded frame (user decision 2026-10-04) that keeps the tabs
-              outside; attached themes render this block flush. */}
+              outside but attached: no top margin, so the tabs sit directly
+              on the frame's top edge; attached themes render this block
+              flush. The top-left corner stays square: the first tab (the
+              terminal-chat tab) sits on it, and a rounded corner would open
+              a gap under the tab's left edge (user decision 2026-10-04). */}
           <div
             className={
               floatingTheme
-                ? 'm-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-edge'
+                ? 'mx-2 mb-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg rounded-tl-none border border-edge'
                 : 'flex min-h-0 flex-1 flex-col'
             }
           >

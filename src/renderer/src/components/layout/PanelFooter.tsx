@@ -16,7 +16,8 @@ export function PanelFooter({ onOpenAppSettings }: PanelFooterProps): React.JSX.
     <div className="shrink-0 border-t border-edge px-2 py-1.5">
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-ink-muted hover:bg-highlight hover:text-ink focus-visible:outline focus-visible:outline-info"
+        // No hover fill (user request 2026-10-04): the label brightens only.
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
         data-testid={TEST_ID.appSettingsButton}
         aria-label="App Settings"
         title="App Settings"

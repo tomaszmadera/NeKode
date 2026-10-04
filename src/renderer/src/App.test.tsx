@@ -276,7 +276,7 @@ describe('app settings and themes', () => {
     expect(document.documentElement.dataset.theme).toBe('default')
   })
 
-  it('floating theme drops the title bar, detaches the left panel and keeps the status bar', () => {
+  it('floating theme keeps the title bar, detaches the left panel and keeps the status bar', () => {
     const app = createAppApiStub()
     const view = render(<App app={app} />)
     // Attached shell first: the title bar strip is present.
@@ -289,13 +289,13 @@ describe('app settings and themes', () => {
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close app settings' }))
     expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
-    // Floating shell (user decision 2026-10-04): no title bar strip, the left
-    // panel floats detached with rounded corners, the tab strip reserves room
-    // for the Windows caption buttons. The status bar stays in every theme.
-    expect(screen.queryByTestId(TEST_ID.titleBar)).toBeNull()
+    // Floating shell (user decision 2026-10-04): the title bar stays (the app
+    // name top-left beside the Windows caption buttons) and the left panel
+    // floats detached with rounded corners. The status bar stays in every
+    // theme.
+    expect(screen.getByTestId(TEST_ID.titleBar)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.leftNav).className).toContain('rounded-lg')
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('pr-[140px]')
     view.unmount()
   })
 
@@ -2478,6 +2478,28 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
     await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t1'))).toBeNull())
     expect(getByTestIdString(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe('true')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
+  })
+
+  it('moving the pointer onto the revealed close control does not flicker it', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+
+    // Hover reveals the control (RTL: mouseOver drives onMouseEnter, mouseOut
+    // drives onMouseLeave).
+    const row = screen.getByTestId(testIdFor.chatRow('t1'))
+    fireEvent.mouseOver(row)
+    const closeButton = screen.getByTestId(testIdFor.chatClose('t1'))
+    expect(closeButton.className).toContain('flex')
+
+    // The pointer lands on the overlay control itself: the reveal must hold.
+    // The X is a sibling of the row button, so the leave boundary is the whole
+    // tile; a row-level leave would hide the X, re-enter the row and loop.
+    fireEvent.mouseOut(row, { relatedTarget: closeButton })
+    expect(closeButton.className).toContain('flex')
+
+    // Leaving the tile entirely still hides it.
+    fireEvent.mouseOut(row, { relatedTarget: document.body })
+    expect(closeButton.className).toContain('hidden')
   })
 
   it('cancel keeps the chat and the dialog does not linger', async () => {
