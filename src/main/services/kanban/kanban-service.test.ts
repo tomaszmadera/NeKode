@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { KanbanState, WorkItem } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
+import type { AdapterInvocation } from './adapter-host'
 import { AdapterError, AdapterHostError, type AdapterRequest } from './adapter-host'
 import { discoverAdapters } from './adapter-manifest'
 import { KanbanService, type KanbanSetConfigInput } from './kanban-service'
@@ -29,7 +30,7 @@ function makeService(
   } = {},
 ) {
   const state = stateStore(options.store)
-  const invoke = vi.fn(async () => {
+  const invoke = vi.fn(async (_adapter: AdapterInvocation, _request: AdapterRequest) => {
     if (options.hostError !== undefined) {
       throw options.hostError
     }

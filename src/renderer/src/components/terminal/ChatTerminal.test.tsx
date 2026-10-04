@@ -60,6 +60,9 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
       shellName: vi.fn().mockResolvedValue('PowerShell'),
+      shellList: vi.fn().mockResolvedValue([]),
+      shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
+      shellAddCustom: vi.fn().mockResolvedValue({ id: 'default', label: 'PowerShell' }),
       terminate: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn((_chatId: string, cb: (data: string) => void) => {
         dataListeners.add(cb)
@@ -92,6 +95,15 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
     },
+    kanban: {
+      adaptersList: vi.fn().mockResolvedValue([]),
+      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
+      setConfig: vi.fn().mockResolvedValue(undefined),
+      test: vi.fn().mockResolvedValue(undefined),
+      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
+      createItem: vi.fn(),
+      updateItem: vi.fn(),
+    },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),
     },
@@ -115,6 +127,121 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
 }
 
 describe('ChatTerminal lifecycle', () => {
+  it('changes font size without replacing the xterm view, stream or PTY', () => {
+    const { app, emitData } = createAppMock()
+    const props = {
+      app,
+      chatId: 't1',
+      cwd: 'D:/code/demo',
+      visible: true,
+      onExit: () => undefined,
+      onClose: () => undefined,
+      onSpawnError: () => undefined,
+    }
+    const view = render(<ChatTerminal {...props} terminalFontSize={15} />)
+    const original = mockTerminalInstances[0]
+    emitData('before change')
+    view.rerender(
+      <ChatTerminal
+        {...props}
+        terminalFontSize={19}
+        terminalFontFamilies={{ text: 'Cascadia Mono', icons: 'Custom Symbols' }}
+      />,
+    )
+    emitData('after change')
+    expect(mockTerminalInstances).toHaveLength(1)
+    expect(original.disposed).toBe(false)
+    expect(original.written).toEqual(['before change', 'after change'])
+    expect(original.options).toMatchObject({
+      fontSize: 19,
+      fontFamily:
+        '"Cascadia Mono", "Custom Symbols", "Symbols Nerd Font Mono", Consolas, "Courier New", monospace',
+    })
+    expect(app.terminals.create).toHaveBeenCalledTimes(1)
+    expect(app.terminals.terminate).not.toHaveBeenCalled()
+  })
+
+  it('waits for fonts before drawing output, applies only the latest selection and ignores disposed loads', async () => {
+    let finishFirst!: (faces: FontFace[]) => void
+    let finishDisposed!: (faces: FontFace[]) => void
+    const first = new Promise<FontFace[]>((resolve) => {
+      finishFirst = resolve
+    })
+    const disposed = new Promise<FontFace[]>((resolve) => {
+      finishDisposed = resolve
+    })
+    const load = vi.fn().mockResolvedValue([{}]).mockReturnValueOnce(first)
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+    try {
+      const { app, emitData } = createAppMock()
+      const props = {
+        app,
+        chatId: 't1',
+        cwd: 'D:/code/demo',
+        visible: true,
+        onExit: () => undefined,
+        onClose: () => undefined,
+        onSpawnError: () => undefined,
+      }
+      const view = render(<ChatTerminal {...props} />)
+      const terminal = mockTerminalInstances[0]
+      emitData('buffered prompt')
+      expect(terminal.written).toEqual([])
+      view.rerender(
+        <ChatTerminal
+          {...props}
+          terminalFontFamilies={{ text: 'Cascadia Mono', icons: 'Symbols Nerd Font Mono' }}
+        />,
+      )
+      await waitFor(() => expect(terminal.written).toEqual(['buffered prompt']))
+      await act(async () => {
+        finishFirst([{} as FontFace])
+      })
+      expect(terminal.options).toMatchObject({
+        fontFamily: '"Cascadia Mono", "Symbols Nerd Font Mono", Consolas, "Courier New", monospace',
+      })
+      load.mockReturnValueOnce(disposed)
+      view.rerender(<ChatTerminal {...props} terminalFontSize={23} />)
+      view.unmount()
+      await act(async () => {
+        finishDisposed([{} as FontFace])
+      })
+      expect(terminal.options).toMatchObject({ fontSize: 15 })
+      expect(terminal.disposed).toBe(true)
+      expect(mockTerminalInstances).toHaveLength(1)
+    } finally {
+      Reflect.deleteProperty(document, 'fonts')
+    }
+  })
+
+  it('reports a bundled font failure while continuing to deliver terminal output', async () => {
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load: vi.fn().mockRejectedValue(new Error('font failed')) },
+    })
+    try {
+      const { app, emitData } = createAppMock()
+      render(
+        <ChatTerminal
+          app={app}
+          chatId="t1"
+          cwd="D:/code/demo"
+          visible
+          onExit={() => undefined}
+          onClose={() => undefined}
+          onSpawnError={() => undefined}
+        />,
+      )
+      emitData('usable text')
+      await waitFor(() =>
+        expect(screen.getByRole('alert').textContent).toContain('Failed to load terminal fonts'),
+      )
+      expect(mockTerminalInstances[0].written).toEqual(['usable text'])
+      expect(app.terminals.create).toHaveBeenCalledTimes(1)
+    } finally {
+      Reflect.deleteProperty(document, 'fonts')
+    }
+  })
   beforeEach(() => {
     resetMockTerminals()
     resetMockFitAddons()

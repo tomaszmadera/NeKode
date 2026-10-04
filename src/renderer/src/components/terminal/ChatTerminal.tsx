@@ -7,7 +7,13 @@ import type { AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { isNewChatChord } from '../../lib/new-chat-chord'
 import { writeSubmitLine } from '../../lib/pty-submit'
-import { DEFAULT_TERMINAL_FONT_SIZE } from '../../lib/terminal-font'
+import {
+  DEFAULT_TERMINAL_FONT_FAMILIES,
+  DEFAULT_TERMINAL_FONT_SIZE,
+  loadTerminalFonts,
+  type TerminalFontFamilies,
+  terminalFontStack,
+} from '../../lib/terminal-font'
 import { themeColor } from '../lib/theme-color'
 import { isBottomPanelChord } from './bottom-panel-chord'
 import { chatSwitchDirection } from './chat-switch-chord'
@@ -58,6 +64,7 @@ interface ChatTerminalProps {
    * Session identity and the PTY are untouched.
    */
   terminalFontSize?: number
+  terminalFontFamilies?: TerminalFontFamilies
   /** Ctrl+V pastes text in full-screen programs; defaults on and applies live. */
   terminalCtrlVPaste?: boolean
   /**
@@ -132,10 +139,16 @@ export function ChatTerminal({
   injected = null,
   onInjected,
   terminalFontSize,
+  terminalFontFamilies = DEFAULT_TERMINAL_FONT_FAMILIES,
   terminalCtrlVPaste = true,
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const fontReadyRef = useRef(false)
+  const pendingOutputRef = useRef<string[]>([])
+  const pendingOutputLengthRef = useRef(0)
+  const [fontError, setFontError] = useState<string | null>(null)
+  const initialFontSizeRef = useRef(terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE)
   // Right-click menu state; null = closed. Coordinates are viewport-relative
   // (clientX/clientY), matching the fixed-position overlay.
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
@@ -177,8 +190,10 @@ export function ChatTerminal({
     const terminal = new Terminal({
       convertEol: true,
       cursorBlink: true,
-      fontSize: terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE,
-      fontFamily: '"Recursive Mono Casual", Consolas, "Courier New", monospace',
+      fontSize: initialFontSizeRef.current,
+      // A distinct initial stack ensures xterm remeasures after font loading,
+      // even when the user keeps the default family and size.
+      fontFamily: 'Consolas, "Courier New", monospace',
       // Terminal palette follows the active theme tokens (default-beta-1 is
       // darker than default); fallbacks keep jsdom tests (no CSS cascade)
       // on the default palette. Picked up at mount; switching themes while a
@@ -213,7 +228,20 @@ export function ChatTerminal({
     }
 
     const unsubscribeData = appRef.current.terminals.onData(chatId, (data) => {
-      terminal.write(data)
+      if (fontReadyRef.current) terminal.write(data)
+      else {
+        pendingOutputRef.current.push(data)
+        pendingOutputLengthRef.current += data.length
+        // Keep startup output bounded if loading stalls. Preserve every byte
+        // in xterm, with an explicit notice while fallback fonts are in use.
+        if (pendingOutputLengthRef.current > 1_048_576) {
+          setFontError('Terminal fonts are still loading. Output is shown using fallback fonts.')
+          fontReadyRef.current = true
+          for (const pending of pendingOutputRef.current) terminal.write(pending)
+          pendingOutputRef.current = []
+          pendingOutputLengthRef.current = 0
+        }
+      }
     })
     const unsubscribeExit = appRef.current.terminals.onExit(chatId, (exitCode) => {
       onExitRef.current(exitCode)
@@ -544,6 +572,9 @@ export function ChatTerminal({
       cancelSubmitCr?.()
       cancelSubmitCr = undefined
       terminalRef.current = null
+      fontReadyRef.current = false
+      pendingOutputRef.current = []
+      pendingOutputLengthRef.current = 0
       sendRef.current = null
       clipboardRef.current = null
       fitRef.current = null
@@ -558,7 +589,7 @@ export function ChatTerminal({
     }
     // Session identity is fixed per mount; the host remounts (new generation)
     // when a dead session must be replaced.
-  }, [chatId, cwd, terminalFontSize])
+  }, [chatId, cwd])
 
   useEffect(() => {
     if (!focused) {
@@ -567,26 +598,45 @@ export function ChatTerminal({
     terminalRef.current?.focus()
   }, [focused])
 
-  // Live font-size changes (App Settings): every mounted view — hidden ones
-  // included — applies the size through xterm's option API and then refits
-  // through the mount effect's fitAndResize (refit + PTY grid report). The
-  // first run sees the option already at the mount value and skips. A null
-  // ref (mid-remount) waits for the next effect pass; xterm itself reflows
-  // the scrollback when the option lands, so no session state is touched.
+  // Load before the first output, then apply family/size changes to this
+  // view only. Cleanup rejects stale loads, including after disposal.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identity changes mount a fresh view; that view also needs its fonts loaded.
   useEffect(() => {
     const terminal = terminalRef.current
-    if (terminal === null || terminalFontSize === undefined) {
-      return
+    if (terminal === null) return
+    let obsolete = false
+    const size = terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE
+    const families = { text: terminalFontFamilies.text, icons: terminalFontFamilies.icons }
+    const apply = (error: string | null): void => {
+      if (obsolete || terminalRef.current !== terminal) return
+      setFontError(error)
+      terminal.options.fontFamily = terminalFontStack(families)
+      terminal.options.fontSize = size
+      fitRef.current?.()
+      fontReadyRef.current = true
+      for (const data of pendingOutputRef.current) terminal.write(data)
+      pendingOutputRef.current = []
+      pendingOutputLengthRef.current = 0
     }
-    if (terminal.options.fontSize === terminalFontSize) {
-      return
+    const loading = loadTerminalFonts(families, size)
+    if (loading === null) apply(null)
+    else
+      void loading.then(
+        () => apply(null),
+        () => apply('Failed to load terminal fonts. Text remains available using fallback fonts.'),
+      )
+    return () => {
+      obsolete = true
     }
-    terminal.options.fontSize = terminalFontSize
-    fitRef.current?.()
-  }, [terminalFontSize])
+  }, [chatId, cwd, terminalFontSize, terminalFontFamilies.text, terminalFontFamilies.icons])
 
   return (
     <>
+      {fontError ? (
+        <p role="alert" className="text-xs text-error">
+          {fontError}
+        </p>
+      ) : null}
       {/* Right-click copy/paste menu over the terminal view. onContextMenu
           also covers xterm's textarea, so it fires even while the view keeps
           keyboard focus. */}

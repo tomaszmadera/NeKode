@@ -65,9 +65,13 @@ import type { ChatAttention } from './lib/chat-attention'
 import { isNewChatChord } from './lib/new-chat-chord'
 import { writeSubmitLine } from './lib/pty-submit'
 import {
+  DEFAULT_TERMINAL_FONT_FAMILIES,
   DEFAULT_TERMINAL_FONT_SIZE,
+  parseTerminalFontFamilies,
   parseTerminalFontSize,
+  TERMINAL_FONT_FAMILIES_STORAGE_KEY,
   TERMINAL_FONT_SIZE_STORAGE_KEY,
+  type TerminalFontFamilies,
 } from './lib/terminal-font'
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { TEST_ID, testIdFor } from './lib/test-ids'
@@ -164,6 +168,37 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       return DEFAULT_TERMINAL_FONT_SIZE
     }
   })
+  const [terminalFontSizeError, setTerminalFontSizeError] = useState<string | null>(null)
+  const [terminalFontState, setTerminalFontState] = useState<{
+    families: TerminalFontFamilies
+    error: string | null
+  }>(() => {
+    try {
+      return {
+        families: parseTerminalFontFamilies(
+          localStorage.getItem(TERMINAL_FONT_FAMILIES_STORAGE_KEY),
+        ),
+        error: null,
+      }
+    } catch {
+      return {
+        families: DEFAULT_TERMINAL_FONT_FAMILIES,
+        error: 'Failed to load the saved terminal fonts.',
+      }
+    }
+  })
+
+  function handleTerminalFontFamiliesChange(families: TerminalFontFamilies): void {
+    try {
+      localStorage.setItem(TERMINAL_FONT_FAMILIES_STORAGE_KEY, JSON.stringify(families))
+      setTerminalFontState({ families, error: null })
+    } catch {
+      setTerminalFontState((previous) => ({
+        ...previous,
+        error: 'Failed to save the terminal fonts.',
+      }))
+    }
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeState.theme
@@ -202,11 +237,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   }
 
   function handleTerminalFontSizeChange(size: number): void {
-    setTerminalFontSize(size)
     try {
       localStorage.setItem(TERMINAL_FONT_SIZE_STORAGE_KEY, String(size))
+      setTerminalFontSize(size)
+      setTerminalFontSizeError(null)
     } catch {
-      // The live terminals keep the new size; persistence is best effort.
+      setTerminalFontSizeError('Failed to save the terminal font size.')
     }
   }
 
@@ -1733,6 +1769,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 forceStartNewChat={chatSurfaceDiverged}
                 terminalCwds={terminalCwds}
                 terminalFontSize={terminalFontSize}
+                terminalFontFamilies={terminalFontState.families}
                 terminalCtrlVPaste={terminalPasteState.enabled}
                 onSessionStatus={handleSessionStatus}
                 onSessionReady={handleSessionReady}
@@ -1771,12 +1808,19 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           chatSwitch={chatSwitchEnabled}
           projectNamesUppercase={projectNamesUppercase}
           onProjectNamesUppercaseChange={handleProjectNamesUppercaseChange}
-          error={themeState.error ?? terminalPasteState.error}
+          error={
+            themeState.error ??
+            terminalPasteState.error ??
+            terminalFontState.error ??
+            terminalFontSizeError
+          }
           onThemeChange={handleThemeChange}
           onChatSwitchChange={handleChatSwitchChange}
           attentionSettings={attentionSettings}
           onAttentionSettingChange={handleAttentionSettingChange}
           terminalFontSize={terminalFontSize}
+          terminalFontFamilies={terminalFontState.families}
+          onTerminalFontFamiliesChange={handleTerminalFontFamiliesChange}
           onTerminalFontSizeChange={handleTerminalFontSizeChange}
           terminalCtrlVPaste={terminalPasteState.enabled}
           onTerminalCtrlVPasteChange={handleTerminalCtrlVPasteChange}
@@ -1820,6 +1864,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         activeProjectId={tabProjectId}
         tabs={allBottomTabs(bottomTabs)}
         terminalFontSize={terminalFontSize}
+        terminalFontFamilies={terminalFontState.families}
         terminalCtrlVPaste={terminalPasteState.enabled}
         activeTabId={
           tabProjectId === null ? null : (bottomTabs.byProject[tabProjectId]?.activeId ?? null)

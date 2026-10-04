@@ -62,6 +62,7 @@ function createAppApiStub(): AppApi {
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
       shellName: vi.fn().mockResolvedValue('PowerShell'),
+      shellList: vi.fn().mockResolvedValue([]),
       // Shell tab detection (spec project-shell-selection): the Project
       // Settings modal opens on the Shell tab and runs one detection.
       shellDetect: vi.fn().mockResolvedValue([
@@ -86,6 +87,15 @@ function createAppApiStub(): AppApi {
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    kanban: {
+      adaptersList: vi.fn().mockResolvedValue([]),
+      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
+      setConfig: vi.fn().mockResolvedValue(undefined),
+      test: vi.fn().mockResolvedValue(undefined),
+      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
+      createItem: vi.fn(),
+      updateItem: vi.fn(),
     },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),
@@ -227,47 +237,24 @@ describe('app settings and themes', () => {
     fireEvent.change(select, { target: { value: 'default-beta-1' } })
     expect(document.documentElement.dataset.theme).toBe('default-beta-1')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default-beta-1')
-    // Tab cycles the visible dialog controls: theme select → font size →
-    // chat-switch checkbox → terminal paste → attention badge → active indicator →
-    // background chime → active chime → General tab → Shortcuts tab →
-    // close button → back to the theme select.
-    fireEvent.keyDown(select, { key: 'Tab' })
-    expect(document.activeElement).toBe(
-      within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize),
-    )
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(
-      within(dialog).getByRole('checkbox', { name: 'Uppercase project names in the tree' }),
-    )
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsChatSwitch))
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(
-      within(dialog).getByRole('checkbox', { name: 'Use Ctrl+V to paste text in terminals' }),
-    )
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsAttentionBadge))
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(
-      within(dialog).getByTestId(TEST_ID.settingsAttentionActiveIndicator),
-    )
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsAttentionChime))
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
+    const close = within(dialog).getByRole('button', { name: 'Close app settings' })
+    close.focus()
+    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
     expect(document.activeElement).toBe(
       within(dialog).getByTestId(TEST_ID.settingsAttentionActiveChime),
     )
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsGeneralTab))
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(within(dialog).getByTestId(TEST_ID.settingsShortcutsTab))
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(
-      within(dialog).getByRole('button', { name: 'Close app settings' }),
+    expect(document.activeElement).toBe(close)
+    fireEvent.keyDown(close, { key: 'Tab' })
+    expect(document.activeElement).toBe(within(dialog).getByRole('tab', { name: 'General' }))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(within(dialog).getByRole('tab', { name: 'Fonts' }))
+    expect(within(dialog).getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(
+      'settings-tab-fonts',
     )
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' })
-    expect(document.activeElement).toBe(select)
-    fireEvent.keyDown(select, { key: 'Escape' })
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(within(dialog).getByRole('tab', { name: 'General' }))
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
     expect(document.activeElement).toBe(opener)
     view.unmount()
@@ -413,6 +400,50 @@ describe('app settings and themes', () => {
     act(() => expect(pressCtrlV(restoredTerminal)).toBe(false))
   })
 
+  it('validates, persists and resets font families and restores them on remount', () => {
+    const app = createAppApiStub()
+    const view = render(<App app={app} />)
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    expect(screen.queryByLabelText('Terminal text font')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'Fonts' }))
+    fireEvent.change(screen.getByLabelText('Terminal text font'), {
+      target: { value: 'bad, serif' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply font families' }))
+    expect(screen.getByLabelText('Terminal text font').getAttribute('aria-invalid')).toBe('true')
+    expect(localStorage.getItem('nekode.terminal-font-families.v1')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Terminal text font'), {
+      target: { value: 'Cascadia Mono' },
+    })
+    fireEvent.change(screen.getByLabelText('Terminal icon font'), {
+      target: { value: 'Custom Symbols' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply font families' }))
+    expect(JSON.parse(localStorage.getItem('nekode.terminal-font-families.v1') ?? 'null')).toEqual({
+      text: 'Cascadia Mono',
+      icons: 'Custom Symbols',
+    })
+    view.unmount()
+    render(<App app={app} />)
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Fonts' }))
+    expect((screen.getByLabelText('Terminal text font') as HTMLInputElement).value).toBe(
+      'Cascadia Mono',
+    )
+    expect((screen.getByLabelText('Terminal icon font') as HTMLInputElement).value).toBe(
+      'Custom Symbols',
+    )
+    fireEvent.change(screen.getByLabelText('Terminal font size'), { target: { value: '19' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Restore font defaults' }))
+    expect((screen.getByLabelText('Terminal text font') as HTMLInputElement).value).toBe(
+      'Recursive Mono Casual',
+    )
+    expect((screen.getByLabelText('Terminal icon font') as HTMLInputElement).value).toBe(
+      'Symbols Nerd Font Mono',
+    )
+    expect(localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY)).toBe('15')
+  })
+
   it('persists the terminal font size and applies it live to every mounted terminal', async () => {
     const app = createAppApiStub()
     await renderTwoChats(app)
@@ -424,6 +455,7 @@ describe('app settings and themes', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    fireEvent.click(within(dialog).getByRole('tab', { name: 'Fonts' }))
     const select = within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize)
     expect((select as HTMLSelectElement).value).toBe('15')
 
@@ -441,6 +473,7 @@ describe('app settings and themes', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    fireEvent.click(within(dialog).getByRole('tab', { name: 'Fonts' }))
     expect(
       (within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize) as HTMLSelectElement).value,
     ).toBe('16')

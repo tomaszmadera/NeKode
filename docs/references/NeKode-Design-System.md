@@ -209,10 +209,12 @@ font-family: "Recursive Sans Casual", Inter, "Segoe UI Variable", "Segoe UI", sy
 Applied stack:
 
 ```css
-font-family: "Recursive Mono Casual", Consolas, "Courier New", monospace;
+font-family: "Recursive Mono Casual", "Symbols Nerd Font Mono", Consolas, "Courier New", monospace;
 ```
 
 Recursive is bundled locally under the SIL Open Font License (`src/renderer/src/fonts/OFL.txt`): one variable woff2 serves both the UI sans and the terminal mono through the MONO axis. Do not bundle fonts without a libre license; otherwise prefer local/system fonts.
+
+The terminal adds bundled Symbols Nerd Font Mono v3.4.0 for prompt glyphs, with provenance and source notices in `src/renderer/src/fonts/NERD-FONTS-PROVENANCE.md`. App Settings > Fonts edits terminal text/icon families and size, previews them, and restores defaults. Custom families require a local font installation; existing terminal sessions adopt the applied preferences without restarting.
 
 ### 6.3 Type scale
 

@@ -249,7 +249,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="ml-1 flex -translate-x-px items-center rounded px-1.5 py-1 text-ink-muted hover:bg-highlight hover:text-ink"
+                      className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink"
                       data-testid={testIdFor.projectFiles(project.id)}
                       title="Show project files"
                       aria-label={`Show project files for ${project.name}`}
@@ -295,18 +295,18 @@ export function LeftNavigation({
                             return (
                               <li key={chat.id} className="relative pl-6">
                                 {/* Close control (user request 2026-10-04): an
-                                    X on the row's right edge while the row is
-                                    hovered or keyboard-focused. Absolutely
-                                    positioned so the tile never resizes; it
-                                    covers the row's right padding, never the
-                                    name. Clicking stages a confirmation
+                                    X on the shared 24px right-edge axis with
+                                    Add Project and Show project files, centered
+                                    in the row and shown on hover or focus.
+                                    Absolute positioning keeps the tile size
+                                    stable. Clicking stages a confirmation
                                     dialog — closing removes the chat with its
                                     terminal (spec Behaviour 11). The badge
                                     yields while the X is shown (same corner). */}
                                 <button
                                   type="button"
                                   className={cn(
-                                    'absolute inset-y-0 right-1.5 z-10 h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink',
+                                    'absolute right-2 top-1/2 z-10 h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink',
                                     revealedChatId === chat.id ? 'flex' : 'hidden',
                                   )}
                                   data-testid={testIdFor.chatClose(chat.id)}
