@@ -59,5 +59,6 @@
 
   /* Terminal-facing mono stack (design doc 6.2). Keep the xterm fontFamily in
      ChatTerminal.tsx in sync with this list. */
-  --font-mono: "Recursive Mono Casual", Consolas, "Courier New", monospace;
+  --font-mono:
+    "Recursive Mono Casual", "Symbols Nerd Font Mono", Consolas, "Courier New", monospace;
 }

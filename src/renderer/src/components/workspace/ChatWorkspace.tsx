@@ -9,6 +9,7 @@ import {
   pruneAttention,
 } from '../../lib/chat-attention'
 import { playAttentionChime } from '../../lib/chime'
+import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ChatTerminal } from '../terminal/ChatTerminal'
 import type { PromptInjection } from '../terminal/PromptInput'
@@ -79,6 +80,7 @@ interface ChatWorkspaceProps {
   forceStartNewChat?: boolean
   terminalCwds?: Record<string, string>
   /** Terminal font size (App Settings); remounts nothing — see ChatTerminal. */
+  terminalFontFamilies?: TerminalFontFamilies
   terminalFontSize?: number
   terminalCtrlVPaste?: boolean
   onSessionStatus?: (chatId: string, live: boolean) => void
@@ -128,6 +130,7 @@ export function ChatWorkspace({
   onAddProject,
   forceStartNewChat = false,
   terminalCwds = {},
+  terminalFontFamilies,
   terminalFontSize,
   terminalCtrlVPaste,
   onSessionStatus,
@@ -377,6 +380,7 @@ export function ChatWorkspace({
                 cwd={record.cwd}
                 visible={chatId === selectedChatId}
                 terminalFontSize={terminalFontSize}
+                terminalFontFamilies={terminalFontFamilies}
                 terminalCtrlVPaste={terminalCtrlVPaste}
                 onExit={() => handleExit(chatId)}
                 onClose={() => handleExit(chatId)}

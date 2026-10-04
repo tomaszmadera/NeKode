@@ -59,6 +59,7 @@ function createAppApiStub(): AppApi {
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
       shellName: vi.fn().mockResolvedValue('PowerShell'),
+      shellList: vi.fn().mockResolvedValue([]),
       // Shell tab detection (spec project-shell-selection): Project Settings
       // opens on the Shell tab and runs one detection on entry.
       shellDetect: vi.fn().mockResolvedValue([
@@ -83,6 +84,15 @@ function createAppApiStub(): AppApi {
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    kanban: {
+      adaptersList: vi.fn().mockResolvedValue([]),
+      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
+      setConfig: vi.fn().mockResolvedValue(undefined),
+      test: vi.fn().mockResolvedValue(undefined),
+      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
+      createItem: vi.fn(),
+      updateItem: vi.fn(),
     },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),

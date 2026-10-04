@@ -189,7 +189,7 @@ describe('AdapterHost', () => {
       })
     let gone = false
     for (let attempt = 0; attempt < 20 && !gone; attempt += 1) {
-      gone = !(await alive(adapterPid as number))
+      gone = !(await alive(adapterPid as unknown as number))
       if (!gone) {
         await new Promise((resolve) => setTimeout(resolve, 100))
       }

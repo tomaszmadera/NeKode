@@ -58,6 +58,9 @@ function createAppApiStub(gitStatus?: Partial<GitStatus>): AppApi {
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
       shellName: vi.fn().mockResolvedValue('PowerShell'),
+      shellList: vi.fn().mockResolvedValue([]),
+      shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
+      shellAddCustom: vi.fn().mockResolvedValue({ id: 'default', label: 'PowerShell' }),
       terminate: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn().mockReturnValue(() => undefined),
       onExit: vi.fn().mockReturnValue(() => undefined),
@@ -78,6 +81,15 @@ function createAppApiStub(gitStatus?: Partial<GitStatus>): AppApi {
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    kanban: {
+      adaptersList: vi.fn().mockResolvedValue([]),
+      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
+      setConfig: vi.fn().mockResolvedValue(undefined),
+      test: vi.fn().mockResolvedValue(undefined),
+      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
+      createItem: vi.fn(),
+      updateItem: vi.fn(),
     },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),

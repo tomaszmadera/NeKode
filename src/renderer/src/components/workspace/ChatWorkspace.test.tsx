@@ -71,6 +71,9 @@ function createAppMock(): AppMockBundle {
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
       shellName: vi.fn().mockResolvedValue('PowerShell'),
+      shellList: vi.fn().mockResolvedValue([]),
+      shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
+      shellAddCustom: vi.fn().mockResolvedValue({ id: 'default', label: 'PowerShell' }),
       terminate: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn((chatId: string, cb: (data: string) => void) => {
         const listeners = dataListenersByChat.get(chatId) ?? new Set()
@@ -102,6 +105,15 @@ function createAppMock(): AppMockBundle {
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    kanban: {
+      adaptersList: vi.fn().mockResolvedValue([]),
+      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
+      setConfig: vi.fn().mockResolvedValue(undefined),
+      test: vi.fn().mockResolvedValue(undefined),
+      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
+      createItem: vi.fn(),
+      updateItem: vi.fn(),
     },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),

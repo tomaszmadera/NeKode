@@ -3,6 +3,7 @@ import type { AppApi } from '../../../../shared/ipc-contract'
 import { BOTTOM_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
+import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ResizeHandle } from '../layout/ResizeHandle'
 import type { BottomTab } from './bottom-tabs'
@@ -31,6 +32,7 @@ interface BottomPanelProps {
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
   onResizeNudge: (delta: number) => void
   /** Terminal font size (App Settings), applied live to every bottom view. */
+  terminalFontFamilies?: TerminalFontFamilies
   terminalFontSize?: number
   terminalCtrlVPaste?: boolean
 }
@@ -51,6 +53,7 @@ export function BottomPanel({
   onSessionReady,
   onResizeStart,
   onResizeNudge,
+  terminalFontFamilies,
   terminalFontSize,
   terminalCtrlVPaste,
 }: BottomPanelProps): React.JSX.Element {
@@ -137,6 +140,7 @@ export function BottomPanel({
                 visible={visible}
                 focused={visible}
                 terminalFontSize={terminalFontSize}
+                terminalFontFamilies={terminalFontFamilies}
                 terminalCtrlVPaste={terminalCtrlVPaste}
                 onExit={() => onExit(tab.id)}
                 onClose={(options) => onCloseTab(tab.id, options)}

@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "./theme.css";
 
+/* Nerd Fonts v3.4.0, Symbols Only Mono; fonts/NERD-FONTS-PROVENANCE.md
+   records the source and notices copied from public/font-licenses/. */
+@font-face {
+  font-family: "Symbols Nerd Font Mono";
+  src: url("./fonts/SymbolsNerdFontMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 /* Recursive variable font (SIL OFL, see fonts/OFL.txt): one file serves two
    families through the MONO and CASL axes. Source: @fontsource-variable/recursive
    5.3.0 (latin + latin-ext subsets). The @font-face descriptors apply on canvas

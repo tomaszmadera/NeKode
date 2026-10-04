@@ -28,7 +28,7 @@ describe('PowerShell action option', () => {
       const command = '"./scripts/zażółć 🐱/start.ps1" -Name "Example value"'
       const create = vi.fn().mockResolvedValue({})
       const update = vi.fn().mockResolvedValue({})
-      const app = { actions: { create, update }, ...shellAppMock() } as unknown as AppApi
+      const app = { ...shellAppMock(), actions: { create, update } } as unknown as AppApi
       const props = {
         app,
         actions: [] as ActionControl[],
