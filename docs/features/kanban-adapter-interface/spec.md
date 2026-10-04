@@ -1,0 +1,135 @@
+# Kanban adapter interface: plugin discovery, project binding, normalized board data
+
+This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
+
+## Goal
+
+Let NeKode read and change work items from an external Kanban backend (Plane today, others later) through user-provided adapter plugins, without building any backend knowledge into the application. The user drops adapters into one directory, binds one adapter per project in Project Settings, fills the adapter's declared config fields, and the application talks to that backend only through a versioned process protocol. This feature also ships the first real Kanban surface: a minimal, read-only board tab next to Files in the center surface (states as titled columns, item titles underneath), deliberately unstyled beyond the basics. Card actions, metadata, and visual design are later work (UX-UI §26–30).
+
+## Related requirements
+
+- UX-UI §26–30 (Kanban as a primary product surface, post-MVP) — this spec is its data layer.
+- requirements.md §3 keeps functional Kanban out of MVP; this feature is the post-MVP integration groundwork (user decision 2026-10-04).
+- First adapter target: Plane CE REST API — the same backend the harness Kanban CLI (`.agents/skills/kanban`) already uses, so its state-group and alias semantics carry over.
+
+## Scope
+
+- Shared: typed IPC contract additions (`kanban` namespace), normalized domain types (`KanbanState`, `WorkItem`, config-field types), `APP_STATE_KEY` entries and per-project key helpers.
+- Main: adapter discovery (manifest scan), adapter host (spawn + stdio JSON protocol + timeout + kill), `KanbanService` facade behind IPC, per-project config persistence and cleanup on `projects:remove`.
+- Renderer: Project Settings "Kanban" section — adapter select, dynamic config form driven by the adapter manifest (secret masking), Test connection, adapters directory display and override.
+- Minimal board surface (basic version only): a `Kanban` tab next to `Files` in the project center surface, rendering `kanban:listBoard` as plain titled columns (state name) with item titles listed underneath; read-only, no card UI, no styling beyond minimal layout.
+- Reference adapter (Python, outside the app contract): a Plane adapter implementing protocol v1 against the Plane REST API, reusing the semantics of the harness `kanban_cli.py` (state groups, alias resolution, `.agents/.env`-compatible field names).
+
+## Non-goals
+
+- Board card UI: metadata, drag-and-drop, card actions (Implement/Resume), visual design — UX-UI §26–30 remains a separate post-MVP feature; this round ships only the minimal read-only column list.
+- The full tabbed Project Settings rebuild: in this feature the Kanban settings render as their own tab/section inside the existing Project Settings dialog without reworking the dialog's other sections.
+- Two-way automatic synchronization with a NeKode Task entity.
+- Long-lived adapter daemons: every invocation is one process.
+- Plugin signing, marketplace, or sandboxing beyond directory discovery and manifest validation.
+- Bundling adapters with the app; adapters are always user-installed files.
+- More than one bound adapter per project.
+- Reading or writing the harness `.agents/.env` or project profile: NeKode stores its own per-project config (entering the API token twice is accepted for v1).
+
+## Behaviour
+
+1. Discovery: main scans the adapters directory — default `<userData>/kanban-adapters`, overridable via the app-level `kanban.adaptersDir` app_state key — one level deep. A subdirectory containing a valid `adapter.json` is an adapter; discovery happens on every `kanban:adaptersList` call, so adapters added while the app runs appear at the next settings open without restart. Invalid or missing manifests are skipped with a logged warning naming the path; remaining valid adapters are still listed. Duplicate adapter ids: the first in lexicographic directory-name order wins, later duplicates are skipped with a warning naming the skipped directory.
+2. Manifest (`adapter.json`): `{ id, name, protocolVersion, invocation: { command, args? }, configSchema: [ { key, label, type, required?, options?, default? } ] }` where `type` is `string | secret | select | boolean`; `options` applies to `select`; `id` is kebab-case and unique. A manifest with `protocolVersion` other than `1` is rejected with a warning (no best-effort compatibility).
+3. Invocation protocol v1: one process per request. Main spawns `invocation.command` + `invocation.args` (argv array, no shell) with cwd = the adapter directory, writes exactly one JSON request object to stdin, closes stdin, reads stdout to EOF, and expects exactly one JSON response object. Request: `{ protocolVersion, action, config, params }`. Response: `{ ok: true, data }` or `{ ok: false, error: { code, message } }`. Exit code 0 must accompany `ok: true` and 1 `ok: false`; any other exit code, invalid UTF-8/JSON, more than one JSON value, or stdout above 10 MB is a typed protocol error. stderr is captured for diagnostics only (never parsed).
+4. Actions and params:
+   - `test` `{}` — connection/credentials check.
+   - `listStates` `{}` — the backend's concrete states.
+   - `listItems` `{ stateId?, stateGroup? }` — items across all states when both omitted.
+   - `getItem` `{ ref }`.
+   - `createItem` `{ title, description?, stateRef?, priority? }`.
+   - `updateItem` `{ ref, title?, description?, stateRef?, priority? }` — patch semantics: only provided fields change.
+   - `stateRef` accepts a concrete state name (case-insensitive) or a group alias (`backlog`, `todo`/`unstarted`, `in progress`/`started`, `done`/`completed`, `cancelled`) and is resolved by the adapter against its own states — the same semantics as the harness kanban CLI.
+5. Timeout: main enforces a per-invocation timeout (30 s default) and kills the adapter's process tree; expiry produces a typed `timeout` error naming the adapter and action.
+6. Config delivery: the request `config` object carries all stored field values, secrets included. No config values are placed on the command line (argv is world-readable on Windows) and no secrets go into environment variables or the manifest.
+7. Project binding: the Project Settings Kanban section lists discovered adapters (name, id). Selecting one renders its `configSchema` as a form: `secret` inputs are masked and never rendered back after save, `select` renders a dropdown from `options`, `boolean` a checkbox, required fields are marked. Save stores the adapter id and field values; an empty non-secret field clears the stored value; a left-empty secret field keeps the stored secret. Deselecting (none) clears the binding but keeps stored field values. No selection = not configured.
+8. Test connection: a button invokes the adapter's `test` action with the currently entered values (unsaved edits included, without persisting them). Success renders an inline confirmation; failure renders the typed error message inline in the section (not a toast).
+9. Read path: `kanban:listBoard(projectId)` returns normalized `{ states, items }` via the adapter (`listStates` + `listItems`). Unconfigured project or missing adapter → typed validation error naming the project.
+10. Write path: `kanban:createItem(projectId, input)` and `kanban:updateItem(projectId, ref, patch)` forward normalized inputs; the adapter's returned WorkItem is returned to the renderer unchanged.
+11. `projects:remove` deletes the project's adapter and config keys (same rule as `project.handoffDir` cleanup).
+12. The settings section shows the active adapters directory with a Browse button (`dialogs:pickDirectory`); confirming a directory persists it to `kanban.adaptersDir` and re-scans immediately.
+13. The Kanban settings render as their own tab (label `Kanban`) inside the existing Project Settings dialog, separate from Configuration and Actions, without reworking those sections.
+14. Board surface: when the active project is selected, the center surface shows `Files   Kanban` tabs (UX-UI §18; Files stays the default). The Kanban tab renders `kanban:listBoard` for the active project: one plain column per state in the adapter's `order`, headed by the state name, with item titles underneath. Selecting the tab triggers one lazy load; a manual refresh control re-runs it. Loading, typed-error, empty-board, and not-configured states are inline text (the not-configured state offers a button opening Project Settings on the Kanban tab, mirroring the Resume picker's Configure affordance).
+
+## Business rules
+
+- Protocol version is exact-match: main speaks only `protocolVersion: 1`; a manifest or response declaring another version is a typed protocol error.
+- `stateGroup` enum: `backlog | unstarted | started | completed | cancelled` (Plane's groups; parity with the harness CLI aliases). An adapter response containing a state or item outside the enum is a protocol violation.
+- WorkItem shape: `{ ref, id, title, description|null, stateId, stateName, stateGroup, priority|null, assignee|null, url|null, updatedAt|null }`. `ref` is the adapter's stable human-readable reference (e.g. `NEKODE-16`); `id` is the backend-native id, opaque to the UI. `priority` normalizes to `urgent | high | medium | low | null`; `updatedAt` is ISO 8601 UTC or null.
+- KanbanState shape: `{ id, name, group, order }` with `group` from the enum and `order` an integer sort key from the adapter.
+- Storage: `project.kanbanAdapter:<projectId>` holds the adapter id; `project.kanbanConfig:<projectId>` holds the JSON object of field values. Missing or empty adapter key = unconfigured.
+- Secret fields are write-only through the UI: `kanban:getConfig` returns `null` for every secret value plus the list of keys that have a stored value, so the UI can show "stored" without echoing the secret.
+- Secret values are stored in the local SQLite `app_state` store as plain JSON — the same trust model as the harness `.agents/.env`; they leave the machine only toward the bound adapter process via stdin.
+- All adapter invocations spawn the argv array directly (no shell), cwd = the adapter directory.
+
+## Authorization
+
+Renderer invokes stay behind the existing trusted-sender guard. `kanban:*` channels reject unknown project ids (`not_found`). Adapter processes run with the user's own privileges and receive only the bound project's stored config values. Main executes only the `invocation.command` declared by a manifest found in the configured adapters directory; nothing outside that directory is ever executed.
+
+## Data / API
+
+- IPC additions (names follow `IPC_CHANNEL`):
+  - `kanban:adaptersList` → `KanbanAdapterInfo[]`
+  - `kanban:getConfig(projectId)` → `{ adapterId: string | null, values: Record<string, string | null>, secretKeys: string[] }`
+  - `kanban:setConfig(projectId, { adapterId: string | null, values: Record<string, string> })` → `void`
+  - `kanban:test(projectId, values?)` → `void` (values optional: persist-first form uses stored config)
+  - `kanban:listBoard(projectId)` → `{ states: KanbanState[], items: WorkItem[] }`
+  - `kanban:createItem(projectId, input: KanbanCreateInput)` → `WorkItem`
+  - `kanban:updateItem(projectId, ref: string, patch: KanbanUpdatePatch)` → `WorkItem`
+- `KanbanAdapterInfo { id, name, configSchema: KanbanConfigField[] }`; `KanbanConfigField { key, label, type: 'string'|'secret'|'select'|'boolean', required: boolean, options?: string[], default?: string | boolean }`.
+- `KanbanCreateInput { title, description?, stateRef?, priority? }`; `KanbanUpdatePatch { title?, description?, stateRef?, priority? }`.
+- `APP_STATE_KEY` addition: `kanbanAdaptersDir: 'kanban.adaptersDir'`; helpers `projectKanbanAdapterKey(projectId)`, `projectKanbanConfigKey(projectId)`.
+- No SQLite schema migration: all persistence uses the existing flat `app_state` key-value store.
+
+## Edge cases
+
+- Adapters directory missing or empty: the list is empty and the settings section shows an explanatory empty state (not an error).
+- Adapter command not found (ENOENT): typed error naming the adapter and command.
+- Adapter prints nothing, garbage, two JSON objects, or more than 10 MB: typed protocol error carrying a short main-process description plus captured stderr tail.
+- Backend unreachable or auth rejected: the adapter's `ok:false` error (code `auth | network | notFound | config | internal`) is surfaced verbatim as a typed error; main adds no interpretation and no retry.
+- Adapter bound to a project disappears from the directory: `kanban:getConfig` still returns the stored binding; every request through it fails with `not_found` naming the adapter id; the settings section marks the stored adapter "(missing)" and still allows clearing or re-binding.
+- Project removed while a request is in flight: the in-flight response is dropped; nothing is persisted.
+- Manifest with a `default` for a secret field: allowed on disk but main ignores it for secret masking decisions (a stored value is what counts).
+
+## Errors
+
+- Typed codes: `validation_error` (unconfigured project, empty required field on save, invalid patch), `not_found` (unknown project, missing adapter), `timeout`, `protocol` (contract violations), and the adapter's own `auth | network | notFound | config | internal` surfaced with the adapter's message.
+- No silent fallbacks: a skipped manifest never hides the reason (warning names the path), and an adapter warning on stderr never turns a failed action into success.
+- Settings save validates only manifest-declared shape (required non-empty); semantic correctness is the adapter's `test` job.
+
+## Acceptance criteria
+
+1. An adapter directory with a valid manifest dropped into the adapters dir appears in Project Settings at the next open of the section, without app restart.
+2. A manifest that is invalid JSON, lacks `id`, or declares `protocolVersion: 2` is not listed; a warning naming the path is logged; valid sibling adapters are still listed.
+3. Two directories declaring the same `id` yield exactly one entry; a warning names the skipped directory.
+4. Selecting an adapter renders exactly its manifest fields with the correct widget per type; required fields block save when empty; a saved secret renders as "stored" and its value never appears in the DOM.
+5. Saving the form without retyping a stored secret keeps the old value: the next adapter invocation receives the previously stored secret in `config` (asserted with a fixture adapter).
+6. Test connection renders success inline and failure inline with the typed error message; neither uses a toast.
+7. `kanban:listBoard` on a project bound to a fixture adapter returns the fixture's states/items normalized to the spec shapes; items or states outside the `stateGroup` enum produce a typed protocol error.
+8. `kanban:updateItem(ref, { stateRef: 'done' })` sends `stateRef: 'done'` to the adapter unresolved; the adapter's returned WorkItem is returned unchanged.
+9. `kanban:*` on an unconfigured project rejects with `validation_error` naming the project; on a bound-but-missing adapter with `not_found` naming the adapter id.
+10. An adapter that sleeps past the timeout yields a typed `timeout` error and leaves no orphaned process (process tree killed; asserted in the fixture test).
+11. The spawned process's command line never contains any config value: the fixture adapter writes its argv to stderr, and the test asserts none of the stored values appear.
+12. `projects:remove` removes both `project.kanbanAdapter:*` and `project.kanbanConfig:*` rows from `app_state`.
+13. Changing the adapters directory in settings persists `kanban.adaptersDir` and the list re-scans without restart.
+14. With an active project, the center surface shows `Files   Kanban`; Files stays the default tab after project switch. The Kanban tab lists one column per state (state name as heading, item titles below), a not-configured inline state with a working Configure button opening Project Settings on the Kanban tab, and a refresh control that re-runs the load.
+15. The Kanban section of Project Settings is reachable as its own tab labeled `Kanban`, without changing the existing Configuration or Actions sections' behavior.
+
+## Required tests
+
+- Manifest validation: happy path; each rejection rule (bad JSON, missing id, bad id format, unknown protocolVersion, bad config field type); duplicate-id resolution order.
+- Adapter host: argv correctness and cwd; stdin request framing (single object, stdin closed); single-JSON stdout parsing; `ok:false` mapping; exit-code violations; protocol violations (no output, garbage, two objects, oversized stdout, non-UTF8); timeout kill with no orphan; ENOENT mapping; stderr captured but unparsed.
+- Secret handling: `getConfig` masking plus `secretKeys`; setConfig keep-secret rule (empty secret field) and clear-on-empty rule (non-secret).
+- Persistence: adapter+config key roundtrip; `projects:remove` cleanup; `kanban.adaptersDir` override.
+- IPC contract: channel presence and typed payload roundtrips in the shared contract test style.
+- Renderer (vitest): settings tab states — no adapters, adapter selected with dynamic fields, required validation, test in-progress/success/failure, "(missing)" adapter, directory override flow; board tab states — columns with titles, loading, error, empty, not-configured with Configure, refresh, Files-default tab behavior.
+- Fixture adapters (node scripts) serve as protocol doubles in vitest; the Python reference Plane adapter is verified manually against the user's Plane instance (documented steps in the task), not in vitest.
+
+## Relevant SDD / ADR
+
+- `docs/architecture/sdd.md` §6, §44 (typed IPC pattern, main-process services).
+- ADR: none. The language-agnostic process-protocol decision (protocol v1: JSON over stdio, one process per request, manifest-declared invocation) is recorded in this spec; promote to an ADR if the architecture doc grows that mechanism.
