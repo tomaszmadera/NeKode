@@ -19,7 +19,8 @@ import { resetMockTerminals } from '../../test/xterm-mock'
 // element of its expanded left-navigation content and a non-closable `Kanban`
 // tab immediately after the chat tab; a project without a binding shows
 // neither. Selecting either entry point shows the board in the center surface
-// (one lazy listBoard load); selecting the chat tab or a file tab returns to
+// on its default List view (one lazy listBoard load), and the Board switch
+// turns it into columns; selecting the chat tab or a file tab returns to
 // that surface. No center-surface `Files | Kanban` view-switch strip exists.
 
 vi.mock('@xterm/xterm', () => import('../../test/xterm-mock'))
@@ -294,12 +295,17 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
 
     fireEvent.click(tile)
-    const backlog = await screen.findByTestId(testIdFor.kanbanColumn('s1'))
+    // The default view is the list; the load fires once either way.
+    await screen.findByTestId(TEST_ID.kanbanList)
     expect(app.kanban.listBoard).toHaveBeenCalledTimes(1)
     expect(app.kanban.listBoard).toHaveBeenCalledWith('p1')
-    // The board renders the fixture columns (state name heading + titles).
+    // The Board switch renders the fixture columns (state name + titles).
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
+    const backlog = await screen.findByTestId(testIdFor.kanbanColumn('s1'))
     expect(within(backlog).getByText('Backlog')).toBeTruthy()
-    expect(within(backlog).getByTestId(testIdFor.kanbanItem('NK-1')).textContent).toBe('First task')
+    expect(within(backlog).getByTestId(testIdFor.kanbanItem('NK-1')).textContent).toContain(
+      'First task',
+    )
     // The Kanban tab is the active tab while the board shows.
     expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
     expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
@@ -315,7 +321,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
 
-    await screen.findByTestId(testIdFor.kanbanColumn('s1'))
+    await screen.findByTestId(TEST_ID.kanbanList)
     expect(app.kanban.listBoard).toHaveBeenCalledWith('p1')
 
     // Chat tab shows the terminal surface instead; the board unmounts.

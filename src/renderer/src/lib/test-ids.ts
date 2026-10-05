@@ -136,6 +136,16 @@ export const TEST_ID = {
   kanbanBoardUnconfigured: 'kanban-board-unconfigured',
   kanbanBoardConfigure: 'kanban-board-configure',
   kanbanBoardRefresh: 'kanban-board-refresh',
+  /** Board | List switch on the Kanban tab (board is the default). */
+  kanbanViewBoard: 'kanban-view-board',
+  kanbanViewList: 'kanban-view-list',
+  /** Grouped list of the same items the board shows as columns. */
+  kanbanList: 'kanban-list',
+  /** Read-only review of one work item, opened from the board or the list. */
+  kanbanReview: 'kanban-review',
+  kanbanReviewBack: 'kanban-review-back',
+  kanbanReviewTitle: 'kanban-review-title',
+  kanbanReviewDescription: 'kanban-review-description',
   /** Shell tab: detecting indicator, per-project select, custom path add. */
   settingsShellDetecting: 'settings-shell-detecting',
   settingsShellSelect: 'settings-shell-select',
@@ -187,6 +197,8 @@ export const testIdFor = {
   kanbanSecretStored: (key: string): string => `settings-kanban-secret-stored-${key}`,
   /** One Kanban board column, keyed by the adapter state id. */
   kanbanColumn: (stateId: string): string => `kanban-column-${stateId}`,
-  /** One item title inside a Kanban column, keyed by the item ref. */
+  /** One work item on the board or the list, keyed by its ref (Plane slug). */
   kanbanItem: (ref: string): string => `kanban-item-${ref}`,
+  /** One state group in the list view, keyed by the adapter state id. */
+  kanbanListGroup: (stateId: string): string => `kanban-list-group-${stateId}`,
 }
