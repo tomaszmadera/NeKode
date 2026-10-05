@@ -1,14 +1,18 @@
 // Per-project tab-strip session state (center-layout-tabs-actions spec
-// Behaviour 3–5): the terminal-chat tab plus the open file tabs in open order,
-// the active tab and the previously active tab (close fallback). The session
-// lives for the app session only — never persisted across restarts. Held by
-// App; components stay presentational. The reducers here are pure so the tab
-// contract (order, focus-without-reorder, close fallback) is testable in
-// isolation.
+// Behaviour 3–5): the terminal-chat tab, the Kanban board tab (a project
+// view, present while the project is bound — kanban-adapter-interface spec
+// Behaviour 14) plus the open file tabs in open order, the active tab and the
+// previously active tab (close fallback). The session lives for the app
+// session only — never persisted across restarts. Held by App; components
+// stay presentational. The reducers here are pure so the tab contract (order,
+// focus-without-reorder, close fallback) is testable in isolation.
 
-export type TabId = { kind: 'terminal' } | { kind: 'file'; path: string }
+export type TabId = { kind: 'terminal' } | { kind: 'file'; path: string } | { kind: 'kanban' }
 
 export const TERMINAL_TAB: TabId = { kind: 'terminal' }
+
+/** The per-project Kanban board tab (spec kanban-adapter-interface Behaviour 14). */
+export const KANBAN_TAB: TabId = { kind: 'kanban' }
 
 export function fileTab(path: string): TabId {
   return { kind: 'file', path }
@@ -27,7 +31,13 @@ export function emptyTabsSession(): ProjectTabsSession {
 }
 
 export function tabKey(tab: TabId): string {
-  return tab.kind === 'terminal' ? 'terminal' : `file:${tab.path}`
+  if (tab.kind === 'terminal') {
+    return 'terminal'
+  }
+  if (tab.kind === 'kanban') {
+    return 'kanban'
+  }
+  return `file:${tab.path}`
 }
 
 function sameTab(a: TabId | null, b: TabId | null): boolean {
@@ -35,7 +45,12 @@ function sameTab(a: TabId | null, b: TabId | null): boolean {
 }
 
 function tabIsOpen(tab: TabId, openFiles: readonly string[]): boolean {
-  return tab.kind === 'terminal' || openFiles.includes(tab.path)
+  // The terminal-chat and Kanban tabs are always open (Kanban is a project
+  // view, never a document); file tabs live in the open-files list.
+  if (tab.kind === 'terminal' || tab.kind === 'kanban') {
+    return true
+  }
+  return openFiles.includes(tab.path)
 }
 
 /** Activate a tab, remembering the previously active tab (Behaviour 4). */

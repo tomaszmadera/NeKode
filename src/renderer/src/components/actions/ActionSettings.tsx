@@ -5,6 +5,7 @@ import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { ACTION_ICON_NAMES, ACTION_NONE, actionIconGlyph } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
+import { KanbanSettings } from '../settings/KanbanSettings'
 import { ShellTab } from '../settings/ShellTab'
 
 interface Props {
@@ -17,10 +18,30 @@ interface Props {
   autoSend: boolean
   onAutoSendChange: (next: boolean) => void
   onRefresh: () => Promise<void>
+  /**
+   * Tab selected when the dialog opens (default `shell`). Only a caller that
+   * must land on a specific section passes it (e.g. the board's Configure
+   * button opening the Kanban tab); every other opener keeps the default.
+   */
+  initialTab?: SettingsTabId
   onClose: () => void
 }
 
-type SettingsTabId = 'shell' | 'actions'
+export type SettingsTabId = 'shell' | 'actions' | 'kanban'
+
+const SETTINGS_TABS = ['shell', 'actions', 'kanban'] as const
+
+const TAB_LABEL: Record<SettingsTabId, string> = {
+  shell: 'Shell',
+  actions: 'Actions & Configuration',
+  kanban: 'Kanban',
+}
+
+const TAB_TEST_ID: Record<SettingsTabId, string> = {
+  shell: TEST_ID.settingsShellTab,
+  actions: TEST_ID.settingsActionsTab,
+  kanban: TEST_ID.settingsKanbanTab,
+}
 
 const POWERSHELL_PREFIX = 'powershell -NoProfile -ExecutionPolicy Bypass -File '
 
@@ -86,11 +107,14 @@ export function ActionSettings({
   autoSend,
   onAutoSendChange,
   onRefresh,
+  initialTab,
   onClose,
 }: Props): React.JSX.Element {
   // Tab state is renderer-local (spec project-shell-selection Stage 4): the
-  // Shell tab is the default, and each tab keeps its own unsaved edits.
-  const [activeTab, setActiveTab] = useState<SettingsTabId>('shell')
+  // Shell tab is the default, each tab keeps its own unsaved edits, and an
+  // explicit `initialTab` (the board's Configure button) overrides the default
+  // for this mount only.
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'shell')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ActionInput | null>(null)
   const [runWithPowerShell, setRunWithPowerShell] = useState(false)
@@ -280,7 +304,7 @@ export function ActionSettings({
               aria-orientation="vertical"
               className="flex w-24 shrink-0 flex-col gap-1 border-r border-edge pr-3 sm:w-36"
             >
-              {(['shell', 'actions'] as const).map((tab) => (
+              {SETTINGS_TABS.map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -288,27 +312,23 @@ export function ActionSettings({
                   id={`settings-tab-${tab}`}
                   aria-controls={`settings-panel-${tab}`}
                   aria-selected={activeTab === tab}
-                  data-testid={
-                    tab === 'shell' ? TEST_ID.settingsShellTab : TEST_ID.settingsActionsTab
-                  }
+                  data-testid={TAB_TEST_ID[tab]}
                   className={`rounded-md px-3 py-2 text-left text-sm ${activeTab === tab ? 'bg-button text-ink' : 'text-ink-secondary hover:bg-highlight hover:text-ink'}`}
                   onClick={() => setActiveTab(tab)}
                 >
-                  {tab === 'shell' ? 'Shell' : 'Actions & Configuration'}
+                  {TAB_LABEL[tab]}
                 </button>
               ))}
             </div>
-            {(['shell', 'actions'] as const)
-              .filter((tab) => tab !== activeTab)
-              .map((tab) => (
-                <div
-                  key={tab}
-                  role="tabpanel"
-                  id={`settings-panel-${tab}`}
-                  aria-labelledby={`settings-tab-${tab}`}
-                  hidden
-                />
-              ))}
+            {SETTINGS_TABS.filter((tab) => tab !== activeTab).map((tab) => (
+              <div
+                key={tab}
+                role="tabpanel"
+                id={`settings-panel-${tab}`}
+                aria-labelledby={`settings-tab-${tab}`}
+                hidden
+              />
+            ))}
             <div
               role="tabpanel"
               id={`settings-panel-${activeTab}`}
@@ -317,6 +337,8 @@ export function ActionSettings({
             >
               {activeTab === 'shell' ? (
                 <ShellTab app={app} projectId={projectId} />
+              ) : activeTab === 'kanban' ? (
+                <KanbanSettings app={app} projectId={projectId} />
               ) : (
                 <>
                   {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is

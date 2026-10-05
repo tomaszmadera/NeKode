@@ -8,6 +8,8 @@ export const TEST_ID = {
   leftNav: 'region-left',
   tabStrip: 'tab-strip',
   tabTerminal: 'tab-terminal',
+  /** Non-closable Kanban project-view tab (spec kanban-adapter-interface). */
+  kanbanTab: 'tab-kanban',
   tabNewChat: 'tab-new-chat',
   /** Context menu of a file tab (right click / ContextMenu key / Shift+F10). */
   tabContextMenu: 'tab-context-menu',
@@ -106,6 +108,34 @@ export const TEST_ID = {
   settingsShellTab: 'settings-shell-tab',
   /** Project Settings: Actions & Configuration tab. */
   settingsActionsTab: 'settings-actions-tab',
+  /** Project Settings: Kanban tab button + panel (spec kanban-adapter-interface). */
+  settingsKanbanTab: 'settings-kanban-tab',
+  settingsKanbanPanel: 'settings-kanban-panel',
+  settingsKanbanLoading: 'settings-kanban-loading',
+  settingsKanbanEmpty: 'settings-kanban-empty',
+  settingsKanbanAdapterSelect: 'settings-kanban-adapter-select',
+  settingsKanbanAdapterMissing: 'settings-kanban-adapter-missing',
+  settingsKanbanSave: 'settings-kanban-save',
+  settingsKanbanSaved: 'settings-kanban-saved',
+  settingsKanbanTest: 'settings-kanban-test',
+  /** Inline container carrying the test-in-progress/success/failure text. */
+  settingsKanbanTestResult: 'settings-kanban-test-result',
+  /**
+   * Inline hint shown while Test connection is disabled because the displayed
+   * adapter is not yet the persisted binding (spec Behaviour 8).
+   */
+  settingsKanbanTestHint: 'settings-kanban-test-hint',
+  /** Active adapters directory display + Browse override. */
+  settingsKanbanDir: 'settings-kanban-dir',
+  settingsKanbanDirBrowse: 'settings-kanban-dir-browse',
+  /** Read-only Kanban board surface (spec kanban-adapter-interface Behaviour 14). */
+  kanbanBoard: 'kanban-board',
+  kanbanBoardLoading: 'kanban-board-loading',
+  kanbanBoardError: 'kanban-board-error',
+  kanbanBoardEmpty: 'kanban-board-empty',
+  kanbanBoardUnconfigured: 'kanban-board-unconfigured',
+  kanbanBoardConfigure: 'kanban-board-configure',
+  kanbanBoardRefresh: 'kanban-board-refresh',
   /** Shell tab: detecting indicator, per-project select, custom path add. */
   settingsShellDetecting: 'settings-shell-detecting',
   settingsShellSelect: 'settings-shell-select',
@@ -130,6 +160,8 @@ export const testIdFor = {
   projectSelect: (projectId: string): string => `project-select-${projectId}`,
   projectToggle: (projectId: string): string => `project-toggle-${projectId}`,
   projectChats: (projectId: string): string => `project-chats-${projectId}`,
+  /** Left-navigation Kanban tile of a bound project (first expanded element). */
+  projectKanban: (projectId: string): string => `project-kanban-${projectId}`,
   projectFiles: (projectId: string): string => `project-files-${projectId}`,
   removeProject: (projectId: string): string => `remove-project-${projectId}`,
   chatRow: (chatId: string): string => `chat-row-${chatId}`,
@@ -149,4 +181,12 @@ export const testIdFor = {
   tabFileClose: (relativePath: string): string => `tab-close-${relativePath}`,
   /** Main-surface pane of one open file tab (hidden view when inactive). */
   filePreviewPane: (relativePath: string): string => `file-preview-pane-${relativePath}`,
+  /** Kanban settings config field widget, keyed by the manifest field key. */
+  kanbanField: (key: string): string => `settings-kanban-field-${key}`,
+  /** "stored" indicator beside a secret field that holds a value in main. */
+  kanbanSecretStored: (key: string): string => `settings-kanban-secret-stored-${key}`,
+  /** One Kanban board column, keyed by the adapter state id. */
+  kanbanColumn: (stateId: string): string => `kanban-column-${stateId}`,
+  /** One item title inside a Kanban column, keyed by the item ref. */
+  kanbanItem: (ref: string): string => `kanban-item-${ref}`,
 }
