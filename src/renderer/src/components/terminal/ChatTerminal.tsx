@@ -168,7 +168,11 @@ export function ChatTerminal({
   const terminalCtrlVPasteRef = useRef(terminalCtrlVPaste)
   // Live copy/paste entry points of the mounted terminal, for the right-click
   // menu rendered outside the mount effect. Null while unmounted.
-  const clipboardRef = useRef<{ copy: () => boolean; paste: () => void } | null>(null)
+  const clipboardRef = useRef<{
+    copy: () => boolean
+    paste: () => void
+    pasteThroughProgram: () => void
+  } | null>(null)
   // Mount effect's fit+PTY-resize routine, reused by the live font-size
   // effect (refit after xterm reflows at the new size). Null while unmounted.
   const fitRef = useRef<(() => void) | null>(null)
@@ -298,7 +302,18 @@ export function ChatTerminal({
 
     // The right-click menu lives outside this effect; it reaches the live
     // terminal's copy/paste through this ref (nulled on cleanup).
-    clipboardRef.current = { copy: copySelection, paste: pasteClipboard }
+    clipboardRef.current = {
+      copy: copySelection,
+      paste: pasteClipboard,
+      pasteThroughProgram: () => {
+        // Bypass Ctrl+V text interception for program-owned clipboard handling
+        // (e.g. images in Codex). Recheck in case the program exited with the
+        // menu open: raw Ctrl+V must never reach Windows shell edit mode.
+        if (terminal.buffer.active.type !== 'alternate') return
+        sendToPty('\x16')
+        terminal.focus()
+      },
+    }
     // The live font-size effect reuses this fit+resize routine (nulled below).
     fitRef.current = fitAndResize
 
@@ -682,12 +697,19 @@ export function ChatTerminal({
           x={contextMenu.x}
           y={contextMenu.y}
           hasSelection={(terminalRef.current?.hasSelection() ?? false) && visible}
+          canPasteThroughProgram={
+            terminalRef.current?.buffer.active.type === 'alternate' && visible
+          }
           onCopy={() => {
             clipboardRef.current?.copy()
             setContextMenu(null)
           }}
           onPaste={() => {
             clipboardRef.current?.paste()
+            setContextMenu(null)
+          }}
+          onPasteThroughProgram={() => {
+            if (visible) clipboardRef.current?.pasteThroughProgram()
             setContextMenu(null)
           }}
           onSelectAll={() => {

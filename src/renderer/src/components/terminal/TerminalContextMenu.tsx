@@ -7,14 +7,17 @@ interface Props {
   y: number
   /** Copy is enabled only while the xterm view holds a selection. */
   hasSelection: boolean
+  /** Raw Ctrl+V is safe only while a full-screen program owns the terminal. */
+  canPasteThroughProgram: boolean
   onCopy: () => void
   onPaste: () => void
+  onPasteThroughProgram: () => void
   onSelectAll: () => void
   onClose: () => void
 }
 
 /**
- * Right-click menu of the terminal view: Copy / Paste / Select All. Same
+ * Right-click menu: Copy / Paste text / Paste through program / Select All. Same
  * backdrop-dismiss pattern as the project context menu (LeftNavigation):
  * a full-viewport fixed overlay closes on backdrop click, Escape or a second
  * right-click; menu-item clicks run their own action and close through it.
@@ -23,8 +26,10 @@ export function TerminalContextMenu({
   x,
   y,
   hasSelection,
+  canPasteThroughProgram,
   onCopy,
   onPaste,
+  onPasteThroughProgram,
   onSelectAll,
   onClose,
 }: Props): React.JSX.Element {
@@ -71,7 +76,18 @@ export function TerminalContextMenu({
           data-testid={TEST_ID.terminalContextPaste}
           onClick={onPaste}
         >
-          Paste
+          Paste text (Ctrl+Shift+V)
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!canPasteThroughProgram}
+          title={canPasteThroughProgram ? undefined : 'Available in full-screen programs'}
+          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink disabled:cursor-not-allowed disabled:text-ink-disabled disabled:hover:bg-transparent"
+          data-testid={TEST_ID.terminalContextPasteThroughProgram}
+          onClick={onPasteThroughProgram}
+        >
+          Paste through program (Ctrl+V)
         </button>
         <button
           type="button"

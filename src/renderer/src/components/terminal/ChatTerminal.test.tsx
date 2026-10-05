@@ -1313,7 +1313,88 @@ describe('ChatTerminal lifecycle', () => {
       },
     )
 
-    it('right-click opens the Copy/Paste/Select All menu and its items act', async () => {
+    it.each([true, false])(
+      'program paste bypasses Ctrl+V text interception when the setting is %s',
+      async (terminalCtrlVPaste) => {
+        const clipboard = stubClipboard()
+        const { terminal, bundle } = renderTerminal(vi.fn(), terminalCtrlVPaste)
+        terminal.buffer.active.type = 'alternate'
+
+        fireEvent.contextMenu(screen.getByTestId('terminal-canvas-t1'))
+        const programPaste = screen.getByRole('menuitem', {
+          name: 'Paste through program (Ctrl+V)',
+        }) as HTMLButtonElement
+        expect(programPaste.disabled).toBe(false)
+        fireEvent.click(programPaste)
+
+        expect(vi.mocked(bundle.app.terminals.write).mock.calls).toEqual([['t1', '\x16']])
+        expect(clipboard.readText).not.toHaveBeenCalled()
+        expect(terminal.paste).not.toHaveBeenCalled()
+        expect(screen.queryByTestId(TEST_ID.terminalContextMenu)).toBeNull()
+        expect(document.activeElement).toBe(screen.getByTestId('terminal-canvas-t1'))
+
+        // Explicit program paste does not change the configured keyboard path.
+        expect(pressKey(terminal, { key: 'v', ctrlKey: true })).toBe(!terminalCtrlVPaste)
+        if (terminalCtrlVPaste) {
+          await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith('pasted text'))
+        } else {
+          expect(clipboard.readText).not.toHaveBeenCalled()
+        }
+      },
+    )
+
+    it.each([true, false])(
+      'menu text paste inserts once in a full-screen program when the setting is %s',
+      async (terminalCtrlVPaste) => {
+        const clipboard = stubClipboard()
+        const { terminal, bundle } = renderTerminal(vi.fn(), terminalCtrlVPaste)
+        terminal.buffer.active.type = 'alternate'
+
+        fireEvent.contextMenu(screen.getByTestId('terminal-canvas-t1'))
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste text (Ctrl+Shift+V)' }))
+
+        await waitFor(() =>
+          expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', 'pasted text'),
+        )
+        expect(clipboard.readText).toHaveBeenCalledTimes(1)
+        expect(terminal.paste).toHaveBeenCalledTimes(1)
+        expect(vi.mocked(bundle.app.terminals.write).mock.calls).toEqual([['t1', 'pasted text']])
+        expect(screen.queryByTestId(TEST_ID.terminalContextMenu)).toBeNull()
+      },
+    )
+
+    it('disables program paste at a shell prompt', () => {
+      const clipboard = stubClipboard()
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      showPrompt(terminal, bundle)
+
+      fireEvent.contextMenu(screen.getByTestId('terminal-canvas-t1'))
+      const programPaste = screen.getByRole('menuitem', {
+        name: 'Paste through program (Ctrl+V)',
+      }) as HTMLButtonElement
+      expect(programPaste.disabled).toBe(true)
+      fireEvent.click(programPaste)
+      expect(bundle.app.terminals.write).not.toHaveBeenCalled()
+      expect(clipboard.readText).not.toHaveBeenCalled()
+    })
+
+    it('rechecks the buffer when a full-screen program exits with the menu open', () => {
+      const clipboard = stubClipboard()
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      terminal.buffer.active.type = 'alternate'
+
+      fireEvent.contextMenu(screen.getByTestId('terminal-canvas-t1'))
+      const programPaste = screen.getByTestId(TEST_ID.terminalContextPasteThroughProgram)
+      expect((programPaste as HTMLButtonElement).disabled).toBe(false)
+      terminal.buffer.active.type = 'normal'
+      fireEvent.click(programPaste)
+
+      expect(screen.queryByTestId(TEST_ID.terminalContextMenu)).toBeNull()
+      expect(bundle.app.terminals.write).not.toHaveBeenCalled()
+      expect(clipboard.readText).not.toHaveBeenCalled()
+    })
+
+    it('right-click opens the copy/paste menu and its items act', async () => {
       const clipboard = stubClipboard()
       const { terminal, bundle } = renderTerminal(vi.fn())
       showPrompt(terminal, bundle)
