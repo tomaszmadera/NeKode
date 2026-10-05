@@ -8,14 +8,15 @@ import type {
   FileEntry,
   ProjectInfo,
 } from '../../shared/ipc-contract'
-import { APP_STATE_KEY } from '../../shared/ipc-contract'
+import { APP_STATE_KEY, projectKanbanAdapterKey } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
 import { ActionBar } from './components/actions/ActionBar'
-import { ActionSettings } from './components/actions/ActionSettings'
+import { ActionSettings, type SettingsTabId } from './components/actions/ActionSettings'
 import { HandoffPicker } from './components/actions/HandoffPicker'
 import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
+import { KanbanBoard } from './components/kanban/KanbanBoard'
 import { AppBrand } from './components/layout/AppBrand'
 import { ConfirmDialog } from './components/layout/ConfirmDialog'
 import { LeftNavigation } from './components/layout/LeftNavigation'
@@ -27,6 +28,7 @@ import {
   activateTab,
   closeFileTab,
   emptyTabsSession,
+  KANBAN_TAB,
   openFileTab,
   type ProjectTabsSession,
   type TabId,
@@ -260,6 +262,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [actions, setActions] = useState<ActionControl[]>([])
   const [actionSettingsOpen, setActionSettingsOpen] = useState(false)
   const [actionSettingsProjectId, setActionSettingsProjectId] = useState<string | null>(null)
+  // Tab the Project Settings dialog opens on. Only the board's Configure
+  // button sets 'kanban'; every other opener resets it to the Shell default
+  // (the dialog remounts per open, so the initial value is read fresh).
+  const [actionSettingsTab, setActionSettingsTab] = useState<SettingsTabId>('shell')
   // Handoff/Resume delivery (spec handoff-resume-flow): auto-send default off
   // (paste into the prompt input), the setting is application-global.
   const [autoSendHandoff, setAutoSendHandoff] = useState(false)
@@ -314,6 +320,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // Behaviour 3–5): open file tabs in open order, the active tab and the
   // previously active tab. Per-session UI state — never persisted.
   const [tabsByProject, setTabsByProject] = useState<Record<string, ProjectTabsSession>>({})
+  // Projects bound to a Kanban adapter (spec kanban-adapter-interface
+  // Behaviour 14): read once per projects change and again when Project
+  // Settings closes, through the generic `state:get` on the per-project
+  // binding key (no new IPC channel). A bound project shows the nav tile and
+  // the top-strip Kanban tab; an unbound one shows neither.
+  const [kanbanProjectIds, setKanbanProjectIds] = useState<ReadonlySet<string>>(new Set())
   // Projects removed in this session: pending chat loads for them are stale.
   const removedProjectIdsRef = useRef<Set<string>>(new Set())
   // Chats closed by explicit close flows in this session: fetched lists can
@@ -363,6 +375,28 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setNotice(errorMessage(error, 'Failed to load actions.'))
     })
   }, [refreshActions])
+
+  // Kanban entry-point visibility (spec kanban-adapter-interface Behaviour
+  // 14): a project is bound when its per-project adapter key holds a value.
+  // Read through the generic `state:get` (no new IPC channel); recomputed on
+  // every projects-list change and when Project Settings closes, so a
+  // bind/unbind shows up in the navigation and tab strip without a restart.
+  const refreshKanbanBindings = useCallback(async (): Promise<void> => {
+    try {
+      const ids = await Promise.all(
+        projects.map(async (project) =>
+          (await app.state.get(projectKanbanAdapterKey(project.id))) ? project.id : null,
+        ),
+      )
+      setKanbanProjectIds(new Set(ids.filter((id): id is string => id !== null)))
+    } catch (error) {
+      setNotice(errorMessage(error, 'Failed to load Kanban bindings.'))
+    }
+  }, [app, projects])
+
+  useEffect(() => {
+    void refreshKanbanBindings()
+  }, [refreshKanbanBindings])
 
   useEffect(() => {
     let alive = true
@@ -757,6 +791,26 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [tabProjectId, updateTabsSession],
   )
 
+  // Board not-configured state: Configure opens Project Settings on its Kanban
+  // tab (mirrors the Resume picker's Configure affordance, spec Behaviour 14).
+  const handleOpenKanbanSettings = useCallback((): void => {
+    if (tabProjectId === null) {
+      return
+    }
+    setNotice(null)
+    setActionSettingsProjectId(tabProjectId)
+    setActionSettingsTab('kanban')
+    setActionSettingsOpen(true)
+  }, [tabProjectId])
+
+  // Closing Project Settings re-reads the Kanban bindings (spec Behaviour 14):
+  // a bind/unbind saved in the dialog then shows or hides the nav tile and the
+  // top-strip tab without a restart.
+  const handleActionSettingsClose = useCallback((): void => {
+    setActionSettingsOpen(false)
+    void refreshKanbanBindings()
+  }, [refreshKanbanBindings])
+
   const handleSelectProject = useCallback(
     (projectId: string): void => {
       setNotice(null)
@@ -786,6 +840,34 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       updateTabsSession(projectId, (session) => activateTab(session, TERMINAL_TAB))
     },
     [persistSelection, updateTabsSession],
+  )
+
+  // Left-navigation Kanban tile (spec kanban-adapter-interface Behaviour 14):
+  // selecting it makes its project the tab-strip project and activates the
+  // Kanban tab of that project's session, so the board shows in the center
+  // surface. Mirrors the project-select path (selection, persistence,
+  // expansion, chat load) plus the tab activation — but the tile and the
+  // top-strip tab are equivalent entry points, so the chat selection is
+  // discarded only when the tile actually SWITCHES projects (the canonical
+  // project-switch behaviour). Opening the board of the already-selected
+  // project keeps its chat selection, so returning via the chat tab shows the
+  // same chat instead of an empty surface.
+  const handleOpenProjectKanban = useCallback(
+    (projectId: string): void => {
+      setNotice(null)
+      const switchingProject = projectId !== selectedProjectId
+      setSelectedProjectId(projectId)
+      if (switchingProject) {
+        setSelectedChatId(null)
+        persistSelection(projectId, null)
+      }
+      setExpandedProjectIds((previous) => new Set(previous).add(projectId))
+      void loadChats(projectId).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to load chats.'))
+      })
+      updateTabsSession(projectId, (session) => activateTab(session, KANBAN_TAB))
+    },
+    [loadChats, persistSelection, selectedProjectId, updateTabsSession],
   )
 
   // Ctrl+Tab / Ctrl+Shift+Tab chat switching across all projects
@@ -1125,6 +1207,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           setSelectedChatId(chat.id)
           setSelectionNonce((previous) => previous + 1)
           persistSelection(projectId, chat.id)
+          // The new chat's terminal shows in the center surface: the
+          // terminal-chat tab becomes active.
           updateTabsSession(projectId, (session) => activateTab(session, TERMINAL_TAB))
           return true
         } catch (error) {
@@ -1550,6 +1634,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const tabsSession =
     tabProjectId === null ? emptyTabsSession() : (tabsByProject[tabProjectId] ?? emptyTabsSession())
   const activeTab = tabsSession.active
+  // A Kanban tab exists only while its project is bound: when the tab-strip
+  // project's active tab is Kanban but that project is not (or is no longer)
+  // bound — after a project switch, or after an unbind saved in Project
+  // Settings — the session falls back to the terminal tab during this render
+  // (the documented "adjust state when a prop changes" idiom the view switch
+  // used). The condition is false on the re-render, so this never loops.
+  if (tabProjectId !== null && activeTab.kind === 'kanban' && !kanbanProjectIds.has(tabProjectId)) {
+    updateTabsSession(tabProjectId, (session) => activateTab(session, TERMINAL_TAB))
+  }
   // The terminal-chat tab shows the active chat's name only while the active
   // chat belongs to the tab-strip project (Behaviour 2); in the Files-mode
   // divergence the strip never labels itself with another project's chat.
@@ -1588,6 +1681,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     setSelectedChatId(chat.id)
     setSelectionNonce((previous) => previous + 1)
     persistSelection(chat.projectId, chat.id)
+    // An action-created chat lands in the center surface: its terminal-chat
+    // tab becomes active.
     updateTabsSession(chat.projectId, (session) => activateTab(session, TERMINAL_TAB))
   }
 
@@ -1684,9 +1779,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             onAddProject={handleAddProject}
             onRemoveProject={handleRemoveProject}
             onOpenProjectFiles={handleOpenProjectFiles}
+            kanbanProjectIds={kanbanProjectIds}
+            onOpenProjectKanban={handleOpenProjectKanban}
             onOpenInFileExplorer={handleOpenInFileExplorer}
             onOpenProjectSettings={(projectId) => {
               setActionSettingsProjectId(projectId)
+              setActionSettingsTab('shell')
               setActionSettingsOpen(true)
             }}
             onCreateChat={handleCreateChat}
@@ -1704,6 +1802,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               emerges from under the middle panel, never over it. */}
           <TabStrip
             chatName={activeChat?.name ?? null}
+            kanbanAvailable={tabProject !== null && kanbanProjectIds.has(tabProject.id)}
             openFiles={tabsSession.openFiles}
             projectRoot={tabProject?.path ?? null}
             active={activeTab}
@@ -1742,6 +1841,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               onError={setNotice}
               onSettings={() => {
                 setActionSettingsProjectId(tabProjectId)
+                setActionSettingsTab('shell')
                 setActionSettingsOpen(true)
               }}
             />
@@ -1782,7 +1882,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 another project's terminal. */}
               <div
                 className="flex min-h-0 flex-1 flex-col"
-                style={{ display: activeTab.kind === 'terminal' ? 'flex' : 'none' }}
+                style={{
+                  display: activeTab.kind === 'terminal' ? 'flex' : 'none',
+                }}
                 data-testid={TEST_ID.chatSurfaceHost}
               >
                 <ChatWorkspace
@@ -1812,6 +1914,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                   onPromptInjected={handlePromptInjected}
                 />
               </div>
+              {/* Kanban board (spec Behaviour 14): mounted only while the
+                Kanban tab is the active tab of the tab-strip project, so its
+                one listBoard load is lazy and fires once per activation. The
+                hidden chat sessions above stay mounted (PTY + scrollback
+                survive). */}
+              {tabProject !== null && activeTab.kind === 'kanban' ? (
+                <KanbanBoard
+                  app={app}
+                  projectId={tabProject.id}
+                  onConfigure={handleOpenKanbanSettings}
+                />
+              ) : null}
             </main>
           </div>
         </div>
@@ -1873,7 +1987,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           autoSend={autoSendHandoff}
           onAutoSendChange={handleAutoSendChange}
           onRefresh={refreshActions}
-          onClose={() => setActionSettingsOpen(false)}
+          initialTab={actionSettingsTab}
+          onClose={handleActionSettingsClose}
         />
       ) : null}
       {handoffPickerOpen && tabProjectId !== null ? (
@@ -1885,6 +2000,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onConfigure={() => {
             setHandoffPickerOpen(false)
             setActionSettingsProjectId(tabProjectId)
+            setActionSettingsTab('shell')
             setActionSettingsOpen(true)
           }}
           onClose={() => setHandoffPickerOpen(false)}

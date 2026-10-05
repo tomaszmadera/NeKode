@@ -4,8 +4,10 @@ import {
   closeFileTab,
   emptyTabsSession,
   fileTab,
+  KANBAN_TAB,
   openFileTab,
   TERMINAL_TAB,
+  tabKey,
 } from './tabs-session'
 
 // Tab-strip session contract (center-layout-tabs-actions spec Behaviour 3–5):
@@ -93,5 +95,38 @@ describe('tabs session — closing (spec Behaviour 4)', () => {
   it('closing an unknown path is a no-op', () => {
     const session = openFileTab(emptyTabsSession(), 'a.ts')
     expect(closeFileTab(session, 'missing.ts')).toEqual(session)
+  })
+})
+
+// Kanban project-view tab (spec kanban-adapter-interface Behaviour 14): a
+// third TabId kind, addressable as 'kanban', that is always "open" (a project
+// view, never a document) and never carries a close path.
+describe('tabs session — kanban tab (spec kanban-adapter-interface Behaviour 14)', () => {
+  it('has its own key and activates/remembers the previous tab like any tab', () => {
+    expect(tabKey(KANBAN_TAB)).toBe('kanban')
+    expect(tabKey(TERMINAL_TAB)).toBe('terminal')
+    expect(tabKey(fileTab('a.ts'))).toBe('file:a.ts')
+
+    let session = emptyTabsSession()
+    session = activateTab(session, KANBAN_TAB)
+    expect(session.active).toEqual(KANBAN_TAB)
+    expect(session.previous).toEqual(TERMINAL_TAB)
+  })
+
+  it('is a valid close fallback while a file tab is closed (always open)', () => {
+    let session = emptyTabsSession()
+    session = openFileTab(session, 'a.ts')
+    // Activate Kanban, then re-activate the file: closing it falls back to the
+    // remembered Kanban project view (it is open even with no file tabs).
+    session = activateTab(session, KANBAN_TAB)
+    session = activateTab(session, fileTab('a.ts'))
+    session = closeFileTab(session, 'a.ts')
+    expect(session.active).toEqual(KANBAN_TAB)
+    expect(session.openFiles).toEqual([])
+  })
+
+  it('re-activating the kanban tab is a no-op (the previous tab is kept)', () => {
+    const session = activateTab(emptyTabsSession(), KANBAN_TAB)
+    expect(activateTab(session, KANBAN_TAB)).toBe(session)
   })
 })

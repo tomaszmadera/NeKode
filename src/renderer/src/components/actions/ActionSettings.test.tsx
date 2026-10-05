@@ -89,3 +89,72 @@ describe('PowerShell action option', () => {
     },
   )
 })
+
+describe('Kanban tab shell', () => {
+  function kanbanAppMock(): AppApi {
+    return {
+      terminals: {
+        shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
+        shellAddCustom: vi.fn(),
+      },
+      kanban: {
+        adaptersList: vi.fn().mockResolvedValue([]),
+        getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
+        setConfig: vi.fn(),
+        test: vi.fn(),
+        listBoard: vi.fn(),
+        createItem: vi.fn(),
+        updateItem: vi.fn(),
+      },
+      state: { get: vi.fn().mockResolvedValue(null), set: vi.fn() },
+      dialogs: { pickDirectory: vi.fn().mockResolvedValue(null) },
+    } as unknown as AppApi
+  }
+
+  it('renders Kanban as its own tab and keeps the Configuration/Actions sections on theirs', async () => {
+    const props = {
+      app: kanbanAppMock(),
+      actions: [] as ActionControl[],
+      projectId: 'p1',
+      projectPath: 'D:/p',
+      autoSend: false,
+      onAutoSendChange: vi.fn(),
+      onRefresh: vi.fn().mockResolvedValue(undefined),
+      onClose: vi.fn(),
+    }
+    render(<ActionSettings {...props} />)
+    const kanbanTab = screen.getByTestId(TEST_ID.settingsKanbanTab)
+    expect(kanbanTab.textContent).toBe('Kanban')
+    expect(kanbanTab.getAttribute('aria-selected')).toBe('false')
+    // The Configuration section is not part of the Kanban tab.
+    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
+
+    fireEvent.click(kanbanTab)
+    await screen.findByTestId(TEST_ID.settingsKanbanPanel)
+    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
+
+    // The existing sections are untouched: back on Actions & Configuration.
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
+  })
+
+  it('opens on the requested tab when an initialTab is passed (board Configure)', async () => {
+    const props = {
+      app: kanbanAppMock(),
+      actions: [] as ActionControl[],
+      projectId: 'p1',
+      projectPath: 'D:/p',
+      autoSend: false,
+      onAutoSendChange: vi.fn(),
+      onRefresh: vi.fn().mockResolvedValue(undefined),
+      initialTab: 'kanban' as const,
+      onClose: vi.fn(),
+    }
+    render(<ActionSettings {...props} />)
+    // No click: the dialog mounts directly on the Kanban tab.
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTab).getAttribute('aria-selected')).toBe('true')
+    expect(await screen.findByTestId(TEST_ID.settingsKanbanPanel)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
+  })
+})

@@ -399,7 +399,7 @@ Use subtle motion for:
 
 - project expansion,
 - Chat switching,
-- Files/Kanban switching,
+- switching between a Project's chat/files surface and its Kanban board,
 - bottom terminal toggle,
 - right panel toggle,
 - Action execution state,
@@ -524,19 +524,18 @@ Example (the tab strip and action bar sit above the surface per §5; the project
 
 # 18. Center Surface — Project
 
-When a Project is selected, show project-level navigation:
+When a Project is selected, the center surface shows that project's chat/files
+surface (the top tab strip holds the chat tab and the open file tabs).
 
-```text
-Files   Kanban
-```
+A Project with a stored Kanban binding also exposes its Kanban board (§26) from
+two equivalent entry points:
 
-Default:
+- a `Kanban` tile in the left navigation, directly under the project's name;
+- a `Kanban` tab in the top tab strip, immediately after the chat tab.
 
-```text
-Files
-```
-
-Files and Kanban are sibling project views.
+Selecting either activates the `Kanban` tab, which renders the board in the
+center surface; selecting the chat tab or a file tab returns to that surface.
+There is no separate `Files | Kanban` view-switch strip.
 
 ---
 
@@ -770,11 +769,11 @@ The goal is to let the user open Kanban and accurately judge how the future work
 
 Only navigation to/from the Kanban surface is functional in the MVP. Card-level workflow actions are post-MVP.
 
-Project navigation:
-
-```text
-Files   Kanban
-```
+Project navigation: a bound Project exposes its board from the left-navigation
+`Kanban` tile (under the project name) and the top-tab-strip `Kanban` tab; both
+select the board in the center surface (§18). The adapter-backed board
+(`kanban-adapter-interface`) is the post-MVP realization of this surface — a
+read-only preview of real backend states and items (`kanban:listBoard`).
 
 Future global navigation may also expose:
 
@@ -1329,7 +1328,7 @@ Only show actions relevant to the current state.
 
 # 44. Kanban Navigation Animation
 
-Files ↔ Kanban:
+Chat/files surface ↔ Kanban (via the left-navigation tile or the top tab):
 
 - smooth tab underline,
 - short crossfade,
@@ -2087,7 +2086,7 @@ This is the intended MVP visual preview. The cards, Handoff indicator and button
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The Kanban visual preview fills the main surface; how it is reached and how it integrates with the tab model is decided with the future Kanban work (see `§18`).
+The Kanban board fills the main surface when its `Kanban` tab is active; it is reached from the left-navigation tile under the project name or the top-tab-strip `Kanban` tab (see `§18`).
 
 ---
 
@@ -2214,7 +2213,8 @@ Projects
 └── Chats
 
 PROJECT CLICK
-→ Files / Kanban
+→ Chat / Files surface (files tree + preview)
+   └── bound projects: Kanban tile (left nav) + Kanban tab (top strip)
 
 CHAT CLICK
 → Chat Terminal
@@ -2260,7 +2260,7 @@ RIGHT
 10. The configurable Project Action Bar is the action row below the tab strip in the center column (placement revised by user decision 2026-09-26).
 11. `Ctrl + `` toggles the auxiliary bottom terminal.
 12. The right panel is hidden by default.
-13. Files and Kanban are primary Project views.
+13. A Project's chat/files surface and (when it has a Kanban binding) its Kanban board are the project views; Kanban is reached from the left-navigation tile or the top-tab-strip tab, never a separate view-switch strip.
 14. The MVP Kanban is a visual-only preview using static demonstration cards, not real Tasks.
 15. MVP demonstration cards show the intended future `Implement`, `Resume` and `Open` controls, but those controls do not execute Kanban workflows.
 16. In the functional post-MVP Kanban, cards represent the Task entities pinned to chats and the previewed controls become functional.

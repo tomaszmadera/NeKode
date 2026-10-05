@@ -4,7 +4,7 @@ This file is the behavioral contract for a feature. Agents implement from it. Do
 
 ## Goal
 
-Let NeKode read and change work items from an external Kanban backend (Plane today, others later) through user-provided adapter plugins, without building any backend knowledge into the application. The user drops adapters into one directory, binds one adapter per project in Project Settings, fills the adapter's declared config fields, and the application talks to that backend only through a versioned process protocol. This feature also ships the first real Kanban surface: a minimal, read-only board tab next to Files in the center surface (states as titled columns, item titles underneath), deliberately unstyled beyond the basics. Card actions, metadata, and visual design are later work (UX-UI §26–30).
+Let NeKode read and change work items from an external Kanban backend (Plane today, others later) through user-provided adapter plugins, without building any backend knowledge into the application. The user drops adapters into one directory, binds one adapter per project in Project Settings, fills the adapter's declared config fields, and the application talks to that backend only through a versioned process protocol. This feature also ships the first real Kanban surface: a minimal, read-only board (states as titled columns, item titles underneath) reached from a `Kanban` tile under the project's name in the left navigation and a `Kanban` tab in the top tab strip, deliberately unstyled beyond the basics. Card actions, metadata, and visual design are later work (UX-UI §26–30).
 
 ## Related requirements
 
@@ -17,12 +17,13 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
 - Shared: typed IPC contract additions (`kanban` namespace), normalized domain types (`KanbanState`, `WorkItem`, config-field types), `APP_STATE_KEY` entries and per-project key helpers.
 - Main: adapter discovery (manifest scan), adapter host (spawn + stdio JSON protocol + timeout + kill), `KanbanService` facade behind IPC, per-project config persistence and cleanup on `projects:remove`.
 - Renderer: Project Settings "Kanban" section — adapter select, dynamic config form driven by the adapter manifest (secret masking), Test connection, adapters directory display and override.
-- Minimal board surface (basic version only): a `Kanban` tab next to `Files` in the project center surface, rendering `kanban:listBoard` as plain titled columns (state name) with item titles listed underneath; read-only, no card UI, no styling beyond minimal layout.
+- Minimal board surface (basic version only): a `Kanban` tile in the left navigation directly under the name of a project that has a stored Kanban binding, plus a `Kanban` tab in the top tab strip beside the chat and file tabs, both opening the board in that project's center surface — `kanban:listBoard` rendered as plain titled columns (state name) with item titles listed underneath; read-only, no card UI, no styling beyond minimal layout. No separate center-surface `Files | Kanban` view-switch strip is added.
 - Reference adapter (Python, outside the app contract): a Plane adapter implementing protocol v1 against the Plane REST API, reusing the semantics of the harness `kanban_cli.py` (state groups, alias resolution, `.agents/.env`-compatible field names).
 
 ## Non-goals
 
 - Board card UI: metadata, drag-and-drop, card actions (Implement/Resume), visual design — UX-UI §26–30 remains a separate post-MVP feature; this round ships only the minimal read-only column list.
+- A separate center-surface `Files | Kanban` view-switch strip: the board is a `Kanban` tab in the existing top tab strip (beside the chat and file tabs) and a tile in the left navigation; no second, project-view tab pair is added.
 - The full tabbed Project Settings rebuild: in this feature the Kanban settings render as their own tab/section inside the existing Project Settings dialog without reworking the dialog's other sections.
 - Two-way automatic synchronization with a NeKode Task entity.
 - Long-lived adapter daemons: every invocation is one process.
@@ -53,7 +54,7 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
 11. `projects:remove` deletes the project's adapter and config keys (same rule as `project.handoffDir` cleanup).
 12. The settings section shows the active adapters directory with a Browse button (`dialogs:pickDirectory`); confirming a directory persists it to `kanban.adaptersDir` and re-scans immediately.
 13. The Kanban settings render as their own tab (label `Kanban`) inside the existing Project Settings dialog, separate from Configuration and Actions, without reworking those sections.
-14. Board surface: when the active project is selected, the center surface shows `Files   Kanban` tabs (UX-UI §18; Files stays the default). The Kanban tab renders `kanban:listBoard` for the active project: one plain column per state in the adapter's `order`, headed by the state name, with item titles underneath. Selecting the tab triggers one lazy load; a manual refresh control re-runs it. Loading, typed-error, empty-board, and not-configured states are inline text (the not-configured state offers a button opening Project Settings on the Kanban tab, mirroring the Resume picker's Configure affordance).
+14. Board entry points: a project with a stored Kanban binding shows a `Kanban` tile in the left navigation directly under the project's name and a `Kanban` tab in the top tab strip beside the chat and file tabs; a project without a binding shows neither, and no separate center-surface `Files | Kanban` view-switch strip exists. The `Kanban` tab is present for as long as the project is bound and is not closable (it is a project view beside the chat tab, not a document), placed immediately after the chat tab. Selecting either entry point activates the `Kanban` tab, which renders `kanban:listBoard` in the center surface: one plain column per state in the adapter's `order`, headed by the state name, with item titles underneath. Activating the tab triggers one lazy load; a manual refresh control re-runs it. Loading, typed-error, empty-board, and not-configured states are inline text (the not-configured state offers a button opening Project Settings on the Kanban tab, mirroring the Resume picker's Configure affordance). Selecting the chat tab or a file tab shows that surface instead; a content-selection gesture always activates the tab that shows it.
 
 ## Business rules
 
@@ -116,7 +117,7 @@ Renderer invokes stay behind the existing trusted-sender guard. `kanban:*` chann
 11. The spawned process's command line never contains any config value: the fixture adapter writes its argv to stderr, and the test asserts none of the stored values appear.
 12. `projects:remove` removes both `project.kanbanAdapter:*` and `project.kanbanConfig:*` rows from `app_state`.
 13. Changing the adapters directory in settings persists `kanban.adaptersDir` and the list re-scans without restart.
-14. With an active project, the center surface shows `Files   Kanban`; Files stays the default tab after project switch. The Kanban tab lists one column per state (state name as heading, item titles below), a not-configured inline state with a working Configure button opening Project Settings on the Kanban tab, and a refresh control that re-runs the load.
+14. A project with a stored Kanban binding shows a `Kanban` tile directly under its name in the left navigation and a `Kanban` tab in the top tab strip beside the chat and file tabs; a project without one shows neither, and no separate `Files | Kanban` view-switch strip exists. Selecting the tile or the tab shows the board in the center surface, listing one column per state (state name as heading, item titles below), with a refresh control that re-runs the load; selecting the chat tab or a file tab returns to that surface. A bound-but-missing adapter surfaces the typed error inline; the not-configured inline state with a Configure button opening Project Settings on the Kanban tab renders when the board is shown for a project whose binding no longer resolves.
 15. The Kanban section of Project Settings is reachable as its own tab labeled `Kanban`, without changing the existing Configuration or Actions sections' behavior.
 
 ## Required tests
@@ -126,7 +127,7 @@ Renderer invokes stay behind the existing trusted-sender guard. `kanban:*` chann
 - Secret handling: `getConfig` masking plus `secretKeys`; setConfig keep-secret rule (empty secret field) and clear-on-empty rule (non-secret).
 - Persistence: adapter+config key roundtrip; `projects:remove` cleanup; `kanban.adaptersDir` override.
 - IPC contract: channel presence and typed payload roundtrips in the shared contract test style.
-- Renderer (vitest): settings tab states — no adapters, adapter selected with dynamic fields, required validation, test in-progress/success/failure, "(missing)" adapter, directory override flow; board tab states — columns with titles, loading, error, empty, not-configured with Configure, refresh, Files-default tab behavior.
+- Renderer (vitest): settings tab states — no adapters, adapter selected with dynamic fields, required validation, test in-progress/success/failure, "(missing)" adapter, directory override flow; board surface states — columns with titles, loading, error, empty, not-configured with Configure, refresh; the left-navigation Kanban tile and the top-strip Kanban tab (both present only for a bound project, the tile directly under the project name), and the return to the chat tab and a file tab.
 - Fixture adapters (node scripts) serve as protocol doubles in vitest; the Python reference Plane adapter is verified manually against the user's Plane instance (documented steps in the task), not in vitest.
 
 ## Relevant SDD / ADR

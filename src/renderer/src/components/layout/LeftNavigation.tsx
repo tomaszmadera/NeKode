@@ -56,6 +56,14 @@ interface LeftNavigationProps {
   onRemoveProject: (projectId: string) => void
   /** Enters Project Files mode for the project (spec Behaviour 1). */
   onOpenProjectFiles: (projectId: string) => void
+  /**
+   * Projects with a stored Kanban binding (spec kanban-adapter-interface
+   * Behaviour 14): each shows a `Kanban` tile as the first element of its
+   * expanded content, directly under its name. Unbound projects show none.
+   */
+  kanbanProjectIds: ReadonlySet<string>
+  /** Opens the project's Kanban board (selects the project, activates its tab). */
+  onOpenProjectKanban: (projectId: string) => void
   onOpenProjectSettings: (projectId: string) => void
   /** Creates a chat immediately with the shell-derived name (no form). */
   onCreateChat: (projectId: string) => Promise<boolean>
@@ -100,6 +108,8 @@ export function LeftNavigation({
   onAddProject,
   onRemoveProject,
   onOpenProjectFiles,
+  kanbanProjectIds,
+  onOpenProjectKanban,
   onOpenProjectSettings,
   onCreateChat,
   onOpenInFileExplorer,
@@ -268,55 +278,74 @@ export function LeftNavigation({
                     </button>
                   </div>
                   {isExpanded ? (
-                    /* Full-width rows, no vertical guide line: the chat
-                       highlight reads across the whole list width. */
-                    /* Constant hairline gap under the project tile (user
-                       request 2026-10-01): ~3px (nearest scale step, 4px)
-                       between the tile's highlight and any highlight below,
-                       selected first chat included — always, not only when
-                       the first chat is selected. */
-                    <div className="mt-1" data-testid={testIdFor.projectChats(project.id)}>
-                      {chats.length > 0 && (
-                        <ul className="flex flex-col gap-1">
-                          {chats.map((chat) => {
-                            const isChatSelected = chat.id === selectedChatId && isSelected
-                            // Attention badge (chat attention badge spec
-                            // Behaviour 5, gated by attention-alert-settings):
-                            // an amber dot next to the chat name, with the
-                            // OSC 9 message as its tooltip. Unselected chats
-                            // show it when the badge toggle is on; the
-                            // SELECTED chat shows it only when the
-                            // active-indicator toggle is on. A collapsed
-                            // project hides the badge with the whole list
-                            // (no promotion to the project row).
-                            const attentionState = attention[chat.id]
-                            const badgeVisible =
-                              attentionState !== undefined &&
-                              (isChatSelected
-                                ? attentionActiveIndicatorEnabled
-                                : attentionBadgeEnabled)
-                            const badgeTitle =
-                              attentionState === undefined
-                                ? undefined
-                                : (attentionState.message ?? 'Needs attention')
-                            // While the close X occupies the row's right edge,
-                            // the badge yields the same corner (they overlap).
-                            return (
-                              /* The tile is the hover boundary: its leave hides
+                    <>
+                      {/* Kanban project view (spec kanban-adapter-interface
+                          Behaviour 14): the first element of the expanded
+                          content, directly under the project name row and
+                          above the chat list, for bound projects only. Same
+                          tile idiom/indent as the chat and New Chat rows. */}
+                      {kanbanProjectIds.has(project.id) ? (
+                        <div className="mt-1 pl-6">
+                          <button
+                            type="button"
+                            className="flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-ink-secondary hover:bg-row-hover"
+                            data-testid={testIdFor.projectKanban(project.id)}
+                            onClick={() => onOpenProjectKanban(project.id)}
+                          >
+                            <Icon.kanban size={12} aria-hidden className="shrink-0" />
+                            Kanban
+                          </button>
+                        </div>
+                      ) : null}
+                      {/* Full-width rows, no vertical guide line: the chat
+                         highlight reads across the whole list width. */}
+                      {/* Constant hairline gap under the project tile (user
+                         request 2026-10-01): ~3px (nearest scale step, 4px)
+                         between the tile's highlight and any highlight below,
+                         selected first chat included — always, not only when
+                         the first chat is selected. */}
+                      <div className="mt-1" data-testid={testIdFor.projectChats(project.id)}>
+                        {chats.length > 0 && (
+                          <ul className="flex flex-col gap-1">
+                            {chats.map((chat) => {
+                              const isChatSelected = chat.id === selectedChatId && isSelected
+                              // Attention badge (chat attention badge spec
+                              // Behaviour 5, gated by attention-alert-settings):
+                              // an amber dot next to the chat name, with the
+                              // OSC 9 message as its tooltip. Unselected chats
+                              // show it when the badge toggle is on; the
+                              // SELECTED chat shows it only when the
+                              // active-indicator toggle is on. A collapsed
+                              // project hides the badge with the whole list
+                              // (no promotion to the project row).
+                              const attentionState = attention[chat.id]
+                              const badgeVisible =
+                                attentionState !== undefined &&
+                                (isChatSelected
+                                  ? attentionActiveIndicatorEnabled
+                                  : attentionBadgeEnabled)
+                              const badgeTitle =
+                                attentionState === undefined
+                                  ? undefined
+                                  : (attentionState.message ?? 'Needs attention')
+                              // While the close X occupies the row's right edge,
+                              // the badge yields the same corner (they overlap).
+                              return (
+                                /* The tile is the hover boundary: its leave hides
                                  the X. The X is a sibling overlay of the row
                                  button, so a row-level leave would fire the
                                  moment the pointer reaches the control and
                                  flicker hide/show (fixed 2026-10-04). */
-                              <li
-                                key={chat.id}
-                                className="relative pl-6"
-                                onMouseLeave={() => {
-                                  if (revealedChatId === chat.id) {
-                                    setRevealedChatId(null)
-                                  }
-                                }}
-                              >
-                                {/* Close control (user request 2026-10-04): an
+                                <li
+                                  key={chat.id}
+                                  className="relative pl-6"
+                                  onMouseLeave={() => {
+                                    if (revealedChatId === chat.id) {
+                                      setRevealedChatId(null)
+                                    }
+                                  }}
+                                >
+                                  {/* Close control (user request 2026-10-04): an
                                     X on the shared 24px right-edge axis with
                                     Add Project and Show project files, centered
                                     in the row and shown on hover or focus.
@@ -325,73 +354,76 @@ export function LeftNavigation({
                                     dialog — closing removes the chat with its
                                     terminal (spec Behaviour 11). The badge
                                     yields while the X is shown (same corner). */}
-                                <button
-                                  type="button"
-                                  className={cn(
-                                    'absolute right-2 top-1/2 z-10 h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink',
-                                    revealedChatId === chat.id ? 'flex' : 'hidden',
-                                  )}
-                                  data-testid={testIdFor.chatClose(chat.id)}
-                                  aria-label={`Close chat ${chat.name}`}
-                                  title="Close chat"
-                                  onClick={(event) => {
-                                    // The row's own activation must not fire
-                                    // behind this control.
-                                    event.stopPropagation()
-                                    onRequestCloseChat(chat.id)
-                                  }}
-                                >
-                                  <Icon.close size={12} aria-hidden />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={cn(
-                                    'flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-chat-title',
-                                    isChatSelected ? 'bg-highlight text-ink' : 'hover:bg-row-hover',
-                                  )}
-                                  data-testid={testIdFor.chatRow(chat.id)}
-                                  data-selected={isChatSelected ? 'true' : 'false'}
-                                  onMouseEnter={() => setRevealedChatId(chat.id)}
-                                  onFocus={() => setRevealedChatId(chat.id)}
-                                  onBlur={() => {
-                                    if (revealedChatId === chat.id) {
-                                      setRevealedChatId(null)
-                                    }
-                                  }}
-                                  onClick={() => onSelectChat(project.id, chat.id)}
-                                >
-                                  <Icon.chat size={12} aria-hidden className="shrink-0" />
-                                  <span className="min-w-0 truncate">{chat.name}</span>
-                                  {badgeVisible && revealedChatId !== chat.id ? (
-                                    <span
-                                      role="img"
-                                      className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning"
-                                      data-testid={testIdFor.chatAttentionBadge(chat.id)}
-                                      title={badgeTitle}
-                                      aria-label={`${chat.name} needs attention`}
-                                    />
-                                  ) : null}
-                                </button>
-                              </li>
-                            )
-                          })}
-                        </ul>
-                      )}
-                      {/* Same indent axis and shared control height as the chat tiles. */}
-                      <div className="mt-1 pl-6">
-                        <button
-                          type="button"
-                          className="flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-ink-secondary hover:bg-row-hover"
-                          data-testid={TEST_ID.newChatButton}
-                          onClick={() => {
-                            void onCreateChat(project.id)
-                          }}
-                        >
-                          <Icon.plus size={12} aria-hidden className="shrink-0" />
-                          New Chat
-                        </button>
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      'absolute right-2 top-1/2 z-10 h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink',
+                                      revealedChatId === chat.id ? 'flex' : 'hidden',
+                                    )}
+                                    data-testid={testIdFor.chatClose(chat.id)}
+                                    aria-label={`Close chat ${chat.name}`}
+                                    title="Close chat"
+                                    onClick={(event) => {
+                                      // The row's own activation must not fire
+                                      // behind this control.
+                                      event.stopPropagation()
+                                      onRequestCloseChat(chat.id)
+                                    }}
+                                  >
+                                    <Icon.close size={12} aria-hidden />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      'flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-chat-title',
+                                      isChatSelected
+                                        ? 'bg-highlight text-ink'
+                                        : 'hover:bg-row-hover',
+                                    )}
+                                    data-testid={testIdFor.chatRow(chat.id)}
+                                    data-selected={isChatSelected ? 'true' : 'false'}
+                                    onMouseEnter={() => setRevealedChatId(chat.id)}
+                                    onFocus={() => setRevealedChatId(chat.id)}
+                                    onBlur={() => {
+                                      if (revealedChatId === chat.id) {
+                                        setRevealedChatId(null)
+                                      }
+                                    }}
+                                    onClick={() => onSelectChat(project.id, chat.id)}
+                                  >
+                                    <Icon.chat size={12} aria-hidden className="shrink-0" />
+                                    <span className="min-w-0 truncate">{chat.name}</span>
+                                    {badgeVisible && revealedChatId !== chat.id ? (
+                                      <span
+                                        role="img"
+                                        className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning"
+                                        data-testid={testIdFor.chatAttentionBadge(chat.id)}
+                                        title={badgeTitle}
+                                        aria-label={`${chat.name} needs attention`}
+                                      />
+                                    ) : null}
+                                  </button>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        )}
+                        {/* Same indent axis and shared control height as the chat tiles. */}
+                        <div className="mt-1 pl-6">
+                          <button
+                            type="button"
+                            className="flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-ink-secondary hover:bg-row-hover"
+                            data-testid={TEST_ID.newChatButton}
+                            onClick={() => {
+                              void onCreateChat(project.id)
+                            }}
+                          >
+                            <Icon.plus size={12} aria-hidden className="shrink-0" />
+                            New Chat
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    </>
                   ) : null}
                 </li>
               )

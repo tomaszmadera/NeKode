@@ -1,0 +1,36 @@
+{
+  "id": "plane",
+  "name": "Plane (CE)",
+  "protocolVersion": 1,
+  "invocation": {
+    "command": "python",
+    "args": ["plane_adapter.py"]
+  },
+  "configSchema": [
+    {
+      "key": "PLANE_API_KEY",
+      "label": "API key",
+      "type": "secret",
+      "required": true
+    },
+    {
+      "key": "PLANE_WORKSPACE_SLUG",
+      "label": "Workspace slug",
+      "type": "string",
+      "required": true
+    },
+    {
+      "key": "PLANE_BASE_URL",
+      "label": "Plane base URL",
+      "type": "string",
+      "required": false,
+      "default": "http://localhost"
+    },
+    {
+      "key": "PLANE_PROJECT_ID",
+      "label": "Project id or Plane URL",
+      "type": "string",
+      "required": true
+    }
+  ]
+}
