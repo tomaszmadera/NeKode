@@ -116,6 +116,19 @@ body {
    bundle order of the two stylesheets. */
 .xterm .xterm-viewport.xterm-viewport {
   overflow-y: auto;
+  /* Keep the wheel inside the terminal. Without this, a scroll that reaches
+     the edge chains into an ancestor and shifts the rest of the window. */
+  overscroll-behavior: contain;
+}
+
+/* The fit host is a definite box (.terminal-fit-host). Pin xterm to it so
+   the scroll area cannot grow the element past the slot: a percentage height
+   only resolves because that host is absolutely positioned with a used
+   height. Overflow stays clipped when a normal-buffer agent has scrollback. */
+.terminal-fit-host > .xterm {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
 }
 
 /* Custom title bar (design doc 26.2): the top strips of the app are the

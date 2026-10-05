@@ -437,6 +437,32 @@ describe('ChatTerminal lifecycle', () => {
     expect(mockFitAddonInstances[0].fit.mock.calls.length).toBeGreaterThan(fitCalls)
   })
 
+  it('pins the fit host so scrollback cannot change the terminal slot', async () => {
+    const { app } = createAppMock()
+    render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    await waitFor(() => expect(mockTerminalInstances[0].openedElement).not.toBeNull())
+    const host = mockTerminalInstances[0].openedElement as HTMLElement
+    // The host is taken out of flow and clipped. A tall xterm scroll area
+    // (normal-buffer agents such as Grok) must not grow this box, or the
+    // wheel scroll blows the grid until a window resize refits it.
+    expect(host.classList.contains('terminal-fit-host')).toBe(true)
+    expect(host.classList.contains('absolute')).toBe(true)
+    expect(host.classList.contains('overflow-hidden')).toBe(true)
+    expect(host.parentElement?.classList.contains('relative')).toBe(true)
+    expect(host.parentElement?.classList.contains('min-h-0')).toBe(true)
+    expect(host.parentElement?.classList.contains('min-w-0')).toBe(true)
+  })
+
   it('detaches on unmount: unsubscribes, disposes xterm, never kills the session here', async () => {
     const bundle = createAppMock()
     const { unmount } = render(
