@@ -186,6 +186,13 @@ describe('kanban board — view switch (spec Behaviour 14, AC14)', () => {
       expect(control.textContent).toBe('')
       expect(title.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
+    // The switch reads List then Board: the default view's icon comes first.
+    expect(
+      screen
+        .getByTestId(TEST_ID.kanbanViewList)
+        .compareDocumentPosition(screen.getByTestId(TEST_ID.kanbanViewBoard)) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
 
     // Choosing Board swaps the arrangement, and the switch shows the choice.
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))

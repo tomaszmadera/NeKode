@@ -536,7 +536,7 @@ two equivalent entry points:
 Selecting either activates the `Kanban` tab, which renders the board in the
 center surface; selecting the chat tab or a file tab returns to that surface.
 There is no separate `Files | Kanban` view-switch strip. Inside the Kanban tab,
-a Board | List icon switch on the header's right side changes how the loaded
+a List | Board icon switch on the header's right side changes how the loaded
 items are shown; List is the default. Both show each item's ref, title, and
 priority. Opening an item shows a read-only review with the full title and the
 description. The refresh icon sits on the right of the same header; every icon
