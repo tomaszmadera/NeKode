@@ -535,7 +535,12 @@ two equivalent entry points:
 
 Selecting either activates the `Kanban` tab, which renders the board in the
 center surface; selecting the chat tab or a file tab returns to that surface.
-There is no separate `Files | Kanban` view-switch strip.
+There is no separate `Files | Kanban` view-switch strip. Inside the Kanban tab,
+a Board | List icon switch on the header's right side changes how the loaded
+items are shown; List is the default. Both show each item's ref, title, and
+priority. Opening an item shows a read-only review with the full title and the
+description. The refresh icon sits on the right of the same header; every icon
+control carries an accessible name (§63).
 
 ---
 
@@ -772,8 +777,11 @@ Only navigation to/from the Kanban surface is functional in the MVP. Card-level 
 Project navigation: a bound Project exposes its board from the left-navigation
 `Kanban` tile (under the project name) and the top-tab-strip `Kanban` tab; both
 select the board in the center surface (§18). The adapter-backed board
-(`kanban-adapter-interface`) is the post-MVP realization of this surface — a
-read-only preview of real backend states and items (`kanban:listBoard`).
+(`kanban-adapter-interface`) is the post-MVP realization of this surface: a
+read-only view of real backend states and items (`kanban:listBoard`), as a
+grouped list (the default) or columns, with a review of the item's ref, priority,
+full title, and description; the view switch and the refresh control are icons on
+the right of the surface header.
 
 Future global navigation may also expose:
 
