@@ -136,7 +136,7 @@ export const TEST_ID = {
   kanbanBoardUnconfigured: 'kanban-board-unconfigured',
   kanbanBoardConfigure: 'kanban-board-configure',
   kanbanBoardRefresh: 'kanban-board-refresh',
-  /** Board | List switch on the Kanban tab (board is the default). */
+  /** List | Board switch on the Kanban tab (list is the default). */
   kanbanViewBoard: 'kanban-view-board',
   kanbanViewList: 'kanban-view-list',
   /** Grouped list of the same items the board shows as columns. */

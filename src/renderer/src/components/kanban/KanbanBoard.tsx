@@ -17,7 +17,7 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // view with a review: the same fields, the state name, the title in full, and
 // the description. The review reads the loaded board; it does not call another
 // action. The header's right side carries the icon controls (user request
-// 2026-10-05): a Board | List switch and the refresh icon, each with an
+// 2026-10-05): a List | Board switch and the refresh icon, each with an
 // accessible name (UX-UI §63). The surface loads lazily: exactly one
 // `kanban:listBoard` call when it mounts (the host mounts it only while the
 // Kanban tab is selected), and the refresh control re-runs that one load.
@@ -269,20 +269,6 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
               <legend className="sr-only">Kanban view</legend>
               <button
                 type="button"
-                className={viewButtonClass(view === 'board')}
-                aria-label="Board view"
-                aria-pressed={view === 'board'}
-                title="Board"
-                data-testid={TEST_ID.kanbanViewBoard}
-                onClick={() => {
-                  setView('board')
-                  setReviewRef(null)
-                }}
-              >
-                <Icon.board size={14} aria-hidden />
-              </button>
-              <button
-                type="button"
                 className={viewButtonClass(view === 'list')}
                 aria-label="List view"
                 aria-pressed={view === 'list'}
@@ -294,6 +280,20 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
                 }}
               >
                 <Icon.list size={14} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className={viewButtonClass(view === 'board')}
+                aria-label="Board view"
+                aria-pressed={view === 'board'}
+                title="Board"
+                data-testid={TEST_ID.kanbanViewBoard}
+                onClick={() => {
+                  setView('board')
+                  setReviewRef(null)
+                }}
+              >
+                <Icon.board size={14} aria-hidden />
               </button>
             </fieldset>
           ) : null}
