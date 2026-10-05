@@ -1592,6 +1592,14 @@ full-screen programs handle Ctrl+V themselves (for example, Vim block
 selection); Ctrl+V still pastes at a shell prompt. Ctrl+Shift+V always pastes
 text. Both paste chords use the terminal's text-paste path and insert once.
 
+The terminal context menu offers "Paste text (Ctrl+Shift+V)" and "Paste through
+program (Ctrl+V)". Text paste always reads plain text from the clipboard.
+Program paste sends Ctrl+V directly to the active full-screen program, bypassing
+the text-paste setting so programs such as Codex can paste images. It is disabled
+at a shell prompt (normal buffer) and rechecks the alternate buffer when clicked.
+After program paste, focus returns to the terminal. Both actions apply to chat
+and bottom-panel terminals.
+
 Recommended future:
 
 ```text

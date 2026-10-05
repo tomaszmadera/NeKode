@@ -161,6 +161,7 @@ export const TEST_ID = {
   terminalContextMenu: 'terminal-context-menu',
   terminalContextCopy: 'terminal-context-copy',
   terminalContextPaste: 'terminal-context-paste',
+  terminalContextPasteThroughProgram: 'terminal-context-paste-through-program',
   terminalContextSelectAll: 'terminal-context-select-all',
 } as const
 
