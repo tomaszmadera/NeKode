@@ -2311,7 +2311,7 @@ describe('chat closing on terminal exit (Stage 4)', () => {
     emitExit('t1', 0)
     await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
     const emptyState = await screen.findByTestId(TEST_ID.startNewChatState)
-    expect(emptyState.textContent).toContain(`Welcome to ${projectA.name}`)
+    expect(emptyState.textContent).toContain('Welcome to NeKode')
     expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
 
