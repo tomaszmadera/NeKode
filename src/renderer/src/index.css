@@ -187,57 +187,75 @@ button:not(:disabled) {
   }
 }
 
-/* Illustrated center-surface empty states (welcome-bkg.png illustration) -----
-   Shared backdrop of the welcome surface and the "No chats in this project"
-   empty state (IllustratedSurface). The artwork is a FULL-BLEED background:
-   cover-sized, center-anchored, so it fills the workspace to every edge with
-   no letterbox and no edge fades. The cover crop only ever eats sky and the
-   dark floor within the app's real aspect-ratio range, and narrow surfaces
-   crop only the sides. With the center anchor the cat's mouth (52% of the
-   image) lands around the workspace's vertical center at every aspect ratio.
-   .artwork-content anchors to the illustration's WAVE CREST (57% of the
-   scaled image height — where its dark text area begins), so the heading
-   starts just below the horizon and never covers the face. Cover geometry:
-   scaled image height = min(100cqh, 62.54cqw), top offset = (100cqh − that)/2,
-   so crest y = 50cqh + 0.07 × min(100cqh, 62.54cqw). No fixed pixel offsets.
-   The content strip scrolls if a very short workspace cannot fit it (the
-   illustration is decorative; heading and action take priority).
-   The surface is a SIZE container: type, spacing and the compact tweaks
-   follow the actual workspace (center column minus sidebar / bottom panel),
-   not the OS window. */
+/* Welcome v2: the supplied 1586 x 992 SVG uses cover sizing. Content begins
+   at image y=575, below the ledge (y=540). Container units follow the center
+   workspace. Short surfaces reserve room for the heading and action. */
 .artwork-root {
   position: relative;
   height: 100%;
   overflow: hidden;
   container-type: size;
   container-name: welcome;
+  background-color: #0c0e1f;
+  color: #d4d7e8;
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
 }
 
 .artwork-content {
   position: absolute;
   inset-inline: 0;
-  top: calc(50cqh + 0.07 * min(100cqh, 62.54cqw) + clamp(6px, 1.2cqh, 16px));
+  top: min(calc(50cqh + 79 * max(100cqw / 1586, 100cqh / 992)), max(12px, calc(100cqh - 120px)));
   bottom: 0;
   overflow: auto;
   display: flex;
   justify-content: center;
-  padding-inline: clamp(16px, 4cqw, 48px);
+  padding: 0 12px 24px;
 }
 
-/* Compact presentation: the workspace (not the window) is narrow — sidebar
-   open on a small window — or short. Two separate @container blocks (the
-   production CSS optimizer drops a comma-separated condition list). The
-   cover-sized artwork needs no restacking (it fills any frame); the compact
-   tweak is tighter horizontal padding so the wrapped text keeps line length
-   readable. */
-@container welcome (max-width: 660px) {
-  .artwork-content {
-    padding-inline: 12px;
-  }
+.artwork-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+  width: 100%;
 }
 
-@container welcome (max-height: 560px) {
-  .artwork-content {
-    padding-inline: 12px;
-  }
+.artwork-welcome h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.artwork-welcome button {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 10px 18px;
+  background: #1a1f3a;
+  color: inherit;
+  border: 1px solid #262b4d;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 15px;
+  line-height: normal;
+}
+
+.artwork-welcome button:hover {
+  background: #222849;
+}
+
+.artwork-welcome button:focus-visible {
+  outline: 2px solid #4a5894;
+  outline-offset: 2px;
+}
+
+.artwork-welcome button span {
+  color: #7d82a3;
+  font-size: 18px;
+  line-height: 1;
 }

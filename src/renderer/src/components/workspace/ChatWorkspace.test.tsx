@@ -186,9 +186,8 @@ describe('ChatWorkspace session host', () => {
     expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.chatWorkspace)).toBeNull()
     expect(bundle.app.terminals.create).not.toHaveBeenCalled()
-    expect(screen.getByRole('heading').textContent).toBe('Welcome to Demo')
-    expect(screen.getByText("Start a new chat to work in this project's directory.")).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
+    expect(screen.getByRole('heading').textContent).toBe('Welcome to NeKode')
+    fireEvent.click(screen.getByRole('button', { name: 'New Chat' }))
     expect(props.onStartNewChat).toHaveBeenCalledTimes(1)
     expect(props.onAddProject).not.toHaveBeenCalled()
 
