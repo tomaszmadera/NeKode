@@ -658,7 +658,18 @@ export function ChatTerminal({
             so host padding made the xterm screen overflow it and the last text
             row touched the prompt frame (measured 0.9px gap). */}
         <div className="flex h-full w-full flex-col p-3">
-          <div ref={containerRef} className="min-h-0 flex-1" />
+          {/* The fit host is absolute inside a flex slot. In flow, xterm's
+              scroll area grows the slot on wheel scroll, FitAddon then
+              reports a huge grid, and the layout stays broken until a window
+              resize refits. Absolute + overflow hidden keeps the measured
+              box equal to the slot. The host stays paddingless: FitAddon
+              measures only this box. */}
+          <div className="relative min-h-0 min-w-0 flex-1">
+            <div
+              ref={containerRef}
+              className="terminal-fit-host absolute inset-0 overflow-hidden"
+            />
+          </div>
           <PromptInput
             onSubmit={(line) => sendRef.current?.(line)}
             injected={injected}
