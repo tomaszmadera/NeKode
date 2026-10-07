@@ -75,6 +75,33 @@ async function renderLoaded(app: AppApi, projectId = 'p1'): Promise<void> {
 }
 
 describe('KanbanSettings', () => {
+  it('invalidates only after persistence succeeds, including directory changes before a failed rescan', async () => {
+    const save = vi
+      .fn()
+      .mockRejectedValueOnce({ nekodeAppError: true, code: 'internal', message: 'Save failed' })
+      .mockResolvedValue(undefined)
+    const scan = vi
+      .fn()
+      .mockResolvedValueOnce([SECOND])
+      .mockRejectedValueOnce({ nekodeAppError: true, code: 'internal', message: 'Scan failed' })
+    const app = appMock({
+      setConfig: save,
+      adaptersList: scan,
+      pickDirectory: vi.fn().mockResolvedValue('D:/new-adapters'),
+    })
+    const invalidate = vi.fn()
+    render(<KanbanSettings app={app} projectId="p1" onInvalidate={invalidate} />)
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.settingsKanbanLoading)).toBeNull())
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanSave))
+    await screen.findByText('Save failed')
+    expect(invalidate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanSave))
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith('p1'))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanDirBrowse))
+    await screen.findByText('Scan failed')
+    expect(app.state.set).toHaveBeenCalled()
+    expect(invalidate.mock.calls).toEqual([['p1'], [null]])
+  })
   it('shows the empty state and the default directory when no adapters are discovered', async () => {
     await renderLoaded(appMock())
     expect(screen.getByTestId(TEST_ID.settingsKanbanEmpty).textContent).toContain(
@@ -318,6 +345,36 @@ describe('KanbanSettings', () => {
       target: { value: 'plane' },
     })
 
+    const button = screen.getByTestId(TEST_ID.settingsKanbanTest) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTestHint)).toBeTruthy()
+    fireEvent.click(button)
+    expect(test).not.toHaveBeenCalled()
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTestResult)).toBeNull()
+  })
+
+  it('keeps a binding unsaved and shows the inline error when saving rejects', async () => {
+    const setConfig = vi.fn().mockRejectedValue({
+      nekodeAppError: true,
+      code: 'internal',
+      message: 'Save failed.',
+    })
+    const test = vi.fn()
+    await renderLoaded(
+      appMock({
+        adaptersList: vi.fn().mockResolvedValue([SECOND]),
+        setConfig,
+        test,
+      }),
+    )
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect), {
+      target: { value: 'second' },
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanSave))
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Save failed.'))
+    expect(setConfig).toHaveBeenCalledExactlyOnceWith('p1', { adapterId: 'second', values: {} })
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanSaved)).toBeNull()
     const button = screen.getByTestId(TEST_ID.settingsKanbanTest) as HTMLButtonElement
     expect(button.disabled).toBe(true)
     expect(screen.getByTestId(TEST_ID.settingsKanbanTestHint)).toBeTruthy()

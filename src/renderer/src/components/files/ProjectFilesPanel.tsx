@@ -1,11 +1,8 @@
 import type React from 'react'
 import type { ProjectInfo } from '../../../../shared/ipc-contract'
-import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
-import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 import { NoticeBanner } from '../layout/NoticeBanner'
-import { ResizeHandle } from '../layout/ResizeHandle'
 import { FileTree } from './FileTree'
 import type { ProjectFilesSession } from './files-types'
 
@@ -17,13 +14,6 @@ import type { ProjectFilesSession } from './files-types'
 // affordance always exits, spec Errors).
 
 interface ProjectFilesPanelProps {
-  width: number
-  /** Floating theme variant (lib/theme.ts): detached rounded panel with
-      margins around it, instead of the window-edge column with a right
-      hairline. */
-  floating?: boolean
-  onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
-  onResizeNudge: (delta: number) => void
   project: ProjectInfo
   session: ProjectFilesSession
   /** Exits Project Files mode (the back affordance, spec Behaviour 12). */
@@ -32,15 +22,11 @@ interface ProjectFilesPanelProps {
   onSelectFile: (relativePath: string) => void
   notice: string | null
   /** Bottom-of-panel strip (App Settings opener), rendered after the
-      tree area and above the resize handle. */
+      tree area. The slot owns the resize handle. */
   children?: React.ReactNode
 }
 
 export function ProjectFilesPanel({
-  width,
-  floating = false,
-  onResizeStart,
-  onResizeNudge,
   project,
   session,
   onBack,
@@ -50,16 +36,7 @@ export function ProjectFilesPanel({
   children,
 }: ProjectFilesPanelProps): React.JSX.Element {
   return (
-    <aside
-      className={cn(
-        'slide-in-from-right relative flex shrink-0 flex-col bg-panel',
-        // Floating theme: detached rounded panel (user request 2026-10-04),
-        // same footprint as the floating LeftNavigation.
-        floating ? 'm-2 overflow-hidden rounded-lg border border-edge' : 'border-r border-edge',
-      )}
-      style={{ width }}
-      data-testid={TEST_ID.leftNav}
-    >
+    <div className="flex h-full min-h-0 w-full flex-col bg-panel">
       {/* Separate rows keep the destination readable at the minimum panel
           width. The back button opts out of window dragging. */}
       <div className="drag-region flex shrink-0 flex-col gap-2 bg-app px-4 py-2">
@@ -103,15 +80,6 @@ export function ProjectFilesPanel({
         )}
       </div>
       {children}
-      <ResizeHandle
-        axis="x"
-        size={width}
-        minSize={LEFT_REGION_SIZE.min}
-        maxSize={LEFT_REGION_SIZE.max}
-        onResizeStart={onResizeStart}
-        onResizeNudge={onResizeNudge}
-        testId={TEST_ID.leftResizeHandle}
-      />
-    </aside>
+    </div>
   )
 }

@@ -23,6 +23,7 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 interface KanbanSettingsProps {
   app: AppApi
   projectId: string | null
+  onInvalidate?: (projectId: string | null) => void
 }
 
 type TestState = 'idle' | 'running' | 'success' | 'error'
@@ -107,7 +108,11 @@ function requiredError(
   return null
 }
 
-export function KanbanSettings({ app, projectId }: KanbanSettingsProps): React.JSX.Element {
+export function KanbanSettings({
+  app,
+  projectId,
+  onInvalidate,
+}: KanbanSettingsProps): React.JSX.Element {
   const [adapters, setAdapters] = useState<KanbanAdapterInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -228,6 +233,7 @@ export function KanbanSettings({ app, projectId }: KanbanSettingsProps): React.J
       // Deselecting clears the binding; stored field values stay (Behaviour 7).
       try {
         await app.kanban.setConfig(projectId, { adapterId: null, values: {} })
+        onInvalidate?.(projectId)
         setPersistedAdapterId(null)
         setSavedState('saved')
       } catch (cause) {
@@ -253,6 +259,7 @@ export function KanbanSettings({ app, projectId }: KanbanSettingsProps): React.J
     // setConfig resolved, so main holds this binding: mark it persisted/testable
     // now, independently of the reload below, which may fail without
     // un-persisting anything (Behaviour 7–8 gating).
+    onInvalidate?.(projectId)
     setPersistedAdapterId(adapterId)
     setSavedState('saved')
     try {
@@ -291,6 +298,7 @@ export function KanbanSettings({ app, projectId }: KanbanSettingsProps): React.J
       const picked = await app.dialogs.pickDirectory(current.length > 0 ? current : null)
       if (picked === null) return
       await app.state.set(APP_STATE_KEY.kanbanAdaptersDir, picked)
+      onInvalidate?.(null)
       // Persist-then-rescan (Behaviour 12 / AC13): the list reflects the new
       // directory immediately, with no restart.
       const list = await app.kanban.adaptersList()

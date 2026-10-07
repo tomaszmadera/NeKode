@@ -15,11 +15,18 @@ import { ActionSettings, type SettingsTabId } from './components/actions/ActionS
 import { HandoffPicker } from './components/actions/HandoffPicker'
 import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
+import {
+  DEFAULT_MARKDOWN_VIEW,
+  isMarkdownPath,
+  type MarkdownViewMode,
+  markdownViewKey,
+} from './components/files/markdown-path'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
-import { KanbanBoard } from './components/kanban/KanbanBoard'
+import { KanbanSessions } from './components/kanban/KanbanSessions'
 import { AppBrand } from './components/layout/AppBrand'
 import { ConfirmDialog } from './components/layout/ConfirmDialog'
 import { LeftNavigation } from './components/layout/LeftNavigation'
+import { LeftPanelTrack } from './components/layout/LeftPanelTrack'
 import { PanelFooter } from './components/layout/PanelFooter'
 import { StatusBar } from './components/layout/StatusBar'
 import { AppSettings } from './components/settings/AppSettings'
@@ -310,22 +317,32 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // mode never touches the chat/project selection and no longer swaps the
   // center surface (the back affordance keeps the tab strip and the active tab).
   // Per-project tree state lives in filesSessions for the app session only
-  // (Behaviour 14).
+  // (Behaviour 14). LeftPanelTrack owns the paired slide between the two views.
   const [filesProjectId, setFilesProjectId] = useState<string | null>(null)
-  // True only right after leaving Project Files: the returning Projects list
-  // replays the files panel's slide (user decision 2026-09-29, round 8).
-  const [navSlideIn, setNavSlideIn] = useState(false)
   const [filesSessions, setFilesSessions] = useState<Record<string, ProjectFilesSession>>({})
   // Per-project tab-strip sessions (center-layout-tabs-actions spec
   // Behaviour 3–5): open file tabs in open order, the active tab and the
   // previously active tab. Per-session UI state — never persisted.
   const [tabsByProject, setTabsByProject] = useState<Record<string, ProjectTabsSession>>({})
+  // Code or Preview per markdown file for this app session (user decision
+  // 2026-10-06). Not written to the database. Preview is the default.
+  const [markdownViewByKey, setMarkdownViewByKey] = useState<Record<string, MarkdownViewMode>>({})
   // Projects bound to a Kanban adapter (spec kanban-adapter-interface
   // Behaviour 14): read once per projects change and again when Project
   // Settings closes, through the generic `state:get` on the per-project
   // binding key (no new IPC channel). A bound project shows the nav tile and
   // the top-strip Kanban tab; an unbound one shows neither.
   const [kanbanProjectIds, setKanbanProjectIds] = useState<ReadonlySet<string>>(new Set())
+  const [kanbanVersions, setKanbanVersions] = useState<Record<string, number>>({})
+  const invalidateKanban = useCallback((projectId: string | null): void => {
+    setKanbanVersions((previous) => {
+      const next = { ...previous }
+      for (const id of projectId === null ? projectsRef.current.map((p) => p.id) : [projectId]) {
+        next[id] = (next[id] ?? 0) + 1
+      }
+      return next
+    })
+  }, [])
   // Projects removed in this session: pending chat loads for them are stale.
   const removedProjectIdsRef = useRef<Set<string>>(new Set())
   // Chats closed by explicit close flows in this session: fetched lists can
@@ -1120,7 +1137,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const handleOpenProjectFiles = useCallback(
     (projectId: string): void => {
       setNotice(null)
-      setNavSlideIn(false)
       setFilesProjectId(projectId)
       const session = filesSessions[projectId] ?? emptyProjectFilesSession()
       if (session.childrenByPath[''] === undefined) {
@@ -1132,7 +1148,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   const handleCloseProjectFiles = useCallback((): void => {
     setNotice(null)
-    setNavSlideIn(true)
     setFilesProjectId(null)
   }, [])
 
@@ -1634,6 +1649,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const tabsSession =
     tabProjectId === null ? emptyTabsSession() : (tabsByProject[tabProjectId] ?? emptyTabsSession())
   const activeTab = tabsSession.active
+  const activeMarkdownFile =
+    tabProject !== null && activeTab.kind === 'file' && isMarkdownPath(activeTab.path)
+      ? { projectId: tabProject.id, path: activeTab.path }
+      : null
   // A Kanban tab exists only while its project is bound: when the tab-strip
   // project's active tab is Kanban but that project is not (or is no longer)
   // bound — after a project switch, or after an unbind saved in Project
@@ -1742,64 +1761,65 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           floatingTheme ? 'flex min-h-0 flex-1' : 'flex min-h-0 flex-1 border-t border-edge'
         }
       >
-        {filesProject !== null ? (
-          <ProjectFilesPanel
-            width={leftWidth}
-            floating={floatingTheme}
-            onResizeStart={leftRegion.startResize}
-            onResizeNudge={leftRegion.nudge}
-            project={filesProject}
-            session={filesSession}
-            onBack={handleCloseProjectFiles}
-            onToggleDirectory={handleFilesToggleDirectory}
-            onSelectFile={handleFilesSelectFile}
-            notice={notice}
-          >
-            <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
-          </ProjectFilesPanel>
-        ) : (
-          <LeftNavigation
-            width={leftWidth}
-            floating={floatingTheme}
-            slideIn={navSlideIn}
-            onResizeStart={leftRegion.startResize}
-            onResizeNudge={leftRegion.nudge}
-            projects={projects}
-            projectNamesUppercase={projectNamesUppercase}
-            chatsByProject={chatsByProject}
-            expandedProjectIds={expandedProjectIds}
-            selectedProjectId={selectedProjectId}
-            selectedChatId={selectedChatId}
-            attention={chatAttention}
-            attentionBadgeEnabled={attentionSettings.badge}
-            attentionActiveIndicatorEnabled={attentionSettings.activeIndicator}
-            onSelectProject={handleSelectProject}
-            onToggleProject={handleToggleProject}
-            onSelectChat={handleSelectChat}
-            onAddProject={handleAddProject}
-            onRemoveProject={handleRemoveProject}
-            onOpenProjectFiles={handleOpenProjectFiles}
-            kanbanProjectIds={kanbanProjectIds}
-            onOpenProjectKanban={handleOpenProjectKanban}
-            onOpenInFileExplorer={handleOpenInFileExplorer}
-            onOpenProjectSettings={(projectId) => {
-              setActionSettingsProjectId(projectId)
-              setActionSettingsTab('shell')
-              setActionSettingsOpen(true)
-            }}
-            onCreateChat={handleCreateChat}
-            onRequestCloseChat={handleRequestCloseChat}
-            notice={notice}
-          >
-            <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
-          </LeftNavigation>
-        )}
+        <LeftPanelTrack
+          view={filesProject !== null ? 'files' : 'projects'}
+          width={leftWidth}
+          floating={floatingTheme}
+          onResizeStart={leftRegion.startResize}
+          onResizeNudge={leftRegion.nudge}
+          projects={
+            <LeftNavigation
+              projects={projects}
+              projectNamesUppercase={projectNamesUppercase}
+              chatsByProject={chatsByProject}
+              expandedProjectIds={expandedProjectIds}
+              selectedProjectId={selectedProjectId}
+              selectedChatId={selectedChatId}
+              attention={chatAttention}
+              attentionBadgeEnabled={attentionSettings.badge}
+              attentionActiveIndicatorEnabled={attentionSettings.activeIndicator}
+              onSelectProject={handleSelectProject}
+              onToggleProject={handleToggleProject}
+              onSelectChat={handleSelectChat}
+              onAddProject={handleAddProject}
+              onRemoveProject={handleRemoveProject}
+              onOpenProjectFiles={handleOpenProjectFiles}
+              kanbanProjectIds={kanbanProjectIds}
+              onOpenProjectKanban={handleOpenProjectKanban}
+              onOpenInFileExplorer={handleOpenInFileExplorer}
+              onOpenProjectSettings={(projectId) => {
+                setActionSettingsProjectId(projectId)
+                setActionSettingsTab('shell')
+                setActionSettingsOpen(true)
+              }}
+              onCreateChat={handleCreateChat}
+              onRequestCloseChat={handleRequestCloseChat}
+              notice={notice}
+            >
+              <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
+            </LeftNavigation>
+          }
+          files={
+            filesProject !== null ? (
+              <ProjectFilesPanel
+                project={filesProject}
+                session={filesSession}
+                onBack={handleCloseProjectFiles}
+                onToggleDirectory={handleFilesToggleDirectory}
+                onSelectFile={handleFilesSelectFile}
+                notice={notice}
+              >
+                <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
+              </ProjectFilesPanel>
+            ) : null
+          }
+        />
         <div className="relative z-10 flex min-w-0 flex-1 flex-col bg-app">
           {/* Center column (spec Behaviour 1): tab strip, reserved action-row
               slot, main surface. No window-top band and no context header.
-              Raised above the sliding left panel (transform creates a stacking
-              context that would otherwise paint over this column): the panel
-              emerges from under the middle panel, never over it. */}
+              Raised above the left-panel slot. The sliding track's transform
+              would otherwise paint that track over this column, so the panel
+              emerges from under the middle panel. */}
           <TabStrip
             chatName={activeChat?.name ?? null}
             kanbanAvailable={tabProject !== null && kanbanProjectIds.has(tabProject.id)}
@@ -1844,6 +1864,25 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 setActionSettingsTab('shell')
                 setActionSettingsOpen(true)
               }}
+              markdownView={
+                activeMarkdownFile === null
+                  ? null
+                  : {
+                      mode:
+                        markdownViewByKey[
+                          markdownViewKey(activeMarkdownFile.projectId, activeMarkdownFile.path)
+                        ] ?? DEFAULT_MARKDOWN_VIEW,
+                      onChange: (mode) => {
+                        const key = markdownViewKey(
+                          activeMarkdownFile.projectId,
+                          activeMarkdownFile.path,
+                        )
+                        setMarkdownViewByKey((previous) =>
+                          previous[key] === mode ? previous : { ...previous, [key]: mode },
+                        )
+                      },
+                    }
+              }
             />
             <main
               ref={centerSurfaceRef}
@@ -1869,6 +1908,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                         app={app}
                         projectId={tabProject.id}
                         relativePath={path}
+                        markdownView={
+                          markdownViewByKey[markdownViewKey(tabProject.id, path)] ??
+                          DEFAULT_MARKDOWN_VIEW
+                        }
                         onOpenExternalError={handleFilesOpenExternalError}
                       />
                     </div>
@@ -1914,18 +1957,21 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                   onPromptInjected={handlePromptInjected}
                 />
               </div>
-              {/* Kanban board (spec Behaviour 14): mounted only while the
-                Kanban tab is the active tab of the tab-strip project, so its
-                one listBoard load is lazy and fires once per activation. The
-                hidden chat sessions above stay mounted (PTY + scrollback
-                survive). */}
-              {tabProject !== null && activeTab.kind === 'kanban' ? (
-                <KanbanBoard
-                  app={app}
-                  projectId={tabProject.id}
-                  onConfigure={handleOpenKanbanSettings}
-                />
-              ) : null}
+              <KanbanSessions
+                app={app}
+                projectIds={
+                  new Set(
+                    projects
+                      .filter((project) => kanbanProjectIds.has(project.id))
+                      .map((project) => project.id),
+                  )
+                }
+                activeProjectId={
+                  tabProject !== null && activeTab.kind === 'kanban' ? tabProject.id : null
+                }
+                versions={kanbanVersions}
+                onConfigure={handleOpenKanbanSettings}
+              />
             </main>
           </div>
         </div>
@@ -1989,6 +2035,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onRefresh={refreshActions}
           initialTab={actionSettingsTab}
           onClose={handleActionSettingsClose}
+          onKanbanInvalidate={invalidateKanban}
         />
       ) : null}
       {handoffPickerOpen && tabProjectId !== null ? (

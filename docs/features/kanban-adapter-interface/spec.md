@@ -120,6 +120,49 @@ Renderer invokes stay behind the existing trusted-sender guard. `kanban:*` chann
 14. A project with a stored Kanban binding shows a `Kanban` tile directly under its name in the left navigation and a `Kanban` tab in the top tab strip beside the chat and file tabs; a project without one shows neither, and no separate `Files | Kanban` view-switch strip exists. Selecting the tile or the tab shows the board in the center surface on its default List view (the items grouped in state order; each item shows its ref, truncated title, and priority), with a List | Board icon switch and a refresh icon on the header's right side; Board shows one column per state (state name as heading) and the item review shows the full title and the description. The refresh icon re-runs the load. Selecting the chat tab or a file tab returns to that surface. A bound-but-missing adapter surfaces the typed error inline; the not-configured inline state with a Configure button opening Project Settings on the Kanban tab renders when the board is shown for a project whose binding no longer resolves.
 15. The Kanban section of Project Settings is reachable as its own tab labeled `Kanban`, without changing the existing Configuration or Actions sections' behavior.
 
+## Cached board rendering amendment (user decision 2026-10-06)
+
+This amendment replaces the destructive loading behavior in Behaviour 14 and
+extends AC14. It changes renderer presentation only; adapter protocol v1 and
+`kanban:listBoard` continue to return a complete board snapshot.
+
+- Cache the last successful board separately for each project for the lifetime
+  of the current application session. Fetch lazily on its first activation.
+  Returning from a chat, file, or another project shows the cached board
+  immediately and starts one background refresh. Hidden boards do not poll.
+- Manual Refresh uses the same background path. While a request is pending,
+  keep the existing list, columns, and item review visible and usable. Show an
+  accessible `Refreshing board...` status and disable duplicate refreshes.
+  Without cached data, retain the initial loading state.
+- Reconcile the returned snapshot by work-item `ref` and state `id`: add new
+  entries, remove absent entries, and update changed fields and ordering.
+  Preserve unchanged item identity and existing keyed DOM nodes where an item
+  stays in the same group. Moving an item between states updates its group.
+- Preserve the chosen List/Board view, scroll position, and open review across
+  tab switches. A changed reviewed item updates in place; removing it returns
+  to the selected view. No additional request is made for the review.
+- Refresh failures retain the last successful board and show the typed error
+  inline. The refresh status ends and retry remains available. A missing or
+  cleared binding shows the established error or not-configured state without
+  presenting another binding's cached data.
+- A removed project or a saved adapter/configuration change invalidates that
+  project's cache. Late responses from a disposed or superseded session must
+  never repopulate it or overwrite another project's board. Deduplicate loads
+  while a request for the same cache generation remains pending.
+- Set all visible Kanban surface text to 12.6px (reduced by 30% from 18px per user decision
+  2026-10-06) and headings to 14.7px (reduced by 30% from 21px). This includes List,
+  Board, review, inline loading/error/empty states, and textual controls.
+  Keep the established font family and colors, and adjust layout constraints
+  where needed to keep priority labels readable.
+- Required renderer coverage: instant cached return under a deferred request;
+  visible refresh status with retained content; add/remove/edit/reorder and
+  state movement; unchanged DOM identity; review update/removal; retained view
+  and scroll; refresh failure and retry; project isolation; removed project
+  and configuration invalidation; stale response exclusion; no duplicate load.
+
+The same iteration fixes the existing welcome SVG accessibility lint error by
+adding a non-empty title without changing the artwork.
+
 ## Required tests
 
 - Manifest validation: happy path; each rejection rule (bad JSON, missing id, bad id format, unknown protocolVersion, bad config field type); duplicate-id resolution order.

@@ -4,11 +4,14 @@ import type { AppApi, FilePreview as FilePreviewData } from '../../../../shared/
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
+import { MarkdownPreview } from './MarkdownPreview'
 import { MonacoPreview } from './MonacoPreview'
+import { isMarkdownPath, type MarkdownViewMode } from './markdown-path'
 
 // Read-only file preview of one file tab (spec Behaviour 6–7): the classified
 // preview — text in Monaco, or the too-large / binary fallback with the single
-// OS action ("Open externally"). The breadcrumb is superseded by the tab model
+// OS action ("Open externally"). A markdown path can render that text instead
+// (user decision 2026-10-06). The breadcrumb is superseded by the tab model
 // (the tab tooltip carries the relative path). A file that vanished between
 // listing and read shows a localized error state inside this tab only; other
 // tabs are unaffected (each tab owns its preview view).
@@ -17,6 +20,11 @@ interface FilePreviewProps {
   app: AppApi
   projectId: string
   relativePath: string
+  /**
+   * Code or rendered Markdown. Used only when the path is a markdown file
+   * and the read result is text. Other files ignore it.
+   */
+  markdownView: MarkdownViewMode
   /** Failed Open externally: the host shows the notice banner. */
   onOpenExternalError: (message: string) => void
 }
@@ -34,6 +42,7 @@ export function FilePreview({
   app,
   projectId,
   relativePath,
+  markdownView,
   onOpenExternalError,
 }: FilePreviewProps): React.JSX.Element {
   const [state, setState] = useState<PreviewState>({ status: 'loading' })
@@ -91,7 +100,11 @@ export function FilePreview({
         ) : null}
         {state.status === 'ready' && state.preview.kind === 'text' ? (
           <div className="h-full min-h-0">
-            <MonacoPreview content={state.preview.content} language={state.preview.language} />
+            {isMarkdownPath(relativePath) && markdownView === 'preview' ? (
+              <MarkdownPreview content={state.preview.content} />
+            ) : (
+              <MonacoPreview content={state.preview.content} language={state.preview.language} />
+            )}
           </div>
         ) : null}
       </div>

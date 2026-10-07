@@ -3,41 +3,42 @@
    Every color utility (bg-panel, text-ink, border-edge, ...) derives from these names. */
 @theme {
   /* Surfaces */
-  --color-app: rgb(11 13 31);
-  --color-panel: rgb(26 29 44);
+  --color-app: rgb(15 18 32);
+  --color-panel: rgb(21 25 41);
   --color-highlight: rgb(31 44 63);
   /* Row hover: the left-nav project row carries its hover fill at rest, one
      step dimmer than selection (design doc 14, 2026-10-02). */
-  --color-row-hover: rgb(28 35 52);
-  --color-button: rgb(30 42 66);
-  --color-button-hover: rgb(38 52 80);
-  --color-tab-inactive: rgb(25 29 41);
-  --color-terminal: rgb(13 15 26);
+  --color-row-hover: rgb(28 33 53);
+  --color-button: rgb(21 25 41);
+  --color-button-hover: rgb(37 44 71);
+  --color-tab-inactive: rgb(21 25 41);
+  --color-terminal: rgb(15 18 32);
 
   /* Text */
-  --color-ink: rgb(202 203 209);
-  --color-ink-secondary: rgb(140 142 152);
-  --color-ink-muted: rgb(106 108 118);
-  --color-ink-disabled: rgb(76 78 88);
+  --color-ink: rgb(230 232 242);
+  --color-ink-secondary: rgb(163 169 194);
+  --color-ink-muted: rgb(123 130 160);
+  --color-ink-disabled: rgb(86 93 124);
 
   /* Semantic text and indicators */
   --color-success: rgb(147 189 161);
   --color-warning: rgb(217 164 65);
   --color-error: rgb(151 65 80);
-  --color-info: rgb(83 134 188);
+  --color-info: rgb(139 147 248);
   /* Left-navigation accents (design doc 14): Projects section header light
      blue, project titles almost white, chat names pastel blue (2026-10-01). */
-  --color-project-title: rgb(226 230 238);
-  --color-projects-header: rgb(134 174 216);
-  --color-chat-title: rgb(141 168 205);
+  --color-project-title: rgb(230 232 242);
+  --color-projects-header: rgb(123 130 160);
+  --color-chat-title: rgb(163 169 194);
   /* Selection accent: narrow left stripe on the selected project's container
      (NEKODE-3, design doc 14). */
-  --color-accent: rgb(83 134 188);
+  --color-accent: rgb(139 147 248);
 
-  /* Structure: inactive tab border / hairline separators. The divider is the
+  /* Structure: panel borders, control outlines and hairline separators. The divider is the
      inset separator between connected buttons (design doc 5, 11.4). */
-  --color-edge: rgb(33 37 49);
-  --color-divider: rgb(56 70 96);
+  --color-edge: rgb(38 44 66);
+  --color-control-edge: rgb(38 44 66);
+  --color-divider: rgb(38 44 66);
 
   /* Scrollbars (terminal viewport and app scroll areas). Derived values,
      design doc 4; scrollbars render only when content overflows (index.css). */
@@ -59,4 +60,9 @@
      ChatTerminal.tsx in sync with this list. */
   --font-mono:
     "Recursive Mono Casual", "Symbols Nerd Font Mono", Consolas, "Courier New", monospace;
+
+  /* Transitions and motion (design doc 24, NEKODE-9) */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }

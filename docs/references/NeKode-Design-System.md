@@ -109,8 +109,8 @@ name parity against `default.css` for each override file, not value parity),
 so themes may diverge freely. Theme membership, display labels and the shell
 layout variant live in the registry `src/renderer/src/lib/theme.ts`:
 `default` keeps the attached shell, `nekode-float` ("NeKode Float")
-clones the default palette except `--color-terminal`, which matches
-`--color-app`, and raises `--radius-lg` one step to 10px (user decision
+clones the default palette, including the shared terminal background, and
+raises `--radius-lg` one step to 10px (user decision
 2026-10-04: the floating shell panels and the dialogs round at 10px). It
 switches the shell to the floating layout: the title bar
 strip without its separating hairline (the app name stays top-left beside
@@ -136,14 +136,14 @@ theme-aware.
 
 | Token | Value | Usage |
 |---|---:|---|
-| `--color-app` | `rgb(11 13 31)` | Main application background |
+| `--color-app` | `rgb(13 18 34)` | Main application background (user decision 2026-10-06) |
 | `--color-panel` | `rgb(26 29 44)` | Left and right panels, tab strip, status bar, dialogs |
 | `--color-highlight` | `rgb(31 44 63)` | Highlight and selection inside panels |
 | `--color-row-hover` | `rgb(28 35 52)` | Left-nav row hover (project, chat, New Chat; dimmer than selection) |
 | `--color-button` | `rgb(30 42 66)` | Command buttons and the active tab |
 | `--color-button-hover` | `rgb(38 52 80)` | Button hover (derived) |
 | `--color-tab-inactive` | `rgb(25 29 41)` | Inactive tab background |
-| `--color-terminal` | `rgb(13 15 26)` | Agent console and terminal (derived) |
+| `--color-terminal` | `rgb(13 18 34)` | Every agent console and terminal in both themes (user decision 2026-10-06) |
 
 The palette has a cool navy bias: every surface mixes blue into the gray, never pure black.
 
@@ -184,7 +184,8 @@ Semantic colors are text and indicator colors: icons, labels, dots, thin indicat
 Use borders mainly for structure, not decoration.
 
 ```css
---color-edge: rgb(33 37 49);    /* inactive tab border, hairline separators */
+--color-edge: rgb(33 37 49);    /* panel borders, hairlines, button and tab outlines */
+--color-control-edge: rgb(48 58 78); /* prompt and field frames */
 --color-divider: rgb(56 70 96); /* inset separator between connected buttons */
 ```
 
@@ -199,7 +200,8 @@ group reads as one component.
 Recommended border width:
 
 - standard: `1px`
-- inactive tabs: `1px` full outline (no underline convention)
+- buttons: `1px` full outline in `--color-edge`
+- tab rows: `1px` top and side outline in `--color-edge`, no bottom edge. The hairline under the row is the bottom border (user decision 2026-10-06)
 
 Avoid double borders between adjacent panes. Prefer a single shared divider.
 
@@ -240,6 +242,12 @@ The terminal adds bundled Symbols Nerd Font Mono v3.4.0 for prompt glyphs, with 
 | Metadata | 11px | 500 | 15px |
 | Terminal (default) | 15px | 400 | xterm default |
 | Large status heading | 14px | 600 | 19px |
+
+The current read-only Kanban surface uses 12.6px body text and 14.7px header and
+review-title text (reduced by 30%, user decision 2026-10-06), retaining the established font
+family and colors. Priority labels reserve 96px; Board columns are 320px wide.
+The [Kanban contract](../features/kanban-adapter-interface/spec.md#cached-board-rendering-amendment-user-decision-2026-10-06)
+defines session caching and visible background refresh.
 
 Workspace navigation and actions (user decision 2026-10-03): the Projects
 heading, project/chat names, New Chat controls, center tabs and action-row
@@ -412,11 +420,11 @@ Implemented (2026-09-28): filled `--color-button` actions use the shared
 buttons stretch to their bar (`self-stretch`), standalone buttons use the
 token directly. Ghost row controls stay compact.
 
-Base visual treatment (borderless, filled):
+Base visual treatment (filled with a subtle outline, user decision 2026-10-06):
 
 ```css
 background: var(--color-button);
-border: none;
+border: 1px solid var(--color-edge);
 color: var(--color-ink);
 border-radius: var(--radius-md);
 ```
@@ -454,7 +462,7 @@ Strong red should appear on hover, active or confirmation state.
 
 Requirements:
 
-- borderless: each segment uses the button treatment (`--color-button`, no border),
+- one subtle outer outline in `--color-edge`; each segment uses `--color-button` without its own border,
 - shared outer radius, segments clipped as one component,
 - internal divider per section 5: a single 1px `--color-divider` hairline, vertically centered and shorter than the segments,
 - same height,
@@ -476,18 +484,28 @@ Tabs should be compact and document/tool oriented, with rounded top corners.
 Inactive:
 
 - background: `var(--color-tab-inactive)`,
-- border: `1px solid var(--color-edge)`,
+- border: `1px solid var(--color-edge)` on the top and sides, no bottom edge,
 - text: `var(--color-ink-secondary)`.
 
 Active:
 
 - background: `var(--color-button)` (the same surface as buttons),
-- no border,
-- text: `var(--color-ink)`.
+- border: `1px solid var(--color-edge)` on the top and sides, no bottom edge,
+- text: `var(--color-ink)`, identical to an enabled button label.
 
-Close icons should only appear on hover or active tabs if used.
+The hairline under the tab row is the bottom border of every tab in that row
+(user decision 2026-10-06): the center strip uses the action row's top line,
+and in the floating theme the frame's top line; the bottom panel uses its
+own row line. A per-tab bottom edge would close each tab into a block.
 
-`+ New Chat` may use a compact button-like treatment at the far right of the tab row. It carries no hover background, only a text-color shift (user decision 2026-10-04).
+Tabs and their close controls keep the same appearance on hover. File and
+bottom-terminal close controls remain visible. Settings section tabs use the
+same outline color on all four sides, because they are a vertical list and
+do not sit on that row line (user decision 2026-10-06).
+
+`+ New Chat` and `New terminal` keep a compact treatment at the far right of
+their tab rows, without a hover background or text-color shift (user decision
+2026-10-06).
 
 ---
 
@@ -593,17 +611,18 @@ blocks the app-level shortcuts while open (`[aria-modal]` guard). The
 project row's `Files` action is always visible (user decision 2026-09-29,
 previously hover-revealed) and sits one pixel left of its neighbors' axis
 (`-translate-x-px`, user request 2026-10-04). Entering Project Files slides
-the left panel in from
-the right: 220ms `cubic-bezier(0.2, 0, 0, 1)` (`slide-in-from-right` in
-`index.css`, section 24 panel-expansion band; disabled under
-`prefers-reduced-motion`). The slide passes under the center column, never
-over it (2026-09-29): the column is raised above the transformed panel
-(`relative z-10` with an opaque `bg-app`; a `transform` alone would paint
-the panel above all normal-flow siblings). Returning to Projects replays
-the mirrored slide (`slide-in-from-left`, left-to-right from the window's
-left edge, same 220ms; user decision 2026-09-29) for the Projects list
-(`slideIn` on `LeftNavigation`, set only right after leaving Project
-Files, so the app start stays static).
+Projects and Project Files together inside the left-panel slot (user decision
+2026-10-07). The Files view starts
+immediately to the right of Projects, the slot clips whatever is outside
+it, and both translate left by one panel width over 220ms
+`cubic-bezier(0.2, 0, 0, 1)` (`.left-panel-track-run` in `index.css`,
+section 24 panel-expansion band), so Projects leaves to the left and Files
+lands in the slot. Returning to Projects runs that move in reverse: Projects
+starts immediately to the left, both translate right by one panel width, and
+Files leaves to the right. The app start stays static.
+`prefers-reduced-motion: reduce` keeps the plain swap. The slide passes
+under the center column, never over it (2026-09-29): the column is raised
+above the slot (`relative z-10` with an opaque `bg-app`).
 
 ---
 
@@ -641,7 +660,7 @@ The console must look like a **running terminal agent**, not an AI chat.
 Prompt input (2026-09-28): every terminal view ends in a styled input row
 (`PromptInput`) instead of typing at the shell prompt line: a `>` glyph, a
 mono input in an `--radius-md` frame on `--color-panel` with a
-`--color-edge` border (info on focus), and the Send and Dictation controls
+`--color-control-edge` border (info on focus), and the Send and Dictation controls
 at the right end of the frame. Send (2026-09-28: Lucide paper plane
 `Icon.send` plus the visible `Send` label) submits the line by click through
 the same PTY write path as Enter and is disabled while the input is empty; a
@@ -848,6 +867,7 @@ outline: 1px solid var(--color-info);
 outline-offset: 1px;
 ```
 
+Shared focus-visible indicator is implemented globally in `index.css` (`:focus-visible`).
 Do not remove keyboard focus indicators.
 
 Cursor (user decision 2026-09-29): every enabled button shows the hand
@@ -862,10 +882,16 @@ controls keep `not-allowed`. Hover backgrounds stay per component (section
 
 Motion should be functional and fast.
 
+Implemented tokens (NEKODE-9):
+
+- `--duration-fast`: `120ms` (hover states, button surfaces, focus rings)
+- `--duration-base`: `160ms` (tab selection, panel transitions)
+- `--ease-standard`: `cubic-bezier(0.2, 0, 0, 1)`
+
 Recommended durations:
 
 ```text
-hover / color:       100–140ms
+hover / color:       100–140ms (token: --duration-fast, 120ms)
 panel expansion:     160–220ms
 tooltip/popover:     120–160ms
 workflow transition: 180–240ms
@@ -874,15 +900,24 @@ workflow transition: 180–240ms
 Preferred easing:
 
 ```css
-cubic-bezier(0.2, 0, 0, 1)
+cubic-bezier(0.2, 0, 0, 1) /* token: --ease-standard */
 ```
 
-Avoid springy or playful animations.
+Avoid springy or playful animations. Do not communicate state through animation alone; always provide a static visual indicator.
 
-Respect:
+Respect prefers-reduced-motion globally via `index.css`:
 
 ```css
-@media (prefers-reduced-motion: reduce)
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 ```
 
 ---
@@ -913,13 +948,13 @@ Expose tokens at the document root:
 :root,
 [data-theme="dark"] {
   /* surfaces */
-  --color-app: rgb(11 13 31);
+  --color-app: rgb(13 18 34);
   --color-panel: rgb(26 29 44);
   --color-highlight: rgb(31 44 63);
   --color-button: rgb(30 42 66);
   --color-button-hover: rgb(38 52 80);
   --color-tab-inactive: rgb(25 29 41);
-  --color-terminal: rgb(13 15 26);
+  --color-terminal: rgb(13 18 34);
 
   /* text */
   --color-ink: rgb(202 203 209);
@@ -938,6 +973,7 @@ Expose tokens at the document root:
 
   /* structure */
   --color-edge: rgb(33 37 49);
+  --color-control-edge: rgb(48 58 78);
   --color-divider: rgb(56 70 96);
 
   /* radius */
@@ -950,7 +986,7 @@ Expose tokens at the document root:
 
 Implemented (2026-09-28): the app uses the Window Controls Overlay title bar.
 `src/main/index.ts` sets `titleBarStyle: 'hidden'` plus `titleBarOverlay`
-(`#0b0d1f` strip, `#cacbd1` symbols, 36px; the app strips are 40px since
+(`#0d1222` strip, `#cacbd1` symbols, 36px; the app strips are 40px since
 2026-09-29) and a matching `backgroundColor` against the first-paint flash.
 Since the user decision of 2026-10-01 the renderer's title bar is one
 continuous full-width strip: the brand (AppBrand) at the left end, the
@@ -962,7 +998,11 @@ the tab strip needs no `env(titlebar-area-width)` inset anymore. The tab
 strip shares the action row's metrics (2026-09-29):
 `px-2 pt-2` insets, so the first tab's left edge aligns with the first
 action-row button. Since 2026-10-03 tabs use the shared 42px control height
-inside a 50px strip (`--spacing-control` plus 8px top padding).
+inside a 50px strip (`--spacing-control` plus 8px top padding). Since
+2026-10-05 the tabs are separated by a 6px gap (`gap-1.5`) — narrower than
+the action row's 8px group gap, so neighbouring tabs read as one strip while
+staying distinct; the strip markup is theme-independent, so the gap holds in
+both themes.
 The Projects header height is 47px (`--spacing-control` plus 5px), with an 8px
 top margin and 4px first-project inset. The first project tile therefore
 starts 59px below the content row, matching the action buttons after the
@@ -1098,13 +1138,13 @@ A NeKode screen should feel correct when:
 ```css
 :root {
   /* surfaces */
-  --color-app: rgb(11 13 31);
+  --color-app: rgb(13 18 34);
   --color-panel: rgb(26 29 44);
   --color-highlight: rgb(31 44 63);
   --color-button: rgb(30 42 66);
   --color-button-hover: rgb(38 52 80);
   --color-tab-inactive: rgb(25 29 41);
-  --color-terminal: rgb(13 15 26);
+  --color-terminal: rgb(13 18 34);
 
   /* text */
   --color-ink: rgb(202 203 209);
@@ -1123,6 +1163,7 @@ A NeKode screen should feel correct when:
 
   /* structure */
   --color-edge: rgb(33 37 49);
+  --color-control-edge: rgb(48 58 78);
   --color-divider: rgb(56 70 96);
 
   /* radius */
@@ -1135,6 +1176,11 @@ A NeKode screen should feel correct when:
   --control-height: 30px;
   --row-height: 26px;
   --panel-padding: 12px;
+
+  /* motion */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 ```
 

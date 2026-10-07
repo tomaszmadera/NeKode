@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AppApi,
   KanbanBoard as KanbanBoardData,
@@ -19,8 +19,8 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // action. The header's right side carries the icon controls (user request
 // 2026-10-05): a List | Board switch and the refresh icon, each with an
 // accessible name (UX-UI §63). The surface loads lazily: exactly one
-// `kanban:listBoard` call when it mounts (the host mounts it only while the
-// Kanban tab is selected), and the refresh control re-runs that one load.
+// `kanban:listBoard` call on first activation. The host retains each visited
+// project session while hidden; activation and Refresh share a background load.
 // Loading, typed error, empty board and not-configured states are inline text;
 // the not-configured state offers Configure (Project Settings on its Kanban
 // tab), mirroring the Resume picker's affordance. Read-only: no drag-and-drop
@@ -35,6 +35,8 @@ interface KanbanBoardProps {
   projectId: string
   /** Opens Project Settings on the Kanban tab (the not-configured state). */
   onConfigure: () => void
+  /** Hidden retained sessions never initiate requests. */
+  active?: boolean
 }
 
 /** One rendered column: a state with the items that belong to it. */
@@ -46,6 +48,48 @@ export interface KanbanColumn {
 
 /** Which arrangement of the loaded items is on screen. List is the default. */
 type KanbanSurfaceView = 'board' | 'list'
+
+export type KanbanSortBy = 'slug' | 'priority'
+export type KanbanSortDirection = 'asc' | 'desc'
+
+export const PRIORITY_RANK: Record<KanbanPriority, number> = {
+  urgent: 1,
+  high: 2,
+  medium: 3,
+  low: 4,
+}
+
+export const PRIORITY_NONE_RANK = 5
+
+export function compareRefs(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+}
+
+export function compareWorkItems(
+  a: WorkItem,
+  b: WorkItem,
+  sortBy: KanbanSortBy,
+  direction: KanbanSortDirection,
+): number {
+  let diff = 0
+  if (sortBy === 'priority') {
+    const rankA = a.priority !== null ? PRIORITY_RANK[a.priority] : PRIORITY_NONE_RANK
+    const rankB = b.priority !== null ? PRIORITY_RANK[b.priority] : PRIORITY_NONE_RANK
+    diff = rankA - rankB
+  }
+  if (diff === 0) {
+    diff = compareRefs(a.ref, b.ref)
+  }
+  return direction === 'asc' ? diff : -diff
+}
+
+export function sortWorkItems(
+  items: readonly WorkItem[],
+  sortBy: KanbanSortBy,
+  direction: KanbanSortDirection,
+): WorkItem[] {
+  return [...items].sort((a, b) => compareWorkItems(a, b, sortBy, direction))
+}
 
 const PRIORITY_LABEL: Record<KanbanPriority, string> = {
   urgent: 'Urgent',
@@ -126,7 +170,7 @@ const ICON_BUTTON_CLASS =
 
 function PriorityText({ priority }: { priority: KanbanPriority | null }): React.JSX.Element {
   return (
-    <span className="inline-flex w-16 shrink-0 justify-end text-ink-secondary">
+    <span className="inline-flex w-24 shrink-0 justify-end text-ink-secondary">
       <span className="sr-only">Priority </span>
       <span>{priorityLabel(priority)}</span>
     </span>
@@ -177,7 +221,7 @@ function ItemReview({ item, onBack }: { item: WorkItem; onBack: () => void }): R
     <article className="min-w-0" data-testid={TEST_ID.kanbanReview}>
       <button
         type="button"
-        className="h-control rounded-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+        className="h-control rounded-md px-3 text-[12.6px] text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
         data-testid={TEST_ID.kanbanReviewBack}
         onClick={onBack}
       >
@@ -189,7 +233,7 @@ function ItemReview({ item, onBack }: { item: WorkItem; onBack: () => void }): R
       </div>
       <p className="text-ink-secondary">{item.stateName}</p>
       <h3
-        className="mt-2 whitespace-pre-wrap break-words text-sm font-semibold text-ink"
+        className="mt-2 whitespace-pre-wrap break-words text-[14.7px] font-semibold text-ink"
         data-testid={TEST_ID.kanbanReviewTitle}
       >
         {item.title}
@@ -205,23 +249,205 @@ function ItemReview({ item, onBack }: { item: WorkItem; onBack: () => void }): R
   )
 }
 
-export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): React.JSX.Element {
+/** Retain unchanged normalized records; React keys retain same-group DOM nodes. */
+export function reconcileBoard(previous: KanbanBoardData, next: KanbanBoardData): KanbanBoardData {
+  const items = new Map(previous.items.map((item) => [item.ref, item]))
+  const states = new Map(previous.states.map((state) => [state.id, state]))
+  return {
+    states: next.states.map((state) => {
+      const old = states.get(state.id)
+      return old !== undefined &&
+        old.name === state.name &&
+        old.group === state.group &&
+        old.order === state.order
+        ? old
+        : state
+    }),
+    items: next.items.map((item) => {
+      const old = items.get(item.ref)
+      return old !== undefined &&
+        (Object.keys(item) as (keyof WorkItem)[]).every((key) => old[key] === item[key])
+        ? old
+        : item
+    }),
+  }
+}
+
+export const KANBAN_COLLAPSED_STORAGE_KEY_PREFIX = 'nekode.kanban-collapsed-states.v1'
+
+export function kanbanCollapsedStorageKey(projectId: string): string {
+  return `${KANBAN_COLLAPSED_STORAGE_KEY_PREFIX}.${projectId}`
+}
+
+export function parseCollapsedStateIds(raw: string | null): Set<string> {
+  if (raw === null) return new Set()
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
+      return new Set(parsed)
+    }
+  } catch {
+    // Malformed JSON falls back safely to empty set
+  }
+  return new Set()
+}
+
+export function loadCollapsedStateIds(projectId: string): Set<string> {
+  try {
+    return parseCollapsedStateIds(localStorage.getItem(kanbanCollapsedStorageKey(projectId)))
+  } catch {
+    return new Set()
+  }
+}
+
+export function saveCollapsedStateIds(projectId: string, ids: Set<string>): void {
+  try {
+    if (ids.size === 0) {
+      localStorage.removeItem(kanbanCollapsedStorageKey(projectId))
+    } else {
+      localStorage.setItem(kanbanCollapsedStorageKey(projectId), JSON.stringify([...ids]))
+    }
+  } catch {
+    // Ignore storage quota or access errors
+  }
+}
+
+export const KANBAN_SORT_STORAGE_KEY_PREFIX = 'nekode.kanban-sort.v1'
+
+export function kanbanSortStorageKey(projectId: string): string {
+  return `${KANBAN_SORT_STORAGE_KEY_PREFIX}.${projectId}`
+}
+
+export interface KanbanSortState {
+  sortBy: KanbanSortBy
+  direction: KanbanSortDirection
+}
+
+export const DEFAULT_KANBAN_SORT: KanbanSortState = {
+  sortBy: 'slug',
+  direction: 'asc',
+}
+
+export function parseKanbanSort(raw: string | null): KanbanSortState {
+  if (raw === null) return DEFAULT_KANBAN_SORT
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed === 'object' && parsed !== null) {
+      const candidate = parsed as Record<string, unknown>
+      const sortBy: KanbanSortBy = candidate.sortBy === 'priority' ? 'priority' : 'slug'
+      const direction: KanbanSortDirection = candidate.direction === 'desc' ? 'desc' : 'asc'
+      return { sortBy, direction }
+    }
+  } catch {
+    // Malformed JSON falls back safely
+  }
+  return DEFAULT_KANBAN_SORT
+}
+
+export function loadKanbanSort(projectId: string): KanbanSortState {
+  try {
+    return parseKanbanSort(localStorage.getItem(kanbanSortStorageKey(projectId)))
+  } catch {
+    return DEFAULT_KANBAN_SORT
+  }
+}
+
+export function saveKanbanSort(projectId: string, state: KanbanSortState): void {
+  try {
+    localStorage.setItem(kanbanSortStorageKey(projectId), JSON.stringify(state))
+  } catch {
+    // Ignore storage quota or access errors
+  }
+}
+
+export function KanbanBoard({
+  app,
+  projectId,
+  onConfigure,
+  active = true,
+}: KanbanBoardProps): React.JSX.Element {
   const [phase, setPhase] = useState<KanbanBoardPhase>('loading')
   const [board, setBoard] = useState<KanbanBoardData>({ states: [], items: [] })
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<KanbanSurfaceView>('list')
   const [reviewRef, setReviewRef] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [collapsedStates, setCollapsedStates] = useState<Set<string>>(() =>
+    loadCollapsedStateIds(projectId),
+  )
+  const [sortState, setSortState] = useState<KanbanSortState>(() => loadKanbanSort(projectId))
+  const pending = useRef(false)
+  const generation = useRef(0)
+  const hasSnapshot = useRef(false)
+
+  useEffect(() => {
+    setCollapsedStates(loadCollapsedStateIds(projectId))
+    setSortState(loadKanbanSort(projectId))
+  }, [projectId])
+
+  const handleSortByChange = useCallback(
+    (nextSortBy: KanbanSortBy) => {
+      setSortState((previous) => {
+        const next: KanbanSortState = { ...previous, sortBy: nextSortBy }
+        saveKanbanSort(projectId, next)
+        return next
+      })
+    },
+    [projectId],
+  )
+
+  const toggleSortDirection = useCallback(() => {
+    setSortState((previous) => {
+      const next: KanbanSortState = {
+        ...previous,
+        direction: previous.direction === 'asc' ? 'desc' : 'asc',
+      }
+      saveKanbanSort(projectId, next)
+      return next
+    })
+  }, [projectId])
+
+  const toggleStateCollapse = useCallback(
+    (stateId: string) => {
+      setCollapsedStates((previous) => {
+        const next = new Set(previous)
+        if (next.has(stateId)) {
+          next.delete(stateId)
+        } else {
+          next.add(stateId)
+        }
+        saveCollapsedStateIds(projectId, next)
+        return next
+      })
+    },
+    [projectId],
+  )
+
+  // A changed binding is a new keyed component in the host. Cleanup excludes
+  // late responses from that disposed session (including StrictMode replay).
+  useEffect(() => {
+    return () => {
+      generation.current += 1
+      pending.current = false
+    }
+  }, [])
 
   // One load: the mount effect and the refresh control share it. An
   // unconfigured project rejects with the typed validation error naming the
   // project (spec Behaviour 9), which is the not-configured state; every other
   // rejection is surfaced as its typed message inline — never a silent drop.
   const load = useCallback(async (): Promise<void> => {
-    setPhase('loading')
+    if (pending.current) return
+    pending.current = true
+    const requestGeneration = generation.current
+    if (!hasSnapshot.current) setPhase('loading')
+    setRefreshing(true)
     setError(null)
     try {
       const next = await app.kanban.listBoard(projectId)
-      setBoard(next)
+      if (requestGeneration !== generation.current) return
+      hasSnapshot.current = true
+      setBoard((previous) => reconcileBoard(previous, next))
       // A refresh that drops the open item closes the review. A ref that is
       // still on the board stays open, including across the first load (null).
       setReviewRef((current) =>
@@ -232,22 +458,30 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
       // state only fires when there is genuinely nothing to show.
       setPhase(next.states.length === 0 && next.items.length === 0 ? 'empty' : 'ready')
     } catch (cause) {
+      if (requestGeneration !== generation.current) return
       const payload = parseAppErrorPayload(cause)
-      if (payload?.code === 'validation') {
-        setPhase('not-configured')
+      if (payload?.code === 'validation' || payload?.code === 'not_found') {
+        hasSnapshot.current = false
+        setBoard({ states: [], items: [] })
+        setReviewRef(null)
+        setError(payload.message)
+        setPhase(payload.code === 'validation' ? 'not-configured' : 'error')
         return
       }
       setError(payload?.message ?? 'Failed to load the Kanban board.')
-      setPhase('error')
+      if (!hasSnapshot.current) setPhase('error')
+    } finally {
+      if (requestGeneration === generation.current) {
+        pending.current = false
+        setRefreshing(false)
+      }
     }
   }, [app, projectId])
 
-  // Lazy: the host mounts this surface only when the Kanban tab is selected,
-  // so this effect is the single load on first selection. `load` is stable for
-  // one (app, projectId) pair, so re-renders never re-fire it.
+  // Lazy first activation and one background refresh on each tab return.
   useEffect(() => {
-    void load()
-  }, [load])
+    if (active) void load()
+  }, [active, load])
 
   const reviewItem =
     phase === 'ready' && reviewRef !== null
@@ -256,14 +490,52 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 text-xs"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 text-[12.6px]"
       data-testid={TEST_ID.kanbanBoard}
     >
       <div className="sticky top-0 z-10 -mx-3 mb-3 flex shrink-0 items-center gap-2 bg-app px-3 py-2">
-        <h2 className="text-sm font-semibold text-ink">Kanban</h2>
+        <h2 className="text-[14.7px] font-semibold text-ink">Kanban</h2>
+        {refreshing && phase !== 'loading' ? (
+          <p role="status" className="min-w-0 truncate text-[12.6px] text-ink-secondary">
+            Refreshing board...
+          </p>
+        ) : null}
         {/* View switch and refresh sit on the right (user request 2026-10-05);
             both are icon controls carrying accessible names (UX-UI §63). */}
         <div className="ml-auto flex items-center gap-1">
+          {phase === 'ready' && view === 'list' && reviewItem === null ? (
+            <div className="mr-1 flex items-center gap-1">
+              <label htmlFor="kanban-sort-by" className="sr-only">
+                Sort by
+              </label>
+              <select
+                id="kanban-sort-by"
+                className="h-6 rounded border border-edge bg-app px-1.5 text-[12px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                value={sortState.sortBy}
+                onChange={(event) => {
+                  handleSortByChange(event.target.value as KanbanSortBy)
+                }}
+                data-testid={TEST_ID.kanbanSortBy}
+              >
+                <option value="slug">Slug</option>
+                <option value="priority">Priority</option>
+              </select>
+              <button
+                type="button"
+                className={ICON_BUTTON_CLASS}
+                aria-label={sortState.direction === 'asc' ? 'Sort ascending' : 'Sort descending'}
+                title={sortState.direction === 'asc' ? 'Ascending' : 'Descending'}
+                data-testid={TEST_ID.kanbanSortDirection}
+                onClick={toggleSortDirection}
+              >
+                {sortState.direction === 'asc' ? (
+                  <Icon.sortAsc size={14} aria-hidden />
+                ) : (
+                  <Icon.sortDesc size={14} aria-hidden />
+                )}
+              </button>
+            </div>
+          ) : null}
           {phase === 'ready' ? (
             <fieldset className="flex items-center gap-1 border-0 p-0">
               <legend className="sr-only">Kanban view</legend>
@@ -303,7 +575,7 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
             aria-label="Refresh"
             title="Refresh"
             data-testid={TEST_ID.kanbanBoardRefresh}
-            disabled={phase === 'loading'}
+            disabled={refreshing}
             onClick={() => {
               void load()
             }}
@@ -314,7 +586,7 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
       </div>
       {phase === 'loading' ? (
         <p
-          className="text-xs text-ink-secondary"
+          className="text-[12.6px] text-ink-secondary"
           role="status"
           data-testid={TEST_ID.kanbanBoardLoading}
         >
@@ -322,7 +594,7 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
         </p>
       ) : null}
       {phase === 'not-configured' ? (
-        <div className="text-xs" data-testid={TEST_ID.kanbanBoardUnconfigured}>
+        <div className="text-[12.6px]" data-testid={TEST_ID.kanbanBoardUnconfigured}>
           <p className="text-ink-secondary">
             No Kanban adapter is configured for this project. Bind one in Project Settings to see
             its board.
@@ -337,13 +609,13 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
           </button>
         </div>
       ) : null}
-      {phase === 'error' ? (
-        <p role="alert" className="text-xs text-error" data-testid={TEST_ID.kanbanBoardError}>
+      {error !== null && phase !== 'not-configured' ? (
+        <p role="alert" className="text-[12.6px] text-error" data-testid={TEST_ID.kanbanBoardError}>
           {error}
         </p>
       ) : null}
       {phase === 'empty' ? (
-        <p className="text-xs text-ink-secondary" data-testid={TEST_ID.kanbanBoardEmpty}>
+        <p className="text-[12.6px] text-ink-secondary" data-testid={TEST_ID.kanbanBoardEmpty}>
           This board has no states yet.
         </p>
       ) : null}
@@ -360,10 +632,10 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
           {boardColumns(board).map((column) => (
             <section
               key={column.stateId}
-              className="flex w-56 shrink-0 flex-col rounded border border-edge p-2"
+              className="flex w-80 shrink-0 flex-col rounded border border-edge p-2"
               data-testid={testIdFor.kanbanColumn(column.stateId)}
             >
-              <h3 className="mb-2 border-b border-edge pb-1 text-xs font-semibold text-ink">
+              <h3 className="mb-2 border-b border-edge pb-1 text-[12.6px] font-semibold text-ink">
                 {column.name}
               </h3>
               <ul className="space-y-1">
@@ -385,26 +657,56 @@ export function KanbanBoard({ app, projectId, onConfigure }: KanbanBoardProps): 
       ) : null}
       {phase === 'ready' && reviewItem === null && view === 'list' ? (
         <div className="flex min-w-0 flex-col gap-3" data-testid={TEST_ID.kanbanList}>
-          {boardColumns(board).map((column) => (
-            <section key={column.stateId} data-testid={testIdFor.kanbanListGroup(column.stateId)}>
-              <h3 className="mb-1 border-b border-edge pb-1 text-xs font-semibold text-ink">
-                {column.name}
-              </h3>
-              <ul className="space-y-1">
-                {column.items.map((item) => (
-                  <li key={item.ref}>
-                    <WorkItemButton
-                      item={item}
-                      layout="row"
-                      onOpen={(ref) => {
-                        setReviewRef(ref)
-                      }}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+          {boardColumns(board).map((column) => {
+            const isCollapsed = collapsedStates.has(column.stateId)
+            const listId = `kanban-list-items-${column.stateId}`
+            const sortedItems = sortWorkItems(column.items, sortState.sortBy, sortState.direction)
+            return (
+              <section key={column.stateId} data-testid={testIdFor.kanbanListGroup(column.stateId)}>
+                <h3 className="mb-1 border-b border-edge pb-1 text-[12.6px] font-semibold text-ink">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded px-1 py-0.5 text-left hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                    aria-expanded={!isCollapsed}
+                    aria-controls={listId}
+                    data-testid={testIdFor.kanbanGroupToggle(column.stateId)}
+                    onClick={() => {
+                      toggleStateCollapse(column.stateId)
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span aria-hidden="true" className="flex shrink-0 text-ink-muted">
+                        {isCollapsed ? (
+                          <Icon.chevronRight size={14} />
+                        ) : (
+                          <Icon.chevronDown size={14} />
+                        )}
+                      </span>
+                      <span>{column.name}</span>
+                    </span>
+                    <span className="text-sm font-normal text-ink-muted">
+                      {column.items.length}
+                    </span>
+                  </button>
+                </h3>
+                {!isCollapsed ? (
+                  <ul id={listId} className="space-y-1">
+                    {sortedItems.map((item) => (
+                      <li key={item.ref}>
+                        <WorkItemButton
+                          item={item}
+                          layout="row"
+                          onOpen={(ref) => {
+                            setReviewRef(ref)
+                          }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+            )
+          })}
         </div>
       ) : null}
     </div>

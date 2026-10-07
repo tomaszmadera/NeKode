@@ -20,6 +20,7 @@ export function WelcomeSurface({
       actionTestId={hasProject ? TEST_ID.startNewChatButton : TEST_ID.welcomeAddProjectButton}
       actionLabel={hasProject ? 'New Chat' : 'Add project'}
       onPrimaryAction={hasProject ? onNewChat : onAddProject}
+      projectName={projectName}
     />
   )
 }

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
@@ -329,7 +329,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     await waitFor(() =>
       expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
     )
-    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
     expect(isSelected(TEST_ID.tabTerminal)).toBe(true)
   })
 
@@ -356,7 +356,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     const readmeTab = screen.getByTestId(testIdFor.tabFile('README.md'))
     fireEvent.click(within(readmeTab).getByRole('button', { name: 'README.md' }))
     await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
   })
 
   it('not-configured board offers Configure that opens Project Settings on the Kanban tab', async () => {
@@ -438,6 +438,118 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
   })
   afterEach(() => {
     cleanup()
+  })
+
+  it('shows the cached review immediately on tab return and preserves project isolation', async () => {
+    boundProjectIds = new Set(['p1', 'p2'])
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    let finish!: (board: KanbanBoard) => void
+    const pending = new Promise<KanbanBoard>((resolve) => {
+      finish = resolve
+    })
+    vi.mocked(app.kanban.listBoard)
+      .mockResolvedValueOnce(fixture)
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce({ ...fixture, items: [item('OTHER-1', 'Other project', 's1')] })
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanViewBoard))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItem(fixture.items[0].ref)))
+    const board = screen.getByTestId(TEST_ID.kanbanBoard)
+    const review = screen.getByTestId(TEST_ID.kanbanReview)
+    board.scrollTop = 80
+    fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
+    expect(board.parentElement?.style.display).toBe('none')
+    expect(app.kanban.listBoard).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanTab))
+    expect(board.parentElement?.style.display).toBe('flex')
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
+    expect(screen.getByRole('status').textContent).toBe('Refreshing board...')
+    expect(board.scrollTop).toBe(80)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+    const other = await screen.findByTestId(testIdFor.kanbanItem('OTHER-1'))
+    expect(other.closest('[data-testid="kanban-board"]')?.parentElement?.style.display).toBe('flex')
+    expect(board.parentElement?.style.display).toBe('none')
+    await act(async () =>
+      finish({
+        ...fixture,
+        items: fixture.items.map((i, index) =>
+          index === 0 ? { ...i, title: 'Updated hidden review' } : i,
+        ),
+      }),
+    )
+    expect(other.textContent).toContain('Other project')
+    expect(within(board).getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe(
+      'Updated hidden review',
+    )
+    expect(app.kanban.listBoard).toHaveBeenCalledTimes(3)
+    vi.mocked(app.kanban.listBoard).mockReturnValue(new Promise(() => {}))
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    expect(board.parentElement?.style.display).toBe('flex')
+    expect(within(board).getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
+  })
+
+  it('invalidates a saved configuration immediately and excludes a superseded request', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.kanban.adaptersList).mockResolvedValue([
+      { id: 'plane', name: 'Plane', configSchema: [] },
+    ])
+    vi.mocked(app.kanban.getConfig).mockResolvedValue({
+      adapterId: 'plane',
+      values: {},
+      secretKeys: [],
+    })
+    let finish!: (board: KanbanBoard) => void
+    const pending = new Promise<KanbanBoard>((resolve) => {
+      finish = resolve
+    })
+    vi.mocked(app.kanban.listBoard)
+      .mockResolvedValueOnce(fixture)
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce({ states: [], items: [] })
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+    await screen.findByTestId(testIdFor.kanbanItem(fixture.items[0].ref))
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Project Settings' }))
+    fireEvent.click(await screen.findByTestId(TEST_ID.settingsKanbanTab))
+    fireEvent.click(await screen.findByTestId(TEST_ID.settingsKanbanSave))
+    await waitFor(() =>
+      expect(app.kanban.setConfig).toHaveBeenCalledWith('p1', { adapterId: 'plane', values: {} }),
+    )
+    await screen.findByTestId(TEST_ID.kanbanBoardEmpty)
+    await act(async () => finish(fixture))
+    expect(screen.queryByTestId(testIdFor.kanbanItem(fixture.items[0].ref))).toBeNull()
+    expect(app.kanban.listBoard).toHaveBeenCalledTimes(3)
+  })
+
+  it('disposes a removed project while its request is pending', async () => {
+    vi.mocked(app.projects.list).mockResolvedValueOnce([projectA]).mockResolvedValue([])
+    let finish!: (board: KanbanBoard) => void
+    vi.mocked(app.kanban.listBoard).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+    await screen.findByTestId(TEST_ID.kanbanBoardLoading)
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull())
+    await act(async () => finish(fixture))
+    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    expect(screen.queryByTestId(testIdFor.kanbanItem(fixture.items[0].ref))).toBeNull()
   })
 
   it('closing Project Settings after an unbind hides the entry points and resets the Kanban tab', async () => {

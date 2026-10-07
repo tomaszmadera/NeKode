@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
@@ -6,7 +6,19 @@ import type {
   WorkItem,
 } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { boardColumns, KanbanBoard } from './KanbanBoard'
+import {
+  boardColumns,
+  compareRefs,
+  DEFAULT_KANBAN_SORT,
+  KanbanBoard,
+  kanbanCollapsedStorageKey,
+  kanbanSortStorageKey,
+  parseCollapsedStateIds,
+  parseKanbanSort,
+  reconcileBoard,
+  sortWorkItems,
+} from './KanbanBoard'
+import { KanbanSessions } from './KanbanSessions'
 
 // Read-only board surface (spec kanban-adapter-interface Behaviour 14, AC14):
 // list view (the default) and board columns in adapter order, item review, and
@@ -14,7 +26,24 @@ import { boardColumns, KanbanBoard } from './KanbanBoard'
 // not-configured with a working Configure callback), plus the icon controls
 // (view switch + refresh) re-running the load.
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
+
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: unknown) => void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes
+    reject = no
+  })
+  return { promise, resolve, reject }
+}
 
 function item(ref: string, title: string, stateId: string): WorkItem {
   return {
@@ -44,6 +73,183 @@ const fixture: KanbanBoardData = {
     item('NK-2', 'Second task', 's2'),
   ],
 }
+
+describe('cached background refresh', () => {
+  it('reuses unchanged item and state objects while applying updates and order', () => {
+    const next = structuredClone(fixture)
+    next.items.reverse()
+    next.items[0].title = 'Changed'
+    const result = reconcileBoard(fixture, next)
+    expect(result.states[0]).toBe(fixture.states[0])
+    expect(result.items[2]).toBe(fixture.items[0])
+    expect(result.items[0]).not.toBe(fixture.items[2])
+    expect(result.items[0].title).toBe('Changed')
+  })
+
+  it('deduplicates activation while the first request is pending and preserves an empty snapshot on failure', async () => {
+    const pending = deferred<KanbanBoardData>()
+    const listBoard = vi
+      .fn()
+      .mockReturnValueOnce(pending.promise)
+      .mockRejectedValueOnce({ nekodeAppError: true, code: 'timeout', message: 'Timed out' })
+    const app = appWith(listBoard)
+    const onConfigure = vi.fn()
+    const ui = render(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active />)
+    ui.rerender(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active={false} />)
+    ui.rerender(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active />)
+    expect(listBoard).toHaveBeenCalledTimes(1)
+    await act(async () => pending.resolve({ states: [], items: [] }))
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    expect((await screen.findByRole('alert')).textContent).toBe('Timed out')
+    expect(screen.getByTestId(TEST_ID.kanbanBoardEmpty)).toBeTruthy()
+  })
+
+  it('disposes removed and invalidated sessions and excludes their late responses', async () => {
+    const old = deferred<KanbanBoardData>()
+    const fresh = deferred<KanbanBoardData>()
+    const removed = deferred<KanbanBoardData>()
+    const listBoard = vi
+      .fn()
+      .mockReturnValueOnce(old.promise)
+      .mockReturnValueOnce(fresh.promise)
+      .mockReturnValueOnce(removed.promise)
+      .mockResolvedValueOnce({ states: [], items: [] })
+    const app = appWith(listBoard)
+    const onConfigure = vi.fn()
+    const ui = render(
+      <KanbanSessions
+        app={app}
+        projectIds={new Set(['p1'])}
+        activeProjectId="p1"
+        versions={{}}
+        onConfigure={onConfigure}
+      />,
+    )
+    ui.rerender(
+      <KanbanSessions
+        app={app}
+        projectIds={new Set(['p1'])}
+        activeProjectId="p1"
+        versions={{ p1: 1 }}
+        onConfigure={onConfigure}
+      />,
+    )
+    await act(async () => old.resolve(fixture))
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull()
+    await act(async () => fresh.resolve({ ...fixture, items: [item('NEW', 'New binding', 's1')] }))
+    expect(screen.getByTestId(testIdFor.kanbanItem('NEW'))).toBeTruthy()
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    ui.rerender(
+      <KanbanSessions
+        app={app}
+        projectIds={new Set()}
+        activeProjectId={null}
+        versions={{ p1: 1 }}
+        onConfigure={onConfigure}
+      />,
+    )
+    await act(async () => removed.resolve(fixture))
+    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    ui.rerender(
+      <KanbanSessions
+        app={app}
+        projectIds={new Set(['p1'])}
+        activeProjectId="p1"
+        versions={{ p1: 1 }}
+        onConfigure={onConfigure}
+      />,
+    )
+    await screen.findByTestId(TEST_ID.kanbanBoardEmpty)
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull()
+    expect(listBoard).toHaveBeenCalledTimes(4)
+  })
+  it('keeps content, DOM identity, view and scroll while reactivating and reconciling snapshots', async () => {
+    const pending = deferred<KanbanBoardData>()
+    const listBoard = vi.fn().mockResolvedValueOnce(fixture).mockReturnValueOnce(pending.promise)
+    const app = appWith(listBoard)
+    const onConfigure = vi.fn()
+    const ui = render(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active />)
+    await switchToBoard()
+    const unchanged = screen.getByTestId(testIdFor.kanbanItem('NK-1'))
+    const root = screen.getByTestId(TEST_ID.kanbanBoard)
+    root.scrollTop = 180
+    ui.rerender(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active={false} />)
+    ui.rerender(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active />)
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBe(unchanged)
+    expect(screen.getByRole('status').textContent).toBe('Refreshing board...')
+    expect(root.scrollTop).toBe(180)
+    expect(screen.getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    expect(listBoard).toHaveBeenCalledTimes(2)
+    await act(async () =>
+      pending.resolve({
+        states: fixture.states.map((s) =>
+          s.id === 's2' ? { ...s, order: 0, name: 'Working' } : s,
+        ),
+        items: [
+          item('NK-9', 'New task', 's1'),
+          fixture.items[0],
+          { ...fixture.items[2], title: 'Moved task', stateId: 's1' },
+        ],
+      }),
+    )
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-3'))).toBeNull()
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBe(unchanged)
+    const backlog = screen.getByTestId(testIdFor.kanbanColumn('s1'))
+    expect(
+      within(backlog)
+        .getAllByRole('button')
+        .map((b) => b.dataset.testid),
+    ).toEqual(['kanban-item-NK-9', 'kanban-item-NK-1', 'kanban-item-NK-2'])
+    expect(screen.getAllByTestId(/^kanban-column-/)[0].textContent).toBe('Working')
+    expect(root.scrollTop).toBe(180)
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('retains and updates review, keeps cached data after failure, retries and closes a removed review', async () => {
+    const pending = deferred<KanbanBoardData>()
+    const listBoard = vi
+      .fn()
+      .mockResolvedValueOnce(fixture)
+      .mockReturnValueOnce(pending.promise)
+      .mockRejectedValueOnce({ nekodeAppError: true, code: 'network', message: 'Offline' })
+      .mockResolvedValueOnce({ ...fixture, items: [] })
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItem('NK-1')))
+    const review = screen.getByTestId(TEST_ID.kanbanReview)
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
+    await act(async () =>
+      pending.resolve({
+        ...fixture,
+        items: fixture.items.map((i) =>
+          i.ref === 'NK-1' ? { ...i, title: 'Edited', description: 'New description' } : i,
+        ),
+      }),
+    )
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
+    expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Edited')
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    expect((await screen.findByRole('alert')).textContent).toBe('Offline')
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull())
+    expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
+    expect(listBoard).toHaveBeenCalledTimes(4)
+  })
+
+  it.each(['validation', 'not_found'])('clears cached data on binding error %s', async (code) => {
+    const listBoard = vi
+      .fn()
+      .mockResolvedValueOnce(fixture)
+      .mockRejectedValueOnce({ nekodeAppError: true, code, message: 'Binding unavailable' })
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+    await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull())
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+})
 
 function appWith(listBoard: AppApi['kanban']['listBoard']): AppApi {
   return { kanban: { listBoard } } as unknown as AppApi
@@ -425,5 +631,277 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
       longTitle,
     )
     expect(listBoard).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('kanban list — collapsible status sections', () => {
+  it('toggles collapse and expand on list section headers, updating aria-expanded and hiding items', async () => {
+    const listBoard = vi.fn().mockResolvedValue(fixture)
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+
+    // Wait for list to render
+    const toggleS1 = await screen.findByTestId(testIdFor.kanbanGroupToggle('s1'))
+    expect(toggleS1.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBeTruthy()
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-3'))).toBeTruthy()
+
+    // Collapse section s1
+    fireEvent.click(toggleS1)
+    expect(toggleS1.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-3'))).toBeNull()
+    // Section s2 is still expanded
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-2'))).toBeTruthy()
+
+    // Expand section s1 back
+    fireEvent.click(toggleS1)
+    expect(toggleS1.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBeTruthy()
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-3'))).toBeTruthy()
+  })
+
+  it('persists collapsed state in localStorage and restores it on remount', async () => {
+    const listBoard = vi.fn().mockResolvedValue(fixture)
+    const { unmount } = render(
+      <KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />,
+    )
+
+    const toggleS1 = await screen.findByTestId(testIdFor.kanbanGroupToggle('s1'))
+    fireEvent.click(toggleS1)
+
+    // Check localStorage
+    const saved = localStorage.getItem(kanbanCollapsedStorageKey('p1'))
+    expect(saved).not.toBeNull()
+    expect(JSON.parse(saved as string)).toContain('s1')
+
+    unmount()
+
+    // Remount - s1 should start collapsed
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+    const newToggleS1 = await screen.findByTestId(testIdFor.kanbanGroupToggle('s1'))
+    expect(newToggleS1.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull()
+
+    // Expanding it clears the collapsed state from storage
+    fireEvent.click(newToggleS1)
+    expect(newToggleS1.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBeTruthy()
+    expect(localStorage.getItem(kanbanCollapsedStorageKey('p1'))).toBeNull()
+  })
+
+  it('isolates collapsed states between different projects', async () => {
+    localStorage.setItem(kanbanCollapsedStorageKey('p1'), JSON.stringify(['s1']))
+
+    const listBoard = vi.fn().mockResolvedValue(fixture)
+    const ui = render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+
+    // For p1, s1 is collapsed
+    const toggleP1 = await screen.findByTestId(testIdFor.kanbanGroupToggle('s1'))
+    expect(toggleP1.getAttribute('aria-expanded')).toBe('false')
+
+    ui.unmount()
+
+    // For p2, s1 is not collapsed
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p2" onConfigure={vi.fn()} />)
+    const toggleP2 = await screen.findByTestId(testIdFor.kanbanGroupToggle('s1'))
+    expect(toggleP2.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('parses collapsed state ids safely', () => {
+    expect(parseCollapsedStateIds(null)).toEqual(new Set())
+    expect(parseCollapsedStateIds('')).toEqual(new Set())
+    expect(parseCollapsedStateIds('not-json')).toEqual(new Set())
+    expect(parseCollapsedStateIds('{"not": "array"}')).toEqual(new Set())
+    expect(parseCollapsedStateIds('["s1", 123]')).toEqual(new Set())
+    expect(parseCollapsedStateIds('["s1", "s2"]')).toEqual(new Set(['s1', 's2']))
+  })
+})
+
+describe('kanban list — sorting items', () => {
+  const unsortedItems: WorkItem[] = [
+    { ...item('NK-10', 'Task 10', 's1'), priority: 'low' },
+    { ...item('NK-2', 'Task 2', 's1'), priority: 'urgent' },
+    { ...item('NK-1', 'Task 1', 's1'), priority: null },
+    { ...item('NK-3', 'Task 3', 's1'), priority: 'urgent' },
+    { ...item('NK-5', 'Task 5', 's1'), priority: 'high' },
+    { ...item('NK-4', 'Task 4', 's1'), priority: 'medium' },
+  ]
+
+  it('natural sort orders task slugs correctly', () => {
+    expect(compareRefs('NK-2', 'NK-10')).toBeLessThan(0)
+    expect(compareRefs('NK-10', 'NK-2')).toBeGreaterThan(0)
+    expect(compareRefs('NK-1', 'NK-1')).toBe(0)
+  })
+
+  it('sorts by slug ascending by default (natural numerical order)', () => {
+    const sorted = sortWorkItems(unsortedItems, 'slug', 'asc')
+    expect(sorted.map((i) => i.ref)).toEqual(['NK-1', 'NK-2', 'NK-3', 'NK-4', 'NK-5', 'NK-10'])
+  })
+
+  it('sorts by slug descending when direction is desc', () => {
+    const sorted = sortWorkItems(unsortedItems, 'slug', 'desc')
+    expect(sorted.map((i) => i.ref)).toEqual(['NK-10', 'NK-5', 'NK-4', 'NK-3', 'NK-2', 'NK-1'])
+  })
+
+  it('sorts by priority ascending (urgent -> high -> medium -> low -> none) with secondary slug', () => {
+    const sorted = sortWorkItems(unsortedItems, 'priority', 'asc')
+    expect(sorted.map((i) => i.ref)).toEqual(['NK-2', 'NK-3', 'NK-5', 'NK-4', 'NK-10', 'NK-1'])
+    expect(sorted.map((i) => i.priority)).toEqual([
+      'urgent',
+      'urgent',
+      'high',
+      'medium',
+      'low',
+      null,
+    ])
+  })
+
+  it('sorts by priority descending (none -> low -> medium -> high -> urgent) with secondary slug reversed', () => {
+    const sorted = sortWorkItems(unsortedItems, 'priority', 'desc')
+    expect(sorted.map((i) => i.ref)).toEqual(['NK-1', 'NK-10', 'NK-4', 'NK-5', 'NK-3', 'NK-2'])
+    expect(sorted.map((i) => i.priority)).toEqual([
+      null,
+      'low',
+      'medium',
+      'high',
+      'urgent',
+      'urgent',
+    ])
+  })
+
+  it('parses stored kanban sort settings safely', () => {
+    expect(parseKanbanSort(null)).toEqual(DEFAULT_KANBAN_SORT)
+    expect(parseKanbanSort('')).toEqual(DEFAULT_KANBAN_SORT)
+    expect(parseKanbanSort('not-json')).toEqual(DEFAULT_KANBAN_SORT)
+    expect(parseKanbanSort(JSON.stringify({ sortBy: 'priority', direction: 'desc' }))).toEqual({
+      sortBy: 'priority',
+      direction: 'desc',
+    })
+    expect(parseKanbanSort(JSON.stringify({ sortBy: 'unknown', direction: 'invalid' }))).toEqual({
+      sortBy: 'slug',
+      direction: 'asc',
+    })
+  })
+
+  it('renders sort controls in header on list view and re-sorts on user interaction', async () => {
+    const boardWithUnsorted: KanbanBoardData = {
+      states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
+      items: [
+        { ...item('NK-10', 'Task 10', 's1'), priority: 'low' },
+        { ...item('NK-2', 'Task 2', 's1'), priority: 'urgent' },
+        { ...item('NK-1', 'Task 1', 's1'), priority: null },
+      ],
+    }
+
+    const listBoard = vi.fn().mockResolvedValue(boardWithUnsorted)
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+
+    await screen.findByTestId(TEST_ID.kanbanList)
+
+    const sortSelect = screen.getByTestId<HTMLSelectElement>(TEST_ID.kanbanSortBy)
+    const directionBtn = screen.getByTestId(TEST_ID.kanbanSortDirection)
+    expect(sortSelect.value).toBe('slug')
+    expect(within(sortSelect).getByRole('option', { name: 'Slug' })).toBeTruthy()
+    expect(within(sortSelect).getByRole('option', { name: 'Priority' })).toBeTruthy()
+    expect(directionBtn.getAttribute('aria-label')).toBe('Sort ascending')
+
+    const s1Group = screen.getByTestId(testIdFor.kanbanListGroup('s1'))
+    let itemRefs = within(s1Group)
+      .getAllByRole('button')
+      .slice(1)
+      .map((btn) => btn.getAttribute('data-testid'))
+    expect(itemRefs).toEqual([
+      testIdFor.kanbanItem('NK-1'),
+      testIdFor.kanbanItem('NK-2'),
+      testIdFor.kanbanItem('NK-10'),
+    ])
+
+    fireEvent.click(directionBtn)
+    expect(directionBtn.getAttribute('aria-label')).toBe('Sort descending')
+    itemRefs = within(s1Group)
+      .getAllByRole('button')
+      .slice(1)
+      .map((btn) => btn.getAttribute('data-testid'))
+    expect(itemRefs).toEqual([
+      testIdFor.kanbanItem('NK-10'),
+      testIdFor.kanbanItem('NK-2'),
+      testIdFor.kanbanItem('NK-1'),
+    ])
+
+    fireEvent.change(sortSelect, { target: { value: 'priority' } })
+    expect(sortSelect.value).toBe('priority')
+    itemRefs = within(s1Group)
+      .getAllByRole('button')
+      .slice(1)
+      .map((btn) => btn.getAttribute('data-testid'))
+    expect(itemRefs).toEqual([
+      testIdFor.kanbanItem('NK-1'),
+      testIdFor.kanbanItem('NK-10'),
+      testIdFor.kanbanItem('NK-2'),
+    ])
+
+    fireEvent.click(directionBtn)
+    expect(directionBtn.getAttribute('aria-label')).toBe('Sort ascending')
+    itemRefs = within(s1Group)
+      .getAllByRole('button')
+      .slice(1)
+      .map((btn) => btn.getAttribute('data-testid'))
+    expect(itemRefs).toEqual([
+      testIdFor.kanbanItem('NK-2'),
+      testIdFor.kanbanItem('NK-10'),
+      testIdFor.kanbanItem('NK-1'),
+    ])
+  })
+
+  it('persists sort settings to localStorage and restores on remount', async () => {
+    const boardWithUnsorted: KanbanBoardData = {
+      states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
+      items: [
+        { ...item('NK-10', 'Task 10', 's1'), priority: 'low' },
+        { ...item('NK-2', 'Task 2', 's1'), priority: 'urgent' },
+      ],
+    }
+
+    const listBoard = vi.fn().mockResolvedValue(boardWithUnsorted)
+    const { unmount } = render(
+      <KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />,
+    )
+
+    const sortSelect = await screen.findByTestId<HTMLSelectElement>(TEST_ID.kanbanSortBy)
+    const directionBtn = screen.getByTestId(TEST_ID.kanbanSortDirection)
+
+    fireEvent.change(sortSelect, { target: { value: 'priority' } })
+    fireEvent.click(directionBtn)
+
+    const saved = localStorage.getItem(kanbanSortStorageKey('p1'))
+    expect(saved).not.toBeNull()
+    expect(JSON.parse(saved as string)).toEqual({ sortBy: 'priority', direction: 'desc' })
+
+    unmount()
+
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+    const newSelect = await screen.findByTestId<HTMLSelectElement>(TEST_ID.kanbanSortBy)
+    const newDirection = screen.getByTestId(TEST_ID.kanbanSortDirection)
+    expect(newSelect.value).toBe('priority')
+    expect(newDirection.getAttribute('aria-label')).toBe('Sort descending')
+  })
+
+  it('hides sort controls when switched to board view or reviewing an item', async () => {
+    const listBoard = vi.fn().mockResolvedValue(richBoard())
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+
+    await screen.findByTestId(TEST_ID.kanbanSortBy)
+
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
+    expect(screen.queryByTestId(TEST_ID.kanbanSortBy)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.kanbanSortDirection)).toBeNull()
+
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewList))
+    expect(screen.getByTestId(TEST_ID.kanbanSortBy)).toBeTruthy()
+
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItem('NK-1')))
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.kanbanSortBy)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.kanbanSortDirection)).toBeNull()
   })
 })

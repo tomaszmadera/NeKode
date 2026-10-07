@@ -61,6 +61,11 @@ export const TEST_ID = {
   filePreviewBinary: 'file-preview-binary',
   filePreviewOpenExternal: 'file-preview-open-external',
   filePreviewMonaco: 'file-preview-monaco',
+  /** Action-row switch for a markdown file tab (user decision 2026-10-06). */
+  fileMarkdownCode: 'file-markdown-code',
+  fileMarkdownPreview: 'file-markdown-preview',
+  /** Rendered Markdown surface inside a file tab. */
+  fileMarkdownRender: 'file-markdown-render',
   /** Right-click menu of the read-only file preview (Copy / Select All). */
   editorContextMenu: 'editor-context-menu',
   editorContextCopy: 'editor-context-copy',
@@ -141,6 +146,9 @@ export const TEST_ID = {
   kanbanViewList: 'kanban-view-list',
   /** Grouped list of the same items the board shows as columns. */
   kanbanList: 'kanban-list',
+  /** Sort select and direction toggle for Kanban list. */
+  kanbanSortBy: 'kanban-sort-by',
+  kanbanSortDirection: 'kanban-sort-direction',
   /** Read-only review of one work item, opened from the board or the list. */
   kanbanReview: 'kanban-review',
   kanbanReviewBack: 'kanban-review-back',
@@ -202,4 +210,6 @@ export const testIdFor = {
   kanbanItem: (ref: string): string => `kanban-item-${ref}`,
   /** One state group in the list view, keyed by the adapter state id. */
   kanbanListGroup: (stateId: string): string => `kanban-list-group-${stateId}`,
+  /** Toggle button for collapsing or expanding a state group in the list view. */
+  kanbanGroupToggle: (stateId: string): string => `kanban-group-toggle-${stateId}`,
 }

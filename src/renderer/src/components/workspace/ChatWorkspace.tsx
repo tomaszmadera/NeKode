@@ -407,7 +407,12 @@ export function ChatWorkspace({
             </div>
           )
         })}
-        {showStartNewChat ? <StartNewChatSurface onStartNewChat={onStartNewChat} /> : null}
+        {showStartNewChat ? (
+          <StartNewChatSurface
+            onStartNewChat={onStartNewChat}
+            projectName={selectedProject?.name}
+          />
+        ) : null}
         {selectedChatId === null && !showStartNewChat ? (
           <WelcomeSurface
             onAddProject={onAddProject}

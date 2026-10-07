@@ -24,3 +24,32 @@ describe('theme palettes', () => {
     },
   )
 })
+
+describe('motion and interaction tokens (NEKODE-9)', () => {
+  const defaultSource = readFileSync(join(THEMES_DIR, 'default.css'), 'utf8')
+  const indexSource = readFileSync('src/renderer/src/index.css', 'utf8')
+
+  it('declares duration-fast, duration-base, and ease-standard in default.css', () => {
+    expect(defaultSource).toContain('--duration-fast: 120ms;')
+    expect(defaultSource).toContain('--duration-base: 160ms;')
+    expect(defaultSource).toContain('--ease-standard: cubic-bezier(0.2, 0, 0, 1);')
+  })
+
+  it('defines a global prefers-reduced-motion media query suppressing transitions and animations', () => {
+    expect(indexSource).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*animation-duration:\s*0\.01ms[\s\S]*transition-duration:\s*0\.01ms/,
+    )
+  })
+
+  it('defines visible focus-visible indicator with theme accent', () => {
+    expect(indexSource).toMatch(
+      /:focus-visible\s*\{[\s\S]*outline:\s*1px solid var\(--color-info\);[\s\S]*outline-offset:\s*1px;/,
+    )
+  })
+
+  it('defines button micro-interaction transitions', () => {
+    expect(indexSource).toMatch(
+      /button\s*\{[\s\S]*transition-duration:\s*var\(--duration-fast\);[\s\S]*transition-timing-function:\s*var\(--ease-standard\);/,
+    )
+  })
+})

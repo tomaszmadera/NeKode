@@ -25,6 +25,7 @@ interface Props {
    */
   initialTab?: SettingsTabId
   onClose: () => void
+  onKanbanInvalidate?: (projectId: string | null) => void
 }
 
 export type SettingsTabId = 'shell' | 'actions' | 'kanban'
@@ -109,6 +110,7 @@ export function ActionSettings({
   onRefresh,
   initialTab,
   onClose,
+  onKanbanInvalidate,
 }: Props): React.JSX.Element {
   // Tab state is renderer-local (spec project-shell-selection Stage 4): the
   // Shell tab is the default, each tab keeps its own unsaved edits, and an
@@ -313,7 +315,7 @@ export function ActionSettings({
                   aria-controls={`settings-panel-${tab}`}
                   aria-selected={activeTab === tab}
                   data-testid={TAB_TEST_ID[tab]}
-                  className={`rounded-md px-3 py-2 text-left text-sm ${activeTab === tab ? 'bg-button text-ink' : 'text-ink-secondary hover:bg-highlight hover:text-ink'}`}
+                  className={`rounded-md border border-edge px-3 py-2 text-left text-sm ${activeTab === tab ? 'bg-button text-ink' : 'text-ink-secondary'}`}
                   onClick={() => setActiveTab(tab)}
                 >
                   {TAB_LABEL[tab]}
@@ -338,7 +340,7 @@ export function ActionSettings({
               {activeTab === 'shell' ? (
                 <ShellTab app={app} projectId={projectId} />
               ) : activeTab === 'kanban' ? (
-                <KanbanSettings app={app} projectId={projectId} />
+                <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
               ) : (
                 <>
                   {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is

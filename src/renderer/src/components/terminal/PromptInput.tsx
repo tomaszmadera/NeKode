@@ -66,7 +66,7 @@ export function PromptInput({
     >
       {/* overflow-hidden clips the segment group's right corners to the frame
           radius, so the group reads as the input's right segment. */}
-      <div className="flex h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-edge bg-panel pl-3 focus-within:border-info">
+      <div className="flex h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-control-edge bg-panel pl-3 focus-within:border-info">
         <span aria-hidden="true" className="select-none font-mono text-ink-muted">
           &gt;
         </span>
