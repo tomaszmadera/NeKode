@@ -767,7 +767,7 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
     fireEvent.click(within(readmeTab).getByRole('button', { name: 'README.md' }))
     expect(isTabSelected('README.md')).toBe(true)
     await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
   })
 
   it('the chat tab selected while the board is up returns to the terminal', async () => {
@@ -791,7 +791,7 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
     await waitFor(() =>
       expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
     )
-    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
   })
 
   it('selecting a chat row while the board is up shows its terminal', async () => {
@@ -808,7 +808,7 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
     await waitFor(() =>
       expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
     )
-    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
   })
 
@@ -829,7 +829,7 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
     // its surface, never a hidden strip change.
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('notes.txt')))
     await waitFor(() => expect(paneDisplay('notes.txt')).toBe('flex'))
-    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
   })
 
   it('the Files affordance stays a Files gesture while the board is up', async () => {
@@ -848,6 +848,6 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
     await screen.findByTestId(TEST_ID.fileTree)
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
     await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
   })
 })

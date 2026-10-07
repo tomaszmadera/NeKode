@@ -203,7 +203,7 @@ export function ChatTerminal({
       // mount; switching themes while a session is open applies on its next
       // open.
       theme: {
-        background: themeColor('--color-terminal', 'rgb(13 15 26)'),
+        background: themeColor('--color-terminal', 'rgb(13 18 34)'),
         foreground: themeColor('--color-ink', 'rgb(202 203 209)'),
         cursor: themeColor('--color-ink', 'rgb(202 203 209)'),
         selectionBackground: themeColor('--color-scrollbar', 'rgb(49 66 95)'),

@@ -6,8 +6,10 @@ import { IllustratedSurface } from './IllustratedSurface'
 
 export function StartNewChatSurface({
   onStartNewChat,
+  projectName,
 }: {
   onStartNewChat: () => void
+  projectName?: string
 }): React.JSX.Element {
   return (
     <IllustratedSurface
@@ -15,6 +17,7 @@ export function StartNewChatSurface({
       actionTestId={TEST_ID.startNewChatButton}
       actionLabel="New Chat"
       onPrimaryAction={onStartNewChat}
+      projectName={projectName}
     />
   )
 }

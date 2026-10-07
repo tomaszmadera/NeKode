@@ -305,6 +305,8 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     const tab = screen.getByTestId(testIdFor.tabFile('README.md'))
     expect(within(tab).getByText('README.md')).toBeTruthy()
     expect(tab.getAttribute('title')).toBe('README.md')
+    // README.md opens rendered. Code still hands the mapped language to Monaco.
+    fireEvent.click(screen.getByTestId(TEST_ID.fileMarkdownCode))
     const monaco = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewMonaco)
     expect(monaco.getAttribute('data-language')).toBe('typescript')
     expect(monaco.textContent).toBe('const x: number = 1')
@@ -329,8 +331,51 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     render(<App app={app} />)
     await enterFilesMode()
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(screen.getByTestId(TEST_ID.fileMarkdownCode))
     const monaco = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewMonaco)
     expect(monaco.getAttribute('data-language')).toBe('plaintext')
+  })
+
+  it('switches a markdown file between code and rendered preview from the action row', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockListings(app)
+    vi.mocked(app.files.read).mockImplementation(async (_projectId, relativePath) => {
+      if (relativePath === 'README.md') {
+        return { kind: 'text', content: '# Title\n\nHello', language: 'markdown' }
+      }
+      return { kind: 'text', content: 'const x = 1', language: 'typescript' }
+    })
+
+    render(<App app={app} />)
+    await enterFilesMode()
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
+    const rendered = await within(pane('README.md')).findByTestId(TEST_ID.fileMarkdownRender)
+    expect(rendered.querySelector('h1')?.textContent).toBe('Title')
+    expect(within(pane('README.md')).queryByTestId(TEST_ID.filePreviewMonaco)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.fileMarkdownPreview).getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+
+    fireEvent.click(screen.getByTestId(TEST_ID.fileMarkdownCode))
+    await within(pane('README.md')).findByTestId(TEST_ID.filePreviewMonaco)
+    expect(within(pane('README.md')).queryByTestId(TEST_ID.fileMarkdownRender)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.fileMarkdownCode).getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
+    await within(pane('src/app.ts')).findByTestId(TEST_ID.filePreviewMonaco)
+    expect(screen.queryByTestId(TEST_ID.fileMarkdownCode)).toBeNull()
+
+    // The file tab's test id is the container; the select control is its inner button.
+    const readmeTab = screen.getByTestId(testIdFor.tabFile('README.md'))
+    fireEvent.click(within(readmeTab).getByRole('button', { name: 'README.md' }))
+    expect(screen.getByTestId(TEST_ID.fileMarkdownCode).getAttribute('aria-pressed')).toBe('true')
+    expect(within(pane('README.md')).getByTestId(TEST_ID.filePreviewMonaco)).toBeTruthy()
+    expect(within(pane('README.md')).queryByTestId(TEST_ID.fileMarkdownRender)).toBeNull()
+
+    fireEvent.click(screen.getByTestId(TEST_ID.fileMarkdownPreview))
+    expect(within(pane('README.md')).getByTestId(TEST_ID.fileMarkdownRender)).toBeTruthy()
+    expect(within(pane('README.md')).queryByTestId(TEST_ID.filePreviewMonaco)).toBeNull()
   })
 
   it('shows the too-large and binary fallbacks with Open externally', async () => {

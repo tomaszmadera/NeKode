@@ -1,12 +1,10 @@
 import type React from 'react'
 import { useEffect, useState } from 'react'
 import type { ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
-import { LEFT_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { NoticeBanner } from './NoticeBanner'
-import { ResizeHandle } from './ResizeHandle'
 
 // Left navigation (UX-UI §9-10): a "Projects" section header carries the
 // icon-only Add Project button (user decision 2026-10-01); project rows
@@ -22,16 +20,6 @@ import { ResizeHandle } from './ResizeHandle'
 // remove button.
 
 interface LeftNavigationProps {
-  width: number
-  /** Floating theme variant (lib/theme.ts): detached rounded panel with
-      margins around it and a gap to the center column, instead of the
-      window-edge column with a right hairline. */
-  floating?: boolean
-  /** Mirrors the files panel's slide (left-to-right; only right after
-      leaving Project Files). */
-  slideIn?: boolean
-  onResizeStart: (event: React.PointerEvent<HTMLElement>) => void
-  onResizeNudge: (delta: number) => void
   projects: ProjectInfo[]
   projectNamesUppercase?: boolean
   chatsByProject: Record<string, ChatInfo[]>
@@ -77,7 +65,7 @@ interface LeftNavigationProps {
   onRequestCloseChat: (chatId: string) => void
   notice: string | null
   /** Bottom-of-panel strip (App Settings opener), rendered after the
-      scrollable list and above the resize handle. */
+      scrollable list. The slot owns the resize handle. */
   children?: React.ReactNode
 }
 
@@ -88,11 +76,6 @@ interface ContextMenuState {
 }
 
 export function LeftNavigation({
-  width,
-  floating = false,
-  slideIn = false,
-  onResizeStart,
-  onResizeNudge,
   projects,
   projectNamesUppercase = true,
   chatsByProject,
@@ -144,18 +127,7 @@ export function LeftNavigation({
   }
 
   return (
-    <aside
-      className={cn(
-        'relative flex shrink-0 flex-col bg-panel',
-        // Floating theme: the panel floats detached from the window edges
-        // (user request 2026-10-04); overflow-hidden clips the right-edge
-        // resize strip and the notice banner to the rounded corners.
-        floating ? 'm-2 overflow-hidden rounded-lg border border-edge' : 'border-r border-edge',
-        slideIn && 'slide-in-from-left',
-      )}
-      style={{ width }}
-      data-testid={TEST_ID.leftNav}
-    >
+    <div className="flex h-full min-h-0 w-full flex-col bg-panel">
       {/* The brand strip left with the window title bar (user decision
           2026-10-01); the panel starts with the notices and Projects header. */}
       <NoticeBanner notice={notice} />
@@ -211,7 +183,7 @@ export function LeftNavigation({
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'relative flex h-control items-center overflow-hidden rounded-md pl-1 pr-2 py-1.5 transition-colors',
+                      'relative flex h-control items-center overflow-hidden rounded-md pl-1 pr-2 py-1.5 transition-colors duration-fast ease-standard',
                       isSelected ? 'bg-highlight' : 'hover:bg-row-hover',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
@@ -288,7 +260,7 @@ export function LeftNavigation({
                         <div className="mt-1 pl-6">
                           <button
                             type="button"
-                            className="flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-ink-secondary hover:bg-row-hover"
+                            className="flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-ink-secondary hover:bg-row-hover transition-colors duration-fast ease-standard"
                             data-testid={testIdFor.projectKanban(project.id)}
                             onClick={() => onOpenProjectKanban(project.id)}
                           >
@@ -375,7 +347,7 @@ export function LeftNavigation({
                                   <button
                                     type="button"
                                     className={cn(
-                                      'flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-chat-title',
+                                      'flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-chat-title transition-colors duration-fast ease-standard',
                                       isChatSelected
                                         ? 'bg-highlight text-ink'
                                         : 'hover:bg-row-hover',
@@ -454,16 +426,7 @@ export function LeftNavigation({
           }}
         />
       ) : null}
-      <ResizeHandle
-        axis="x"
-        size={width}
-        minSize={LEFT_REGION_SIZE.min}
-        maxSize={LEFT_REGION_SIZE.max}
-        onResizeStart={onResizeStart}
-        onResizeNudge={onResizeNudge}
-        testId={TEST_ID.leftResizeHandle}
-      />
-    </aside>
+    </div>
   )
 }
 

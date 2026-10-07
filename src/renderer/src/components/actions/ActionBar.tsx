@@ -6,6 +6,7 @@ import { cn } from '../../lib/cn'
 import { actionIconGlyph, Icon, type LucideIcon } from '../../lib/icons'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import { TEST_ID } from '../../lib/test-ids'
+import type { MarkdownViewMode } from '../files/markdown-path'
 
 interface ActionBarProps {
   app: AppApi
@@ -26,6 +27,14 @@ interface ActionBarProps {
   onResume: () => void
   onError: (message: string) => void
   onSettings: () => void
+  /**
+   * Code / Preview for the active markdown file tab. Null when the active
+   * tab is not a markdown file (user decision 2026-10-06).
+   */
+  markdownView: {
+    mode: MarkdownViewMode
+    onChange: (mode: MarkdownViewMode) => void
+  } | null
 }
 
 /** Fixed Handoff command (English, spec Behaviour 2). */
@@ -73,6 +82,7 @@ export function ActionBar({
   onResume,
   onError,
   onSettings,
+  markdownView,
 }: ActionBarProps): React.JSX.Element {
   const [states, setStates] = useState<Record<string, ActionExecution>>({})
   // A status read is stamped with the run epoch. execute() bumps it first, so
@@ -227,37 +237,39 @@ export function ActionBar({
 
   return (
     <div
-      className="flex shrink-0 items-center gap-2 overflow-x-auto border-y border-edge px-2 py-2"
+      role="toolbar"
+      aria-label="Agent controls"
+      className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-edge px-3 py-2"
       data-testid={TEST_ID.actionRowSlot}
     >
       {[
         { name: 'Handoff and Resume', items: fixed.slice(0, 2) },
         { name: 'Stop and Continue', items: fixed.slice(2) },
       ].map((group) => (
-        <fieldset
-          key={group.name}
-          className="flex h-control shrink-0 items-stretch overflow-hidden rounded-md bg-button"
-        >
+        <fieldset key={group.name} className="nk-btn-group shrink-0">
           <legend className="sr-only">{group.name}</legend>
           {group.items.map((item, index) => {
             const FixedIcon = item.icon
+            const isDisabled = !chatIsLive || !activeChatId
             return (
-              <div key={item.label} className="flex items-stretch">
+              <div key={item.label} className="flex items-center">
                 {index > 0 ? (
-                  // Toolbar-standard separator (design doc 5): a single
-                  // low-contrast hairline, vertically centered, shorter than
-                  // the buttons.
-                  <span aria-hidden="true" className="h-4 w-px self-center bg-divider" />
+                  // Toolbar separator from design reference (1px x 16px hairline)
+                  <span aria-hidden="true" className="h-4 w-px bg-edge" />
                 ) : null}
                 <button
                   type="button"
-                  disabled={!chatIsLive || !activeChatId}
-                  className="flex items-center gap-1.5 bg-button px-3 text-sm text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
+                  disabled={isDisabled}
+                  className="nk-tb"
                   onClick={() => {
                     runFixed(item.action)
                   }}
                 >
-                  <FixedIcon size={14} aria-hidden />
+                  <FixedIcon
+                    size={15}
+                    aria-hidden
+                    className={isDisabled ? 'text-ink-disabled' : 'text-ink-secondary'}
+                  />
                   {item.label}
                 </button>
               </div>
@@ -268,6 +280,7 @@ export function ActionBar({
       {visible.map((action) => {
         const state = states[action.id]
         const status = state?.status ?? 'idle'
+        const isRunning = status === 'running'
         // A preset icon name renders as its Lucide glyph; any other stored
         // value (custom emoji) stays literal text before the title. The
         // capitalized alias keeps JSX from reading the variable as a DOM tag.
@@ -287,50 +300,92 @@ export function ActionBar({
           .filter(Boolean)
           .join('\n')
         return (
-          <button
-            key={action.id}
-            type="button"
-            disabled={status === 'running'}
-            title={details}
-            data-status={status}
-            className={cn(
-              'flex shrink-0 items-center gap-1.5 self-stretch rounded-md bg-button px-3 text-sm hover:bg-button-hover disabled:text-ink-disabled',
-              status === 'failed' && 'text-error',
-              status === 'running' && 'text-info',
-              status === 'idle' && 'text-ink',
-            )}
-            onClick={() => {
-              void execute(action)
-            }}
-          >
-            <StateIcon
-              size={14}
-              aria-hidden
-              className={cn(status === 'running' && 'animate-spin')}
-            />
-            {!actionIconGlyph(action.icon) && action.icon ? (
-              <span aria-hidden="true" className={cn(status === 'running' && 'animate-spin')}>
-                {action.icon}
-              </span>
-            ) : null}
-            {action.title}
-          </button>
+          <div key={action.id} className="nk-btn-group shrink-0">
+            <button
+              type="button"
+              disabled={isRunning}
+              title={details}
+              data-status={status}
+              data-active={isRunning ? 'true' : 'false'}
+              className={cn(
+                'nk-tb',
+                isRunning && 'active text-info',
+                status === 'failed' && 'text-error',
+              )}
+              onClick={() => {
+                void execute(action)
+              }}
+            >
+              <StateIcon
+                size={15}
+                aria-hidden
+                className={cn(
+                  isRunning && 'animate-spin',
+                  status === 'idle' && 'text-ink-secondary',
+                )}
+              />
+              {!actionIconGlyph(action.icon) && action.icon ? (
+                <span aria-hidden="true" className={cn(isRunning && 'animate-spin')}>
+                  {action.icon}
+                </span>
+              ) : null}
+              {action.title}
+            </button>
+          </div>
         )
       })}
-      {/* Icon-only ghost control: no fill at rest or on hover (user request
-          2026-10-04, the tab strip's New chat treatment): the icon brightens
-          from --color-ink-secondary to --color-ink. The accessible name and
-          tooltip come from aria-label and title since the visible label is
-          gone. */}
-      <button
-        type="button"
-        className="ml-auto flex shrink-0 items-center justify-center self-stretch rounded-md px-2 text-ink-secondary hover:text-ink"
-        aria-label="Actions"
-        title="Actions"
-        onClick={onSettings}
-      >
-        <Icon.settings size={14} aria-hidden />
-      </button>
+      {/* Settings stays at the right end. A markdown file tab adds
+          Code | Preview just before it (user decision 2026-10-06). */}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {markdownView !== null ? (
+          <fieldset className="nk-btn-group shrink-0">
+            <legend className="sr-only">Markdown view</legend>
+            <button
+              type="button"
+              className={cn('nk-tb', markdownView.mode === 'code' && 'active')}
+              aria-pressed={markdownView.mode === 'code'}
+              data-testid={TEST_ID.fileMarkdownCode}
+              onClick={() => {
+                markdownView.onChange('code')
+              }}
+            >
+              <Icon.code
+                size={15}
+                aria-hidden
+                className={markdownView.mode === 'code' ? 'text-ink' : 'text-ink-secondary'}
+              />
+              Code
+            </button>
+            <span aria-hidden="true" className="h-4 w-px bg-edge" />
+            <button
+              type="button"
+              className={cn('nk-tb', markdownView.mode === 'preview' && 'active')}
+              aria-pressed={markdownView.mode === 'preview'}
+              data-testid={TEST_ID.fileMarkdownPreview}
+              onClick={() => {
+                markdownView.onChange('preview')
+              }}
+            >
+              <Icon.preview
+                size={15}
+                aria-hidden
+                className={markdownView.mode === 'preview' ? 'text-ink' : 'text-ink-secondary'}
+              />
+              Preview
+            </button>
+          </fieldset>
+        ) : null}
+        {/* Icon-only ghost control matching design reference (32x32) */}
+        <button
+          type="button"
+          className="nk-tb !h-8 !w-8 justify-center !p-0 text-ink-secondary hover:text-ink"
+          aria-label="Actions"
+          title="Actions"
+          onClick={onSettings}
+        >
+          <Icon.settings size={16} aria-hidden />
+        </button>
+      </div>
     </div>
   )
 }

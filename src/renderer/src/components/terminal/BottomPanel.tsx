@@ -75,6 +75,7 @@ export function BottomPanel({
         onResizeNudge={onResizeNudge}
         testId={TEST_ID.bottomResizeHandle}
       />
+      {/* border-b is the tabs' bottom edge (user decision 2026-10-06). */}
       {visibleTabs.length > 0 ? (
         <div className="flex h-8 shrink-0 items-stretch overflow-x-auto border-b border-edge bg-app px-1 pt-1">
           {visibleTabs.map((tab) => {
@@ -83,8 +84,8 @@ export function BottomPanel({
               <div
                 key={tab.id}
                 className={cn(
-                  'flex shrink-0 items-stretch rounded-t-md',
-                  selected ? 'bg-button' : 'border border-edge bg-tab-inactive hover:bg-highlight',
+                  'flex shrink-0 items-stretch rounded-t-md border-x border-t border-edge transition-colors duration-fast ease-standard',
+                  selected ? 'bg-button' : 'bg-tab-inactive',
                 )}
                 data-testid={testIdFor.bottomTab(tab.id)}
                 data-selected={selected ? 'true' : 'false'}
@@ -92,8 +93,8 @@ export function BottomPanel({
                 <button
                   type="button"
                   className={cn(
-                    'max-w-48 truncate px-3 text-xs text-ink-secondary hover:text-ink',
-                    selected && 'text-ink',
+                    'max-w-48 truncate px-3 text-xs transition-colors duration-fast ease-standard',
+                    selected ? 'text-ink' : 'text-ink-secondary',
                   )}
                   data-selected={selected ? 'true' : 'false'}
                   onClick={() => onSelectTab(tab.id)}
@@ -102,7 +103,7 @@ export function BottomPanel({
                 </button>
                 <button
                   type="button"
-                  className="flex items-center px-2 text-ink-muted hover:bg-highlight hover:text-ink"
+                  className="flex items-center px-2 text-ink-muted"
                   aria-label={`Close ${tab.label}`}
                   data-testid={testIdFor.bottomTabClose(tab.id)}
                   onClick={() => onCloseTab(tab.id)}
@@ -114,7 +115,7 @@ export function BottomPanel({
           })}
           <button
             type="button"
-            className="flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+            className="flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-xs text-ink-secondary hover:text-ink transition-colors duration-fast ease-standard"
             data-testid={TEST_ID.bottomNewTerminal}
             onClick={onNewTerminal}
           >

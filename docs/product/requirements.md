@@ -36,7 +36,7 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
 
 4. **Przeglądanie plików projektu:**
    - Drzewo plików projektu w lewym panelu z możliwością zwijania/rozwijania katalogów.
-   - Podgląd zawartości plików w trybie tylko do odczytu (read-only) przy użyciu komponentu Monaco Editor.
+   - Podgląd zawartości plików w trybie tylko do odczytu (read-only) przy użyciu komponentu Monaco Editor. Plik Markdown (`md`, `markdown`) ma w pasku akcji przełącznik `Code` | `Preview` (decyzja użytkownika 2026-10-06): `Preview` jest domyślny i renderuje ten sam tekst jako Markdown, `Code` pokazuje Monaco. Wybór jest pamiętany per plik w sesji aplikacji i nie jest zapisywany.
 
 5. **Pasek akcji projektu (Action Bar):**
    - Pasek akcji w kolumnie środkowej, bezpośrednio pod paskiem zakładek (decyzja użytkownika 2026-09-26): stałe grupy `Handoff | Resume` i `Stop | Continue`, a następnie konfigurowalne przyciski do uruchamiania zdefiniowanych poleceń projektu (np. dev server, testy, build, weryfikacja).

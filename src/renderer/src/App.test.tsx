@@ -2296,7 +2296,7 @@ describe('chat closing on terminal exit (Stage 4)', () => {
 
   it('closing the last chat selects the previous one, then the Start new chat state', async () => {
     await renderWithChats([chatOne, chatTwo], 't2')
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', 'D:/code/demo'))
+    await waitFor(() => expect(exitListenersByChat.get('t2')?.size).toBe(1))
 
     // The closed chat was last in tree order: the previous chat is selected.
     emitExit('t2', 0)
@@ -2308,6 +2308,8 @@ describe('chat closing on terminal exit (Stage 4)', () => {
 
     // Closing that one too leaves the project without chats: the empty state
     // offers "Start new chat" (spec Behaviour 11).
+    // Selection can render before the terminal subscribes to its exit event.
+    await waitFor(() => expect(exitListenersByChat.get('t1')?.size).toBe(1))
     emitExit('t1', 0)
     await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t1'))
     const emptyState = await screen.findByTestId(TEST_ID.startNewChatState)

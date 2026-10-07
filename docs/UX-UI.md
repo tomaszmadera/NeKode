@@ -201,7 +201,7 @@ Layout:
 [Handoff | Resume]   [Stop | Continue]   ▶ Docker Up   🧪 Tests   🚀 Deploy
 ```
 
-The fixed groups come first, then the configurable actions.
+The fixed groups come first, then the configurable actions. When a markdown file tab is active, `Code` and `Preview` sit at the right, before the settings control (§19).
 
 Possible actions:
 
@@ -542,6 +542,15 @@ priority. Opening an item shows a read-only review with the full title and the
 description. The refresh icon sits on the right of the same header; every icon
 control carries an accessible name (§63).
 
+Each visited project's board stays cached in memory for the app session.
+Tab return and Refresh keep the loaded content usable while showing
+`Refreshing board...`. View, scroll, and review survive tab switches;
+successful refreshes reconcile items and states, and failures keep cached
+content with an inline error. Project removal and saved Kanban settings
+invalidate the affected cache. The current read-only surface uses 12.6px body
+text and 14.7px headings. See the
+[cached rendering contract](features/kanban-adapter-interface/spec.md#cached-board-rendering-amendment-user-decision-2026-10-06).
+
 ---
 
 # 19. File Tree and File Preview
@@ -553,6 +562,8 @@ The Project Files view supports:
 - read-only file preview,
 - syntax highlighting,
 - line numbers.
+
+A markdown file (`md` or `markdown`) adds `Code` and `Preview` to the action row, in front of the settings control (user decision 2026-10-06). `Preview` is the default and renders that text as Markdown. `Code` shows the read-only Monaco preview. The choice stays with that file for the app session and is not saved. Raw HTML is not executed. Only `http` and `https` links open, through the existing external-URL allowlist. Remote and relative images show their alt text. A too-large or binary result keeps its fallback in either mode.
 
 MVP does not require editing.
 

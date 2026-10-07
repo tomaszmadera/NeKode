@@ -569,6 +569,7 @@ When a user clicks a file:
 - display it read-only,
 - use Monaco Editor,
 - apply syntax highlighting where supported,
+- for a markdown file, offer `Code` and `Preview` in the action row (`Preview` is the default rendered Markdown, `Code` is Monaco; user decision 2026-10-06, contract in `docs/features/project-files-view/spec.md`),
 - do not implement editing in the MVP.
 
 Requirements:

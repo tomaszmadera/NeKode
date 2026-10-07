@@ -46,11 +46,11 @@ function createWindow(): void {
     // the first renderer paint.
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#0b0d1f',
+      color: '#0d1222',
       symbolColor: '#cacbd1',
       height: 36,
     },
-    backgroundColor: '#0b0d1f',
+    backgroundColor: '#0d1222',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
