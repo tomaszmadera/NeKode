@@ -83,6 +83,12 @@ interface ChatTerminalProps {
   /** Spawn failure (e.g. project directory missing): typed error state. */
   onSpawnError: (message: string) => void
   /**
+   * Skip `terminals:create` for this mount. A failed task launch already owns
+   * the chat; the project shell must not replace the profile process. The
+   * host remounts this view when the hold clears.
+   */
+  suppressSpawn?: boolean
+  /**
    * Attention signals parsed from this terminal's stream (chat attention
    * badge spec Behaviour 2-3): BEL as a standalone bell, or an OSC 9
    * notification with its message text (null for an empty one). Detection is
@@ -141,6 +147,7 @@ export function ChatTerminal({
   terminalFontSize,
   terminalFontFamilies = DEFAULT_TERMINAL_FONT_FAMILIES,
   terminalCtrlVPaste = true,
+  suppressSpawn = false,
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -166,6 +173,8 @@ export function ChatTerminal({
   const onInputDeliveredRef = useRef(onInputDelivered)
   const onReadyRef = useRef(onReady)
   const terminalCtrlVPasteRef = useRef(terminalCtrlVPaste)
+  // Read inside the mount effect. A change does not respawn; the host remounts.
+  const suppressSpawnRef = useRef(suppressSpawn)
   // Live copy/paste entry points of the mounted terminal, for the right-click
   // menu rendered outside the mount effect. Null while unmounted.
   const clipboardRef = useRef<{
@@ -184,6 +193,7 @@ export function ChatTerminal({
   onInputDeliveredRef.current = onInputDelivered
   onReadyRef.current = onReady
   terminalCtrlVPasteRef.current = terminalCtrlVPaste
+  suppressSpawnRef.current = suppressSpawn
 
   useEffect(() => {
     const container = containerRef.current
@@ -547,18 +557,24 @@ export function ChatTerminal({
     // Lazy spawn: the main process creates the PTY on this first attach.
     // An exit can unmount this view before create resolves. Completion after
     // cleanup must not mark the chat live or flush a pending command.
+    // A held task launch skips this call so the project shell cannot replace
+    // a profile process that has not received its argv yet.
     let disposed = false
-    void appRef.current.terminals
-      .create(chatId, cwd)
-      .then(() => {
-        if (disposed) return
-        fitAndResize()
-        onReadyRef.current?.()
-      })
-      .catch((error: unknown) => {
-        if (disposed) return
-        onSpawnErrorRef.current(errorMessage(error, 'Failed to start the terminal for this chat.'))
-      })
+    if (!suppressSpawnRef.current) {
+      void appRef.current.terminals
+        .create(chatId, cwd)
+        .then(() => {
+          if (disposed) return
+          fitAndResize()
+          onReadyRef.current?.()
+        })
+        .catch((error: unknown) => {
+          if (disposed) return
+          onSpawnErrorRef.current(
+            errorMessage(error, 'Failed to start the terminal for this chat.'),
+          )
+        })
+    }
 
     // Fit on workspace open and on container resize. ResizeObserver is the
     // precise signal where available (jsdom tests fall back to window resize).

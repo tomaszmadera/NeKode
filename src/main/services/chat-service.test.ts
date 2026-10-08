@@ -89,6 +89,21 @@ describe('ChatService', () => {
     expect(created.name.length).toBeGreaterThan(0)
   })
 
+  it('createNamed stores the profile name and create keeps the shell label', () => {
+    const { projects, chats } = createServices({ chatName: () => 'PowerShell' })
+    const project = projects.add(demoPath)
+    const named = chats.createNamed(project.id, '  Codex  ')
+    expect(named.name).toBe('Codex')
+    const shell = chats.create(project.id)
+    expect(shell.name).toBe('PowerShell')
+    expect(
+      chats
+        .list(project.id)
+        .map((chat) => chat.name)
+        .sort(),
+    ).toEqual(['Codex', 'PowerShell'])
+  })
+
   it('rejects an empty derived name', () => {
     const { projects, chats } = createServices({ chatName: () => '   ' })
     const project = projects.add(demoPath)

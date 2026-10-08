@@ -264,6 +264,54 @@ describe('KanbanService config', () => {
       }),
     ).toThrow(AppError)
   })
+
+  it('keeps handoff links on an identical rewrite and deletes them on a real change', () => {
+    const links = JSON.stringify({ links: { demo: { native: { name: 'a.md', ref: 'D-1' } } } })
+    const stored = {
+      'project.kanbanAdapter:p1': 'demo',
+      'project.kanbanConfig:p1': JSON.stringify({ base_url: 'https://x' }),
+      'project.kanbanHandoffLinks:p1': links,
+    }
+    // Adapter and values unchanged: the explicit links survive.
+    const identical = makeService({ store: stored })
+    identical.service.setConfig('p1', { adapterId: 'demo', values: { base_url: 'https://x' } })
+    expect(identical.state.dump()['project.kanbanHandoffLinks:p1']).toBe(links)
+
+    // A changed value invalidates them.
+    const changedValue = makeService({ store: stored })
+    changedValue.service.setConfig('p1', { adapterId: 'demo', values: { base_url: 'https://y' } })
+    expect(changedValue.state.dump()['project.kanbanHandoffLinks:p1']).toBeUndefined()
+
+    // A changed adapter invalidates them even with identical values.
+    const changedAdapter = makeService({ store: stored })
+    changedAdapter.service.setConfig('p1', { adapterId: 'other', values: {} })
+    expect(changedAdapter.state.dump()['project.kanbanHandoffLinks:p1']).toBeUndefined()
+
+    // Deselecting a bound adapter invalidates them.
+    const deselected = makeService({ store: stored })
+    deselected.service.setConfig('p1', { adapterId: null, values: {} })
+    expect(deselected.state.dump()['project.kanbanHandoffLinks:p1']).toBeUndefined()
+
+    // Deselecting an already-unbound project keeps them.
+    const unbound = makeService({
+      store: { 'project.kanbanAdapter:p1': '', 'project.kanbanHandoffLinks:p1': links },
+    })
+    unbound.service.setConfig('p1', { adapterId: null, values: {} })
+    expect(unbound.state.dump()['project.kanbanHandoffLinks:p1']).toBe(links)
+  })
+
+  it('cleanupProject deletes the handoff link document too', () => {
+    const { service, state } = makeService({
+      store: {
+        'project.kanbanAdapter:p1': 'demo',
+        'project.kanbanConfig:p1': JSON.stringify({}),
+        'project.kanbanHandoffLinks:p1': JSON.stringify({ links: {} }),
+      },
+    })
+    service.cleanupProject('p1')
+    expect(state.dump()['project.kanbanHandoffLinks:p1']).toBeUndefined()
+    expect(state.dump()['project.kanbanAdapter:p1']).toBeUndefined()
+  })
 })
 
 describe('KanbanService actions', () => {
@@ -518,6 +566,48 @@ describe('KanbanService actions', () => {
       // The adapter's own code is surfaced verbatim (spec Errors), not
       // collapsed into the generic 'adapter' code.
       await expect(adapter.service.listBoard('p1')).rejects.toMatchObject({ code: 'network' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('KanbanService getItem', () => {
+  it('rejects an empty ref before the adapter host', async () => {
+    const { service, invoke } = makeService()
+    await expect(service.getItem('p1', '  ')).rejects.toMatchObject({ code: 'validation' })
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('calls adapter getItem with { ref } and returns the normalized item', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
+      require('node:fs') as typeof import('node:fs')
+    const { tmpdir } = require('node:os') as typeof import('node:os')
+    const { join } = require('node:path') as typeof import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-getitem-'))
+    try {
+      const adapterDir = join(dir, 'demo')
+      mkdirSync(adapterDir)
+      writeFileSync(
+        join(adapterDir, 'adapter.json'),
+        JSON.stringify({
+          id: 'demo',
+          name: 'Demo',
+          protocolVersion: 1,
+          invocation: { command: 'node', args: ['a.js'] },
+          configSchema: [],
+        }),
+      )
+      const { service, invoke } = makeService({
+        adaptersDir: dir,
+        store: { 'project.kanbanAdapter:p1': 'demo' },
+      })
+      invoke.mockResolvedValue(item)
+      await expect(service.getItem('p1', 'DEMO-1')).resolves.toEqual(item)
+      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+      expect(request.protocolVersion).toBe(1)
+      expect(request.action).toBe('getItem')
+      expect(request.params).toEqual({ ref: 'DEMO-1' })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

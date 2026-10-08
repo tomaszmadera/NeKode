@@ -67,14 +67,26 @@ export class ChatService {
    * identity.
    */
   create(projectId: string): ChatInfo {
-    const name = this.chatNameForProject(projectId).trim()
+    return this.insert(projectId, this.chatNameForProject(projectId).trim(), 'chats:create')
+  }
+
+  /**
+   * Inserts a chat with a main-owned name. Task launch uses the agent profile
+   * name. `chats:create` does not call this and still does not accept a name
+   * from the renderer.
+   */
+  createNamed(projectId: string, name: string): ChatInfo {
+    return this.insert(projectId, name.trim(), 'kanban:launchTask')
+  }
+
+  private insert(projectId: string, name: string, channel: string): ChatInfo {
     if (name.length === 0) {
-      throw new AppError('validation', 'Chat name must not be empty.', 'chats:create')
+      throw new AppError('validation', 'Chat name must not be empty.', channel)
     }
 
     const project = this.db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)
     if (!project) {
-      throw new AppError('not_found', 'Project not found.', 'chats:create')
+      throw new AppError('not_found', 'Project not found.', channel)
     }
 
     const id = randomUUID()
@@ -83,8 +95,8 @@ export class ChatService {
         .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
         .run(id, projectId, name, new Date().toISOString())
     } catch (error) {
-      console.error('[sqlite] chats:create failed:', error)
-      throw new AppError('sqlite', 'Database error.', 'chats:create')
+      console.error(`[sqlite] ${channel} failed:`, error)
+      throw new AppError('sqlite', 'Database error.', channel)
     }
 
     return { id, projectId, name }

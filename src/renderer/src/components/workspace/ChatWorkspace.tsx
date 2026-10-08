@@ -11,6 +11,7 @@ import {
 import { playAttentionChime } from '../../lib/chime'
 import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { EMPTY_HELD_LAUNCHES, type HeldLaunch } from '../kanban/held-launch'
 import { ChatTerminal } from '../terminal/ChatTerminal'
 import type { PromptInjection } from '../terminal/PromptInput'
 import { StartNewChatSurface } from './StartNewChatSurface'
@@ -111,6 +112,16 @@ interface ChatWorkspaceProps {
    * badge re-renders without a new signal (spec AC2/AC8).
    */
   attentionSettings: AttentionSettings
+  /**
+   * Task launches whose argv was not delivered. Those chats show the spawn
+   * error and must not start the project shell. Clearing an entry remounts
+   * the view so it can attach to the profile process.
+   */
+  heldLaunches?: Readonly<Record<string, HeldLaunch>>
+  /** Retry of a held launch. Uses the original attempt id. */
+  onRetryHeldLaunch?: (chatId: string) => void
+  /** Chat whose held retry is in flight. Its Retry control stays disabled. */
+  retryingLaunchChatId?: string | null
 }
 
 function freshRecord(cwd: string): SessionRecord {
@@ -140,6 +151,9 @@ export function ChatWorkspace({
   attention,
   onAttentionChange,
   attentionSettings,
+  heldLaunches = EMPTY_HELD_LAUNCHES,
+  onRetryHeldLaunch,
+  retryingLaunchChatId = null,
 }: ChatWorkspaceProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Record<string, SessionRecord>>({})
   // Chats whose exit already started the close flow (guards duplicate exits).
@@ -155,6 +169,9 @@ export function ChatWorkspace({
   // Latest attention settings without re-subscribing the signal path.
   const attentionSettingsRef = useRef(attentionSettings)
   attentionSettingsRef.current = attentionSettings
+  const heldLaunchesRef = useRef(heldLaunches)
+  heldLaunchesRef.current = heldLaunches
+  const previousHeldRef = useRef(heldLaunches)
 
   /** A signal from one of this workspace's terminals. A hidden chat's signal
    * always marks the chat; the SELECTED chat's signal marks it too, but only
@@ -249,12 +266,25 @@ export function ChatWorkspace({
     // chat when chats.remove rejects) must not swallow this session's exit —
     // a fresh session always ends in a fresh close flow.
     closingChatIdsRef.current.delete(selectedChatId)
+    const held = heldLaunchesRef.current[selectedChatId]
     setSessions((previous) => {
       const existing = previous[selectedChatId]
       if (existing === undefined) {
-        return { ...previous, [selectedChatId]: freshRecord(cwd) }
+        const created = freshRecord(cwd)
+        if (held !== undefined) {
+          return {
+            ...previous,
+            [selectedChatId]: { ...created, status: 'error', errorMessage: held.message },
+          }
+        }
+        return { ...previous, [selectedChatId]: created }
       }
       if (existing.status === 'running') {
+        return previous
+      }
+      // A held launch keeps this chat. Re-selecting it must not start the
+      // project shell; Retry goes through the original attempt.
+      if (heldLaunchesRef.current[selectedChatId] !== undefined) {
         return previous
       }
       // Failed session re-selected: replace it with a fresh process (and view).
@@ -292,6 +322,43 @@ export function ChatWorkspace({
       onAttentionChange(pruned)
     }
   }, [chatsByProject, onAttentionChange])
+
+  // A cleared hold remounts that chat so the view can attach to the profile
+  // process. A new hold marks an existing session failed without spawning.
+  useEffect(() => {
+    const previousHeld = previousHeldRef.current
+    previousHeldRef.current = heldLaunches
+    if (previousHeld === heldLaunches) {
+      return
+    }
+    setSessions((previous) => {
+      let changed = false
+      const next = { ...previous }
+      for (const chatId of Object.keys(previousHeld)) {
+        if (heldLaunches[chatId] !== undefined) {
+          continue
+        }
+        const record = next[chatId]
+        if (record === undefined) {
+          continue
+        }
+        next[chatId] = { ...freshRecord(record.cwd), generation: record.generation + 1 }
+        changed = true
+      }
+      for (const [chatId, held] of Object.entries(heldLaunches)) {
+        const record = next[chatId]
+        if (record === undefined) {
+          continue
+        }
+        if (record.status === 'error' && record.errorMessage === held.message) {
+          continue
+        }
+        next[chatId] = { ...record, status: 'error', errorMessage: held.message }
+        changed = true
+      }
+      return changed ? next : previous
+    })
+  }, [heldLaunches])
 
   // Selecting a chat clears its attention badge (Behaviour 6 / AC5): the user
   // is looking at it, so the badge has nothing left to say. The clearing rides
@@ -382,6 +449,7 @@ export function ChatWorkspace({
                 terminalFontSize={terminalFontSize}
                 terminalFontFamilies={terminalFontFamilies}
                 terminalCtrlVPaste={terminalCtrlVPaste}
+                suppressSpawn={heldLaunches[chatId] !== undefined}
                 onExit={() => handleExit(chatId)}
                 onClose={() => handleExit(chatId)}
                 onSpawnError={(message) => handleSpawnError(chatId, message)}
@@ -400,8 +468,15 @@ export function ChatWorkspace({
               />
               {record.status === 'error' && chatId === selectedChatId ? (
                 <SpawnErrorOverlay
-                  message={record.errorMessage}
-                  onRetry={() => handleRetry(chatId)}
+                  message={heldLaunches[chatId]?.message ?? record.errorMessage}
+                  disabled={retryingLaunchChatId === chatId}
+                  onRetry={() => {
+                    if (heldLaunches[chatId] !== undefined) {
+                      onRetryHeldLaunch?.(chatId)
+                      return
+                    }
+                    handleRetry(chatId)
+                  }}
                 />
               ) : null}
             </div>
@@ -428,9 +503,11 @@ export function ChatWorkspace({
 function SpawnErrorOverlay({
   message,
   onRetry,
+  disabled = false,
 }: {
   message: string | null
   onRetry: () => void
+  disabled?: boolean
 }): React.JSX.Element {
   return (
     <div
@@ -443,8 +520,9 @@ function SpawnErrorOverlay({
       </p>
       <button
         type="button"
-        className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
+        className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover disabled:opacity-50"
         data-testid={TEST_ID.terminalRetry}
+        disabled={disabled}
         onClick={onRetry}
       >
         Retry

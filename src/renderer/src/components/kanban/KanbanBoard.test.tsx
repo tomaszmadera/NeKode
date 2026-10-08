@@ -45,6 +45,12 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
+function listedKanbanItemIds(group: HTMLElement): Array<string | null> {
+  return within(group)
+    .getAllByTestId(/^kanban-item-NK-/)
+    .map((element) => element.getAttribute('data-testid'))
+}
+
 function item(ref: string, title: string, stateId: string): WorkItem {
   return {
     ref,
@@ -196,11 +202,11 @@ describe('cached background refresh', () => {
     expect(screen.queryByTestId(testIdFor.kanbanItem('NK-3'))).toBeNull()
     expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBe(unchanged)
     const backlog = screen.getByTestId(testIdFor.kanbanColumn('s1'))
-    expect(
-      within(backlog)
-        .getAllByRole('button')
-        .map((b) => b.dataset.testid),
-    ).toEqual(['kanban-item-NK-9', 'kanban-item-NK-1', 'kanban-item-NK-2'])
+    expect(listedKanbanItemIds(backlog)).toEqual([
+      testIdFor.kanbanItem('NK-9'),
+      testIdFor.kanbanItem('NK-1'),
+      testIdFor.kanbanItem('NK-2'),
+    ])
     expect(screen.getAllByTestId(/^kanban-column-/)[0].textContent).toBe('Working')
     expect(root.scrollTop).toBe(180)
     expect(screen.queryByRole('status')).toBeNull()
@@ -215,7 +221,7 @@ describe('cached background refresh', () => {
       .mockRejectedValueOnce({ nekodeAppError: true, code: 'network', message: 'Offline' })
       .mockResolvedValueOnce({ ...fixture, items: [] })
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItem('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const review = screen.getByTestId(TEST_ID.kanbanReview)
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
@@ -550,7 +556,7 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
         onConfigure={vi.fn()}
       />,
     )
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItem('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
 
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
     const title = within(review).getByTestId(TEST_ID.kanbanReviewTitle)
@@ -578,7 +584,7 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
         onConfigure={vi.fn()}
       />,
     )
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItem('NK-2')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-2')))
     expect(await screen.findByTestId(TEST_ID.kanbanReviewDescription)).toHaveProperty(
       'textContent',
       'No description.',
@@ -593,7 +599,7 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
         onConfigure={vi.fn()}
       />,
     )
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItem('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     await screen.findByTestId(TEST_ID.kanbanReview)
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
@@ -609,7 +615,7 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     }
     const listBoard = vi.fn().mockResolvedValueOnce(kept).mockResolvedValueOnce(dropped)
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItem('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     await screen.findByTestId(TEST_ID.kanbanReview)
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
@@ -622,7 +628,7 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
   it('keeps the review open when a refresh still includes that item', async () => {
     const listBoard = vi.fn().mockResolvedValue(richBoard())
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItem('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     await screen.findByTestId(TEST_ID.kanbanReview)
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
@@ -806,10 +812,7 @@ describe('kanban list — sorting items', () => {
     expect(directionBtn.getAttribute('aria-label')).toBe('Sort ascending')
 
     const s1Group = screen.getByTestId(testIdFor.kanbanListGroup('s1'))
-    let itemRefs = within(s1Group)
-      .getAllByRole('button')
-      .slice(1)
-      .map((btn) => btn.getAttribute('data-testid'))
+    let itemRefs = listedKanbanItemIds(s1Group)
     expect(itemRefs).toEqual([
       testIdFor.kanbanItem('NK-1'),
       testIdFor.kanbanItem('NK-2'),
@@ -818,10 +821,7 @@ describe('kanban list — sorting items', () => {
 
     fireEvent.click(directionBtn)
     expect(directionBtn.getAttribute('aria-label')).toBe('Sort descending')
-    itemRefs = within(s1Group)
-      .getAllByRole('button')
-      .slice(1)
-      .map((btn) => btn.getAttribute('data-testid'))
+    itemRefs = listedKanbanItemIds(s1Group)
     expect(itemRefs).toEqual([
       testIdFor.kanbanItem('NK-10'),
       testIdFor.kanbanItem('NK-2'),
@@ -830,10 +830,7 @@ describe('kanban list — sorting items', () => {
 
     fireEvent.change(sortSelect, { target: { value: 'priority' } })
     expect(sortSelect.value).toBe('priority')
-    itemRefs = within(s1Group)
-      .getAllByRole('button')
-      .slice(1)
-      .map((btn) => btn.getAttribute('data-testid'))
+    itemRefs = listedKanbanItemIds(s1Group)
     expect(itemRefs).toEqual([
       testIdFor.kanbanItem('NK-1'),
       testIdFor.kanbanItem('NK-10'),
@@ -842,10 +839,7 @@ describe('kanban list — sorting items', () => {
 
     fireEvent.click(directionBtn)
     expect(directionBtn.getAttribute('aria-label')).toBe('Sort ascending')
-    itemRefs = within(s1Group)
-      .getAllByRole('button')
-      .slice(1)
-      .map((btn) => btn.getAttribute('data-testid'))
+    itemRefs = listedKanbanItemIds(s1Group)
     expect(itemRefs).toEqual([
       testIdFor.kanbanItem('NK-2'),
       testIdFor.kanbanItem('NK-10'),
@@ -899,9 +893,127 @@ describe('kanban list — sorting items', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewList))
     expect(screen.getByTestId(TEST_ID.kanbanSortBy)).toBeTruthy()
 
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItem('NK-1')))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.kanbanSortBy)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanSortDirection)).toBeNull()
+  })
+})
+
+describe('kanban work item controls (task launch navigation)', () => {
+  it('opens the review only from the ref and the title, by pointer and keyboard', async () => {
+    render(
+      <KanbanBoard
+        app={appWith(vi.fn().mockResolvedValue(richBoard()))}
+        projectId="p1"
+        onConfigure={vi.fn()}
+      />,
+    )
+
+    const row = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
+    expect(row.tagName).toBe('DIV')
+    expect(row.querySelector('button button')).toBeNull()
+    expect(row.style.minHeight).toBe('40.35px')
+    expect(row.className).not.toContain('hover:bg-highlight')
+    expect(within(row).getByTestId(testIdFor.kanbanItemStart('NK-1')).textContent).toBe('Start')
+    expect(within(row).getByTestId(testIdFor.kanbanItemResume('NK-1')).textContent).toBe('Resume')
+
+    const ref = within(row).getByTestId(testIdFor.kanbanItemRef('NK-1'))
+    const title = within(row).getByTestId(testIdFor.kanbanItemTitle('NK-1'))
+    const start = within(row).getByTestId(testIdFor.kanbanItemStart('NK-1'))
+    const resume = within(row).getByTestId(testIdFor.kanbanItemResume('NK-1'))
+    expect(title.className).toContain('truncate')
+    expect(title.className).toContain('hover:bg-highlight')
+    expect(ref.className).toContain('focus-visible:outline-2')
+    for (const control of [ref, title, start, resume]) {
+      expect(control.tagName).toBe('BUTTON')
+      expect(control.getAttribute('type')).toBe('button')
+      control.focus()
+      expect(document.activeElement).toBe(control)
+    }
+
+    fireEvent.click(row)
+    fireEvent.click(within(row).getByText('High'))
+    start.focus()
+    fireEvent.keyDown(start, { key: 'Enter' })
+    fireEvent.click(start)
+    resume.focus()
+    fireEvent.keyDown(resume, { key: ' ' })
+    fireEvent.click(resume)
+    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    ref.focus()
+    fireEvent.keyDown(ref, { key: 'Enter' })
+    fireEvent.click(ref)
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
+
+    const titleAgain = screen.getByTestId(testIdFor.kanbanItemTitle('NK-1'))
+    titleAgain.focus()
+    fireEvent.keyDown(titleAgain, { key: 'Enter' })
+    fireEvent.click(titleAgain)
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
+
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
+    const card = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
+    expect(card.tagName).toBe('DIV')
+    expect(card.style.minHeight).toBe('')
+    expect(card.className).not.toContain('hover:bg-highlight')
+    expect(card.querySelector('button button')).toBeNull()
+    fireEvent.click(card)
+    fireEvent.click(within(card).getByText('High'))
+    const cardStart = within(card).getByTestId(testIdFor.kanbanItemStart('NK-1'))
+    const cardResume = within(card).getByTestId(testIdFor.kanbanItemResume('NK-1'))
+    cardStart.focus()
+    expect(document.activeElement).toBe(cardStart)
+    fireEvent.keyDown(cardStart, { key: 'Enter' })
+    fireEvent.click(cardStart)
+    fireEvent.click(cardResume)
+    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    const cardRef = within(card).getByTestId(testIdFor.kanbanItemRef('NK-1'))
+    cardRef.focus()
+    fireEvent.click(cardRef)
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
+  })
+
+  it('asks the host to open Start and Resume', async () => {
+    const onStart = vi.fn()
+    const onResume = vi.fn()
+    render(
+      <KanbanBoard
+        app={appWith(vi.fn().mockResolvedValue(richBoard()))}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={onStart}
+        onResume={onResume}
+      />,
+    )
+    const start = await screen.findByTestId(testIdFor.kanbanItemStart('NK-1'))
+    fireEvent.click(start)
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(onStart.mock.calls[0]?.[0].ref).toBe('NK-1')
+    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemResume('NK-1')))
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(onResume).toHaveBeenCalledTimes(1)
+    expect(onResume.mock.calls[0]?.[0].ref).toBe('NK-1')
+    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
+  })
+
+  it('leaves Resume inert when the host wires no handler', async () => {
+    render(
+      <KanbanBoard
+        app={appWith(vi.fn().mockResolvedValue(richBoard()))}
+        projectId="p1"
+        onConfigure={vi.fn()}
+      />,
+    )
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemResume('NK-1')))
+    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

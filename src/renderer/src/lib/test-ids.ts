@@ -133,6 +133,13 @@ export const TEST_ID = {
   /** Active adapters directory display + Browse override. */
   settingsKanbanDir: 'settings-kanban-dir',
   settingsKanbanDirBrowse: 'settings-kanban-dir-browse',
+  /** Project Settings: Agents tab (kanban task launch amendment). */
+  settingsAgentsTab: 'settings-agents-tab',
+  settingsAgentsPanel: 'settings-agents-panel',
+  settingsAgentsEmpty: 'settings-agents-empty',
+  settingsAgentsError: 'settings-agents-error',
+  settingsAgentsDefault: 'settings-agents-default',
+  settingsAgentsDefaultBadge: 'settings-agents-default-badge',
   /** Read-only Kanban board surface (spec kanban-adapter-interface Behaviour 14). */
   kanbanBoard: 'kanban-board',
   kanbanBoardLoading: 'kanban-board-loading',
@@ -154,6 +161,42 @@ export const TEST_ID = {
   kanbanReviewBack: 'kanban-review-back',
   kanbanReviewTitle: 'kanban-review-title',
   kanbanReviewDescription: 'kanban-review-description',
+  /** Start confirmation. Rendered by the app shell, not inside the board. */
+  kanbanStartDialog: 'kanban-start-dialog',
+  kanbanStartTask: 'kanban-start-task',
+  kanbanStartLoading: 'kanban-start-loading',
+  kanbanStartEmpty: 'kanban-start-empty',
+  kanbanStartError: 'kanban-start-error',
+  kanbanStartCancel: 'kanban-start-cancel',
+  kanbanStartConfirm: 'kanban-start-confirm',
+  kanbanStartConfigure: 'kanban-start-configure',
+  /** Resume modal (handoff match and link, kanban task launch amendment).
+      Rendered by the app shell, not inside the board. */
+  kanbanResumeDialog: 'kanban-resume-dialog',
+  kanbanResumeTask: 'kanban-resume-task',
+  kanbanResumeLoading: 'kanban-resume-loading',
+  kanbanResumeError: 'kanban-resume-error',
+  kanbanResumeConfigure: 'kanban-resume-configure',
+  kanbanResumeRefresh: 'kanban-resume-refresh',
+  /** No linked handoff and no automatic candidate. */
+  kanbanResumeEmpty: 'kanban-resume-empty',
+  /** The list of matching candidates (metadata or filename). */
+  kanbanResumeCandidates: 'kanban-resume-candidates',
+  /** Rejected files with their visible reason. */
+  kanbanResumeWarnings: 'kanban-resume-warnings',
+  /** Opens the manual Link handoff file list. */
+  kanbanResumeLink: 'kanban-resume-link',
+  kanbanResumeLinkList: 'kanban-resume-link-list',
+  kanbanResumeLinkConfirm: 'kanban-resume-link-confirm',
+  kanbanResumeCancel: 'kanban-resume-cancel',
+  /** Confirm of a Resume launch. Disabled until the scan, file and profile hold. */
+  kanbanResumeConfirm: 'kanban-resume-confirm',
+  /** Resume modal: shown when the project has no agent profiles. */
+  kanbanResumeProfilesEmpty: 'kanban-resume-profiles-empty',
+  /** Resume modal: opens Project Settings on the Agents tab. */
+  kanbanResumeConfigureAgents: 'kanban-resume-configure-agents',
+  /** Resume modal: the agent-profile load failed. */
+  kanbanResumeProfileError: 'kanban-resume-profile-error',
   /** Shell tab: detecting indicator, per-project select, custom path add. */
   settingsShellDetecting: 'settings-shell-detecting',
   settingsShellSelect: 'settings-shell-select',
@@ -208,6 +251,22 @@ export const testIdFor = {
   kanbanColumn: (stateId: string): string => `kanban-column-${stateId}`,
   /** One work item on the board or the list, keyed by its ref (Plane slug). */
   kanbanItem: (ref: string): string => `kanban-item-${ref}`,
+  /** Ref control that opens the review. Not the row or card background. */
+  kanbanItemRef: (ref: string): string => `kanban-item-ref-${ref}`,
+  /** Title control that opens the review. */
+  kanbanItemTitle: (ref: string): string => `kanban-item-title-${ref}`,
+  /** Visible Start control. Opens the launch confirmation in the app shell. */
+  kanbanItemStart: (ref: string): string => `kanban-item-start-${ref}`,
+  /** Visible Resume control. Opens the Resume and handoff confirmation. */
+  kanbanItemResume: (ref: string): string => `kanban-item-resume-${ref}`,
+  /** One agent profile radio in the Start confirmation. */
+  kanbanStartProfile: (profileId: string): string => `kanban-start-profile-${profileId}`,
+  /** One handoff candidate row in the Resume modal, keyed by file name. */
+  kanbanResumeCandidate: (name: string): string => `kanban-resume-candidate-${name}`,
+  /** One agent profile radio in the Resume modal. */
+  kanbanResumeProfile: (profileId: string): string => `kanban-resume-profile-${profileId}`,
+  /** One file row in the Resume modal's manual Link handoff list. */
+  kanbanResumeLinkOption: (name: string): string => `kanban-resume-link-option-${name}`,
   /** One state group in the list view, keyed by the adapter state id. */
   kanbanListGroup: (stateId: string): string => `kanban-list-group-${stateId}`,
   /** Toggle button for collapsing or expanding a state group in the list view. */
