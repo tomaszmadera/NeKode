@@ -11,6 +11,7 @@ import {
   KANBAN_PRIORITIES,
   projectKanbanAdapterKey,
   projectKanbanConfigKey,
+  projectKanbanHandoffLinksKey,
 } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import { AdapterHost, toAppError } from './adapter-host'
@@ -32,6 +33,7 @@ const CHANNEL = {
   listBoard: 'kanban:listBoard',
   createItem: 'kanban:createItem',
   updateItem: 'kanban:updateItem',
+  getItem: 'kanban:getItem',
 } as const
 
 /** Minimal project lookup (the ProjectService surface this service needs). */
@@ -144,6 +146,10 @@ export class KanbanService {
 
   setConfig(projectId: string, input: KanbanSetConfigInput): void {
     this.assertProject(projectId)
+    // A changed binding or config invalidates this project's explicit handoff
+    // links (spec Powiązanie handoffu 5); an identical rewrite keeps them.
+    const previousAdapter = this.#state.get(projectKanbanAdapterKey(projectId)) ?? ''
+    const previousConfig = this.#state.get(projectKanbanConfigKey(projectId)) ?? ''
     if (typeof input !== 'object' || input === null) {
       throw new AppError(
         'validation',
@@ -179,6 +185,9 @@ export class KanbanService {
     if (adapterId === null) {
       // Deselect keeps stored values (spec Behaviour 7).
       this.#state.set(projectKanbanAdapterKey(projectId), '')
+      if (previousAdapter !== '') {
+        this.#state.delete(projectKanbanHandoffLinksKey(projectId))
+      }
       return
     }
 
@@ -216,7 +225,11 @@ export class KanbanService {
       }
     }
     this.#state.set(projectKanbanAdapterKey(projectId), adapterId)
-    this.#state.set(projectKanbanConfigKey(projectId), JSON.stringify(merged))
+    const nextConfig = JSON.stringify(merged)
+    this.#state.set(projectKanbanConfigKey(projectId), nextConfig)
+    if (adapterId !== previousAdapter || nextConfig !== previousConfig) {
+      this.#state.delete(projectKanbanHandoffLinksKey(projectId))
+    }
   }
 
   async test(projectId: string, values?: Record<string, string>): Promise<void> {
@@ -276,10 +289,24 @@ export class KanbanService {
     return normalizeItem(data, 'updateItem data')
   }
 
+  /** Live item for task launch. Adapter action `getItem` with `{ ref }`. */
+  async getItem(projectId: string, ref: string): Promise<WorkItem> {
+    if (typeof ref !== 'string' || ref.trim().length === 0) {
+      throw new AppError(
+        'validation',
+        'kanban:getItem ref must be a non-empty string',
+        CHANNEL.getItem,
+      )
+    }
+    const data = await this.invoke<unknown>(projectId, 'getItem', undefined, { ref })
+    return normalizeItem(data, 'getItem data')
+  }
+
   /** Cascade cleanup on projects:remove (spec Behaviour 11). */
   cleanupProject(projectId: string): void {
     this.#state.delete(projectKanbanAdapterKey(projectId))
     this.#state.delete(projectKanbanConfigKey(projectId))
+    this.#state.delete(projectKanbanHandoffLinksKey(projectId))
   }
 
   private assertProject(projectId: string): { path: string } {
@@ -341,7 +368,7 @@ export class KanbanService {
 
   private async invoke<T>(
     projectId: string,
-    action: 'test' | 'listStates' | 'listItems' | 'createItem' | 'updateItem',
+    action: 'test' | 'listStates' | 'listItems' | 'createItem' | 'updateItem' | 'getItem',
     valuesOverride: Record<string, string> | undefined,
     params: Record<string, unknown>,
   ): Promise<T> {

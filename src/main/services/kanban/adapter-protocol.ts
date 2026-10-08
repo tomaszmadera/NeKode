@@ -125,12 +125,10 @@ export function normalizeItems(data: unknown): WorkItem[] {
 /**
  * Valid action names of protocol v1 (the service is the only caller).
  *
- * `getItem` is part of the protocol vocabulary (spec Behaviour 4: it is a
- * valid action an adapter must implement), so it stays in this allowlist. The
- * spec's IPC Data/API list fixes the app's channels and contains no
- * `kanban:getItem`, so no KanbanService method or IPC channel invokes it in
- * this stage — a deliberate deferral, not a missing wiring. Re-add the call
- * site when a read-one surface is specced.
+ * `getItem` stays in this allowlist. `KanbanService.getItem` invokes it with
+ * `{ ref }` for the `kanban:getItem` channel and for task launch, which
+ * refetches the live item instead of reusing the cached board. Protocol
+ * version stays 1. This is app IPC, not a protocol change.
  */
 export const ADAPTER_ACTIONS = [
   'test',

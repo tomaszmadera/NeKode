@@ -3,6 +3,7 @@ import {
   APP_STATE_KEY,
   IPC_CHANNEL,
   projectHandoffDirKey,
+  projectKanbanHandoffLinksKey,
   projectShellKey,
 } from '../../shared/ipc-contract'
 import { AppError, type AppErrorPayload, toTransportError } from '../../shared/ipc-error'
@@ -125,12 +126,16 @@ export function registerAppIpcHandlers(
     }
     const chatIds = services.chats.list(projectId).map((chat) => chat.id)
     const result = services.projects.remove(projectId)
+    // An in-flight Start must not spawn into the project that was just removed.
+    services.kanban.dropLaunchProject(projectId)
     // The removed project's per-project settings have no owner anymore (spec
-    // handoff-resume-flow Behaviour 8, project-shell-selection Behaviour 9);
-    // the FK cascade cannot reach app_state keys.
+    // handoff-resume-flow Behaviour 8, project-shell-selection Behaviour 9,
+    // kanban task launch amendment). The FK cascade cannot reach app_state.
     services.state.delete(projectHandoffDirKey(projectId))
     services.state.delete(projectShellKey(projectId))
+    services.state.delete(projectKanbanHandoffLinksKey(projectId))
     services.kanban.cleanupProject(projectId)
+    services.agentProfiles.cleanupProject(projectId)
     services.actions.stopForProject(projectId)
     for (const chatId of chatIds) {
       services.terminals.terminate(chatId)

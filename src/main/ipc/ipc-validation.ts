@@ -1,7 +1,15 @@
 import { isAbsolute } from 'node:path'
 import { isBottomTabId } from '../../shared/bottom-tab-id'
-import type { ActionInput, KanbanCreateInput, KanbanUpdatePatch } from '../../shared/ipc-contract'
-import { KANBAN_PRIORITIES } from '../../shared/ipc-contract'
+import type {
+  ActionInput,
+  AgentProfilePut,
+  KanbanCreateInput,
+  KanbanHandoffCandidatesInput,
+  KanbanLaunchTaskInput,
+  KanbanLinkHandoffInput,
+  KanbanUpdatePatch,
+} from '../../shared/ipc-contract'
+import { agentProfileFieldError, KANBAN_PRIORITIES } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import type { AppServices } from './service-registry'
 
@@ -146,6 +154,39 @@ function assertOptionalKanbanValues(
   assertKanbanValues(value, label)
 }
 
+const AGENT_PROFILE_PUT_KEYS = ['id', 'name', 'executable', 'args', 'isDefault']
+
+function assertAgentProfilePut(value: unknown, label: string): asserts value is AgentProfilePut {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+  const input = value as Record<string, unknown>
+  const keys = Object.keys(input)
+  if (
+    keys.length !== AGENT_PROFILE_PUT_KEYS.length ||
+    keys.some((key) => !AGENT_PROFILE_PUT_KEYS.includes(key))
+  ) {
+    fail(label, 'has unexpected or missing fields')
+  }
+  if (input.id !== null) {
+    assertString(input.id, `${label}.id`)
+    if ((input.id as string).length === 0) fail(`${label}.id`, 'must be non-empty')
+  }
+  assertString(input.name, `${label}.name`)
+  assertString(input.executable, `${label}.executable`)
+  if (!Array.isArray(input.args)) fail(`${label}.args`, 'must be an array')
+  input.args.forEach((arg, index) => {
+    assertString(arg, `${label}.args[${index}]`)
+  })
+  if (typeof input.isDefault !== 'boolean') fail(`${label}.isDefault`, 'must be a boolean')
+  const message = agentProfileFieldError({
+    name: input.name as string,
+    executable: input.executable as string,
+    args: input.args as string[],
+  })
+  if (message !== null) throw new ValidationError(message)
+}
+
 function assertKanbanSetConfig(
   value: unknown,
   label: string,
@@ -222,6 +263,112 @@ function assertKanbanUpdatePatch(
     (typeof input.priority !== 'string' || !KANBAN_PRIORITIES.includes(input.priority as never))
   ) {
     fail(`${label}.priority`, `must be one of ${KANBAN_PRIORITIES.join('|')}`)
+  }
+}
+
+const LAUNCH_TASK_FIELDS = ['projectId', 'itemId', 'ref', 'profileId', 'attemptId', 'mode'] as const
+const LAUNCH_TASK_RESUME_FIELDS = [...LAUNCH_TASK_FIELDS, 'fileName', 'stamp'] as const
+
+function assertKanbanLaunchTask(
+  value: unknown,
+  label: string,
+): asserts value is KanbanLaunchTaskInput {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+  const input = value as Record<string, unknown>
+  if (input.mode !== 'start' && input.mode !== 'resume') {
+    fail(`${label}.mode`, 'must be "start" or "resume"')
+  }
+  const allowed: readonly string[] =
+    input.mode === 'resume' ? LAUNCH_TASK_RESUME_FIELDS : LAUNCH_TASK_FIELDS
+  const keys = Object.keys(input)
+  if (keys.length !== allowed.length || keys.some((key) => !allowed.includes(key))) {
+    fail(label, 'has unexpected or missing fields')
+  }
+  for (const field of ['projectId', 'itemId', 'ref', 'profileId', 'attemptId'] as const) {
+    const fieldValue = input[field]
+    if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
+      fail(`${label}.${field}`, 'must be a non-empty string')
+    }
+    if (fieldValue.includes('\u0000')) {
+      fail(`${label}.${field}`, 'must not contain NUL characters')
+    }
+  }
+  if (input.mode === 'resume') {
+    for (const field of ['fileName', 'stamp'] as const) {
+      const fieldValue = input[field]
+      if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
+        fail(`${label}.${field}`, 'must be a non-empty string')
+      }
+      if (fieldValue.includes('\u0000')) {
+        fail(`${label}.${field}`, 'must not contain NUL characters')
+      }
+    }
+    // The renderer sends a name from a scan result main just produced, never a
+    // free path: a separator or a dot segment is rejected here (same rule as
+    // kanban:linkHandoff).
+    const fileName = input.fileName as string
+    if (/[\\/]/.test(fileName) || fileName === '.' || fileName === '..') {
+      fail(`${label}.fileName`, 'must be a file name, not a path')
+    }
+  }
+}
+
+const HANDOFF_CANDIDATES_FIELDS = ['projectId', 'itemId', 'ref'] as const
+const LINK_HANDOFF_FIELDS = ['projectId', 'itemId', 'ref', 'fileName'] as const
+
+/** Shared projectId/itemId/ref shape for the two handoff channels. */
+function assertHandoffIdentity(
+  input: Record<string, unknown>,
+  label: string,
+  fields: readonly string[],
+): void {
+  const keys = Object.keys(input)
+  if (keys.length !== fields.length || keys.some((key) => !fields.includes(key))) {
+    fail(label, 'has unexpected or missing fields')
+  }
+  for (const field of ['projectId', 'itemId', 'ref'] as const) {
+    const fieldValue = input[field]
+    if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
+      fail(`${label}.${field}`, 'must be a non-empty string')
+    }
+    if ((fieldValue as string).includes('\u0000')) {
+      fail(`${label}.${field}`, 'must not contain NUL characters')
+    }
+  }
+}
+
+function assertKanbanHandoffCandidates(
+  value: unknown,
+  label: string,
+): asserts value is KanbanHandoffCandidatesInput {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+  assertHandoffIdentity(value as Record<string, unknown>, label, HANDOFF_CANDIDATES_FIELDS)
+}
+
+function assertKanbanLinkHandoff(
+  value: unknown,
+  label: string,
+): asserts value is KanbanLinkHandoffInput {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+  const input = value as Record<string, unknown>
+  assertHandoffIdentity(input, label, LINK_HANDOFF_FIELDS)
+  const fileName = input.fileName
+  if (typeof fileName !== 'string' || fileName.trim().length === 0) {
+    fail(`${label}.fileName`, 'must be a non-empty string')
+  }
+  if ((fileName as string).includes('\u0000')) {
+    fail(`${label}.fileName`, 'must not contain NUL characters')
+  }
+  // The renderer sends a name from a scan result main just produced, never a
+  // free path: a separator or a dot segment is rejected here.
+  if (/[\\/]/.test(fileName as string) || fileName === '.' || fileName === '..') {
+    fail(`${label}.fileName`, 'must be a file name, not a path')
   }
 }
 
@@ -329,10 +476,16 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel('state:set', ['string', 'string'], (args) =>
       services.state.set(args[0], args[1]),
     ),
-    // Chat terminals (Stage 3): one PTY per chat, spawned lazily on create.
-    serviceChannel('terminals:create', ['string', 'path'], (args) =>
-      services.terminals.create(args[0], args[1]),
-    ),
+    // Chat terminals: one PTY per chat, spawned lazily on create. A failed
+    // task launch owns that chat until argv is delivered; the renderer must
+    // not start the project shell in its place.
+    serviceChannel('terminals:create', ['string', 'path'], (args) => {
+      const chatId = args[0] as string
+      if (services.kanban.blocksProjectShell(chatId)) {
+        throw new AppError('conflict', 'Failed to start the terminal process.', 'terminals:create')
+      }
+      return services.terminals.create(chatId, args[1] as string)
+    }),
     serviceChannel('terminals:write', ['string', 'string'], (args) =>
       services.terminals.write(args[0], args[1]),
     ),
@@ -444,6 +597,70 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
           args[1] as string,
           args[2] as KanbanUpdatePatch,
         ),
+    },
+    {
+      channel: 'kanban:getItem',
+      parse: (payload) => {
+        requireArgs(payload, 2, 'kanban:getItem')
+        assertString(payload[0], 'kanban:getItem arg[0]')
+        assertString(payload[1], 'kanban:getItem arg[1]')
+        if ((payload[0] as string).length === 0 || (payload[1] as string).length === 0) {
+          fail('kanban:getItem', 'requires non-empty projectId and ref')
+        }
+        return payload
+      },
+      invoke: (args) => services.kanban.getItem(args[0] as string, args[1] as string),
+    },
+    {
+      channel: 'kanban:launchTask',
+      parse: (payload) => {
+        requireArgs(payload, 1, 'kanban:launchTask')
+        assertKanbanLaunchTask(payload[0], 'kanban:launchTask')
+        return payload
+      },
+      invoke: (args) => services.kanban.launchTask(args[0] as KanbanLaunchTaskInput),
+    },
+    {
+      channel: 'kanban:handoffCandidates',
+      parse: (payload) => {
+        requireArgs(payload, 1, 'kanban:handoffCandidates')
+        assertKanbanHandoffCandidates(payload[0], 'kanban:handoffCandidates')
+        return payload
+      },
+      invoke: (args) => services.kanban.handoffCandidates(args[0] as KanbanHandoffCandidatesInput),
+    },
+    {
+      channel: 'kanban:linkHandoff',
+      parse: (payload) => {
+        requireArgs(payload, 1, 'kanban:linkHandoff')
+        assertKanbanLinkHandoff(payload[0], 'kanban:linkHandoff')
+        return payload
+      },
+      invoke: (args) => services.kanban.linkHandoff(args[0] as KanbanLinkHandoffInput),
+    },
+    serviceChannel('agentProfiles:get', ['string'], (args) => services.agentProfiles.get(args[0])),
+    {
+      channel: 'agentProfiles:put',
+      parse: (payload) => {
+        requireArgs(payload, 2, 'agentProfiles:put')
+        assertString(payload[0], 'agentProfiles:put arg[0]')
+        assertAgentProfilePut(payload[1], 'agentProfiles:put arg[1]')
+        return payload
+      },
+      invoke: (args) => services.agentProfiles.put(args[0] as string, args[1] as AgentProfilePut),
+    },
+    {
+      channel: 'agentProfiles:delete',
+      parse: (payload) => {
+        requireArgs(payload, 2, 'agentProfiles:delete')
+        assertString(payload[0], 'agentProfiles:delete arg[0]')
+        assertString(payload[1], 'agentProfiles:delete arg[1]')
+        if ((payload[1] as string).length === 0) {
+          fail('agentProfiles:delete arg[1]', 'must be non-empty')
+        }
+        return payload
+      },
+      invoke: (args) => services.agentProfiles.delete(args[0] as string, args[1] as string),
     },
     {
       channel: 'dialogs:pickDirectory',

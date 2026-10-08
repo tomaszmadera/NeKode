@@ -5,6 +5,7 @@ import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { ACTION_ICON_NAMES, ACTION_NONE, actionIconGlyph } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
+import { AgentProfilesSettings } from '../settings/AgentProfilesSettings'
 import { KanbanSettings } from '../settings/KanbanSettings'
 import { ShellTab } from '../settings/ShellTab'
 
@@ -28,20 +29,22 @@ interface Props {
   onKanbanInvalidate?: (projectId: string | null) => void
 }
 
-export type SettingsTabId = 'shell' | 'actions' | 'kanban'
+export type SettingsTabId = 'shell' | 'actions' | 'kanban' | 'agents'
 
-const SETTINGS_TABS = ['shell', 'actions', 'kanban'] as const
+const SETTINGS_TABS = ['shell', 'actions', 'kanban', 'agents'] as const
 
 const TAB_LABEL: Record<SettingsTabId, string> = {
   shell: 'Shell',
   actions: 'Actions & Configuration',
   kanban: 'Kanban',
+  agents: 'Agents',
 }
 
 const TAB_TEST_ID: Record<SettingsTabId, string> = {
   shell: TEST_ID.settingsShellTab,
   actions: TEST_ID.settingsActionsTab,
   kanban: TEST_ID.settingsKanbanTab,
+  agents: TEST_ID.settingsAgentsTab,
 }
 
 const POWERSHELL_PREFIX = 'powershell -NoProfile -ExecutionPolicy Bypass -File '
@@ -341,6 +344,8 @@ export function ActionSettings({
                 <ShellTab app={app} projectId={projectId} />
               ) : activeTab === 'kanban' ? (
                 <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
+              ) : activeTab === 'agents' ? (
+                <AgentProfilesSettings app={app} projectId={projectId} />
               ) : (
                 <>
                   {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is

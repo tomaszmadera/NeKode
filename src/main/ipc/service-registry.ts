@@ -2,14 +2,21 @@ import type {
   ActionControl,
   ActionExecution,
   ActionInput,
+  AgentProfilePut,
+  AgentProfilesDocument,
   ChatInfo,
   FileEntry,
   FilePreview,
   GitStatus,
+  HandoffCandidatesResult,
   HandoffEntry,
   KanbanAdapterInfo,
   KanbanBoard,
   KanbanCreateInput,
+  KanbanHandoffCandidatesInput,
+  KanbanLaunchResult,
+  KanbanLaunchTaskInput,
+  KanbanLinkHandoffInput,
   KanbanProjectConfig,
   KanbanUpdatePatch,
   ProjectInfo,
@@ -120,6 +127,31 @@ export interface AppServices {
     listBoard(projectId: string): Promise<KanbanBoard>
     createItem(projectId: string, input: KanbanCreateInput): Promise<WorkItem>
     updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem>
+    /** Adapter `getItem` `{ ref }`. Not the cached board. */
+    getItem(projectId: string, ref: string): Promise<WorkItem>
+    /** Start one task chat. Same attempt id returns the same chat. */
+    launchTask(input: KanbanLaunchTaskInput): Promise<KanbanLaunchResult>
+    /** One handoff scan for an item. Read-only; failures are distinct states. */
+    handoffCandidates(input: KanbanHandoffCandidatesInput): Promise<HandoffCandidatesResult>
+    /** Stores an explicit link for a scanned file name and re-reads candidates. */
+    linkHandoff(input: KanbanLinkHandoffInput): Promise<HandoffCandidatesResult>
+    /** Per-project key cleanup on projects:remove; not on the renderer bridge. */
+    cleanupProject(projectId: string): void
+    /** Drops in-flight Start launches for a removed project. Not on the renderer bridge. */
+    dropLaunchProject(projectId: string): void
+    /**
+     * True while a launch chat is waiting for a profile spawn. Renderer
+     * `terminals:create` must not start the project shell for that chat.
+     */
+    blocksProjectShell(chatId: string): boolean
+  }
+  agentProfiles: {
+    /** This project's document. Missing key reads as an empty document. */
+    get(projectId: string): AgentProfilesDocument
+    /** Creates or updates one profile. Invalid fields do not write. */
+    put(projectId: string, input: AgentProfilePut): AgentProfilesDocument
+    /** Deletes one profile. Deleting the default clears defaultId. */
+    delete(projectId: string, profileId: string): AgentProfilesDocument
     /** Per-project key cleanup on projects:remove; not on the renderer bridge. */
     cleanupProject(projectId: string): void
   }

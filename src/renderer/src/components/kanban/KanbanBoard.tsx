@@ -13,9 +13,9 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // Read-only Kanban surface (spec kanban-adapter-interface Behaviour 14, AC14).
 // List is the default: the same items grouped under the state names. Board is
 // one column per adapter state, ordered by `order`. Both show the ref (Plane
-// slug), a truncated title, and the priority. Opening an item replaces that
-// view with a review: the same fields, the state name, the title in full, and
-// the description. The review reads the loaded board; it does not call another
+// slug), a truncated title, and the priority. Opening the ref or the title
+// replaces that view with a review: the same fields, the state name, the title
+// in full, and the description. The review reads the loaded board; it does not call another
 // action. The header's right side carries the icon controls (user request
 // 2026-10-05): a List | Board switch and the refresh icon, each with an
 // accessible name (UX-UI §63). The surface loads lazily: exactly one
@@ -23,8 +23,10 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // project session while hidden; activation and Refresh share a background load.
 // Loading, typed error, empty board and not-configured states are inline text;
 // the not-configured state offers Configure (Project Settings on its Kanban
-// tab), mirroring the Resume picker's affordance. Read-only: no drag-and-drop
-// and no card actions.
+// tab), mirroring the Resume picker's affordance. No drag-and-drop. Start and
+// Start and Resume stay visible and do not open the review. Start asks the host
+// to open the launch confirmation; Resume asks the host to open the handoff
+// confirmation. Neither launches from the board.
 
 /** Inline render phase of the board. */
 export type KanbanBoardPhase = 'loading' | 'ready' | 'error' | 'not-configured' | 'empty'
@@ -35,6 +37,10 @@ interface KanbanBoardProps {
   projectId: string
   /** Opens Project Settings on the Kanban tab (the not-configured state). */
   onConfigure: () => void
+  /** Opens the Start confirmation in the app shell. Resume stays unwired. */
+  onStart?: (item: WorkItem) => void
+  /** Opens the Resume and handoff confirmation in the app shell. */
+  onResume?: (item: WorkItem) => void
   /** Hidden retained sessions never initiate requests. */
   active?: boolean
 }
@@ -154,8 +160,13 @@ export function boardColumns(board: KanbanBoardData): KanbanColumn[] {
   return [...columns, ...unmatched.values()]
 }
 
-const ITEM_BUTTON_CLASS =
-  'rounded-md px-1.5 py-1 text-left hover:bg-highlight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+const ITEM_CONTROL_CLASS =
+  'rounded-md px-1.5 py-0.5 text-left hover:bg-highlight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+
+/** Border box of a single-line list row before this split: 26.9px.
+ * Electron, default theme, deviceScaleFactor 1. The row is 1.5× that height.
+ */
+const LIST_ROW_MIN_HEIGHT_PX = 40.35
 
 /** Header icon toggle: the selected view keeps a highlight fill. */
 function viewButtonClass(selected: boolean): string {
@@ -177,42 +188,123 @@ function PriorityText({ priority }: { priority: KanbanPriority | null }): React.
   )
 }
 
-/** Board card or list row. The title is truncated; the review shows it in full. */
-function WorkItemButton({
+function ItemRefButton({
   item,
-  layout,
   onOpen,
 }: {
   item: WorkItem
-  layout: 'card' | 'row'
   onOpen: (ref: string) => void
 }): React.JSX.Element {
-  const titleClass =
-    layout === 'card' ? 'block truncate text-ink-secondary' : 'min-w-0 truncate text-ink-secondary'
   return (
     <button
       type="button"
-      className={
-        layout === 'card'
-          ? `block w-full ${ITEM_BUTTON_CLASS}`
-          : `grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-baseline gap-3 ${ITEM_BUTTON_CLASS}`
-      }
-      data-testid={testIdFor.kanbanItem(item.ref)}
+      className={`${ITEM_CONTROL_CLASS} shrink-0 font-medium text-ink`}
+      data-testid={testIdFor.kanbanItemRef(item.ref)}
       onClick={() => {
         onOpen(item.ref)
       }}
     >
-      {layout === 'card' ? (
-        <span className="flex items-baseline justify-between gap-2">
-          <span className="shrink-0 font-medium text-ink">{item.ref}</span>
-          <PriorityText priority={item.priority} />
-        </span>
-      ) : (
-        <span className="shrink-0 font-medium text-ink">{item.ref}</span>
-      )}
-      <span className={titleClass}>{item.title}</span>
-      {layout === 'row' ? <PriorityText priority={item.priority} /> : null}
+      {item.ref}
     </button>
+  )
+}
+
+function ItemTitleButton({
+  item,
+  onOpen,
+}: {
+  item: WorkItem
+  onOpen: (ref: string) => void
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className={`${ITEM_CONTROL_CLASS} min-w-32 max-w-full flex-1 truncate text-ink-secondary`}
+      data-testid={testIdFor.kanbanItemTitle(item.ref)}
+      onClick={() => {
+        onOpen(item.ref)
+      }}
+    >
+      {item.title}
+    </button>
+  )
+}
+
+/** Start and Resume stay visible. They do not open the review. */
+function ItemLaunchButtons({
+  item,
+  onStart,
+  onResume,
+}: {
+  item: WorkItem
+  onStart?: (item: WorkItem) => void
+  onResume?: (item: WorkItem) => void
+}): React.JSX.Element {
+  return (
+    <div className="flex shrink-0 gap-1">
+      <button
+        type="button"
+        className={`${ITEM_CONTROL_CLASS} text-ink`}
+        data-testid={testIdFor.kanbanItemStart(item.ref)}
+        onClick={() => {
+          onStart?.(item)
+        }}
+      >
+        Start
+      </button>
+      <button
+        type="button"
+        className={`${ITEM_CONTROL_CLASS} text-ink`}
+        data-testid={testIdFor.kanbanItemResume(item.ref)}
+        onClick={() => {
+          onResume?.(item)
+        }}
+      >
+        Resume
+      </button>
+    </div>
+  )
+}
+
+/** Board card or list row. Only the ref and the title open the review. */
+function WorkItemSurface({
+  item,
+  layout,
+  onOpen,
+  onStart,
+  onResume,
+}: {
+  item: WorkItem
+  layout: 'card' | 'row'
+  onOpen: (ref: string) => void
+  onStart?: (item: WorkItem) => void
+  onResume?: (item: WorkItem) => void
+}): React.JSX.Element {
+  if (layout === 'card') {
+    return (
+      <div className="w-full rounded-md px-1.5 py-1" data-testid={testIdFor.kanbanItem(item.ref)}>
+        <div className="flex items-baseline justify-between gap-2">
+          <ItemRefButton item={item} onOpen={onOpen} />
+          <PriorityText priority={item.priority} />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ItemLaunchButtons item={item} onStart={onStart} onResume={onResume} />
+          <ItemTitleButton item={item} onOpen={onOpen} />
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div
+      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-1.5 py-1"
+      style={{ minHeight: LIST_ROW_MIN_HEIGHT_PX }}
+      data-testid={testIdFor.kanbanItem(item.ref)}
+    >
+      <ItemRefButton item={item} onOpen={onOpen} />
+      <ItemTitleButton item={item} onOpen={onOpen} />
+      <PriorityText priority={item.priority} />
+      <ItemLaunchButtons item={item} onStart={onStart} onResume={onResume} />
+    </div>
   )
 }
 
@@ -364,6 +456,8 @@ export function KanbanBoard({
   app,
   projectId,
   onConfigure,
+  onStart,
+  onResume,
   active = true,
 }: KanbanBoardProps): React.JSX.Element {
   const [phase, setPhase] = useState<KanbanBoardPhase>('loading')
@@ -641,12 +735,14 @@ export function KanbanBoard({
               <ul className="space-y-1">
                 {column.items.map((item) => (
                   <li key={item.ref}>
-                    <WorkItemButton
+                    <WorkItemSurface
                       item={item}
                       layout="card"
                       onOpen={(ref) => {
                         setReviewRef(ref)
                       }}
+                      onStart={onStart}
+                      onResume={onResume}
                     />
                   </li>
                 ))}
@@ -693,12 +789,14 @@ export function KanbanBoard({
                   <ul id={listId} className="space-y-1">
                     {sortedItems.map((item) => (
                       <li key={item.ref}>
-                        <WorkItemButton
+                        <WorkItemSurface
                           item={item}
                           layout="row"
                           onOpen={(ref) => {
                             setReviewRef(ref)
                           }}
+                          onStart={onStart}
+                          onResume={onResume}
                         />
                       </li>
                     ))}

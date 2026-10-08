@@ -6,7 +6,10 @@ import type {
   ActionExecution,
   ChatInfo,
   FileEntry,
+  KanbanLaunchResult,
+  KanbanLaunchTaskInput,
   ProjectInfo,
+  WorkItem,
 } from '../../shared/ipc-contract'
 import { APP_STATE_KEY, projectKanbanAdapterKey } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
@@ -22,7 +25,10 @@ import {
   markdownViewKey,
 } from './components/files/markdown-path'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
+import type { HeldLaunch } from './components/kanban/held-launch'
 import { KanbanSessions } from './components/kanban/KanbanSessions'
+import { TaskResumeModal } from './components/kanban/TaskResumeModal'
+import { TaskStartModal } from './components/kanban/TaskStartModal'
 import { AppBrand } from './components/layout/AppBrand'
 import { ConfirmDialog } from './components/layout/ConfirmDialog'
 import { LeftNavigation } from './components/layout/LeftNavigation'
@@ -334,6 +340,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // the top-strip Kanban tab; an unbound one shows neither.
   const [kanbanProjectIds, setKanbanProjectIds] = useState<ReadonlySet<string>>(new Set())
   const [kanbanVersions, setKanbanVersions] = useState<Record<string, number>>({})
+  const [taskStart, setTaskStart] = useState<{ projectId: string; item: WorkItem } | null>(null)
+  const [taskResume, setTaskResume] = useState<{ projectId: string; item: WorkItem } | null>(null)
+  const [heldLaunches, setHeldLaunches] = useState<Record<string, HeldLaunch>>({})
+  const heldLaunchesRef = useRef(heldLaunches)
+  heldLaunchesRef.current = heldLaunches
+  const retryingLaunchRef = useRef<string | null>(null)
+  const [retryingLaunchChatId, setRetryingLaunchChatId] = useState<string | null>(null)
   const invalidateKanban = useCallback((projectId: string | null): void => {
     setKanbanVersions((previous) => {
       const next = { ...previous }
@@ -820,6 +833,54 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     setActionSettingsOpen(true)
   }, [tabProjectId])
 
+  const handleStartTask = useCallback((projectId: string, item: WorkItem): void => {
+    setTaskStart({ projectId, item })
+  }, [])
+
+  // Project Settings on the Agents tab. Start and Resume share this opener.
+  const openAgentsSettings = useCallback((projectId: string): void => {
+    setNotice(null)
+    setActionSettingsProjectId(projectId)
+    setActionSettingsTab('agents')
+    setActionSettingsOpen(true)
+  }, [])
+
+  const handleConfigureTaskAgents = useCallback((): void => {
+    const projectId = taskStart?.projectId
+    setTaskStart(null)
+    if (projectId === undefined) {
+      return
+    }
+    openAgentsSettings(projectId)
+  }, [openAgentsSettings, taskStart])
+
+  const handleConfigureResumeAgents = useCallback((): void => {
+    const projectId = taskResume?.projectId
+    setTaskResume(null)
+    if (projectId === undefined) {
+      return
+    }
+    openAgentsSettings(projectId)
+  }, [openAgentsSettings, taskResume])
+
+  const handleResumeTask = useCallback((projectId: string, item: WorkItem): void => {
+    setTaskResume({ projectId, item })
+  }, [])
+
+  // Resume with no configured directory: Configure handoffs opens Project
+  // Settings on the tab that owns the handoff directory.
+  const handleConfigureTaskHandoffs = useCallback((): void => {
+    const projectId = taskResume?.projectId
+    setTaskResume(null)
+    if (projectId === undefined) {
+      return
+    }
+    setNotice(null)
+    setActionSettingsProjectId(projectId)
+    setActionSettingsTab('actions')
+    setActionSettingsOpen(true)
+  }, [taskResume])
+
   // Closing Project Settings re-reads the Kanban bindings (spec Behaviour 14):
   // a bind/unbind saved in the dialog then shows or hides the nav tile and the
   // top-strip tab without a restart.
@@ -980,6 +1041,24 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     (projectId: string): void => {
       setNotice(null)
       void (async () => {
+        setTaskStart((current) => (current?.projectId === projectId ? null : current))
+        // The removed project's in-flight resume scan must not outlive it:
+        // clearing the state unmounts the Resume modal and invalidates the
+        // pending response (spec Bledy i wyscigi: removing a project before
+        // confirmation invalidates pending responses).
+        setTaskResume((current) => (current?.projectId === projectId ? null : current))
+        setHeldLaunches((previous) => {
+          let changed = false
+          const next: Record<string, HeldLaunch> = {}
+          for (const [chatId, held] of Object.entries(previous)) {
+            if (held.input.projectId === projectId) {
+              changed = true
+              continue
+            }
+            next[chatId] = held
+          }
+          return changed ? next : previous
+        })
         // Before the first await. A shell-name fetch already in flight must
         // not add or spawn a bottom tab, and a state update that lands after
         // the drop must not put the tab back.
@@ -1235,6 +1314,112 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app, applyChatsUpdate, persistSelection, updateTabsSession],
   )
 
+  // Start confirmation (kanban task launch). The chat is named in main. This
+  // activates the existing terminal-chat surface the same way New Chat does.
+  const adoptLaunchedChat = useCallback(
+    (projectId: string, chat: ChatInfo): void => {
+      applyChatsUpdate((previous) => {
+        const existing = previous[projectId] ?? []
+        return {
+          ...previous,
+          [projectId]: [...existing.filter((item) => item.id !== chat.id), chat],
+        }
+      })
+      setSelectedProjectId(projectId)
+      setExpandedProjectIds((previous) => new Set(previous).add(projectId))
+      setSelectedChatId(chat.id)
+      setSelectionNonce((previous) => previous + 1)
+      persistSelection(projectId, chat.id)
+      updateTabsSession(projectId, (session) => activateTab(session, TERMINAL_TAB))
+    },
+    [applyChatsUpdate, persistSelection, updateTabsSession],
+  )
+
+  const handleTaskLaunched = useCallback(
+    (projectId: string, result: KanbanLaunchResult & { input: KanbanLaunchTaskInput }): void => {
+      if (removedProjectIdsRef.current.has(projectId)) {
+        return
+      }
+      adoptLaunchedChat(projectId, result.chat)
+      if (result.delivered) {
+        setHeldLaunches((previous) => {
+          if (!(result.chat.id in previous)) {
+            return previous
+          }
+          const next = { ...previous }
+          delete next[result.chat.id]
+          return next
+        })
+      } else {
+        setHeldLaunches((previous) => ({
+          ...previous,
+          [result.chat.id]: {
+            message: 'Failed to start the terminal for this chat.',
+            input: result.input,
+          },
+        }))
+      }
+      setTaskStart(null)
+      setTaskResume(null)
+    },
+    [adoptLaunchedChat],
+  )
+
+  const handleRetryHeldLaunch = useCallback(
+    (chatId: string): void => {
+      const held = heldLaunchesRef.current[chatId]
+      if (held === undefined || retryingLaunchRef.current !== null) {
+        return
+      }
+      retryingLaunchRef.current = chatId
+      setRetryingLaunchChatId(chatId)
+      void (async () => {
+        try {
+          const result = await app.kanban.launchTask(held.input)
+          if (removedProjectIdsRef.current.has(held.input.projectId)) {
+            return
+          }
+          if (result.delivered) {
+            setHeldLaunches((previous) => {
+              if (!(chatId in previous)) {
+                return previous
+              }
+              const next = { ...previous }
+              delete next[chatId]
+              return next
+            })
+            adoptLaunchedChat(held.input.projectId, result.chat)
+          } else {
+            setHeldLaunches((previous) => ({
+              ...previous,
+              [chatId]: {
+                ...held,
+                message: 'Failed to start the terminal for this chat.',
+              },
+            }))
+          }
+        } catch (error) {
+          if (removedProjectIdsRef.current.has(held.input.projectId)) {
+            return
+          }
+          setHeldLaunches((previous) => ({
+            ...previous,
+            [chatId]: {
+              ...held,
+              message: errorMessage(error, 'Failed to start the terminal for this chat.'),
+            },
+          }))
+        } finally {
+          if (retryingLaunchRef.current === chatId) {
+            retryingLaunchRef.current = null
+            setRetryingLaunchChatId(null)
+          }
+        }
+      })()
+    },
+    [adoptLaunchedChat, app],
+  )
+
   // `+ New chat` (spec Behaviour 8): the existing new-chat flow unchanged —
   // immediate creation in the active project, shell display name, chat
   // selected and its terminal shown.
@@ -1272,6 +1457,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         // Tombstone before the map removal: fetched lists still in flight can
         // predate this close, and mergeFetchedChats must not resurrect it.
         removedChatIdsRef.current.add(chatId)
+        // A closed chat's held launch can no longer be retried: drop the entry
+        // so it does not outlive its chat in the renderer.
+        setHeldLaunches((previous) => {
+          if (!(chatId in previous)) {
+            return previous
+          }
+          const next = { ...previous }
+          delete next[chatId]
+          return next
+        })
         let successorChatId: string | null = null
         for (const [projectId, chats] of Object.entries(chatsByProjectRef.current)) {
           const index = chats.findIndex((chat) => chat.id === chatId)
@@ -1955,6 +2150,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                   onAddProject={handleAddProject}
                   promptInjection={promptInjection}
                   onPromptInjected={handlePromptInjected}
+                  heldLaunches={heldLaunches}
+                  onRetryHeldLaunch={handleRetryHeldLaunch}
+                  retryingLaunchChatId={retryingLaunchChatId}
                 />
               </div>
               <KanbanSessions
@@ -1971,6 +2169,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 }
                 versions={kanbanVersions}
                 onConfigure={handleOpenKanbanSettings}
+                onStart={handleStartTask}
+                onResume={handleResumeTask}
               />
             </main>
           </div>
@@ -1980,6 +2180,37 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           Right Panel
         </div>
       </div>
+      {taskStart !== null ? (
+        <TaskStartModal
+          key={`${taskStart.projectId}:${taskStart.item.id}`}
+          app={app}
+          projectId={taskStart.projectId}
+          item={taskStart.item}
+          onCancel={() => {
+            setTaskStart(null)
+          }}
+          onConfigureAgents={handleConfigureTaskAgents}
+          onLaunched={(result) => {
+            handleTaskLaunched(taskStart.projectId, result)
+          }}
+        />
+      ) : null}
+      {taskResume !== null ? (
+        <TaskResumeModal
+          key={`resume:${taskResume.projectId}:${taskResume.item.id}`}
+          app={app}
+          projectId={taskResume.projectId}
+          item={taskResume.item}
+          onCancel={() => {
+            setTaskResume(null)
+          }}
+          onConfigureHandoffs={handleConfigureTaskHandoffs}
+          onConfigureAgents={handleConfigureResumeAgents}
+          onLaunched={(result) => {
+            handleTaskLaunched(taskResume.projectId, result)
+          }}
+        />
+      ) : null}
       {chatToClose !== null ? (
         /* Close-chat confirmation (user request 2026-10-04): the row's X only
             requests the close; this dialog owns the destructive action.

@@ -165,6 +165,58 @@ describe('preload app api', () => {
     ])
   })
 
+  it('routes agent profile calls through typed channels', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    const input = {
+      id: null,
+      name: 'Claude',
+      executable: 'claude',
+      args: ['{prompt}'],
+      isDefault: true,
+    }
+    await api.agentProfiles.get('p1')
+    await api.agentProfiles.put('p1', input)
+    await api.agentProfiles.delete('p1', 'id-1')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.agentProfilesGet, args: ['p1'] },
+      { channel: IPC_CHANNEL.agentProfilesPut, args: ['p1', input] },
+      { channel: IPC_CHANNEL.agentProfilesDelete, args: ['p1', 'id-1'] },
+    ])
+  })
+
+  it('routes kanban getItem and launchTask through typed channels', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    const launchInput = {
+      projectId: 'p1',
+      itemId: 'native-1',
+      ref: 'DEMO-1',
+      profileId: 'prof-1',
+      attemptId: 'attempt-1',
+      mode: 'start' as const,
+    }
+    await api.kanban.getItem('p1', 'DEMO-1')
+    await api.kanban.launchTask(launchInput)
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.kanbanGetItem, args: ['p1', 'DEMO-1'] },
+      { channel: IPC_CHANNEL.kanbanLaunchTask, args: [launchInput] },
+    ])
+  })
+
+  it('routes kanban handoff candidates and link through typed channels', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    const identity = { projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1' }
+    const linkInput = { ...identity, fileName: 'nekode-28-notes.md' }
+    await api.kanban.handoffCandidates(identity)
+    await api.kanban.linkHandoff(linkInput)
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.kanbanHandoffCandidates, args: [identity] },
+      { channel: IPC_CHANNEL.kanbanLinkHandoff, args: [linkInput] },
+    ])
+  })
+
   it('routes files:openRoot through its typed channel', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)

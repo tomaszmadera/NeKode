@@ -6,12 +6,15 @@ import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import type { AppServices } from '../ipc/service-registry'
 import { ActionService } from './action-service'
+import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
 import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
 import { FilesService } from './files/files-service'
 import { GitService } from './git/git-service'
+import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
 import { HandoffsService } from './handoffs/handoffs-service'
 import { KanbanService } from './kanban/kanban-service'
+import { TaskLaunchService } from './kanban/task-launch-service'
 import { ProjectService } from './project-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { ShellService } from './terminal/shell-service'
@@ -79,6 +82,10 @@ export function createServices(options: CreateServicesOptions): AppServices {
   const git = new GitService()
   const files = new FilesService({ projects, openExternal: options.openExternal })
   const handoffs = new HandoffsService({ projects, state, handoffDirKey: projectHandoffDirKey })
+  // Handoff match and link (stage 4): a shallow scan beside HandoffsService.
+  // HandoffsService.list keeps its own contract; this service is read-only
+  // apart from the explicit link document it owns.
+  const handoffMatcher = new HandoffMatcherService({ projects, state })
   const kanban = new KanbanService({
     projects,
     state,
@@ -90,6 +97,24 @@ export function createServices(options: CreateServicesOptions): AppServices {
         ? override
         : join(options.userDataPath, 'kanban-adapters')
     },
+  })
+  const agentProfiles = new AgentProfilesService({ projects, state })
+  const taskLaunch = new TaskLaunchService({
+    projects,
+    profiles: agentProfiles,
+    kanban,
+    // Resume rechecks its chosen file through the stage 4 matcher before the
+    // chat is created (spec Resume.3).
+    handoffs: handoffMatcher,
+    handoffDir: (projectId) => {
+      const value = state.get(projectHandoffDirKey(projectId))
+      if (value === null || value.trim().length === 0) {
+        return null
+      }
+      return value
+    },
+    createChat: (projectId, name) => chats.createNamed(projectId, name),
+    terminals,
   })
   const actions = new ActionService({
     db,
@@ -191,7 +216,19 @@ export function createServices(options: CreateServicesOptions): AppServices {
       listBoard: (projectId) => kanban.listBoard(projectId),
       createItem: (projectId, input) => kanban.createItem(projectId, input),
       updateItem: (projectId, ref, patch) => kanban.updateItem(projectId, ref, patch),
+      getItem: (projectId, ref) => kanban.getItem(projectId, ref),
+      launchTask: (input) => taskLaunch.launch(input),
+      handoffCandidates: (input) => handoffMatcher.candidates(input),
+      linkHandoff: (input) => handoffMatcher.link(input),
       cleanupProject: (projectId) => kanban.cleanupProject(projectId),
+      dropLaunchProject: (projectId) => taskLaunch.dropProject(projectId),
+      blocksProjectShell: (chatId) => taskLaunch.blocksProjectShell(chatId),
+    },
+    agentProfiles: {
+      get: (projectId) => agentProfiles.get(projectId),
+      put: (projectId, input) => agentProfiles.put(projectId, input),
+      delete: (projectId, profileId) => agentProfiles.delete(projectId, profileId),
+      cleanupProject: (projectId) => agentProfiles.cleanupProject(projectId),
     },
     dialogs: {
       pickDirectory: (defaultPath) => options.pickDirectory(defaultPath),

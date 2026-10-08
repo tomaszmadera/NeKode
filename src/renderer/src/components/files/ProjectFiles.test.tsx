@@ -87,6 +87,15 @@ function createAppApiStub(): AppApi {
       listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
       createItem: vi.fn(),
       updateItem: vi.fn(),
+      getItem: vi.fn(),
+      launchTask: vi.fn(),
+      handoffCandidates: vi.fn(),
+      linkHandoff: vi.fn(),
+    },
+    agentProfiles: {
+      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
+      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
+      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
     },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),

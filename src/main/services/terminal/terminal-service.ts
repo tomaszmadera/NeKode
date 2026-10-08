@@ -147,9 +147,10 @@ export class TerminalService {
         rows: this.#rows,
         env: { ...process.env } as Record<string, string>,
       })
-    } catch (error) {
-      // Full details stay on the main side; the renderer gets the typed error.
-      console.error('[terminal] failed to spawn PTY:', error)
+    } catch {
+      // A node-pty error can carry the command line. Task launch puts the
+      // prompt in argv, so the log stays a fixed string.
+      console.error('[terminal] failed to spawn PTY')
       throw new AppError('unknown', 'Failed to start the terminal process.')
     }
 

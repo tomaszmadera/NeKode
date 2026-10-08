@@ -1,14 +1,17 @@
 import type {
   ActionControl,
   ActionExecution,
+  AgentProfilesDocument,
   AppApi,
   ChatInfo,
   FileEntry,
   FilePreview,
   GitStatus,
+  HandoffCandidatesResult,
   HandoffEntry,
   KanbanAdapterInfo,
   KanbanBoard,
+  KanbanLaunchResult,
   KanbanProjectConfig,
   ProjectInfo,
   ShellInfo,
@@ -135,6 +138,18 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
         invoke<WorkItem>(IPC_CHANNEL.kanbanCreateItem, projectId, input),
       updateItem: (projectId, ref, patch) =>
         invoke<WorkItem>(IPC_CHANNEL.kanbanUpdateItem, projectId, ref, patch),
+      getItem: (projectId, ref) => invoke<WorkItem>(IPC_CHANNEL.kanbanGetItem, projectId, ref),
+      launchTask: (input) => invoke<KanbanLaunchResult>(IPC_CHANNEL.kanbanLaunchTask, input),
+      handoffCandidates: (input) =>
+        invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanHandoffCandidates, input),
+      linkHandoff: (input) => invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanLinkHandoff, input),
+    },
+    agentProfiles: {
+      get: (projectId) => invoke<AgentProfilesDocument>(IPC_CHANNEL.agentProfilesGet, projectId),
+      put: (projectId, input) =>
+        invoke<AgentProfilesDocument>(IPC_CHANNEL.agentProfilesPut, projectId, input),
+      delete: (projectId, profileId) =>
+        invoke<AgentProfilesDocument>(IPC_CHANNEL.agentProfilesDelete, projectId, profileId),
     },
     dialogs: {
       pickDirectory: (defaultPath) =>
