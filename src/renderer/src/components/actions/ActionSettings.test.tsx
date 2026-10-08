@@ -157,4 +157,39 @@ describe('Kanban tab shell', () => {
     expect(await screen.findByTestId(TEST_ID.settingsKanbanPanel)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
   })
+
+  it('adds an Agents tab beside Shell, Actions, and Kanban', async () => {
+    const get = vi.fn().mockResolvedValue({ defaultId: null, profiles: [] })
+    const app = {
+      ...kanbanAppMock(),
+      agentProfiles: { get, put: vi.fn(), delete: vi.fn() },
+    } as unknown as AppApi
+    const props = {
+      app,
+      actions: [] as ActionControl[],
+      projectId: 'p1',
+      projectPath: 'D:/p',
+      autoSend: false,
+      onAutoSendChange: vi.fn(),
+      onRefresh: vi.fn().mockResolvedValue(undefined),
+      onClose: vi.fn(),
+    }
+    render(<ActionSettings {...props} />)
+    const agentsTab = screen.getByTestId(TEST_ID.settingsAgentsTab)
+    expect(agentsTab.textContent).toBe('Agents')
+    expect(agentsTab.getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByRole('tab', { name: 'Shell' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Actions & Configuration' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Kanban' })).toBeTruthy()
+
+    fireEvent.click(agentsTab)
+    expect(await screen.findByTestId(TEST_ID.settingsAgentsEmpty)).toBeTruthy()
+    expect(get).toHaveBeenCalledWith('p1')
+    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
+
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.settingsAgentsPanel)).toBeNull()
+  })
 })

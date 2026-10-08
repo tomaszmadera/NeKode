@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AppApi } from '../../../../shared/ipc-contract'
+import type { AppApi, WorkItem } from '../../../../shared/ipc-contract'
 import { KanbanBoard } from './KanbanBoard'
 
 interface Props {
@@ -8,6 +8,10 @@ interface Props {
   activeProjectId: string | null
   versions: Readonly<Record<string, number>>
   onConfigure: () => void
+  /** Start on a work item. The shell owns the confirmation dialog. */
+  onStart?: (projectId: string, item: WorkItem) => void
+  /** Resume on a work item. The shell owns the handoff confirmation dialog. */
+  onResume?: (projectId: string, item: WorkItem) => void
 }
 
 /** Lazily visited project boards retain DOM and UI state for this App session. */
@@ -17,6 +21,8 @@ export function KanbanSessions({
   activeProjectId,
   versions,
   onConfigure,
+  onStart,
+  onResume,
 }: Props): React.JSX.Element {
   const [sessions, setSessions] = useState<Readonly<Record<string, number>>>({})
   const retained = Object.fromEntries(
@@ -47,6 +53,20 @@ export function KanbanSessions({
             projectId={id}
             active={activeProjectId === id}
             onConfigure={onConfigure}
+            onStart={
+              onStart === undefined
+                ? undefined
+                : (item) => {
+                    onStart(id, item)
+                  }
+            }
+            onResume={
+              onResume === undefined
+                ? undefined
+                : (item) => {
+                    onResume(id, item)
+                  }
+            }
           />
         </div>
       ))}

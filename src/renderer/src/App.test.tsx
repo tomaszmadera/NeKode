@@ -1,11 +1,18 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ActionControl, ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
+import type {
+  ActionControl,
+  ChatInfo,
+  HandoffCandidatesResult,
+  KanbanBoard as KanbanBoardData,
+  ProjectInfo,
+} from '../../shared/ipc-contract'
 import {
   APP_STATE_KEY,
   type AppApi,
   emptyGitWorktree,
   projectHandoffDirKey,
+  projectKanbanAdapterKey,
 } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
 import { playAttentionChime } from './lib/chime'
@@ -96,6 +103,15 @@ function createAppApiStub(): AppApi {
       listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
       createItem: vi.fn(),
       updateItem: vi.fn(),
+      getItem: vi.fn(),
+      launchTask: vi.fn(),
+      handoffCandidates: vi.fn(),
+      linkHandoff: vi.fn(),
+    },
+    agentProfiles: {
+      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
+      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
+      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
     },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),
@@ -3023,5 +3039,102 @@ describe('chat attention badge (end to end through App)', () => {
     // would be app.state — the badge lifecycle never touches it.
     const stateKeys = vi.mocked(app.state.set).mock.calls.map(([key]) => key)
     expect(stateKeys).not.toContain('chatAttention')
+  })
+})
+
+describe('kanban task resume — removing the project', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  function deferred<T>(): {
+    promise: Promise<T>
+    resolve: (value: T) => void
+  } {
+    let resolve!: (value: T) => void
+    const promise = new Promise<T>((yes) => {
+      resolve = yes
+    })
+    return { promise, resolve }
+  }
+
+  const board: KanbanBoardData = {
+    states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
+    items: [
+      {
+        ref: 'NEKODE-28',
+        id: 'native-28',
+        title: 'Kanban task launch',
+        description: null,
+        stateId: 's1',
+        stateName: 'Backlog',
+        stateGroup: 'backlog',
+        priority: null,
+        assignee: null,
+        url: null,
+        updatedAt: null,
+      },
+    ],
+  }
+
+  it('clears the open Resume modal when its project is removed and drops the stale scan', async () => {
+    vi.mocked(app.projects.list).mockResolvedValueOnce([projectA]).mockResolvedValue([])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.kanban.listBoard).mockResolvedValue(board)
+    // A bound project: the Kanban tile and tab exist.
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === projectKanbanAdapterKey('p1') ? 'demo' : null,
+    )
+    // The resume scan is held open so removal happens while it is in flight.
+    const scan = deferred<HandoffCandidatesResult>()
+    vi.mocked(app.kanban.handoffCandidates).mockReturnValue(scan.promise)
+
+    render(<App app={app} />)
+    // Select the project (its subtree expands), then open its Kanban board.
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.projectKanban('p1')))
+
+    // Open the Resume modal for the project's item.
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemResume('NEKODE-28')))
+    await screen.findByTestId(TEST_ID.kanbanResumeDialog)
+    expect(app.kanban.handoffCandidates).toHaveBeenCalledTimes(1)
+
+    // Remove the project while the scan is still pending (spec Bledy i
+    // wyscigi: removing the project before confirmation invalidates it).
+    fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
+
+    // The modal is unmounted with its project.
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.kanbanResumeDialog)).toBeNull())
+
+    // A late scan result for the removed project is never applied: no
+    // candidate row appears and the dialog stays gone.
+    await act(async () => {
+      scan.resolve({
+        state: 'ready',
+        files: [
+          {
+            name: 'nekode-28.md',
+            path: 'h/nekode-28.md',
+            modifiedAt: new Date(1).toISOString(),
+            matchKind: 'filename',
+          },
+        ],
+        rejections: [],
+        link: null,
+      })
+      await Promise.resolve()
+    })
+    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('nekode-28.md'))).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.kanbanResumeDialog)).toBeNull()
   })
 })

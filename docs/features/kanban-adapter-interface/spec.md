@@ -177,3 +177,268 @@ adding a non-empty title without changing the artwork.
 
 - `docs/architecture/sdd.md` §6, §44 (typed IPC pattern, main-process services).
 - ADR: none. The language-agnostic process-protocol decision (protocol v1: JSON over stdio, one process per request, manifest-declared invocation) is recorded in this spec; promote to an ADR if the architecture doc grows that mechanism.
+
+## Kanban task launch amendment (user decision 2026-10-07)
+
+Ta sekcja jest kontraktem NEKODE-28 zaakceptowanym przez użytkownika
+2026-10-07. Akceptacja dotyczy specyfikacji. Sekcja zastępuje ograniczenie dotyczące akcji kart
+w Goal i Non-goals oraz sposób
+otwierania szczegółów z Behaviour 14 i AC14. Pozostały kontrakt adaptera,
+w tym cached board rendering amendment, pozostaje obowiązujący.
+
+### Cel i odbiorca
+
+Użytkownik uruchamia pracę nad zadaniem z listy lub kolumn Kanbana w nowym
+czacie wybranego agenta. Może też wznowić pracę z konkretnym handoffem
+powiązanym z tym zadaniem. NeKode obsługuje konfigurację i uruchomienie;
+Harness pozostaje niezależnym narzędziem agenta.
+
+### Zakres i wyłączenia
+
+- Lista i kolumny: osobne kontrolki tytułu, slugu, Start i Resume.
+- Lista: wiersz wyższy o 50%. Kolumny: miejsce na przyciski bez narzucania
+  wzrostu wysokości karty o 50%.
+- Profile agentów w Project Settings, modal wyboru agenta i uruchomienie
+  w nowym czacie z poleceniem dotyczącym wybranego zadania.
+- Wyszukiwanie handoffów w istniejącym katalogu projektu i jawne przypisanie
+  pliku, którego powiązania nie da się rozpoznać automatycznie.
+- Poza zakresem: drag-and-drop, nowa lokalna encja Task, automatyczna zmiana
+  statusu zadania w backendzie, worktrees, API modeli, instalowanie agentów,
+  wznawianie wewnętrznego identyfikatora sesji CLI oraz zmiany Harness.
+- Istniejący Resume na pasku akcji nadal działa według
+  [handoff-resume-flow](../handoff-resume-flow/spec.md). Nowy Resume zadania
+  ma odrębny przepływ, wymagający powiązanego pliku i tworzący nowy czat.
+
+### Nawigacja i wygląd
+
+1. Kliknięcie slugu (`WorkItem.ref`) lub tytułu otwiera istniejący widok
+   szczegółów. Kliknięcie tła, priorytetu albo wolnego miejsca nie otwiera go.
+   Hover i fokus wskazują konkretne kontrolki, zamiast sugerować aktywność
+   całego wiersza lub karty. Start i Resume nie otwierają szczegółów.
+2. Slug i tytuł są oddzielnymi kontrolkami dostępnymi z klawiatury. Nie wolno
+   zagnieżdżać przycisków we wspólnym przycisku wiersza. Modal ma opis,
+   obsługę Escape, utrzymanie fokusu wewnątrz i powrót fokusu po anulowaniu.
+3. Docelowa minimalna wysokość jednoliniowego wiersza listy wynosi 1,5 jego
+   wysokości sprzed zmiany. Bazową wysokość trzeba zmierzyć przed edycją
+   przy domyślnym motywie i skali 100%; tolerancja wynosi 1 px. Zwiększenie
+   paddingu o 50% samo w sobie nie spełnia tego warunku. Typografia
+   12.6px / 14.7px, kolory, sortowanie, grupowanie i zwijanie grup zostają.
+4. Start i Resume są stale widoczne w obu układach, także bez aktywnego
+   czatu. Przy małej szerokości nie zasłaniają tytułu ani priorytetu;
+   dopuszczalny jest osobny rząd przycisków. Stan backendu sam nie blokuje
+   tych akcji. Etykiety interfejsu i generowane polecenia są angielskie.
+
+### Profile agentów
+
+Osobne profile w Project Settings są zaakceptowaną decyzją użytkownika
+z 2026-10-07. Nie są listą wszystkich Actions i nie wykrywają agentów
+automatycznie na podstawie nazw przycisków.
+
+- Profil zawiera stabilny lokalny id, nazwę oraz konfigurację uruchomienia:
+  executable i tablicę argumentów. W argumentach dokładnie jeden element
+  `{prompt}` oznacza całe początkowe polecenie przekazane jako jeden argument.
+  Profil jest przeznaczony dla interaktywnego CLI przyjmującego taki prompt.
+  Wrapper może obsłużyć CLI o innym interfejsie, ale aplikacja go nie generuje.
+- Project Settings pozwala dodawać, edytować i usuwać profile oraz ustawić
+  profil domyślny. Bez profili modal pokazuje Configure agents; nie tworzy
+  czatu. Formularz odrzuca pustą nazwę, executable i niepoprawny placeholder.
+- Katalog pracy to katalog projektu, z którego pochodzi zadanie. Profile
+  nie zmieniają globalnej konfiguracji shell ani istniejących Actions.
+- Lista w modalu pokazuje nazwy profili i zaznacza domyślny. Użytkownik
+  zatwierdza przyciskiem Start albo Resume. Brak wyboru blokuje zatwierdzenie.
+  Usunięcie profilu domyślnego czyści domyślny wybór.
+
+### Start
+
+1. Start otwiera modal z ref i tytułem zadania oraz wyborem agenta. Cancel
+   i Escape nie tworzą czatu ani procesu.
+2. Po zatwierdzeniu aplikacja sprawdza istnienie projektu, bieżące powiązanie
+   adaptera, aktualność zadania i wybranego profilu. Pobiera bieżący opis
+   zadania przez adapter, aby nie wysyłać nieaktualnego opisu z cache.
+3. Powstaje dokładnie jeden nowy czat tego projektu, widoczny w nawigacji.
+   Aplikacja aktywuje powierzchnię czatu w istniejącym systemie zakładek.
+   Nie przebudowuje systemu na osobną zakładkę górnego paska dla każdego czatu.
+   Poprzedni czat i sesja Kanbana zachowują swój stan.
+4. Wybrany agent uruchamia się w nowej sesji terminala, z początkowym
+   poleceniem przekazanym przy uruchomieniu procesu. Aplikacja nie wpisuje
+   promptu do shell przed startem agenta ani po stałym opóźnieniu.
+5. Polecenie zaczyna się od `Work on task <ref>: <title>.`, następnie zawiera
+   opis (albo informację o jego braku) i URL, jeśli adapter go zwraca.
+   Zawiera także `Follow the project's instructions. Do not assume approval
+   for actions that require it.` oraz informację o katalogu handoffów, jeżeli
+   jest skonfigurowany. Zaleca zachowanie pełnego ref w nazwie przyszłego
+   lokalnego rekordu i handoffu, zgodnie z instrukcjami projektu.
+6. Zatwierdzenie oznacza uruchomienie i przekazanie polecenia, niezależnie od
+   `handoffResume.autoSend`. Ta istniejąca opcja dotyczy paska akcji.
+   Sukces uruchomienia nie oznacza wykonania zadania przez agenta.
+
+### Powiązanie handoffu z zadaniem
+
+Proponowany most między aplikacją i dowolnym narzędziem agenta opiera się
+na plikach i ref zadania. NeKode nie importuje Harness, nie uruchamia
+`taskctl`, nie czyta `.agents/.env` i nie modyfikuje szablonów ani rekordów
+Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
+
+1. Zakres wyszukiwania to skonfigurowany `project.handoffDir:<projectId>`.
+   Ścieżka względna rozwiązuje się względem katalogu projektu, absolutna
+   może wskazywać poza projekt. Skan jest płytki: regularne pliki `.md`,
+   bez `README.md`, katalogów, archiwów w podkatalogach i dowiązań.
+2. Preferowane jawne metadane to opcjonalne, płaskie pola frontmatter:
+   `work_item_ref: NEKODE-28`, `work_item_id: <backend-native id>` oraz
+   `work_item_adapter: <adapter id>`. Ref jest wymagany dla tego sposobu
+   dopasowania; pozostałe pola, jeżeli obecne, muszą zgadzać się z zadaniem.
+   To konwencja wymiany danych, nie wymaganie zmiany formatu Harness.
+3. Dla plików bez tych metadanych pełny ref może być początkiem nazwy
+   bez rozszerzenia: `nekode-28` albo `nekode-28-<opis>`. Porównanie ignoruje
+   wielkość liter. `nekode-2` nie pasuje do `nekode-20`, `nekode-28` ani
+   `old-nekode-2`. Ten sposób oznaczany jest w modalu jako `Filename match`.
+   Jawne metadane wskazujące inne zadanie wykluczają dopasowanie po nazwie.
+4. Plik o dowolnej innej nazwie można wskazać z listy skonfigurowanego
+   katalogu przez `Link handoff`. Użytkownik widzi nazwę i ścieżkę przed
+   potwierdzeniem. Przypisanie przechowuje NeKode, bez edycji pliku. Nie
+   wolno przypisać pliku z metadanymi wskazującymi inne zadanie.
+5. Jawne przypisanie ma pierwszeństwo przed kandydatami automatycznymi.
+   Klucz wiązania obejmuje projectId, adapterId i backend-native item id;
+   ref jest zachowany jako etykieta. Zmiana konfiguracji powiązania Kanbana
+   unieważnia przypisania. Zmiana katalogu wymaga nowego sprawdzenia ścieżek.
+6. Kandydaci automatyczni są sortowani po czasie modyfikacji malejąco,
+   przy remisie po nazwie. Wszystkie pasujące pliki są widoczne; najnowszy
+   może być zaznaczony, lecz użytkownik zatwierdza konkretny plik. Nazwa
+   i `task_id` bez rozpoznawalnego ref nie powodują zgadywania po tytule
+   zadania ani po dowolnej wzmiance w treści handoffu.
+
+### Resume
+
+1. Resume otwiera modal dla zadania i rozpoczyna odczyt jego handoffów.
+   Bez katalogu pokazuje Configure handoffs. Bez dopasowań pokazuje
+   `No linked handoff` i Link handoff. Nie przełącza się automatycznie
+   na Start ani na polecenie Resume bez ścieżki.
+2. Modal zawiera wybór konkretnego handoffu i tego samego rodzaju profil
+   agenta co Start. Zatwierdzenie jest możliwe dopiero po zakończeniu
+   wyszukiwania i wskazaniu istniejącego powiązanego pliku oraz profilu.
+3. Tuż przed utworzeniem czatu main ponownie sprawdza plik, jego powiązanie
+   i aktualną konfigurację. Usunięty, nieczytelny, podmieniony lub zmieniony
+   po wyświetleniu plik wymaga odświeżenia wyboru. Nie powstaje wtedy czat.
+4. Dalej obowiązuje przepływ Start, ale prompt zaczyna się od
+   `Resume task <ref>: <title> from handoff <path>. Read the handoff first
+   and reconcile it with the current repository state before continuing.`
+   Zawiera aktualny opis i URL zadania oraz instrukcje projektu.
+   Ścieżka jest względna względem projektu, jeśli plik leży wewnątrz niego;
+   w przeciwnym razie absolutna. Jest danymi promptu, nie kodem shell.
+5. Resume rozpoczyna nową sesję wybranego agenta z kontekstem pliku.
+   Nie wymaga tego samego agenta, który zapisał handoff, ani starej sesji CLI.
+
+### Dane, uprawnienia i zgodność
+
+- Renderer korzysta z typowanego IPC. Main jest właścicielem odczytów plików,
+  sprawdzania projektu, profili, powiązania zadania i uruchomienia procesu.
+  Nie przyjmuje dowolnej ścieżki od renderer jako zaufanego źródła handoffu.
+- Profile, domyślny wybór i jawne powiązania są ustawieniami lokalnymi per
+  projekt w istniejącym `app_state`; ich usunięcie jest częścią usuwania
+  projektu. Nie ma nowej encji Task ani migracji tabel projektów lub czatów.
+- Kontrakt potrzebuje operacji listowania/zapisu profili, znajdowania i
+  przypisania handoffów oraz uruchomienia zadania z profilem i opcjonalnym
+  handoffem. Szczegółowe nazwy IPC i podział kodu należą do późniejszego planu.
+- Tożsamość zadania używa istniejących WorkItem.id i WorkItem.ref; tytuł
+  i opis mogą się zmieniać bez utraty jawnego przypisania.
+- Odczyt metadanych jest ograniczony do frontmatter plików UTF-8 do 1 MiB.
+  Plik większy lub niepoprawny ma widoczny powód odrzucenia. Renderer nie
+  otrzymuje całej treści pliku. Wyszukiwanie następuje przy otwarciu Resume
+  lub jawnym Refresh, bez skanowania dysku przy hover i bez stałego pollingu.
+- Opis zadania, URL, ref i ścieżka nigdy nie są interpolowane jako kod shell.
+  Executable i argumenty pochodzą z profilu wybranego przez użytkownika;
+  prompt trafia jako pojedynczy argument procesu. Nie trafia do logów,
+  komunikatów diagnostycznych ani poleceń publikowanych na Kanbanie.
+  Argumenty procesu mogą być widoczne dla lokalnych narzędzi systemowych.
+- NeKode waliduje powiązanie i możliwość odczytu. Zgodność handoffu z
+  bieżącym stanem repozytorium sprawdza agent według instrukcji projektu;
+  aplikacja nie traktuje wykrytego pliku jako zatwierdzenia planu.
+- Dotychczasowe handoffs:list i Resume paska akcji zachowują swój kontrakt,
+  w tym paste-only / auto-send. Nowe filtrowanie dotyczy wyłącznie Resume
+  zadania. Protocol v1 adaptera nie wymaga zmiany.
+
+### Błędy i wyścigi
+
+- Brak katalogu, nieprawidłowe uprawnienia, błąd adaptera i brak executable
+  mają osobne, widoczne komunikaty w odpowiednim modalu lub czacie.
+  Nie ma zastępowania agenta innym profilem ani cichego pomijania błędu.
+- Niepoprawne metadane jednego pliku nie ukrywają poprawnych kandydatów;
+  modal pokazuje ostrzeżenie z nazwą odrzuconego pliku. Awaria odczytu
+  katalogu nie jest prezentowana jako brak handoffów.
+- Podczas zatwierdzania kontrolki są zablokowane. Podwójny klik lub Enter
+  tworzy najwyżej jeden czat i proces dla tego zatwierdzenia. Po zakończeniu
+  użytkownik może jawnie rozpocząć następny czat tego samego zadania.
+- Anulowanie, zamknięcie modalu lub usunięcie projektu przed zatwierdzeniem
+  unieważnia oczekujące odpowiedzi. Spóźniony skan innego projektu lub
+  zadania nie może zmienić wyboru ani uruchomić procesu.
+- Błąd po utworzeniu czatu pozostawia ten konkretny czat z czytelnym błędem
+  i jawnym Retry. Retry nie tworzy dodatkowego czatu i nie ponawia w ciemno
+  już dostarczonego promptu. Ponowne otwarcie aplikacji nie uruchamia zadania
+  automatycznie ani nie odtwarza początkowego polecenia.
+
+### Kryteria akceptacji
+
+1. W obu widokach tylko tytuł i slug otwierają szczegóły. Tło, priorytet,
+   Start i Resume nie otwierają szczegółów; klawiatura obsługuje każdą akcję.
+2. Wysokość wiersza listy ma współczynnik 1,5 względem zapisanej wartości
+   bazowej, z tolerancją 1 px. Przyciski pozostają czytelne w obu układach.
+3. Dodany profil jest dostępny po ponownym otwarciu ustawień i restarcie;
+   profil innego projektu nie pojawia się w modalu bieżącego projektu.
+4. Anulowanie modalu Start nie tworzy sesji. Zatwierdzenie uruchamia wybrany
+   profil w nowym czacie właściwego projektu z ref, tytułem i aktualnym opisem.
+5. Bez profili albo przy błędzie walidacji nic się nie uruchamia. Prompt
+   ze spacjami, cudzysłowami, nowymi liniami i znakami shell jest nadal
+   pojedynczym argumentem i nie wykonuje dodatkowych poleceń.
+6. Resume wykrywa jawne metadane i zgodne nazwy, odróżnia NEKODE-2 od
+   NEKODE-20, respektuje sprzeczne metadane oraz ręczne przypisanie.
+7. Kilka kandydatów wymaga zatwierdzenia konkretnego pliku. Plik o dowolnej
+   nazwie może zostać jawnie przypisany bez zmiany jego zawartości.
+8. Brak powiązanego pliku, brak konfiguracji albo błąd odczytu nie uruchamia
+   Resume. Plik zmieniony lub usunięty po skanie blokuje zatwierdzenie.
+9. Resume tworzy nowy czat wybranego profilu i przekazuje konkretną ścieżkę
+   oraz ref zadania. Przypisanie nie przechodzi na inne powiązanie adaptera.
+10. Podwójne zatwierdzenie nie duplikuje czatu; błąd i Retry nie duplikują
+    procesu ani polecenia. Wynik spóźnionego skanu nie przechodzi między
+    projektami. Istniejące czaty i zachowanie cache Kanbana działają dalej.
+11. Funkcja działa bez Harness. Żaden przepływ nie zapisuje plików Harness,
+    nie zmienia statusu zadania i nie uruchamia modelowego API.
+
+### Wymagana weryfikacja
+
+- Testy usług: zapis i izolacja profili; dopasowanie metadanych i granic ref
+  w nazwach; konflikt metadanych; ręczne przypisania i ich unieważnianie;
+  brak katalogu, odmowa odczytu, zły UTF-8, limit rozmiaru, dowiązania,
+  ponowna walidacja pliku i usunięcie projektu.
+- Testy IPC i uruchomienia: walidacja nadawcy i wejść; bieżące dane zadania;
+  argv z dokładnie jednym promptem; błąd procesu, deduplikacja i Retry.
+- Testy renderer: zakres kliknięcia, modal i fokus, brak profili, wybór
+  agenta/pliku, anulowanie, stany ładowania i błędów, stale responses,
+  izolacja projektu oraz zachowanie starego Resume i cache Kanbana.
+- Weryfikacja rzeczywistej aplikacji Electron: pomiar wysokości wiersza,
+  lista i kolumny przy wąskim panelu, otwarcie nowego czatu i start CLI
+  w katalogu właściwego projektu z poprawnym promptem. Testowy lokalny
+  CLI musi pokazać odebrane argumenty bez kontaktu z modelem. Osobny smoke
+  wybranego skonfigurowanego agenta potwierdza przyjęcie promptu przez CLI;
+  same testy jsdom nie dowodzą działania terminala.
+
+### Źródła i zaakceptowane decyzje
+
+- Bieżący wiersz i karta są jednym przyciskiem: `WorkItemButton` w
+  `src/renderer/src/components/kanban/KanbanBoard.tsx:181`; wspólny hover
+  pochodzi z `ITEM_BUTTON_CLASS` w tym pliku, linia 157.
+- Istniejący katalog i listowanie bez treści: `HandoffsService.list` w
+  `src/main/services/handoffs/handoffs-service.ts:84` oraz kontrakt
+  [handoff-resume-flow](../handoff-resume-flow/spec.md).
+- Nowy czat i aktywacja powierzchni: `handleCreateChat` w
+  `src/renderer/src/App.tsx:1204`; uruchomienie istniejącej akcji w nowym
+  terminalu: `src/main/services/action-service.ts:278`.
+- Harness wymaga nazwy pliku zgodnej z lokalnym task_id:
+  `.agents/scripts/handoff-status:85`. Template `.agents/templates/handoff.md`
+  ma task_id, ale nie ma ref backendu. To uzasadnia oddzielne dopasowanie.
+- [Product requirements](../../product/requirements.md), sekcja 3, traktują
+  Kanban i handoffy powiązane z zadaniami jako post-MVP bez obowiązkowego
+  Harness. Ten kontrakt realizuje taki kierunek bez lokalnej encji Task.
+- Użytkownik zaakceptował 2026-10-07 całą specyfikację, w tym zasady
+  dopasowania handoffów, ręczne przypisania, argv `{prompt}` oraz użycie
+  istniejącej powierzchni czatu. Osobne profile w Project Settings były
+  wcześniej zaakceptowaną decyzją tego samego dnia.

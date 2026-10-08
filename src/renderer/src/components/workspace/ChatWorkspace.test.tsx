@@ -114,6 +114,15 @@ function createAppMock(): AppMockBundle {
       listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
       createItem: vi.fn(),
       updateItem: vi.fn(),
+      getItem: vi.fn(),
+      launchTask: vi.fn(),
+      handoffCandidates: vi.fn(),
+      linkHandoff: vi.fn(),
+    },
+    agentProfiles: {
+      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
+      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
+      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
     },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),
@@ -671,6 +680,56 @@ describe('ChatWorkspace session host', () => {
         />,
       )
       await waitFor(() => expect(removeSpy).toHaveBeenLastCalledWith({}))
+    })
+  })
+})
+
+describe('ChatWorkspace held task launch', () => {
+  beforeEach(() => {
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('does not spawn the project shell and retries the same attempt', async () => {
+    const bundle = createAppMock()
+    const retry = vi.fn()
+    const input = {
+      projectId: 'p1',
+      itemId: 'native-1',
+      ref: 'NK-1',
+      profileId: 'prof-1',
+      attemptId: 'attempt-1',
+      mode: 'start' as const,
+    }
+    const held = {
+      t1: { message: 'Failed to start the terminal for this chat.', input },
+    }
+    const view = render(
+      <ChatWorkspace
+        {...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })}
+        heldLaunches={held}
+        onRetryHeldLaunch={retry}
+      />,
+    )
+    expect(await screen.findByTestId(TEST_ID.terminalSpawnError)).toBeTruthy()
+    expect(bundle.app.terminals.create).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId(TEST_ID.terminalRetry))
+    expect(retry).toHaveBeenCalledWith('t1')
+    expect(bundle.app.terminals.create).not.toHaveBeenCalled()
+
+    view.rerender(
+      <ChatWorkspace
+        {...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })}
+        heldLaunches={{}}
+        onRetryHeldLaunch={retry}
+      />,
+    )
+    await waitFor(() => {
+      expect(bundle.app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo')
     })
   })
 })

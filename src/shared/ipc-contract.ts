@@ -287,6 +287,13 @@ export const IPC_CHANNEL = {
   kanbanListBoard: 'kanban:listBoard',
   kanbanCreateItem: 'kanban:createItem',
   kanbanUpdateItem: 'kanban:updateItem',
+  kanbanGetItem: 'kanban:getItem',
+  kanbanLaunchTask: 'kanban:launchTask',
+  kanbanHandoffCandidates: 'kanban:handoffCandidates',
+  kanbanLinkHandoff: 'kanban:linkHandoff',
+  agentProfilesGet: 'agentProfiles:get',
+  agentProfilesPut: 'agentProfiles:put',
+  agentProfilesDelete: 'agentProfiles:delete',
 } as const
 
 // Keys of the flat app_state key–value store (spec Data/API). Shared so the
@@ -350,6 +357,206 @@ export function projectKanbanConfigKey(projectId: string): string {
  */
 export function projectShellKey(projectId: string): string {
   return `project.shell:${projectId}`
+}
+
+/**
+ * The one argv element a profile reserves for the launch prompt. The saved
+ * prompt replaces this whole element later; it is never concatenated into
+ * another argument. Stage 2 only stores the literal.
+ */
+export const AGENT_PROMPT_PLACEHOLDER = '{prompt}'
+
+/** One per-project agent launch profile. `id` is minted in main. */
+export interface AgentProfile {
+  id: string
+  name: string
+  executable: string
+  args: string[]
+}
+
+/** `project.agentProfiles:<projectId>` JSON document. */
+export interface AgentProfilesDocument {
+  defaultId: string | null
+  profiles: AgentProfile[]
+}
+
+/**
+ * `agentProfiles:put` body. `id: null` creates a profile (main mints the id).
+ * A string updates that profile. `isDefault` selects or, when this profile is
+ * the current default, clears the project default.
+ */
+export interface AgentProfilePut {
+  id: string | null
+  name: string
+  executable: string
+  args: string[]
+  isDefault: boolean
+}
+
+/** Per-project agent profiles document (kanban task launch amendment). */
+export function projectAgentProfilesKey(projectId: string): string {
+  return `project.agentProfiles:${projectId}`
+}
+
+/**
+ * Per-project explicit handoff links (kanban task launch amendment). One JSON
+ * document in `app_state`, keyed by adapter id and backend-native item id; the
+ * WorkItem.ref is stored only as a label. Deleting the Kanban binding, changing
+ * its config, or removing the project deletes this key.
+ */
+export function projectKanbanHandoffLinksKey(projectId: string): string {
+  return `project.kanbanHandoffLinks:${projectId}`
+}
+
+/**
+ * Shared fields of `kanban:launchTask`. Main refetches the item with `getItem`
+ * `{ ref }` and checks `itemId`. The renderer does not send a chat name,
+ * description, or prompt.
+ */
+export interface KanbanLaunchTaskBase {
+  projectId: string
+  itemId: string
+  ref: string
+  profileId: string
+  attemptId: string
+}
+
+/** `kanban:launchTask` body for `mode: 'start'` (the Start prompt). */
+export interface KanbanStartLaunchInput extends KanbanLaunchTaskBase {
+  mode: 'start'
+}
+
+/**
+ * `kanban:launchTask` body for `mode: 'resume'`. `fileName` and `stamp` come
+ * from a scan result main just produced. Main rechecks the file, its link, and
+ * the stamp immediately before creating the chat; a missing, unreadable,
+ * replaced, or changed file refreshes the choice and creates no chat.
+ */
+export interface KanbanResumeLaunchInput extends KanbanLaunchTaskBase {
+  mode: 'resume'
+  /** File name from the scan result main just produced. */
+  fileName: string
+  /** `modifiedAt` ISO stamp from that scan; main rechecks it before the chat. */
+  stamp: string
+}
+
+export type KanbanLaunchTaskInput = KanbanStartLaunchInput | KanbanResumeLaunchInput
+
+/** Chat created for one confirmation. `delivered` is false when spawn failed. */
+export interface KanbanLaunchResult {
+  chat: ChatInfo
+  delivered: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Handoff match and link (kanban task launch amendment, stage 4). The matcher
+// reads the project's configured handoff directory and returns metadata, not
+// file bodies. An explicit link is keyed by adapter id and backend-native item
+// id; the ref is stored only as a label.
+// ---------------------------------------------------------------------------
+
+/**
+ * How a scanned file matched the work item. `metadata` is a frontmatter match,
+ * `filename` a ref-prefixed or ref-named file, `none` a readable file that
+ * matched neither (linkable manually). The explicit assignment is surfaced
+ * separately as the result `link`.
+ */
+export type HandoffMatchKind = 'metadata' | 'filename' | 'none'
+
+/** One regular, readable `.md` file of the configured handoff directory. */
+export interface HandoffFileInfo {
+  name: string
+  /** Display path: project-relative inside the root, absolute otherwise. */
+  path: string
+  /** ISO modification time; also the stamp a later confirm rechecks. */
+  modifiedAt: string
+  matchKind: HandoffMatchKind
+}
+
+/** A readable file the scan could not use as a candidate; shown as a warning. */
+export interface HandoffRejection {
+  name: string
+  path: string
+  /** Visible, user-facing reason (size cap, encoding, conflicting metadata). */
+  reason: string
+}
+
+/** An explicit assignment resolved to its current file. */
+export interface HandoffLinkedFile {
+  name: string
+  path: string
+  modifiedAt: string
+}
+
+/**
+ * One handoff scan for a work item. `not-configured` is an unconfigured
+ * directory; `error` is a directory read failure and is never shown as an
+ * empty set. Both are distinct from a `ready` scan that has no candidates.
+ */
+export type HandoffCandidatesResult =
+  | { state: 'not-configured' }
+  | { state: 'error'; message: string }
+  | {
+      state: 'ready'
+      /** Readable files, modification time descending (case-insensitive name tie-break). */
+      files: HandoffFileInfo[]
+      /** Files with a visible rejection reason; never hide the good candidates. */
+      rejections: HandoffRejection[]
+      /** Resolved explicit assignment for this item, or null. */
+      link: HandoffLinkedFile | null
+    }
+
+/** `kanban:handoffCandidates` body. Item identity comes from the board. */
+export interface KanbanHandoffCandidatesInput {
+  projectId: string
+  itemId: string
+  ref: string
+}
+
+/** `kanban:linkHandoff` body. `fileName` comes from a scan result main produced. */
+export interface KanbanLinkHandoffInput {
+  projectId: string
+  itemId: string
+  ref: string
+  fileName: string
+}
+
+/** One explicit handoff assignment. `ref` is only a label. */
+export interface KanbanHandoffLink {
+  name: string
+  ref: string
+}
+
+/** `project.kanbanHandoffLinks:<projectId>` JSON document. */
+export interface KanbanHandoffLinksDocument {
+  /** adapter id -> backend-native item id -> link. */
+  links: Record<string, Record<string, KanbanHandoffLink>>
+}
+
+/**
+ * Shared profile field rules. Null means the fields may be saved. Empty name,
+ * empty executable, or any `{prompt}` count other than one is a validation
+ * error. The placeholder must be its own argv element, not a substring.
+ */
+export function agentProfileFieldError(input: {
+  name: string
+  executable: string
+  args: readonly string[]
+}): string | null {
+  if (typeof input.name !== 'string' || input.name.trim().length === 0) {
+    return 'Name is required.'
+  }
+  if (typeof input.executable !== 'string' || input.executable.trim().length === 0) {
+    return 'Executable is required.'
+  }
+  if (!Array.isArray(input.args) || input.args.some((arg) => typeof arg !== 'string')) {
+    return 'Arguments must be a list of strings.'
+  }
+  const placeholders = input.args.filter((arg) => arg === AGENT_PROMPT_PLACEHOLDER).length
+  if (placeholders !== 1) {
+    return 'Arguments must include {prompt} exactly once.'
+  }
+  return null
 }
 
 export interface AppApi {
@@ -470,6 +677,40 @@ export interface AppApi {
     listBoard(projectId: string): Promise<KanbanBoard>
     createItem(projectId: string, input: KanbanCreateInput): Promise<WorkItem>
     updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem>
+    /** Live item via the adapter `getItem` action (`{ ref }`). */
+    getItem(projectId: string, ref: string): Promise<WorkItem>
+    /**
+     * Starts one task chat. Main owns the profile, the prompt, and the
+     * process. The same `attemptId` returns the same chat.
+     */
+    launchTask(input: KanbanLaunchTaskInput): Promise<KanbanLaunchResult>
+    /**
+     * One scan of the project's configured handoff directory for a work item.
+     * Read-only: main returns names, match kind, display path, stamp and
+     * rejection reasons, never file bodies. Failures are distinct states,
+     * never an empty set.
+     */
+    handoffCandidates(input: KanbanHandoffCandidatesInput): Promise<HandoffCandidatesResult>
+    /**
+     * Stores an explicit handoff link for a file name a scan result just
+     * returned, and re-reads the candidates. A file whose metadata names
+     * another item is refused.
+     */
+    linkHandoff(input: KanbanLinkHandoffInput): Promise<HandoffCandidatesResult>
+  }
+  agentProfiles: {
+    /** This project's profiles. Another project's document is never returned. */
+    get(projectId: string): Promise<AgentProfilesDocument>
+    /**
+     * Creates (`id: null`, main mints the id) or updates one profile and
+     * returns the project document. Invalid fields reject and do not write.
+     */
+    put(projectId: string, input: AgentProfilePut): Promise<AgentProfilesDocument>
+    /**
+     * Deletes one profile. Deleting the default profile clears `defaultId`.
+     * Returns the project document.
+     */
+    delete(projectId: string, profileId: string): Promise<AgentProfilesDocument>
   }
   dialogs: {
     /**

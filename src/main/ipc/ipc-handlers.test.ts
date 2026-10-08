@@ -12,6 +12,23 @@ import {
 import { registerAppIpcHandlers } from './ipc-handlers'
 import type { AppServices } from './service-registry'
 
+function fakeAgentProfiles(): AppServices['agentProfiles'] {
+  return {
+    get: vi.fn(() => ({ defaultId: null, profiles: [] })),
+    put: vi.fn(() => ({ defaultId: null, profiles: [] })),
+    delete: vi.fn(() => ({ defaultId: null, profiles: [] })),
+    cleanupProject: vi.fn(),
+  }
+}
+
+/** A ready scan with no candidates; the two handoff channels return it by default. */
+const EMPTY_HANDOFF_CANDIDATES = {
+  state: 'ready' as const,
+  files: [],
+  rejections: [],
+  link: null,
+}
+
 function fakeActions(): AppServices['actions'] {
   return {
     list: vi.fn(() => []),
@@ -158,8 +175,15 @@ function createHarness(): Harness {
       ),
       createItem: vi.fn(() => Promise.resolve({} as never)),
       updateItem: vi.fn(() => Promise.resolve({} as never)),
+      getItem: vi.fn(() => Promise.resolve({} as never)),
+      launchTask: vi.fn(() => Promise.resolve({} as never)),
+      handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+      linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
       cleanupProject: vi.fn(),
+      dropLaunchProject: vi.fn(),
+      blocksProjectShell: vi.fn(() => false),
     },
+    agentProfiles: fakeAgentProfiles(),
     dialogs: {
       pickDirectory: vi.fn(() => Promise.resolve(null)),
     },
@@ -405,8 +429,15 @@ describe('registered ipc handlers', () => {
         listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
         createItem: vi.fn(() => Promise.resolve({} as never)),
         updateItem: vi.fn(() => Promise.resolve({} as never)),
+        getItem: vi.fn(() => Promise.resolve({} as never)),
+        launchTask: vi.fn(() => Promise.resolve({} as never)),
+        handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+        linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         cleanupProject: vi.fn(),
+        dropLaunchProject: vi.fn(),
+        blocksProjectShell: vi.fn(() => false),
       },
+      agentProfiles: fakeAgentProfiles(),
       dialogs: {
         pickDirectory: vi.fn(() => Promise.resolve(null)),
       },
@@ -497,8 +528,15 @@ describe('registered ipc handlers', () => {
         listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
         createItem: vi.fn(() => Promise.resolve({} as never)),
         updateItem: vi.fn(() => Promise.resolve({} as never)),
+        getItem: vi.fn(() => Promise.resolve({} as never)),
+        launchTask: vi.fn(() => Promise.resolve({} as never)),
+        handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+        linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         cleanupProject: vi.fn(),
+        dropLaunchProject: vi.fn(),
+        blocksProjectShell: vi.fn(() => false),
       },
+      agentProfiles: fakeAgentProfiles(),
       dialogs: {
         pickDirectory: vi.fn(() => Promise.resolve(null)),
       },
@@ -597,8 +635,15 @@ describe('registered ipc handlers', () => {
         listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
         createItem: vi.fn(() => Promise.resolve({} as never)),
         updateItem: vi.fn(() => Promise.resolve({} as never)),
+        getItem: vi.fn(() => Promise.resolve({} as never)),
+        launchTask: vi.fn(() => Promise.resolve({} as never)),
+        handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+        linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         cleanupProject: vi.fn(),
+        dropLaunchProject: vi.fn(),
+        blocksProjectShell: vi.fn(() => false),
       },
+      agentProfiles: fakeAgentProfiles(),
       dialogs: {
         pickDirectory: vi.fn(() => Promise.resolve(null)),
       },
@@ -778,12 +823,52 @@ describe('kanban:* channels (adapter integration)', () => {
 
     await invoke(IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', { stateRef: 'done' }])
     expect(services.kanban.updateItem).toHaveBeenCalledWith('p1', 'DEMO-1', { stateRef: 'done' })
+
+    await invoke(IPC_CHANNEL.kanbanGetItem, ['p1', 'DEMO-1'])
+    expect(services.kanban.getItem).toHaveBeenCalledWith('p1', 'DEMO-1')
+    const launchInput = {
+      projectId: 'p1',
+      itemId: 'native-1',
+      ref: 'DEMO-1',
+      profileId: 'prof-1',
+      attemptId: 'attempt-1',
+      mode: 'start' as const,
+    }
+    await invoke(IPC_CHANNEL.kanbanLaunchTask, [launchInput])
+    expect(services.kanban.launchTask).toHaveBeenCalledWith(launchInput)
+
+    const candidates = { projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1' }
+    await invoke(IPC_CHANNEL.kanbanHandoffCandidates, [candidates])
+    expect(services.kanban.handoffCandidates).toHaveBeenCalledWith(candidates)
+
+    const linkInput = { ...candidates, fileName: 'nekode-28-notes.md' }
+    await invoke(IPC_CHANNEL.kanbanLinkHandoff, [linkInput])
+    expect(services.kanban.linkHandoff).toHaveBeenCalledWith(linkInput)
   })
 
   it('projects:remove cleans the per-project kanban keys', () => {
     const { services, invoke } = createHarness()
     invoke(IPC_CHANNEL.projectsRemove, ['p1'])
     expect(services.kanban.cleanupProject).toHaveBeenCalledWith('p1')
+    expect(services.kanban.dropLaunchProject).toHaveBeenCalledWith('p1')
+    expect(vi.mocked(services.projects.remove).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(services.kanban.dropLaunchProject).mock.invocationCallOrder[0],
+    )
+  })
+
+  it('projects:remove deletes the per-project handoff link document', () => {
+    const { services, invoke } = createHarness()
+    invoke(IPC_CHANNEL.projectsRemove, ['p1'])
+    expect(services.state.delete).toHaveBeenCalledWith('project.kanbanHandoffLinks:p1')
+  })
+
+  it('does not drop task launches when project removal fails', () => {
+    const { services, invoke } = createHarness()
+    vi.mocked(services.projects.remove).mockImplementation(() => {
+      throw new AppError('not_found', 'Project not found.', 'projects:remove')
+    })
+    expect(() => invoke(IPC_CHANNEL.projectsRemove, ['missing'])).toThrow(/Project not found/)
+    expect(services.kanban.dropLaunchProject).not.toHaveBeenCalled()
   })
 
   it('rejects invalid payloads before the service', () => {
@@ -801,6 +886,33 @@ describe('kanban:* channels (adapter integration)', () => {
       [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', {}]],
       [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', { bogus: 1 }]],
       [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', 'stateRef']],
+      [IPC_CHANNEL.kanbanGetItem, ['p1']],
+      [IPC_CHANNEL.kanbanGetItem, ['', 'DEMO-1']],
+      [IPC_CHANNEL.kanbanLaunchTask, [{ projectId: 'p1', mode: 'resume' }]],
+      [
+        IPC_CHANNEL.kanbanLaunchTask,
+        [
+          {
+            projectId: 'p1',
+            itemId: 'native-1',
+            ref: 'DEMO-1',
+            profileId: 'prof-1',
+            attemptId: 'attempt-1',
+            mode: 'start',
+            name: 'Codex',
+          },
+        ],
+      ],
+      [IPC_CHANNEL.kanbanHandoffCandidates, [{ projectId: 'p1', itemId: '', ref: 'DEMO-1' }]],
+      [
+        IPC_CHANNEL.kanbanHandoffCandidates,
+        [{ projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1', extra: 1 }],
+      ],
+      [
+        IPC_CHANNEL.kanbanLinkHandoff,
+        [{ projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1', fileName: 'a/b.md' }],
+      ],
+      [IPC_CHANNEL.kanbanLinkHandoff, [{ projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1' }]],
     ]
     for (const [channel, payload] of cases) {
       try {
@@ -813,6 +925,8 @@ describe('kanban:* channels (adapter integration)', () => {
     }
     expect(services.kanban.setConfig).not.toHaveBeenCalled()
     expect(services.kanban.listBoard).not.toHaveBeenCalled()
+    expect(services.kanban.handoffCandidates).not.toHaveBeenCalled()
+    expect(services.kanban.linkHandoff).not.toHaveBeenCalled()
   })
 
   it('transports adapter failures with their typed codes and messages', async () => {
@@ -830,5 +944,55 @@ describe('kanban:* channels (adapter integration)', () => {
       expect(message).toContain('auth')
       expect(message).toContain('Plane rejected the token.')
     }
+  })
+})
+
+describe('agentProfiles:* channels', () => {
+  const input = {
+    id: null,
+    name: 'Claude',
+    executable: 'claude',
+    args: ['{prompt}'],
+    isDefault: true,
+  }
+
+  it('routes get, put, and delete to the service', () => {
+    const { services, invoke } = createHarness()
+    invoke(IPC_CHANNEL.agentProfilesGet, ['p1'])
+    expect(services.agentProfiles.get).toHaveBeenCalledWith('p1')
+    invoke(IPC_CHANNEL.agentProfilesPut, ['p1', input])
+    expect(services.agentProfiles.put).toHaveBeenCalledWith('p1', input)
+    invoke(IPC_CHANNEL.agentProfilesDelete, ['p1', 'id-1'])
+    expect(services.agentProfiles.delete).toHaveBeenCalledWith('p1', 'id-1')
+  })
+
+  it('projects:remove deletes that project’s agent profiles after the project row is removed', () => {
+    const { services, invoke } = createHarness()
+    invoke(IPC_CHANNEL.projectsRemove, ['p1'])
+    expect(services.projects.remove).toHaveBeenCalledWith('p1')
+    expect(services.agentProfiles.cleanupProject).toHaveBeenCalledWith('p1')
+    expect(vi.mocked(services.projects.remove).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(services.agentProfiles.cleanupProject).mock.invocationCallOrder[0],
+    )
+  })
+
+  it('does not delete agent profiles when project removal fails', () => {
+    const { services, invoke } = createHarness()
+    vi.mocked(services.projects.remove).mockImplementation(() => {
+      throw new AppError('not_found', 'Project not found.', 'projects:remove')
+    })
+    expect(() => invoke(IPC_CHANNEL.projectsRemove, ['missing'])).toThrow(/Project not found/)
+    expect(services.agentProfiles.cleanupProject).not.toHaveBeenCalled()
+  })
+
+  it('rejects an invalid profile before the service', () => {
+    const { services, invoke } = createHarness()
+    expect(() => invoke(IPC_CHANNEL.agentProfilesPut, ['p1', { ...input, name: '  ' }])).toThrow(
+      APP_ERROR_MARKER,
+    )
+    expect(() => invoke(IPC_CHANNEL.agentProfilesPut, ['p1', { ...input, args: [] }])).toThrow(
+      /exactly once/,
+    )
+    expect(services.agentProfiles.put).not.toHaveBeenCalled()
   })
 })
