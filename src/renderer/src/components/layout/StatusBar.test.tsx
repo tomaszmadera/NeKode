@@ -40,6 +40,7 @@ function createAppApiStub(gitStatus?: Partial<GitStatus>): AppApi {
       status: vi.fn(),
     },
     projects: {
+      wslDirectories: vi.fn(() => Promise.resolve([])),
       wslDistributions: vi.fn().mockResolvedValue([]),
       addWsl: vi.fn(),
       list: vi.fn().mockResolvedValue([]),

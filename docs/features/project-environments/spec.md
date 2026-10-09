@@ -87,12 +87,12 @@ Acceptance requires a single shared entry flow, passing Local/WSL dialog and App
 
 ## WSL directory suggestions (NEKODE-35)
 
-Status: proposed; extends the NEKODE-34 WSL field. It reopens only the NEKODE-34 §7 sentence that forbids IPC changes, and only for the read-only directory-listing channel below. The database schema, persistence, terminals and every other service stay unchanged.
+Status: approved (2026-10-09); extends the NEKODE-34 WSL field. It reopens only the NEKODE-34 §7 sentence that forbids IPC changes, and only for the read-only directory-listing channel below. The database schema, persistence, terminals and every other service stay unchanged.
 
 Goal: as the user types `Linux project directory`, NeKode suggests matching subdirectories of the selected distribution, so the Linux path does not have to be typed from memory.
 
 1. One new read-only channel, `projects:wslDirectories`, takes the selected distribution and the renderer's current directory text and returns matching absolute Linux directory paths. It reuses the existing WSL invocation boundary (`runWsl`) with an argv array and no shell, and registers no project.
-2. Suggestions are the child directories of the query's parent: the text after the last `/` filters the directory names directly under that parent. A query that does not start with `/` yields no suggestions. Only directories are returned, only as absolute paths, capped at one fixed entry limit, sorted.
+2. Suggestions are the child directories of the query's parent: the text after the last `/` filters the directory names directly under that parent. A query that does not start with `/` yields no suggestions. Only directories are returned, only as absolute paths, capped at 100 entries, sorted.
 3. Every returned path is a valid candidate under the shared WSL path contract. A child whose component the contract rejects (a control character) is dropped, so a suggestion can never bypass the path rules that registration enforces.
 4. Output is NUL-delimited so names with spaces and newlines survive unchanged.
 5. A missing parent, an unreadable or permission-denied parent, and an unavailable distribution surface as an explicit error state, never as an empty list. An empty result is its own state, distinct from loading and error.

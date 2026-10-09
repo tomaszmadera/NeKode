@@ -49,6 +49,7 @@ export interface AppServices {
     list(): ProjectInfo[]
     add(path: string): ProjectInfo
     wslDistributions(): string[]
+    wslDirectories(distribution: string, linuxPath: string): string[]
     addWsl(distribution: string, linuxPath: string): ProjectInfo
     remove(projectId: string): void
   }

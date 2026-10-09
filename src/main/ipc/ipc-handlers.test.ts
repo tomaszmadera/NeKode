@@ -119,6 +119,7 @@ function createHarness(): Harness {
   const services: AppServices = {
     actions: fakeActions(),
     projects: {
+      wslDirectories: vi.fn(() => []),
       wslDistributions: vi.fn(() => []),
       addWsl: vi.fn(),
       list: vi.fn(() => []),
@@ -216,6 +217,24 @@ function createHarness(): Harness {
 }
 
 describe('registered ipc handlers', () => {
+  it('routes directory suggestions only for trusted senders and transports listing errors', () => {
+    const { invoke, services, showOpenDialog } = createHarness()
+    invoke(IPC_CHANNEL.projectsWslDirectories, ['Ubuntu', '/home/'])
+    expect(services.projects.wslDirectories).toHaveBeenCalledExactlyOnceWith('Ubuntu', '/home/')
+    expect(() =>
+      invoke(IPC_CHANNEL.projectsWslDirectories, ['Ubuntu', '/home/'], 'https://untrusted.example'),
+    ).toThrow(/untrusted/)
+    expect(() => invoke(IPC_CHANNEL.projectsWslDirectories, ['Ubuntu', 42])).toThrow(/validation/)
+    expect(services.projects.wslDirectories).toHaveBeenCalledOnce()
+    vi.mocked(services.projects.wslDirectories).mockImplementation(() => {
+      throw new AppError('unknown', 'Directory listing unavailable.')
+    })
+    expect(() => invoke(IPC_CHANNEL.projectsWslDirectories, ['Ubuntu', '/missing/'])).toThrow(
+      /Directory listing unavailable/,
+    )
+    expect(services.projects.addWsl).not.toHaveBeenCalled()
+    expect(showOpenDialog).not.toHaveBeenCalled()
+  })
   it('routes WSL registration and project shell context only for trusted senders', () => {
     const { invoke, services, showOpenDialog } = createHarness()
     invoke(IPC_CHANNEL.projectsWslDistributions, [])
@@ -422,6 +441,7 @@ describe('registered ipc handlers', () => {
     const services: AppServices = {
       actions: fakeActions(),
       projects: {
+        wslDirectories: vi.fn(() => []),
         wslDistributions: vi.fn(() => []),
         addWsl: vi.fn(),
         list: vi.fn(() => []),
@@ -523,6 +543,7 @@ describe('registered ipc handlers', () => {
     const services: AppServices = {
       actions: fakeActions(),
       projects: {
+        wslDirectories: vi.fn(() => []),
         wslDistributions: vi.fn(() => []),
         addWsl: vi.fn(),
         list: vi.fn(() => []),
@@ -632,6 +653,7 @@ describe('registered ipc handlers', () => {
     const services: AppServices = {
       actions: fakeActions(),
       projects: {
+        wslDirectories: vi.fn(() => []),
         wslDistributions: vi.fn(() => []),
         addWsl: vi.fn(),
         list: vi.fn(() => []),

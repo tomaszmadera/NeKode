@@ -252,6 +252,7 @@ export const IPC_CHANNEL = {
   projectsList: 'projects:list',
   projectsAdd: 'projects:add',
   projectsWslDistributions: 'projects:wslDistributions',
+  projectsWslDirectories: 'projects:wslDirectories',
   projectsAddWsl: 'projects:addWsl',
   projectsRemove: 'projects:remove',
   chatsList: 'chats:list',
@@ -561,6 +562,8 @@ export interface AppApi {
     /** Opens the native directory dialog in main. Resolves null when the user cancels. */
     add(): Promise<ProjectInfo | null>
     wslDistributions(): Promise<string[]>
+    /** Advisory directory completions in the selected distribution; never registers a project. */
+    wslDirectories(distribution: string, linuxPath: string): Promise<string[]>
     addWsl(distribution: string, linuxPath: string): Promise<ProjectInfo>
     remove(projectId: string): Promise<void>
   }

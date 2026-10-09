@@ -21,6 +21,10 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
   const alive = useRef(true)
   const requestId = useRef(0)
   const busyRef = useRef(false)
+  const directoryRequestId = useRef(0)
+  const directoryFocused = useRef(false)
+  const directoriesDismissed = useRef(false)
+  const acceptedPath = useRef<string | null>(null)
   const [location, setLocation] = useState('local')
   const [distributions, setDistributions] = useState<string[]>([])
   const [distribution, setDistribution] = useState('')
@@ -31,6 +35,66 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [registeredProject, setRegisteredProject] = useState<ProjectInfo | null>(null)
+  const [directories, setDirectories] = useState<string[]>([])
+  const [directoryState, setDirectoryState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle',
+  )
+  const [directoryError, setDirectoryError] = useState<string | null>(null)
+  const [directoriesOpen, setDirectoriesOpen] = useState(false)
+  const [activeDirectory, setActiveDirectory] = useState(0)
+  const wsl = location === 'wsl'
+  const fieldsDisabled = busy || registeredProject !== null
+
+  useEffect(() => {
+    const id = ++directoryRequestId.current
+    if (acceptedPath.current === path && wsl && !fieldsDisabled) {
+      acceptedPath.current = null
+      return
+    }
+    setDirectories([])
+    setDirectoriesOpen(false)
+    setDirectoryError(null)
+    if (!wsl || fieldsDisabled || discovery !== 'ready' || !distribution || !path.startsWith('/')) {
+      setDirectoryState('idle')
+      return
+    }
+    setDirectoryState('loading')
+    const timer = setTimeout(async () => {
+      try {
+        const paths = await app.projects.wslDirectories(distribution, path)
+        if (!alive.current || id !== directoryRequestId.current) return
+        setDirectories(paths)
+        setActiveDirectory(0)
+        setDirectoryState('ready')
+        setDirectoriesOpen(
+          paths.length > 0 && directoryFocused.current && !directoriesDismissed.current,
+        )
+      } catch (cause) {
+        if (!alive.current || id !== directoryRequestId.current) return
+        setDirectoryState('error')
+        setDirectoryError(parseAppErrorPayload(cause)?.message ?? 'Unable to list WSL directories.')
+      }
+    }, 200)
+    return () => {
+      clearTimeout(timer)
+      directoryRequestId.current += 1
+    }
+  }, [app.projects.wslDirectories, path, distribution, wsl, discovery, fieldsDisabled])
+
+  useEffect(() => {
+    if (directoriesOpen) {
+      document
+        .getElementById(`wsl-directory-option-${activeDirectory}`)
+        ?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [activeDirectory, directoriesOpen])
+
+  function acceptDirectory(value: string): void {
+    acceptedPath.current = value === path ? null : value
+    setPath(value)
+    setPathError(null)
+    setError(null)
+  }
 
   useEffect(() => {
     const opener = document.activeElement
@@ -110,8 +174,6 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
     }
   }
 
-  const wsl = location === 'wsl'
-  const fieldsDisabled = busy || registeredProject !== null
   const primaryLabel = registeredProject
     ? busy
       ? 'Opening project...'
@@ -221,16 +283,106 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
               id="wsl-directory"
               placeholder="/home/user/project"
               value={path}
+              role="combobox"
+              autoComplete="off"
+              aria-autocomplete="list"
+              aria-expanded={directoriesOpen}
+              aria-controls={directoriesOpen ? 'wsl-directories' : undefined}
+              aria-activedescendant={
+                directoriesOpen ? `wsl-directory-option-${activeDirectory}` : undefined
+              }
               disabled={fieldsDisabled || discovery !== 'ready' || !distribution}
               onChange={(event) => {
+                acceptedPath.current = null
+                directoriesDismissed.current = false
                 setPath(event.target.value)
                 setPathError(null)
                 setError(null)
+              }}
+              onFocus={() => {
+                directoryFocused.current = true
+                directoriesDismissed.current = false
+                if (directoryState === 'ready' && directories.length > 0) setDirectoriesOpen(true)
+              }}
+              onBlur={() => {
+                directoryFocused.current = false
+                setDirectoriesOpen(false)
+              }}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  if (directories.length === 0) return
+                  event.preventDefault()
+                  directoriesDismissed.current = false
+                  setDirectoriesOpen(true)
+                  setActiveDirectory((previous) =>
+                    !directoriesOpen
+                      ? event.key === 'ArrowDown'
+                        ? 0
+                        : directories.length - 1
+                      : (previous + (event.key === 'ArrowDown' ? 1 : -1) + directories.length) %
+                        directories.length,
+                  )
+                } else if (
+                  directoriesOpen &&
+                  (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey))
+                ) {
+                  event.preventDefault()
+                  acceptDirectory(directories[activeDirectory])
+                } else if (directoriesOpen && event.key === 'Escape') {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  directoriesDismissed.current = true
+                  setDirectoriesOpen(false)
+                }
               }}
               aria-invalid={pathError !== null}
               aria-describedby={pathError ? 'wsl-path-help wsl-path-error' : 'wsl-path-help'}
               className={controlClass}
             />
+            {directoriesOpen ? (
+              <div
+                id="wsl-directories"
+                role="listbox"
+                tabIndex={-1}
+                aria-label="Linux directories"
+                className="mt-1 max-h-40 overflow-y-auto rounded-md border border-edge bg-app text-sm"
+              >
+                {directories.map((directory, index) => (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    key={directory}
+                    id={`wsl-directory-option-${index}`}
+                    role="option"
+                    aria-selected={index === activeDirectory}
+                    className={`w-full cursor-pointer break-all px-3 py-2 text-left ${index === activeDirectory ? 'bg-highlight text-ink' : 'text-ink-secondary hover:bg-highlight'}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setActiveDirectory(index)
+                      acceptDirectory(directory)
+                    }}
+                  >
+                    {directory}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {directoryState === 'loading' ? (
+              <p role="status" className="mt-2 text-xs text-ink-secondary">
+                Loading directories...
+              </p>
+            ) : null}
+            {directoryState === 'ready' && directories.length === 0 ? (
+              <p role="status" className="mt-2 text-xs text-ink-secondary">
+                No matching directories.
+              </p>
+            ) : null}
+            {directoryError ? (
+              <p role="alert" className="mt-2 text-sm text-ink">
+                {directoryError}
+              </p>
+            ) : null}
             <p id="wsl-path-help" className="mt-2 text-xs text-ink-secondary">
               Use an absolute Linux path in this distribution.
             </p>

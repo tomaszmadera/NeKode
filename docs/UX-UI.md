@@ -286,6 +286,13 @@ control on close. No separate WSL navigation button or unavailable future
 location is shown. The [project environment contract](features/project-environments/spec.md#unified-project-add-ui-nekode-34)
 owns the full behavior (NEKODE-34, approved 2026-10-09).
 
+The WSL directory field suggests matching directories after a short typing
+pause. Up/Down moves the active choice; Enter, Tab or a click fills the field
+without adding a project. Escape closes the suggestions first. With the list
+closed, Tab moves focus and Enter submits as before. Loading, no matches and
+listing errors have separate messages. The [directory suggestion contract](features/project-environments/spec.md#wsl-directory-suggestions-nekode-35)
+owns this behavior (NEKODE-35).
+
 ```text
 Projects                        +
 

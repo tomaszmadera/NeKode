@@ -30,6 +30,56 @@ export function listWslDistributions(): string[] {
   }
 }
 
+/** Query paths may end in '/' and include the root, unlike registration paths. */
+export function listWslDirectories(distribution: string, query: string): string[] {
+  try {
+    // Validate the distribution even for empty queries without invoking WSL.
+    wslProjectPath(distribution, '/query')
+    if ([...query].some((character) => character.charCodeAt(0) < 32)) {
+      throw new Error('Directory queries must not contain control characters.')
+    }
+    if (!query.startsWith('/')) return []
+    const candidate = query === '/' ? '/query' : query.endsWith('/') ? query.slice(0, -1) : query
+    wslProjectPath(distribution, candidate)
+  } catch (error) {
+    throw new AppError('validation', error instanceof Error ? error.message : 'Invalid WSL query.')
+  }
+  const separator = query.lastIndexOf('/')
+  const parent = query.slice(0, separator) || '/'
+  const prefix = query.slice(separator + 1)
+  const childPrefix = parent === '/' ? '/' : `${parent}/`
+  // find on a regular file can succeed with no output; prove the parent is a directory first.
+  runWsl(distribution, ['/usr/bin/test', '-d', parent])
+  const output = runWsl(distribution, [
+    'find',
+    '-H',
+    parent,
+    '-mindepth',
+    '1',
+    '-maxdepth',
+    '1',
+    '-type',
+    'd',
+    '-print0',
+  ])
+  return output
+    .split('\0')
+    .filter((path) => {
+      if (!path.startsWith(childPrefix)) return false
+      const name = path.slice(childPrefix.length)
+      if (!name || name.includes('/') || !name.startsWith(prefix)) return false
+      try {
+        wslProjectPath(distribution, path)
+        return true
+      } catch {
+        // Linux permits names that the shared project path contract deliberately rejects.
+        return false
+      }
+    })
+    .sort()
+    .slice(0, 100)
+}
+
 export function validatedWslProjectPath(distribution: string, linuxPath: string): string {
   let path: string
   try {
