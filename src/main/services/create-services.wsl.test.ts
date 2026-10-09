@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { APP_STATE_KEY, projectShellKey, projectWslShellsKey } from '../../shared/ipc-contract'
 import { createServices } from './create-services'
 import { createNodePty } from './terminal/node-pty-factory'
-import { listWslDistributions, runWsl } from './terminal/wsl'
+import { listWslDirectories, listWslDistributions, runWsl } from './terminal/wsl'
 
 vi.mock('node:fs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs')>()),
@@ -23,6 +23,7 @@ vi.mock('./terminal/node-pty-factory', () => ({
 vi.mock('./terminal/wsl', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./terminal/wsl')>()),
   listWslDistributions: vi.fn(() => ['Ubuntu']),
+  listWslDirectories: vi.fn(() => ['/home/user/Project']),
   runWsl: vi.fn((_distribution: string, args: string[]) =>
     args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
   ),
@@ -47,6 +48,16 @@ function setup() {
 }
 
 describe('WSL service wiring', () => {
+  it('lists directories through the existing WSL helper without registering a project', () => {
+    const { services, project } = setup()
+    const before = services.projects.list()
+    expect(services.projects.wslDirectories('Ubuntu', '/home/user/')).toEqual([
+      '/home/user/Project',
+    ])
+    expect(listWslDirectories).toHaveBeenCalledExactlyOnceWith('Ubuntu', '/home/user/')
+    expect(services.projects.list()).toEqual(before)
+    expect(before.map((entry) => entry.id)).toEqual([project.id])
+  })
   it.each(['chat', 'bottom'] as const)(
     'reattaches a live %s PTY after its saved Linux shell becomes unavailable',
     (kind) => {

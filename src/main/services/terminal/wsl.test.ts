@@ -1,10 +1,116 @@
 import { execFileSync } from 'node:child_process'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { listWslDistributions, prepareWslTerminal, validatedWslProjectPath } from './wsl'
+import {
+  listWslDirectories,
+  listWslDistributions,
+  prepareWslTerminal,
+  validatedWslProjectPath,
+} from './wsl'
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }))
 
 beforeEach(() => vi.mocked(execFileSync).mockReset())
+
+describe('WSL directory suggestions', () => {
+  it.each(['', 'home/user'])('does not invoke WSL for non-absolute query %j', (query) => {
+    expect(listWslDirectories('Ubuntu', query)).toEqual([])
+    expect(execFileSync).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['-Ubuntu', '/home/'],
+    ['Ubuntu.', '/home/'],
+    ['Ubuntu', '/home//user'],
+    ['Ubuntu', '/home/../user'],
+    ['Ubuntu', '/home/./user'],
+    ['Ubuntu', '/home\\user'],
+    ['Ubuntu', '/home/\0'],
+  ])('rejects invalid distribution/query %j %j before invoking WSL', (distribution, query) => {
+    expect(() => listWslDirectories(distribution, query)).toThrow()
+    expect(execFileSync).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['/', '/', '', ['/alpha', '/beta']],
+    ['/home/', '/home', '', ['/home/alpha', '/home/beta']],
+    ['/home/al', '/home', 'al', ['/home/alpha']],
+    ['/home/AL', '/home', 'AL', []],
+  ])(
+    'splits query %j and sorts immediate matching children',
+    (query, parent, _prefix, expected) => {
+      const root = parent === '/' ? '' : parent
+      vi.mocked(execFileSync)
+        .mockReturnValueOnce('')
+        .mockReturnValueOnce(
+          `${root}/beta\0${root}/alpha\0${root}/alpha/nested\0/elsewhere/alpha\0`,
+        )
+      expect(listWslDirectories('Ubuntu', query)).toEqual(expected)
+      expect(execFileSync).toHaveBeenNthCalledWith(
+        1,
+        'wsl.exe',
+        ['--distribution', 'Ubuntu', '--exec', '/usr/bin/test', '-d', parent],
+        expect.objectContaining({ timeout: 5000, windowsHide: true }),
+      )
+      expect(execFileSync).toHaveBeenLastCalledWith(
+        'wsl.exe',
+        [
+          '--distribution',
+          'Ubuntu',
+          '--exec',
+          'find',
+          '-H',
+          parent,
+          '-mindepth',
+          '1',
+          '-maxdepth',
+          '1',
+          '-type',
+          'd',
+          '-print0',
+        ],
+        expect.objectContaining({ timeout: 5000, windowsHide: true }),
+      )
+    },
+  )
+
+  it('preserves spaces, Unicode and shell metacharacters, dropping invalid candidates', () => {
+    vi.mocked(execFileSync)
+      .mockReturnValueOnce('')
+      .mockReturnValueOnce(
+        '/home/My $ Project\0/home/ą\0/home/line\nbreak\0/home/back\\slash\0/home/..\0',
+      )
+    expect(listWslDirectories('Ubuntu', '/home/')).toEqual(['/home/My $ Project', '/home/ą'])
+  })
+
+  it('caps results at 100 after sorting, not before filtering', () => {
+    const paths = Array.from(
+      { length: 110 },
+      (_, index) => `/home/p${String(index).padStart(3, '0')}`,
+    )
+    vi.mocked(execFileSync)
+      .mockReturnValueOnce('')
+      .mockReturnValueOnce(`${paths.reverse().join('\0')}\0`)
+    const result = listWslDirectories('Ubuntu', '/home/p')
+    expect(result).toHaveLength(100)
+    expect(result[0]).toBe('/home/p000')
+    expect(result[99]).toBe('/home/p099')
+  })
+
+  it('keeps an empty listing distinct from a missing parent or failed listing', () => {
+    vi.mocked(execFileSync).mockReturnValueOnce('').mockReturnValueOnce('')
+    expect(listWslDirectories('Ubuntu', '/empty/')).toEqual([])
+    vi.mocked(execFileSync).mockImplementationOnce(() => {
+      throw new Error('missing parent or distribution')
+    })
+    expect(() => listWslDirectories('Ubuntu', '/missing/')).toThrow(/unavailable/)
+    vi.mocked(execFileSync)
+      .mockReturnValueOnce('')
+      .mockImplementationOnce(() => {
+        throw new Error('permission denied')
+      })
+    expect(() => listWslDirectories('Ubuntu', '/denied/')).toThrow(/unavailable/)
+  })
+})
 
 describe('WSL invocation boundary', () => {
   it('decodes installed distributions with BOM and CRLF', () => {

@@ -15,10 +15,12 @@ afterEach(cleanup)
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 function setup() {
@@ -26,11 +28,12 @@ function setup() {
   const add = vi.fn().mockResolvedValue(project)
   const addWsl = vi.fn().mockResolvedValue(project)
   const wslDistributions = vi.fn().mockResolvedValue(['Ubuntu', 'Debian'])
-  const app = { projects: { add, addWsl, wslDistributions } } as unknown as AppApi
+  const wslDirectories = vi.fn().mockResolvedValue([])
+  const app = { projects: { add, addWsl, wslDistributions, wslDirectories } } as unknown as AppApi
   const onAdded = vi.fn()
   const onClose = vi.fn()
   const view = render(<AddProject app={app} onAdded={onAdded} onClose={onClose} />)
-  return { ...view, app, add, addWsl, wslDistributions, onAdded, onClose, project }
+  return { ...view, app, add, addWsl, wslDistributions, wslDirectories, onAdded, onClose, project }
 }
 
 function selectWsl() {
@@ -279,5 +282,168 @@ describe('Add Project', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
     expect(add).toHaveBeenCalledOnce()
     expect(onAdded).toHaveBeenNthCalledWith(2, project)
+  })
+})
+
+describe('WSL directory combobox', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  async function prepare() {
+    const result = setup()
+    await act(async () => selectWsl())
+    const input = screen.getByRole('combobox', {
+      name: 'Linux project directory',
+    }) as HTMLInputElement
+    act(() => input.focus())
+    return { ...result, input }
+  }
+
+  async function debounce() {
+    await act(async () => vi.advanceTimersByTimeAsync(200))
+  }
+
+  it('debounces input and announces loading, empty and errors separately without moving focus', async () => {
+    const { input, wslDirectories } = await prepare()
+    enterPath('relative')
+    await debounce()
+    expect(wslDirectories).not.toHaveBeenCalled()
+    enterPath('/home/a')
+    enterPath('/home/al')
+    expect(screen.getByRole('status').textContent).toBe('Loading directories...')
+    expect(wslDirectories).not.toHaveBeenCalled()
+    await debounce()
+    expect(wslDirectories).toHaveBeenCalledExactlyOnceWith('Ubuntu', '/home/al')
+    expect(screen.getByRole('status').textContent).toBe('No matching directories.')
+    wslDirectories.mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'unknown',
+      message: 'Parent unavailable.',
+    })
+    enterPath('/missing/')
+    await debounce()
+    expect(screen.getByRole('alert').textContent).toBe('Parent unavailable.')
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('accepts keyboard and pointer choices without registering and keeps navigation available', async () => {
+    const { input, wslDirectories, addWsl } = await prepare()
+    wslDirectories.mockResolvedValue(['/home/alpha', '/home/beta'])
+    enterPath('/home/')
+    await debounce()
+    expect(input.getAttribute('aria-expanded')).toBe('true')
+    expect(input.getAttribute('aria-controls')).toBe(screen.getByRole('listbox').id)
+    expect(fireEvent.keyDown(input, { key: 'ArrowDown' })).toBe(false)
+    expect(input.getAttribute('aria-activedescendant')).toBe(
+      screen.getByRole('option', { name: '/home/beta' }).id,
+    )
+    expect(fireEvent.keyDown(input, { key: 'Enter' })).toBe(false)
+    expect(input.value).toBe('/home/beta')
+    expect(screen.getByRole('listbox')).toBeTruthy()
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(false)
+    expect(input.value).toBe('/home/alpha')
+    expect(document.activeElement).toBe(input)
+    const beta = screen.getByRole('option', { name: '/home/beta' })
+    fireEvent.mouseDown(beta)
+    fireEvent.click(beta)
+    expect(input.value).toBe('/home/beta')
+    expect(addWsl).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(input)
+    enterPath('/home/beta/')
+    await debounce()
+    expect(wslDirectories).toHaveBeenLastCalledWith('Ubuntu', '/home/beta/')
+  })
+
+  it('Escape closes the list, closed Tab/Enter retain defaults, and arrows reopen it', async () => {
+    const { input, wslDirectories, onClose } = await prepare()
+    wslDirectories.mockResolvedValue(['/home/project'])
+    enterPath('/home/')
+    await debounce()
+    expect(fireEvent.keyDown(input, { key: 'Escape' })).toBe(false)
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(true)
+    expect(fireEvent.keyDown(input, { key: 'Enter' })).toBe(true)
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(screen.getByRole('listbox')).toBeTruthy()
+    expect(fireEvent.keyDown(input, { key: 'Tab', shiftKey: true })).toBe(true)
+    expect(fireEvent.keyDown(input, { key: 'Enter', isComposing: true })).toBe(true)
+  })
+
+  it('drops superseded input responses before the next debounce finishes', async () => {
+    const { input, wslDirectories } = await prepare()
+    const first = deferred<string[]>()
+    wslDirectories.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['/new/project'])
+    enterPath('/old/')
+    await debounce()
+    enterPath('/new/')
+    await act(async () => first.resolve(['/old/project']))
+    expect(screen.queryByRole('listbox')).toBeNull()
+    await debounce()
+    expect(screen.getByRole('option', { name: '/new/project' })).toBeTruthy()
+    expect(input.value).toBe('/new/')
+  })
+
+  it('ignores a superseded rejection while the newer query is loading', async () => {
+    const { wslDirectories } = await prepare()
+    const old = deferred<string[]>()
+    wslDirectories.mockReturnValueOnce(old.promise)
+    enterPath('/old/')
+    await debounce()
+    enterPath('/new/')
+    await act(async () =>
+      old.reject({ nekodeAppError: true, code: 'unknown', message: 'Old failure.' }),
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('Loading directories...')
+    await debounce()
+    expect(screen.getByRole('status').textContent).toBe('No matching directories.')
+  })
+
+  it('refreshes the distribution after accepting an unchanged field value', async () => {
+    const { input, wslDirectories } = await prepare()
+    wslDirectories
+      .mockResolvedValueOnce(['/home/project'])
+      .mockResolvedValueOnce(['/home/project-debian'])
+    enterPath('/home/project')
+    await debounce()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.change(screen.getByLabelText('Distribution'), { target: { value: 'Debian' } })
+    expect(screen.queryByRole('listbox')).toBeNull()
+    await debounce()
+    expect(wslDirectories).toHaveBeenLastCalledWith('Debian', '/home/project')
+    expect(screen.queryByRole('option', { name: '/home/project' })).toBeNull()
+  })
+
+  it('drops old distribution results and never reopens the list after blur', async () => {
+    const { input, wslDirectories } = await prepare()
+    const old = deferred<string[]>()
+    wslDirectories.mockReturnValueOnce(old.promise).mockResolvedValueOnce(['/home/debian'])
+    enterPath('/home/')
+    await debounce()
+    fireEvent.change(screen.getByLabelText('Distribution'), { target: { value: 'Debian' } })
+    await act(async () => old.resolve(['/home/ubuntu']))
+    act(() => screen.getByRole('button', { name: 'Cancel' }).focus())
+    await debounce()
+    expect(wslDirectories).toHaveBeenLastCalledWith('Debian', '/home/')
+    expect(screen.queryByRole('listbox')).toBeNull()
+    act(() => input.focus())
+    expect(screen.getByRole('option', { name: '/home/debian' })).toBeTruthy()
+  })
+
+  it.each(['local', 'unmount'])('ignores completion after %s', async (action) => {
+    const { wslDirectories, unmount } = await prepare()
+    const pending = deferred<string[]>()
+    wslDirectories.mockReturnValueOnce(pending.promise)
+    enterPath('/home/')
+    await debounce()
+    if (action === 'local')
+      fireEvent.change(screen.getByLabelText('Project location'), { target: { value: 'local' } })
+    else unmount()
+    await act(async () => pending.resolve(['/home/late']))
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
   })
 })

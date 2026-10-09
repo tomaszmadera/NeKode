@@ -514,6 +514,9 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel('actions:status', ['string'], (args) => services.actions.status(args[0])),
     serviceChannel('projects:list', [], () => services.projects.list()),
     serviceChannel('projects:wslDistributions', [], () => services.projects.wslDistributions()),
+    serviceChannel('projects:wslDirectories', ['string', 'string'], (args) =>
+      services.projects.wslDirectories(args[0], args[1]),
+    ),
     {
       channel: 'projects:addWsl',
       parse(payload) {

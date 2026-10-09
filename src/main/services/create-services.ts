@@ -26,7 +26,7 @@ import { ProjectService } from './project-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { ShellService } from './terminal/shell-service'
 import { TerminalService } from './terminal/terminal-service'
-import { listWslDistributions, validatedWslProjectPath } from './terminal/wsl'
+import { listWslDirectories, listWslDistributions, validatedWslProjectPath } from './terminal/wsl'
 
 // Wires the persistence, terminal and git stacks to the typed service registry
 // consumed by the IPC handlers. DB path is injected so tests use :memory: or a
@@ -159,6 +159,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       },
       add: (path) => projects.add(path),
       wslDistributions: listWslDistributions,
+      wslDirectories: listWslDirectories,
       addWsl: (distribution, linuxPath) =>
         projects.add(validatedWslProjectPath(distribution, linuxPath)),
       remove: (projectId) => projects.remove(projectId),

@@ -75,6 +75,8 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       // Resolves null when the user cancels the dialog.
       add: () => invoke<ProjectInfo | null>(IPC_CHANNEL.projectsAdd),
       wslDistributions: () => invoke<string[]>(IPC_CHANNEL.projectsWslDistributions),
+      wslDirectories: (distribution, linuxPath) =>
+        invoke<string[]>(IPC_CHANNEL.projectsWslDirectories, distribution, linuxPath),
       addWsl: (distribution, linuxPath) =>
         invoke<ProjectInfo>(IPC_CHANNEL.projectsAddWsl, distribution, linuxPath),
       remove: (projectId) => invoke<void>(IPC_CHANNEL.projectsRemove, projectId),

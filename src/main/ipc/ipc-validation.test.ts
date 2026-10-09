@@ -30,6 +30,7 @@ function fakeServices(): AppServices {
       stopForProject: vi.fn(),
     },
     projects: {
+      wslDirectories: vi.fn(() => []),
       wslDistributions: vi.fn(() => []),
       addWsl: vi.fn(),
       list: () => [],
@@ -107,6 +108,22 @@ function channelMap() {
 }
 
 describe('ipc payload validation', () => {
+  it('validates both directory query arguments and exact arity before the service', () => {
+    const services = fakeServices()
+    const channel = buildValidatedChannels(services).find(
+      (entry) => entry.channel === 'projects:wslDirectories',
+    )
+    if (!channel) throw new Error('Missing directory suggestions channel')
+    for (const payload of [[], ['Ubuntu'], ['Ubuntu', '/', 'extra'], [null, '/'], ['Ubuntu', 42]]) {
+      expect(() => channel.parse(payload)).toThrow(ValidationError)
+    }
+    expect(services.projects.wslDirectories).not.toHaveBeenCalled()
+    for (const query of ['', 'relative', '/', '/home/user/']) {
+      const args = channel.parse(['Ubuntu', query])
+      channel.invoke(args)
+      expect(services.projects.wslDirectories).toHaveBeenLastCalledWith('Ubuntu', query)
+    }
+  })
   it('validates WSL registration and optional project shell context', () => {
     const channels = channelMap()
     expect(channels.get('projects:addWsl')?.parse(['Ubuntu', '/home/user/My Project'])).toEqual([

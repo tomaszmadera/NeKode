@@ -28,12 +28,17 @@ describe('preload app api', () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
     await api.projects.wslDistributions()
+    await api.projects.wslDirectories('Ubuntu-24.04', '/home/user/My $ Project/')
     await api.projects.addWsl('Ubuntu-24.04', '/home/user/My Project')
     await api.terminals.shellList('p1')
     await api.terminals.shellDetect('p1')
     await api.terminals.shellAddCustom('/bin/fish', 'p1')
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.projectsWslDistributions, args: [] },
+      {
+        channel: IPC_CHANNEL.projectsWslDirectories,
+        args: ['Ubuntu-24.04', '/home/user/My $ Project/'],
+      },
       { channel: IPC_CHANNEL.projectsAddWsl, args: ['Ubuntu-24.04', '/home/user/My Project'] },
       { channel: IPC_CHANNEL.terminalsShellList, args: ['p1'] },
       { channel: IPC_CHANNEL.terminalsShellDetect, args: ['p1'] },
