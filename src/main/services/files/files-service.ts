@@ -2,6 +2,7 @@ import { promises as nodeFs } from 'node:fs'
 import { posix } from 'node:path'
 import type { FileEntry, FilePreview } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
+import { joinProjectPath } from '../project-path'
 
 // Project file listing and read-only preview classification (spec Data/API,
 // Business rules). The renderer never touches the filesystem: every listing
@@ -247,7 +248,7 @@ export class FilesService {
         // Symlink entries are classified by their target; broken links are
         // skipped and links leaving the root stay name-only (opening them
         // fails with the containment error).
-        const stats = await this.#fs.stat(posix.join(target, entry.name))
+        const stats = await this.#fs.stat(joinProjectPath(target, entry.name))
         if (stats === null) {
           continue
         }
@@ -368,7 +369,7 @@ export class FilesService {
       // not-found, like every other rejected shape (spec Errors).
       throw notFound(channel)
     }
-    const target = posix.join(root, input)
+    const target = joinProjectPath(root, input)
 
     const realRoot = await this.#fs.realpath(root)
     const realTarget = await this.#fs.realpath(target)

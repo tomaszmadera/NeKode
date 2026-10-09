@@ -3,6 +3,7 @@ import { basename } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '../../../shared/bottom-tab-id'
 import type { Unsubscribe } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
+import { prepareWslTerminal } from './wsl'
 
 // Chat terminal sessions (spec Data/API, SDD §17): one PTY process per chat,
 // spawned lazily on the first terminal attach. The renderer never touches
@@ -109,11 +110,11 @@ export class TerminalService {
    * Lazily spawns the chat's PTY on first attach. Idempotent per chatId while
    * the session is alive (one PTY per chat, spec Business rules); an exited
    * session is replaced by a fresh process (spec Edge cases). The optional
-   * shell override (spec project-shell-selection) is resolved by the caller —
-   * main resolves the project's stored choice; absent means the service
+   * shell override can be a resolver, evaluated only for a new process.
+   * Main resolves the project's stored choice; absent means the service
    * default (platform default, unchanged).
    */
-  create(chatId: string, cwd: string, shell?: ShellSpec): string {
+  create(chatId: string, cwd: string, shell?: ShellSpec | (() => ShellSpec)): string {
     if (this.#quitting) {
       throw new AppError('conflict', 'The application is closing.')
     }
@@ -136,13 +137,15 @@ export class TerminalService {
       )
     }
 
-    const shellSpec = shell ?? this.#shell
+    const resolvedShell = typeof shell === 'function' ? shell() : shell
+    const wsl = prepareWslTerminal(cwd, resolvedShell)
+    const shellSpec = wsl ?? resolvedShell ?? this.#shell
     let pty: PtyProcessLike
     try {
       pty = this.#createPty({
         file: shellSpec.file,
         args: [...shellSpec.args],
-        cwd,
+        cwd: wsl?.cwd ?? cwd,
         cols: this.#cols,
         rows: this.#rows,
         env: { ...process.env } as Record<string, string>,

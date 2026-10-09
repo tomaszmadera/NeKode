@@ -5,7 +5,7 @@ import { AppError } from '../../shared/ipc-error'
 import { shellDisplayName } from './terminal/terminal-service'
 
 // ChatService: chat list/create/remove scoped to a project (spec Business
-// rules: the name is a non-empty shell-derived display label and duplicates
+// rules: the name is `[shell]` with an optional agent profile name and duplicates
 // within one project are allowed — identity is the id). A chat is removed
 // only by project removal (cascade) or by its terminal exiting (spec
 // Behaviour 11) — that policy lives in the IPC layer, this service owns the
@@ -61,29 +61,35 @@ export class ChatService {
 
   /**
    * Creates a chat with no naming form (spec Behaviour 3): the name is the
-   * project's shell display label (spec project-shell-selection; the
+   * project's shell display label in brackets (spec project-shell-selection; the
    * platform default, e.g. "PowerShell" on win32, when the project has no
    * shell choice) and may repeat within a project — the generated id is the
    * identity.
    */
   create(projectId: string): ChatInfo {
-    return this.insert(projectId, this.chatNameForProject(projectId).trim(), 'chats:create')
+    return this.insert(projectId, this.formatName(projectId, 'chats:create'), 'chats:create')
   }
 
   /**
-   * Inserts a chat with a main-owned name. Task launch uses the agent profile
-   * name. `chats:create` does not call this and still does not accept a name
+   * Inserts a chat with a main-owned `[shell] profile` name. Task launch supplies
+   * the agent profile name. `chats:create` does not accept a name
    * from the renderer.
    */
   createNamed(projectId: string, name: string): ChatInfo {
-    return this.insert(projectId, name.trim(), 'kanban:launchTask')
+    const channel = 'kanban:launchTask'
+    return this.insert(projectId, this.formatName(projectId, channel, name), channel)
+  }
+
+  private formatName(projectId: string, channel: string, profileName?: string): string {
+    const shellName = this.chatNameForProject(projectId).trim()
+    const profile = profileName?.trim()
+    if (shellName.length === 0 || profile === '') {
+      throw new AppError('validation', 'Chat name must not be empty.', channel)
+    }
+    return `[${shellName}]${profile === undefined ? '' : ` ${profile}`}`
   }
 
   private insert(projectId: string, name: string, channel: string): ChatInfo {
-    if (name.length === 0) {
-      throw new AppError('validation', 'Chat name must not be empty.', channel)
-    }
-
     const project = this.db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)
     if (!project) {
       throw new AppError('not_found', 'Project not found.', channel)

@@ -40,6 +40,8 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       status: vi.fn(),
     },
     projects: {
+      wslDistributions: vi.fn().mockResolvedValue([]),
+      addWsl: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
       add: vi.fn().mockResolvedValue(null),
       remove: vi.fn().mockResolvedValue(undefined),
@@ -106,7 +108,11 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       getItem: vi.fn(),
       launchTask: vi.fn(),
       handoffCandidates: vi.fn(),
-      linkHandoff: vi.fn(),
+      handoffAvailability: vi.fn(async () => ({
+        state: 'ready' as const,
+        items: [],
+        rejections: [],
+      })),
     },
     agentProfiles: {
       get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
@@ -556,6 +562,7 @@ describe('ChatTerminal lifecycle', () => {
     )
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
     const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
+    expect(input.className).toContain('terminal-prompt-input')
     fireEvent.change(input, { target: { value: 'git status' } })
     fireEvent.submit(input.closest('form') as HTMLFormElement)
     // Split-write submission (lib/pty-submit.ts): the line, then the CR as

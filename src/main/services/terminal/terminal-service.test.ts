@@ -239,7 +239,7 @@ describe('terminal service (fake PTY)', () => {
   it('quit teardown emits no exit events (chat removal is suppressed during quit)', () => {
     // ConPTY-style kill raises an exit event afterwards; the chat-close flow
     // (renderer-driven chat removal, spec Behaviour 11) must never start while
-    // the application quits — chats stay in the tree and the database.
+    // the application quits: chats stay in the tree and the database.
     const { service, ptys } = createHarness({ killEmitsExit: true })
     const exitEvents: Array<[string, number]> = []
     service.onExit((chatId, exitCode) => exitEvents.push([chatId, exitCode]))
@@ -363,5 +363,71 @@ describe('shellDisplayName', () => {
     const expected = process.platform === 'win32' ? 'PowerShell' : shellDisplayName()
     expect(shellDisplayName()).toBe(expected)
     expect(shellDisplayName().length).toBeGreaterThan(0)
+  })
+})
+
+describe('WSL terminal routing', () => {
+  it('keeps WSL sessions on repeated attach and disposes only owned sessions on close and quit', () => {
+    const { service, ptys, spawn } = createHarness({ killEmitsExit: true })
+    const exits = vi.fn()
+    service.onExit(exits)
+    const path = '\\\\wsl$\\Ubuntu\\home\\user'
+    service.create('chat', path)
+    const bottom = createBottomTabId('wsl')
+    service.create(bottom, path)
+    service.create('chat', path)
+    expect(spawn).toHaveBeenCalledTimes(2)
+    service.terminate(bottom)
+    expect(ptys[1].killCount).toBe(1)
+    expect(service.hasRunningSession('chat')).toBe(true)
+    service.terminateAll()
+    expect(ptys[0].killCount).toBe(1)
+    expect(exits).not.toHaveBeenCalled()
+    expect(() => service.create('late', path)).toThrow(/closing/)
+  })
+  it('starts the distribution default in Linux cwd with a separate host cwd', () => {
+    const { service, spawn } = createHarness()
+    service.create('wsl-chat', '\\\\wsl.localhost\\Ubuntu-24.04\\home\\u\\My Project')
+    expect(spawn.mock.calls.map(([{ file, args, cwd }]) => ({ file, args, cwd }))).toEqual([
+      {
+        file: 'wsl.exe',
+        args: ['--distribution', 'Ubuntu-24.04', '--cd', '/home/u/My Project'],
+        cwd: process.cwd(),
+      },
+    ])
+  })
+  it('forwards a Linux executable and argv without shell interpolation', () => {
+    const { service, spawn } = createHarness()
+    service.create('agent', '\\\\wsl$\\Ubuntu\\home\\u', {
+      file: '/usr/bin/agent',
+      args: ['a b', '$(touch nope)', '"quote"', 'ą'],
+    })
+    expect(spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file: 'wsl.exe',
+        args: [
+          '--distribution',
+          'Ubuntu',
+          '--cd',
+          '/home/u',
+          '--exec',
+          '/usr/bin/agent',
+          'a b',
+          '$(touch nope)',
+          '"quote"',
+          'ą',
+        ],
+      }),
+    )
+  })
+  it('refuses a Windows agent executable before spawning', () => {
+    const { service, spawn } = createHarness()
+    expect(() =>
+      service.create('agent', '\\\\wsl$\\Ubuntu\\home\\u', {
+        file: 'C:\\tools\\agent.exe',
+        args: [],
+      }),
+    ).toThrow(/Linux executable/)
+    expect(spawn).not.toHaveBeenCalled()
   })
 })

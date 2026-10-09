@@ -1,7 +1,9 @@
-# Przyciski akcji — uruchamianie apkI (start.ps1 / stop.ps1)
+# Przyciski akcji: uruchamianie aplikacji (start.ps1 / stop.ps1)
 
 System **Actions** jest już wbudowany w NeKode — przycisk dodaje się z poziomu UI,
 bez zmian w kodzie.
+
+W polu Working Dir podaj własny bezwzględny katalog klonu NeKode. Polecenia poniżej używają ścieżek względnych wobec tego katalogu; zastąp znacznik katalogu przed zapisem.
 
 ## Jak dodać przycisk
 
@@ -14,8 +16,8 @@ bez zmian w kodzie.
 | Scope       | Global (albo Project, jeśli ma być per-projekt)        |
 | Title       | `Start NeKode`                                         |
 | Icon        | `None` (paleta Lucide) albo `Custom (emoji)`, np. 🚀   |
-| Command     | `powershell -NoProfile -ExecutionPolicy Bypass -File "F:\projects\NeKode\scripts\start.ps1"` |
-| Working Dir | `F:\projects\NeKode`                                   |
+| Command     | `powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start.ps1"` |
+| Working Dir | `<katalog-klonu-NeKode>`                                   |
 | Run In      | `Background`                                           |
 | Confirm     | opcjonalnie                                            |
 
@@ -66,19 +68,19 @@ Przy edycji polecenia z tym prefiksem checkbox jest automatycznie zaznaczony.
 Start (dev):
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File "F:\projects\NeKode\scripts\start.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start.ps1"
 ```
 
 Stop:
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File "F:\projects\NeKode\scripts\stop.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\stop.ps1"
 ```
 
 Start (skompilowana apka, wymaga wcześniejszego `pnpm run build:unpack`):
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File "F:\projects\NeKode\scripts\start.ps1" -Mode Unpacked
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start.ps1" -Mode Unpacked
 ```
 
 Dla Stop/Unpacked pozostałe pola identyczne (Title tylko inny).

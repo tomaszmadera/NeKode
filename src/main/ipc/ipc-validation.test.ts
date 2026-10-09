@@ -4,12 +4,18 @@ import { AppError } from '../../shared/ipc-error'
 import { buildValidatedChannels, ValidationError } from './ipc-validation'
 import type { AppServices } from './service-registry'
 
-/** A ready scan with no candidates; the two handoff channels return it by default. */
+/** A ready scan with no candidates; the handoff candidates channel returns it by default. */
 const EMPTY_HANDOFF_CANDIDATES = {
   state: 'ready' as const,
   files: [],
   rejections: [],
-  link: null,
+}
+
+/** A ready batch check with no available items. */
+const EMPTY_HANDOFF_AVAILABILITY = {
+  state: 'ready' as const,
+  items: [],
+  rejections: [],
 }
 
 function fakeServices(): AppServices {
@@ -24,6 +30,8 @@ function fakeServices(): AppServices {
       stopForProject: vi.fn(),
     },
     projects: {
+      wslDistributions: vi.fn(() => []),
+      addWsl: vi.fn(),
       list: () => [],
       add: () => ({ id: 'p1', name: 'demo', path: 'D:/code/demo', runtimeLabel: null }),
       remove: () => {},
@@ -73,7 +81,7 @@ function fakeServices(): AppServices {
       getItem: vi.fn(() => Promise.resolve({} as never)),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
       handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-      linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+      handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
       cleanupProject: vi.fn(),
       dropLaunchProject: vi.fn(),
       blocksProjectShell: vi.fn(() => false),
@@ -99,6 +107,32 @@ function channelMap() {
 }
 
 describe('ipc payload validation', () => {
+  it('validates WSL registration and optional project shell context', () => {
+    const channels = channelMap()
+    expect(channels.get('projects:addWsl')?.parse(['Ubuntu', '/home/user/My Project'])).toEqual([
+      'Ubuntu',
+      '/home/user/My Project',
+    ])
+    for (const payload of [
+      ['Ubuntu'],
+      ['', '/home/user'],
+      ['Ubuntu', '/'],
+      ['Ubuntu', '/home/../user'],
+      ['Ubuntu', '/home/user\0'],
+    ]) {
+      expect(() => channels.get('projects:addWsl')?.parse(payload)).toThrow(ValidationError)
+    }
+    expect(channels.get('terminals:shellDetect')?.parse(['p1'])).toEqual(['p1'])
+    expect(channels.get('terminals:shellList')?.parse([null])).toEqual([null])
+    expect(channels.get('terminals:shellAddCustom')?.parse(['/bin/fish', 'p1'])).toEqual([
+      '/bin/fish',
+      'p1',
+    ])
+    expect(() => channels.get('terminals:shellDetect')?.parse([{}])).toThrow(ValidationError)
+    expect(() =>
+      channels.get('terminals:shellAddCustom')?.parse(['/bin/fish', 'p1', 'extra']),
+    ).toThrow(ValidationError)
+  })
   it('validates action inputs and confirmation before service calls', () => {
     const channels = channelMap()
     const input = {
@@ -273,10 +307,15 @@ describe('ipc payload validation', () => {
       'agentProfiles:put',
       'agentProfiles:delete',
       'kanban:handoffCandidates',
-      'kanban:linkHandoff',
+      'kanban:handoffAvailability',
     ]) {
       expect(channels.has(channel)).toBe(true)
     }
+  })
+
+  it('does not expose the removed kanban:linkHandoff channel', () => {
+    const channels = channelMap()
+    expect(channels.has('kanban:linkHandoff')).toBe(false)
   })
 
   it('terminals:terminate accepts a bottom tab id and rejects a chat id', () => {
@@ -456,7 +495,7 @@ describe('ipc payload validation', () => {
     expect(services.kanban.launchTask).toHaveBeenCalledTimes(2)
   })
 
-  it('validates kanban:handoffCandidates and kanban:linkHandoff before the service', () => {
+  it('validates kanban:handoffCandidates before the service', () => {
     const services = fakeServices()
     const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
     for (const entry of buildValidatedChannels(services)) {
@@ -472,20 +511,32 @@ describe('ipc payload validation', () => {
     expect(() => candidates?.parse([{ ...identity, itemId: '' }])).toThrow(ValidationError)
     expect(() => candidates?.parse([{ ...identity, ref: 1 }])).toThrow(ValidationError)
     expect(() => candidates?.parse([])).toThrow(/expected 1 argument/)
-
-    const linkInput = { ...identity, fileName: 'nekode-28-notes.md' }
-    const link = channels.get('kanban:linkHandoff')
-    link?.invoke(link.parse([linkInput]))
-    expect(services.kanban.linkHandoff).toHaveBeenCalledWith(linkInput)
-    expect(() => link?.parse([{ ...linkInput, fileName: '' }])).toThrow(ValidationError)
-    expect(() => link?.parse([{ ...linkInput, fileName: 'a/b.md' }])).toThrow(
-      /file name, not a path/,
-    )
-    expect(() => link?.parse([{ ...linkInput, fileName: '..' }])).toThrow(/file name, not a path/)
-    expect(() => link?.parse([{ ...linkInput, fileName: 'a\u0000b.md' }])).toThrow(/NUL/)
-    expect(() => link?.parse([identity])).toThrow(/unexpected or missing fields/)
     expect(services.kanban.handoffCandidates).toHaveBeenCalledTimes(1)
-    expect(services.kanban.linkHandoff).toHaveBeenCalledTimes(1)
+  })
+
+  it('validates kanban:handoffAvailability before the service', () => {
+    const services = fakeServices()
+    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
+    for (const entry of buildValidatedChannels(services)) {
+      channels.set(entry.channel, entry)
+    }
+    const input = { projectId: 'p1', items: [{ itemId: 'native-1', ref: 'DEMO-1' }] }
+    const availability = channels.get('kanban:handoffAvailability')
+    availability?.invoke(availability.parse([input]))
+    expect(services.kanban.handoffAvailability).toHaveBeenCalledWith(input)
+    // An empty item set is a valid request (a loaded board may have no items).
+    availability?.invoke(availability.parse([{ projectId: 'p1', items: [] }]))
+    expect(services.kanban.handoffAvailability).toHaveBeenCalledTimes(2)
+    expect(() => availability?.parse([{ projectId: 'p1' }])).toThrow(/unexpected or missing fields/)
+    expect(() => availability?.parse([{ projectId: '', items: [] }])).toThrow(ValidationError)
+    expect(() =>
+      availability?.parse([{ projectId: 'p1', items: [{ itemId: '', ref: 'DEMO-1' }] }]),
+    ).toThrow(ValidationError)
+    expect(() =>
+      availability?.parse([{ projectId: 'p1', items: [{ itemId: 'n', ref: 'DEMO-1', x: 1 }] }]),
+    ).toThrow(/unexpected or missing fields/)
+    expect(() => availability?.parse(['p1'])).toThrow(ValidationError)
+    expect(() => availability?.parse([])).toThrow(/expected 1 argument/)
   })
 
   it('terminals:create does not start the project shell for an undelivered launch', () => {

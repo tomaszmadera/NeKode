@@ -46,22 +46,19 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
             .then((value) => (alive ? (value ?? 'default') : 'default'))
             .catch(() => 'default')
         : Promise.resolve('default')
-    void saved.then((choice) => {
-      if (!alive) return
-      setSavedChoice(choice)
-      setSelected(choice)
-    })
-    app.terminals
-      .shellDetect()
-      .then((list) => {
+    void Promise.all([saved, app.terminals.shellDetect(projectId)])
+      .then(([choice, list]) => {
         if (alive) {
+          setSavedChoice(choice)
+          setSelected(list.some((shell) => shell.id === choice) ? choice : 'default')
           setShells(list)
           setDetecting(false)
         }
       })
       .catch((cause: unknown) => {
         if (alive) {
-          setShells([])
+          setShells([{ id: 'default', label: 'Default' }])
+          setSelected('default')
           setDetecting(false)
           setDetectError(
             parseAppErrorPayload(cause)?.message ?? 'Shell detection failed. Showing Default only.',
@@ -93,7 +90,7 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
     const path = customPath.trim()
     if (path.length === 0) return
     try {
-      const entry = await app.terminals.shellAddCustom(path)
+      const entry = await app.terminals.shellAddCustom(path, projectId)
       setShells((previous) => [...previous.filter((shell) => shell.id !== entry.id), entry])
       setCustomPath('')
       setCustomError(null)
@@ -171,7 +168,9 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
               ) : null}
               <p className="mt-1 text-xs text-ink-muted">
                 Applies to chats and bottom terminals created after the change. A shell that is
-                later uninstalled falls back to the default.
+                later uninstalled falls back to the default for Local projects. WSL uses its
+                distribution default for old host choices; an unavailable Linux shell shows an
+                error.
               </p>
             </div>
           ) : null}
@@ -183,7 +182,7 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
               <input
                 id="settings-shell-custom"
                 value={customPath}
-                placeholder="C:\\tools\\nu.exe"
+                placeholder={shells[0]?.label.includes('WSL:') ? '/bin/bash' : 'C:\\tools\\nu.exe'}
                 data-testid={TEST_ID.settingsShellCustomInput}
                 onChange={(event) => {
                   setCustomPath(event.target.value)

@@ -47,9 +47,32 @@ describe('motion and interaction tokens (NEKODE-9)', () => {
     )
   })
 
+  it('suppresses the terminal prompt input outline so the frame is the only focus indicator', () => {
+    // The shared :focus-visible rule is unlayered, so it beats Tailwind
+    // outline utilities. The prompt field needs a later, more specific rule.
+    const match = indexSource.match(
+      /\.terminal-prompt-input:focus,\s*\.terminal-prompt-input:focus-visible\s*\{([^}]*)\}/,
+    )
+    expect(match).not.toBeNull()
+    expect(match?.[1]).toMatch(/outline:\s*none;/)
+    expect(match?.[1]).toMatch(/outline-offset:\s*0;/)
+    const ruleAt = indexSource.indexOf('.terminal-prompt-input:focus')
+    const sharedAt = indexSource.indexOf(':focus-visible {')
+    expect(ruleAt).toBeGreaterThan(sharedAt)
+  })
+
   it('defines button micro-interaction transitions', () => {
     expect(indexSource).toMatch(
       /button\s*\{[\s\S]*transition-duration:\s*var\(--duration-fast\);[\s\S]*transition-timing-function:\s*var\(--ease-standard\);/,
+    )
+  })
+
+  it('sets NeKode Float app color to rgb(16 18 32) and tab strip background to var(--color-app)', () => {
+    const floatSource = readFileSync(join(THEMES_DIR, 'nekode-float.css'), 'utf8')
+    expect(floatSource).toContain('--color-app: rgb(16 18 32);')
+    expect(floatSource).toContain('--color-terminal: rgb(16 18 32);')
+    expect(floatSource).toMatch(
+      /\[data-theme="nekode-float"\]\s*\[data-testid="tab-strip"\]\s*\{\s*background-color:\s*var\(--color-app\);\s*\}/,
     )
   })
 })

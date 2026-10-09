@@ -1,4 +1,6 @@
-# New Session Bootstrap Prompt
+# New session bootstrap prompt
+
+Status: historyczny prompt z etapu koncepcji. Nie jest instrukcją wznowienia bieżącej pracy ani nadrzędnym kontraktem produktu. Zawarte niżej twierdzenia o źródłach prawdy i stanie projektu opisują tamten kontekst; bieżące zasady określa [publiczny kontrakt](../development/project-contract.md), a architekturę plik [sdd.md](../architecture/sdd.md).
 
 Wklej poniższy prompt na początku nowej sesji, a następnie — jeśli chcesz — od razu wklej `SDD.md`, `UX-UI.md` albo inne przygotowane dokumenty.
 

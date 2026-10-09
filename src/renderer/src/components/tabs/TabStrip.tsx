@@ -16,6 +16,11 @@ import { KANBAN_TAB, type TabId, TERMINAL_TAB } from './tabs-session'
 // Shift+F10) copying the file's relative and absolute path.
 
 interface TabStripProps {
+  /**
+   * Floating theme: the strip sits directly on the app background (bg-app)
+   * rather than the panel background (bg-panel).
+   */
+  floating?: boolean
   /** Active chat's shell display name; null shows the neutral "Chat" label. */
   chatName: string | null
   /**
@@ -58,6 +63,7 @@ interface TabContextMenuState {
 }
 
 export function TabStrip({
+  floating = false,
   chatName,
   kanbanAvailable,
   openFiles,
@@ -69,7 +75,7 @@ export function TabStrip({
 }: TabStripProps): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null)
 
-  // Escape closes the context menu (the overlay handles pointer dismissal) —
+  // Escape closes the context menu (the overlay handles pointer dismissal) -
   // the same window-level listener pattern as the project context menu.
   useEffect(() => {
     if (contextMenu === null) {
@@ -92,10 +98,13 @@ export function TabStrip({
 
   return (
     <nav
-      className="drag-region flex h-[calc(var(--spacing-control)+0.5rem)] shrink-0 items-stretch gap-1.5 bg-panel border-b border-edge px-2 pt-2"
+      className={cn(
+        'drag-region flex h-[calc(var(--spacing-control)+0.5rem)] shrink-0 items-stretch gap-1.5 px-2 pt-2',
+        floating ? 'bg-app' : 'bg-panel border-b border-edge',
+      )}
       // The strip shares the action row's metrics (round 4, design doc 26.2):
       // 8px left and top insets so the first tab aligns with the first button
-      // below, and a 6px `gap-1.5` between tabs (user request 2026-10-05) —
+      // below, and a 6px `gap-1.5` between tabs (user request 2026-10-05) -
       // narrower than the action row's 8px group gap, so neighbouring tabs
       // read as one strip while staying distinct. The gap is structural
       // (theme-independent markup), so it holds in both themes. The extra
@@ -104,7 +113,8 @@ export function TabStrip({
       // (user decision 2026-10-01), in the floating theme too, so no
       // caption-button inset is needed here. Tabs draw only the top and side
       // edges (user decision 2026-10-06): the hairline under this row is
-      // their bottom border, so they read as tabs rather than closed blocks.
+      // their bottom border in attached themes (dropped in the floating theme,
+      // user request 2026-10-08), so they read as tabs rather than closed blocks.
       data-testid={TEST_ID.tabStrip}
     >
       <button

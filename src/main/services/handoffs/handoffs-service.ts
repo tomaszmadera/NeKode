@@ -1,7 +1,8 @@
 import { promises as nodeFs } from 'node:fs'
-import { isAbsolute, posix } from 'node:path'
+import { isAbsolute } from 'node:path'
 import type { HandoffEntry } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
+import { joinProjectPath } from '../project-path'
 
 // Handoff directory listing (spec handoff-resume-flow Data/API). Read-only:
 // regular files of the user-configured per-project directory, newest first,
@@ -97,7 +98,7 @@ export class HandoffsService {
     }
     const dir = isAbsolute(configured)
       ? toPosix(configured)
-      : posix.join(toPosix(project.path), toPosix(configured))
+      : joinProjectPath(toPosix(project.path), toPosix(configured))
 
     let listed: HandoffsFsEntry[]
     try {
@@ -118,7 +119,7 @@ export class HandoffsService {
         continue
       }
       // Symlinks classify by their target; broken links are skipped.
-      const filePath = posix.join(dir, entry.name)
+      const filePath = joinProjectPath(dir, entry.name)
       const stats = await this.#fs.stat(filePath)
       if (stats === null || !stats.isFile) {
         continue

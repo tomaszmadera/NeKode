@@ -9,7 +9,7 @@ Let the user inspect a registered project's files without leaving NeKode: browse
 ## Related requirements
 
 - `docs/product/requirements.md` §2 item 4 (project file tree; read-only Monaco preview).
-- `docs/architecture/SDD.md` §7 (five-region layout), §12 (file tree), §13 (file preview), §6 (renderer owns no OS capabilities).
+- `docs/architecture/sdd.md` §7 (five-region layout), §12 (file tree), §13 (file preview), §6 (renderer owns no OS capabilities).
 - `docs/UX-UI.md` §11 (left navigation modes), §18 (center surface — project), §19 (file tree and file preview), §69 (project files layout example), §73 (preserve spatial memory).
 - Navigation decision (user, 2026-09-26): entering Project Files uses an explicit per-project "Files" action; clicking a project row keeps expanding the chat list only; project removal is reachable only from a row context menu.
 
@@ -114,6 +114,6 @@ No write channels. All inputs are validated with the existing IPC validation pat
 
 ## Relevant SDD / ADR
 
-- `docs/architecture/SDD.md` §6, §7, §12, §13.
+- `docs/architecture/sdd.md` §6, §7, §12, §13.
 - `docs/UX-UI.md` §11, §18, §19, §69, §73.
 - `none` (no ADR required; the feature adds no architecture-level decision beyond the typed IPC pattern already in force).

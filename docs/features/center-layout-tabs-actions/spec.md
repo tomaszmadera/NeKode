@@ -9,7 +9,7 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 ## Related requirements
 
 - `docs/product/requirements.md` §2 item 5 (project action bar; placement revised by user decision 2026-09-26 — not window-top, but under the tab strip in the center column), item 6 (persistence: action configuration), item 7 (UI).
-- `docs/architecture/SDD.md` §7 (layout — to be revised), §9 (context content — moves to the status bar), §21–§25 (action bar, action definition, execution modes, action status, configuration UI), §34–§35 (persistence: `actions` table), §44 (IPC `actions:*`), §52 (security).
+- `docs/architecture/sdd.md` §7 (layout — to be revised), §9 (context content — moves to the status bar), §21–§25 (action bar, action definition, execution modes, action status, configuration UI), §34–§35 (persistence: `actions` table), §44 (IPC `actions:*`), §52 (security).
 - `docs/UX-UI.md` §5 (global layout — to be revised), §7–§8 (action bar and interaction — placement revised), §14–§16 (context header content and presentation — moves to the status bar), §49 (action configuration), §50 (project file navigation), §65 (responsive context display), §68–§69 (layout examples — to be revised).
 - Navigation and file-preview behavior inherited from `docs/features/project-files-view/spec.md` (where not superseded by the tab model here).
 
@@ -21,7 +21,7 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 - Configurable actions: definition model, SQLite persistence, basic configuration UI (list + add/edit form), and execution in `background` or `new-terminal` mode with visible execution state.
 - Status bar at the very bottom of the window, full width: active project name, path, detected runtimes, Git branch and worktree status (the current context-header content, relocated).
 - Removal of the center context header and of any window-top action band.
-- Documentation revision (deliverable of this feature): `docs/architecture/SDD.md` §7/§9/§21, `docs/UX-UI.md` §5/§7/§8/§14/§49/§50/§65/§68/§69, `docs/product/requirements.md` §2.5/§2.7 wording, and `docs/features/project-files-view/spec.md` sections superseded by the tab model.
+- Documentation revision (deliverable of this feature): `docs/architecture/sdd.md` §7/§9/§21, `docs/UX-UI.md` §5/§7/§8/§14/§49/§50/§65/§68/§69, `docs/product/requirements.md` §2.5/§2.7 wording, and `docs/features/project-files-view/spec.md` sections superseded by the tab model.
 
 ## Non-goals
 
@@ -37,7 +37,7 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 ## Behaviour
 
 1. The center column is laid out top-down as: tab strip, action row, main surface. There is no window-top action band and no context header above the main surface.
-2. The tab strip contains exactly one terminal-chat tab, always first and never closable. Its label is the active chat's name (shell display name, as today). Selecting it shows the terminal surface of the active chat. With no chat in the project it shows the empty state with `Start new chat`.
+2. The tab strip contains exactly one terminal-chat tab, always first and never closable. Its label is the active chat's saved name (`[shell] profile name`, or just `[shell]` for new chats without an agent profile; existing names are preserved). Selecting it shows the terminal surface of the active chat. With no chat in the project it shows the empty state with `Start new chat`.
 3. After the terminal-chat tab follow one tab per open file of the active project, in open order. A file tab's label is the file name; its tooltip is the path relative to the project root. Clicking a file in the project file tree opens its tab, or focuses it when already open; opening order is preserved and a file never has two tabs.
 4. Each file tab has a close control. Closing the active tab selects the previously active tab; with no other file tab open it selects the terminal-chat tab. No confirmation is required (preview is read-only).
 5. Within one app session, each project retains its open file tabs, their order, and the active tab: switching projects shows that project's own tab set. Tabs are not persisted across application restarts.
@@ -122,6 +122,6 @@ Typed IPC channels follow the existing `IPC_CHANNEL` / `AppApi` pattern (`src/sh
 
 ## Relevant SDD / ADR
 
-- `docs/architecture/SDD.md` §6, §7, §9, §10, §21, §22, §23, §24, §25, §34, §35, §44, §47, §50, §52.
+- `docs/architecture/sdd.md` §6, §7, §9, §10, §21, §22, §23, §24, §25, §34, §35, §44, §47, §50, §52.
 - `docs/UX-UI.md` §5, §7, §8, §14, §15, §16, §19, §49, §50, §65, §68, §69.
-- `none` (no ADR required; the feature follows the typed IPC and SQLite persistence patterns already in force; the layout revision is a product decision recorded in the task record, not an architecture-level change).
+- `none` (no ADR required; the feature follows the typed IPC and SQLite persistence patterns already in force; the accepted layout decision of 2026-09-26 is recorded publicly in Related requirements and Behaviour here).

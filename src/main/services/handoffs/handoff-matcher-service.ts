@@ -1,43 +1,44 @@
 import { promises as nodeFs } from 'node:fs'
-import { isAbsolute, posix } from 'node:path'
+import { isAbsolute } from 'node:path'
 import type {
   HandoffCandidatesResult,
   HandoffFileInfo,
   HandoffRejection,
+  KanbanHandoffAvailabilityInput,
+  KanbanHandoffAvailabilityResult,
   KanbanHandoffCandidatesInput,
-  KanbanHandoffLinksDocument,
-  KanbanLinkHandoffInput,
 } from '../../../shared/ipc-contract'
-import {
-  projectHandoffDirKey,
-  projectKanbanAdapterKey,
-  projectKanbanHandoffLinksKey,
-  relativeToProject,
-} from '../../../shared/ipc-contract'
+import { projectHandoffDirKey, relativeToProject } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
+import { joinProjectPath } from '../project-path'
 
-// Handoff match and link (kanban task launch amendment, stage 4). A shallow scan
-// of the project's configured handoff directory: regular `.md` files only,
-// README.md and symlinks skipped, links never followed. A leading flat
-// `key: value` frontmatter block is parsed here so no YAML dependency is added.
-// The scan returns names, match kind, display path, a stamp and rejection
-// reasons, never file bodies. There is no caching: every call re-resolves the
-// directory and re-checks the files, so a changed directory is a fresh check.
-// HandoffsService.list keeps its own contract; this service does not touch it.
+// Handoff match (kanban task launch amendment, stage 4; NEKODE-30 stage 2). A
+// shallow scan of the project's configured handoff directory: regular `.md`
+// files only, README.md and symlinks skipped, links never followed. The full
+// work-item ref carried in the file name is the only link between a work item
+// and a handoff (spec Jednolita konwencja nazw); frontmatter identity is never
+// parsed here. The scan returns names, match kind, display path, a stamp and
+// rejection reasons, never file bodies. There is no caching: every call
+// re-resolves the directory and re-checks the files, so a changed directory is
+// a fresh check. HandoffsService.list keeps its own contract; this service does
+// not touch it.
+//
+// One directory read backs both `candidates` (one item) and `handoffAvailability`
+// (a batch of loaded items). Usable files are read at most once into a snapshot,
+// then `resolveItem` matches that same snapshot against each item, so the list
+// view and the Resume modal can never resolve the same file+item+snapshot
+// differently (spec Dostępność Resume, Dane i zgodność).
 
 const MAX_HANDOFF_BYTES = 1024 * 1024
-const FRONTMATTER_KEYS = ['work_item_ref', 'work_item_id', 'work_item_adapter'] as const
 
 /** Minimal project lookup (the ProjectService surface this service needs). */
 export interface HandoffMatcherProjectLookup {
   get(projectId: string): { path: string } | null
 }
 
-/** Minimal setting read/write/delete (the AppStateService surface). */
+/** Minimal setting read (the AppStateService surface). */
 export interface HandoffMatcherStateStore {
   get(key: string): string | null
-  set(key: string, value: string): void
-  delete(key: string): void
 }
 
 export interface HandoffMatcherFsEntry {
@@ -90,44 +91,6 @@ const nodeFsAdapter: HandoffMatcherFsAdapter = {
   },
 }
 
-/**
- * Leading flat `key: value` frontmatter block. A block opens with a line `---`
- * and closes with a later `---`; without the closing fence there is no
- * frontmatter. Only the three work-item keys are kept; other lines are ignored.
- */
-export function parseFrontmatter(content: string): Record<string, string> {
-  const lines = content.replace(/^\uFEFF/, '').split(/\r?\n/)
-  if (lines.length === 0 || lines[0].trim() !== '---') {
-    return {}
-  }
-  const values: Record<string, string> = {}
-  for (let index = 1; index < lines.length; index += 1) {
-    const line = lines[index]
-    if (line.trim() === '---') {
-      return values
-    }
-    const match = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line)
-    if (match === null) {
-      continue
-    }
-    const key = match[1]
-    if (!(FRONTMATTER_KEYS as readonly string[]).includes(key)) {
-      continue
-    }
-    let value = match[2].trim()
-    if (
-      value.length >= 2 &&
-      ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'")))
-    ) {
-      value = value.slice(1, -1)
-    }
-    values[key] = value
-  }
-  // No closing fence: treat the file as having no frontmatter.
-  return {}
-}
-
 /** Case-insensitive ref prefix: `nekode-2` matches `nekode-2` and
     `nekode-2-<desc>` but not `nekode-20`, `nekode-28` or `old-nekode-2`. */
 export function filenameMatchesRef(name: string, ref: string): boolean {
@@ -139,83 +102,45 @@ export function filenameMatchesRef(name: string, ref: string): boolean {
   return base === target || base.startsWith(`${target}-`)
 }
 
-type MatchEvaluation = 'metadata' | 'filename' | 'none' | 'conflict'
+/** One readable file of a directory snapshot (no per-item filtering). */
+interface ScannedFile {
+  name: string
+  path: string
+  modifiedAt: string
+  mtimeMs: number
+}
+
+type HandoffDirectorySnapshot =
+  | { state: 'not-configured' }
+  | { state: 'error'; message: string }
+  | { state: 'ready'; files: ScannedFile[]; rejections: HandoffRejection[] }
+
+function compareNames(a: { name: string }, b: { name: string }): number {
+  const aLower = a.name.toLowerCase()
+  const bLower = b.name.toLowerCase()
+  return aLower < bLower ? -1 : aLower > bLower ? 1 : 0
+}
 
 /**
- * Metadata wins; a present field that names another item is a conflict and
- * excludes the filename match. Without `work_item_ref` the metadata method does
- * not apply (the ref is required), but a mismatching `work_item_id` or
- * `work_item_adapter` still conflicts. Ref and adapter compare case-insensitively;
- * the backend-native id compares exactly (it is opaque).
+ * Matches one snapshot against one item by file name only (spec Jednolita
+ * konwencja nazw). Every readable file is reported: a file whose name is the
+ * full ref or a ref-prefixed name is a candidate (`filename`), every other name
+ * is `none` and never drives Resume.
  */
-function evaluateMatch(
-  name: string,
-  frontmatter: Record<string, string>,
-  item: { itemId: string; ref: string },
-  adapterId: string,
-): MatchEvaluation {
-  const ref = frontmatter.work_item_ref
-  const id = frontmatter.work_item_id
-  const adapter = frontmatter.work_item_adapter
-  const hasRef = ref !== undefined && ref.length > 0
-  const hasId = id !== undefined && id.length > 0
-  const hasAdapter = adapter !== undefined && adapter.length > 0
-
-  if (hasId && id !== item.itemId) {
-    return 'conflict'
-  }
-  if (hasAdapter && adapter.toLowerCase() !== adapterId.toLowerCase()) {
-    return 'conflict'
-  }
-  if (hasRef && ref.toLowerCase() !== item.ref.trim().toLowerCase()) {
-    return 'conflict'
-  }
-  if (hasRef) {
-    return 'metadata'
-  }
-  return filenameMatchesRef(name, item.ref) ? 'filename' : 'none'
+function resolveItem(
+  snapshotFiles: readonly ScannedFile[],
+  item: { ref: string },
+): HandoffFileInfo[] {
+  return snapshotFiles.map((file) => ({
+    name: file.name,
+    path: file.path,
+    modifiedAt: file.modifiedAt,
+    matchKind: filenameMatchesRef(file.name, item.ref) ? 'filename' : 'none',
+  }))
 }
 
-function emptyLinksDocument(): KanbanHandoffLinksDocument {
-  return { links: {} }
-}
-
-function parseLinks(raw: string | null): KanbanHandoffLinksDocument {
-  if (raw === null || raw.length === 0) {
-    return emptyLinksDocument()
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return emptyLinksDocument()
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return emptyLinksDocument()
-  }
-  const record = (parsed as Record<string, unknown>).links
-  if (typeof record !== 'object' || record === null || Array.isArray(record)) {
-    return emptyLinksDocument()
-  }
-  const links: KanbanHandoffLinksDocument['links'] = {}
-  for (const [adapterKey, byItem] of Object.entries(record as Record<string, unknown>)) {
-    if (typeof byItem !== 'object' || byItem === null || Array.isArray(byItem)) {
-      continue
-    }
-    const items: Record<string, { name: string; ref: string }> = {}
-    for (const [itemKey, link] of Object.entries(byItem as Record<string, unknown>)) {
-      if (typeof link !== 'object' || link === null || Array.isArray(link)) {
-        continue
-      }
-      const entry = link as Record<string, unknown>
-      if (typeof entry.name !== 'string' || typeof entry.ref !== 'string') {
-        continue
-      }
-      items[itemKey] = { name: entry.name, ref: entry.ref }
-    }
-    links[adapterKey] = items
-  }
-  return { links }
+function tooLargeReason(): string {
+  return 'File is larger than 1 MiB.'
 }
 
 export class HandoffMatcherService {
@@ -232,61 +157,60 @@ export class HandoffMatcherService {
   /** One scan of the configured directory for the item. Never returns bodies. */
   async candidates(input: KanbanHandoffCandidatesInput): Promise<HandoffCandidatesResult> {
     const project = this.#requireProject(input.projectId, 'kanban:handoffCandidates')
-    return this.#scan(project.path, input)
+    return this.#resolveCandidates(project.path, input)
   }
 
   /**
-   * Stores an explicit link for a file name a scan produced, then re-reads the
-   * candidates so the link resolves. A rejected file (too large, invalid UTF-8,
-   * or metadata naming another item) is refused and not written.
+   * One batch scan of the configured directory for the loaded items (spec
+   * Dostępność Resume, Dane): the directory and each qualifying file are read
+   * at most once, then the same snapshot is matched against every item.
    */
-  async link(input: KanbanLinkHandoffInput): Promise<HandoffCandidatesResult> {
-    const project = this.#requireProject(input.projectId, 'kanban:linkHandoff')
-    const scan = await this.#scan(project.path, input)
-    if (scan.state === 'not-configured') {
-      throw new AppError(
-        'validation',
-        'Handoff directory is not configured for this project.',
-        'kanban:linkHandoff',
-      )
+  async availability(
+    input: KanbanHandoffAvailabilityInput,
+  ): Promise<KanbanHandoffAvailabilityResult> {
+    const project = this.#requireProject(input.projectId, 'kanban:handoffAvailability')
+    const snapshot = await this.#readDirectory(input.projectId, project.path)
+    if (snapshot.state !== 'ready') {
+      return snapshot
     }
-    if (scan.state === 'error') {
-      throw new AppError('not_found', scan.message, 'kanban:linkHandoff')
-    }
-    const rejected = scan.rejections.find((entry) => entry.name === input.fileName)
-    if (rejected !== undefined) {
-      throw new AppError('validation', rejected.reason, 'kanban:linkHandoff')
-    }
-    const file = scan.files.find((entry) => entry.name === input.fileName)
-    if (file === undefined) {
-      throw new AppError(
-        'validation',
-        `Handoff file "${input.fileName}" is not in the configured directory.`,
-        'kanban:linkHandoff',
-      )
-    }
-    const adapterId = this.#adapterId(input.projectId)
-    const document = parseLinks(this.#state.get(projectKanbanHandoffLinksKey(input.projectId)))
-    const byItem = { ...(document.links[adapterId] ?? {}) }
-    byItem[input.itemId] = { name: file.name, ref: input.ref }
-    const stored: KanbanHandoffLinksDocument = {
-      links: { ...document.links, [adapterId]: byItem },
-    }
-    this.#state.set(projectKanbanHandoffLinksKey(input.projectId), JSON.stringify(stored))
-    return this.#scan(project.path, input)
+    const items = input.items.map((item) => ({
+      itemId: item.itemId,
+      ref: item.ref,
+      available: resolveItem(snapshot.files, item).some((file) => file.matchKind === 'filename'),
+    }))
+    return { state: 'ready', items, rejections: snapshot.rejections }
   }
 
-  async #scan(
+  /** One item's candidates over the shared directory snapshot. */
+  async #resolveCandidates(
     projectPath: string,
     input: KanbanHandoffCandidatesInput,
   ): Promise<HandoffCandidatesResult> {
-    const configured = this.#state.get(projectHandoffDirKey(input.projectId))
+    const snapshot = await this.#readDirectory(input.projectId, projectPath)
+    if (snapshot.state !== 'ready') {
+      return snapshot
+    }
+    return {
+      state: 'ready',
+      files: resolveItem(snapshot.files, input),
+      rejections: snapshot.rejections,
+    }
+  }
+
+  /**
+   * One directory read plus at most one whole-file read per qualifying file.
+   * The files are sorted newest first (case-insensitive name tie-break); the
+   * rejections are the file-level warnings only (size cap, encoding, read). A
+   * read failure is its own state, never presented as an empty set.
+   */
+  async #readDirectory(projectId: string, projectPath: string): Promise<HandoffDirectorySnapshot> {
+    const configured = this.#state.get(projectHandoffDirKey(projectId))
     if (configured === null || configured.trim().length === 0) {
       return { state: 'not-configured' }
     }
     const dir = isAbsolute(configured)
       ? toPosix(configured)
-      : posix.join(toPosix(projectPath), toPosix(configured))
+      : joinProjectPath(toPosix(projectPath), toPosix(configured))
 
     let listed: HandoffMatcherFsEntry[]
     try {
@@ -306,8 +230,7 @@ export class HandoffMatcherService {
       }
     }
 
-    const adapterId = this.#adapterId(input.projectId)
-    const found: Array<HandoffFileInfo & { mtimeMs: number }> = []
+    const files: ScannedFile[] = []
     const rejections: HandoffRejection[] = []
 
     for (const entry of listed) {
@@ -318,7 +241,7 @@ export class HandoffMatcherService {
       if (entry.name.toLowerCase() === 'readme.md') {
         continue
       }
-      const filePath = posix.join(dir, entry.name)
+      const filePath = joinProjectPath(dir, entry.name)
       const stats = await this.#fs.stat(filePath)
       if (stats === null || !stats.isFile) {
         continue
@@ -343,9 +266,10 @@ export class HandoffMatcherService {
         rejections.push({ name: entry.name, path: displayPath, reason: tooLargeReason() })
         continue
       }
-      let content: string
       try {
-        content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+        // The body is read only to enforce the UTF-8 limit (spec Dane): the
+        // decoded text is discarded because only the name decides the match.
+        new TextDecoder('utf-8', { fatal: true }).decode(bytes)
       } catch {
         rejections.push({
           name: entry.name,
@@ -354,68 +278,22 @@ export class HandoffMatcherService {
         })
         continue
       }
-      const evaluation = evaluateMatch(entry.name, parseFrontmatter(content), input, adapterId)
-      if (evaluation === 'conflict') {
-        rejections.push({
-          name: entry.name,
-          path: displayPath,
-          reason: 'Metadata names a different work item.',
-        })
-        continue
-      }
-      found.push({
+      files.push({
         name: entry.name,
         path: displayPath,
         modifiedAt: new Date(stats.mtimeMs).toISOString(),
-        matchKind: evaluation,
         mtimeMs: stats.mtimeMs,
       })
     }
 
-    found.sort((a, b) => {
+    files.sort((a, b) => {
       if (a.mtimeMs !== b.mtimeMs) {
         return b.mtimeMs - a.mtimeMs
       }
-      const aLower = a.name.toLowerCase()
-      const bLower = b.name.toLowerCase()
-      return aLower < bLower ? -1 : aLower > bLower ? 1 : 0
+      return compareNames(a, b)
     })
-    rejections.sort((a, b) => {
-      const aLower = a.name.toLowerCase()
-      const bLower = b.name.toLowerCase()
-      return aLower < bLower ? -1 : aLower > bLower ? 1 : 0
-    })
-    const files: HandoffFileInfo[] = found.map(({ name, path, modifiedAt, matchKind }) => ({
-      name,
-      path,
-      modifiedAt,
-      matchKind,
-    }))
-    const stored = this.#linkFor(input.projectId, adapterId, input.itemId)
-    const linked = stored === null ? undefined : files.find((file) => file.name === stored.name)
-    return {
-      state: 'ready',
-      files,
-      rejections,
-      link:
-        linked === undefined
-          ? null
-          : { name: linked.name, path: linked.path, modifiedAt: linked.modifiedAt },
-    }
-  }
-
-  #linkFor(
-    projectId: string,
-    adapterId: string,
-    itemId: string,
-  ): { name: string; ref: string } | null {
-    const document = parseLinks(this.#state.get(projectKanbanHandoffLinksKey(projectId)))
-    return document.links[adapterId]?.[itemId] ?? null
-  }
-
-  #adapterId(projectId: string): string {
-    const bound = this.#state.get(projectKanbanAdapterKey(projectId))
-    return bound !== null && bound.trim().length > 0 ? bound : ''
+    rejections.sort(compareNames)
+    return { state: 'ready', files, rejections }
   }
 
   #requireProject(projectId: string, channel: string): { path: string } {
@@ -425,8 +303,4 @@ export class HandoffMatcherService {
     }
     return project
   }
-}
-
-function tooLargeReason(): string {
-  return 'File is larger than 1 MiB.'
 }

@@ -24,6 +24,22 @@ function createIpcMock() {
 }
 
 describe('preload app api', () => {
+  it('forwards WSL registration data and project shell context unchanged', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.projects.wslDistributions()
+    await api.projects.addWsl('Ubuntu-24.04', '/home/user/My Project')
+    await api.terminals.shellList('p1')
+    await api.terminals.shellDetect('p1')
+    await api.terminals.shellAddCustom('/bin/fish', 'p1')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.projectsWslDistributions, args: [] },
+      { channel: IPC_CHANNEL.projectsAddWsl, args: ['Ubuntu-24.04', '/home/user/My Project'] },
+      { channel: IPC_CHANNEL.terminalsShellList, args: ['p1'] },
+      { channel: IPC_CHANNEL.terminalsShellDetect, args: ['p1'] },
+      { channel: IPC_CHANNEL.terminalsShellAddCustom, args: ['/bin/fish', 'p1'] },
+    ])
+  })
   it('routes action CRUD, execution, and state queries through typed channels', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
@@ -204,16 +220,29 @@ describe('preload app api', () => {
     ])
   })
 
-  it('routes kanban handoff candidates and link through typed channels', async () => {
+  it('routes kanban handoff candidates through its typed channel', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
     const identity = { projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1' }
-    const linkInput = { ...identity, fileName: 'nekode-28-notes.md' }
     await api.kanban.handoffCandidates(identity)
-    await api.kanban.linkHandoff(linkInput)
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.kanbanHandoffCandidates, args: [identity] },
-      { channel: IPC_CHANNEL.kanbanLinkHandoff, args: [linkInput] },
+    ])
+  })
+
+  it('routes the batch handoff availability check through its typed channel', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    const availabilityInput = {
+      projectId: 'p1',
+      items: [
+        { itemId: 'native-1', ref: 'DEMO-1' },
+        { itemId: 'native-28', ref: 'DEMO-28' },
+      ],
+    }
+    await api.kanban.handoffAvailability(availabilityInput)
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.kanbanHandoffAvailability, args: [availabilityInput] },
     ])
   })
 

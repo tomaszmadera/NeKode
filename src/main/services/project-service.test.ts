@@ -53,6 +53,30 @@ const demoPath = join(tmpdir(), 'nekode-project-service-tests', 'demo-project')
 const otherPath = join(tmpdir(), 'nekode-project-service-tests', 'other-project')
 
 describe('ProjectService', () => {
+  it('canonicalizes existing WSL UNC aliases and keeps distributions distinct', () => {
+    const alias = '\\\\wsl$\\Ubuntu\\home\\user\\My Project'
+    const canonical = '\\\\wsl.localhost\\Ubuntu\\home\\user\\My Project'
+    const other = '\\\\wsl.localhost\\Debian\\home\\user\\My Project'
+    const service = createService(
+      fakeFileSystem({ [alias]: 'dir', [canonical]: 'dir', [other]: 'dir' }),
+    )
+    const created = service.add(alias)
+    expect(created.path).toBe(canonical)
+    expect(created.name).toBe('My Project')
+    expect(service.get(created.id)).toEqual(created)
+    expectAppError(() => service.add(canonical), 'conflict')
+    service.add(other)
+    expect(service.list()).toHaveLength(2)
+  })
+
+  it('rejects malformed WSL locations without persisting them', () => {
+    const paths = ['\\\\wsl$\\Ubuntu', '\\\\wsl$\\Ubuntu\\home\\..\\user']
+    const service = createService(
+      fakeFileSystem(Object.fromEntries(paths.map((path) => [path, 'dir']))),
+    )
+    for (const path of paths) expectAppError(() => service.add(path), 'validation')
+    expect(service.list()).toEqual([])
+  })
   it('add derives the name from the folder and stores the record', () => {
     const service = createService(fakeFileSystem({ [demoPath]: 'dir' }))
     const created = service.add(demoPath)

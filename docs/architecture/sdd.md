@@ -4,12 +4,54 @@
 
 **Status:** MVP Design Specification  
 **Version:** 0.1  
-**Document:** `SDD.md`  
+**Document:** `docs/architecture/sdd.md`
 **Target platform:** Windows 11  
 **Primary implementation stack:** Electron + React + TypeScript  
 **Primary interaction model in MVP:** terminal-first, without ACP  
 **UI reference direction:** ZCode-inspired, minimal, workspace-oriented  
 **Primary domain objects:** Project, Chat, Terminal Session (Task is the post-MVP progress entity, see §14)
+
+**Authority:** Technical design under the [public source hierarchy](../development/project-contract.md#sources-and-authority). Accepted product decisions and [product requirements](../product/requirements.md) take precedence. This document includes future design; the [feature contracts](../features/) state each feature's scope. The current contribution obligations below do not claim every design section is implemented.
+
+## Current implementation obligations
+
+These obligations are grounded in the repository as of 2026-10-07. Dependency versions and scripts remain owned by executable configuration; see [setup](../development/setup.md) and [verification](../development/ci.md#dobór-weryfikacji). Preserve these boundaries when extending the app.
+
+### IPC boundary
+
+Main owns OS, filesystem, SQLite, and PTY work; preload owns Electron transport; renderer owns presentation and calls only the typed `window.app` bridge. Keep `contextIsolation: true`, `sandbox: true`, and `nodeIntegration: false` in [main startup](../../src/main/index.ts). Do not weaken isolation to make a renderer call work.
+
+Define channels and `AppApi` once in the [shared IPC contract](../../src/shared/ipc-contract.ts), expose them in [preload](../../src/preload/app-api.ts), validate them in [ipc-validation.ts](../../src/main/ipc/ipc-validation.ts), and register through [ipc-handlers.ts](../../src/main/ipc/ipc-handlers.ts). Keep service wiring in [create-services.ts](../../src/main/services/create-services.ts) and the [service registry](../../src/main/ipc/service-registry.ts). Justify each privileged channel with a concrete renderer need and minimal authority; avoid ad-hoc handlers and speculative APIs. Native dialogs and prompts stay in main.
+
+Validate argument arity, string/number types, and path policy before any service call. `assertSafePath` rejects NUL, relative paths, and `..` segments for absolute-path arguments; APIs accepting project-relative paths validate them in their own established service boundary. The [sender guard](../../src/main/security/sender-guard.ts) requires the trusted renderer's main frame; an empty trust list rejects all invokes. Never accept a renderer-supplied path as proof of authorization.
+
+Transport errors as the typed, serialized [AppError payload](../../src/shared/ipc-error.ts); preload reconstructs the structured rejection. Preserve the current union, including domain and adapter codes. Unknown failures use the generic sanitized transport message; original details stay in main-side diagnostics. Do not replace typed failures with a silent value.
+
+Channel changes require positive preload routing and typed rejection tests, at least one negative case per validator rule, and privileged-sender rejection cases. Existing owners are [preload tests](../../src/preload/app-api.test.ts), [validation tests](../../src/main/ipc/ipc-validation.test.ts), [handler tests](../../src/main/ipc/ipc-handlers.test.ts), and [sender tests](../../src/main/security/sender-guard.test.ts). If a documented stub becomes a real service, remove its fixed response in the same change; the current terminal channels are real services, not stubs.
+
+### Persistence
+
+[openDatabase](../../src/main/db/connection.ts) sets `journal_mode = WAL`, `foreign_keys = ON`, and `busy_timeout = 5000`. Keep these pragmas. The database is `nekode.db` under `app.getPath('userData')`, as wired in main startup. Test isolation must use the app's explicit userData override, not `%APPDATA%`; see setup.
+
+[Migrations](../../src/main/db/migrations.ts) are versioned and transactional, recorded in `schema_migrations`, and idempotent. Append a forward version instead of changing an applied migration; an unreleased migration can be revised only when it has not been applied to supported user databases. Verify both empty and populated upgrade paths. Version 1's historical `tasks` table was migrated to `chats`; chat names may repeat after version 3. Do not reintroduce the obsolete unique chat-name rule. Current tables also include `projects`, `app_state`, and `actions`.
+
+Services receive database/filesystem dependencies for tests. Keep multi-statement writes transactional and validate failure-producing inputs before the first mutation. Preserve project-path uniqueness, business constraints, owned-row foreign keys with cascading deletion, and [stale selection cleanup](../../src/main/services/app-state-service.ts). Project removal must clean up its project-scoped state keys. Map domain errors to the existing typed codes; SQLite failures are sanitized for renderer transport with originals kept in main.
+
+[Database tests](../../src/main/db/db.test.ts) distinguish `:memory:` service/migration logic from temporary file databases used for WAL/file semantics. `:memory:` does not exercise WAL. Cover migration idempotence, populated data preservation, cascade deletion, applicable unique conflicts, validation-before-write, and stale state cleanup. No ORM or extra persistence abstraction is required without a concrete need. Destruction or manual migration of a real user database requires its exact target and separate authorization.
+
+### Terminal lifecycle
+
+Keep four owners distinct: the renderer's xterm view, main's PTY, the agent CLI child of its shell, and the Electron app. [TerminalService](../../src/main/services/terminal/terminal-service.ts) owns PTY creation, input, resize, termination, and event subscriptions; [ChatTerminal](../../src/renderer/src/components/terminal/ChatTerminal.tsx) owns the view. Push events remain filtered by session/chat id in preload so data never crosses sessions.
+
+The [chat contract](../features/mvp-core-shell/spec.md) owns session behavior: one live main PTY per chat, lazy creation in the project cwd, retained sessions while switching chats, and fresh processes after app restart. [Shell selection](../features/project-shell-selection/spec.md) extends the Windows PowerShell default with per-project choices. Hidden chat views stay mounted. Disposing a view removes subscriptions and xterm resources; it must not terminate the retained PTY. Shell exit closes the chat through the accepted close flow. App quit kills PTYs while suppressing that chat-deletion flow, preserving persisted chat rows. No PTY is promised to survive main-process exit. The [bottom-terminal contract](../features/bottom-auxiliary-terminal/spec.md) separately owns bottom tabs, hide behavior, and restart limits.
+
+Dispose each `onData`/`onExit` subscription once per view lifecycle, not per render. Stop writing to exited sessions; service writes reject as typed errors. Keep scrollback and queued output/input bounded whenever introducing buffering or backpressure. ChatTerminal currently bounds pending font-load output at 1,048,576 characters before flushing with an explicit fallback-font notice; it does not implement a general PTY input queue. Keep spawn failures explicit and avoid silent retry loops. Log only necessary process identifiers/exit diagnostics, never terminal input.
+
+Preserve the [canonical clipboard and shortcut behavior](../UX-UI.md#53-keyboard-shortcuts). Ctrl+C copies an xterm selection and otherwise retains interrupt behavior; Ctrl+Shift+C copies. Ctrl+Shift+V always pastes text through `terminal.paste()`. Ctrl+V uses that text path by default; disabling "Use Ctrl+V to paste text in terminals" lets full-screen programs own Ctrl+V in the alternate buffer, while shell-prompt Ctrl+V still pastes text. Right-click "Paste text (Ctrl+Shift+V)" uses the text path; "Paste through program (Ctrl+V)" forwards the raw chord only to an active full-screen program, bypassing the text-paste setting. Bypassing xterm with a direct clipboard-text `terminals:write` breaks prompt tracking and can double-paste in Windows edit mode. The UX/UI contract owns these gates and the English UI; terminal command literals remain contracted data.
+
+Submit a line using [writeSubmitLine](../../src/renderer/src/lib/pty-submit.ts): write text first, then CR after `SUBMIT_GAP_MS = 150`; cancel the pending CR during teardown. A single `text + '\r'` burst can be parsed as an unterminated paste by a ConPTY TUI. Test-only zero-gap overrides do not prove production chunk timing. Raw PTY byte/chunk probes and a real Windows smoke are needed for such defects.
+
+[Terminal unit tests](../../src/main/services/terminal/terminal-service.test.ts) use injected fake PTYs; jsdom tests do not spawn them. Changes to lifecycle or ConPTY behavior also need real dev or packaged Electron checks: task switching retains sessions, missing cwd surfaces a spawn error, and app quit reaps spawned shell/agent processes. Attention signals are passive parser callbacks under the [badge contract](../features/chat-attention-badge/spec.md); historical host measurements do not guarantee OSC support on every Windows version. Record an unavailable runtime check as not run.
 
 ---
 

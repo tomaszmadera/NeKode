@@ -140,16 +140,18 @@ export function LeftNavigation({
         <span className="text-sm text-projects-header" data-testid={TEST_ID.projectsHeader}>
           Projects
         </span>
-        <button
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink"
-          data-testid={TEST_ID.addProjectButton}
-          aria-label="Add Project"
-          title="Add Project"
-          onClick={onAddProject}
-        >
-          <Icon.plus size={14} aria-hidden />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink"
+            data-testid={TEST_ID.addProjectButton}
+            aria-label="Add Project"
+            title="Add Project"
+            onClick={onAddProject}
+          >
+            <Icon.plus size={14} aria-hidden />
+          </button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {projects.length === 0 ? (
@@ -157,7 +159,7 @@ export function LeftNavigation({
             className="px-2 py-3 text-xs leading-relaxed text-ink-muted"
             data-testid={TEST_ID.emptyProjectList}
           >
-            No projects yet. Add a local project to start working.
+            No projects yet. Add a project to start working.
           </p>
         ) : (
           <ul data-testid={TEST_ID.projectList}>

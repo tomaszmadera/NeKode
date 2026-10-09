@@ -72,10 +72,10 @@ describe('ChatService', () => {
     const created = chats.create(project.id)
     expect(created.id.length).toBeGreaterThan(0)
     expect(created.projectId).toBe(project.id)
-    expect(created.name).toBe('PowerShell')
+    expect(created.name).toBe('[PowerShell]')
     // The chat model has no task status (spec Data/API): the payload shape
     // itself is the contract.
-    expect(created).toEqual({ id: created.id, projectId: project.id, name: 'PowerShell' })
+    expect(created).toEqual({ id: created.id, projectId: project.id, name: '[PowerShell]' })
     expect(chats.get(created.id)).toEqual(created)
     expect(chats.list(project.id)).toEqual([created])
   })
@@ -85,23 +85,51 @@ describe('ChatService', () => {
     const project = projects.add(demoPath)
 
     const created = chats.create(project.id)
-    expect(created.name).toBe(shellDisplayName())
+    expect(created.name).toBe(`[${shellDisplayName()}]`)
     expect(created.name.length).toBeGreaterThan(0)
   })
 
-  it('createNamed stores the profile name and create keeps the shell label', () => {
+  it('stores the shell prefix with an optional trimmed profile name', () => {
     const { projects, chats } = createServices({ chatName: () => 'PowerShell' })
     const project = projects.add(demoPath)
     const named = chats.createNamed(project.id, '  Codex  ')
-    expect(named.name).toBe('Codex')
+    expect(named.name).toBe('[PowerShell] Codex')
     const shell = chats.create(project.id)
-    expect(shell.name).toBe('PowerShell')
+    expect(shell.name).toBe('[PowerShell]')
     expect(
       chats
         .list(project.id)
         .map((chat) => chat.name)
         .sort(),
-    ).toEqual(['Codex', 'PowerShell'])
+    ).toEqual(['[PowerShell]', '[PowerShell] Codex'])
+  })
+
+  it('uses each project shell and preserves the name after the shell setting changes', () => {
+    const { db, projects } = createServices()
+    const project = projects.add(demoPath)
+    const otherProject = projects.add(otherPath)
+    let projectShell = '  bash  '
+    const chats = new ChatService({
+      db,
+      chatNameForProject: (id) => (id === project.id ? projectShell : 'PowerShell 7'),
+    })
+    const named = chats.createNamed(project.id, 'Codex')
+    const shell = chats.create(otherProject.id)
+    expect(named.name).toBe('[bash] Codex')
+    expect(shell.name).toBe('[PowerShell 7]')
+
+    projectShell = 'zsh'
+    expect(chats.get(named.id)).toEqual(named)
+    expect(chats.list(project.id)).toEqual([named])
+    expect(chats.create(project.id).name).toBe('[zsh]')
+  })
+
+  it('rejects an empty profile or shell without storing a chat', () => {
+    const { projects, chats, chatsNamed } = createServices({ chatName: () => 'PowerShell' })
+    const project = projects.add(demoPath)
+    expectAppError(() => chats.createNamed(project.id, '   '), 'validation')
+    expectAppError(() => chatsNamed(() => '  ').createNamed(project.id, 'Codex'), 'validation')
+    expect(chats.list(project.id)).toEqual([])
   })
 
   it('rejects an empty derived name', () => {
@@ -109,6 +137,22 @@ describe('ChatService', () => {
     const project = projects.add(demoPath)
     expectAppError(() => chats.create(project.id), 'validation')
     expect(chats.list(project.id)).toEqual([])
+  })
+
+  it('keeps existing chat names unchanged when listing or reopening them', () => {
+    const { db, projects, chats } = createServices({ chatName: () => 'bash' })
+    const project = projects.add(demoPath)
+    const insert = db.prepare(
+      'INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)',
+    )
+    insert.run('legacy-shell', project.id, 'PowerShell', '2026-10-08T00:00:00Z')
+    insert.run('legacy-profile', project.id, 'Codex', '2026-10-08T00:00:01Z')
+    const existing = [
+      { id: 'legacy-shell', projectId: project.id, name: 'PowerShell' },
+      { id: 'legacy-profile', projectId: project.id, name: 'Codex' },
+    ]
+    expect(chats.list(project.id)).toEqual(existing)
+    expect(chats.get('legacy-profile')).toEqual(existing[1])
   })
 
   it('allows two chats with the same name within one project (spec Business rules)', () => {
@@ -131,8 +175,8 @@ describe('ChatService', () => {
     chatsNamed(() => 'Chat B').create(otherProject.id)
 
     const chats = chatsNamed(() => 'unused')
-    expect(chats.list(project.id).map((chat) => chat.name)).toEqual(['Chat A'])
-    expect(chats.list(otherProject.id).map((chat) => chat.name)).toEqual(['Chat B'])
+    expect(chats.list(project.id).map((chat) => chat.name)).toEqual(['[Chat A]'])
+    expect(chats.list(otherProject.id).map((chat) => chat.name)).toEqual(['[Chat B]'])
   })
 
   it('rejects creating a chat under a missing project', () => {

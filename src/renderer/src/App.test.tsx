@@ -42,6 +42,8 @@ function createAppApiStub(): AppApi {
       status: vi.fn(),
     },
     projects: {
+      wslDistributions: vi.fn().mockResolvedValue([]),
+      addWsl: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
       add: vi.fn().mockResolvedValue({
         id: 'p1',
@@ -106,7 +108,13 @@ function createAppApiStub(): AppApi {
       getItem: vi.fn(),
       launchTask: vi.fn(),
       handoffCandidates: vi.fn(),
-      linkHandoff: vi.fn(),
+      handoffAvailability: vi.fn(
+        async (input: { items: Array<{ itemId: string; ref: string }> }) => ({
+          state: 'ready' as const,
+          items: input.items.map((entry) => ({ ...entry, available: true })),
+          rejections: [],
+        }),
+      ),
     },
     agentProfiles: {
       get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
@@ -295,8 +303,11 @@ describe('app settings and themes', () => {
   it('floating theme keeps the title bar, detaches the left panel and keeps the status bar', () => {
     const app = createAppApiStub()
     const view = render(<App app={app} />)
-    // Attached shell first: the title bar strip is present.
+    // Attached shell first: the title bar strip is present, tab strip uses bg-panel and has border-b.
     expect(screen.getByTestId(TEST_ID.titleBar)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('bg-panel')
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('border-b')
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain('bg-app')
     fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const select = within(dialog).getByRole('combobox', { name: 'Theme' })
@@ -308,10 +319,14 @@ describe('app settings and themes', () => {
     // Floating shell (user decision 2026-10-04): the title bar stays (the app
     // name top-left beside the Windows caption buttons) and the left panel
     // floats detached with rounded corners. The status bar stays in every
-    // theme.
+    // theme. The tab strip uses the app background (bg-app) and drops border-b
+    // (user request 2026-10-08).
     expect(screen.getByTestId(TEST_ID.titleBar)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.leftNav).className).toContain('rounded-lg')
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('bg-app')
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain('bg-panel')
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain('border-b')
     view.unmount()
   })
 
@@ -1700,6 +1715,12 @@ describe('project and chat data flow', () => {
 
   beforeEach(() => {
     app = createAppApiStub()
+    HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+      this.setAttribute('open', '')
+    })
+    HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+      this.removeAttribute('open')
+    })
   })
 
   afterEach(() => {
@@ -1742,6 +1763,9 @@ describe('project and chat data flow', () => {
     expect(screen.getByTestId(TEST_ID.emptyProjectList)).toBeTruthy()
 
     fireEvent.click(screen.getByTestId(TEST_ID.addProjectButton))
+    expect(screen.getByRole('dialog', { name: 'Add Project' })).toBeTruthy()
+    expect(app.projects.add).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Choose folder...' }))
     await waitFor(() => expect(app.projects.add).toHaveBeenCalledTimes(1))
     expect(app.projects.list).toHaveBeenCalledTimes(2)
 
@@ -1758,12 +1782,14 @@ describe('project and chat data flow', () => {
 
     render(<App app={app} />)
     fireEvent.click(screen.getByTestId(TEST_ID.addProjectButton))
+    fireEvent.click(screen.getByRole('button', { name: 'Choose folder...' }))
     await waitFor(() => expect(app.projects.add).toHaveBeenCalledTimes(1))
 
     expect(screen.getByTestId(TEST_ID.emptyProjectList)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
     expect(app.projects.list).toHaveBeenCalledTimes(1)
     expect(app.state.set).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Add Project' })).toBeTruthy()
   })
 
   it('welcome surface: the primary action reuses the add-project flow', async () => {
@@ -1774,6 +1800,8 @@ describe('project and chat data flow', () => {
     // The illustration layer is decorative: never announced to screen readers.
     expect(welcome.querySelector('[aria-hidden="true"]')).toBeTruthy()
     fireEvent.click(screen.getByTestId(TEST_ID.welcomeAddProjectButton))
+    expect(screen.getByRole('combobox', { name: 'Project location' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Choose folder...' }))
     await waitFor(() => expect(app.projects.add).toHaveBeenCalledTimes(1))
   })
 
@@ -1786,8 +1814,71 @@ describe('project and chat data flow', () => {
 
     render(<App app={app} />)
     fireEvent.click(screen.getByTestId(TEST_ID.addProjectButton))
-    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    fireEvent.click(screen.getByRole('button', { name: 'Choose folder...' }))
+    const notice = await screen.findByRole('alert')
     expect(notice.textContent).toContain('already registered')
+  })
+
+  it('add-project: the shared dialog adds WSL and selects it through the existing flow', async () => {
+    vi.mocked(app.projects.wslDistributions).mockResolvedValue(['Ubuntu'])
+    vi.mocked(app.projects.addWsl).mockResolvedValue(projectA)
+    vi.mocked(app.projects.list).mockResolvedValueOnce([]).mockResolvedValue([projectA])
+    render(<App app={app} />)
+    await screen.findByTestId(TEST_ID.emptyProjectList)
+    fireEvent.click(screen.getByTestId(TEST_ID.addProjectButton))
+    expect(screen.queryByRole('button', { name: 'Add WSL Project' })).toBeNull()
+    fireEvent.change(screen.getByLabelText('Project location'), { target: { value: 'wsl' } })
+    await screen.findByRole('option', { name: 'Ubuntu' })
+    fireEvent.change(screen.getByLabelText('Linux project directory'), {
+      target: { value: '/home/user/project' },
+    })
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Add Project' })).getByRole('button', {
+        name: 'Add Project',
+      }),
+    )
+    await waitFor(() =>
+      expect(app.projects.addWsl).toHaveBeenCalledWith('Ubuntu', '/home/user/project'),
+    )
+    const row = await screen.findByTestId(testIdFor.projectRow('p1'))
+    expect(row.getAttribute('data-selected')).toBe('true')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Project' })).toBeNull())
+    expect(app.projects.add).not.toHaveBeenCalled()
+  })
+
+  it('add-project: modal blocks workspace shortcuts until it closes', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    const bottomDisplay = screen.getByTestId(TEST_ID.bottomRegion).style.display
+    fireEvent.click(screen.getByTestId(TEST_ID.addProjectButton))
+    const dialog = screen.getByRole('dialog', { name: 'Add Project' })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    for (const code of ['Backquote', 'Tab', 'KeyN']) {
+      fireEvent.keyDown(window, { code, ctrlKey: true, bubbles: true, cancelable: true })
+    }
+    expect(app.chats.create).not.toHaveBeenCalled()
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.bottomRegion).style.display).toBe(bottomDisplay)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe(
+        'true',
+      ),
+    )
+    fireEvent.keyDown(window, { code: 'KeyN', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => expect(app.chats.create).toHaveBeenCalledWith('p1'))
+    fireEvent.keyDown(window, { code: 'Backquote', ctrlKey: true, bubbles: true, cancelable: true })
+    expect(screen.getByTestId(TEST_ID.bottomRegion).style.display).not.toBe(bottomDisplay)
   })
 
   it('new-chat: creates the chat immediately (no naming form) and selects it', async () => {
@@ -3130,7 +3221,6 @@ describe('kanban task resume — removing the project', () => {
           },
         ],
         rejections: [],
-        link: null,
       })
       await Promise.resolve()
     })

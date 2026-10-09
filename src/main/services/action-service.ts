@@ -11,6 +11,7 @@ import type {
   ChatInfo,
 } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
+import { parseWslPath } from '../../shared/wsl-path'
 import { wrapSqliteError } from './project-service'
 
 interface ActionRow {
@@ -263,6 +264,23 @@ export class ActionService {
         'Select a project or configure a working directory.',
         'actions:execute',
       )
+    const projectPath = projectId === null ? null : this.#projectPath(projectId)
+    const location = projectPath === null ? null : parseWslPath(projectPath)
+    const cwdLocation = parseWslPath(cwd)
+    if (action.runMode === 'background' && (location !== null || cwdLocation !== null)) {
+      throw new AppError(
+        'validation',
+        'Background actions are unavailable for WSL projects. Use a terminal action.',
+        'actions:execute',
+      )
+    }
+    if (location !== null && cwdLocation?.distribution !== location.distribution) {
+      throw new AppError(
+        'validation',
+        'A WSL action must use its project distribution.',
+        'actions:execute',
+      )
+    }
     if (!(this.#deps.isDirectory ?? isDirectory)(cwd)) {
       this.#invalidateRun(id)
       this.#stopChild(id)

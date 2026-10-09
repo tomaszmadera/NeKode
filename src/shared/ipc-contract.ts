@@ -251,6 +251,8 @@ export function relativeToProject(projectRoot: string, absolutePath: string): st
 export const IPC_CHANNEL = {
   projectsList: 'projects:list',
   projectsAdd: 'projects:add',
+  projectsWslDistributions: 'projects:wslDistributions',
+  projectsAddWsl: 'projects:addWsl',
   projectsRemove: 'projects:remove',
   chatsList: 'chats:list',
   chatsCreate: 'chats:create',
@@ -290,7 +292,7 @@ export const IPC_CHANNEL = {
   kanbanGetItem: 'kanban:getItem',
   kanbanLaunchTask: 'kanban:launchTask',
   kanbanHandoffCandidates: 'kanban:handoffCandidates',
-  kanbanLinkHandoff: 'kanban:linkHandoff',
+  kanbanHandoffAvailability: 'kanban:handoffAvailability',
   agentProfilesGet: 'agentProfiles:get',
   agentProfilesPut: 'agentProfiles:put',
   agentProfilesDelete: 'agentProfiles:delete',
@@ -399,16 +401,6 @@ export function projectAgentProfilesKey(projectId: string): string {
 }
 
 /**
- * Per-project explicit handoff links (kanban task launch amendment). One JSON
- * document in `app_state`, keyed by adapter id and backend-native item id; the
- * WorkItem.ref is stored only as a label. Deleting the Kanban binding, changing
- * its config, or removing the project deletes this key.
- */
-export function projectKanbanHandoffLinksKey(projectId: string): string {
-  return `project.kanbanHandoffLinks:${projectId}`
-}
-
-/**
  * Shared fields of `kanban:launchTask`. Main refetches the item with `getItem`
  * `{ ref }` and checks `itemId`. The renderer does not send a chat name,
  * description, or prompt.
@@ -428,9 +420,9 @@ export interface KanbanStartLaunchInput extends KanbanLaunchTaskBase {
 
 /**
  * `kanban:launchTask` body for `mode: 'resume'`. `fileName` and `stamp` come
- * from a scan result main just produced. Main rechecks the file, its link, and
- * the stamp immediately before creating the chat; a missing, unreadable,
- * replaced, or changed file refreshes the choice and creates no chat.
+ * from a scan result main just produced. Main rechecks the file and the stamp
+ * immediately before creating the chat; a missing, unreadable, replaced, or
+ * changed file refreshes the choice and creates no chat.
  */
 export interface KanbanResumeLaunchInput extends KanbanLaunchTaskBase {
   mode: 'resume'
@@ -449,19 +441,18 @@ export interface KanbanLaunchResult {
 }
 
 // ---------------------------------------------------------------------------
-// Handoff match and link (kanban task launch amendment, stage 4). The matcher
-// reads the project's configured handoff directory and returns metadata, not
-// file bodies. An explicit link is keyed by adapter id and backend-native item
-// id; the ref is stored only as a label.
+// Handoff match (kanban task launch amendment, stage 4; NEKODE-30 stage 2). The
+// matcher reads the project's configured handoff directory and returns file
+// metadata, not file bodies. The only link between a work item and a handoff is
+// the full ref carried in the file name.
 // ---------------------------------------------------------------------------
 
 /**
- * How a scanned file matched the work item. `metadata` is a frontmatter match,
- * `filename` a ref-prefixed or ref-named file, `none` a readable file that
- * matched neither (linkable manually). The explicit assignment is surfaced
- * separately as the result `link`.
+ * How a scanned file matched the work item. `filename` is a ref-named or
+ * ref-prefixed file; `none` is a readable file whose name does not carry the
+ * ref (never a candidate).
  */
-export type HandoffMatchKind = 'metadata' | 'filename' | 'none'
+export type HandoffMatchKind = 'filename' | 'none'
 
 /** One regular, readable `.md` file of the configured handoff directory. */
 export interface HandoffFileInfo {
@@ -477,15 +468,8 @@ export interface HandoffFileInfo {
 export interface HandoffRejection {
   name: string
   path: string
-  /** Visible, user-facing reason (size cap, encoding, conflicting metadata). */
+  /** Visible, user-facing reason (size cap, encoding, read failure). */
   reason: string
-}
-
-/** An explicit assignment resolved to its current file. */
-export interface HandoffLinkedFile {
-  name: string
-  path: string
-  modifiedAt: string
 }
 
 /**
@@ -502,8 +486,6 @@ export type HandoffCandidatesResult =
       files: HandoffFileInfo[]
       /** Files with a visible rejection reason; never hide the good candidates. */
       rejections: HandoffRejection[]
-      /** Resolved explicit assignment for this item, or null. */
-      link: HandoffLinkedFile | null
     }
 
 /** `kanban:handoffCandidates` body. Item identity comes from the board. */
@@ -513,25 +495,39 @@ export interface KanbanHandoffCandidatesInput {
   ref: string
 }
 
-/** `kanban:linkHandoff` body. `fileName` comes from a scan result main produced. */
-export interface KanbanLinkHandoffInput {
+/**
+ * `kanban:handoffAvailability` body. The renderer sends the loaded items'
+ * identities only, never a disk path; main resolves the configured directory
+ * from its own state.
+ */
+export interface KanbanHandoffAvailabilityInput {
   projectId: string
+  items: Array<{ itemId: string; ref: string }>
+}
+
+/** One loaded item's availability in a batch handoff scan. */
+export interface KanbanHandoffAvailabilityItem {
   itemId: string
   ref: string
-  fileName: string
+  /** True when at least one readable file name carries the item's full ref. */
+  available: boolean
 }
 
-/** One explicit handoff assignment. `ref` is only a label. */
-export interface KanbanHandoffLink {
-  name: string
-  ref: string
-}
-
-/** `project.kanbanHandoffLinks:<projectId>` JSON document. */
-export interface KanbanHandoffLinksDocument {
-  /** adapter id -> backend-native item id -> link. */
-  links: Record<string, Record<string, KanbanHandoffLink>>
-}
+/**
+ * One batch handoff check for the loaded items. `not-configured` is an
+ * unconfigured directory; `error` is a directory read failure and is never
+ * shown as an empty set. Both are distinct from a `ready` scan whose items are
+ * all unavailable. The result carries no file bodies and no adapter config.
+ */
+export type KanbanHandoffAvailabilityResult =
+  | { state: 'not-configured' }
+  | { state: 'error'; message: string }
+  | {
+      state: 'ready'
+      items: KanbanHandoffAvailabilityItem[]
+      /** File-level scan warnings (size, encoding, read); never hides an item. */
+      rejections: HandoffRejection[]
+    }
 
 /**
  * Shared profile field rules. Null means the fields may be saved. Empty name,
@@ -564,13 +560,15 @@ export interface AppApi {
     list(): Promise<ProjectInfo[]>
     /** Opens the native directory dialog in main. Resolves null when the user cancels. */
     add(): Promise<ProjectInfo | null>
+    wslDistributions(): Promise<string[]>
+    addWsl(distribution: string, linuxPath: string): Promise<ProjectInfo>
     remove(projectId: string): Promise<void>
   }
   chats: {
     list(projectId: string): Promise<ChatInfo[]>
     /**
      * Creates a chat with no naming form (spec Behaviour 3): the name is
-     * derived from the platform shell (e.g. "PowerShell" on win32) and may
+     * the project's compact shell code in brackets (e.g. "[PS7]") and may
      * repeat within a project. Returns the created chat (selected by the
      * renderer).
      */
@@ -602,18 +600,18 @@ export interface AppApi {
      * last detection of this app run plus persisted custom entries. Never
      * probes the machine — detection runs only via `shellDetect`.
      */
-    shellList(): Promise<ShellInfo[]>
+    shellList(projectId?: string | null): Promise<ShellInfo[]>
     /**
      * Runs one detection (the Shell settings tab calls this on entry):
      * fixed-path probing plus one WSL enumeration in main, cache replaced,
      * custom paths re-validated (dead pruned). Returns the full list.
      */
-    shellDetect(): Promise<ShellInfo[]>
+    shellDetect(projectId?: string | null): Promise<ShellInfo[]>
     /**
      * Validates an absolute executable path in main and adds it as a
      * `custom:<path>` entry (persisted app-level). Rejects invalid input.
      */
-    shellAddCustom(path: string): Promise<ShellInfo>
+    shellAddCustom(path: string, projectId?: string | null): Promise<ShellInfo>
     /**
      * Terminates one bottom-tab PTY. Rejects any other id. Chat sessions and
      * application quit do not use this method.
@@ -692,11 +690,13 @@ export interface AppApi {
      */
     handoffCandidates(input: KanbanHandoffCandidatesInput): Promise<HandoffCandidatesResult>
     /**
-     * Stores an explicit handoff link for a file name a scan result just
-     * returned, and re-reads the candidates. A file whose metadata names
-     * another item is refused.
+     * One batch handoff scan for the loaded items: the directory and each
+     * qualifying file are read at most once, then matched against every item.
+     * Read-only; failures are distinct states, never an empty set.
      */
-    linkHandoff(input: KanbanLinkHandoffInput): Promise<HandoffCandidatesResult>
+    handoffAvailability(
+      input: KanbanHandoffAvailabilityInput,
+    ): Promise<KanbanHandoffAvailabilityResult>
   }
   agentProfiles: {
     /** This project's profiles. Another project's document is never returned. */
@@ -719,4 +719,9 @@ export interface AppApi {
      */
     pickDirectory(defaultPath: string | null): Promise<string | null>
   }
+}
+
+/** Custom Linux shells belong to one project and its persisted distribution. */
+export function projectWslShellsKey(projectId: string): string {
+  return `project.wslShells:${projectId}`
 }

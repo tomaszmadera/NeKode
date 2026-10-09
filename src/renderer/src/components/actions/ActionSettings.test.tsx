@@ -1,6 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ActionControl, ActionInput, AppApi } from '../../../../shared/ipc-contract'
+import {
+  type ActionControl,
+  type ActionInput,
+  type AppApi,
+  projectHandoffDirKey,
+} from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
 import { ActionSettings } from './ActionSettings'
 
@@ -191,5 +196,41 @@ describe('Kanban tab shell', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.settingsAgentsPanel)).toBeNull()
+  })
+})
+
+describe('handoff directory save', () => {
+  it('persists the directory and invalidates the previous availability result', async () => {
+    const set = vi.fn().mockResolvedValue(undefined)
+    const onKanbanInvalidate = vi.fn()
+    const app = {
+      terminals: {
+        shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
+        shellAddCustom: vi.fn(),
+      },
+      state: { get: vi.fn().mockResolvedValue('old/dir'), set },
+      dialogs: { pickDirectory: vi.fn().mockResolvedValue(null) },
+    } as unknown as AppApi
+    render(
+      <ActionSettings
+        app={app}
+        actions={[]}
+        projectId="p1"
+        projectPath="D:/p"
+        autoSend={false}
+        onAutoSendChange={vi.fn()}
+        onRefresh={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+        initialTab="actions"
+        onKanbanInvalidate={onKanbanInvalidate}
+      />,
+    )
+    const input = await screen.findByTestId(TEST_ID.settingsHandoffDir)
+    fireEvent.change(input, { target: { value: '.agents/handoffs' } })
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirSave))
+    await waitFor(() =>
+      expect(set).toHaveBeenCalledWith(projectHandoffDirKey('p1'), '.agents/handoffs'),
+    )
+    expect(onKanbanInvalidate).toHaveBeenCalledWith('p1')
   })
 })

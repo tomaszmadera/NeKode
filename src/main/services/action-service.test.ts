@@ -38,6 +38,34 @@ function setup() {
 }
 
 describe('ActionService', () => {
+  it('rejects WSL background actions before host spawn, including a host cwd override', () => {
+    const { db, service, startBackground } = setup()
+    try {
+      db.prepare('UPDATE projects SET path = ? WHERE id = ?').run(
+        '\\\\wsl.localhost\\Ubuntu\\home\\user',
+        'p1',
+      )
+      for (const cwd of [null, 'D:/code/demo']) {
+        const action = service.create({
+          scope: 'project',
+          projectId: 'p1',
+          title: 'Build',
+          icon: null,
+          command: 'make',
+          cwd,
+          runMode: 'background',
+          confirm: false,
+          sortOrder: 0,
+        })
+        expect(() => service.execute(action.id, 'p1', false)).toThrow(
+          /Background actions are unavailable for WSL/,
+        )
+      }
+      expect(startBackground).not.toHaveBeenCalled()
+    } finally {
+      db.close()
+    }
+  })
   it('preserves action rows across a file database reopen and cascades project removal', () => {
     const directory = mkdtempSync(join(tmpdir(), 'nekode-action-test-'))
     const path = join(directory, 'actions.db')

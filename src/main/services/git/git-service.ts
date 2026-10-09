@@ -4,6 +4,7 @@ import {
   type GitStatus,
   type GitWorktreeStatus,
 } from '../../../shared/ipc-contract'
+import { parseWslPath } from '../../../shared/wsl-path'
 
 // Read-only git status for the status bar (UX-UI §14–16): branch, worktree
 // status and change counts via the git CLI. No watchers, no mutations. Any
@@ -127,14 +128,33 @@ export class GitService {
 
 function execFileRunner(args: string[], cwd: string): Promise<GitStatusRunResult> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, timeout: 5000, windowsHide: true }, (error, stdout, stderr) => {
-      const exitCode =
-        error !== null && typeof (error as { code?: unknown }).code === 'number'
-          ? (error as { code: number }).code
-          : error !== null
-            ? 1
-            : 0
-      resolve({ stdout, stderr, exitCode })
-    })
+    const location = parseWslPath(cwd)
+    const file = location === null ? 'git' : 'wsl.exe'
+    const commandArgs =
+      location === null
+        ? args
+        : [
+            '--distribution',
+            location.distribution,
+            '--cd',
+            location.linuxPath,
+            '--exec',
+            'git',
+            ...args,
+          ]
+    execFile(
+      file,
+      commandArgs,
+      { cwd: location === null ? cwd : process.cwd(), timeout: 5000, windowsHide: true },
+      (error, stdout, stderr) => {
+        const exitCode =
+          error !== null && typeof (error as { code?: unknown }).code === 'number'
+            ? (error as { code: number }).code
+            : error !== null
+              ? 1
+              : 0
+        resolve({ stdout, stderr, exitCode })
+      },
+    )
   })
 }

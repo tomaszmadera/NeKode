@@ -169,6 +169,10 @@ export function ActionSettings({
       await app.state.set(projectHandoffDirKey(projectId), handoffDir.trim())
       setHandoffDirSaved(true)
       setConfigError(null)
+      // A saved directory invalidates the previous availability result: the
+      // board session is keyed by this version, so it re-scans (spec
+      // Dostępność Resume pkt 6).
+      onKanbanInvalidate?.(projectId)
     } catch (cause) {
       setHandoffDirSaved(false)
       setConfigError(

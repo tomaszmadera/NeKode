@@ -148,6 +148,13 @@ export const TEST_ID = {
   kanbanBoardUnconfigured: 'kanban-board-unconfigured',
   kanbanBoardConfigure: 'kanban-board-configure',
   kanbanBoardRefresh: 'kanban-board-refresh',
+  /** Handoff availability notices under the board header (stage 1). */
+  kanbanHandoffNotConfigured: 'kanban-handoff-not-configured',
+  kanbanHandoffConfigure: 'kanban-handoff-configure',
+  kanbanHandoffError: 'kanban-handoff-error',
+  kanbanHandoffRetry: 'kanban-handoff-retry',
+  kanbanHandoffWarnings: 'kanban-handoff-warnings',
+  kanbanHandoffEmpty: 'kanban-handoff-empty',
   /** List | Board switch on the Kanban tab (list is the default). */
   kanbanViewBoard: 'kanban-view-board',
   kanbanViewList: 'kanban-view-list',
@@ -170,7 +177,7 @@ export const TEST_ID = {
   kanbanStartCancel: 'kanban-start-cancel',
   kanbanStartConfirm: 'kanban-start-confirm',
   kanbanStartConfigure: 'kanban-start-configure',
-  /** Resume modal (handoff match and link, kanban task launch amendment).
+  /** Resume modal (handoff selection, kanban task launch amendment).
       Rendered by the app shell, not inside the board. */
   kanbanResumeDialog: 'kanban-resume-dialog',
   kanbanResumeTask: 'kanban-resume-task',
@@ -178,16 +185,12 @@ export const TEST_ID = {
   kanbanResumeError: 'kanban-resume-error',
   kanbanResumeConfigure: 'kanban-resume-configure',
   kanbanResumeRefresh: 'kanban-resume-refresh',
-  /** No linked handoff and no automatic candidate. */
+  /** No handoff file name carries the ref (no candidate to resume). */
   kanbanResumeEmpty: 'kanban-resume-empty',
-  /** The list of matching candidates (metadata or filename). */
+  /** The list of matching handoff files (filename match on the full ref). */
   kanbanResumeCandidates: 'kanban-resume-candidates',
   /** Rejected files with their visible reason. */
   kanbanResumeWarnings: 'kanban-resume-warnings',
-  /** Opens the manual Link handoff file list. */
-  kanbanResumeLink: 'kanban-resume-link',
-  kanbanResumeLinkList: 'kanban-resume-link-list',
-  kanbanResumeLinkConfirm: 'kanban-resume-link-confirm',
   kanbanResumeCancel: 'kanban-resume-cancel',
   /** Confirm of a Resume launch. Disabled until the scan, file and profile hold. */
   kanbanResumeConfirm: 'kanban-resume-confirm',
@@ -265,8 +268,6 @@ export const testIdFor = {
   kanbanResumeCandidate: (name: string): string => `kanban-resume-candidate-${name}`,
   /** One agent profile radio in the Resume modal. */
   kanbanResumeProfile: (profileId: string): string => `kanban-resume-profile-${profileId}`,
-  /** One file row in the Resume modal's manual Link handoff list. */
-  kanbanResumeLinkOption: (name: string): string => `kanban-resume-link-option-${name}`,
   /** One state group in the list view, keyed by the adapter state id. */
   kanbanListGroup: (stateId: string): string => `kanban-list-group-${stateId}`,
   /** Toggle button for collapsing or expanding a state group in the list view. */

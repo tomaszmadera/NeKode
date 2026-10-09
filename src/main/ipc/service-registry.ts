@@ -13,10 +13,11 @@ import type {
   KanbanAdapterInfo,
   KanbanBoard,
   KanbanCreateInput,
+  KanbanHandoffAvailabilityInput,
+  KanbanHandoffAvailabilityResult,
   KanbanHandoffCandidatesInput,
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
-  KanbanLinkHandoffInput,
   KanbanProjectConfig,
   KanbanUpdatePatch,
   ProjectInfo,
@@ -47,6 +48,8 @@ export interface AppServices {
   projects: {
     list(): ProjectInfo[]
     add(path: string): ProjectInfo
+    wslDistributions(): string[]
+    addWsl(distribution: string, linuxPath: string): ProjectInfo
     remove(projectId: string): void
   }
   chats: {
@@ -74,11 +77,11 @@ export interface AppServices {
     /** Display label of the project's resolved shell (fallback: platform default). */
     shellName(projectId: string): string
     /** Cached shell list; never probes (spec project-shell-selection). */
-    shellList(): ShellInfo[]
+    shellList(projectId?: string | null): ShellInfo[]
     /** One explicit detection run; replaces the cache, prunes dead custom paths. */
-    shellDetect(): ShellInfo[]
+    shellDetect(projectId?: string | null): ShellInfo[]
     /** Validates and adds an absolute executable path as a custom shell. */
-    shellAddCustom(path: string): ShellInfo
+    shellAddCustom(path: string, projectId?: string | null): ShellInfo
     /**
      * Per-session teardown. The renderer bridge exposes this only for bottom
      * tab ids. Project removal and chat close call it in main.
@@ -133,8 +136,13 @@ export interface AppServices {
     launchTask(input: KanbanLaunchTaskInput): Promise<KanbanLaunchResult>
     /** One handoff scan for an item. Read-only; failures are distinct states. */
     handoffCandidates(input: KanbanHandoffCandidatesInput): Promise<HandoffCandidatesResult>
-    /** Stores an explicit link for a scanned file name and re-reads candidates. */
-    linkHandoff(input: KanbanLinkHandoffInput): Promise<HandoffCandidatesResult>
+    /**
+     * One batch handoff scan for the loaded items: one directory read and at
+     * most one read per qualifying file, matched against every item.
+     */
+    handoffAvailability(
+      input: KanbanHandoffAvailabilityInput,
+    ): Promise<KanbanHandoffAvailabilityResult>
     /** Per-project key cleanup on projects:remove; not on the renderer bridge. */
     cleanupProject(projectId: string): void
     /** Drops in-flight Start launches for a removed project. Not on the renderer bridge. */

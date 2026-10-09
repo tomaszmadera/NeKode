@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { customChoice, decodeWslList, ShellService } from './shell-service'
 
 // ShellService unit tests (spec project-shell-selection): everything
-// OS-facing is injected (exists, isFile, WSL runner, env) — no real probing
+// OS-facing is injected (exists, isFile, WSL runner, env): no real probing
 // and no processes in vitest. Covers detection composition/ordering, UTF-16LE
 // WSL decoding, degradation when WSL is unavailable, custom-path
 // add/validate/prune semantics, cache behavior (list never probes), and the
@@ -244,5 +244,89 @@ describe('label (same fallback rules as resolve)', () => {
     const { service } = makeService({ exists: [], files: [] })
     expect(service.label('cmd')).toBe('PowerShell')
     expect(service.label(customChoice('D:\\gone.exe'))).toBe('PowerShell')
+  })
+})
+
+describe('chatLabel (compact chat prefix)', () => {
+  const INSTALLED = [
+    'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+    'C:\\Windows\\System32\\cmd.exe',
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+  ]
+
+  it('maps each installed candidate to its compact code', () => {
+    const { service } = makeService({ exists: INSTALLED, files: [] })
+    expect(service.chatLabel('powershell')).toBe('PS5')
+    expect(service.chatLabel('pwsh')).toBe('PS7')
+    expect(service.chatLabel('cmd')).toBe('cmd')
+    expect(service.chatLabel('gitbash')).toBe('bash')
+  })
+
+  it('collapses every WSL choice to one code without the distribution', () => {
+    const { service } = makeService({ exists: [], files: [] })
+    expect(service.chatLabel('wsl:Ubuntu-24.04')).toBe('WSL')
+    expect(service.chatLabel('wsl:Debian-12')).toBe('WSL')
+    expect(service.chatLabel('wsl:')).toBe('PS5')
+  })
+
+  it('keeps the default, unknown and custom codes aligned with label()', () => {
+    const { service } = makeService({ exists: [], files: ['D:\\tools\\nu.exe'] })
+    expect(service.chatLabel(null)).toBe('PS5')
+    expect(service.chatLabel('default')).toBe('PS5')
+    expect(service.chatLabel('nonsense')).toBe('PS5')
+    expect(service.chatLabel(customChoice('D:\\tools\\nu.exe'))).toBe('nu.exe')
+  })
+
+  it('falls back to the default code when the chosen binary died', () => {
+    const { service } = makeService({ exists: [], files: [] })
+    expect(service.chatLabel('cmd')).toBe('PS5')
+    expect(service.chatLabel(customChoice('D:\\gone.exe'))).toBe('PS5')
+  })
+
+  it('uses WSL for a WSL project and the base name for its custom Linux shell', () => {
+    const service = new ShellService({ runWsl: vi.fn(() => 'usable') })
+    const project = '\\\\wsl$\\Ubuntu\\home\\u'
+    expect(service.chatLabel('default', project)).toBe('WSL')
+    expect(service.chatLabel('wsl:Debian-12', project)).toBe('WSL')
+    expect(service.chatLabel(customChoice('/bin/fish'), project)).toBe('fish')
+  })
+})
+
+describe('project-scoped WSL shells', () => {
+  const project = '\\\\wsl$\\Ubuntu\\home\\u'
+  it('probes only the project distribution and never host candidates, custom files or distributions', () => {
+    const exists = vi.fn()
+    const isFile = vi.fn()
+    const listWslDistributions = vi.fn()
+    const runWsl = vi.fn((_distribution: string, args: string[]) =>
+      args[0] === '/bin/cat' ? '# shells\n/bin/bash\n/bin/zsh\n' : 'usable',
+    )
+    const service = new ShellService({ exists, isFile, listWslDistributions, runWsl })
+    expect(service.detect(['/bin/fish'], project).shells.map((entry) => entry.id)).toEqual([
+      'default',
+      'custom:/bin/bash',
+      'custom:/bin/zsh',
+      'custom:/bin/fish',
+    ])
+    expect(exists).not.toHaveBeenCalled()
+    expect(isFile).not.toHaveBeenCalled()
+    expect(listWslDistributions).not.toHaveBeenCalled()
+    expect(runWsl.mock.calls.every(([distribution]) => distribution === 'Ubuntu')).toBe(true)
+    expect(service.resolve('powershell', project)).toEqual({ file: 'wsl.exe', args: [] })
+    expect(exists).not.toHaveBeenCalled()
+  })
+  it('validates Linux custom shells in WSL and fails explicitly after removal', () => {
+    const runWsl = vi.fn(() => 'usable')
+    const service = new ShellService({ runWsl })
+    expect(service.addCustomPath('/bin/fish', project)).toEqual({
+      id: 'custom:/bin/fish',
+      label: 'fish',
+    })
+    expect(() => service.addCustomPath('C:\\shell.exe', project)).toThrow(/Linux/)
+    runWsl.mockImplementation(() => {
+      throw new Error('removed')
+    })
+    expect(() => service.resolve('custom:/bin/fish', project)).toThrow()
   })
 })

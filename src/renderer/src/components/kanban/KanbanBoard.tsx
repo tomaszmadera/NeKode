@@ -2,6 +2,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AppApi,
+  HandoffRejection,
   KanbanBoard as KanbanBoardData,
   KanbanPriority,
   WorkItem,
@@ -23,10 +24,11 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // project session while hidden; activation and Refresh share a background load.
 // Loading, typed error, empty board and not-configured states are inline text;
 // the not-configured state offers Configure (Project Settings on its Kanban
-// tab), mirroring the Resume picker's affordance. No drag-and-drop. Start and
-// Start and Resume stay visible and do not open the review. Start asks the host
-// to open the launch confirmation; Resume asks the host to open the handoff
-// confirmation. Neither launches from the board.
+// tab), mirroring the Resume picker's affordance. No drag-and-drop. Start is
+// always shown; Resume renders only for an item the batch handoff check proved
+// available. Neither control opens the review: Start asks the host to open the
+// launch confirmation, Resume asks the host to open the handoff confirmation.
+// Neither launches from the board.
 
 /** Inline render phase of the board. */
 export type KanbanBoardPhase = 'loading' | 'ready' | 'error' | 'not-configured' | 'empty'
@@ -37,9 +39,18 @@ interface KanbanBoardProps {
   projectId: string
   /** Opens Project Settings on the Kanban tab (the not-configured state). */
   onConfigure: () => void
-  /** Opens the Start confirmation in the app shell. Resume stays unwired. */
+  /** Opens Project Settings on the tab that owns the handoff directory. */
+  onConfigureHandoffs?: () => void
+  /**
+   * Opens the Start confirmation in the app shell. Start is always shown, for
+   * every item, regardless of handoff availability.
+   */
   onStart?: (item: WorkItem) => void
-  /** Opens the Resume and handoff confirmation in the app shell. */
+  /**
+   * Opens the Resume and handoff confirmation in the app shell. Resume is a
+   * row control shown only for an item the batch handoff check proved
+   * available.
+   */
   onResume?: (item: WorkItem) => void
   /** Hidden retained sessions never initiate requests. */
   active?: boolean
@@ -230,13 +241,15 @@ function ItemTitleButton({
   )
 }
 
-/** Start and Resume stay visible. They do not open the review. */
+/** Start stays visible. Resume only when the item has a confirmed handoff. */
 function ItemLaunchButtons({
   item,
+  resumeEnabled,
   onStart,
   onResume,
 }: {
   item: WorkItem
+  resumeEnabled: boolean
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
 }): React.JSX.Element {
@@ -252,16 +265,18 @@ function ItemLaunchButtons({
       >
         Start
       </button>
-      <button
-        type="button"
-        className={`${ITEM_CONTROL_CLASS} text-ink`}
-        data-testid={testIdFor.kanbanItemResume(item.ref)}
-        onClick={() => {
-          onResume?.(item)
-        }}
-      >
-        Resume
-      </button>
+      {resumeEnabled ? (
+        <button
+          type="button"
+          className={`${ITEM_CONTROL_CLASS} text-ink`}
+          data-testid={testIdFor.kanbanItemResume(item.ref)}
+          onClick={() => {
+            onResume?.(item)
+          }}
+        >
+          Resume
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -270,12 +285,14 @@ function ItemLaunchButtons({
 function WorkItemSurface({
   item,
   layout,
+  resumeEnabled,
   onOpen,
   onStart,
   onResume,
 }: {
   item: WorkItem
   layout: 'card' | 'row'
+  resumeEnabled: boolean
   onOpen: (ref: string) => void
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
@@ -288,7 +305,12 @@ function WorkItemSurface({
           <PriorityText priority={item.priority} />
         </div>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <ItemLaunchButtons item={item} onStart={onStart} onResume={onResume} />
+          <ItemLaunchButtons
+            item={item}
+            resumeEnabled={resumeEnabled}
+            onStart={onStart}
+            onResume={onResume}
+          />
           <ItemTitleButton item={item} onOpen={onOpen} />
         </div>
       </div>
@@ -303,7 +325,12 @@ function WorkItemSurface({
       <ItemRefButton item={item} onOpen={onOpen} />
       <ItemTitleButton item={item} onOpen={onOpen} />
       <PriorityText priority={item.priority} />
-      <ItemLaunchButtons item={item} onStart={onStart} onResume={onResume} />
+      <ItemLaunchButtons
+        item={item}
+        resumeEnabled={resumeEnabled}
+        onStart={onStart}
+        onResume={onResume}
+      />
     </div>
   )
 }
@@ -311,14 +338,16 @@ function WorkItemSurface({
 function ItemReview({ item, onBack }: { item: WorkItem; onBack: () => void }): React.JSX.Element {
   return (
     <article className="min-w-0" data-testid={TEST_ID.kanbanReview}>
-      <button
-        type="button"
-        className="h-control rounded-md px-3 text-[12.6px] text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-        data-testid={TEST_ID.kanbanReviewBack}
-        onClick={onBack}
-      >
-        Back
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="h-control rounded-md px-3 text-[12.6px] text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+          data-testid={TEST_ID.kanbanReviewBack}
+          onClick={onBack}
+        >
+          Back
+        </button>
+      </div>
       <div className="mt-3 flex items-baseline justify-between gap-3">
         <p className="font-medium text-ink">{item.ref}</p>
         <PriorityText priority={item.priority} />
@@ -338,6 +367,83 @@ function ItemReview({ item, onBack }: { item: WorkItem; onBack: () => void }): R
         {descriptionText(item.description)}
       </p>
     </article>
+  )
+}
+
+/**
+ * Inline handoff-directory notices beneath the board header (spec Dostępność
+ * Resume pkt 3-4): an unconfigured directory offers Configure handoffs, a read
+ * failure is its own state with Retry, and rejected files are named warnings.
+ * A read failure never removes the loaded board; the notices render above it.
+ */
+function HandoffNotices({
+  phase,
+  error,
+  warnings,
+  showEmpty,
+  onConfigureHandoffs,
+  onRetry,
+}: {
+  phase: 'not-configured' | 'error' | 'ready'
+  error: string | null
+  warnings: HandoffRejection[]
+  showEmpty: boolean
+  onConfigureHandoffs?: () => void
+  onRetry: () => void
+}): React.JSX.Element | null {
+  if (phase === 'not-configured') {
+    return (
+      <div className="mb-3 text-[12.6px]" data-testid={TEST_ID.kanbanHandoffNotConfigured}>
+        <p className="text-ink-secondary">Handoff directory is not configured.</p>
+        <button
+          type="button"
+          className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
+          data-testid={TEST_ID.kanbanHandoffConfigure}
+          onClick={onConfigureHandoffs}
+        >
+          Configure handoffs
+        </button>
+      </div>
+    )
+  }
+  if (phase === 'error') {
+    return (
+      <div className="mb-3 text-[12.6px]" data-testid={TEST_ID.kanbanHandoffError}>
+        <p className="text-error">{error ?? 'Failed to read the handoff directory.'}</p>
+        <button
+          type="button"
+          className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
+          data-testid={TEST_ID.kanbanHandoffRetry}
+          onClick={onRetry}
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+  return (
+    <>
+      {warnings.length > 0 ? (
+        <ul
+          className="mb-3 list-none space-y-1 text-[12.6px] text-warning"
+          data-testid={TEST_ID.kanbanHandoffWarnings}
+        >
+          {warnings.map((warning) => (
+            <li key={warning.name}>
+              {warning.name}: {warning.reason}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {showEmpty ? (
+        <p
+          className="mb-3 text-[12.6px] text-ink-secondary"
+          data-testid={TEST_ID.kanbanHandoffEmpty}
+        >
+          No handoffs match the loaded items.
+        </p>
+      ) : null}
+    </>
   )
 }
 
@@ -456,6 +562,7 @@ export function KanbanBoard({
   app,
   projectId,
   onConfigure,
+  onConfigureHandoffs,
   onStart,
   onResume,
   active = true,
@@ -470,13 +577,36 @@ export function KanbanBoard({
     loadCollapsedStateIds(projectId),
   )
   const [sortState, setSortState] = useState<KanbanSortState>(() => loadKanbanSort(projectId))
+  // Handoff availability (spec Dostępność Resume): Resume is hidden until a
+  // batch check succeeds and the item has a readable accepted candidate. The
+  // check runs beside the board load and never delays rendering the board.
+  const [handoffPhase, setHandoffPhase] = useState<
+    'loading' | 'not-configured' | 'error' | 'ready'
+  >('loading')
+  const [availableIds, setAvailableIds] = useState<ReadonlySet<string>>(new Set())
+  const [handoffError, setHandoffError] = useState<string | null>(null)
+  const [handoffWarnings, setHandoffWarnings] = useState<HandoffRejection[]>([])
+  const [handoffEmpty, setHandoffEmpty] = useState(false)
   const pending = useRef(false)
   const generation = useRef(0)
   const hasSnapshot = useRef(false)
+  const handoffPending = useRef<string | null>(null)
+  const handoffGeneration = useRef(0)
+  const boardRef = useRef(board)
+  boardRef.current = board
 
   useEffect(() => {
     setCollapsedStates(loadCollapsedStateIds(projectId))
     setSortState(loadKanbanSort(projectId))
+    // A project change (or a direct projectId switch in a test) is a new scan
+    // generation: a late response for the previous project never restores Resume.
+    handoffGeneration.current += 1
+    handoffPending.current = null
+    setHandoffPhase('loading')
+    setAvailableIds(new Set())
+    setHandoffError(null)
+    setHandoffWarnings([])
+    setHandoffEmpty(false)
   }, [projectId])
 
   const handleSortByChange = useCallback(
@@ -523,8 +653,69 @@ export function KanbanBoard({
     return () => {
       generation.current += 1
       pending.current = false
+      handoffGeneration.current += 1
+      handoffPending.current = null
     }
   }, [])
+
+  // One batch handoff check for the loaded items: one directory read, then the
+  // same snapshot matched against every item. Identical concurrent triggers
+  // are coalesced; a different item set is its own generation, so an older
+  // result never marks a new item available (spec Dostępność Resume pkt 6-9).
+  const loadHandoff = useCallback(
+    async (items: Array<{ itemId: string; ref: string }>): Promise<void> => {
+      const signature = items.map((entry) => `${entry.itemId}:${entry.ref}`).join('|')
+      // The same load firing twice for an unchanged item set is one request.
+      if (handoffPending.current === signature) {
+        return
+      }
+      const requestGeneration = ++handoffGeneration.current
+      handoffPending.current = signature
+      setHandoffPhase('loading')
+      setAvailableIds(new Set())
+      setHandoffError(null)
+      setHandoffWarnings([])
+      setHandoffEmpty(false)
+      try {
+        const result = await app.kanban.handoffAvailability({ projectId, items })
+        if (requestGeneration !== handoffGeneration.current) return
+        if (result.state === 'not-configured') {
+          setHandoffPhase('not-configured')
+          return
+        }
+        if (result.state === 'error') {
+          setHandoffPhase('error')
+          setHandoffError(result.message)
+          return
+        }
+        setAvailableIds(
+          new Set(result.items.filter((entry) => entry.available).map((entry) => entry.itemId)),
+        )
+        setHandoffWarnings(result.rejections)
+        setHandoffEmpty(
+          result.items.length > 0 &&
+            result.items.every((entry) => !entry.available) &&
+            result.rejections.length === 0,
+        )
+        setHandoffPhase('ready')
+      } catch (cause) {
+        if (requestGeneration !== handoffGeneration.current) return
+        setHandoffPhase('error')
+        setHandoffError(
+          parseAppErrorPayload(cause)?.message ?? 'Failed to read the handoff directory.',
+        )
+      } finally {
+        if (requestGeneration === handoffGeneration.current) {
+          handoffPending.current = null
+        }
+      }
+    },
+    [app, projectId],
+  )
+
+  const recheckHandoff = useCallback((): void => {
+    void loadHandoff(boardRef.current.items.map((entry) => ({ itemId: entry.id, ref: entry.ref })))
+  }, [loadHandoff])
 
   // One load: the mount effect and the refresh control share it. An
   // unconfigured project rejects with the typed validation error naming the
@@ -551,6 +742,9 @@ export function KanbanBoard({
       // render in unmatched-state columns (see boardColumns), so the empty
       // state only fires when there is genuinely nothing to show.
       setPhase(next.states.length === 0 && next.items.length === 0 ? 'empty' : 'ready')
+      // Availability is checked on activation, tab return and Refresh; the
+      // board render never waits for it (spec Dostępność Resume pkt 7).
+      void loadHandoff(next.items.map((entry) => ({ itemId: entry.id, ref: entry.ref })))
     } catch (cause) {
       if (requestGeneration !== generation.current) return
       const payload = parseAppErrorPayload(cause)
@@ -570,7 +764,7 @@ export function KanbanBoard({
         setRefreshing(false)
       }
     }
-  }, [app, projectId])
+  }, [app, projectId, loadHandoff])
 
   // Lazy first activation and one background refresh on each tab return.
   useEffect(() => {
@@ -581,6 +775,12 @@ export function KanbanBoard({
     phase === 'ready' && reviewRef !== null
       ? (board.items.find((entry) => entry.ref === reviewRef) ?? null)
       : null
+
+  // Resume is shown only for an item the batch check proved available. The
+  // backend status and the mere presence of files never decide (spec
+  // Dostępność Resume pkt 2).
+  const itemResumable = (item: WorkItem): boolean =>
+    handoffPhase === 'ready' && availableIds.has(item.id)
 
   return (
     <div
@@ -678,6 +878,16 @@ export function KanbanBoard({
           </button>
         </div>
       </div>
+      {handoffPhase !== 'loading' ? (
+        <HandoffNotices
+          phase={handoffPhase}
+          error={handoffError}
+          warnings={handoffWarnings}
+          showEmpty={handoffEmpty}
+          onConfigureHandoffs={onConfigureHandoffs}
+          onRetry={recheckHandoff}
+        />
+      ) : null}
       {phase === 'loading' ? (
         <p
           className="text-[12.6px] text-ink-secondary"
@@ -738,6 +948,7 @@ export function KanbanBoard({
                     <WorkItemSurface
                       item={item}
                       layout="card"
+                      resumeEnabled={itemResumable(item)}
                       onOpen={(ref) => {
                         setReviewRef(ref)
                       }}
@@ -792,6 +1003,7 @@ export function KanbanBoard({
                         <WorkItemSurface
                           item={item}
                           layout="row"
+                          resumeEnabled={itemResumable(item)}
                           onOpen={(ref) => {
                             setReviewRef(ref)
                           }}

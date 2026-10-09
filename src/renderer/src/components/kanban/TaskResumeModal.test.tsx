@@ -6,7 +6,6 @@ import type {
   AppApi,
   HandoffCandidatesResult,
   HandoffFileInfo,
-  HandoffLinkedFile,
   HandoffRejection,
   KanbanLaunchResult,
   WorkItem,
@@ -37,13 +36,11 @@ function file(name: string, matchKind: HandoffFileInfo['matchKind'], mtime = 1):
 function ready(input: {
   files?: HandoffFileInfo[]
   rejections?: HandoffRejection[]
-  link?: HandoffLinkedFile | null
 }): HandoffCandidatesResult {
   return {
     state: 'ready',
     files: input.files ?? [],
     rejections: input.rejections ?? [],
-    link: input.link ?? null,
   }
 }
 
@@ -63,7 +60,6 @@ function appMock(): AppApi {
     },
     kanban: {
       handoffCandidates: vi.fn().mockResolvedValue(EMPTY),
-      linkHandoff: vi.fn().mockResolvedValue(EMPTY),
       launchTask: vi.fn(),
     },
   } as unknown as AppApi
@@ -148,7 +144,7 @@ describe('TaskResumeModal', () => {
     fireEvent.click(opener)
     fireEvent.mouseDown(await screen.findByRole('presentation'))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(app.kanban.linkHandoff).not.toHaveBeenCalled()
+    expect(app.kanban.launchTask).not.toHaveBeenCalled()
   })
 
   it('offers Configure handoffs when no directory is configured', async () => {
@@ -189,7 +185,7 @@ describe('TaskResumeModal', () => {
     expect(screen.queryByTestId(TEST_ID.kanbanResumeEmpty)).toBeNull()
   })
 
-  it('shows the no-linked-handoff text and a Link handoff action when nothing matches', async () => {
+  it('shows the empty state without a manual handoff action when nothing matches', async () => {
     const app = appMock()
     vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
       ready({ files: [file('loose.md', 'none')] }),
@@ -207,16 +203,20 @@ describe('TaskResumeModal', () => {
       'No linked handoff',
     )
     expect(screen.queryByTestId(TEST_ID.kanbanResumeCandidates)).toBeNull()
-    expect(screen.getByTestId(TEST_ID.kanbanResumeLink)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Link handoff' })).toBeNull()
+    expect(screen.queryByText('loose.md')).toBeNull()
+    expect((screen.getByTestId(TEST_ID.kanbanResumeConfirm) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
   })
 
-  it('selects the newest metadata match and lists candidate kinds beside rejections', async () => {
+  it('selects the newest filename match, never labels candidate kinds, and lists rejections', async () => {
     const app = appMock()
     vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
       ready({
         files: [
-          file('newest-filename.md', 'filename', 30),
-          file('meta.md', 'metadata', 20),
+          file('nekode-28-notes.md', 'filename', 30),
+          file('meta.md', 'none', 20),
           file('loose.md', 'none', 10),
         ],
         rejections: [
@@ -239,26 +239,68 @@ describe('TaskResumeModal', () => {
     expect(warnings.textContent).toContain('big.md')
     expect(warnings.textContent).toContain('File is larger than 1 MiB.')
     expect(warnings.textContent).toContain('bad.md')
-    // The metadata match is the default selection even though another file is newer.
-    const metaRow = screen.getByTestId(testIdFor.kanbanResumeCandidate('meta.md'))
-    expect((within(metaRow).getByRole('radio') as HTMLInputElement).checked).toBe(true)
-    expect(metaRow.textContent).toContain('Metadata match')
-    expect(
-      screen.getByTestId(testIdFor.kanbanResumeCandidate('newest-filename.md')).textContent,
-    ).toContain('Filename match')
+    // Only a ref-named file is a candidate, and its row carries the name with
+    // no match-kind label (NEKODE-30 stage 2).
+    const row = screen.getByTestId(testIdFor.kanbanResumeCandidate('nekode-28-notes.md'))
+    expect((within(row).getByRole('radio') as HTMLInputElement).checked).toBe(true)
+    expect(row.textContent).toBe('nekode-28-notes.md')
+    // A file whose name does not carry the ref is never a candidate.
+    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('meta.md'))).toBeNull()
     expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('loose.md'))).toBeNull()
   })
 
-  it('links a chosen file name from the picker and shows the link surviving the update', async () => {
+  it('ignores a stored legacy handoff link and only offers filename candidates', async () => {
     const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('loose.md', 'none', 5)] }),
-    )
-    vi.mocked(app.kanban.linkHandoff).mockResolvedValue(
-      ready({
-        files: [file('loose.md', 'none', 5)],
-        link: { name: 'loose.md', path: 'h/loose.md', modifiedAt: new Date(5).toISOString() },
+    vi.mocked(app.kanban.launchTask).mockResolvedValue({
+      chat: { id: 'chat-linked', projectId: 'p1', name: 'Codex' },
+      delivered: true,
+    })
+    // A scan result that still carries a legacy link document (NEKODE-30
+    // stage 2 removed the link) must not add or suppress a candidate.
+    const withLegacyLink = {
+      ...ready({
+        files: [file('nekode-28-notes.md', 'filename', 10), file('meta.md', 'none', 5)],
       }),
+      link: { name: 'meta.md', path: 'h/meta.md', modifiedAt: new Date(5).toISOString() },
+    } as unknown as HandoffCandidatesResult
+    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(withLegacyLink)
+    render(
+      <TaskResumeModal
+        app={app}
+        projectId="p1"
+        item={item}
+        onCancel={vi.fn()}
+        onConfigureHandoffs={vi.fn()}
+      />,
+    )
+    const row = await screen.findByTestId(testIdFor.kanbanResumeCandidate('nekode-28-notes.md'))
+    expect((within(row).getByRole('radio') as HTMLInputElement).checked).toBe(true)
+    // The legacy link's file is a name miss and stays unselectable.
+    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('meta.md'))).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Link handoff' })).toBeNull()
+    const confirm = screen.getByTestId(TEST_ID.kanbanResumeConfirm)
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(confirm)
+    await waitFor(() =>
+      expect(app.kanban.launchTask).toHaveBeenCalledWith({
+        ...candidatesInput,
+        profileId: profile.id,
+        attemptId: expect.any(String),
+        mode: 'resume',
+        fileName: 'nekode-28-notes.md',
+        stamp: new Date(10).toISOString(),
+      }),
+    )
+  })
+
+  it('allows choosing another automatic candidate without offering manual assignment', async () => {
+    const app = appMock()
+    vi.mocked(app.kanban.launchTask).mockResolvedValue({
+      chat: { id: 'chat-candidate', projectId: 'p1', name: 'Codex' },
+      delivered: true,
+    })
+    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
+      ready({ files: [file('meta.md', 'none', 10), file('older.md', 'filename', 5)] }),
     )
     render(
       <TaskResumeModal
@@ -269,72 +311,22 @@ describe('TaskResumeModal', () => {
         onConfigureHandoffs={vi.fn()}
       />,
     )
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanResumeLink))
-    const option = screen.getByTestId(testIdFor.kanbanResumeLinkOption('loose.md'))
-    fireEvent.click(within(option).getByRole('radio'))
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeLinkConfirm))
-    await waitFor(() => {
-      expect(app.kanban.linkHandoff).toHaveBeenCalledWith({
-        ...candidatesInput,
-        fileName: 'loose.md',
-      })
-    })
-    await waitFor(() => {
-      expect(screen.queryByTestId(TEST_ID.kanbanResumeLinkList)).toBeNull()
-    })
-    const row = screen.getByTestId(testIdFor.kanbanResumeCandidate('loose.md'))
-    expect(row.textContent).toContain('Linked')
+    const row = await screen.findByTestId(testIdFor.kanbanResumeCandidate('older.md'))
+    fireEvent.click(within(row).getByRole('radio'))
     expect((within(row).getByRole('radio') as HTMLInputElement).checked).toBe(true)
-  })
-
-  it('keeps the dismiss controls locked while a link write is in flight', async () => {
-    const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('loose.md', 'none', 5)] }),
-    )
-    let resolveLink: (value: HandoffCandidatesResult) => void = () => undefined
-    vi.mocked(app.kanban.linkHandoff).mockReturnValue(
-      new Promise((resolve) => {
-        resolveLink = resolve
+    expect(screen.queryByRole('button', { name: 'Link handoff' })).toBeNull()
+    const confirm = screen.getByTestId(TEST_ID.kanbanResumeConfirm)
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(confirm)
+    await waitFor(() =>
+      expect(app.kanban.launchTask).toHaveBeenCalledWith({
+        ...candidatesInput,
+        profileId: profile.id,
+        attemptId: expect.any(String),
+        mode: 'resume',
+        fileName: 'older.md',
+        stamp: new Date(5).toISOString(),
       }),
-    )
-    const onCancel = vi.fn()
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={onCancel}
-        onConfigureHandoffs={vi.fn()}
-      />,
-    )
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanResumeLink))
-    fireEvent.click(
-      within(screen.getByTestId(testIdFor.kanbanResumeLinkOption('loose.md'))).getByRole('radio'),
-    )
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeLinkConfirm))
-    expect(app.kanban.linkHandoff).toHaveBeenCalledTimes(1)
-
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
-    fireEvent.mouseDown(screen.getByRole('presentation'))
-    const cancel = screen.getByTestId(TEST_ID.kanbanResumeCancel)
-    expect((cancel as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(cancel)
-    expect(onCancel).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog')).toBeTruthy()
-
-    await act(async () => {
-      resolveLink(
-        ready({
-          files: [file('loose.md', 'none', 5)],
-          link: { name: 'loose.md', path: 'h/loose.md', modifiedAt: new Date(5).toISOString() },
-        }),
-      )
-    })
-    expect(onCancel).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog')).toBeTruthy()
-    expect(screen.getByTestId(testIdFor.kanbanResumeCandidate('loose.md')).textContent).toContain(
-      'Linked',
     )
   })
 

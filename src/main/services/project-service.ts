@@ -3,6 +3,7 @@ import { basename, isAbsolute } from 'node:path'
 import type Database from 'better-sqlite3'
 import type { ProjectInfo } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
+import { parseWslPath, wslProjectPath } from '../../shared/wsl-path'
 
 // ProjectService: project CRUD on top of the projects table.
 // All rule validation happens here (spec Business rules / Edge cases);
@@ -47,12 +48,19 @@ export class ProjectService {
   }
 
   add(path: string): ProjectInfo {
+    let location: ReturnType<typeof parseWslPath>
+    try {
+      location = parseWslPath(path)
+    } catch {
+      throw new AppError('validation', 'Invalid WSL project path.', 'projects:add')
+    }
     const validation = this.validatePath(path)
     if (validation !== null) {
       throw new AppError('validation', validation, 'projects:add')
     }
 
-    const normalized = path
+    const normalized =
+      location === null ? path : wslProjectPath(location.distribution, location.linuxPath)
     const name = basename(normalized)
     const id = randomUUID()
     try {
