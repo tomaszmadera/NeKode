@@ -82,7 +82,6 @@ const EMPTY_SCAN: HandoffCandidatesResult = {
   state: 'ready',
   files: [],
   rejections: [],
-  link: null,
 }
 
 /** One ready scan result. `files` carry the name, display path and stamp. */
@@ -91,11 +90,10 @@ function readyScan(
     name: string
     path: string
     modifiedAt: string
-    matchKind: 'metadata' | 'filename' | 'none'
+    matchKind: 'filename' | 'none'
   }>,
-  link: { name: string; path: string; modifiedAt: string } | null = null,
 ): HandoffCandidatesResult {
-  return { state: 'ready', files, rejections: [], link }
+  return { state: 'ready', files, rejections: [] }
 }
 
 function input(overrides: Partial<KanbanStartLaunchInput> = {}): KanbanStartLaunchInput {
@@ -225,10 +223,10 @@ describe('TaskLaunchService start', () => {
     expect(bundle.getItem).toHaveBeenCalledTimes(1)
     expect(bundle.getItem).toHaveBeenCalledWith(bundle.project.id, 'DEMO-1')
     expect(result.delivered).toBe(true)
-    expect(result.chat.name).toBe('Codex')
+    expect(result.chat.name).toBe('[PowerShell] Codex')
     expect(result.chat.projectId).toBe(bundle.project.id)
     expect(bundle.chats.list(bundle.project.id)).toEqual([result.chat])
-    expect(bundle.chats.create(bundle.project.id).name).toBe('PowerShell')
+    expect(bundle.chats.create(bundle.project.id).name).toBe('[PowerShell]')
     expect(bundle.spawns).toHaveLength(1)
     const spawn = bundle.spawns[0]
     expect(spawn?.file).toBe('codex.exe')
@@ -255,7 +253,7 @@ describe('TaskLaunchService start', () => {
     expect(bundle.getItem).toHaveBeenCalledTimes(2)
     expect(bundle.spawns[1]?.args[2]).toContain('Work on task DEMO-1: Updated title.')
     expect(
-      bundle.chats.list(bundle.project.id).filter((chat) => chat.name === 'Codex'),
+      bundle.chats.list(bundle.project.id).filter((chat) => chat.name === '[PowerShell] Codex'),
     ).toHaveLength(2)
   })
 
@@ -409,7 +407,7 @@ describe('TaskLaunchService resume', () => {
       ref: 'DEMO-1',
     })
     expect(result.delivered).toBe(true)
-    expect(result.chat.name).toBe('Codex')
+    expect(result.chat.name).toBe('[PowerShell] Codex')
     expect(bundle.chats.list(bundle.project.id)).toEqual([result.chat])
     expect(bundle.spawns).toHaveLength(1)
     const spawn = bundle.spawns[0]
@@ -449,7 +447,7 @@ describe('TaskLaunchService resume', () => {
     expect(bundle.spawns).toHaveLength(0)
   })
 
-  it('does not carry a link to a different adapter binding: an unlinked none-match is refused', async () => {
+  it('refuses a resume whose file is not a filename match', async () => {
     const bundle = harness()
     bundle.setScan(() => readyScan([{ ...notesFile, name: 'loose.md', matchKind: 'none' }]))
     await expect(
@@ -458,21 +456,10 @@ describe('TaskLaunchService resume', () => {
     expect(bundle.spawns).toHaveLength(0)
   })
 
-  it('accepts an explicit link and uses the absolute path when the file is outside the project', async () => {
-    const bundle = harness()
-    const linked = { name: 'outer.md', path: 'D:/outside/outer.md', modifiedAt: STAMP }
-    bundle.setScan(() => readyScan([], linked))
-    const result = await bundle.service.launch(
-      resumeInput({ projectId: bundle.project.id, fileName: 'outer.md' }),
-    )
-    expect(result.delivered).toBe(true)
-    expect(bundle.spawns[0]?.args[2]).toContain('from handoff D:/outside/outer.md.')
-  })
-
   it('dedups a resume by attempt id and keeps the prompt and handoff path out of logs', async () => {
     const bundle = harness()
     bundle.setItem(liveItem({ description: `needs SPAWN_FAIL ${LEAK}` }))
-    bundle.setScan(() => readyScan([{ ...notesFile, matchKind: 'metadata' }]))
+    bundle.setScan(() => readyScan([{ ...notesFile, matchKind: 'filename' }]))
     const errors: unknown[][] = []
     const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       errors.push(args)

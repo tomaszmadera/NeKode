@@ -149,6 +149,16 @@ body {
   outline-offset: 1px;
 }
 
+/* Terminal prompt text field (PromptInput): the frame already shows focus
+   through focus-within:border-info. The shared rule above is unlayered, so
+   Tailwind outline utilities cannot remove it (they live in @layer utilities).
+   This later rule is more specific and clears that inner outline. */
+.terminal-prompt-input:focus,
+.terminal-prompt-input:focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+
 /* Click affordance (user request 2026-09-29) and button micro-interactions
    (design doc 24, NEKODE-9): hand cursor on enabled buttons and fast transition
    tokens for hover, surface, outline, and focus ring states. */

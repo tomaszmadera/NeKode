@@ -31,6 +31,30 @@ function appMock(options?: {
 }
 
 describe('ShellTab', () => {
+  it('uses project context for Linux custom shells and displays Default for a historic host choice', async () => {
+    const detect = vi.fn().mockResolvedValue([
+      { id: 'default', label: 'Default (WSL: Ubuntu)' },
+      { id: 'custom:/bin/bash', label: 'bash' },
+    ])
+    const addCustom = vi.fn().mockResolvedValue({ id: 'custom:/bin/fish', label: 'fish' })
+    render(
+      <ShellTab
+        app={appMock({ detect, addCustom, get: vi.fn().mockResolvedValue('powershell') })}
+        projectId="wsl"
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSelect)).toBeTruthy())
+    expect((screen.getByTestId(TEST_ID.settingsShellSelect) as HTMLSelectElement).value).toBe(
+      'default',
+    )
+    expect(detect).toHaveBeenCalledWith('wsl')
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsShellCustomInput), {
+      target: { value: '/bin/fish' },
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsShellCustomAdd))
+    await waitFor(() => expect(addCustom).toHaveBeenCalledWith('/bin/fish', 'wsl'))
+    expect(screen.getByText(/WSL uses its distribution default/)).toBeTruthy()
+  })
   it('runs exactly one detection on entry and shows the pending indicator until it lands', async () => {
     let resolveDetect: (value: Array<{ id: string; label: string }>) => void = () => {}
     const detect = vi.fn().mockImplementation(
@@ -41,6 +65,7 @@ describe('ShellTab', () => {
     )
     render(<ShellTab app={appMock({ detect })} projectId="p1" />)
     expect(detect).toHaveBeenCalledTimes(1)
+    expect(detect).toHaveBeenCalledWith('p1')
     // Visible pending state, no select yet (nothing detected).
     expect(screen.getByTestId(TEST_ID.settingsShellDetecting).textContent).toContain(
       'Detecting shells',
@@ -121,7 +146,7 @@ describe('ShellTab', () => {
       target: { value: 'D:\\tools\\nu.exe' },
     })
     fireEvent.click(screen.getByTestId(TEST_ID.settingsShellCustomAdd))
-    await waitFor(() => expect(addCustom).toHaveBeenCalledWith('D:\\tools\\nu.exe'))
+    await waitFor(() => expect(addCustom).toHaveBeenCalledWith('D:\\tools\\nu.exe', 'p1'))
     await waitFor(() => {
       const values = Array.from(
         (screen.getByTestId(TEST_ID.settingsShellSelect) as HTMLSelectElement).options,

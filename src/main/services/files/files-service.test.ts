@@ -153,6 +153,47 @@ async function captureError(run: () => Promise<unknown>): Promise<AppError> {
 }
 
 describe('files:list — ordering, exclusions and laziness', () => {
+  it('preserves WSL UNC paths for nested browsing, preview and opening while rejecting symlink escapes', async () => {
+    const root = '//wsl.localhost/Ubuntu/home/user/My Project'
+    const outside = '//wsl.localhost/Ubuntu/home/outside.txt'
+    const fs = createFakeFs({
+      nodes: {
+        [root]: { type: 'dir' },
+        [`${root}/nested`]: { type: 'dir' },
+        [`${root}/nested/file.txt`]: { type: 'file', content: encode('WSL fixture') },
+        [outside]: { type: 'file', content: encode('outside') },
+        [`${root}/escape`]: { type: 'symlink', target: outside },
+      },
+    })
+    const open = vi.fn(async (_path: string) => '')
+    const service = createService(fs, open, { get: () => ({ path: root.replace(/\//g, '\\') }) })
+    expect((await service.list('wsl', 'nested')).map((entry) => entry.relativePath)).toEqual([
+      'nested/file.txt',
+    ])
+    expect(await service.read('wsl', 'nested/file.txt')).toMatchObject({
+      kind: 'text',
+      content: 'WSL fixture',
+    })
+    await service.openExternal('wsl', 'nested/file.txt')
+    await service.openRoot('wsl')
+    expect(open.mock.calls.map(([path]) => path)).toEqual([`${root}/nested/file.txt`, root])
+    expect((await captureError(() => service.read('wsl', 'escape'))).code).toBe('not_found')
+    expect((await captureError(() => service.read('wsl', '../outside.txt'))).code).toBe('not_found')
+  })
+
+  it('does not fold case when checking containment in a Linux project', async () => {
+    const root = '//wsl.localhost/Ubuntu/home/user/Project'
+    const outside = '//wsl.localhost/Ubuntu/home/user/project/outside.txt'
+    const fs = createFakeFs({
+      nodes: {
+        [root]: { type: 'dir' },
+        [outside]: { type: 'file', content: encode('outside') },
+        [`${root}/link`]: { type: 'symlink', target: outside },
+      },
+    })
+    const service = createService(fs, undefined, { get: () => ({ path: root }) })
+    expect((await captureError(() => service.read('wsl', 'link'))).code).toBe('not_found')
+  })
   it('lists directories first, then files, case-insensitive alphabetical', async () => {
     const fs = createFakeFs({
       nodes: {

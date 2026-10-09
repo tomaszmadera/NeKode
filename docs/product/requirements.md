@@ -2,7 +2,8 @@
 
 **Status:** Zaakceptowane wymagania produktu MVP  
 **Wersja:** 0.2  
-**Źródła nadrzędne:** [`SDD.md`](file:///mnt/f/projects/NeKode/docs/architecture/SDD.md), [`UX-UI.md`](file:///mnt/f/projects/NeKode/docs/UX-UI.md)
+**Rola:** Kanoniczne wymagania produktu; przyjęte decyzje użytkownika i ADR mają pierwszeństwo zgodnie z [hierarchią źródeł](../development/project-contract.md#sources-and-authority).
+**Dokumenty powiązane:** [Architektura](../architecture/sdd.md), [UX/UI](../UX-UI.md), [kontrakty funkcji](../features/). Dokumenty projektowe obejmują także przyszły zakres; jego opis nie potwierdza implementacji.
 
 ---
 
@@ -47,7 +48,7 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
    - Zapisywanie konfiguracji projektów, czatów, historii i stanu layoutu w lokalnej bazie SQLite (`better-sqlite3`).
 
 7. **Interfejs użytkownika:**
-   - Ergonomiczny, ciemny interfejs zgodny ze specyfikacją [`UX-UI.md`](file:///mnt/f/projects/NeKode/docs/UX-UI.md).
+   - Ergonomiczny, ciemny interfejs zgodny ze specyfikacją [`UX-UI.md`](../UX-UI.md).
    - Skalowalne i resizowalne panele robocze.
    - Kolumna środkowa: pasek zakładek u góry (zakładka aktywnego czatu — niezamykalna; zakładki otwartych plików; `+ New chat`), pod nim pasek akcji (zob. 5), poniżej powierzchnia główna.
    - Pasek statusu na samym dole okna (cała szerokość) z kontekstem projektu: nazwa, ścieżka, wykryte runtimy oraz gałąź i status Git.
@@ -65,5 +66,5 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
 - Brak synchronizacji chmurowej i kont użytkowników (dane przechowywane wyłącznie lokalnie).
 - Post-MVP: encja **Task (zadanie)** — jednostka pracy przypinana do czatu, z panelem zapisu postępu prac (wzorzem mogą być rekordy `.agents/tasks/*/task.md` z project-template, ale bez uzależnienia aplikacji od konkretnego harnessa).
 - Post-MVP: migawki przekazania prac (handoff) powiązane z zadaniami.
-- Post-MVP: ręczna zmiana nazwy czatu (pole `name` w bazie zostaje przygotowane; domyślnie nazwa = nazwa terminala/shella).
+- Post-MVP: ręczna zmiana nazwy czatu (pole `name` w bazie zostaje przygotowane). Nowe czaty mają nazwę `[powłoka] nazwa profilu`, a bez profilu samo `[powłoka]`. Prefiks to skrót powłoki: `PS5`, `PS7`, `cmd`, `bash`, `WSL`, a dla powłoki własnej nazwa pliku. Powłoka pochodzi z konfiguracji projektu w chwili tworzenia czatu; pełna etykieta (`PowerShell 7`, `WSL: Ubuntu-24.04`) zostaje w Ustawieniach projektu i na zakładce dolnego terminala. Istniejące czaty zachowują zapisane nazwy.
 - Post-MVP: funkcjonalność tablicy **Kanban** (wcześniej planowana jako poglądowy podgląd w MVP — przeniesiona poza MVP w celu przemyślenia modelu razem z zadaniami).

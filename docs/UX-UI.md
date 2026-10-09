@@ -9,7 +9,8 @@
 **Primary UI reference direction:** ZCode-inspired  
 **Product model:** Project → Chat (Task is the post-MVP progress entity)  
 **Primary MVP interaction model:** terminal-first agentic coding  
-**Companion technical document:** `SDD.md`
+**Companion technical document:** [Architecture](architecture/sdd.md)
+**Authority:** Canonical interaction contract under the [public source hierarchy](development/project-contract.md#sources-and-authority). Accepted product decisions and [product requirements](product/requirements.md) take precedence. Future designs remain scoped by their feature contracts; this document is not an implementation inventory.
 
 ---
 
@@ -273,6 +274,17 @@ lives in the continuous full-width window title bar with the Windows caption
 buttons at the right end (user decision 2026-10-01); the left panel starts
 with the "Projects" section header carrying an icon-only Add Project button
 on the right.
+
+`Add Project` opens one modal with a `Project location` selector: `Local`
+(initial choice) or `WSL`. The welcome action opens the same modal. Local
+uses `Choose folder...` and the native directory picker; cancelling the
+picker keeps this modal open. WSL uses installed `Distribution` and
+`Linux project directory`, then `Add Project`. Discovery has loading,
+empty/error and Retry states; validation errors remain visible inside the
+modal. Focus starts on the location selector and returns to the invoking
+control on close. No separate WSL navigation button or unavailable future
+location is shown. The [project environment contract](features/project-environments/spec.md#unified-project-add-ui-nekode-34)
+owns the full behavior (NEKODE-34, approved 2026-10-09).
 
 ```text
 Projects                        +
@@ -982,7 +994,8 @@ switches the shell to the floating layout: the title bar strip without its
 separating hairline (the app name stays at the top-left beside the Windows
 caption buttons), a detached rounded left panel with a gap to the center
 column, file tabs attached to the top of the rounded frame around the center
-content (the frame's top-left corner stays square where the first tab
+content (with the tab strip background matching the main app background rgb(16, 18, 32);
+user decision 2026-10-08; the frame's top-left corner stays square where the first tab
 attaches, and the shell panels round at 10px; user decision 2026-10-04),
 and a terminal surface matching the app background color; terminal
 font size; the "Switch chats with Ctrl+Tab" on/off
@@ -1392,7 +1405,7 @@ From Project:
 New Chat
 ```
 
-The chat is created immediately, without a naming form: the name comes from the shell and duplicates are allowed.
+The chat is created immediately, without a naming form. New names use `[shell] profile name`, or just `[shell]` without an agent profile. The shell prefix is the compact shell code (`[PS5]`, `[PS7]`, `[cmd]`, `[bash]`, `[WSL]`; the file's base name for a custom shell), taken from the project's configuration at creation time. The verbose label stays in Project Settings and on the bottom-tab text. Duplicates are allowed. Existing chats keep their saved names.
 
 Future from Kanban (post-MVP Task entity):
 
@@ -1756,7 +1769,7 @@ No Projects:
 ```text
 No projects yet
 
-Add a local project to start working.
+Add a project to start working.
 
 [Add Project]
 ```

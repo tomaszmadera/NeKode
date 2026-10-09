@@ -10,7 +10,7 @@
    these names — override values only, never token names. */
 [data-theme="nekode-float"] {
   /* Surfaces */
-  --color-app: rgb(15 18 32);
+  --color-app: rgb(16 18 32);
   --color-panel: rgb(21 25 41);
   --color-highlight: rgb(31 44 63);
   /* Row hover: the left-nav project row carries its hover fill at rest, one
@@ -19,7 +19,7 @@
   --color-button: rgb(21 25 41);
   --color-button-hover: rgb(37 44 71);
   --color-tab-inactive: rgb(21 25 41);
-  --color-terminal: rgb(15 18 32);
+  --color-terminal: rgb(16 18 32);
 
   /* Text */
   --color-ink: rgb(230 232 242);
@@ -74,4 +74,9 @@
   --duration-fast: 120ms;
   --duration-base: 160ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Tab strip background on NeKode Float matches the app canvas (rgb(16, 18, 32)) */
+[data-theme="nekode-float"] [data-testid="tab-strip"] {
+  background-color: var(--color-app);
 }

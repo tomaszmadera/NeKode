@@ -53,6 +53,8 @@ function createAppMock(): AppMockBundle {
       status: vi.fn(),
     },
     projects: {
+      wslDistributions: vi.fn().mockResolvedValue([]),
+      addWsl: vi.fn(),
       list: vi.fn().mockResolvedValue([projectA]),
       add: vi.fn().mockResolvedValue(null),
       remove: vi.fn().mockResolvedValue(undefined),
@@ -117,7 +119,11 @@ function createAppMock(): AppMockBundle {
       getItem: vi.fn(),
       launchTask: vi.fn(),
       handoffCandidates: vi.fn(),
-      linkHandoff: vi.fn(),
+      handoffAvailability: vi.fn(async () => ({
+        state: 'ready' as const,
+        items: [],
+        rejections: [],
+      })),
     },
     agentProfiles: {
       get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),

@@ -29,6 +29,7 @@ import type { HeldLaunch } from './components/kanban/held-launch'
 import { KanbanSessions } from './components/kanban/KanbanSessions'
 import { TaskResumeModal } from './components/kanban/TaskResumeModal'
 import { TaskStartModal } from './components/kanban/TaskStartModal'
+import { AddProject } from './components/layout/AddProject'
 import { AppBrand } from './components/layout/AppBrand'
 import { ConfirmDialog } from './components/layout/ConfirmDialog'
 import { LeftNavigation } from './components/layout/LeftNavigation'
@@ -867,6 +868,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     setTaskResume({ projectId, item })
   }, [])
 
+  // The board's not-configured handoff notice opens Project Settings on the tab
+  // that owns the per-project handoff directory.
+  const handleConfigureProjectHandoffs = useCallback((projectId: string): void => {
+    setNotice(null)
+    setActionSettingsProjectId(projectId)
+    setActionSettingsTab('actions')
+    setActionSettingsOpen(true)
+  }, [])
+
   // Resume with no configured directory: Configure handoffs opens Project
   // Settings on the tab that owns the handoff directory.
   const handleConfigureTaskHandoffs = useCallback((): void => {
@@ -1001,29 +1011,26 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [expandedProjectIds, loadChats],
   )
 
+  const [addProjectOpen, setAddProjectOpen] = useState(false)
+  const handleProjectAdded = useCallback(
+    async (project: ProjectInfo): Promise<void> => {
+      removedProjectIdsRef.current.delete(project.id)
+      projectRemovalsRef.current.delete(project.id)
+      setProjects(await app.projects.list())
+      applyChatsUpdate((previous) => ({ ...previous, [project.id]: [] }))
+      setLoadedChatProjectIds((previous) => new Set(previous).add(project.id))
+      setExpandedProjectIds((previous) => new Set(previous).add(project.id))
+      setSelectedProjectId(project.id)
+      setSelectedChatId(null)
+      persistSelection(project.id, null)
+    },
+    [app, applyChatsUpdate, persistSelection],
+  )
+
   const handleAddProject = useCallback((): void => {
     setNotice(null)
-    void (async () => {
-      try {
-        const project = await app.projects.add()
-        if (project === null) {
-          // Native dialog cancelled: no data change, no selection change.
-          return
-        }
-        removedProjectIdsRef.current.delete(project.id)
-        projectRemovalsRef.current.delete(project.id)
-        setProjects(await app.projects.list())
-        applyChatsUpdate((previous) => ({ ...previous, [project.id]: [] }))
-        setLoadedChatProjectIds((previous) => new Set(previous).add(project.id))
-        setExpandedProjectIds((previous) => new Set(previous).add(project.id))
-        setSelectedProjectId(project.id)
-        setSelectedChatId(null)
-        persistSelection(project.id, null)
-      } catch (error) {
-        setNotice(errorMessage(error, 'Failed to add the project.'))
-      }
-    })()
-  }, [app, applyChatsUpdate, persistSelection])
+    setAddProjectOpen(true)
+  }, [])
 
   // Open in file explorer (context menu): the OS file manager on the
   // registered project root. Failures surface as notices, the selection and
@@ -2016,6 +2023,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               would otherwise paint that track over this column, so the panel
               emerges from under the middle panel. */}
           <TabStrip
+            floating={floatingTheme}
             chatName={activeChat?.name ?? null}
             kanbanAvailable={tabProject !== null && kanbanProjectIds.has(tabProject.id)}
             openFiles={tabsSession.openFiles}
@@ -2169,6 +2177,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 }
                 versions={kanbanVersions}
                 onConfigure={handleOpenKanbanSettings}
+                onConfigureHandoffs={handleConfigureProjectHandoffs}
                 onStart={handleStartTask}
                 onResume={handleResumeTask}
               />
@@ -2282,6 +2291,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             setActionSettingsOpen(true)
           }}
           onClose={() => setHandoffPickerOpen(false)}
+        />
+      ) : null}
+      {addProjectOpen ? (
+        <AddProject
+          app={app}
+          onAdded={handleProjectAdded}
+          onClose={() => setAddProjectOpen(false)}
         />
       ) : null}
       <BottomPanel

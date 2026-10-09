@@ -1,6 +1,6 @@
 # NeKode Design System
 
-**Status:** Foundation / implementation-ready  
+**Status:** Canonical visual contract (foundation / implementation-ready). Follow the [public source hierarchy](../development/project-contract.md#sources-and-authority); product behavior and feature scope remain in their respective contracts.
 **Target:** Electron desktop application  
 **Primary theme:** Dark  
 **Scope:** Visual language, design tokens, typography, color system, spacing, surfaces, controls, terminal styling, iconography, states, motion and implementation guidance  
@@ -116,7 +116,7 @@ switches the shell to the floating layout: the title bar
 strip without its separating hairline (the app name stays top-left beside
 the Windows caption buttons), a detached rounded left panel with a gap to
 the center column, and file tabs attached to the top of the rounded frame
-around the center content below the tab strip; the frame's top-left corner
+around the center content below the tab strip (with the tab strip background on NeKode Float matching the main app background, rgb(16, 18, 32); user decision 2026-10-08); the frame's top-left corner
 stays square where the first tab attaches (App.tsx, user decision
 2026-10-04).
 App Settings applies the selected theme

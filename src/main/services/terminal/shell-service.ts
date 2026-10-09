@@ -1,17 +1,19 @@
 import { execFileSync } from 'node:child_process'
 import { accessSync, constants, statSync } from 'node:fs'
-import { basename, isAbsolute } from 'node:path'
+import { basename, isAbsolute, posix } from 'node:path'
 import type { ShellChoice, ShellInfo } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
+import { parseWslPath } from '../../../shared/wsl-path'
+import { runWsl, type WslRun } from './wsl'
 
 // ShellService (spec project-shell-selection): detection of installed shells,
 // per-choice resolution to a spawnable spec, and display labels. Detection is
-// explicit — the renderer triggers it on Shell-tab entry — so nothing probes
-// the machine at startup or in the background. The only subprocess is
-// `wsl.exe --list --quiet` with a short timeout; everything else is
-// existence checks on fixed candidate paths. Detection results live in a
+// explicit: the renderer triggers it on Shell-tab entry, so nothing probes
+// the machine at startup or in the background. Local detection checks fixed
+// candidate paths and enumerates WSL distributions. A WSL project probes only
+// its distribution's Linux shells. Detection results live in a
 // run-scoped cache; persisted custom paths re-validate on every detection
-// run (dead ones pruned). resolve() never throws: an unresolvable choice
+// run (dead ones pruned). Local resolve() never throws: an unresolvable choice
 // (uninstalled shell, removed distribution, unknown id) falls back to the
 // platform default so a terminal always opens.
 //
@@ -37,15 +39,25 @@ export interface DetectResult {
 interface Candidate {
   id: ShellChoice
   label: string
+  /**
+   * Compact code for the chat-name prefix (spec project-shell-selection
+   * Behaviour 6): `[PS7] Codex` instead of `[PowerShell 7] Codex`. The verbose
+   * `label` stays the settings and bottom-tab text.
+   */
+  shortLabel: string
   /** First existing path wins; empty list = not installed. */
   paths: (env: NodeJS.ProcessEnv) => string[]
   spec: (path: string) => ShellSpec
 }
 
+/** Chat-prefix code for every WSL choice; the distribution is omitted. */
+const WSL_SHORT_LABEL = 'WSL'
+
 const WINDOWS_CANDIDATES: readonly Candidate[] = [
   {
     id: 'powershell',
     label: 'PowerShell',
+    shortLabel: 'PS5',
     paths: (env) => [
       `${env.SystemRoot ?? 'C:\\Windows'}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
     ],
@@ -54,6 +66,7 @@ const WINDOWS_CANDIDATES: readonly Candidate[] = [
   {
     id: 'pwsh',
     label: 'PowerShell 7',
+    shortLabel: 'PS7',
     paths: (env) => [
       `${env.ProgramFiles ?? 'C:\\Program Files'}\\PowerShell\\7\\pwsh.exe`,
       `${env.LOCALAPPDATA ?? ''}\\Microsoft\\WindowsApps\\pwsh.exe`,
@@ -63,12 +76,14 @@ const WINDOWS_CANDIDATES: readonly Candidate[] = [
   {
     id: 'cmd',
     label: 'cmd',
+    shortLabel: 'cmd',
     paths: (env) => [`${env.SystemRoot ?? 'C:\\Windows'}\\System32\\cmd.exe`],
     spec: (path) => ({ file: path, args: [] }),
   },
   {
     id: 'gitbash',
     label: 'Git Bash',
+    shortLabel: 'bash',
     paths: (env) => [`${env.ProgramFiles ?? 'C:\\Program Files'}\\Git\\bin\\bash.exe`],
     spec: (path) => ({ file: path, args: ['-i', '-l'] }),
   },
@@ -77,8 +92,9 @@ const WINDOWS_CANDIDATES: readonly Candidate[] = [
 export interface ShellServiceOptions {
   /**
    * Existence probe; injectable for tests. The real implementation is
-   * accessSync(F_OK) — see the module comment for the MSIX-alias rationale.
+   * accessSync(F_OK): see the module comment for the MSIX-alias rationale.
    */
+  runWsl?: WslRun
   exists?: (path: string) => boolean
   /** File check for custom paths; injectable for tests. */
   isFile?: (path: string) => boolean
@@ -122,7 +138,7 @@ function realIsFile(path: string): boolean {
 /**
  * Existence for candidate probing and custom-path spawn validation:
  * accessSync(F_OK) instead of existsSync so MSIX app-execution aliases (the
- * Store PowerShell 7) are detected and spawnable — see the module comment.
+ * Store PowerShell 7) are detected and spawnable: see the module comment.
  */
 function realExists(path: string): boolean {
   try {
@@ -138,6 +154,8 @@ export class ShellService {
   readonly #isFile: (path: string) => boolean
   readonly #listWslDistributions: () => string[]
   readonly #env: NodeJS.ProcessEnv
+  readonly #runWsl: WslRun
+  readonly #wslLists = new Map<string, ShellInfo[]>()
   /** Run-scoped cache; null until the first detection of this app run. */
   #detected: ShellInfo[] | null = null
   /** Custom entries merged into the cache (validated at add/detect time). */
@@ -150,13 +168,39 @@ export class ShellService {
     this.#isFile = options.isFile ?? realIsFile
     this.#listWslDistributions = options.listWslDistributions ?? realWslDistributions
     this.#env = options.env ?? process.env
+    this.#runWsl = options.runWsl ?? runWsl
   }
 
   /**
    * One detection run: fixed candidates + one WSL enumeration + re-validated
    * custom paths. `customPaths` is the persisted app-level list (shells.custom).
    */
-  detect(customPaths: readonly string[]): DetectResult {
+  detect(customPaths: readonly string[], projectPath?: string): DetectResult {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location !== null) {
+      const output = this.#runWsl(location.distribution, ['/bin/cat', '/etc/shells'])
+      const paths = [
+        ...new Set([
+          ...output.split(/\r?\n/).filter((path) => path.startsWith('/')),
+          ...customPaths,
+        ]),
+      ]
+      const shells: ShellInfo[] = [
+        { id: 'default', label: `Default (WSL: ${location.distribution})` },
+      ]
+      const prunedCustomPaths: string[] = []
+      for (const path of paths) {
+        try {
+          this.#validateLinuxShell(path, location.distribution)
+          shells.push({ id: customChoice(path), label: posix.basename(path) })
+        } catch (error) {
+          if (!(error instanceof AppError) || error.code !== 'validation') throw error
+          if (customPaths.includes(path)) prunedCustomPaths.push(path)
+        }
+      }
+      this.#wslLists.set(projectPath as string, shells)
+      return { shells, prunedCustomPaths }
+    }
     if (this.#pending !== null) {
       return this.#pending
     }
@@ -197,7 +241,14 @@ export class ShellService {
    * entries. Never probes (spec Behaviour 3); null detected means the Shell
    * tab has not run detection yet in this app run.
    */
-  list(): ShellInfo[] {
+  list(projectPath?: string): ShellInfo[] {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location !== null)
+      return (
+        this.#wslLists.get(projectPath as string) ?? [
+          { id: 'default', label: `Default (WSL: ${location.distribution})` },
+        ]
+      )
     const detected = this.#detected ?? [{ id: 'default' as const, label: this.defaultLabel() }]
     return [...detected, ...this.#customEntries.filter((entry) => !hasId(detected, entry.id))]
   }
@@ -206,7 +257,17 @@ export class ShellService {
    * Validates an absolute executable path and adds it to the cache as a
    * `custom:<path>` entry. Storage (shells.custom) is owned by the caller.
    */
-  addCustomPath(path: string): ShellInfo {
+  addCustomPath(path: string, projectPath?: string): ShellInfo {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location !== null) {
+      this.#validateLinuxShell(path, location.distribution)
+      const entry: ShellInfo = { id: customChoice(path), label: posix.basename(path) }
+      this.#wslLists.set(projectPath as string, [
+        ...this.list(projectPath).filter((shell) => shell.id !== entry.id),
+        entry,
+      ])
+      return entry
+    }
     const trimmed = path.trim()
     if (trimmed.length === 0 || !isAbsolute(trimmed)) {
       throw new AppError('validation', 'The shell path must be absolute.')
@@ -228,11 +289,19 @@ export class ShellService {
   }
 
   /**
-   * Resolves a stored choice to a spawnable spec; never throws (spec
-   * fallback rule): unknown id, dead executable, or removed distribution
-   * resolves to the platform default. `null`/empty/absent means default.
+   * Resolves a stored choice to a spawnable spec. Local choices fall back to
+   * the platform default. WSL host choices use the distribution default;
+   * unavailable Linux choices fail explicitly. `null`/empty/absent is default.
    */
-  resolve(choice: string | null | undefined): ShellSpec {
+  resolve(choice: string | null | undefined, projectPath?: string): ShellSpec {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location !== null) {
+      // Historic host choices are visibly represented by the distribution default.
+      if (!choice?.startsWith('custom:/')) return { file: 'wsl.exe', args: [] }
+      const path = customPathOf(choice)
+      this.#validateLinuxShell(path, location.distribution)
+      return { file: path, args: [] }
+    }
     if (choice === null || choice === undefined || choice.length === 0 || choice === 'default') {
       return this.defaultShellSpec()
     }
@@ -259,7 +328,12 @@ export class ShellService {
    * Display label of a stored choice; same fallback rule as resolve() so the
    * chat name and the spawned shell can never disagree.
    */
-  label(choice: string | null | undefined): string {
+  label(choice: string | null | undefined, projectPath?: string): string {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location !== null)
+      return choice?.startsWith('custom:/')
+        ? posix.basename(customPathOf(choice))
+        : `WSL: ${location.distribution}`
     if (choice === null || choice === undefined || choice.length === 0 || choice === 'default') {
       return this.defaultLabel()
     }
@@ -283,6 +357,57 @@ export class ShellService {
     return path !== undefined ? candidate.label : this.defaultLabel()
   }
 
+  /**
+   * Compact chat-name prefix code of a stored choice (spec project-shell-selection
+   * Behaviour 6): `[PS5]`, `[PS7]`, `[cmd]`, `[bash]`, `[WSL]`, or the base
+   * name of a custom executable. Same fallback rules as label() and resolve(),
+   * so the prefix can never disagree with the spawned shell. The verbose
+   * `label()` keeps serving the Shell settings list and the bottom-tab text.
+   */
+  chatLabel(choice: string | null | undefined, projectPath?: string): string {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location !== null)
+      return choice?.startsWith('custom:/') ? posix.basename(customPathOf(choice)) : WSL_SHORT_LABEL
+    if (choice === null || choice === undefined || choice.length === 0 || choice === 'default') {
+      return this.defaultShortLabel()
+    }
+    if (choice.startsWith('custom:')) {
+      const path = customPathOf(choice)
+      return this.#isFile(path) ? basename(path) : this.defaultShortLabel()
+    }
+    if (choice.startsWith('wsl:')) {
+      const distro = choice.slice('wsl:'.length)
+      return distro.length > 0 ? WSL_SHORT_LABEL : this.defaultShortLabel()
+    }
+    const candidate = WINDOWS_CANDIDATES.find((item) => item.id === choice)
+    if (candidate === undefined) {
+      return this.defaultShortLabel()
+    }
+    const path = candidate.paths(this.#env).find((item) => this.#exists(item))
+    return path !== undefined ? candidate.shortLabel : this.defaultShortLabel()
+  }
+
+  #validateLinuxShell(path: string, distribution: string): void {
+    if (
+      !path.startsWith('/') ||
+      path.includes('\\') ||
+      path.includes('\u0000') ||
+      path.split('/').some((part) => part === '..' || part === '.')
+    ) {
+      throw new AppError('validation', 'Use an absolute Linux shell path.')
+    }
+    // Fixed source, positional path data. Never interpolate the executable.
+    const result = this.#runWsl(distribution, [
+      '/bin/sh',
+      '-c',
+      'if test -f "$1" && test -x "$1"; then printf usable; fi',
+      'nekode-shell',
+      path,
+    ])
+    if (result !== 'usable')
+      throw new AppError('validation', 'The Linux shell is unavailable or not executable.')
+  }
+
   defaultShellSpec(): ShellSpec {
     if (process.platform === 'win32') {
       return { file: 'powershell.exe', args: ['-NoLogo'] }
@@ -293,6 +418,14 @@ export class ShellService {
   defaultLabel(): string {
     if (process.platform === 'win32') {
       return 'PowerShell'
+    }
+    return basename(process.env.SHELL ?? '/bin/bash')
+  }
+
+  /** Chat-prefix code of the platform-default shell (label()'s short form). */
+  defaultShortLabel(): string {
+    if (process.platform === 'win32') {
+      return 'PS5'
     }
     return basename(process.env.SHELL ?? '/bin/bash')
   }

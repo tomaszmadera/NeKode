@@ -8,6 +8,8 @@ interface Props {
   activeProjectId: string | null
   versions: Readonly<Record<string, number>>
   onConfigure: () => void
+  /** Opens Project Settings on the handoff-directory tab. */
+  onConfigureHandoffs?: (projectId: string) => void
   /** Start on a work item. The shell owns the confirmation dialog. */
   onStart?: (projectId: string, item: WorkItem) => void
   /** Resume on a work item. The shell owns the handoff confirmation dialog. */
@@ -21,6 +23,7 @@ export function KanbanSessions({
   activeProjectId,
   versions,
   onConfigure,
+  onConfigureHandoffs,
   onStart,
   onResume,
 }: Props): React.JSX.Element {
@@ -53,6 +56,9 @@ export function KanbanSessions({
             projectId={id}
             active={activeProjectId === id}
             onConfigure={onConfigure}
+            onConfigureHandoffs={
+              onConfigureHandoffs === undefined ? undefined : () => onConfigureHandoffs(id)
+            }
             onStart={
               onStart === undefined
                 ? undefined

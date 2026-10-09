@@ -72,7 +72,7 @@ export function PromptInput({
         </span>
         <input
           ref={inputRef}
-          className="min-w-0 flex-1 bg-transparent font-mono text-[13px] text-ink outline-none placeholder:text-ink-muted"
+          className="terminal-prompt-input min-w-0 flex-1 bg-transparent font-mono text-[13px] text-ink outline-none placeholder:text-ink-muted"
           data-testid={TEST_ID.terminalPromptInput}
           aria-label="Terminal input"
           placeholder={placeholder}

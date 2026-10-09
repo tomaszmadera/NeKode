@@ -224,7 +224,7 @@ Request/response examples:
 
 ```json
 POST /v1/transcribe
-{ "path": "C:\\Users\\tomek\\AppData\\Local\\Temp\\nekode-dictation\\abc123.wav", "language": "pl" }
+{ "path": "C:\\Users\\<user>\\AppData\\Local\\Temp\\nekode-dictation\\abc123.wav", "language": "pl" }
 
 200 OK
 { "data": { "text": "Przykładowa rozpoznana wypowiedź.", "provider": "whisper", "model": "base" } }

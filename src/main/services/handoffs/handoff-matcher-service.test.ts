@@ -1,21 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import {
-  projectHandoffDirKey,
-  projectKanbanAdapterKey,
-  projectKanbanHandoffLinksKey,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+import { projectHandoffDirKey, projectKanbanAdapterKey } from '../../../shared/ipc-contract'
 import {
   filenameMatchesRef,
   type HandoffMatcherFsAdapter,
   type HandoffMatcherFsEntry,
   HandoffMatcherService,
-  parseFrontmatter,
 } from './handoff-matcher-service'
 
-// Handoff match and link (kanban task launch amendment, stage 4). The fs
-// adapter is an in-memory fixture so every boundary (metadata, filename,
-// conflicts, size, encoding, symlinks, links) is deterministic.
+// Handoff match (kanban task launch amendment, stage 4; NEKODE-30 stage 2). The
+// fs adapter is an in-memory fixture so every boundary (filename match,
+// rejection, size, encoding, symlink) is deterministic. Only the file name
+// decides the match; frontmatter identity is never parsed.
 
 const PROJECT_PATH = 'D:/code/demo'
 
@@ -107,35 +102,6 @@ function makeService(input: {
 const DIR = `${PROJECT_PATH}/h`
 const ITEM = { projectId: 'p1', itemId: 'native-28', ref: 'NEKODE-28' }
 
-describe('parseFrontmatter', () => {
-  it('reads a leading flat key: value block and stops at the closing fence', () => {
-    const content = [
-      '---',
-      'work_item_ref: NEKODE-28',
-      'work_item_id: native-28',
-      '---',
-      'body',
-    ].join('\n')
-    expect(parseFrontmatter(content)).toEqual({
-      work_item_ref: 'NEKODE-28',
-      work_item_id: 'native-28',
-    })
-  })
-
-  it('ignores non-work-item keys, nested lines and unterminated blocks', () => {
-    expect(parseFrontmatter('---\ntitle: x\n---\n')).toEqual({})
-    expect(parseFrontmatter('---\nwork_item_ref: NEKODE-28\n')).toEqual({})
-    expect(parseFrontmatter('work_item_ref: NEKODE-28\n')).toEqual({})
-    expect(parseFrontmatter('---\n  work_item_ref: NEKODE-28\n---\n')).toEqual({})
-  })
-
-  it('strips one pair of matching quotes from a scalar', () => {
-    expect(parseFrontmatter('---\nwork_item_ref: "NEKODE-28"\n---\n')).toEqual({
-      work_item_ref: 'NEKODE-28',
-    })
-  })
-})
-
 describe('filenameMatchesRef', () => {
   it('accepts the exact ref and a ref-prefixed name, ignoring case', () => {
     expect(filenameMatchesRef('nekode-2.md', 'NEKODE-2')).toBe(true)
@@ -222,15 +188,12 @@ describe('HandoffMatcherService.candidates', () => {
     expect(result.message).not.toContain('not found')
   })
 
-  it('matches explicit metadata and carries the file stamp and display path', async () => {
+  it('matches a ref-named file and carries the file stamp and display path', async () => {
     const { service } = makeService({
       fs: fixture({
-        entries: { [DIR]: [{ name: 'meta.md', kind: 'file' }] },
+        entries: { [DIR]: [{ name: 'nekode-28.md', kind: 'file' }] },
         files: {
-          [`${DIR}/meta.md`]: {
-            bytes: bytes('---\nwork_item_ref: NEKODE-28\nwork_item_id: native-28\n---\n'),
-            mtimeMs: 2000,
-          },
+          [`${DIR}/nekode-28.md`]: { bytes: bytes('body'), mtimeMs: 2000 },
         },
       }),
     })
@@ -239,14 +202,13 @@ describe('HandoffMatcherService.candidates', () => {
       state: 'ready',
       files: [
         {
-          name: 'meta.md',
-          path: 'h/meta.md',
+          name: 'nekode-28.md',
+          path: 'h/nekode-28.md',
           modifiedAt: new Date(2000).toISOString(),
-          matchKind: 'metadata',
+          matchKind: 'filename',
         },
       ],
       rejections: [],
-      link: null,
     })
   })
 
@@ -283,68 +245,6 @@ describe('HandoffMatcherService.candidates', () => {
       ['nekode-20.md', 'none'],
       ['old-nekode-2.md', 'none'],
     ])
-  })
-
-  it('treats metadata naming another item as a visible rejection that excludes the filename', async () => {
-    const { service } = makeService({
-      fs: fixture({
-        entries: {
-          [DIR]: [
-            { name: 'nekode-28-other.md', kind: 'file' },
-            { name: 'clean.md', kind: 'file' },
-          ],
-        },
-        files: {
-          [`${DIR}/nekode-28-other.md`]: {
-            bytes: bytes('---\nwork_item_ref: NEKODE-99\n---\n'),
-            mtimeMs: 5,
-          },
-          [`${DIR}/clean.md`]: { bytes: bytes('plain'), mtimeMs: 4 },
-        },
-      }),
-    })
-    const result = await service.candidates(ITEM)
-    if (result.state !== 'ready') {
-      throw new Error('expected ready')
-    }
-    // The good candidate is still visible; the conflicting file is a warning.
-    expect(result.files.map((file) => file.name)).toEqual(['clean.md'])
-    expect(result.rejections).toEqual([
-      {
-        name: 'nekode-28-other.md',
-        path: 'h/nekode-28-other.md',
-        reason: 'Metadata names a different work item.',
-      },
-    ])
-  })
-
-  it('conflicts on a mismatching work_item_id or work_item_adapter', async () => {
-    const { service } = makeService({
-      fs: fixture({
-        entries: {
-          [DIR]: [
-            { name: 'a.md', kind: 'file' },
-            { name: 'b.md', kind: 'file' },
-          ],
-        },
-        files: {
-          [`${DIR}/a.md`]: {
-            bytes: bytes('---\nwork_item_ref: NEKODE-28\nwork_item_id: other\n---\n'),
-            mtimeMs: 3,
-          },
-          [`${DIR}/b.md`]: {
-            bytes: bytes('---\nwork_item_ref: NEKODE-28\nwork_item_adapter: other\n---\n'),
-            mtimeMs: 2,
-          },
-        },
-      }),
-    })
-    const result = await service.candidates(ITEM)
-    if (result.state !== 'ready') {
-      throw new Error('expected ready')
-    }
-    expect(result.files).toEqual([])
-    expect(result.rejections.map((rejection) => rejection.name)).toEqual(['a.md', 'b.md'])
   })
 
   it('shows the size cap and invalid UTF-8 as rejections without hiding good candidates', async () => {
@@ -491,148 +391,278 @@ describe('HandoffMatcherService.candidates', () => {
   })
 })
 
-describe('HandoffMatcherService.link', () => {
-  function linkFixture(): {
-    fs: HandoffMatcherFsAdapter
-    files: Record<string, FakeFile>
-  } {
-    const files: Record<string, FakeFile> = {
-      [`${DIR}/matched.md`]: { bytes: bytes('auto'), mtimeMs: 9 },
-      [`${DIR}/other.md`]: { bytes: bytes('manual'), mtimeMs: 8 },
-      [`${DIR}/conflict.md`]: {
-        bytes: bytes('---\nwork_item_ref: NEKODE-99\n---\n'),
-        mtimeMs: 7,
-      },
-    }
+// Batch handoff availability (spec Dostępność Resume): one directory read and
+// at most one read per qualifying file, matched against every loaded item with
+// the same rules as `candidates`.
+describe('HandoffMatcherService.availability', () => {
+  interface Counts {
+    readdir: number
+    stat: number
+    readFile: number
+  }
+
+  function withCounts(input: {
+    entries?: Record<string, HandoffMatcherFsEntry[]>
+    files?: Record<string, FakeFile>
+  }): { fs: HandoffMatcherFsAdapter; counts: Counts } {
+    const base = fixture(input)
+    const counts: Counts = { readdir: 0, stat: 0, readFile: 0 }
     return {
-      files,
-      fs: fixture({
-        entries: {
-          [DIR]: [
-            { name: 'matched.md', kind: 'file' },
-            { name: 'other.md', kind: 'file' },
-            { name: 'conflict.md', kind: 'file' },
-          ],
+      counts,
+      fs: {
+        async readdir(dirPath) {
+          counts.readdir += 1
+          return base.readdir(dirPath)
         },
-        files,
-      }),
+        async stat(path) {
+          counts.stat += 1
+          return base.stat(path)
+        },
+        async readFile(path) {
+          counts.readFile += 1
+          return base.readFile(path)
+        },
+      },
     }
   }
 
-  it('stores a chosen name without editing the file and wins over automatic candidates', async () => {
-    const { fs, files } = linkFixture()
-    const state = stateStore({
-      [projectHandoffDirKey('p1')]: 'h',
-      [projectKanbanAdapterKey('p1')]: 'demo',
+  it('reads the directory once and each file at most once for many items', async () => {
+    const { fs, counts } = withCounts({
+      entries: {
+        [DIR]: [
+          { name: 'nekode-2.md', kind: 'file' },
+          { name: 'nekode-20.md', kind: 'file' },
+          { name: 'notes.md', kind: 'file' },
+        ],
+      },
+      files: {
+        [`${DIR}/nekode-2.md`]: { bytes: bytes('x'), mtimeMs: 3 },
+        [`${DIR}/nekode-20.md`]: { bytes: bytes('x'), mtimeMs: 2 },
+        [`${DIR}/notes.md`]: { bytes: bytes('x'), mtimeMs: 1 },
+      },
     })
-    const { service } = makeService({ state, fs })
-    const before = await service.candidates(ITEM)
-    if (before.state !== 'ready') {
-      throw new Error('expected ready')
-    }
-    expect(before.link).toBeNull()
-
-    const after = await service.link({ ...ITEM, fileName: 'other.md' })
-    if (after.state !== 'ready') {
-      throw new Error('expected ready')
-    }
-    expect(after.link).toEqual({
-      name: 'other.md',
-      path: 'h/other.md',
-      modifiedAt: new Date(8).toISOString(),
-    })
-    // The file body is untouched; only the app_state document was written.
-    expect(files[`${DIR}/other.md`]?.bytes?.toString('utf8')).toBe('manual')
-    const stored = JSON.parse(state.dump()[projectKanbanHandoffLinksKey('p1')] ?? 'null') as {
-      links: Record<string, Record<string, { name: string; ref: string }>>
-    }
-    expect(stored.links.demo?.[ITEM.itemId]).toEqual({ name: 'other.md', ref: 'NEKODE-28' })
-  })
-
-  it('refuses a file whose metadata names another item and writes nothing', async () => {
-    const { fs } = linkFixture()
-    const state = stateStore({
-      [projectHandoffDirKey('p1')]: 'h',
-      [projectKanbanAdapterKey('p1')]: 'demo',
-    })
-    const { service } = makeService({ state, fs })
-    await expect(service.link({ ...ITEM, fileName: 'conflict.md' })).rejects.toMatchObject({
-      code: 'validation',
-      message: 'Metadata names a different work item.',
-    })
-    expect(state.dump()[projectKanbanHandoffLinksKey('p1')]).toBeUndefined()
-  })
-
-  it('refuses a name that is not in the directory', async () => {
-    const { fs } = linkFixture()
     const { service } = makeService({ fs })
-    await expect(service.link({ ...ITEM, fileName: 'missing.md' })).rejects.toMatchObject({
-      code: 'validation',
+    const result = await service.availability({
+      projectId: 'p1',
+      items: [
+        { itemId: 'native-2', ref: 'NEKODE-2' },
+        { itemId: 'native-20', ref: 'NEKODE-20' },
+        { itemId: 'native-28', ref: 'NEKODE-28' },
+      ],
+    })
+    // NEKODE-2 never matches NEKODE-20 (the boundary holds through the batch).
+    expect(result).toEqual({
+      state: 'ready',
+      items: [
+        { itemId: 'native-2', ref: 'NEKODE-2', available: true },
+        { itemId: 'native-20', ref: 'NEKODE-20', available: true },
+        { itemId: 'native-28', ref: 'NEKODE-28', available: false },
+      ],
+      rejections: [],
+    })
+    expect(counts.readdir).toBe(1)
+    expect(counts.readFile).toBe(3)
+    expect(counts.stat).toBe(3)
+  })
+
+  it('matches by file name through the batch and keeps a metadata-only name unavailable', async () => {
+    const { service } = makeService({
+      fs: fixture({
+        entries: {
+          [DIR]: [
+            { name: 'meta.md', kind: 'file' },
+            { name: 'nekode-28.md', kind: 'file' },
+          ],
+        },
+        files: {
+          [`${DIR}/meta.md`]: {
+            bytes: bytes('---\nwork_item_ref: NEKODE-28\nwork_item_id: native-28\n---\n'),
+            mtimeMs: 2,
+          },
+          [`${DIR}/nekode-28.md`]: { bytes: bytes('x'), mtimeMs: 1 },
+        },
+      }),
+    })
+    expect(
+      await service.availability({
+        projectId: 'p1',
+        items: [
+          { itemId: 'native-28', ref: 'NEKODE-28' },
+          { itemId: 'native-1', ref: 'NEKODE-1' },
+        ],
+      }),
+    ).toEqual({
+      state: 'ready',
+      items: [
+        { itemId: 'native-28', ref: 'NEKODE-28', available: true },
+        { itemId: 'native-1', ref: 'NEKODE-1', available: false },
+      ],
+      rejections: [],
     })
   })
 
-  it('refuses to link when the directory is unconfigured', async () => {
-    const { service } = makeService({ state: stateStore() })
-    await expect(service.link({ ...ITEM, fileName: 'a.md' })).rejects.toMatchObject({
-      code: 'validation',
+  it('keeps a rejected file visible without hiding a valid candidate', async () => {
+    const { service } = makeService({
+      fs: fixture({
+        entries: {
+          [DIR]: [
+            { name: 'big.md', kind: 'file' },
+            { name: 'nekode-28.md', kind: 'file' },
+          ],
+        },
+        files: {
+          [`${DIR}/big.md`]: { size: 1024 * 1024 + 1, mtimeMs: 2 },
+          [`${DIR}/nekode-28.md`]: { bytes: bytes('x'), mtimeMs: 1 },
+        },
+      }),
+    })
+    expect(
+      await service.availability({
+        projectId: 'p1',
+        items: [{ itemId: 'native-28', ref: 'NEKODE-28' }],
+      }),
+    ).toEqual({
+      state: 'ready',
+      items: [{ itemId: 'native-28', ref: 'NEKODE-28', available: true }],
+      rejections: [{ name: 'big.md', path: 'h/big.md', reason: 'File is larger than 1 MiB.' }],
     })
   })
 
-  it('does not resolve a link stored under a different adapter binding', async () => {
-    const { fs } = linkFixture()
-    const state = stateStore({
-      [projectHandoffDirKey('p1')]: 'h',
-      [projectKanbanAdapterKey('p1')]: 'demo',
+  it('distinguishes not-configured, a read error, and a ready empty scan', async () => {
+    expect(
+      await makeService({ state: stateStore() }).service.availability({
+        projectId: 'p1',
+        items: [{ itemId: ITEM.itemId, ref: ITEM.ref }],
+      }),
+    ).toEqual({ state: 'not-configured' })
+
+    const errored = await makeService({
+      fs: fixture({ entries: {}, files: {} }),
+    }).service.availability({ projectId: 'p1', items: [{ itemId: ITEM.itemId, ref: ITEM.ref }] })
+    expect(errored.state).toBe('error')
+
+    const empty = await makeService({
+      fs: fixture({
+        entries: { [DIR]: [{ name: 'README.md', kind: 'file' }] },
+        files: { [`${DIR}/README.md`]: { bytes: bytes('x'), mtimeMs: 1 } },
+      }),
+    }).service.availability({ projectId: 'p1', items: [{ itemId: ITEM.itemId, ref: ITEM.ref }] })
+    expect(empty).toEqual({
+      state: 'ready',
+      items: [{ itemId: ITEM.itemId, ref: ITEM.ref, available: false }],
+      rejections: [],
     })
-    const { service } = makeService({ state, fs })
-    await service.link({ ...ITEM, fileName: 'other.md' })
-    state.set(projectKanbanAdapterKey('p1'), 'other-adapter')
+  })
+
+  it('isolates the check by project: an unknown project is not_found', async () => {
+    await expect(
+      makeService({}).service.availability({
+        projectId: 'missing',
+        items: [{ itemId: ITEM.itemId, ref: ITEM.ref }],
+      }),
+    ).rejects.toMatchObject({ code: 'not_found' })
+  })
+})
+
+// Filename-only matching (NEKODE-30 stage 2, spec Jednolita konwencja nazw):
+// the file name is the only link. Frontmatter identity is never parsed and the
+// scan result carries no explicit link.
+describe('filename-only matching (NEKODE-30 stage 2)', () => {
+  it('does not match a file whose frontmatter names the item but whose name does not carry the ref', async () => {
+    const { service } = makeService({
+      fs: fixture({
+        entries: { [DIR]: [{ name: 'metadata-only.md', kind: 'file' }] },
+        files: {
+          [`${DIR}/metadata-only.md`]: {
+            bytes: bytes('---\nwork_item_ref: NEKODE-28\nwork_item_id: native-28\n---\n'),
+            mtimeMs: 5,
+          },
+        },
+      }),
+    })
+    const result = await service.candidates(ITEM)
+    if (result.state !== 'ready') {
+      throw new Error(`expected ready, got ${result.state}`)
+    }
+    // The name decides: a metadata-only file is a name miss, not a candidate.
+    expect(result.files).toEqual([
+      {
+        name: 'metadata-only.md',
+        path: 'h/metadata-only.md',
+        modifiedAt: new Date(5).toISOString(),
+        matchKind: 'none',
+      },
+    ])
+    const availability = await service.availability({
+      projectId: 'p1',
+      items: [{ itemId: ITEM.itemId, ref: ITEM.ref }],
+    })
+    expect(availability).toEqual({
+      state: 'ready',
+      items: [{ itemId: ITEM.itemId, ref: ITEM.ref, available: false }],
+      rejections: [],
+    })
+  })
+
+  it('reports no link field on a ready scan result', async () => {
+    const { service } = makeService({
+      fs: fixture({
+        entries: { [DIR]: [{ name: 'nekode-28.md', kind: 'file' }] },
+        files: { [`${DIR}/nekode-28.md`]: { bytes: bytes('x'), mtimeMs: 1 } },
+      }),
+    })
     const result = await service.candidates(ITEM)
     if (result.state !== 'ready') {
       throw new Error('expected ready')
     }
-    expect(result.link).toBeNull()
+    expect(result).not.toHaveProperty('link')
+    expect(Object.keys(result).sort()).toEqual(['files', 'rejections', 'state'])
   })
 
-  it('survives a reopen: a fresh service over the same state resolves the link', async () => {
-    const { fs } = linkFixture()
-    const state = stateStore({
-      [projectHandoffDirKey('p1')]: 'h',
-      [projectKanbanAdapterKey('p1')]: 'demo',
+  it('ignores a legacy per-project handoff links document left in app_state', async () => {
+    const fs = fixture({
+      entries: {
+        [DIR]: [
+          { name: 'nekode-28.md', kind: 'file' },
+          { name: 'loose.md', kind: 'file' },
+        ],
+      },
+      files: {
+        [`${DIR}/nekode-28.md`]: { bytes: bytes('x'), mtimeMs: 2 },
+        [`${DIR}/loose.md`]: { bytes: bytes('x'), mtimeMs: 1 },
+      },
     })
-    await makeService({ state, fs }).service.link({ ...ITEM, fileName: 'other.md' })
-    const reopened = await makeService({ state, fs }).service.candidates(ITEM)
-    if (reopened.state !== 'ready') {
+    const base = await makeService({
+      state: stateStore({
+        [projectHandoffDirKey('p1')]: 'h',
+        [projectKanbanAdapterKey('p1')]: 'demo',
+      }),
+      fs,
+    }).service.candidates(ITEM)
+    // A leftover `project.kanbanHandoffLinks:<id>` document must not change the
+    // scan: only the file name decides a match (NEKODE-30 stage 2). The former
+    // document bound an adapter id and a work-item id to a file name; seeding
+    // that real shape (an object keyed by adapter and item, not a rejected
+    // array) is what makes this guard discriminate a reintroduced legacy reader.
+    const withLegacyDocument = await makeService({
+      state: stateStore({
+        [projectHandoffDirKey('p1')]: 'h',
+        [projectKanbanAdapterKey('p1')]: 'demo',
+        'project.kanbanHandoffLinks:p1': JSON.stringify({
+          links: { demo: { 'native-28': { name: 'loose.md', ref: 'NEKODE-28' } } },
+        }),
+      }),
+      fs,
+    }).service.candidates(ITEM)
+    expect(withLegacyDocument).toEqual(base)
+    if (base.state !== 'ready') {
       throw new Error('expected ready')
     }
-    expect(reopened.link?.name).toBe('other.md')
-  })
-
-  it('drops a link whose file is gone', async () => {
-    const { fs } = linkFixture()
-    const state = stateStore({
-      [projectHandoffDirKey('p1')]: 'h',
-      [projectKanbanAdapterKey('p1')]: 'demo',
-    })
-    const { service } = makeService({ state, fs })
-    await service.link({ ...ITEM, fileName: 'other.md' })
-    const withoutOther = fixture({
-      entries: { [DIR]: [{ name: 'matched.md', kind: 'file' }] },
-      files: { [`${DIR}/matched.md`]: { bytes: bytes('auto'), mtimeMs: 9 } },
-    })
-    const result = await makeService({ state, fs: withoutOther }).service.candidates(ITEM)
-    if (result.state !== 'ready') {
-      throw new Error('expected ready')
-    }
-    expect(result.link).toBeNull()
-  })
-
-  it('rejects an unknown project with not_found', async () => {
-    const { service } = makeService({})
-    const error = await service
-      .link({ ...ITEM, projectId: 'missing', fileName: 'a.md' })
-      .catch((cause: unknown) => cause)
-    expect(error).toBeInstanceOf(AppError)
-    expect((error as AppError).code).toBe('not_found')
+    // The legacy link's file is a name miss (its name carries no ref), never a
+    // candidate; only the ref-named file matches.
+    expect(base.files.map((file) => [file.name, file.matchKind])).toEqual([
+      ['nekode-28.md', 'filename'],
+      ['loose.md', 'none'],
+    ])
   })
 })

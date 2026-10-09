@@ -264,54 +264,6 @@ describe('KanbanService config', () => {
       }),
     ).toThrow(AppError)
   })
-
-  it('keeps handoff links on an identical rewrite and deletes them on a real change', () => {
-    const links = JSON.stringify({ links: { demo: { native: { name: 'a.md', ref: 'D-1' } } } })
-    const stored = {
-      'project.kanbanAdapter:p1': 'demo',
-      'project.kanbanConfig:p1': JSON.stringify({ base_url: 'https://x' }),
-      'project.kanbanHandoffLinks:p1': links,
-    }
-    // Adapter and values unchanged: the explicit links survive.
-    const identical = makeService({ store: stored })
-    identical.service.setConfig('p1', { adapterId: 'demo', values: { base_url: 'https://x' } })
-    expect(identical.state.dump()['project.kanbanHandoffLinks:p1']).toBe(links)
-
-    // A changed value invalidates them.
-    const changedValue = makeService({ store: stored })
-    changedValue.service.setConfig('p1', { adapterId: 'demo', values: { base_url: 'https://y' } })
-    expect(changedValue.state.dump()['project.kanbanHandoffLinks:p1']).toBeUndefined()
-
-    // A changed adapter invalidates them even with identical values.
-    const changedAdapter = makeService({ store: stored })
-    changedAdapter.service.setConfig('p1', { adapterId: 'other', values: {} })
-    expect(changedAdapter.state.dump()['project.kanbanHandoffLinks:p1']).toBeUndefined()
-
-    // Deselecting a bound adapter invalidates them.
-    const deselected = makeService({ store: stored })
-    deselected.service.setConfig('p1', { adapterId: null, values: {} })
-    expect(deselected.state.dump()['project.kanbanHandoffLinks:p1']).toBeUndefined()
-
-    // Deselecting an already-unbound project keeps them.
-    const unbound = makeService({
-      store: { 'project.kanbanAdapter:p1': '', 'project.kanbanHandoffLinks:p1': links },
-    })
-    unbound.service.setConfig('p1', { adapterId: null, values: {} })
-    expect(unbound.state.dump()['project.kanbanHandoffLinks:p1']).toBe(links)
-  })
-
-  it('cleanupProject deletes the handoff link document too', () => {
-    const { service, state } = makeService({
-      store: {
-        'project.kanbanAdapter:p1': 'demo',
-        'project.kanbanConfig:p1': JSON.stringify({}),
-        'project.kanbanHandoffLinks:p1': JSON.stringify({ links: {} }),
-      },
-    })
-    service.cleanupProject('p1')
-    expect(state.dump()['project.kanbanHandoffLinks:p1']).toBeUndefined()
-    expect(state.dump()['project.kanbanAdapter:p1']).toBeUndefined()
-  })
 })
 
 describe('KanbanService actions', () => {

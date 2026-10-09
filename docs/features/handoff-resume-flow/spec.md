@@ -8,7 +8,7 @@ Make the Handoff/Resume action row and the Add Project dialog less lossy for an 
 
 ## Related requirements
 
-User change list 2026-10-01 (task `.agents/tasks/handoff-resume-flow/task.md`):
+Accepted user decisions 2026-10-01, owned by this public contract:
 
 1. Add Project resumes from the previously selected path.
 2. Configuration gains auto-send after Handoff / Resume.

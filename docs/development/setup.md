@@ -1,9 +1,11 @@
 # Instrukcja Konfiguracji Środowiska Deweloperskiego (Setup)
 
-**Platforma docelowa:** Windows 11 / WSL2
+**Platforma aplikacji:** Windows 11. WSL2 jest opcjonalną integracją powłoki, a nie deklaracją wsparcia aplikacji desktopowej na Linuksie.
 **Główny stos technologiczny:** Electron, React, TypeScript, Vite, Tailwind CSS, SQLite (`better-sqlite3`), `node-pty`
 
-Toolchain poniżej jest **zweryfikowany** (stack-update-hardening, 2026-09-24): wersje
+Bieżące wersje i polecenia odczytuj z [package.json](../../package.json), [pnpm-lock.yaml](../../pnpm-lock.yaml), [polityki instalacji](../../pnpm-workspace.yaml) i [konfiguracji pakowania](../../electron-builder.yml). [Kontrakt projektu](project-contract.md) określa zasady zmian i źródła wymagań.
+
+Toolchain poniżej jest historycznym pomiarem **zweryfikowanym** (stack-update-hardening, 2026-09-24): wersje
 zainstalowane i przetestowane wraz z buildem instalatora i uruchomieniem aplikacji poza dev.
 
 ## 1. Wymagania wstępne
@@ -81,7 +83,18 @@ nie instalatora. Cicha deinstalacja: `<katalog>\Uninstall nekode.exe /S`.
 `nekode.exe --remote-debugging-port=<port>` + sonda CDP (`Runtime.evaluate`) pozwala sprawdzić,
 że renderer zamontował się pod CSP (np. `document.getElementById('root').children.length > 0`).
 Ścieżka `userData` na Windows **nie** respektuje zmiennej `APPDATA` (Known Folder) — izolację
-testową rób przez `app.setPath('userData', ...)`, nie przez środowisko.
+testową rób przez `app.setPath('userData', ...)`, nie przez przekierowanie `APPDATA`.
+NeKode udostępnia `NEKODE_USER_DATA`: [main](../../src/main/index.ts) ustawia tę ścieżkę
+przed gotowością aplikacji. Dla dev smoke ustaw `$env:NEKODE_USER_DATA` na nowy katalog
+tymczasowy w PowerShell, potem uruchom `pnpm run dev`. Dla packaged smoke uruchom
+`dist/win-unpacked/nekode.exe` z tym samym jawnie izolowanym środowiskiem. Utwórz
+osobny projekt-fixture; nie używaj rzeczywistej bazy ani projektu użytkownika.
+Zakończ i odbierz wszystkie uruchomione procesy Electron, PTY i agentów; sprawdź,
+że procesy tego testu nie zostały osierocone. Usuwaj wyłącznie sprawdzony katalog
+fixture. W raporcie odróżnij dev, packaged i installer smoke; wynik jsdom nie jest e2e.
+Nie dodawaj drugiego frameworka e2e ani zależności przed konkretną potrzebą. Obecne
+repozytorium nie ma skryptu e2e w package.json; Playwright `_electron` jest opcją
+przyszłego harnessu, nie warunkiem uruchomienia aplikacji.
 
 ## 4. Standardowe polecenia
 
@@ -97,6 +110,20 @@ testową rób przez `app.setPath('userData', ...)`, nie przez środowisko.
 ## 5. Moduły natywne i diagnostyka
 
 Zasada: **tylko N-API z gotowymi binariami** (brak Build Tools na hoście).
+
+Ta polityka dotyczy wspieranego Windows `win32-x64`; przy zmianie wersji potwierdź
+prebuild dla konkretnej pary wersja/platforma. Dla integracji WSL sprawdź także
+binaria jej narzędzi, jeśli zmiana ich dotyczy. Brak prebuilda blokuje zmianę:
+nie dodawaj kompilatora, forka ani obcych binariów bez jawnej decyzji użytkownika.
+Przejrzyj każdy nowy skrypt instalacyjny przed dopuszczeniem go w `allowBuilds`.
+`npmRebuild: false` pozostaje właściwe dopóki wszystkie moduły natywne mają
+odpowiednie binaria N-API; przejście na moduł zależny od ABI wymaga ponownej oceny.
+
+Po zmianie zależności uruchom instalację, lint, typecheck i testy, a dla zmian
+natywnych także dev lub packaged smoke w prawdziwym Electronie. Ładowanie modułu
+w hostowym Node lub Vitest nie dowodzi zgodności z Electronem. Zmiana pakowania
+wymaga co najmniej `pnpm run build:unpack` i uruchomienia paczki; instalator ma
+osobny smoke. Zanotuj nieuruchomiony test z powodem zamiast wyniku pass.
 
 | Moduł | Skąd binaria | Polityka build |
 |---|---|---|

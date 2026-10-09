@@ -11,7 +11,6 @@ import {
   KANBAN_PRIORITIES,
   projectKanbanAdapterKey,
   projectKanbanConfigKey,
-  projectKanbanHandoffLinksKey,
 } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import { AdapterHost, toAppError } from './adapter-host'
@@ -146,10 +145,6 @@ export class KanbanService {
 
   setConfig(projectId: string, input: KanbanSetConfigInput): void {
     this.assertProject(projectId)
-    // A changed binding or config invalidates this project's explicit handoff
-    // links (spec Powiązanie handoffu 5); an identical rewrite keeps them.
-    const previousAdapter = this.#state.get(projectKanbanAdapterKey(projectId)) ?? ''
-    const previousConfig = this.#state.get(projectKanbanConfigKey(projectId)) ?? ''
     if (typeof input !== 'object' || input === null) {
       throw new AppError(
         'validation',
@@ -185,9 +180,6 @@ export class KanbanService {
     if (adapterId === null) {
       // Deselect keeps stored values (spec Behaviour 7).
       this.#state.set(projectKanbanAdapterKey(projectId), '')
-      if (previousAdapter !== '') {
-        this.#state.delete(projectKanbanHandoffLinksKey(projectId))
-      }
       return
     }
 
@@ -227,9 +219,6 @@ export class KanbanService {
     this.#state.set(projectKanbanAdapterKey(projectId), adapterId)
     const nextConfig = JSON.stringify(merged)
     this.#state.set(projectKanbanConfigKey(projectId), nextConfig)
-    if (adapterId !== previousAdapter || nextConfig !== previousConfig) {
-      this.#state.delete(projectKanbanHandoffLinksKey(projectId))
-    }
   }
 
   async test(projectId: string, values?: Record<string, string>): Promise<void> {
@@ -306,7 +295,6 @@ export class KanbanService {
   cleanupProject(projectId: string): void {
     this.#state.delete(projectKanbanAdapterKey(projectId))
     this.#state.delete(projectKanbanConfigKey(projectId))
-    this.#state.delete(projectKanbanHandoffLinksKey(projectId))
   }
 
   private assertProject(projectId: string): { path: string } {

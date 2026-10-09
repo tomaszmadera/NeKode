@@ -63,7 +63,7 @@ Kanban and passes their values to the adapter on every invocation.
 | `PLANE_API_KEY` | secret | yes | Plane Personal Access Token used as the `X-API-Key` header. Masked in the UI; never shown again after saving. |
 | `PLANE_WORKSPACE_SLUG` | string | yes | Workspace slug of the Plane workspace that owns the project. |
 | `PLANE_BASE_URL` | string | no | Base URL of the Plane instance (scheme + host + optional port, e.g. `https://plane.example.com`), with no `/api/v1` suffix — the adapter appends `/api/v1`. Defaults to `http://localhost` when left empty. |
-| `PLANE_PROJECT_ID` | string | yes | Plane project UUID, **or** a full Plane project web URL from which the adapter extracts the project id. **Convenience:** pasting a full project URL also supplies the base URL (and the workspace slug if `PLANE_WORKSPACE_SLUG` is still empty). This adapter does **not** resolve a project *identifier* (for example `NEKODE`); use the UUID or a project URL. The harness reference CLI `kanban_cli.py` accepts an identifier (it resolves it via projects-lite), but this adapter does not. |
+| `PLANE_PROJECT_ID` | string | yes | Plane project UUID, **or** a full Plane project web URL from which the adapter extracts the project id. **Convenience:** pasting a full project URL also supplies the base URL (and the workspace slug if `PLANE_WORKSPACE_SLUG` is still empty). This adapter does **not** resolve a project *identifier* (for example `NEKODE`); use the UUID or a project URL. |
 
 ### Secret handling
 
@@ -85,9 +85,11 @@ configuration from argv or the environment.
 5. Click **Test connection**. This invokes the adapter's `test` action with the
    currently entered values; success is shown inline, and any failure is shown
    inline with the adapter's error message.
-6. Open the center surface's **`Files | Kanban`** tabs and select **Kanban**.
-   The board shows one column per Plane state (state name as the heading) with
-   work-item titles underneath.
+6. Select the project's **Kanban** tile or its top **Kanban** tab. List is the
+   default view; the **Board view** icon switches to one column per state.
+   Select an item to review its full title and description. See the
+   [application contract](../../docs/features/kanban-adapter-interface/spec.md)
+   for loading, refresh, and error behavior.
 
 ## State groups and aliases
 

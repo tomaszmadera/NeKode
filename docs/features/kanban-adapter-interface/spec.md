@@ -10,7 +10,7 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
 
 - UX-UI §26–30 (Kanban as a primary product surface, post-MVP) — this spec is its data layer.
 - requirements.md §3 keeps functional Kanban out of MVP; this feature is the post-MVP integration groundwork (user decision 2026-10-04).
-- First adapter target: Plane CE REST API — the same backend the harness Kanban CLI (`.agents/skills/kanban`) already uses, so its state-group and alias semantics carry over.
+- First adapter target: Plane CE REST API. State groups and aliases are defined explicitly in Behaviour and Business rules below.
 
 ## Scope
 
@@ -18,7 +18,7 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
 - Main: adapter discovery (manifest scan), adapter host (spawn + stdio JSON protocol + timeout + kill), `KanbanService` facade behind IPC, per-project config persistence and cleanup on `projects:remove`.
 - Renderer: Project Settings "Kanban" section — adapter select, dynamic config form driven by the adapter manifest (secret masking), Test connection, adapters directory display and override.
 - Read-only board surface: a `Kanban` tile in the left navigation directly under the name of a project that has a stored Kanban binding, plus a `Kanban` tab in the top tab strip beside the chat and file tabs, both opening the board in that project's center surface. `kanban:listBoard` renders as a List view (the items grouped under the state names — the default) or a Board view (one column per state name); the view switch and the refresh control are icon controls on the header's right side, each with an accessible name. Each item shows its ref, truncated title, and priority. Opening an item shows a review with the full title and the description. No styling beyond minimal layout. No separate center-surface `Files | Kanban` view-switch strip is added.
-- Reference adapter (Python, outside the app contract): a Plane adapter implementing protocol v1 against the Plane REST API, reusing the semantics of the harness `kanban_cli.py` (state groups, alias resolution, `.agents/.env`-compatible field names).
+- Reference adapter (Python, outside the app contract): a Plane adapter implementing protocol v1 against the Plane REST API, with the state groups, alias resolution, and `PLANE_*` configuration fields documented in the public adapter guide.
 
 ## Non-goals
 
@@ -44,7 +44,7 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
    - `getItem` `{ ref }`.
    - `createItem` `{ title, description?, stateRef?, priority? }`.
    - `updateItem` `{ ref, title?, description?, stateRef?, priority? }` — patch semantics: only provided fields change.
-   - `stateRef` accepts a concrete state name (case-insensitive) or a group alias (`backlog`, `todo`/`unstarted`, `in progress`/`started`, `done`/`completed`, `cancelled`) and is resolved by the adapter against its own states — the same semantics as the harness kanban CLI.
+   - `stateRef` accepts a concrete state name (case-insensitive) or a group alias (`backlog`, `todo`/`unstarted`, `in progress`/`started`, `done`/`completed`, `cancelled`) and is resolved by the adapter against its own states.
 5. Timeout: main enforces a per-invocation timeout (30 s default) and kills the adapter's process tree; expiry produces a typed `timeout` error naming the adapter and action.
 6. Config delivery: the request `config` object carries all stored field values, secrets included. No config values are placed on the command line (argv is world-readable on Windows) and no secrets go into environment variables or the manifest.
 7. Project binding: the Project Settings Kanban section lists discovered adapters (name, id). Selecting one renders its `configSchema` as a form: `secret` inputs are masked and never rendered back after save, `select` renders a dropdown from `options`, `boolean` a checkbox, required fields are marked. Save stores the adapter id and field values; an empty non-secret field clears the stored value; a left-empty secret field keeps the stored secret. Deselecting (none) clears the binding but keeps stored field values. No selection = not configured.
@@ -59,12 +59,12 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
 ## Business rules
 
 - Protocol version is exact-match: main speaks only `protocolVersion: 1`; a manifest or response declaring another version is a typed protocol error.
-- `stateGroup` enum: `backlog | unstarted | started | completed | cancelled` (Plane's groups; parity with the harness CLI aliases). An adapter response containing a state or item outside the enum is a protocol violation.
+- `stateGroup` enum: `backlog | unstarted | started | completed | cancelled` (Plane's normalized groups). An adapter response containing a state or item outside the enum is a protocol violation.
 - WorkItem shape: `{ ref, id, title, description|null, stateId, stateName, stateGroup, priority|null, assignee|null, url|null, updatedAt|null }`. `ref` is the adapter's stable human-readable reference (e.g. `NEKODE-16`); `id` is the backend-native id, opaque to the UI. `priority` normalizes to `urgent | high | medium | low | null`; `updatedAt` is ISO 8601 UTC or null.
 - KanbanState shape: `{ id, name, group, order }` with `group` from the enum and `order` an integer sort key from the adapter.
 - Storage: `project.kanbanAdapter:<projectId>` holds the adapter id; `project.kanbanConfig:<projectId>` holds the JSON object of field values. Missing or empty adapter key = unconfigured.
 - Secret fields are write-only through the UI: `kanban:getConfig` returns `null` for every secret value plus the list of keys that have a stored value, so the UI can show "stored" without echoing the secret.
-- Secret values are stored in the local SQLite `app_state` store as plain JSON — the same trust model as the harness `.agents/.env`; they leave the machine only toward the bound adapter process via stdin.
+- Secret values are stored in the local SQLite `app_state` store as plain JSON, without encryption at rest. Main passes them only to the bound adapter process via stdin; the adapter uses them to authenticate its backend requests. Secret values are never placed in argv or returned through the settings UI.
 - All adapter invocations spawn the argv array directly (no shell), cwd = the adapter directory.
 
 ## Authorization
@@ -200,8 +200,8 @@ Harness pozostaje niezależnym narzędziem agenta.
   wzrostu wysokości karty o 50%.
 - Profile agentów w Project Settings, modal wyboru agenta i uruchomienie
   w nowym czacie z poleceniem dotyczącym wybranego zadania.
-- Wyszukiwanie handoffów w istniejącym katalogu projektu i jawne przypisanie
-  pliku, którego powiązania nie da się rozpoznać automatycznie.
+- Wyszukiwanie handoffów w skonfigurowanym katalogu projektu przez zgodną
+  nazwę pliku i wybór dopasowanego kandydata w modalu Resume.
 - Poza zakresem: drag-and-drop, nowa lokalna encja Task, automatyczna zmiana
   statusu zadania w backendzie, worktrees, API modeli, instalowanie agentów,
   wznawianie wewnętrznego identyfikatora sesji CLI oraz zmiany Harness.
@@ -223,8 +223,9 @@ Harness pozostaje niezależnym narzędziem agenta.
    przy domyślnym motywie i skali 100%; tolerancja wynosi 1 px. Zwiększenie
    paddingu o 50% samo w sobie nie spełnia tego warunku. Typografia
    12.6px / 14.7px, kolory, sortowanie, grupowanie i zwijanie grup zostają.
-4. Start i Resume są stale widoczne w obu układach, także bez aktywnego
-   czatu. Przy małej szerokości nie zasłaniają tytułu ani priorytetu;
+4. Start jest stale widoczny w obu układach, także bez aktywnego czatu.
+   Widoczność Resume określa sekcja "Dostępność Resume i kontrakt producenta
+   handoffu" poniżej. Przy małej szerokości akcje nie zasłaniają tytułu ani priorytetu;
    dopuszczalny jest osobny rząd przycisków. Stan backendu sam nie blokuje
    tych akcji. Etykiety interfejsu i generowane polecenia są angielskie.
 
@@ -283,25 +284,19 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
    Ścieżka względna rozwiązuje się względem katalogu projektu, absolutna
    może wskazywać poza projekt. Skan jest płytki: regularne pliki `.md`,
    bez `README.md`, katalogów, archiwów w podkatalogach i dowiązań.
-2. Preferowane jawne metadane to opcjonalne, płaskie pola frontmatter:
-   `work_item_ref: NEKODE-28`, `work_item_id: <backend-native id>` oraz
-   `work_item_adapter: <adapter id>`. Ref jest wymagany dla tego sposobu
-   dopasowania; pozostałe pola, jeżeli obecne, muszą zgadzać się z zadaniem.
-   To konwencja wymiany danych, nie wymaganie zmiany formatu Harness.
-3. Dla plików bez tych metadanych pełny ref może być początkiem nazwy
+2. Automatyczne dopasowanie opiera się wyłącznie na nazwie pliku.
+   NeKode nie interpretuje `work_item_ref`, `work_item_id` ani
+   `work_item_adapter` w treści handoffu. Producent nie musi ich zapisywać.
+3. Pełny ref musi być początkiem nazwy
    bez rozszerzenia: `nekode-28` albo `nekode-28-<opis>`. Porównanie ignoruje
    wielkość liter. `nekode-2` nie pasuje do `nekode-20`, `nekode-28` ani
-   `old-nekode-2`. Ten sposób oznaczany jest w modalu jako `Filename match`.
-   Jawne metadane wskazujące inne zadanie wykluczają dopasowanie po nazwie.
-4. Plik o dowolnej innej nazwie można wskazać z listy skonfigurowanego
-   katalogu przez `Link handoff`. Użytkownik widzi nazwę i ścieżkę przed
-   potwierdzeniem. Przypisanie przechowuje NeKode, bez edycji pliku. Nie
-   wolno przypisać pliku z metadanymi wskazującymi inne zadanie.
-5. Jawne przypisanie ma pierwszeństwo przed kandydatami automatycznymi.
-   Klucz wiązania obejmuje projectId, adapterId i backend-native item id;
-   ref jest zachowany jako etykieta. Zmiana konfiguracji powiązania Kanbana
-   unieważnia przypisania. Zmiana katalogu wymaga nowego sprawdzenia ścieżek.
-6. Kandydaci automatyczni są sortowani po czasie modyfikacji malejąco,
+   `old-nekode-2`. Ten sposób jest jedynym dopasowaniem automatycznym;
+   modal nie rozróżnia rodzajów dopasowania i pokazuje samą nazwę pliku
+   (decyzja użytkownika 2026-10-09).
+4. NeKode nie udostępnia ręcznego przypisania handoffu. Link handoff
+   nie występuje w szczegółach zadania ani w modalu Resume. Zmiana
+   katalogu wymaga nowego sprawdzenia kandydatów automatycznych.
+5. Kandydaci automatyczni są sortowani po czasie modyfikacji malejąco,
    przy remisie po nazwie. Wszystkie pasujące pliki są widoczne; najnowszy
    może być zaznaczony, lecz użytkownik zatwierdza konkretny plik. Nazwa
    i `task_id` bez rozpoznawalnego ref nie powodują zgadywania po tytule
@@ -309,9 +304,9 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
 
 ### Resume
 
-1. Resume otwiera modal dla zadania i rozpoczyna odczyt jego handoffów.
+1. Widoczny Resume otwiera modal dla zadania i rozpoczyna świeży odczyt jego handoffów.
    Bez katalogu pokazuje Configure handoffs. Bez dopasowań pokazuje
-   `No linked handoff` i Link handoff. Nie przełącza się automatycznie
+   `No linked handoff`. Nie udostępnia ręcznego przypisania pliku i nie przełącza się automatycznie
    na Start ani na polecenie Resume bez ścieżki.
 2. Modal zawiera wybór konkretnego handoffu i tego samego rodzaju profil
    agenta co Start. Zatwierdzenie jest możliwe dopiero po zakończeniu
@@ -333,18 +328,19 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
 - Renderer korzysta z typowanego IPC. Main jest właścicielem odczytów plików,
   sprawdzania projektu, profili, powiązania zadania i uruchomienia procesu.
   Nie przyjmuje dowolnej ścieżki od renderer jako zaufanego źródła handoffu.
-- Profile, domyślny wybór i jawne powiązania są ustawieniami lokalnymi per
+- Profile i domyślny wybór są ustawieniami lokalnymi per
   projekt w istniejącym `app_state`; ich usunięcie jest częścią usuwania
   projektu. Nie ma nowej encji Task ani migracji tabel projektów lub czatów.
-- Kontrakt potrzebuje operacji listowania/zapisu profili, znajdowania i
-  przypisania handoffów oraz uruchomienia zadania z profilem i opcjonalnym
+- Kontrakt potrzebuje operacji listowania/zapisu profili, znajdowania
+  handoffów oraz uruchomienia zadania z profilem i opcjonalnym
   handoffem. Szczegółowe nazwy IPC i podział kodu należą do późniejszego planu.
 - Tożsamość zadania używa istniejących WorkItem.id i WorkItem.ref; tytuł
-  i opis mogą się zmieniać bez utraty jawnego przypisania.
-- Odczyt metadanych jest ograniczony do frontmatter plików UTF-8 do 1 MiB.
+  i opis mogą się zmieniać bez zmiany reguły dopasowania nazwy.
+- Odczyt plików wymaga UTF-8 i limitu 1 MiB; dopasowanie nie analizuje frontmatter.
   Plik większy lub niepoprawny ma widoczny powód odrzucenia. Renderer nie
-  otrzymuje całej treści pliku. Wyszukiwanie następuje przy otwarciu Resume
-  lub jawnym Refresh, bez skanowania dysku przy hover i bez stałego pollingu.
+  otrzymuje całej treści pliku. Dostępność Resume sprawdza zbiorczy skan
+  opisany poniżej; modal ponawia wyszukiwanie przy otwarciu Resume lub
+  jawnym Refresh, bez skanowania dysku przy hover i bez stałego pollingu.
 - Opis zadania, URL, ref i ścieżka nigdy nie są interpolowane jako kod shell.
   Executable i argumenty pochodzą z profilu wybranego przez użytkownika;
   prompt trafia jako pojedynczy argument procesu. Nie trafia do logów,
@@ -362,7 +358,7 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
 - Brak katalogu, nieprawidłowe uprawnienia, błąd adaptera i brak executable
   mają osobne, widoczne komunikaty w odpowiednim modalu lub czacie.
   Nie ma zastępowania agenta innym profilem ani cichego pomijania błędu.
-- Niepoprawne metadane jednego pliku nie ukrywają poprawnych kandydatów;
+- Nieczytelny plik nie ukrywa poprawnych kandydatów;
   modal pokazuje ostrzeżenie z nazwą odrzuconego pliku. Awaria odczytu
   katalogu nie jest prezentowana jako brak handoffów.
 - Podczas zatwierdzania kontrolki są zablokowane. Podwójny klik lub Enter
@@ -389,24 +385,27 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
 5. Bez profili albo przy błędzie walidacji nic się nie uruchamia. Prompt
    ze spacjami, cudzysłowami, nowymi liniami i znakami shell jest nadal
    pojedynczym argumentem i nie wykonuje dodatkowych poleceń.
-6. Resume wykrywa jawne metadane i zgodne nazwy, odróżnia NEKODE-2 od
-   NEKODE-20, respektuje sprzeczne metadane oraz ręczne przypisanie.
-7. Kilka kandydatów wymaga zatwierdzenia konkretnego pliku. Plik o dowolnej
-   nazwie może zostać jawnie przypisany bez zmiany jego zawartości.
+6. Resume automatycznie wykrywa zgodne nazwy i odróżnia NEKODE-2 od
+   NEKODE-20. Metadane tożsamości nie wpływają na dopasowanie.
+7. Kilka kandydatów wymaga zatwierdzenia konkretnego dopasowanego pliku.
+   W szczegółach i modalu nie ma Link handoff ani listy ręcznego przypisania.
 8. Brak powiązanego pliku, brak konfiguracji albo błąd odczytu nie uruchamia
    Resume. Plik zmieniony lub usunięty po skanie blokuje zatwierdzenie.
 9. Resume tworzy nowy czat wybranego profilu i przekazuje konkretną ścieżkę
-   oraz ref zadania. Przypisanie nie przechodzi na inne powiązanie adaptera.
+   oraz ref zadania. Wynik dopasowania nie przechodzi na inne powiązanie adaptera.
 10. Podwójne zatwierdzenie nie duplikuje czatu; błąd i Retry nie duplikują
     procesu ani polecenia. Wynik spóźnionego skanu nie przechodzi między
     projektami. Istniejące czaty i zachowanie cache Kanbana działają dalej.
 11. Funkcja działa bez Harness. Żaden przepływ nie zapisuje plików Harness,
     nie zmienia statusu zadania i nie uruchamia modelowego API.
 
+Kryteria dostępności przycisku i zalecany kontrakt producenta handoffów
+określa poniższe uzupełnienie NEKODE-30.
+
 ### Wymagana weryfikacja
 
-- Testy usług: zapis i izolacja profili; dopasowanie metadanych i granic ref
-  w nazwach; konflikt metadanych; ręczne przypisania i ich unieważnianie;
+- Testy usług: zapis i izolacja profili; dopasowanie pełnego ref
+  w nazwach; brak dopasowania przez metadane; unieważnianie wyników;
   brak katalogu, odmowa odczytu, zły UTF-8, limit rozmiaru, dowiązania,
   ponowna walidacja pliku i usunięcie projektu.
 - Testy IPC i uruchomienia: walidacja nadawcy i wejść; bieżące dane zadania;
@@ -442,3 +441,219 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
   dopasowania handoffów, ręczne przypisania, argv `{prompt}` oraz użycie
   istniejącej powierzchni czatu. Osobne profile w Project Settings były
   wcześniej zaakceptowaną decyzją tego samego dnia.
+- Decyzja użytkownika 2026-10-09 zastępuje wcześniejsze dopasowanie przez
+  metadane: jedna konwencja nazw i jednorazowe dostosowanie danych,
+  bez obsługi starego formatu. Późniejsze polecenie tego samego dnia
+  usuwa Link handoff z interfejsu; funkcja ręcznego przypisania może
+  wrócić dopiero po przyszłej decyzji.
+
+## Dostępność Resume i kontrakt producenta handoffu (NEKODE-30)
+
+Wymaganie użytkownika z 2026-10-08: Resume na liście Kanban jest widoczne
+tylko wtedy, gdy istnieje handoff danego zadania w skonfigurowanym katalogu.
+Ta sama reguła obowiązuje w widoku Board, który używa tych samych akcji.
+Konwencja nazw wynika z decyzji użytkownika 2026-10-09. Pozostały zakres Etapu 2
+w NeKode został zatwierdzony 2026-10-09; zlecenie przygotowania specyfikacji
+samo nie zatwierdzało implementacji.
+Ta sekcja aktualizuje kontrakt w miejscu, zamiast tworzyć drugą specyfikację.
+
+### Cel i zakres
+
+Użytkownik widzi Resume wyłącznie dla zadania z potwierdzonym dopasowanym
+handoffem. Może skonfigurować katalog i zatwierdzić konkretnego kandydata.
+Agent zapisujący handoff zachowuje pełny ref w jego nazwie. Zmiana tytułu
+zadania nie zmienia ref ani wymaganego prefiksu nazwy.
+
+Zakres obejmuje zbiorczą dostępność handoffów w Kanbanie, nawigację do
+konfiguracji, pełny ref w promptach, jednorazowe dostosowanie
+danych oraz kontrakt producenta dla Harness. Zmiana producenta należy do właściciela
+szablonu Harness, a nie do działającej aplikacji NeKode.
+
+Podział zaakceptowany 2026-10-09: HARNESS-24 obejmuje producenta w Agent
+Harness; NEKODE-30 obejmuje konsumenta i końcową integrację w NeKode.
+Zadania mają osobne rekordy, testy, review i odbiór. Integracja w NeKode
+wymaga odebranej zmiany producenta i zatwierdzonej synchronizacji.
+
+Poza zakresem są zapis lokalnej ścieżki w backendzie Kanbana, automatyczne
+tworzenie handoffu podczas Start, stała obsługa starych formatów,
+rekurencyjne skanowanie, watchery i polling oraz zmiana Resume paska akcji.
+Sukces uruchomienia agenta ani sam lokalny rekord nie oznaczają istnienia handoffu.
+
+### Widoczność i przepływ
+
+1. Resume jest renderowany tylko po udanym sprawdzeniu skonfigurowanego
+   katalogu, jeżeli zadanie ma co najmniej jeden czytelny, zaakceptowany
+   kandydat dopasowany przez pełny ref w nazwie.
+   Samo istnienie dowolnego pliku w katalogu nie wystarcza.
+   Brak profilu agenta nie ukrywa Resume; modal zachowuje Configure agents.
+2. Podczas pierwszego skanu, po unieważnieniu wyniku, bez katalogu, bez
+   powiązanego pliku lub przy błędzie skanu Resume jest ukryty, również
+   przed klawiaturą i technologiami asystującymi. Start pozostaje dostępny.
+   Status zadania w backendzie sam nie rozstrzyga dostępności.
+3. Bez konfiguracji Kanban pokazuje komunikat
+   `Handoff directory is not configured.` i Configure handoffs prowadzący do ustawienia istniejącego
+   `project.handoffDir:<projectId>`. Nie ustawia katalogu domyślnie. Dla
+   projektu z Harness użytkownik wskazuje `.agents/handoffs`; dla innych
+   producentów wskazuje rzeczywisty katalog wyjściowy.
+4. Błąd odczytu katalogu jest osobnym widocznym stanem z komunikatem i Retry.
+   Poprawnie odczytany katalog bez kandydatów jest stanem pustym, nie błędem.
+   Odrzucone pliki mają widoczne ostrzeżenia z nazwą i przyczyną; poprawni
+   kandydaci pozostają dostępni. Awaria skanu nie usuwa załadowanej tablicy.
+5. Decyzja użytkownika 2026-10-09: Link handoff jest usunięty z interfejsu.
+   Szczegóły zadania i modal Resume nie udostępniają przycisku, listy
+   ani potwierdzenia ręcznego przypisania. Ewentualne wprowadzenie tej
+   funkcji wymaga przyszłej decyzji produktowej. Szczegóły nadal korzystają
+   z danych załadowanej tablicy.
+6. Dostępność jest sprawdzana przy pierwszej aktywacji Kanbana, powrocie do
+   jego zakładki, jawnym Refresh oraz po zapisaniu zmiany katalogu,
+   powiązania adaptera. Zmiana katalogu albo
+   powiązania natychmiast unieważnia poprzedni wynik. Nie ma skanów na hover,
+   przy sortowaniu, zmianie List/Board ani zwijaniu grup. Ukryte sesje nie
+   inicjują skanów; powrót odświeża ich wynik.
+7. Jeden cykl sprawdzenia dla aktywnego projektu czyta katalog i każdy
+   kwalifikujący się plik najwyżej raz, a następnie dopasowuje ten sam
+   zestaw do wszystkich załadowanych zadań. Nie wolno wywoływać pełnego
+   skanu osobno dla każdego wiersza. Renderowanie tablicy nie czeka na skan.
+8. Wynik jest migawką. Zmiana pliku poza aplikacją pojawia się po Refresh
+   albo powrocie do zakładki. Otwarcie modalu i zatwierdzenie Resume zawsze
+   ponownie sprawdzają plik; migawka listy nie zastępuje tej walidacji.
+   Usunięty, nieczytelny lub zmieniony plik blokuje uruchomienie i odświeża
+   dostępność. Nie powstaje czat ani proces dla odrzuconego zatwierdzenia.
+9. Spóźnione odpowiedzi nie mogą odtworzyć Resume po zmianie projektu,
+   katalogu, powiązania, zestawu zadań lub nowszym skanie. Równoległe
+   wyzwalacze tego samego sprawdzenia są scalane. Każdy wynik należy do
+   konkretnego projektu, konfiguracji i generacji żądania.
+
+### Jednolita konwencja nazw producenta
+
+Decyzja użytkownika 2026-10-09: producent i NeKode stosują jedną konwencję
+nazw. Nie ma wymiany trzech pól work_item ani parsera ich metadanych
+w runtime NeKode. Istniejące dane są dostosowywane jednorazowo.
+
+1. Prompt Start i Resume przekazuje rzeczywisty pełny ref, opis i URL
+   zadania oraz skonfigurowany katalog. Nie wymaga utrwalania
+   work_item_ref/id/adapter przez producenta. Id i adapter pozostają
+   wewnętrznymi danymi NeKode do izolacji operacji Kanbana i przypisań.
+   Brak katalogu nie blokuje Start ani nie ustawia go domyślnie.
+2. Dla zadania z bezpiecznym pełnym ref lokalne `task_id` zaczyna się
+   jego pełną znormalizowaną postacią, np. `nekode-30-kanban-handoff-availability`.
+   Katalog rekordu zachowuje nazwę task_id, a handoff nazwę `<task_id>.md`.
+   Krótki opis i sufiks rozróżniają rekordy bez skracania ref. Nie powstaje
+   osobny podkatalog handoffu, bo skan NeKode jest płytki. Ref niezgodny z
+   ograniczeniami task_id nie jest arbitralnie zmieniany. Producent zgłasza
+   brak możliwości zastosowania konwencji; nie uruchamia alternatywnego
+   powiązania przez metadane. NeKode nie zgaduje po tytule ani treści.
+3. Istniejące dane dla zadań z Kanbana muszą spełniać tę samą konwencję.
+   Jednorazowe dostosowanie obejmuje nazwę katalogu rekordu, task_id,
+   nazwę handoffu i odwołania do tych ścieżek. Zadania spoza Kanbana
+   zachowują własne nazwy. Nie ma wyjątków dla starych rekordów Kanbana.
+4. Producent nie wyprowadza katalogu Harness z ustawienia aplikacji.
+   Harness zachowuje `.agents/handoffs/<task_id>.md`, swoją walidację,
+   powiązanie z rekordem oraz cykl tworzenia, zastępowania i zamykania.
+   Dla takiego projektu skonfigurowany katalog NeKode musi wskazywać ten
+   sam katalog wyjściowy. Rozbieżność nie uruchamia kopiowania plików.
+5. NeKode porównuje pełny ref z nazwą bez rozszerzenia: zgodna jest nazwa
+   równa ref albo zaczynająca się od ref i separatora `-`, bez rozróżniania
+   wielkości liter. Prefiks tylko w nazwie katalogu nie wystarcza.
+   Skonfigurowany katalog odpowiada jednemu projektowi Kanbana; plików
+   różnych źródeł o identycznym ref nie można odróżnić samą nazwą.
+6. Link handoff nie jest częścią bieżącej funkcji. Jedynym sposobem
+   powiązania jest zgodność pełnego ref z nazwą pliku. Brak zgodnej nazwy
+   wymaga dostosowania danych według zatwierdzonej listy.
+
+Przykład nazw dla tego zadania:
+
+```text
+.agents/tasks/nekode-30-kanban-handoff-availability/task.md
+.agents/handoffs/nekode-30-kanban-handoff-availability.md
+```
+
+Wewnętrzny format rekordu i handoffu oraz ich walidacja należą do Harness.
+NeKode nie musi znać task_id, faz, wersji Harness ani ścieżki rekordu.
+
+### Jednorazowe dostosowanie danych
+
+Przed zmianą nazw powstaje lista konkretnych starych i nowych ścieżek oraz
+odwołań wymagających aktualizacji. Powiązanie z zadaniem wymaga dokładnego
+ref potwierdzonego w Kanbanie lub przez użytkownika; tytuł nie jest dowodem.
+Lista ujawnia kolizje nazw i rekordy bez potwierdzonego powiązania.
+Zmiana obejmuje wyłącznie zatwierdzoną listę, nie inne zadania ani projekty.
+Po zmianie walidatory Harness sprawdzają rekord i handoff, a NeKode rozpoznaje
+plik według nowej nazwy. Nie powstaje stały mechanizm migracji w aplikacji.
+
+### Dane, autoryzacja i zgodność
+
+- Nowa typowana operacja IPC przyjmuje projectId oraz zbiór `{ itemId, ref }`
+  załadowanych zadań. Zwraca `not-configured`, `error` z komunikatem albo
+  `ready` z dostępnością każdego zadania i ostrzeżeniami. Dostępność jest
+  wartością logiczną, nie obietnicą uruchomienia ani wyborem konkretnego pliku.
+- Main waliduje projekt, powiązanie, tożsamości wejściowe i aktualny katalog.
+  Renderer nie wskazuje ścieżki dyskowej. Wynik nie zawiera treści plików
+  ani konfiguracji adaptera. Ref i ścieżki nigdy nie stają się kodem shell.
+- Zbiorczy skan oraz `handoffCandidates` używają tych samych reguł dopasowania,
+  odrzucenia. Lista i modal nie mogą
+  rozstrzygać inaczej dla tego samego pliku i zadania przy tej samej migawce.
+- Obowiązują istniejące ograniczenia: płytki skan regularnych `.md`, bez
+  `README.md` i dowiązań, UTF-8 i limit 1 MiB. Dostępność jest stanem sesji,
+  nie trwałym polem zadania i nie wymaga migracji bazy danych.
+- Odczyt tablicy nie zapisuje niczego w backendzie Kanbana, plikach ani
+  Harness. Interfejs nie zapisuje ręcznych przypisań handoffów.
+  Uruchomienie nadal wymaga zatwierdzenia pliku i agenta w modalu.
+- Zmiana producenta wymaga pracy w źródle szablonu Harness i jego testów.
+  Wdrożenie do projektu musi korzystać z przewidzianej synchronizacji;
+  aplikacja NeKode nie edytuje współdzielonego harnessu podczas działania.
+  Zlecenie napisania tego kontraktu nie upoważnia do jego zmiany.
+
+### Kryteria akceptacji i wymagana weryfikacja
+
+1. Lista i Board pokazują Resume tylko dla zadania z
+   dopasowanym czytelnym handoffem. Brak konfiguracji, wynik pusty, ładowanie
+   i błąd skanu nie renderują tej kontrolki. Start działa jak dotychczas.
+2. Configure handoffs jest dostępne bez Resume. Skonfigurowanie właściwego
+   katalogu powoduje nowy skan; błąd odczytu ma odrębny komunikat i Retry.
+3. Szczegóły i modal Resume nie zawierają Link handoff ani przepływu
+   ręcznego przypisania. Wybór i zatwierdzenie dopasowanego kandydata,
+   Configure handoffs, Configure agents oraz Refresh nadal są dostępne.
+4. Dla wielu zadań liczniki adaptera plików potwierdzają jeden odczyt
+   katalogu i najwyżej jeden odczyt każdego pliku na zbiorczy cykl.
+   Sortowanie, zwijanie, hover i przełączenie List/Board nie ponawiają skanu.
+5. Testy obejmują nazwę z pełnym ref, NEKODE-2 kontra NEKODE-20,
+   brak dopasowania po tytule i metadanych, kilka kandydatów,
+   brak ręcznego przypisania w UI i pliki odrzucone.
+   Odrzucony plik nie ukrywa poprawnego kandydata.
+6. Zmiana katalogu, adaptera lub projektu usuwa stary wynik, a spóźnione
+   odpowiedzi nie przywracają przycisku. Ukryta sesja nie skanuje; powrót,
+   Refresh odświeżają dostępność.
+7. Usunięcie albo zmiana pliku po skanie listy lub modalu blokuje
+   zatwierdzenie bez tworzenia czatu i procesu. Nie ma Resume bez ścieżki.
+8. Prompt przekazuje rzeczywisty pełny ref i instrukcję nazewnictwa bez sekretów. Test
+   uruchomienia zachowuje pojedynczy argument promptu i obecne reguły logowania.
+9. Testy producenta Harness potwierdzają prefiks pełnego ref w task_id,
+   zachowanie nazwy przy handoff-create i replace oraz zgodność nazwy
+   handoffu z task_id. Jednorazowe dostosowanie ma zatwierdzoną listę
+   zmian i poprawną walidację rekordów, handoffów oraz odwołań.
+   Zadania spoza Kanbana nie otrzymują wymuszonego prefiksu Kanbana.
+10. Smoke rzeczywistego Electron używa lokalnych plików i testowego CLI:
+    brak pliku, utworzenie poprawnego pliku i Refresh, wybór dopasowanego
+    pliku, usunięcie po skanie oraz projekt bez Harness. Regresja paska akcji
+    nie zmienia jego dotychczasowego Resume ani paste-only / auto-send.
+
+Testy usług, IPC i renderer dowodzą dostępności, błędów i izolacji sesji;
+testy producenta dowodzą konwencji nazw. Żaden test automatyczny nie
+wymaga kontaktu z modelem ani zapisu do produkcyjnego Kanbana.
+
+### Podstawa rekomendacji
+
+- `src/main/services/handoffs/handoff-matcher-service.ts:96` ma dokładne
+  dopasowanie pełnego ref. Kontrakt konsumenta dopuszcza wyłącznie tę ścieżkę;
+  analiza metadanych tożsamości nie należy do dopasowania.
+- `src/shared/ipc-contract.ts:568` opisywał dawny lokalny rejestr ręcznych
+  przypisań per projekt, adapter i backend-native id. Zatwierdzona zmiana
+  konsumenta usuwa ten rejestr razem z kanałem `kanban:linkHandoff`; jedynym
+  powiązaniem pozostaje zgodność pełnego ref z nazwą pliku.
+- `src/renderer/src/components/kanban/KanbanBoard.tsx:834` uzależnia Resume
+  od udanego skanu i dostępności handoffu danego zadania.
+- `.agents/skills/handoff/SKILL.md:8` ustala katalog i nazwę producenta,
+  a `.agents/scripts/handoff-status:88` wymaga zgodności nazwy z task_id.
+- `.agents/templates/handoff.md:2` zawiera task_id. Nowy kontrakt nie wymaga
+  dodawania work_item_ref, work_item_id ani work_item_adapter do szablonu.

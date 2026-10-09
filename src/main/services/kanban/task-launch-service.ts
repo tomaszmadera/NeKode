@@ -19,9 +19,9 @@ import type { ShellSpec } from '../terminal/terminal-service'
 // the single `{prompt}` argv element. It is never passed through a shell.
 // `handoffResume.autoSend` is the action-bar paste setting and is not read.
 // Start and Resume share this path; Resume additionally rechecks the handoff
-// file, its link and its stamp immediately before the chat is created (spec
-// Resume.3) and uses the Resume prompt. A detected file is never treated as
-// plan approval.
+// file and its stamp immediately before the chat is created (spec Resume.3)
+// and uses the Resume prompt. A detected file is never treated as plan
+// approval.
 
 const CHANNEL = 'kanban:launchTask'
 const SPAWN_LOG = '[kanban-launch] failed to start the task process'
@@ -81,7 +81,7 @@ interface PreparedLaunch {
   shell: ShellSpec
 }
 
-/** The description, URL, project instructions and handoff directory note. */
+/** The description, URL, project instructions and handoff directory. */
 function promptTail(item: WorkItem, handoffDir: string | null): string[] {
   const parts: string[] = []
   const description = item.description?.trim() ?? ''
@@ -336,12 +336,12 @@ export class TaskLaunchService {
   }
 
   /**
-   * Rechecks the chosen file, its link and the current configuration through
-   * the stage 4 matcher, then builds the Resume prompt. A file that is now
-   * missing, unreadable, no longer a candidate (for example, a link under a
-   * different adapter binding), or whose stamp changed refreshes the choice and
-   * launches nothing. The path in the prompt is the matcher display path:
-   * project-relative inside the project, absolute otherwise.
+   * Rechecks the chosen file and the current configuration through the stage 4
+   * matcher, then builds the Resume prompt. A file that is now missing,
+   * unreadable, no longer a filename candidate, or whose stamp changed
+   * refreshes the choice and launches nothing. The path in the prompt is the
+   * matcher display path: project-relative inside the project, absolute
+   * otherwise.
    */
   async #resumePrompt(item: WorkItem, input: KanbanResumeLaunchInput): Promise<string> {
     const scan = await this.#handoffs.candidates({
@@ -353,14 +353,12 @@ export class TaskLaunchService {
       throw new AppError('conflict', RESUME_REFRESH, CHANNEL)
     }
     const candidate = scan.files.find(
-      (file) => file.name === input.fileName && file.matchKind !== 'none',
+      (file) => file.name === input.fileName && file.matchKind === 'filename',
     )
-    const linked = scan.link !== null && scan.link.name === input.fileName ? scan.link : null
-    const resolved = candidate ?? linked
-    if (resolved === null || resolved.modifiedAt !== input.stamp) {
+    if (candidate === undefined || candidate.modifiedAt !== input.stamp) {
       throw new AppError('conflict', RESUME_REFRESH, CHANNEL)
     }
-    return buildResumePrompt(item, resolved.path, this.#handoffDir(input.projectId))
+    return buildResumePrompt(item, candidate.path, this.#handoffDir(input.projectId))
   }
 
   #spawn(attempt: Attempt, cwd: string, prepared: PreparedLaunch): KanbanLaunchResult {

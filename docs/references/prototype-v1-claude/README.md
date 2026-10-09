@@ -1,4 +1,6 @@
-# NeKode — agent workspace — design reference
+# NeKode: agent workspace design reference
+
+Status: historical visual prototype. Use the current [design system](../NeKode-Design-System.md) and [public source hierarchy](../../development/project-contract.md#sources-and-authority) for accepted rules; this export does not prove implemented features.
 
 This is a design mockup created in a visual design tool (an appifact
 design canvas), exported as a standalone page. Treat it as a REFERENCE

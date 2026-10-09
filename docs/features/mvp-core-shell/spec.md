@@ -6,14 +6,14 @@ This file is the behavioral contract for a feature. Agents implement from it. Do
 
 Deliver the first vertically functional slice of the NeKode desktop workspace: a user can register a local project, create a chat inside it, and work in a live terminal attached to that chat. The terminal session survives chat switching during the application session. This gives the agent-first workflow its minimum usable loop: pick chat → run agent CLI in terminal.
 
-A chat is a terminal session listed under a project (left tree: projects → chats). Closing the chat's terminal (`exit`, `Ctrl+D` at an empty input line outside full-screen programs, or shell termination) closes the chat itself. A chat is labeled automatically with its shell name (e.g. "PowerShell"); manual renaming is post-MVP. The task concept — a work item with progress tracking, attachable to a chat, recorded harness-agnostically — is a post-MVP entity and is out of scope for this slice.
+A chat is a terminal session listed under a project (left tree: projects → chats). Closing the chat's terminal (`exit`, `Ctrl+D` at an empty input line outside full-screen programs, or shell termination) closes the chat itself. A new chat is labeled automatically with `[shell] profile name`, or just `[shell]` without an agent profile, where `shell` is the compact shell code (e.g. `[PS5]`). Existing chats keep their saved names; manual renaming is post-MVP. The task concept - a work item with progress tracking, attachable to a chat, recorded harness-agnostically - is a post-MVP entity and is out of scope for this slice.
 
 Target user: a developer on Windows 11 running coding-agent CLIs (Codex, Claude Code, OpenCode, agy, Gemini CLI) as plain terminal processes.
 
 ## Related requirements
 
 - `docs/product/requirements.md` §2.1 (project management), §2.2 (chats), §2.3 (PTY sessions), §2.6 (SQLite persistence), §2.7 (dark UI, English).
-- `docs/architecture/SDD.md` §3 (MVP scope items 1–4, 8, 12, 13), §5 (service architecture), §6 (renderer must not own OS capabilities), §7 (five-region layout).
+- `docs/architecture/sdd.md` §3 (MVP scope items 1–4, 8, 12, 13), §5 (service architecture), §6 (renderer must not own OS capabilities), §7 (five-region layout).
 - `docs/UX-UI.md` §5 (global layout), §6 (default/restore state), §9–10 (left navigation), §14 (context header), §16 (git branch/worktree status), §17 (chat surface = primary terminal).
 
 ## Scope
@@ -40,7 +40,7 @@ Target user: a developer on Windows 11 running coding-agent CLIs (Codex, Claude 
 
 1. On first launch (empty database) the app shows the default state: left shows an empty Projects list with an Add Project affordance, center shows a Welcome/empty state, right and bottom regions hidden (UX-UI §6).
 2. Add Project: user picks a directory via the native dialog; the app stores absolute path and derives the project name from the folder name. Selecting it makes it the active project.
-3. New Chat: created immediately with no naming form; its name is derived from the platform shell (e.g. "PowerShell" on Windows). It is created under the active project and becomes the selected chat.
+3. New Chat: created immediately with no naming form; its name is the project's compact shell code in brackets (e.g. "[PS5]" on Windows). It is created under the active project and becomes the selected chat.
 4. Selecting a chat opens the chat workspace in the center surface: context header on top, primary terminal filling the rest (UX-UI §17).
 5. The first terminal render for a chat spawns exactly one PTY process: the user's default shell (PowerShell on Windows), cwd = project path. The renderer may write to it and resize it.
 6. Switching to another chat hides the previous chat's terminal view but does NOT kill or reset its PTY process or scrollback; switching back shows the live session continuing.
@@ -55,7 +55,7 @@ Target user: a developer on Windows 11 running coding-agent CLIs (Codex, Claude 
 
 - A project path must be an existing absolute directory; the same path cannot be registered twice (unique constraint).
 - A chat belongs to exactly one project; deleting a project deletes its chats and their state rows (cascade).
-- Chat name is derived from the platform shell at creation and is non-empty; duplicates within one project are allowed (the name is a display label, chat identity is the id). Manual renaming is post-MVP.
+- New chat names use `[shell] profile name`, or just `[shell]` without an agent profile. The prefix is the compact shell code resolved from the project's configuration at creation time. Existing chats retain their saved names. Duplicates within one project are allowed (the name is a display label, chat identity is the id). Manual renaming is post-MVP.
 - One PTY process maximum per chat at a time; a chat with no project directory on disk (moved/deleted) cannot spawn a terminal and shows an explicit error state instead.
 - A chat is removed only by project removal or by its terminal exiting (Behaviour 11); application quit never removes chats.
 - Application state is a flat key–value store; selection keys are written on every selection change.
@@ -107,7 +107,7 @@ IDs are generated in the main process (UUID v4). All IPC channels are validated 
 7. `pnpm run lint`, `pnpm run typecheck`, `pnpm run test`, `pnpm run build` all pass; renderer bundle contains no direct `require('electron')`/Node API usage beyond the preload bridge contract.
 8. All UI text is English; dark theme tokens match UX-UI.
 9. Typing `exit` (or `Ctrl+D` at an empty input line; outside full-screen programs `Ctrl+D` on a non-empty line emulates `delete-char` and `Ctrl+U` removes the whole input line, while both keys pass through untouched to full-screen programs) in a chat terminal closes the chat: it disappears from the tree and the database, the next chat of the project is selected (or a "Start new chat" empty state when none remain); no "session ended" state exists anywhere in the UI.
-10. Creating a chat requires no name input: the chat is labeled with the shell name (e.g. "PowerShell"), and several chats in one project may share the same label.
+10. Creating a chat requires no name input: the chat is labeled with the compact shell code in brackets (e.g. "[PS5]"), and several chats in one project may share the same label.
 
 ## Required tests
 
@@ -121,4 +121,4 @@ IDs are generated in the main process (UUID v4). All IPC channels are validated 
 
 ## Relevant SDD / ADR
 
-- `docs/architecture/SDD.md` §3, §5, §6, §7 (no ADR register exists in this repo).
+- `docs/architecture/sdd.md` §3, §5, §6, §7 (no ADR register exists in this repo).

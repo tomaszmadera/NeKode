@@ -11,6 +11,7 @@ import type {
   HandoffEntry,
   KanbanAdapterInfo,
   KanbanBoard,
+  KanbanHandoffAvailabilityResult,
   KanbanLaunchResult,
   KanbanProjectConfig,
   ProjectInfo,
@@ -73,6 +74,9 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       // No path argument: the native directory dialog opens in main.
       // Resolves null when the user cancels the dialog.
       add: () => invoke<ProjectInfo | null>(IPC_CHANNEL.projectsAdd),
+      wslDistributions: () => invoke<string[]>(IPC_CHANNEL.projectsWslDistributions),
+      addWsl: (distribution, linuxPath) =>
+        invoke<ProjectInfo>(IPC_CHANNEL.projectsAddWsl, distribution, linuxPath),
       remove: (projectId) => invoke<void>(IPC_CHANNEL.projectsRemove, projectId),
     },
     chats: {
@@ -93,9 +97,18 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       // the project's stored choice; list reads the cache, detect runs one
       // explicit detection, addCustom validates the path in main.
       shellName: (projectId) => invoke<string>(IPC_CHANNEL.terminalsShellName, projectId),
-      shellList: () => invoke<ShellInfo[]>(IPC_CHANNEL.terminalsShellList),
-      shellDetect: () => invoke<ShellInfo[]>(IPC_CHANNEL.terminalsShellDetect),
-      shellAddCustom: (path) => invoke<ShellInfo>(IPC_CHANNEL.terminalsShellAddCustom, path),
+      shellList: (projectId) =>
+        projectId == null
+          ? invoke<ShellInfo[]>(IPC_CHANNEL.terminalsShellList)
+          : invoke<ShellInfo[]>(IPC_CHANNEL.terminalsShellList, projectId),
+      shellDetect: (projectId) =>
+        projectId == null
+          ? invoke<ShellInfo[]>(IPC_CHANNEL.terminalsShellDetect)
+          : invoke<ShellInfo[]>(IPC_CHANNEL.terminalsShellDetect, projectId),
+      shellAddCustom: (path, projectId) =>
+        projectId == null
+          ? invoke<ShellInfo>(IPC_CHANNEL.terminalsShellAddCustom, path)
+          : invoke<ShellInfo>(IPC_CHANNEL.terminalsShellAddCustom, path, projectId),
       terminate: (bottomTabId) => invoke<void>(IPC_CHANNEL.terminalsTerminate, bottomTabId),
       onData: (chatId, callback) =>
         subscribe<string>(
@@ -142,7 +155,8 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       launchTask: (input) => invoke<KanbanLaunchResult>(IPC_CHANNEL.kanbanLaunchTask, input),
       handoffCandidates: (input) =>
         invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanHandoffCandidates, input),
-      linkHandoff: (input) => invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanLinkHandoff, input),
+      handoffAvailability: (input) =>
+        invoke<KanbanHandoffAvailabilityResult>(IPC_CHANNEL.kanbanHandoffAvailability, input),
     },
     agentProfiles: {
       get: (projectId) => invoke<AgentProfilesDocument>(IPC_CHANNEL.agentProfilesGet, projectId),

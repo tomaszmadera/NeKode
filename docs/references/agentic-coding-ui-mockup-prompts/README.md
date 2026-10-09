@@ -1,6 +1,6 @@
 # Mockup Prompt Pack
 
-This pack contains **33 mockup prompts** derived from the current SDD and UX/UI specification.
+This pack contains **33 mockup prompts** derived from an earlier SDD and UX/UI design snapshot. It is a visual reference, not an implementation inventory or approved behavior contract. Follow the [public source hierarchy](../../development/project-contract.md#sources-and-authority) and current [design system](../NeKode-Design-System.md). Example Windows paths are fictional UI context; they are not required local directories.
 
 ## How to use
 

@@ -5,7 +5,6 @@ import type {
   AppApi,
   HandoffCandidatesResult,
   HandoffFileInfo,
-  HandoffMatchKind,
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   KanbanResumeLaunchInput,
@@ -26,56 +25,20 @@ interface TaskResumeModalProps {
   onLaunched?: (result: KanbanLaunchResult & { input: KanbanLaunchTaskInput }) => void
 }
 
-/** One selectable row: an automatic candidate or the explicit link. */
-interface ResumeOption {
-  name: string
-  path: string
-  modifiedAt: string
-  kind: HandoffMatchKind | 'link'
-}
-
+/** One selectable row: a readable file whose name carries the full ref. */
 type ReadyResult = Extract<HandoffCandidatesResult, { state: 'ready' }>
 
 function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
 }
 
-function matchLabel(kind: HandoffMatchKind | 'link'): string {
-  if (kind === 'link') {
-    return 'Linked'
-  }
-  return kind === 'metadata' ? 'Metadata match' : 'Filename match'
+/** The readable files whose name carries the item's full ref (the candidates). */
+function candidateOptions(result: ReadyResult): HandoffFileInfo[] {
+  return result.files.filter((file) => file.matchKind === 'filename')
 }
 
-/**
- * Automatic candidates (metadata or filename) plus the explicit link, which
- * wins and moves to the front when it matched nothing automatically.
- */
-function candidateOptions(result: ReadyResult): ResumeOption[] {
-  const options: ResumeOption[] = result.files
-    .filter((file) => file.matchKind === 'metadata' || file.matchKind === 'filename')
-    .map((file) => ({ ...file, kind: file.matchKind }))
-  const link = result.link
-  if (link !== null) {
-    const index = options.findIndex((option) => option.name === link.name)
-    if (index >= 0) {
-      options[index] = { ...options[index], kind: 'link' }
-    } else {
-      options.unshift({ ...link, kind: 'link' })
-    }
-  }
-  return options
-}
-
-/** Newest metadata match, then newest filename match, else the explicit link. */
+/** The newest filename candidate, or null when no name carries the ref. */
 function defaultSelection(result: ReadyResult): string | null {
-  if (result.link !== null) {
-    return result.link.name
-  }
-  const metadata = result.files.find((file) => file.matchKind === 'metadata')
-  if (metadata !== undefined) {
-    return metadata.name
-  }
   const filename = result.files.find((file) => file.matchKind === 'filename')
   return filename?.name ?? null
 }
@@ -85,9 +48,8 @@ function defaultSelection(result: ReadyResult): string | null {
  * runs on open and on Refresh only, never on hover and never on a poll. A
  * missing directory offers Configure handoffs; a read failure is its own
  * visible state, never an empty set; a rejected file is a named warning beside
- * the good candidates. Link handoff stores a chosen file name without editing
- * the file. Confirm is enabled only after the scan finishes and the user has an
- * agent profile plus a still-matching file; main rechecks the file and its
+ * the good candidates. Confirm is enabled only after the scan finishes and the
+ * user has an agent profile plus a still-matching file; main rechecks the file and its
  * stamp before it creates the chat, and a changed file refreshes this choice.
  */
 export function TaskResumeModal({
@@ -108,8 +70,6 @@ export function TaskResumeModal({
   const [result, setResult] = useState<ReadyResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selection, setSelection] = useState<string | null>(null)
-  const [linkOpen, setLinkOpen] = useState(false)
-  const [pendingLinkName, setPendingLinkName] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [busy, setBusy] = useState(false)
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
@@ -239,49 +199,6 @@ export function TaskResumeModal({
     controls[next]?.focus()
   }
 
-  function handleLink(): void {
-    if (busyRef.current || pendingLinkName === null) {
-      return
-    }
-    // The link write is persisted in main: while it is in flight the dismiss
-    // controls stay locked, so the confirmation always reaches a visible link.
-    busyRef.current = true
-    setBusy(true)
-    setError(null)
-    const fileName = pendingLinkName
-    void app.kanban
-      .linkHandoff({ projectId, itemId: item.id, ref: item.ref, fileName })
-      .then((next) => {
-        if (!openRef.current) {
-          return
-        }
-        busyRef.current = false
-        setBusy(false)
-        if (next.state === 'not-configured') {
-          setResult(null)
-          setPhase('not-configured')
-          return
-        }
-        if (next.state === 'error') {
-          setError(next.message)
-          return
-        }
-        setResult(next)
-        setPhase('ready')
-        setSelection(defaultSelection(next))
-        setLinkOpen(false)
-        setPendingLinkName(null)
-      })
-      .catch((cause: unknown) => {
-        if (!openRef.current) {
-          return
-        }
-        busyRef.current = false
-        setBusy(false)
-        setError(errorMessage(cause, 'Failed to link the handoff.'))
-      })
-  }
-
   function handleConfirm(): void {
     if (busyRef.current || phase !== 'ready' || selection === null || selectedProfileId === null) {
       return
@@ -326,7 +243,6 @@ export function TaskResumeModal({
   const options = result === null ? [] : candidateOptions(result)
   const canConfirm =
     phase === 'ready' &&
-    !linkOpen &&
     !busy &&
     !scanning &&
     selection !== null &&
@@ -437,51 +353,11 @@ export function TaskResumeModal({
                           }}
                         />
                         <span className="truncate">{option.name}</span>
-                        <span className="shrink-0 text-ink-muted">{matchLabel(option.kind)}</span>
                       </label>
                     ))}
                   </div>
                 </fieldset>
               )}
-              {linkOpen ? (
-                <div className="mt-3 text-[12.6px]" data-testid={TEST_ID.kanbanResumeLinkList}>
-                  {result.files.length === 0 ? (
-                    <p className="text-ink-secondary">No files in the handoff directory.</p>
-                  ) : (
-                    <ul className="list-none space-y-1">
-                      {result.files.map((file: HandoffFileInfo) => (
-                        <li key={file.name}>
-                          <label
-                            className="flex items-center gap-2 text-ink"
-                            data-testid={testIdFor.kanbanResumeLinkOption(file.name)}
-                          >
-                            <input
-                              type="radio"
-                              name="kanban-resume-link-file"
-                              value={file.name}
-                              checked={pendingLinkName === file.name}
-                              onChange={() => {
-                                setPendingLinkName(file.name)
-                              }}
-                            />
-                            <span className="truncate">{file.name}</span>
-                            <span className="truncate text-ink-muted">{file.path}</span>
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <button
-                    type="button"
-                    className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover focus-visible:outline focus-visible:outline-info disabled:opacity-50"
-                    data-testid={TEST_ID.kanbanResumeLinkConfirm}
-                    disabled={pendingLinkName === null || busy}
-                    onClick={handleLink}
-                  >
-                    Link handoff
-                  </button>
-                </div>
-              ) : null}
             </>
           ) : null}
 
@@ -570,20 +446,6 @@ export function TaskResumeModal({
             >
               Refresh
             </button>
-            {phase === 'ready' && !linkOpen ? (
-              <button
-                type="button"
-                disabled={busy}
-                className="h-control rounded-md bg-button px-4 text-[12.6px] text-ink hover:bg-button-hover focus-visible:outline focus-visible:outline-info disabled:opacity-50"
-                data-testid={TEST_ID.kanbanResumeLink}
-                onClick={() => {
-                  setPendingLinkName(selection)
-                  setLinkOpen(true)
-                }}
-              >
-                Link handoff
-              </button>
-            ) : null}
             <button
               type="button"
               className="h-control rounded-md bg-button px-4 text-[12.6px] text-ink hover:bg-button-hover focus-visible:outline focus-visible:outline-info disabled:opacity-50"

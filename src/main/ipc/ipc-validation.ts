@@ -4,13 +4,14 @@ import type {
   ActionInput,
   AgentProfilePut,
   KanbanCreateInput,
+  KanbanHandoffAvailabilityInput,
   KanbanHandoffCandidatesInput,
   KanbanLaunchTaskInput,
-  KanbanLinkHandoffInput,
   KanbanUpdatePatch,
 } from '../../shared/ipc-contract'
 import { agentProfileFieldError, KANBAN_PRIORITIES } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
+import { wslProjectPath } from '../../shared/wsl-path'
 import type { AppServices } from './service-registry'
 
 // Payload validation layer in front of the real services (spec Errors:
@@ -306,8 +307,7 @@ function assertKanbanLaunchTask(
       }
     }
     // The renderer sends a name from a scan result main just produced, never a
-    // free path: a separator or a dot segment is rejected here (same rule as
-    // kanban:linkHandoff).
+    // free path: a separator or a dot segment is rejected here.
     const fileName = input.fileName as string
     if (/[\\/]/.test(fileName) || fileName === '.' || fileName === '..') {
       fail(`${label}.fileName`, 'must be a file name, not a path')
@@ -316,9 +316,8 @@ function assertKanbanLaunchTask(
 }
 
 const HANDOFF_CANDIDATES_FIELDS = ['projectId', 'itemId', 'ref'] as const
-const LINK_HANDOFF_FIELDS = ['projectId', 'itemId', 'ref', 'fileName'] as const
 
-/** Shared projectId/itemId/ref shape for the two handoff channels. */
+/** Shared projectId/itemId/ref shape for the handoff candidates channel. */
 function assertHandoffIdentity(
   input: Record<string, unknown>,
   label: string,
@@ -349,27 +348,61 @@ function assertKanbanHandoffCandidates(
   assertHandoffIdentity(value as Record<string, unknown>, label, HANDOFF_CANDIDATES_FIELDS)
 }
 
-function assertKanbanLinkHandoff(
+const HANDOFF_AVAILABILITY_FIELDS = ['projectId', 'items'] as const
+const HANDOFF_AVAILABILITY_ITEM_FIELDS = ['itemId', 'ref'] as const
+
+/**
+ * Batch handoff check body: one project id and the loaded items' identities
+ * (`{ itemId, ref }`). The renderer never sends a disk path; main resolves the
+ * directory from its own state. Shape only here.
+ */
+function assertKanbanHandoffAvailability(
   value: unknown,
   label: string,
-): asserts value is KanbanLinkHandoffInput {
+): asserts value is KanbanHandoffAvailabilityInput {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     fail(label, 'must be an object')
   }
   const input = value as Record<string, unknown>
-  assertHandoffIdentity(input, label, LINK_HANDOFF_FIELDS)
-  const fileName = input.fileName
-  if (typeof fileName !== 'string' || fileName.trim().length === 0) {
-    fail(`${label}.fileName`, 'must be a non-empty string')
+  const keys = Object.keys(input)
+  if (
+    keys.length !== HANDOFF_AVAILABILITY_FIELDS.length ||
+    keys.some((key) => !HANDOFF_AVAILABILITY_FIELDS.includes(key as never))
+  ) {
+    fail(label, 'has unexpected or missing fields')
   }
-  if ((fileName as string).includes('\u0000')) {
-    fail(`${label}.fileName`, 'must not contain NUL characters')
+  const projectId = input.projectId
+  if (typeof projectId !== 'string' || projectId.trim().length === 0) {
+    fail(`${label}.projectId`, 'must be a non-empty string')
   }
-  // The renderer sends a name from a scan result main just produced, never a
-  // free path: a separator or a dot segment is rejected here.
-  if (/[\\/]/.test(fileName as string) || fileName === '.' || fileName === '..') {
-    fail(`${label}.fileName`, 'must be a file name, not a path')
+  if ((projectId as string).includes('\u0000')) {
+    fail(`${label}.projectId`, 'must not contain NUL characters')
   }
+  if (!Array.isArray(input.items)) {
+    fail(`${label}.items`, 'must be an array')
+  }
+  input.items.forEach((entry, index) => {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      fail(`${label}.items[${index}]`, 'must be an object')
+    }
+    const item = entry as Record<string, unknown>
+    const itemKeys = Object.keys(item)
+    if (
+      itemKeys.length !== HANDOFF_AVAILABILITY_ITEM_FIELDS.length ||
+      itemKeys.some((key) => !HANDOFF_AVAILABILITY_ITEM_FIELDS.includes(key as never))
+    ) {
+      fail(`${label}.items[${index}]`, 'has unexpected or missing fields')
+    }
+    for (const field of HANDOFF_AVAILABILITY_ITEM_FIELDS) {
+      const fieldValue = item[field]
+      if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
+        fail(`${label}.items[${index}].${field}`, 'must be a non-empty string')
+      }
+      if ((fieldValue as string).includes('\u0000')) {
+        fail(`${label}.items[${index}].${field}`, 'must not contain NUL characters')
+      }
+    }
+  })
 }
 
 function actionInputChannel(
@@ -437,6 +470,27 @@ function serviceChannel(
   }
 }
 
+/** Optional project context preserves existing Local callers. */
+function shellContextChannel(
+  channel: string,
+  custom: boolean,
+  invoke: (args: unknown[]) => unknown,
+): ValidatedChannel {
+  return {
+    channel,
+    parse(payload) {
+      const base = custom ? 1 : 0
+      if (payload.length !== base && payload.length !== base + 1)
+        fail(channel, 'has invalid arguments')
+      if (custom) assertSafePath(payload[0], `${channel} path`)
+      if (payload.length === base + 1 && payload[base] !== null)
+        assertString(payload[base], `${channel} projectId`)
+      return payload
+    },
+    invoke,
+  }
+}
+
 export function buildValidatedChannels(services: AppServices): ValidatedChannel[] {
   return [
     serviceChannel('actions:list', [], () => services.actions.list()),
@@ -459,6 +513,25 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     },
     serviceChannel('actions:status', ['string'], (args) => services.actions.status(args[0])),
     serviceChannel('projects:list', [], () => services.projects.list()),
+    serviceChannel('projects:wslDistributions', [], () => services.projects.wslDistributions()),
+    {
+      channel: 'projects:addWsl',
+      parse(payload) {
+        requireArgs(payload, 2, 'projects:addWsl')
+        assertString(payload[0], 'distribution')
+        assertString(payload[1], 'linuxPath')
+        try {
+          wslProjectPath(payload[0] as string, payload[1] as string)
+        } catch {
+          fail(
+            'projects:addWsl',
+            'requires a valid distribution and absolute Linux project directory',
+          )
+        }
+        return payload
+      },
+      invoke: (args) => services.projects.addWsl(args[0] as string, args[1] as string),
+    },
     // The Add Project flow opens the native dialog in main (ipc-handlers);
     // the channel payload is empty and the path comes from the dialog.
     serviceChannel('projects:add', [], () =>
@@ -499,10 +572,20 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel('terminals:shellName', ['string'], (args) =>
       services.terminals.shellName(args[0]),
     ),
-    serviceChannel('terminals:shellList', [], () => services.terminals.shellList()),
-    serviceChannel('terminals:shellDetect', [], () => services.terminals.shellDetect()),
-    serviceChannel('terminals:shellAddCustom', ['path'], (args) =>
-      services.terminals.shellAddCustom(args[0]),
+    shellContextChannel('terminals:shellList', false, (args) =>
+      args.length === 0
+        ? services.terminals.shellList()
+        : services.terminals.shellList(args[0] as string | null),
+    ),
+    shellContextChannel('terminals:shellDetect', false, (args) =>
+      args.length === 0
+        ? services.terminals.shellDetect()
+        : services.terminals.shellDetect(args[0] as string | null),
+    ),
+    shellContextChannel('terminals:shellAddCustom', true, (args) =>
+      args.length === 1
+        ? services.terminals.shellAddCustom(args[0] as string)
+        : services.terminals.shellAddCustom(args[0] as string, args[1] as string | null),
     ),
     {
       channel: 'terminals:terminate',
@@ -630,13 +713,14 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       invoke: (args) => services.kanban.handoffCandidates(args[0] as KanbanHandoffCandidatesInput),
     },
     {
-      channel: 'kanban:linkHandoff',
+      channel: 'kanban:handoffAvailability',
       parse: (payload) => {
-        requireArgs(payload, 1, 'kanban:linkHandoff')
-        assertKanbanLinkHandoff(payload[0], 'kanban:linkHandoff')
+        requireArgs(payload, 1, 'kanban:handoffAvailability')
+        assertKanbanHandoffAvailability(payload[0], 'kanban:handoffAvailability')
         return payload
       },
-      invoke: (args) => services.kanban.linkHandoff(args[0] as KanbanLinkHandoffInput),
+      invoke: (args) =>
+        services.kanban.handoffAvailability(args[0] as KanbanHandoffAvailabilityInput),
     },
     serviceChannel('agentProfiles:get', ['string'], (args) => services.agentProfiles.get(args[0])),
     {

@@ -21,12 +21,18 @@ function fakeAgentProfiles(): AppServices['agentProfiles'] {
   }
 }
 
-/** A ready scan with no candidates; the two handoff channels return it by default. */
+/** A ready scan with no candidates; the handoff candidates channel returns it by default. */
 const EMPTY_HANDOFF_CANDIDATES = {
   state: 'ready' as const,
   files: [],
   rejections: [],
-  link: null,
+}
+
+/** A ready batch check with no available items; the default availability result. */
+const EMPTY_HANDOFF_AVAILABILITY = {
+  state: 'ready' as const,
+  items: [],
+  rejections: [],
 }
 
 function fakeActions(): AppServices['actions'] {
@@ -113,6 +119,8 @@ function createHarness(): Harness {
   const services: AppServices = {
     actions: fakeActions(),
     projects: {
+      wslDistributions: vi.fn(() => []),
+      addWsl: vi.fn(),
       list: vi.fn(() => []),
       add: vi.fn((path: string) => ({
         id: 'p1',
@@ -178,7 +186,7 @@ function createHarness(): Harness {
       getItem: vi.fn(() => Promise.resolve({} as never)),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
       handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-      linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+      handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
       cleanupProject: vi.fn(),
       dropLaunchProject: vi.fn(),
       blocksProjectShell: vi.fn(() => false),
@@ -208,6 +216,24 @@ function createHarness(): Harness {
 }
 
 describe('registered ipc handlers', () => {
+  it('routes WSL registration and project shell context only for trusted senders', () => {
+    const { invoke, services, showOpenDialog } = createHarness()
+    invoke(IPC_CHANNEL.projectsWslDistributions, [])
+    invoke(IPC_CHANNEL.projectsAddWsl, ['Ubuntu', '/home/user/My Project'])
+    invoke(IPC_CHANNEL.terminalsShellDetect, ['p1'])
+    expect(services.projects.wslDistributions).toHaveBeenCalledOnce()
+    expect(services.projects.addWsl).toHaveBeenCalledWith('Ubuntu', '/home/user/My Project')
+    expect(services.terminals.shellDetect).toHaveBeenCalledWith('p1')
+    expect(showOpenDialog).not.toHaveBeenCalled()
+    expect(() =>
+      invoke(IPC_CHANNEL.projectsAddWsl, ['Ubuntu', '/home/user'], 'https://untrusted.example'),
+    ).toThrow(/untrusted/)
+    expect(() =>
+      invoke(IPC_CHANNEL.projectsWslDistributions, [], 'https://untrusted.example'),
+    ).toThrow(/untrusted/)
+    expect(services.projects.wslDistributions).toHaveBeenCalledOnce()
+    expect(services.projects.addWsl).toHaveBeenCalledOnce()
+  })
   it('routes action CRUD and execution, rejecting malformed inputs before services', () => {
     const { services, invoke } = createHarness()
     const input = {
@@ -396,6 +422,8 @@ describe('registered ipc handlers', () => {
     const services: AppServices = {
       actions: fakeActions(),
       projects: {
+        wslDistributions: vi.fn(() => []),
+        addWsl: vi.fn(),
         list: vi.fn(() => []),
         add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
         remove: vi.fn(),
@@ -432,7 +460,7 @@ describe('registered ipc handlers', () => {
         getItem: vi.fn(() => Promise.resolve({} as never)),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-        linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+        handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
         cleanupProject: vi.fn(),
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
@@ -495,6 +523,8 @@ describe('registered ipc handlers', () => {
     const services: AppServices = {
       actions: fakeActions(),
       projects: {
+        wslDistributions: vi.fn(() => []),
+        addWsl: vi.fn(),
         list: vi.fn(() => []),
         add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
         remove: vi.fn(),
@@ -531,7 +561,7 @@ describe('registered ipc handlers', () => {
         getItem: vi.fn(() => Promise.resolve({} as never)),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-        linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+        handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
         cleanupProject: vi.fn(),
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
@@ -602,6 +632,8 @@ describe('registered ipc handlers', () => {
     const services: AppServices = {
       actions: fakeActions(),
       projects: {
+        wslDistributions: vi.fn(() => []),
+        addWsl: vi.fn(),
         list: vi.fn(() => []),
         add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
         remove: vi.fn(),
@@ -638,7 +670,7 @@ describe('registered ipc handlers', () => {
         getItem: vi.fn(() => Promise.resolve({} as never)),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-        linkHandoff: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
+        handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
         cleanupProject: vi.fn(),
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
@@ -841,9 +873,12 @@ describe('kanban:* channels (adapter integration)', () => {
     await invoke(IPC_CHANNEL.kanbanHandoffCandidates, [candidates])
     expect(services.kanban.handoffCandidates).toHaveBeenCalledWith(candidates)
 
-    const linkInput = { ...candidates, fileName: 'nekode-28-notes.md' }
-    await invoke(IPC_CHANNEL.kanbanLinkHandoff, [linkInput])
-    expect(services.kanban.linkHandoff).toHaveBeenCalledWith(linkInput)
+    const availabilityInput = {
+      projectId: 'p1',
+      items: [{ itemId: 'native-1', ref: 'DEMO-1' }],
+    }
+    await invoke(IPC_CHANNEL.kanbanHandoffAvailability, [availabilityInput])
+    expect(services.kanban.handoffAvailability).toHaveBeenCalledWith(availabilityInput)
   })
 
   it('projects:remove cleans the per-project kanban keys', () => {
@@ -854,12 +889,6 @@ describe('kanban:* channels (adapter integration)', () => {
     expect(vi.mocked(services.projects.remove).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(services.kanban.dropLaunchProject).mock.invocationCallOrder[0],
     )
-  })
-
-  it('projects:remove deletes the per-project handoff link document', () => {
-    const { services, invoke } = createHarness()
-    invoke(IPC_CHANNEL.projectsRemove, ['p1'])
-    expect(services.state.delete).toHaveBeenCalledWith('project.kanbanHandoffLinks:p1')
   })
 
   it('does not drop task launches when project removal fails', () => {
@@ -908,11 +937,17 @@ describe('kanban:* channels (adapter integration)', () => {
         IPC_CHANNEL.kanbanHandoffCandidates,
         [{ projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1', extra: 1 }],
       ],
+      [IPC_CHANNEL.kanbanHandoffAvailability, [{ projectId: 'p1' }]],
+      [IPC_CHANNEL.kanbanHandoffAvailability, [{ projectId: '', items: [] }]],
+      [IPC_CHANNEL.kanbanHandoffAvailability, ['p1']],
       [
-        IPC_CHANNEL.kanbanLinkHandoff,
-        [{ projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1', fileName: 'a/b.md' }],
+        IPC_CHANNEL.kanbanHandoffAvailability,
+        [{ projectId: 'p1', items: [{ itemId: '', ref: 'DEMO-1' }] }],
       ],
-      [IPC_CHANNEL.kanbanLinkHandoff, [{ projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1' }]],
+      [
+        IPC_CHANNEL.kanbanHandoffAvailability,
+        [{ projectId: 'p1', items: [{ itemId: 'native-1', ref: 'DEMO-1', extra: 1 }] }],
+      ],
     ]
     for (const [channel, payload] of cases) {
       try {
@@ -926,7 +961,7 @@ describe('kanban:* channels (adapter integration)', () => {
     expect(services.kanban.setConfig).not.toHaveBeenCalled()
     expect(services.kanban.listBoard).not.toHaveBeenCalled()
     expect(services.kanban.handoffCandidates).not.toHaveBeenCalled()
-    expect(services.kanban.linkHandoff).not.toHaveBeenCalled()
+    expect(services.kanban.handoffAvailability).not.toHaveBeenCalled()
   })
 
   it('transports adapter failures with their typed codes and messages', async () => {

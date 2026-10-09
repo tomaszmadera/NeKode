@@ -1,0 +1,288 @@
+import type React from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { AppApi, ProjectInfo } from '../../../../shared/ipc-contract'
+import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { wslProjectPath } from '../../../../shared/wsl-path'
+
+interface Props {
+  app: AppApi
+  onAdded: (project: ProjectInfo) => void | Promise<void>
+  onClose: () => void
+}
+
+const controlClass =
+  'mt-1 h-control w-full rounded-md border border-edge bg-app px-3 text-sm disabled:opacity-50'
+
+export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const locationInput = useRef<HTMLSelectElement>(null)
+  const pathInput = useRef<HTMLInputElement>(null)
+  const primaryAction = useRef<HTMLButtonElement>(null)
+  const alive = useRef(true)
+  const requestId = useRef(0)
+  const busyRef = useRef(false)
+  const [location, setLocation] = useState('local')
+  const [distributions, setDistributions] = useState<string[]>([])
+  const [distribution, setDistribution] = useState('')
+  const [path, setPath] = useState('')
+  const [discovery, setDiscovery] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
+  const [pathError, setPathError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [registeredProject, setRegisteredProject] = useState<ProjectInfo | null>(null)
+
+  useEffect(() => {
+    const opener = document.activeElement
+    alive.current = true
+    dialog.current?.showModal()
+    locationInput.current?.focus()
+    return () => {
+      alive.current = false
+      requestId.current += 1
+      dialog.current?.close()
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
+    }
+  }, [])
+
+  async function discover(): Promise<void> {
+    const id = ++requestId.current
+    setDiscovery('loading')
+    setDiscoveryError(null)
+    try {
+      const names = await app.projects.wslDistributions()
+      if (!alive.current || id !== requestId.current) return
+      setDistributions(names)
+      setDistribution((previous) => (names.includes(previous) ? previous : (names[0] ?? '')))
+      setDiscovery('ready')
+    } catch (cause) {
+      if (!alive.current || id !== requestId.current) return
+      setDiscovery('error')
+      setDiscoveryError(parseAppErrorPayload(cause)?.message ?? 'Unable to list WSL distributions.')
+    }
+  }
+
+  async function add(): Promise<void> {
+    if (busyRef.current) return
+    if (!registeredProject && location === 'wsl') {
+      if (discovery !== 'ready' || !distribution) return
+      try {
+        wslProjectPath(distribution, path)
+      } catch (cause) {
+        setPathError(
+          cause instanceof Error ? cause.message : 'Use an absolute Linux project directory.',
+        )
+        pathInput.current?.focus()
+        return
+      }
+    }
+    busyRef.current = true
+    setBusy(true)
+    setError(null)
+    let project = registeredProject
+    try {
+      if (!project) {
+        project =
+          location === 'local'
+            ? await app.projects.add()
+            : await app.projects.addWsl(distribution, path)
+        if (!alive.current) return
+        if (project === null) {
+          requestAnimationFrame(() => {
+            if (alive.current) primaryAction.current?.focus()
+          })
+          return
+        }
+        setRegisteredProject(project)
+      }
+      await onAdded(project)
+      if (alive.current) onClose()
+    } catch (cause) {
+      if (alive.current) {
+        setError(
+          parseAppErrorPayload(cause)?.message ??
+            (project ? 'Unable to open the added project.' : 'Failed to add the project.'),
+        )
+      }
+    } finally {
+      busyRef.current = false
+      if (alive.current) setBusy(false)
+    }
+  }
+
+  const wsl = location === 'wsl'
+  const fieldsDisabled = busy || registeredProject !== null
+  const primaryLabel = registeredProject
+    ? busy
+      ? 'Opening project...'
+      : 'Retry opening project'
+    : busy
+      ? wsl
+        ? 'Adding project...'
+        : 'Choosing folder...'
+      : wsl
+        ? 'Add Project'
+        : 'Choose folder...'
+
+  return (
+    <dialog
+      ref={dialog}
+      aria-modal="true"
+      aria-labelledby="add-project-title"
+      aria-describedby="add-project-description"
+      onCancel={(event) => {
+        event.preventDefault()
+        if (!busyRef.current) onClose()
+      }}
+      className="m-auto max-h-[90vh] w-[min(28rem,90vw)] overflow-y-auto rounded-lg border border-edge bg-panel p-5 text-ink shadow-xl backdrop:bg-black/70"
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          void add()
+        }}
+      >
+        <h2 id="add-project-title" className="text-base font-semibold">
+          Add Project
+        </h2>
+        <p id="add-project-description" className="mt-2 text-sm text-ink-secondary">
+          Choose where your project is stored.
+        </p>
+        <label className="mt-4 block text-sm" htmlFor="project-location">
+          Project location
+        </label>
+        <select
+          ref={locationInput}
+          id="project-location"
+          value={location}
+          disabled={fieldsDisabled}
+          className={controlClass}
+          onChange={(event) => {
+            const next = event.target.value
+            setLocation(next)
+            setError(null)
+            setPathError(null)
+            if (next === 'wsl') void discover()
+            else {
+              requestId.current += 1
+              setDiscovery('idle')
+              setDiscoveryError(null)
+            }
+          }}
+        >
+          <option value="local">Local</option>
+          <option value="wsl">WSL</option>
+        </select>
+        {wsl ? (
+          <>
+            {discovery === 'loading' ? (
+              <p role="status" className="mt-3 text-sm text-ink-secondary">
+                Loading distributions...
+              </p>
+            ) : null}
+            {discoveryError || (discovery === 'ready' && distributions.length === 0) ? (
+              <div className="mt-3">
+                <p role="alert" className="text-sm text-ink">
+                  {discoveryError ??
+                    'No WSL distributions are installed. Install a distribution, then retry, or choose Local.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void discover()}
+                  className="mt-2 h-control rounded-md bg-button px-3 text-sm hover:bg-button-hover"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
+            <label className="mt-4 block text-sm" htmlFor="wsl-distribution">
+              Distribution
+            </label>
+            <select
+              id="wsl-distribution"
+              value={distribution}
+              disabled={fieldsDisabled || discovery !== 'ready' || distributions.length === 0}
+              onChange={(event) => {
+                setDistribution(event.target.value)
+                setError(null)
+                setPathError(null)
+              }}
+              className={controlClass}
+            >
+              {distributions.map((name) => (
+                <option key={name}>{name}</option>
+              ))}
+            </select>
+            <label className="mt-4 block text-sm" htmlFor="wsl-directory">
+              Linux project directory
+            </label>
+            <input
+              ref={pathInput}
+              id="wsl-directory"
+              placeholder="/home/user/project"
+              value={path}
+              disabled={fieldsDisabled || discovery !== 'ready' || !distribution}
+              onChange={(event) => {
+                setPath(event.target.value)
+                setPathError(null)
+                setError(null)
+              }}
+              aria-invalid={pathError !== null}
+              aria-describedby={pathError ? 'wsl-path-help wsl-path-error' : 'wsl-path-help'}
+              className={controlClass}
+            />
+            <p id="wsl-path-help" className="mt-2 text-xs text-ink-secondary">
+              Use an absolute Linux path in this distribution.
+            </p>
+            {pathError ? (
+              <p id="wsl-path-error" role="alert" className="mt-2 text-sm text-ink">
+                {pathError}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <p className="mt-4 text-sm leading-relaxed text-ink-secondary">
+            Choose a project folder on this computer. The folder will be added as a project.
+          </p>
+        )}
+        {error ? (
+          <div className="mt-3 rounded-md border border-error p-3">
+            <p role="alert" className="text-sm text-ink">
+              {error}
+            </p>
+            {registeredProject ? (
+              <p className="mt-1 text-xs text-ink-secondary">
+                The project was added. Retry opening it without adding it again.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {busy ? (
+          <p role="status" className="mt-3 text-sm text-ink-secondary">
+            {primaryLabel} Wait for this step to finish.
+          </p>
+        ) : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="h-control rounded-md px-4 text-sm text-ink-secondary hover:bg-highlight hover:text-ink disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            ref={primaryAction}
+            type="submit"
+            disabled={
+              busy || (!registeredProject && wsl && (discovery !== 'ready' || !distribution))
+            }
+            className="h-control rounded-md bg-accent px-4 text-sm font-semibold text-app hover:opacity-90 disabled:opacity-50"
+          >
+            {primaryLabel}
+          </button>
+        </div>
+      </form>
+    </dialog>
+  )
+}

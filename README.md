@@ -68,6 +68,12 @@ Building outside dev mode:
 - `src/preload`: strictly typed IPC bridge (`contextBridge`).
 - `src/renderer`: React 19, Tailwind CSS, xterm.js, Monaco Editor.
 
+## Contributing
+
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the [public project contract](docs/development/project-contract.md), which map requirements, architecture, verification, and contribution rules to their public owners. Maintainer version publication follows the [release procedure](docs/operations/releases.md).
+
+`AGENTS.md`, the `.agents/` harness, and agent-specific configuration are local working files and remain ignored. They contain personal tools and execution mechanics, so the public repository does not prescribe that workflow. Project requirements and contribution rules live in the public documentation. A clean clone needs no harness to build, test, or contribute. You can create your own locally ignored `AGENTS.md` from the public contract and link to its owners without duplicating their rules.
+
 ## Documentation
 
 - `docs/product/` - approved product requirements.
