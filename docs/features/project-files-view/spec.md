@@ -22,6 +22,7 @@ Let the user inspect a registered project's files without leaving NeKode: browse
 - Project row context menu with the "Remove Project" action (the row-level remove control moves here and disappears from the row).
 - Large-file and binary-file fallbacks with an "Open externally" action.
 - Default excluded-directory filtering (SDD §12 list).
+- Git status decoration on tree entries (NEKODE-31, user request 2026-10-10): per-entry color plus a letter badge, computed from one Git read per mode entry, with folder aggregation.
 - Retaining file-tree expansion state and the last selected file per project for the duration of the app session.
 
 ## Non-goals
@@ -30,7 +31,8 @@ Let the user inspect a registered project's files without leaving NeKode: browse
 - Configurable exclusion patterns (the default list is fixed in this slice; configuration is later).
 - The Kanban tab (post-MVP): no dead tab is rendered (the `Files` view label is superseded by the tab model).
 - File operations beyond reading: create, rename, delete, move, drag & drop.
-- File search, git status decoration on tree entries, file icon themes.
+- File search, file icon themes.
+- A Git watcher or any automatic re-read of file status while the mode stays open (the status is a snapshot taken on entry; NEKODE-31 keeps the application's no-watcher model).
 - Persisting tree expansion or preview selection across application restarts.
 - Showing the file tree simultaneously with the Projects/Chats navigation.
 
@@ -51,6 +53,10 @@ Let the user inspect a registered project's files without leaving NeKode: browse
 13. Selecting a chat from Projects/Chats navigation (after exiting the mode) shows that chat's terminal as today. The chat tree and its close/exit flows are unchanged by this feature.
 14. Within one app session, each project retains its file-tree expansion state and last selected file: leaving and re-entering the mode restores them. The tree state is not persisted to the database.
 15. While the mode is open for project P, the file tree shows P's files only; entering the mode for another project (via that project's "Files" action after leaving the mode) shows that project's tree with its own retained state.
+16. Every tree entry also carries the project's Git status as a text color plus a non-color letter badge (the design system forbids carrying status by color alone): modified (a working-tree or staged change, rename, type change, or deletion) amber with `M`; staged addition green with `A`; untracked green with `U`; unmerged/conflict red with `C`; ignored dimmed with `I`. An entry with no status keeps the plain look. The status word is part of the entry's accessible name.
+17. A directory entry shows the highest-precedence status among its own status and every change at any depth below it, in the order conflict > modified > added > untracked > ignored. The aggregation does not depend on the directory being expanded, so a collapsed folder with a modified file inside still shows amber `M`, and a folder whose only status comes from an ignored file shows the dimmed `I`.
+18. Git reports a wholly untracked or ignored directory as one entry; that status decorates the directory and every listed descendant below it, so the files inside an untracked folder all show green `U`.
+19. The statuses are read once when the mode is entered for a project, and again on re-entry; the application registers no Git watcher, so the tree shows the status of that read (the same snapshot model as the status bar, UX-UI §16). A failed read leaves every entry undecorated and shows no error.
 
 ## Business rules
 
@@ -59,6 +65,9 @@ Let the user inspect a registered project's files without leaving NeKode: browse
 - Excluded directories are unreachable by direct request as well: `files:list`/`files:read`/`files:openExternal` on a path whose segment matches a default exclusion (case-insensitively) resolves as not-found (a same-named regular file still previews).
 - Relative paths carrying `:` (NTFS alternate data streams) resolve as not-found at the file service.
 - The exclusion list is a single constant in the main-process file service; renderer receives already-filtered listings.
+- Decoration is presentation only: it adds no Git mutation, no new file affordance, and changes no listing or containment rule. Excluded directories stay hidden whatever their status; an ignored path that the exclusion list already hides is never rendered.
+- The decoration maps onto the existing semantic theme tokens (`--color-warning` modified, `--color-success` added/untracked, `--color-error` conflict, `--color-ink-disabled` ignored); it adds no theme token, and the letter badge keeps the meaning readable without color.
+- Git paths are project-root-relative, `/`-separated, and compared segment-wise with tree relative paths (`docs/../x` never matches `docsx`); a directory key also covers its whole subtree.
 
 ## Authorization
 
@@ -74,6 +83,7 @@ New typed IPC channels follow the existing `IPC_CHANNEL` / `AppApi` pattern (`sr
   - `{ kind: 'too-large'; size: number }`,
   - `{ kind: 'binary' }`.
 - `files:openExternal(projectId, relativePath) -> void` — opens via the OS default application.
+- `git:fileStatuses(projectPath) -> GitFileStatuses`: one read of `git status --porcelain=v2 --ignored=traditional` at the project path. `GitFileStatuses = Record<string, GitFileStatusKind>` keys the project-root-relative path (a directory key carries no trailing slash) to `GitFileStatusKind = 'modified' | 'added' | 'untracked' | 'conflict' | 'ignored'`. Deleted, renamed and type-changed entries read as `modified`. Any failure (not a repository, git missing, non-zero exit, rejected runner) resolves to the empty map `{}`. The argument is validated as an absolute path, exactly like `git:status`; that channel's own payload is unchanged.
 
 No write channels. All inputs are validated with the existing IPC validation pattern; invalid input returns a typed error (`ipc-error`), never raw stack traces. Preview threshold (2 MB) and the exclusion list are constants in the main-process file service.
 
@@ -86,11 +96,19 @@ No write channels. All inputs are validated with the existing IPC validation pat
 - Unicode and spaces in names are displayed and passed through unchanged.
 - A file exactly 2 MB previews; 2 MB + 1 byte falls back to too-large.
 - Window resize keeps the tree and preview laid out (preview re-fits via Monaco automatic layout).
+- The project is not a Git repository, or git is unavailable: the tree renders undecorated and the mode keeps working.
+- A path whose name contains a quote, a backslash or non-ASCII characters: Git C-quotes it in the porcelain output and the read unquotes it before matching, so the entry still decorates (a plain space is not quoted and passes through).
+- A directory deleted from disk is absent from the tree; a deletion is only visible through its parent folder's aggregated status.
+- A rename decorates the new path as modified; the old path is gone from the tree.
+- A file inside a not-yet-expanded untracked directory shows green once the directory is expanded.
+- An entry whose status key is unknown (a Git status letter the mapping does not cover) is left undecorated rather than mis-colored.
 
 ## Errors
 
 - IPC failures (unreadable directory, missing file, containment rejection, external-open failure) surface as a localized error state: inline in the tree or preview area where the failure occurred, or a notice for `Open externally` failure. No silent fallback; no crash; the user can always leave the mode via the back affordance.
 - Containment rejections are indistinguishable from "not found" to the caller (same error), and never leak paths outside the root.
+- A failed Git status read (not a repository, git missing, timeout, permission error) yields the empty status map: the tree renders undecorated, never an error banner, and the mode keeps working (the same degradation as the status bar, spec Errors).
+- A malformed `git:fileStatuses` argument (missing, non-string, relative, `..`-bearing) is rejected by the existing IPC validation with the typed validation error, like every other channel.
 
 ## Acceptance criteria
 
@@ -104,6 +122,9 @@ No write channels. All inputs are validated with the existing IPC validation pat
 8. With the project directory removed on disk, the mode still opens and shows the inline error state; the back affordance works.
 9. Re-entering Project Files mode for the same project within one session restores folder expansion and the previously selected file preview.
 10. With a markdown file tab active, the action row shows `Code` and `Preview`. `Preview` is selected by default and shows the rendered Markdown. `Code` shows the read-only Monaco preview. Switching to a non-markdown file hides the switch. Returning to the markdown file restores the mode chosen earlier in the session.
+11. With the project in a Git repository that holds a modified file, an untracked file, a staged addition and a conflicted file, each tree entry shows its category color and matching letter badge (`M`, `U`, `A`, `C`), and the folder holding them shows the highest-precedence color and letter while still collapsed.
+12. An ignored file shows dimmed with `I`, and a file with no Git status renders exactly as before (no badge, no color change).
+13. With the project outside a Git repository, or with git unavailable, the tree renders undecorated, the mode keeps working, and no error banner appears.
 
 ## Required tests
 
@@ -111,9 +132,14 @@ No write channels. All inputs are validated with the existing IPC validation pat
 - IPC handler tests: argument validation and typed errors for all three channels (same pattern as existing `ipc-handlers.test.ts`).
 - Renderer tests (mocked `window.app`): "Files" action enters the mode and row click does not; context menu holds Remove Project and the row has no remove button; tree expand/collapse/select; file selection → tab preview; fallback rendering for too-large and binary; the back affordance keeps the center tab strip and active tab; per-project state retention across mode round-trips; a markdown file tab shows `Code` and `Preview` in the action row, `Preview` renders the text, a non-markdown tab hides the switch, and the chosen mode survives a tab switch.
 - Regression: existing chat selection, chat close/exit, and remove-project flows stay green (the removal flow itself is unchanged).
+- Main Git-service tests (NEKODE-31): the file-status parser against fixtures for a modified entry, a staged addition, an untracked file, an untracked directory (its trailing-slash entry covers the subtree), a conflicted entry, an ignored file and an ignored directory, a `2` rename line, a C-quoted path, CRLF output, empty/garbage output and the non-repository exit; and `GitService.getFileStatuses` running the recorded command in the project directory and degrading to `{}` on a non-zero exit or a rejected runner.
+- IPC tests (NEKODE-31): the new channel's arity and absolute-path validation and its typed validation error, plus the handler dispatching to the service.
+- Preload test (NEKODE-31): the new method routes to `git:fileStatuses` with the project path.
+- Renderer tests (NEKODE-31): a decoration unit test for the status precedence, the folder aggregation, the descendant coverage of an untracked or ignored directory key, the segment-wise path match, and the letter/color mapping; and a tree test rendering a decorated file, a decorated folder, an ignored entry, and an undecorated entry, with the status in the entry's accessible name.
 
 ## Relevant SDD / ADR
 
 - `docs/architecture/sdd.md` §6, §7, §12, §13.
 - `docs/UX-UI.md` §11, §18, §19, §69, §73.
+- NEKODE-31 decoration reuses the existing semantic theme tokens and follows the design system's "never communicate status by color alone" rule (`docs/references/NeKode-Design-System.md` §4.4, §25).
 - `none` (no ADR required; the feature adds no architecture-level decision beyond the typed IPC pattern already in force).

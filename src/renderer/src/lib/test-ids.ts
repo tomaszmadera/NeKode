@@ -56,6 +56,8 @@ export const TEST_ID = {
   filesProjectName: 'files-project-name',
   fileTree: 'file-tree',
   fileTreeError: 'file-tree-error',
+  /** Git status letter badge of a file-tree entry (NEKODE-31). */
+  fileTreeGitBadge: 'file-tree-git-badge',
   filePreviewError: 'file-preview-error',
   filePreviewTooLarge: 'file-preview-too-large',
   filePreviewBinary: 'file-preview-binary',

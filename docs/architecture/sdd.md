@@ -584,7 +584,8 @@ The project file tree must support:
 - file selection,
 - lazy loading where practical,
 - ignored directory filtering,
-- configurable exclusion patterns.
+- configurable exclusion patterns,
+- Git status decoration per entry: a color plus a letter badge, with folder aggregation (NEKODE-31).
 
 Default exclusions may include:
 

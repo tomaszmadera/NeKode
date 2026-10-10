@@ -74,6 +74,7 @@ export function ProjectFilesPanel({
             childrenByPath={session.childrenByPath}
             expandedPaths={session.expandedPaths}
             selectedPath={session.selectedPath}
+            statuses={session.gitStatuses}
             onToggleDirectory={onToggleDirectory}
             onSelectFile={onSelectFile}
           />

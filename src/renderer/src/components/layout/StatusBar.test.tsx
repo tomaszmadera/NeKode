@@ -75,6 +75,7 @@ function createAppApiStub(gitStatus?: Partial<GitStatus>): AppApi {
         worktree: emptyGitWorktree(),
         ...gitStatus,
       }),
+      fileStatuses: vi.fn().mockResolvedValue({}),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),

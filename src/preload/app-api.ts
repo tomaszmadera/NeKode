@@ -6,6 +6,7 @@ import type {
   ChatInfo,
   FileEntry,
   FilePreview,
+  GitFileStatuses,
   GitStatus,
   HandoffCandidatesResult,
   HandoffEntry,
@@ -129,6 +130,8 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
     },
     git: {
       getStatus: (projectPath) => invoke<GitStatus>(IPC_CHANNEL.gitStatus, projectPath),
+      fileStatuses: (projectPath) =>
+        invoke<GitFileStatuses>(IPC_CHANNEL.gitFileStatuses, projectPath),
     },
     files: {
       list: (projectId, relativePath) =>

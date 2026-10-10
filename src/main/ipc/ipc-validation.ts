@@ -605,6 +605,9 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     },
     // Read-only git status; failures degrade to "no git" inside the service.
     serviceChannel('git:status', ['path'], (args) => services.git.getStatus(args[0])),
+    // Per-path status for the file-tree decoration (NEKODE-31): same
+    // absolute-path validation as git:status; a failure degrades to {}.
+    serviceChannel('git:fileStatuses', ['path'], (args) => services.git.fileStatuses(args[0])),
     // Project files (spec Data/API): read-only tree listing, preview
     // classification and the single OS action (openExternal). Relative-path
     // shape is validated here; containment (`..`, absolute, symlinks leaving

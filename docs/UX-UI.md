@@ -580,7 +580,20 @@ The Project Files view supports:
 - selecting files,
 - read-only file preview,
 - syntax highlighting,
-- line numbers.
+- line numbers,
+- Git status decoration on files and folders.
+
+Each tree entry shows its Git status as a color plus a letter badge, so the meaning never rests on color alone (§25):
+
+```text
+M   modified (working-tree or staged change, rename, deletion)   amber
+A   staged addition                                             green
+U   untracked                                                   green
+C   unmerged / conflict                                         red
+I   ignored                                                     dimmed
+```
+
+A folder shows the strongest status found at any depth below it (conflict, then modified, then added, then untracked, then ignored), whether or not it is expanded. The statuses come from one read when Project Files mode is entered.
 
 A markdown file (`md` or `markdown`) adds `Code` and `Preview` to the action row, in front of the settings control (user decision 2026-10-06). `Preview` is the default and renders that text as Markdown. `Code` shows the read-only Monaco preview. The choice stays with that file for the app session and is not saved. Raw HTML is not executed. Only `http` and `https` links open, through the existing external-URL allowlist. Remote and relative images show their alt text. A too-large or binary result keeps its fallback in either mode.
 

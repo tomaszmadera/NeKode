@@ -1218,18 +1218,45 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app, updateFilesSession],
   )
 
+  // Git decoration (spec Behaviour 16-19, NEKODE-31): one read when the mode
+  // is entered for a project, again on re-entry. A failed read leaves the
+  // tree undecorated (empty map) instead of failing the mode.
+  const loadGitStatuses = useCallback(
+    (projectId: string, projectPath: string): void => {
+      void app.git
+        .fileStatuses(projectPath)
+        .then((statuses) => {
+          if (removedProjectIdsRef.current.has(projectId)) {
+            return
+          }
+          updateFilesSession(projectId, (session) => ({ ...session, gitStatuses: statuses }))
+        })
+        .catch(() => {
+          if (removedProjectIdsRef.current.has(projectId)) {
+            return
+          }
+          updateFilesSession(projectId, (session) => ({ ...session, gitStatuses: {} }))
+        })
+    },
+    [app, updateFilesSession],
+  )
+
   // Entering the mode is per project and idempotent (spec Behaviour 4): the
   // retained expansion state and open file tabs survive the round-trip.
   const handleOpenProjectFiles = useCallback(
     (projectId: string): void => {
       setNotice(null)
       setFilesProjectId(projectId)
+      const project = projects.find((item) => item.id === projectId)
+      if (project !== undefined) {
+        loadGitStatuses(projectId, project.path)
+      }
       const session = filesSessions[projectId] ?? emptyProjectFilesSession()
       if (session.childrenByPath[''] === undefined) {
         loadFilesDirectory(projectId, '')
       }
     },
-    [filesSessions, loadFilesDirectory],
+    [filesSessions, loadFilesDirectory, loadGitStatuses, projects],
   )
 
   const handleCloseProjectFiles = useCallback((): void => {

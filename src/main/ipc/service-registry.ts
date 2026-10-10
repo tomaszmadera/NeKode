@@ -7,6 +7,7 @@ import type {
   ChatInfo,
   FileEntry,
   FilePreview,
+  GitFileStatuses,
   GitStatus,
   HandoffCandidatesResult,
   HandoffEntry,
@@ -97,6 +98,11 @@ export interface AppServices {
   }
   git: {
     getStatus(projectPath: string): Promise<GitStatus>
+    /**
+     * Per-path working-tree status for the file-tree decoration (NEKODE-31).
+     * One read-only call; any failure degrades to the empty map.
+     */
+    fileStatuses(projectPath: string): Promise<GitFileStatuses>
   }
   files: {
     /** One directory level of the project tree (null = project root). */

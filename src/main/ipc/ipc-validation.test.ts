@@ -61,6 +61,7 @@ function fakeServices(): AppServices {
       getStatus: vi.fn(() =>
         Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
       ),
+      fileStatuses: vi.fn(() => Promise.resolve({ 'src/app.ts': 'modified' as const })),
     },
     files: {
       list: vi.fn(() => Promise.resolve([])),
@@ -219,6 +220,20 @@ describe('ipc payload validation', () => {
     expect(() => entry.parse(['D:/code/de\u0000mo'])).toThrow(/NUL/)
   })
 
+  it('git:fileStatuses shares the absolute-path validation of git:status', () => {
+    const entry = channelMap().get('git:fileStatuses')
+    expect(entry).toBeDefined()
+    if (!entry) {
+      return
+    }
+    expect(entry.parse(['D:/code/demo'])).toEqual(['D:/code/demo'])
+    expect(() => entry.parse(['code/demo'])).toThrow(/absolute path/)
+    expect(() => entry.parse(['D:/code/../secrets'])).toThrow(/"\.\." segments/)
+    expect(() => entry.parse(['D:/code/de\u0000mo'])).toThrow(/NUL/)
+    expect(() => entry.parse([])).toThrow(ValidationError)
+    expect(() => entry.parse(['D:/code/demo', 'extra'])).toThrow(ValidationError)
+  })
+
   it('validates the terminal cwd as a safe path', () => {
     const entry = channelMap().get('terminals:create')
     expect(() => entry?.parse(['t1', 'relative/cwd'])).toThrow(ValidationError)
@@ -292,6 +307,10 @@ describe('ipc payload validation', () => {
     gitStatus?.invoke(gitStatus.parse(['D:/code/demo']))
     expect(services.git.getStatus).toHaveBeenCalledWith('D:/code/demo')
 
+    const gitFileStatuses = channels.get('git:fileStatuses')
+    gitFileStatuses?.invoke(gitFileStatuses.parse(['D:/code/demo']))
+    expect(services.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo')
+
     const stateSet = channels.get('state:set')
     stateSet?.invoke(stateSet.parse(['k', 'v']))
     expect(services.state.set).toHaveBeenCalledWith('k', 'v')
@@ -314,6 +333,7 @@ describe('ipc payload validation', () => {
       'terminals:shellName',
       'terminals:terminate',
       'git:status',
+      'git:fileStatuses',
       'files:list',
       'files:read',
       'files:openExternal',
