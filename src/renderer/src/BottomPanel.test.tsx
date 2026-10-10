@@ -393,6 +393,11 @@ describe('bottom auxiliary terminal panel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('button', { name: 'PowerShell' })
+    // The tab's create lands in its own effect after the tab renders, so
+    // wait for it instead of reading the call list behind the DOM condition.
+    await waitFor(() =>
+      expect(bottomCreateIds(app).some((id) => id.startsWith('bottom:p2:'))).toBe(true),
+    )
     const createsAfterSwitch = vi.mocked(app.terminals.create).mock.calls.length
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() =>
@@ -455,9 +460,20 @@ describe('bottom auxiliary terminal panel', () => {
     await renderSelectedProject()
     pressChord()
     await screen.findByRole('button', { name: 'PowerShell' })
-    const calls = vi.mocked(app.terminals.create).mock.calls
-    const tabId = calls.map(([id]) => id).find((id) => id.startsWith('bottom:'))
-    expect(tabId).toBeTypeOf('string')
+    // The panel's terminal is created by an effect that follows the toggle,
+    // so the recorded call is awaited: reading the mock synchronously raced
+    // that effect and failed only under full-suite load.
+    let tabId: string | undefined
+    await waitFor(() => {
+      tabId = vi
+        .mocked(app.terminals.create)
+        .mock.calls.map(([id]) => id)
+        .find((id) => id.startsWith('bottom:'))
+      expect(tabId).toBeTypeOf('string')
+    })
+    // The xterm instance is constructed after create resolves, so wait for
+    // it: lastBottomTerminal() otherwise returns the chat terminal.
+    await waitFor(() => expect(mockTerminalInstances).toHaveLength(2))
     const terminal = lastBottomTerminal()
     await waitFor(() => expect(terminal.keyHandler).not.toBeNull())
     expect(bottomRegion().style.display).not.toBe('none')
@@ -480,6 +496,7 @@ describe('bottom auxiliary terminal panel', () => {
       expect(screen.getAllByRole('button', { name: 'PowerShell' })).toHaveLength(2),
     )
     const [, second] = bottomTabIds()
+    await waitFor(() => expect(mockTerminalInstances).toHaveLength(3))
     const terminal = lastBottomTerminal()
     await waitFor(() => expect(terminal.keyHandler).not.toBeNull())
     expect(pressBottomKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
@@ -656,6 +673,8 @@ describe('bottom auxiliary terminal panel', () => {
     await screen.findByRole('button', { name: 'PowerShell' })
     const [existingId] = bottomTabIds()
     expect(existingId).toBeTruthy()
+    // The tab's create lands in its own effect after the tab renders.
+    await waitFor(() => expect(bottomCreateIds(app)).toHaveLength(1))
     const createsBefore = bottomCreateIds(app)
 
     let resolveShell: (name: string) => void = () => undefined
