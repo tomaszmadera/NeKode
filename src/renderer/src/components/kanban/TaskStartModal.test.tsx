@@ -185,7 +185,7 @@ describe('TaskStartModal', () => {
     )
     fireEvent.click(screen.getByTestId('opener'))
     const confirm = await screen.findByTestId(TEST_ID.kanbanStartConfirm)
-    expect(screen.getByTestId(testIdFor.kanbanStartProfile(profile.id))).toBeTruthy()
+    expect(await screen.findByTestId(testIdFor.kanbanStartProfile(profile.id))).toBeTruthy()
     fireEvent.click(confirm)
     fireEvent.click(confirm)
     expect(app.kanban.launchTask).toHaveBeenCalledTimes(1)
@@ -254,8 +254,10 @@ describe('TaskStartModal', () => {
 
   it('ignores Escape while a launch is in flight and still calls onLaunched', async () => {
     const { app, onCancel, onLaunched, resolveLaunch } = busyLaunchSetup()
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanStartConfirm))
-    expect(app.kanban.launchTask).toHaveBeenCalledTimes(1)
+    const confirm = await screen.findByTestId(TEST_ID.kanbanStartConfirm)
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(confirm)
+    await waitFor(() => expect(app.kanban.launchTask).toHaveBeenCalledTimes(1))
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
 
@@ -274,8 +276,10 @@ describe('TaskStartModal', () => {
 
   it('ignores the backdrop while a launch is in flight and still calls onLaunched', async () => {
     const { app, onCancel, onLaunched, resolveLaunch } = busyLaunchSetup()
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanStartConfirm))
-    expect(app.kanban.launchTask).toHaveBeenCalledTimes(1)
+    const confirm = await screen.findByTestId(TEST_ID.kanbanStartConfirm)
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(confirm)
+    await waitFor(() => expect(app.kanban.launchTask).toHaveBeenCalledTimes(1))
 
     fireEvent.mouseDown(screen.getByRole('presentation'))
 
@@ -294,8 +298,10 @@ describe('TaskStartModal', () => {
 
   it('ignores Cancel while a launch is in flight and still calls onLaunched', async () => {
     const { app, onCancel, onLaunched, resolveLaunch } = busyLaunchSetup()
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanStartConfirm))
-    expect(app.kanban.launchTask).toHaveBeenCalledTimes(1)
+    const confirm = await screen.findByTestId(TEST_ID.kanbanStartConfirm)
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(confirm)
+    await waitFor(() => expect(app.kanban.launchTask).toHaveBeenCalledTimes(1))
 
     const cancel = screen.getByTestId(TEST_ID.kanbanStartCancel)
     expect((cancel as HTMLButtonElement).disabled).toBe(true)
