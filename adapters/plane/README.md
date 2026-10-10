@@ -91,6 +91,23 @@ configuration from argv or the environment.
    [application contract](../../docs/features/kanban-adapter-interface/spec.md)
    for loading, refresh, and error behavior.
 
+## Descriptions
+
+The adapter converts Plane's `description_html` into readable text before
+returning a work item to NeKode. Paragraphs, line breaks, list markers, and link
+destinations are preserved; HTML entities are decoded. The Kanban review and
+agent prompts receive this text. If HTML is absent, the adapter uses
+`description_stripped`, then `description`, without changing plain text.
+An empty description returns `null`.
+
+On create and update, plain text is still converted to HTML for Plane storage.
+The harness CLI's `get` command performs the same read conversion; `get --json`
+returns the original API response.
+
+The converter is mirrored in the independently distributed harness CLI.
+Run their shared regression tests from the repository root with
+`python -m unittest discover -s adapters/plane -p test_description_text.py`.
+
 ## State groups and aliases
 
 NeKode's normalized state group enum is

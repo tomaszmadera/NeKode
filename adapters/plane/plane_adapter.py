@@ -23,6 +23,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Any
 
 PROTOCOL_VERSION = 1
@@ -334,8 +335,110 @@ def text_to_html(text: str) -> str:
     return "".join(parts)
 
 
+# Kept in sync with the harness CLI, which ships independently.
+class _DescriptionParser(HTMLParser):
+    """Readable text from Plane rich text; no HTML is rendered or executed."""
+
+    BLOCKS = {"p", "div", "section", "article", "blockquote", "pre",
+              "h1", "h2", "h3", "h4", "h5", "h6", "tr"}
+    HIDDEN = {"script", "style", "template"}
+    VOID = {"br", "hr", "img", "input", "meta", "link", "wbr", "source"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.breaks = 0
+        self.lists: list[list[Any]] = []
+        self.links: list[tuple[str, int]] = []
+        self.hidden: list[str] = []
+        self.pre = False
+        self.item_start = False
+
+    def _break(self, count: int) -> None:
+        if self.parts:
+            self.parts[-1] = self.parts[-1].rstrip(" \t")
+            self.breaks = max(self.breaks, count)
+
+    def _append(self, value: str) -> None:
+        if self.breaks:
+            self.parts.append("\n" * self.breaks)
+            self.breaks = 0
+        self.parts.append(value)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if self.hidden or tag in self.HIDDEN:
+            if tag not in self.VOID:
+                self.hidden.append(tag)
+            return
+        if tag in {"ul", "ol"}:
+            self._break(1 if self.lists else 2)
+            start = values.get("start") or "1"
+            self.lists.append([tag, int(start) if re.fullmatch(r"-?\d+", start) else 1])
+        elif tag == "li":
+            self._break(1)
+            marker = "- "
+            if self.lists and self.lists[-1][0] == "ol":
+                marker = f"{self.lists[-1][1]}. "
+                self.lists[-1][1] += 1
+            self._append("  " * max(0, len(self.lists) - 1) + marker)
+            self.item_start = True
+        elif tag in self.BLOCKS:
+            if not self.item_start:
+                self._break(1 if self.lists else 2)
+            if tag == "pre":
+                self.pre = True
+        elif tag in {"br", "hr"}:
+            self._break(1 if tag == "br" else 2)
+        elif tag == "a":
+            self.links.append((values.get("href") or "", len(self.parts)))
+        elif tag == "img" and values.get("alt"):
+            self._append(values["alt"])
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.hidden:
+            if tag == self.hidden[-1]:
+                self.hidden.pop()
+            return
+        if tag in {"ul", "ol"}:
+            if self.lists:
+                self.lists.pop()
+            self._break(1 if self.lists else 2)
+        elif tag == "li" or tag in self.BLOCKS:
+            self._break(1 if self.lists else 2)
+            self.item_start = False
+            if tag == "pre":
+                self.pre = False
+        elif tag == "a" and self.links:
+            href, start = self.links.pop()
+            label = "".join(self.parts[start:]).strip()
+            if href and href != label:
+                self._append(f" ({href})" if label else href)
+        elif tag in {"td", "th"}:
+            self._append(" | ")
+
+    def handle_data(self, data: str) -> None:
+        if self.hidden:
+            return
+        value = data if self.pre else re.sub(r"\s+", " ", data)
+        if not self.pre and (self.breaks or not self.parts or self.parts[-1].endswith(" ")):
+            value = value.lstrip(" ")
+        if value:
+            self._append(value)
+            if value.strip():
+                self.item_start = False
+
+
 def description_of(issue: dict[str, Any]) -> str | None:
-    for key in ("description_stripped", "description_html", "description"):
+    """Prefer rich text so paragraphs and link destinations survive conversion."""
+    markup = issue.get("description_html")
+    if isinstance(markup, str) and markup.strip():
+        parser = _DescriptionParser()
+        parser.feed(markup)
+        parser.close()
+        text = "".join(parser.parts).strip("\n").rstrip()
+        return text if text.strip() else None
+    for key in ("description_stripped", "description"):
         value = issue.get(key)
         if isinstance(value, str) and value.strip():
             return value
