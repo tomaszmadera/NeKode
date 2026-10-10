@@ -253,6 +253,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
     },
     git: {
       getStatus: (projectPath) => git.getStatus(projectPath),
+      fileStatuses: (projectPath) => git.getFileStatuses(projectPath),
     },
     files: {
       list: (projectId, relativePath) => files.list(projectId, relativePath),

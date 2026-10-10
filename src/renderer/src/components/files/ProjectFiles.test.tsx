@@ -72,6 +72,7 @@ function createAppApiStub(): AppApi {
       getStatus: vi
         .fn()
         .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
+      fileStatuses: vi.fn().mockResolvedValue({}),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),
@@ -574,5 +575,148 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     expect(screen.queryByTestId(testIdFor.fileEntry('src'))).toBeNull()
     expect(screen.queryByTestId(testIdFor.tabFile('src/app.ts'))).toBeNull()
     expect(screen.queryAllByTestId(/^tab-file-/)).toEqual([])
+  })
+})
+
+describe('project files: Git status decoration (spec Behaviour 16-19, NEKODE-31)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('decorates entries from the status map and aggregates it onto folders', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockListings(app)
+    vi.mocked(app.git.fileStatuses).mockResolvedValue({
+      'src/app.ts': 'modified',
+      'src/nested': 'untracked',
+      'README.md': 'ignored',
+    })
+
+    render(<App app={app} />)
+    await enterFilesMode()
+
+    // One read per mode entry, against the project path (Behaviour 19).
+    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
+
+    // A collapsed folder already shows the strongest status below it
+    // (Behaviour 17): modified wins over the untracked directory inside.
+    const srcRow = screen.getByTestId(testIdFor.fileEntry('src'))
+    expect(srcRow.getAttribute('data-git-status')).toBe('modified')
+    expect(srcRow.getAttribute('aria-expanded')).toBe('false')
+    const srcBadge = within(srcRow).getByTestId(TEST_ID.fileTreeGitBadge)
+    expect(srcBadge.textContent).toBe('M')
+    expect(srcBadge.className).toContain('text-warning')
+    expect(within(srcRow).getByText('src').className).toContain('text-warning')
+    // The status word joins the accessible name: never color alone.
+    expect(srcRow.textContent).toContain('modified')
+
+    // Ignored entry: the dimmed token plus its own letter.
+    const readmeRow = screen.getByTestId(testIdFor.fileEntry('README.md'))
+    expect(readmeRow.getAttribute('data-git-status')).toBe('ignored')
+    const readmeBadge = within(readmeRow).getByTestId(TEST_ID.fileTreeGitBadge)
+    expect(readmeBadge.textContent).toBe('I')
+    expect(readmeBadge.className).toContain('text-ink-disabled')
+
+    // Expanding reveals the changed file and the untracked directory.
+    fireEvent.click(srcRow)
+    const appRow = await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))
+    expect(appRow.getAttribute('data-git-status')).toBe('modified')
+    expect(within(appRow).getByTestId(TEST_ID.fileTreeGitBadge).textContent).toBe('M')
+    const nestedRow = screen.getByTestId(testIdFor.fileEntry('src/nested'))
+    expect(nestedRow.getAttribute('data-git-status')).toBe('untracked')
+    const nestedBadge = within(nestedRow).getByTestId(TEST_ID.fileTreeGitBadge)
+    expect(nestedBadge.textContent).toBe('U')
+    expect(nestedBadge.className).toContain('text-success')
+  })
+
+  it('shows the A and C badges for a staged addition and a conflicted file', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.files.list).mockImplementation(async (projectId, relativePath) => {
+      if (projectId !== 'p1') {
+        return []
+      }
+      if (relativePath === null) {
+        return [
+          { name: 'src', relativePath: 'src', kind: 'directory' },
+          { name: 'conflict.txt', relativePath: 'conflict.txt', kind: 'file' },
+        ]
+      }
+      return relativePath === 'src'
+        ? [{ name: 'new.ts', relativePath: 'src/new.ts', kind: 'file' }]
+        : []
+    })
+    vi.mocked(app.git.fileStatuses).mockResolvedValue({
+      'src/new.ts': 'added',
+      'conflict.txt': 'conflict',
+    })
+
+    render(<App app={app} />)
+    await enterFilesMode()
+    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
+
+    // The collapsed folder aggregates the staged addition (Behaviour 17).
+    const srcRow = screen.getByTestId(testIdFor.fileEntry('src'))
+    expect(srcRow.getAttribute('data-git-status')).toBe('added')
+    const srcBadge = within(srcRow).getByTestId(TEST_ID.fileTreeGitBadge)
+    expect(srcBadge.textContent).toBe('A')
+    expect(srcBadge.className).toContain('text-success')
+
+    const conflictRow = screen.getByTestId(testIdFor.fileEntry('conflict.txt'))
+    expect(conflictRow.getAttribute('data-git-status')).toBe('conflicted')
+    const conflictBadge = within(conflictRow).getByTestId(TEST_ID.fileTreeGitBadge)
+    expect(conflictBadge.textContent).toBe('C')
+    expect(conflictBadge.className).toContain('text-error')
+    expect(conflictRow.textContent).toContain('conflicted')
+
+    fireEvent.click(srcRow)
+    const newRow = await screen.findByTestId(testIdFor.fileEntry('src/new.ts'))
+    expect(newRow.getAttribute('data-git-status')).toBe('added')
+    expect(within(newRow).getByTestId(TEST_ID.fileTreeGitBadge).textContent).toBe('A')
+  })
+
+  it('renders the undecorated tree and no error when the status read rejects', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockListings(app)
+    vi.mocked(app.git.fileStatuses).mockRejectedValue(new Error('ipc-error: invalid argument'))
+
+    render(<App app={app} />)
+    await enterFilesMode()
+    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
+
+    // Behaviour 19 / Errors: a failed read leaves every entry undecorated
+    // and never surfaces an error banner or notice.
+    for (const path of ['src', 'README.md']) {
+      const row = screen.getByTestId(testIdFor.fileEntry(path))
+      expect(row.getAttribute('data-git-status')).toBeNull()
+      expect(within(row).queryByTestId(TEST_ID.fileTreeGitBadge)).toBeNull()
+    }
+    expect(screen.queryByTestId(TEST_ID.fileTreeError)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
+  })
+
+  it('renders the plain tree with no badge when the read yields no statuses', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockListings(app)
+    vi.mocked(app.git.fileStatuses).mockResolvedValue({})
+
+    render(<App app={app} />)
+    await enterFilesMode()
+    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
+
+    for (const path of ['src', 'README.md']) {
+      const row = screen.getByTestId(testIdFor.fileEntry(path))
+      expect(row.getAttribute('data-git-status')).toBeNull()
+      expect(within(row).queryByTestId(TEST_ID.fileTreeGitBadge)).toBeNull()
+    }
+    expect(
+      within(screen.getByTestId(testIdFor.fileEntry('README.md'))).getByText('README.md').className,
+    ).not.toContain('text-')
   })
 })

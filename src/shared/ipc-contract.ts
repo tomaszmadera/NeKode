@@ -76,6 +76,15 @@ export interface GitStatus {
   worktree: GitWorktreeStatus
 }
 
+// Per-path Git status behind the file-tree decoration (spec
+// project-files-view Behaviour 16-19). `modified` also covers a deletion, a
+// rename and a type change; an untracked or ignored directory is keyed
+// without its trailing slash and covers its whole subtree.
+export type GitFileStatusKind = 'modified' | 'added' | 'untracked' | 'conflict' | 'ignored'
+
+/** Project-root-relative path to decoration kind; empty when git is absent. */
+export type GitFileStatuses = Readonly<Record<string, GitFileStatusKind>>
+
 export type Unsubscribe = () => void
 
 // One entry of a project file-tree listing (spec Data/API): one directory
@@ -271,6 +280,7 @@ export const IPC_CHANNEL = {
   terminalsData: 'terminals:data',
   terminalsExit: 'terminals:exit',
   gitStatus: 'git:status',
+  gitFileStatuses: 'git:fileStatuses',
   filesList: 'files:list',
   filesRead: 'files:read',
   filesOpenExternal: 'files:openExternal',
@@ -625,6 +635,12 @@ export interface AppApi {
   }
   git: {
     getStatus(projectPath: string): Promise<GitStatus>
+    /**
+     * One read of the project's per-path working-tree status for the file
+     * tree decoration. Any failure (not a repository, git missing, timeout)
+     * degrades to the empty map; the caller never sees an error state.
+     */
+    fileStatuses(projectPath: string): Promise<GitFileStatuses>
   }
   files: {
     /**

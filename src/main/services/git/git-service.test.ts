@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { emptyGitWorktree } from '../../../shared/ipc-contract'
 import type { GitStatusRunner } from './git-service'
-import { GitService, parseGitStatus } from './git-service'
+import { GitService, parseGitFileStatuses, parseGitStatus } from './git-service'
 
 // Git status parser fixtures (plan Stage 3): realistic `git status
 // --porcelain=v2 --branch` output for clean, dirty, detached HEAD and
@@ -195,5 +195,124 @@ describe('GitService (injected runner)', () => {
       dirty: false,
       worktree: expectedWorktree({}),
     })
+  })
+})
+
+// NEKODE-31 (spec Behaviour 16-19, Data/API): the per-path status map behind
+// the file-tree decoration. Fixtures mirror `git status --porcelain=v2
+// --ignored=traditional`: ordinary entries, staged adds, deletions, renames,
+// unmerged entries, untracked files and collapsed untracked/ignored
+// directories, plus Git's C-quoted paths.
+
+const FIXTURE_FILE_STATUSES = [
+  '# branch.oid 3b1075d9a2f1c4d6e8f0a1b2c3d4e5f6a7b8c9d0',
+  '1 M. N... 100644 100644 100644 1111111111111111 2222222222222222 src/app.ts',
+  '1 A. N... 100644 000000 000000 0000000000000000 2222222222222222 src/new.ts',
+  '1 D. N... 100644 100644 000000 1111111111111111 0000000000000000 src/old.ts',
+  '1 .M N... 100644 100644 100644 1111111111111111 2222222222222222 docs/readme.md',
+  '2 R. N... 100644 100644 100644 1111111111111111 2222222222222222 R100 docs/renamed.md\tdocs/old-name.md',
+  'u UU N... 100644 100644 100644 100644 1111111111111111 2222222222222222 3333333333333333 conflict.txt',
+  '? an-untracked.txt',
+  '? sub/inner/',
+  '! debug.log',
+  '! node_modules/',
+].join(LF)
+
+describe('parseGitFileStatuses fixtures', () => {
+  it('maps each porcelain entry to its decoration kind', () => {
+    expect(parseGitFileStatuses(FIXTURE_FILE_STATUSES)).toEqual({
+      'src/app.ts': 'modified',
+      'src/new.ts': 'added',
+      'src/old.ts': 'modified',
+      'docs/readme.md': 'modified',
+      'docs/renamed.md': 'modified',
+      'conflict.txt': 'conflict',
+      'an-untracked.txt': 'untracked',
+      'sub/inner': 'untracked',
+      'debug.log': 'ignored',
+      node_modules: 'ignored',
+    })
+  })
+
+  it('unquotes C-quoted paths, treats plain spaces as literal, and strips the directory slash', () => {
+    const quoted = [
+      '? "quo\\"ted.txt"',
+      '! "caf\\303\\251.log"',
+      '? "a dir/"',
+      '? plain with spaces.txt',
+    ].join(LF)
+    expect(parseGitFileStatuses(quoted)).toEqual({
+      'quo"ted.txt': 'untracked',
+      'café.log': 'ignored',
+      'a dir': 'untracked',
+      'plain with spaces.txt': 'untracked',
+    })
+  })
+
+  it('keeps the whole path when it contains a space (markers 1, 2 and u)', () => {
+    // `git status --porcelain=v2` separates fields with single spaces and
+    // does not quote a plain space, so the path is what follows the fixed
+    // field run (ten fields for `u`), never `split(' ', N)`.
+    const spaced = [
+      '1 .M N... 100644 100644 100644 1111111111111111 2222222222222222 my file.txt',
+      '2 R. N... 100644 100644 100644 1111111111111111 2222222222222222 R100 new name.txt\tdocs/old name.txt',
+      'u UU N... 100644 100644 100644 100644 1111111111111111 2222222222222222 3333333333333333 my conflict.txt',
+    ].join(LF)
+    expect(parseGitFileStatuses(spaced)).toEqual({
+      'my file.txt': 'modified',
+      'new name.txt': 'modified',
+      'my conflict.txt': 'conflict',
+    })
+  })
+
+  it('tolerates CRLF output and stays empty on empty or unusable input', () => {
+    expect(parseGitFileStatuses(FIXTURE_FILE_STATUSES.split(LF).join(CR + LF))).toEqual(
+      parseGitFileStatuses(FIXTURE_FILE_STATUSES),
+    )
+    expect(parseGitFileStatuses('')).toEqual({})
+    expect(parseGitFileStatuses('fatal: not a git repository')).toEqual({})
+  })
+})
+
+describe('GitService file statuses (injected runner)', () => {
+  const fileStatusArgs = ['status', '--porcelain=v2', '--ignored=traditional']
+
+  it('runs the read-only porcelain command in the project directory', async () => {
+    const calls: Array<{ args: string[]; cwd: string }> = []
+    const service = new GitService({
+      run: (args, cwd) => {
+        calls.push({ args, cwd })
+        return Promise.resolve({ stdout: FIXTURE_FILE_STATUSES, stderr: '', exitCode: 0 })
+      },
+    })
+    await expect(service.getFileStatuses('D:/code/demo')).resolves.toEqual({
+      'src/app.ts': 'modified',
+      'src/new.ts': 'added',
+      'src/old.ts': 'modified',
+      'docs/readme.md': 'modified',
+      'docs/renamed.md': 'modified',
+      'conflict.txt': 'conflict',
+      'an-untracked.txt': 'untracked',
+      'sub/inner': 'untracked',
+      'debug.log': 'ignored',
+      node_modules: 'ignored',
+    })
+    expect(calls).toEqual([{ args: fileStatusArgs, cwd: 'D:/code/demo' }])
+  })
+
+  it('degrades to the empty map on a non-repository exit or a rejected runner', async () => {
+    const nonRepo = new GitService({
+      run: () =>
+        Promise.resolve({
+          stdout: '',
+          stderr: 'fatal: not a git repository',
+          exitCode: 128,
+        }),
+    })
+    await expect(nonRepo.getFileStatuses('D:/code/demo')).resolves.toEqual({})
+    const missing = new GitService({
+      run: () => Promise.reject(new Error('spawn git ENOENT')),
+    })
+    await expect(missing.getFileStatuses('D:/code/demo')).resolves.toEqual({})
   })
 })

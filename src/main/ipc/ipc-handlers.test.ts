@@ -161,6 +161,7 @@ function createHarness(): Harness {
       getStatus: vi.fn(() =>
         Promise.resolve({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
       ),
+      fileStatuses: vi.fn(() => Promise.resolve({})),
     },
     files: {
       list: vi.fn(() => Promise.resolve([])),
@@ -459,6 +460,7 @@ describe('registered ipc handlers', () => {
         getStatus: vi.fn(() =>
           Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
         ),
+        fileStatuses: vi.fn(() => Promise.resolve({})),
       },
       files: {
         list: vi.fn(() => Promise.resolve([])),
@@ -561,6 +563,7 @@ describe('registered ipc handlers', () => {
         getStatus: vi.fn(() =>
           Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
         ),
+        fileStatuses: vi.fn(() => Promise.resolve({})),
       },
       files: {
         list: vi.fn(() => Promise.resolve([])),
@@ -671,6 +674,7 @@ describe('registered ipc handlers', () => {
         getStatus: vi.fn(() =>
           Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
         ),
+        fileStatuses: vi.fn(() => Promise.resolve({})),
       },
       files: {
         list: vi.fn(() => Promise.resolve([])),

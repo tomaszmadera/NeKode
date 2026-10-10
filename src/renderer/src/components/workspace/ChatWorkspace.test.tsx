@@ -99,6 +99,7 @@ function createAppMock(): AppMockBundle {
       getStatus: vi
         .fn()
         .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
+      fileStatuses: vi.fn().mockResolvedValue({}),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),
