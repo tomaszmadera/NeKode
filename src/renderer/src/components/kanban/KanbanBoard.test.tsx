@@ -941,7 +941,7 @@ describe('kanban work item controls (task launch navigation)', () => {
     expect(title.className).toContain('truncate')
     expect(title.className).toContain('hover:bg-highlight')
     expect(ref.className).toContain('focus-visible:outline-2')
-    for (const control of [ref, title, start, resume]) {
+    for (const control of [ref, title, resume]) {
       expect(control.tagName).toBe('BUTTON')
       expect(control.getAttribute('type')).toBe('button')
       control.focus()
@@ -982,7 +982,7 @@ describe('kanban work item controls (task launch navigation)', () => {
     const cardStart = within(card).getByTestId(testIdFor.kanbanItemStart('NK-1'))
     const cardResume = await within(card).findByTestId(testIdFor.kanbanItemResume('NK-1'))
     cardStart.focus()
-    expect(document.activeElement).toBe(cardStart)
+    expect(document.activeElement).not.toBe(cardStart)
     fireEvent.keyDown(cardStart, { key: 'Enter' })
     fireEvent.click(cardStart)
     fireEvent.click(cardResume)
@@ -995,7 +995,7 @@ describe('kanban work item controls (task launch navigation)', () => {
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
   })
 
-  it('asks the host to open Start and Resume', async () => {
+  it('asks the host to open Resume and blocks Start when Resume exists', async () => {
     const onStart = vi.fn()
     const onResume = vi.fn()
     render(
@@ -1008,13 +1008,13 @@ describe('kanban work item controls (task launch navigation)', () => {
       />,
     )
     const start = await screen.findByTestId(testIdFor.kanbanItemStart('NK-1'))
+    await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))
     fireEvent.click(start)
-    expect(onStart).toHaveBeenCalledTimes(1)
-    expect(onStart.mock.calls[0]?.[0].ref).toBe('NK-1')
+    expect(onStart).not.toHaveBeenCalled()
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemResume('NK-1')))
-    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(onStart).not.toHaveBeenCalled()
     expect(onResume).toHaveBeenCalledTimes(1)
     expect(onResume.mock.calls[0]?.[0].ref).toBe('NK-1')
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
@@ -1043,6 +1043,56 @@ describe('kanban handoff availability', () => {
   ): AppApi {
     return { kanban: { listBoard, handoffAvailability } } as unknown as AppApi
   }
+
+  it.each(['list', 'board'] as const)(
+    'disables Start only for items with Resume and re-enables it after handoff removal in %s',
+    async (view) => {
+      const availability = vi
+        .fn()
+        .mockResolvedValueOnce({
+          state: 'ready',
+          items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: true }],
+          rejections: [],
+        })
+        .mockResolvedValue({
+          state: 'ready',
+          items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: false }],
+          rejections: [],
+        })
+      const onStart = vi.fn()
+      const onResume = vi.fn()
+      const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), availability)
+      render(
+        <KanbanBoard
+          app={app}
+          projectId="p1"
+          onConfigure={vi.fn()}
+          onStart={onStart}
+          onResume={onResume}
+        />,
+      )
+      await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))
+      if (view === 'board') fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
+      const start = screen.getByTestId(testIdFor.kanbanItemStart('NK-1')) as HTMLButtonElement
+      const otherStart = screen.getByTestId(testIdFor.kanbanItemStart('NK-2')) as HTMLButtonElement
+      expect(start.disabled).toBe(true)
+      start.focus()
+      expect(document.activeElement).not.toBe(start)
+      fireEvent.click(start)
+      expect(onStart).not.toHaveBeenCalled()
+      expect(otherStart.disabled).toBe(false)
+      fireEvent.click(otherStart)
+      expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-2' }))
+      fireEvent.click(screen.getByTestId(testIdFor.kanbanItemResume('NK-1')))
+      expect(onResume).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
+      fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+      await screen.findByTestId(TEST_ID.kanbanHandoffEmpty)
+      expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull()
+      expect(start.disabled).toBe(false)
+      fireEvent.click(start)
+      expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
+    },
+  )
 
   it('hides Resume until the batch check succeeds, and always shows Start', async () => {
     const pending = deferred<KanbanHandoffAvailabilityResult>()

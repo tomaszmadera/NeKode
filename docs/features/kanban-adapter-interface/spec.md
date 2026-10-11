@@ -224,6 +224,9 @@ Harness pozostaje niezależnym narzędziem agenta.
    paddingu o 50% samo w sobie nie spełnia tego warunku. Typografia
    12.6px / 14.7px, kolory, sortowanie, grupowanie i zwijanie grup zostają.
 4. Start jest stale widoczny w obu układach, także bez aktywnego czatu.
+   Decyzja użytkownika 2026-10-11: gdy dla zadania jest widoczny Resume,
+   Start jest nieaktywny, nie przyjmuje fokusu i nie otwiera modalu.
+   Po zniknięciu Resume Start znów jest aktywny.
    Widoczność Resume określa sekcja "Dostępność Resume i kontrakt producenta
    handoffu" poniżej. Przy małej szerokości akcje nie zasłaniają tytułu ani priorytetu;
    dopuszczalny jest osobny rząd przycisków. Stan backendu sam nie blokuje
@@ -315,9 +318,14 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
    i aktualną konfigurację. Usunięty, nieczytelny, podmieniony lub zmieniony
    po wyświetleniu plik wymaga odświeżenia wyboru. Nie powstaje wtedy czat.
 4. Dalej obowiązuje przepływ Start, ale prompt zaczyna się od
-   `Resume task <ref>: <title> from handoff <path>. Read the handoff first
-   and reconcile it with the current repository state before continuing.`
-   Zawiera aktualny opis i URL zadania oraz instrukcje projektu.
+   `Resume task <ref>: <title> from handoff <path>. Read the handoff first,
+   reconcile it with the current repository state, and check the current task
+   requirements on Kanban before continuing.`
+   Decyzja użytkownika 2026-10-11: Resume zawiera tylko to polecenie oraz
+   `Follow the project's instructions. Do not assume approval for actions that require it.`
+   Nie dołącza opisu, informacji o braku opisu, URL, katalogu handoffów ani
+   instrukcji nazewnictwa przyszłego rekordu. Agent sprawdza bieżące wymagania
+   na Kanbanie po przeczytaniu handoffu. Prompt Start zachowuje opis i kontekst.
    Ścieżka jest względna względem projektu, jeśli plik leży wewnątrz niego;
    w przeciwnym razie absolutna. Jest danymi promptu, nie kodem shell.
 5. Resume rozpoczyna nową sesję wybranego agenta z kontekstem pliku.
@@ -530,8 +538,9 @@ Decyzja użytkownika 2026-10-09: producent i NeKode stosują jedną konwencję
 nazw. Nie ma wymiany trzech pól work_item ani parsera ich metadanych
 w runtime NeKode. Istniejące dane są dostosowywane jednorazowo.
 
-1. Prompt Start i Resume przekazuje rzeczywisty pełny ref, opis i URL
-   zadania oraz skonfigurowany katalog. Nie wymaga utrwalania
+1. Prompt Start przekazuje rzeczywisty pełny ref, opis i URL zadania oraz
+   skonfigurowany katalog. Resume przekazuje pełny ref, tytuł, ścieżkę handoffu
+   i instrukcje z sekcji Resume powyżej. Nie wymaga utrwalania
    work_item_ref/id/adapter przez producenta. Id i adapter pozostają
    wewnętrznymi danymi NeKode do izolacji operacji Kanbana i przypisań.
    Brak katalogu nie blokuje Start ani nie ustawia go domyślnie.
@@ -608,7 +617,8 @@ plik według nowej nazwy. Nie powstaje stały mechanizm migracji w aplikacji.
 
 1. Lista i Board pokazują Resume tylko dla zadania z
    dopasowanym czytelnym handoffem. Brak konfiguracji, wynik pusty, ładowanie
-   i błąd skanu nie renderują tej kontrolki. Start działa jak dotychczas.
+   i błąd skanu nie renderują tej kontrolki. Start jest nieaktywny dokładnie
+   wtedy, gdy dla tego zadania jest widoczny Resume, w widokach List i Board.
 2. Configure handoffs jest dostępne bez Resume. Skonfigurowanie właściwego
    katalogu powoduje nowy skan; błąd odczytu ma odrębny komunikat i Retry.
 3. Szczegóły i modal Resume nie zawierają Link handoff ani przepływu
@@ -626,7 +636,8 @@ plik według nowej nazwy. Nie powstaje stały mechanizm migracji w aplikacji.
    Refresh odświeżają dostępność.
 7. Usunięcie albo zmiana pliku po skanie listy lub modalu blokuje
    zatwierdzenie bez tworzenia czatu i procesu. Nie ma Resume bez ścieżki.
-8. Prompt przekazuje rzeczywisty pełny ref i instrukcję nazewnictwa bez sekretów. Test
+8. Oba prompty przekazują rzeczywisty pełny ref, a Start dodatkowo instrukcję
+   nazewnictwa bez sekretów. Test
    uruchomienia zachowuje pojedynczy argument promptu i obecne reguły logowania.
 9. Testy producenta Harness potwierdzają prefiks pełnego ref w task_id,
    zachowanie nazwy przy handoff-create i replace oraz zgodność nazwy
