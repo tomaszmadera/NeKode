@@ -1,10 +1,19 @@
 import type {
+  DesktopDictationSettings,
+  DesktopDictationSetup,
+} from '../../shared/desktop-dictation-contract'
+import type {
   ActionControl,
   ActionExecution,
   ActionInput,
   AgentProfilePut,
   AgentProfilesDocument,
   ChatInfo,
+  DictationDictionary,
+  DictationResult,
+  DictationSettings,
+  DictationStart,
+  DictationStatusSnapshot,
   FileEntry,
   FilePreview,
   GitFileStatuses,
@@ -33,6 +42,22 @@ import type {
 // handlers invoke.
 
 export interface AppServices {
+  dictation: {
+    desktopSetup(): DesktopDictationSetup
+    desktopConfigure(settings: DesktopDictationSettings): DesktopDictationSetup
+    desktopActivate(handle: string): Promise<void>
+    status(): DictationStatusSnapshot
+    testConnection(): Promise<DictationStatusSnapshot>
+    refreshModels(): Promise<DictationStatusSnapshot>
+    dictionaryList(): Promise<DictationDictionary>
+    getSettings(): DictationSettings
+    setSettings(settings: DictationSettings): DictationSettings
+    start(chatId: string, retrySessionId: string | null): DictationStart
+    audio(sessionId: string, wav: ArrayBuffer): Promise<void>
+    cancel(sessionId: string): void
+    onResult(callback: (result: DictationResult) => void): Unsubscribe
+    shutdown(): void
+  }
   actions: {
     list(): ActionControl[]
     create(input: ActionInput): ActionControl
@@ -93,6 +118,8 @@ export interface AppServices {
     terminateProjectBottom(projectId: string): void
     /** App-quit teardown (spec Behaviour 8); not part of the renderer bridge. */
     terminateAll(): void
+    /** App-quit wait. A seven-second report does not settle this promise. */
+    shutdown(reportTimeout?: (error: unknown) => void): Promise<void>
     onData(listener: (chatId: string, data: string) => void): Unsubscribe
     onExit(listener: (chatId: string, exitCode: number) => void): Unsubscribe
   }

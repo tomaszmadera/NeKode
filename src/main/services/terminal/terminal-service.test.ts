@@ -106,6 +106,64 @@ function createHarness(
 }
 
 describe('terminal service (fake PTY)', () => {
+  it('shutdown waits for every native PTY exit and shares reentrant teardown', async () => {
+    const { service, ptys } = createHarness()
+    const exits = vi.fn()
+    service.onExit(exits)
+    service.create('t1', 'D:/a')
+    service.create('t2', 'D:/a')
+    const done = vi.fn()
+    const pending = service.shutdown().then(done)
+    expect(service.shutdown()).toBe(service.shutdown())
+    expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1])
+    expect(() => service.create('t3', 'D:/a')).toThrow('application is closing')
+    ptys[0].emitExit(0)
+    await Promise.resolve()
+    expect(done).not.toHaveBeenCalled()
+    ptys[1].emitExit(0)
+    await pending
+    expect(done).toHaveBeenCalledOnce()
+    expect(exits).not.toHaveBeenCalled()
+  })
+
+  it('shutdown reports a missing PTY exit and resolves when that exit arrives', async () => {
+    vi.useFakeTimers()
+    try {
+      const { service, ptys } = createHarness()
+      service.create('t1', 'D:/a')
+      const reporter = vi.fn()
+      const outcome = { state: 'pending' as 'pending' | 'resolved' | 'rejected' }
+      const pending = service.shutdown(reporter).then(
+        () => {
+          outcome.state = 'resolved'
+        },
+        () => {
+          outcome.state = 'rejected'
+        },
+      )
+      await vi.advanceTimersByTimeAsync(7000)
+      expect(outcome.state).toBe('pending')
+      expect(reporter).toHaveBeenCalledOnce()
+      const reported = reporter.mock.calls[0]?.[0]
+      expect(reported).toBeInstanceOf(Error)
+      expect((reported as Error).message).toBe('Terminal shutdown timed out.')
+      ptys[0]?.emitExit(0)
+      await pending
+      expect(outcome.state).toBe('resolved')
+      expect(reporter).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shutdown does not kill or wait for an already exited PTY', async () => {
+    const { service, ptys } = createHarness()
+    service.create('t1', 'D:/a')
+    ptys[0].emitExit(0)
+    await service.shutdown()
+    expect(ptys[0].killCount).toBe(0)
+  })
+
   it('spawns lazily and keeps exactly one PTY per chat', () => {
     const { service, ptys, spawn } = createHarness()
     expect(spawn).not.toHaveBeenCalled()

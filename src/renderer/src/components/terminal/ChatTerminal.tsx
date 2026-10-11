@@ -39,6 +39,7 @@ function navigatorClipboard(): Clipboard | null {
 // survive chat switches (spec Behaviour 6).
 
 interface ChatTerminalProps {
+  dictation?: import('../../hooks/useDesktopDictation').DesktopDictationControl
   app: AppApi
   chatId: string
   /** Project directory; becomes the PTY cwd on first attach. */
@@ -132,6 +133,7 @@ function errorMessage(error: unknown, fallback: string): string {
  */
 export function ChatTerminal({
   app,
+  dictation,
   chatId,
   cwd,
   visible,
@@ -202,7 +204,9 @@ export function ChatTerminal({
     }
 
     const terminal = new Terminal({
-      convertEol: true,
+      // PTY output already owns line endings. A bare LF can move down at
+      // the same column during a TUI redraw; adding CR corrupts that frame.
+      convertEol: false,
       cursorBlink: true,
       fontSize: initialFontSizeRef.current,
       // A distinct initial stack ensures xterm remeasures after font loading,
@@ -702,6 +706,7 @@ export function ChatTerminal({
             />
           </div>
           <PromptInput
+            dictation={dictation}
             onSubmit={(line) => sendRef.current?.(line)}
             injected={injected}
             onInjected={onInjected}

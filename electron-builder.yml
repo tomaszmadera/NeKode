@@ -8,6 +8,9 @@
 #   Rebuilding them for Electron would require VS C++ Build Tools (not
 #   available on this host) and is not needed for N-API modules.
 npmRebuild: false
+extraResources:
+  - from: resources/dictation/desktop-shortcut.ps1
+    to: dictation/desktop-shortcut.ps1
 
 # Windows application icon (added 2026-10-01, user request): the branded cat
 # tile rasterized from src/renderer/src/assets/brand/cat-icon-tile.svg

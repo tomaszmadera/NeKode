@@ -16,6 +16,9 @@ import { ActionService } from './action-service'
 import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
 import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
+import { DesktopDictation } from './dictation/desktop-dictation'
+import { DictationService } from './dictation/dictation-service'
+import { OpenWhisprClient } from './dictation/openwhispr-client'
 import { FilesService } from './files/files-service'
 import { GitService } from './git/git-service'
 import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
@@ -37,6 +40,7 @@ import { listWslDirectories, listWslDistributions, validatedWslProjectPath } fro
 
 export interface CreateServicesOptions {
   dbPath: string
+  desktopShortcut?: (handle: string) => Promise<void>
   /**
    * userData directory (default location of the kanban adapters dir).
    */
@@ -58,6 +62,19 @@ export function createServices(options: CreateServicesOptions): AppServices {
   runMigrations(db)
   const projects = new ProjectService({ db, fs: { stat: (path) => safeStat(path) } })
   const state = new AppStateService({ db })
+  const desktopDictation = new DesktopDictation(
+    state,
+    options.desktopShortcut ??
+      (() =>
+        Promise.reject(
+          new AppError(
+            'not_found',
+            'The desktop dictation helper is unavailable. Repair your NeKode installation.',
+          ),
+        )),
+  )
+  const dictation = new OpenWhisprClient({ state })
+  const dictationSessions = new DictationService(dictation)
   // Shell selection (spec project-shell-selection): one service owns
   // detection, resolution and labels. Custom paths persist app-level in
   // shells.custom; per-project choices live under project.shell:<id>.
@@ -140,6 +157,26 @@ export function createServices(options: CreateServicesOptions): AppServices {
     return project.path
   }
   return {
+    dictation: {
+      desktopSetup: () => desktopDictation.get(),
+      desktopConfigure: (settings) => desktopDictation.set(settings),
+      desktopActivate: (handle) => desktopDictation.activate(handle),
+      status: () => dictation.status(),
+      testConnection: () => dictation.testConnection(),
+      refreshModels: () => dictation.refreshModels(),
+      dictionaryList: () => dictation.dictionaryList(),
+      getSettings: () => dictation.getSettings(),
+      setSettings: (settings) => {
+        const result = dictation.setSettings(settings)
+        if (!settings.enabled) dictationSessions.discard()
+        return result
+      },
+      start: (chatId, retrySessionId) => dictationSessions.start(chatId, retrySessionId),
+      audio: (sessionId, wav) => dictationSessions.audio(sessionId, wav),
+      cancel: (sessionId) => dictationSessions.cancel(sessionId),
+      onResult: (callback) => dictationSessions.onResult(callback),
+      shutdown: () => dictationSessions.shutdown(),
+    },
     actions: {
       list: () => actions.list(),
       create: (input) => actions.create(input),
@@ -248,6 +285,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       terminate: (chatId) => terminals.terminate(chatId),
       terminateProjectBottom: (projectId) => terminals.terminateProjectBottom(projectId),
       terminateAll: () => terminals.terminateAll(),
+      shutdown: (reportTimeout) => terminals.shutdown(reportTimeout),
       onData: (listener) => terminals.onData(listener),
       onExit: (listener) => terminals.onExit(listener),
     },

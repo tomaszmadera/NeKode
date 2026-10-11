@@ -8,6 +8,7 @@ import {
 } from '../../../../shared/ipc-contract'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { createDictationApiStub } from '../../test/dictation-api-stub'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
 import { resetMockTerminals } from '../../test/xterm-mock'
 
@@ -33,6 +34,7 @@ vi.mock('../files/MonacoPreview', () => ({
 
 function createAppApiStub(): AppApi {
   return {
+    dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { emptyGitWorktree } from '../../shared/ipc-contract'
+import { emptyGitWorktree, IPC_CHANNEL } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import { buildValidatedChannels, ValidationError } from './ipc-validation'
 import type { AppServices } from './service-registry'
@@ -20,6 +20,22 @@ const EMPTY_HANDOFF_AVAILABILITY = {
 
 function fakeServices(): AppServices {
   return {
+    dictation: {
+      desktopSetup: vi.fn(),
+      desktopConfigure: vi.fn(),
+      desktopActivate: vi.fn(async () => {}),
+      status: vi.fn(),
+      testConnection: vi.fn(),
+      refreshModels: vi.fn(),
+      dictionaryList: vi.fn(),
+      getSettings: vi.fn(),
+      setSettings: vi.fn(),
+      start: vi.fn(),
+      audio: vi.fn(),
+      cancel: vi.fn(),
+      onResult: vi.fn(() => () => undefined),
+      shutdown: vi.fn(),
+    },
     actions: {
       list: vi.fn(() => []),
       create: vi.fn(),
@@ -54,6 +70,7 @@ function fakeServices(): AppServices {
       terminate: vi.fn(),
       terminateProjectBottom: vi.fn(),
       terminateAll: vi.fn(),
+      shutdown: vi.fn(async () => {}),
       onData: () => () => undefined,
       onExit: () => () => undefined,
     },
@@ -109,6 +126,127 @@ function channelMap() {
 }
 
 describe('ipc payload validation', () => {
+  it('accepts only argument-free desktop activation and strict boolean desktop settings', () => {
+    const services = fakeServices()
+    const channels = buildValidatedChannels(services)
+    const activate = channels.find(
+      (entry) => entry.channel === IPC_CHANNEL.dictationDesktopActivate,
+    )
+    const configure = channels.find(
+      (entry) => entry.channel === IPC_CHANNEL.dictationDesktopConfigure,
+    )
+    if (!activate || !configure) throw new Error('Missing desktop channels')
+    expect(activate.parse([])).toEqual([])
+    for (const payload of [['Ctrl'], ['123'], [{ script: 'bad' }], [null]])
+      expect(() => activate.parse(payload)).toThrow(ValidationError)
+    for (const payload of [
+      [],
+      [null],
+      [[]],
+      [{ enabled: true, confirmed: 'true' }],
+      [{ enabled: 'true', confirmed: false }],
+      [{ enabled: true, confirmed: true, key: 'any' }],
+      [{ enabled: false, confirmed: true }],
+      [{ enabled: true, confirmed: false }, 'extra'],
+    ])
+      expect(() => configure.parse(payload)).toThrow(ValidationError)
+    expect(services.dictation.desktopConfigure).not.toHaveBeenCalled()
+    configure.invoke(configure.parse([{ enabled: true, confirmed: false }]))
+    expect(services.dictation.desktopConfigure).toHaveBeenCalledExactlyOnceWith({
+      enabled: true,
+      confirmed: false,
+    })
+  })
+  it('validates session start, binary WAV, cancel and exact arity before invoking services', () => {
+    const services = fakeServices()
+    const channels = new Map(
+      buildValidatedChannels(services).map((entry) => [entry.channel, entry]),
+    )
+    const start = channels.get(IPC_CHANNEL.dictationStart)
+    if (!start) throw new Error('Missing start channel')
+    for (const payload of [[], ['chat'], ['chat', null, 1], [null, null], ['', null], ['chat', 1]])
+      expect(() => start.parse(payload)).toThrow(ValidationError)
+    start.invoke(start.parse(['chat', null]))
+    expect(services.dictation.start).toHaveBeenCalledExactlyOnceWith('chat', null)
+    const audio = channels.get(IPC_CHANNEL.dictationAudio)
+    if (!audio) throw new Error('Missing audio channel')
+    for (const payload of [
+      [],
+      ['session'],
+      ['session', null],
+      ['session', 'C:\\audio.wav'],
+      ['session', new Uint8Array(44)],
+      ['session', new ArrayBuffer(44)],
+      [1, new ArrayBuffer(44)],
+    ])
+      expect(() => audio.parse(payload)).toThrow(ValidationError)
+    expect(services.dictation.audio).not.toHaveBeenCalled()
+    const wav = new Uint8Array([
+      82, 73, 70, 70, 36, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0, 128,
+      62, 0, 0, 0, 125, 0, 0, 2, 0, 16, 0, 100, 97, 116, 97, 0, 0, 0, 0,
+    ]).buffer
+    audio.invoke(audio.parse(['session', wav]))
+    expect(services.dictation.audio).toHaveBeenCalledExactlyOnceWith('session', wav)
+    const malformed = wav.slice(0)
+    new DataView(malformed).setUint32(24, 44100, true)
+    expect(() => audio.parse(['session', malformed])).toThrow(ValidationError)
+    const cancel = channels.get(IPC_CHANNEL.dictationCancel)
+    if (!cancel) throw new Error('Missing cancel channel')
+    expect(() => cancel.parse([])).toThrow(ValidationError)
+    expect(() => cancel.parse([1])).toThrow(ValidationError)
+    expect(() => cancel.parse(['session', 'extra'])).toThrow(ValidationError)
+    cancel.invoke(cancel.parse(['session']))
+    expect(services.dictation.cancel).toHaveBeenCalledExactlyOnceWith('session')
+  })
+  it.each([
+    IPC_CHANNEL.dictationStatus,
+    IPC_CHANNEL.dictationTestConnection,
+    IPC_CHANNEL.dictationRefreshModels,
+    IPC_CHANNEL.dictationDictionaryList,
+    IPC_CHANNEL.dictationGetSettings,
+  ])('rejects all arguments to %s before service routing', (name) => {
+    const services = fakeServices()
+    const channel = buildValidatedChannels(services).find((entry) => entry.channel === name)
+    if (!channel) throw new Error('Missing dictation channel')
+    expect(() => channel.parse(['renderer-url-or-token'])).toThrow(ValidationError)
+    channel.invoke(channel.parse([]))
+    const method = name.slice('dictation:'.length) as
+      | 'status'
+      | 'testConnection'
+      | 'refreshModels'
+      | 'dictionaryList'
+      | 'getSettings'
+    expect(services.dictation[method]).toHaveBeenCalledExactlyOnceWith()
+  })
+  it('strictly validates settings and exact arity before routing', () => {
+    const services = fakeServices()
+    const channel = buildValidatedChannels(services).find(
+      (entry) => entry.channel === IPC_CHANNEL.dictationSetSettings,
+    )
+    if (!channel) throw new Error('Missing dictation settings channel')
+    const settings = { enabled: true, language: 'pl', model: 'default', timeoutSeconds: 30 }
+    for (const payload of [
+      [],
+      [settings, 'extra'],
+      [null],
+      [[]],
+      [{ ...settings, enabled: 'true' }],
+      [{ ...settings, language: 'http://cloud' }],
+      [{ ...settings, model: { provider: '', model: 'm' } }],
+      [{ ...settings, model: { provider: 'p', model: 'm', token: 'secret' } }],
+      [{ ...settings, model: { provider: 'p', model: '\u0000' } }],
+      [{ ...settings, timeoutSeconds: 4 }],
+      [{ ...settings, timeoutSeconds: 301 }],
+      [{ ...settings, timeoutSeconds: 5.5 }],
+      [{ ...settings, timeoutSeconds: Infinity }],
+      [{ ...settings, token: 'secret' }],
+    ]) {
+      expect(() => channel.parse(payload)).toThrow(ValidationError)
+    }
+    expect(services.dictation.setSettings).not.toHaveBeenCalled()
+    channel.invoke(channel.parse([settings]))
+    expect(services.dictation.setSettings).toHaveBeenCalledExactlyOnceWith(settings)
+  })
   it('validates both directory query arguments and exact arity before the service', () => {
     const services = fakeServices()
     const channel = buildValidatedChannels(services).find(

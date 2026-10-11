@@ -1,8 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ITerminalOptions } from '@xterm/xterm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
+import { createDictationApiStub } from '../../test/dictation-api-stub'
 import { mockFitAddonInstances, resetMockFitAddons } from '../../test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
 import { ChatTerminal } from './ChatTerminal'
@@ -31,6 +33,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
   const exitUnsubscribes: Array<() => void> = []
 
   const app: AppApi = {
+    dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
@@ -301,6 +304,42 @@ describe('ChatTerminal lifecycle', () => {
     await waitFor(() => expect(app.terminals.resize).toHaveBeenCalledWith('t1', 80, 24))
   })
 
+  it('preserves the PTY column on LF when Grok clears successive screen rows', async () => {
+    const { app, emitData } = createAppMock()
+    render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    const view = mockTerminalInstances[0]
+    // Reduced from Grok 1.0.50 output captured through real Windows ConPTY:
+    // clear a row, LF at the same column, then erase the next row's borders.
+    // Treating LF as CRLF leaves the old borders behind between redraws.
+    const frame = '\x1b[6;4H|\x1b[6;97H|\x1b[5;4H\x1b[94X\n \x1b[92C '
+    act(() => emitData(frame))
+    expect(view.write).toHaveBeenCalledWith(frame)
+
+    // Use the real parser without opening a DOM view; the wiring mock does
+    // not implement cursor positioning or LF column semantics.
+    // xterm probes canvas at module load, but this test only uses its parser.
+    const canvasContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+    const { Terminal } = await vi.importActual<typeof import('@xterm/xterm')>('@xterm/xterm')
+    canvasContext.mockRestore()
+    const terminal = new Terminal({ ...(view.options as ITerminalOptions), cols: 100, rows: 30 })
+    try {
+      await new Promise<void>((resolve) => terminal.write(frame, resolve))
+      expect(terminal.buffer.active.getLine(5)?.translateToString(true).trimEnd()).toBe('')
+    } finally {
+      terminal.dispose()
+    }
+  })
+
   it('ignores create completion after the view has been disposed', async () => {
     let resolveCreate: ((sessionId: string) => void) | undefined
     const onReady = vi.fn()
@@ -547,8 +586,7 @@ describe('ChatTerminal lifecycle', () => {
   // Styled prompt input under the terminal: Enter submits the line plus CR
   // through the PTY write path with Enter semantics (the Ctrl+D prompt base
   // re-collects from the shell's next redraw), an empty line submits nothing,
-  // and the Dictation control is the design-doc 21 idle state (rendered,
-  // disabled) until a recognizer is wired.
+  // and Dictation stays disabled when no desktop control is provided.
   it('prompt input writes the submitted line plus CR to the PTY and clears itself', async () => {
     const { app } = createAppMock()
     const { getByTestId } = render(

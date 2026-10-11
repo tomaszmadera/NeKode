@@ -1,13 +1,18 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import type { AppApi } from '../../../../shared/ipc-contract'
 import type { AttentionSettings } from '../../lib/attention-settings'
 import { Icon } from '../../lib/icons'
 import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID } from '../../lib/test-ids'
 import { isThemeId, THEME_IDS, THEMES, type ThemeId } from '../../lib/theme'
+import { DesktopDictationSettings } from './DesktopDictationSettings'
+import { DictationDictionary } from './DictationDictionary'
 import { FontsSettings } from './FontsSettings'
 
 interface AppSettingsProps {
+  dictationApi: AppApi['dictation']
+  desktopDictation: ReturnType<typeof import('../../hooks/useDesktopDictation').useDesktopDictation>
   theme: ThemeId
   chatSwitch: boolean
   projectNamesUppercase: boolean
@@ -28,7 +33,7 @@ interface AppSettingsProps {
   onClose: () => void
 }
 
-type SettingsTab = 'general' | 'fonts' | 'shortcuts'
+type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation'
 
 // One row per app shortcut. Keys render in <kbd>-style cells; keep each
 // description in sync with the behavior actually implemented (App-level chords,
@@ -57,6 +62,8 @@ const SHORTCUT_SECTIONS: Array<{ heading: string; rows: Array<[string, string]> 
 ]
 
 export function AppSettings({
+  dictationApi,
+  desktopDictation,
   theme,
   chatSwitch,
   projectNamesUppercase,
@@ -156,7 +163,7 @@ export function AppSettings({
               aria-orientation="vertical"
               className="flex w-24 shrink-0 flex-col gap-1 border-r border-edge pr-3 sm:w-36"
             >
-              {(['general', 'fonts', 'shortcuts'] as const).map((tab) => (
+              {(['general', 'fonts', 'shortcuts', 'dictation'] as const).map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -175,7 +182,7 @@ export function AppSettings({
                   className={`rounded-md border border-edge px-3 py-2 text-left text-sm focus-visible:outline focus-visible:outline-info ${activeTab === tab ? 'bg-button text-ink' : 'text-ink-secondary'}`}
                   onClick={() => setActiveTab(tab)}
                   onKeyDown={(event) => {
-                    const tabs: SettingsTab[] = ['general', 'fonts', 'shortcuts']
+                    const tabs: SettingsTab[] = ['general', 'fonts', 'shortcuts', 'dictation']
                     const index = tabs.indexOf(tab)
                     const { key } = event
                     const next =
@@ -186,7 +193,7 @@ export function AppSettings({
                           : key === 'Home'
                             ? tabs[0]
                             : key === 'End'
-                              ? tabs[2]
+                              ? tabs[tabs.length - 1]
                               : null
                     if (next !== null) {
                       event.preventDefault()
@@ -195,11 +202,17 @@ export function AppSettings({
                     }
                   }}
                 >
-                  {tab === 'general' ? 'General' : tab === 'fonts' ? 'Fonts' : 'Shortcuts'}
+                  {tab === 'general'
+                    ? 'General'
+                    : tab === 'fonts'
+                      ? 'Fonts'
+                      : tab === 'dictation'
+                        ? 'Dictation'
+                        : 'Shortcuts'}
                 </button>
               ))}
             </div>
-            {(['general', 'fonts', 'shortcuts'] as const)
+            {(['general', 'fonts', 'shortcuts', 'dictation'] as const)
               .filter((tab) => tab !== activeTab)
               .map((tab) => (
                 <div
@@ -347,6 +360,15 @@ export function AppSettings({
                   onFamiliesChange={onTerminalFontFamiliesChange}
                   onSizeChange={onTerminalFontSizeChange}
                 />
+              ) : activeTab === 'dictation' ? (
+                <>
+                  <DesktopDictationSettings
+                    setup={desktopDictation.setup}
+                    saving={desktopDictation.saving || desktopDictation.control.busy}
+                    onChange={desktopDictation.configure}
+                  />
+                  <DictationDictionary api={dictationApi} />
+                </>
               ) : (
                 <div data-testid={TEST_ID.settingsShortcutsTable} className="mt-4 space-y-4">
                   {SHORTCUT_SECTIONS.map((section) => (
@@ -372,9 +394,9 @@ export function AppSettings({
               )}
             </div>
           </div>
-          {error ? (
+          {(error ?? desktopDictation.control.error) ? (
             <p role="alert" className="mt-3 text-xs text-error">
-              {error}
+              {error ?? desktopDictation.control.error}
             </p>
           ) : null}
         </section>

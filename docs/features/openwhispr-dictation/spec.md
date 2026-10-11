@@ -1,10 +1,64 @@
-# OpenWhispr Dictation Integration — Functional Specification
+# OpenWhispr dictation integration: functional specification
 
 This file is the behavioral contract for the OpenWhispr dictation feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 Path: `docs/features/openwhispr-dictation/spec.md`.
-Status: approved for planning; not yet implemented. Implementation issue: Plane `NEKODE` project, "Implement OpenWhispr Dictation Integration" (Backlog).
+Status: desktop V1 contract and amended execution plan approved. Implementation issue: `NEKODE-22`. Public Cloud API remains deferred to optional backlog item `NEKODE-37`.
 Parent contract: `docs/features/dictation-provider-architecture/spec.md` (generic provider registry). This document is the concrete OpenWhispr specialization and takes precedence for OpenWhispr behavior. Plane NEKODE-21 (the generic provider architecture) is deprioritized; this integration ships first.
+
+## Desktop V1 contract
+
+The user accepts OpenWhispr desktop dictation for V1, including delivery into whichever field is focused when OpenWhispr pastes the transcript. Clicking Dictation must first focus the prompt input belonging to that button. OpenWhispr owns recording, processing, cancellation and insertion. NeKode sends the configured activation shortcut and does not own or observe a correlated desktop dictation session.
+
+This decision supersedes the previous original-target and session-ownership requirements for desktop mode. A focus change from A to B may redirect delivery to B; this is accepted desktop behavior. No desktop destination-gone review surface or NeKode exactly-once transcript guarantee is promised. The unchanged local-mode requirements below retain those guarantees for the local bridge route.
+
+V1 uses the confirmed Windows shortcut `Ctrl + Super`, activation mode `Tap`. Other shortcuts and Hold mode are not supported by this first product integration. OpenWhispr's own settings select Cloud or Local processing; NeKode does not change them. No downloaded local model is required for desktop Cloud. Local processing remains an option through OpenWhispr and the retained local bridge foundation. Public Cloud API, credentials, quotas and any automatic route fallback remain outside this task.
+
+### Requirements and acceptance
+
+Desktop identifiers supplement the stable local `FR-*` and `AC*` identifiers. They do not relabel earlier original-target test failures as successes.
+
+| Id | Required behavior | Acceptance evidence |
+|---|---|---|
+| DFR-001 | Dictation is an explicit button action in a chat terminal prompt. Enablement defaults off and requires Windows plus confirmation that OpenWhispr is running with `Ctrl + Super` / Tap. Opening settings, restoring state or changing an option never activates it. | Disabled actions send no shortcut; opening or restoring the UI sends none. Configuration confirmation is a user assertion, not detected OpenWhispr state. |
+| DFR-002 | Before each activation, focus the input belonging to the clicked button and place its caret at the end of the current draft without changing its value. Refuse the action if the input is absent or cannot receive focus. | Pointer and keyboard activation observe that exact input focused, unchanged draft and caret at end before the IPC call. Two prompts do not share the target. |
+| DFR-003 | Send one press/release of the fixed confirmed chord through a typed, validated and sender-guarded main-process operation. The renderer cannot provide keys, commands, scripts, executable paths or a target OS window. Main derives the NeKode window from the trusted sender. | Strict argument and sender rejection; native adapter receives only the fixed chord and main-owned window identity. |
+| DFR-004 | Refuse activation when the owning NeKode window is not foreground, including immediately before native key-down. Track attempted keys before sending, release them in a finally path, and report partial-send or release failures. Refuse when modifiers are already held; never release a user's held modifier. No automatic shortcut retry. | Injected foreground-loss, held-modifier, partial-send and key-release checks. Failure reports an uncertain external state rather than claiming no recording occurred. |
+| DFR-005 | Serialize shortcut dispatch: while it is in flight, another activation is ignored and the button shows only a dispatch-busy state. Completing dispatch means the shortcut was sent, not that recording began or transcription succeeded. | Reentrant/double activation makes one dispatch. No NeKode Recording, Transcribing, Stop or Cancel state is inferred from dispatch. |
+| DFR-006 | OpenWhispr owns the microphone and transcript delivery. NeKode creates no desktop-mode audio file, does not fetch a transcript, inspect history, read the clipboard, inject via PromptInjection or submit a terminal command. | Tests show no NeKode capture/transcription/insertion/submit operation on desktop activation. Paste updates the normal controlled input like user editing. |
+| DFR-007 | Stopping/cancelling a take uses OpenWhispr's own controls or configured hotkey. Tap is a toggle: clicking Dictation during an external recording may stop it. NeKode does not identify which transition occurred, prevent all external concurrent sessions or restore the initial target later. | UI describes external controls and current-focus delivery. It never says a session completed or was cancelled on the basis of shortcut success. |
+| DFR-008 | Settings expose only the desktop enable toggle, fixed supported shortcut/Tap instructions and explicit configuration confirmation. OpenWhispr controls microphone, language, model and processing mode. Explain that Cloud audio is handled by OpenWhispr according to its selected mode. | No API key/Base URL or ineffective language/model/timeout controls for desktop mode; no false bridge/model-readiness gate for desktop Cloud. |
+| DFR-009 | An unavailable sender/helper, unsupported platform, foreground loss or dispatch failure produces an actionable error. Do not retry, switch route, launch OpenWhispr or change external settings automatically. | Error states settle dispatch-busy; unsupported/invalid cases invoke no native sender. Unknown send/release outcome asks the user to inspect and stop OpenWhispr before retrying. |
+| DFR-010 | Read-only dictionary display may use the retained local bridge independently of desktop activation. Missing bridge/auth does not disable the launcher. Show that OpenWhispr manages the dictionary; the local-file-transcription limitation applies only to the local bridge route. | Complete-list dictionary read per FR-027 and truthful unavailable states, no writes, no claimed NeKode transcript rewriting. |
+
+### Desktop workflow
+
+1. In Dictation settings, enable desktop dictation and confirm OpenWhispr is already running with `Ctrl + Super` / Tap. Processing mode and language are configured in OpenWhispr.
+2. Click Dictation beside the intended chat prompt. NeKode focuses that input, moves the caret to the end and dispatches the fixed shortcut once. The draft is not submitted.
+3. Observe and control recording in OpenWhispr. Stop or cancel there or using its configured shortcut. Keep the intended field focused until insertion if that is where the text should land.
+4. OpenWhispr pastes into the currently focused field. If focus moved, that later field may receive the text. NeKode does not redirect or recover it. Sending the prompt remains a separate explicit user action.
+
+### Desktop implementation boundaries
+
+- Preserve Electron isolation, renderer sandboxing, sender validation and typed error transport. Add a narrow activation channel, not an arbitrary keyboard automation API.
+- Use a fixed Windows/.NET helper with the established probe's SendInput approach, invoked from main without shell interpolation, new dependencies or administrator rights. Main supplies the expected native window handle. Keep the helper available in both development and the packaged build; the production helper must not load the probe GUI.
+- Verify foreground and pre-existing modifier state at the native boundary. Always attempt key-up cleanup before reporting an error. A parent dispatch watchdog must not kill a sender mid-chord and strand modifiers; the implementation must demonstrate bounded completion and cleanup before the helper is accepted.
+- Focus is established at click time, not locked for the duration of dictation. User actions can move it before or after shortcut dispatch. No NeKode window refocus or focus stealing follows completion.
+- Do not mount the retained getUserMedia/worklet controller for desktop mode. Preserve the existing local bridge/service/recorder code and regressions for future local use; never use it as silent fallback.
+- Settings default to off/unconfirmed. The supported chord is displayed explicitly rather than inferred from external configuration. Reset confirmation when its enablement setup is changed.
+- No installation-specific path, account inspection, credentials, OpenWhispr file mutation, history polling or system clipboard read is permitted.
+
+### Desktop verification
+
+Automated verification uses injected send/focus/process adapters and covers DFR-001 through DFR-010, IPC routing/rejection, focus-before-dispatch order, preserved drafts, normal paste/change updates, native cleanup and packaged helper availability. Automated checks send no real shortcut and make no microphone or network calls.
+
+A real Windows product acceptance pass requires separate, exact live authorization. It checks focus at activation, one stable-focus delivery without terminal submission, dispatch cleanup, settings/error truthfulness and OpenWhispr-owned stop/cancel. The previously observed A-to-B result is evidence for current-focus semantics; no repeat is required merely to confirm the known behavior. Do not infer new take authorization from this product decision.
+
+Sources: the user's accepted V1 decision, [hotkeys](https://docs.openwhispr.com/help/dictation/hotkeys), [auto-paste](https://docs.openwhispr.com/help/dictation/auto-paste-and-clipboard). The probe and its historical test evidence live in [desktop-probe.md](desktop-probe.md), not in this behavioral contract.
+
+## Retained local-mode contract
+
+Sections 1 through 24 below describe the retained local bridge mode, not desktop V1 shipment criteria. Their identifiers, security, original-target and session guarantees remain unchanged for that mode. In particular, G4, FR-019 through FR-023 and AC6 through AC9 remain local requirements; NG10 permits only the desktop V1 fixed shortcut adapter specified above. Local recording, model readiness, WAV inference and local insertion acceptance are not prerequisites for desktop Cloud activation and must not be reported as verified by a desktop take. The task plan owns execution scope and separates the two modes.
 
 ## 1. Executive Summary
 
@@ -88,7 +142,7 @@ Identifiers are stable. "MVP" = mandatory for the first shippable slice; "Option
 - FR-010 (MVP) Recording starts only by clicking the Dictation button (click-to-toggle: click starts, click stops and submits). Recording never starts from settings changes, dialog opens, or session restore. A visible recording indicator (button state + accessible label) is shown while recording; clicking again or pressing Escape stops; a dedicated cancel control discards the take.
 - FR-011 (MVP) Capture via `getUserMedia` in the renderer; PCM encoded to WAV (16-bit, mono, 16 kHz) in the renderer (AudioWorklet-based encoder; no external dependency, no FFmpeg). Default input device; no device-picker UI in MVP. Microphone permission denial or missing device produces an actionable error and no recording state.
 - FR-012 (MVP) The encoded audio is transferred to the main process over a typed IPC channel (binary payload) and written by main to an app-managed temp directory under `os.tmpdir()` with a generated file name. The renderer never learns or chooses filesystem paths.
-- FR-013 (MVP) Cleanup lifecycle: the temp file is deleted when transcription completes, fails, is cancelled, or times out; a startup sweep deletes leftovers from previous sessions; nothing is persisted by default; audio content and temp paths never appear in logs.
+- FR-013 (MVP) Cleanup lifecycle: the temp file is deleted when transcription completes, fails, is cancelled, or times out. Each service writes UUID WAV files in its own PID-UUID directory under `os.tmpdir()/nekode-dictation`. Startup sweeps generated WAVs only in owner directories whose PID is confirmed absent (ESRCH), tolerating another startup removing the same exited owner's files. Live owners, reused PIDs, unknown process status, unrecognized entries, symlinks and legacy root-level WAVs are retained because safe ownership cannot be established. Legacy leftovers require explicit manual cleanup; NeKode never deletes them automatically. No intentional audio persistence is provided; audio content and temp paths never appear in logs.
 - FR-014 (MVP) Edge audio cases: a take shorter than ~300 ms or containing no detected speech is treated as "no speech recognized" without calling the bridge; an interrupted take (device loss) ends in a recording-failure state; app shutdown during recording discards the take and releases the microphone.
 
 ### Transcription
@@ -118,7 +172,7 @@ Identifiers are stable. "MVP" = mandatory for the first shippable slice; "Option
 
 ### Dictionary
 
-- FR-027 (MVP) Dictionary read: `GET /v1/dictionary/list` (authenticated) rendered read-only in the Dictation tab (a "Dictionary (OpenWhispr)" section): terms list, entry count, and the documented limitation (FR-029). Handle the observed pagination fields (`has_more`, `next_cursor`) by fetching additional pages when `has_more` is true.
+- FR-027 (MVP) Dictionary read: `GET /v1/dictionary/list` (authenticated) rendered read-only in the Dictation tab (a "Dictionary (OpenWhispr)" section): terms list, entry count, and the documented limitation (FR-029). Support the confirmed OpenWhispr v1.10.2 complete response `{ data: string[], has_more: false, next_cursor: null }`. Validate the envelope and terms; preserve their order and duplicates. A valid envelope with `has_more: true` reports `unsupported-pagination` and displays no partial dictionary. Do not guess a cursor request convention. Lists above 10,000 entries report `dictionary-limit` without partial success. Display at most the first 200 terms with the complete entry count and an explicit display-cap notice. Missing bridge, invalid bridge, transport/authentication failure and malformed responses have truthful unavailable states and an explicit refresh action; they do not gate desktop activation.
 - FR-028 (Optional) Dictionary modification: add/remove entries via `POST /v1/dictionary/update` (`{ add: [...] }` / `{ remove: [...] }`) only on an explicit user action with an explicit confirmation for removals. NeKode never silently synchronizes, reorders, or prunes the OpenWhispr dictionary.
 - FR-029 (MVP) Disclosure: the UI states that the current OpenWhispr file-transcription API does not accept dictionary/keyterm hints, so dictionary terms are not applied to NeKode's transcriptions by the bridge; their MVP role is informational (and, post-MVP, correction hints — Section 13).
 
@@ -217,7 +271,7 @@ Endpoints (all bearer-authenticated unless noted; responses use the versioned en
 | `GET /v1/health` | reachability | 200 = reachable; 401/403 = auth failure; no model readiness implied |
 | `GET /v1/transcribe/models` | model catalog | `LocalTranscribeModel[]`; filter `downloaded` for selectable models |
 | `POST /v1/transcribe` | transcribe a local file | JSON body `{ path, language?, model? }`; accepts a filesystem PATH, not an upload |
-| `GET /v1/dictionary/list` | dictionary read | observed pagination fields `has_more` / `next_cursor` |
+| `GET /v1/dictionary/list` | dictionary read | v1.10.2 complete response `{ data: string[], has_more: false, next_cursor: null }`; no defined cursor request protocol |
 | `POST /v1/dictionary/update` | dictionary add/remove | body `{ add: [...] }` and/or `{ remove: [...] }` |
 
 Request/response examples:
@@ -241,13 +295,14 @@ Hard limitations (must be encoded in behavior, not just comments):
 - The endpoint takes a path: the file must exist and stay readable until the response arrives; NeKode controls creation and deletion (FR-012, FR-013).
 - Cancelling the HTTP request does not necessarily stop inference inside OpenWhispr (FR-017).
 - The token is rotated by OpenWhispr on restart; stale tokens manifest as 401 (FR-004).
+- Installed v1 route verified on 2026-10-10: `src/helpers/cliBridge.js` matches an explicit `model` string by bare model name and otherwise chooses the first catalog entry flagged `default`. It rejects an absent or undownloaded match. NeKode retains provider + model identity and refuses an explicit selection when that bare-name route would resolve another provider. With downloaded models but no usable selection or downloaded bridge default for fallback, status is `model-available` rather than `operational` (FR-002).
 - A stale bridge file does not prove liveness; only `/v1/health` does (FR-002/FR-003).
 
 ## 11. Model Discovery and Selection
 
 - Catalog refresh happens when the settings tab opens and on Refresh models; the transcription path uses the last known selection without a blocking refresh.
 - Selection identity: `default` or `provider + model` of a downloaded entry. Only downloaded entries are selectable; non-downloaded entries may render in a disabled "available in OpenWhispr catalog" group only if FR-025's "no dead controls" rule is honored (they must not look actionable).
-- OpenWhispr's own `default: true` flag is informational in the UI ("OpenWhispr default: X") — NeKode's `default` option means "omit the field", which delegates the choice to OpenWhispr.
+- OpenWhispr's own `default: true` flag identifies its configured default in the UI ("OpenWhispr default: X"); NeKode's `default` option means "omit the field", which delegates the choice to OpenWhispr. Default and stale-selection fallback are usable only when that route resolves a downloaded default; an explicit selection can be usable without a configured bridge default.
 - Model-specific language support is not queryable via the bridge; the UI therefore shows language as a request hint and surfaces provider warnings (FR-018) when a model rejects a combination.
 
 ## 12. Dictionary Integration
@@ -312,7 +367,7 @@ Error classes: recoverable-with-user-action (connection family, model family, mi
 ## 17. Non-Functional Requirements
 
 - Performance: Test connection ≈ 1.5 s budget; transcription timeout default 30 s (user-tunable 5–300 s); recording start latency imperceptible (< 300 ms to visible recording state); insertion within ~100 ms of result receipt.
-- Reliability: every session terminates in a defined state; no wedged busy states (Section 9); temp files never leak across restarts (startup sweep).
+- Reliability: every session terminates in a defined state; no wedged busy states (Section 9); startup sweep cleans confirmed exited owners under FR-013, retaining files when ownership cannot be proven.
 - Resource: microphone released on every session exit; no polling timers in steady state.
 - Compatibility: Windows 11; single-user local app; works with OpenWhispr bridge `version: 1` contracts only (explicit compatibility error otherwise).
 - Testability: bridge client fully mockable behind an interface; all external calls mocked in the automated suite; no real OpenWhispr process required for unit/integration tests; the manual acceptance pass uses the real installed app.
@@ -349,10 +404,10 @@ Error classes: recoverable-with-user-action (connection family, model family, mi
 - AC10 (Model fallback). Given a configured model that is no longer downloaded, When a transcription runs, Then the request omits `model`, the result carries a stale-selection warning, and settings marks the selection stale.
 - AC11 (Timeout). Given the bridge never answers, When the configured timeout elapses, Then the session fails with the timeout message, the temp file is deleted, and at most one same-take retry is offered.
 - AC12 (Empty/no speech). Given a silence-only take, Then no bridge call happens (client-side gate) and the outcome is "No speech recognized".
-- AC13 (Cleanup). Given any session exit (success, failure, cancel, timeout, app quit during recording), Then the temp file is gone after the run and the startup sweep removed leftovers from a previous crash.
+- AC13 (Cleanup). Given any session exit (success, failure, cancel, timeout, app quit during recording), Then the temp file is gone after the run. Startup sweep removes generated WAV leftovers from a confirmed exited owner after a crash; live, unknown and legacy files remain intact per FR-013. Concurrent sweeps do not block a new service when another sweep has already removed the same exited owner's entry.
 - AC14 (Security). Given the feature active, Then: Electron flags unchanged; every new IPC channel is typed, validated, sender-guarded; the token never appears in renderer-visible payloads, logs, or `app_state`; the HTTP client only ever dials `127.0.0.1` ports from the bridge file; no cloud endpoint is ever called.
 - AC15 (Settings truthfulness). Given the MVP build, Then the Dictation tab shows exactly the FR-024 controls (no API key field, no base URL, no dictionary editor unless FR-018 ships, no post-processing controls) and each control performs its documented behavior.
-- AC16 (Dictionary read). Given a populated OpenWhispr dictionary (verified populated on the reference machine), When the Dictionary section renders, Then it lists the terms with count, follows `has_more` pagination, and displays the FR-029 limitation text; no write occurs without an explicit user action (which in MVP does not exist).
+- AC16 (Dictionary read). Given a complete dictionary response matching FR-027, When the Dictionary section renders, Then it displays the terms in their returned order, the complete count, the first-200 display-cap notice when needed, and the local-specific FR-029 limitation text. Empty lists are explicit. Valid paged responses, lists above 10,000 entries, malformed responses and unavailable bridge/auth/transport states show the corresponding error without displaying a partial list. Refresh requests only the dictionary; no dictionary write or desktop activation occurs.
 - AC17 (Windows paths). Given a temp recording, Then the `path` sent to the bridge is an absolute Windows path resolvable by OpenWhispr on the same machine, and home/tmp resolution never hardcodes a user profile name.
 
 ## 21. Verification and Test Scenarios
@@ -360,10 +415,10 @@ Error classes: recoverable-with-user-action (connection family, model family, mi
 Automated (vitest; bridge mocked via the injected transport; no real OpenWhispr, no network, no microphone):
 
 - Bridge file parser: valid v1; missing file; invalid JSON; `version: 2`; port 0/70000/missing; token empty/absent/non-string → each maps to the FR-001 status.
-- `OpenWhisprClient` against a mocked transport: health 200/401/timeout/connection-refused; models envelope (downloaded filter, unknown provider shapes, `has_more` pagination for dictionary); transcribe success, empty text, malformed envelope, `warning` passthrough, 401 triggering exactly one re-read+retry, timeout, abort.
+- `OpenWhisprClient` against a mocked transport: health 200/401/timeout/connection-refused; models envelope (downloaded filter, unknown provider shapes); dictionary complete/empty lists, unsupported pagination, entry limit, malformed envelopes and unavailable states; transcribe success, empty text, malformed envelope, `warning` passthrough, 401 triggering exactly one re-read+retry, timeout, abort.
 - Session controller state machine: full happy path; cancel in Recording; cancel in Transcribing; timeout + single same-take retry; duplicate activation ignored; stale-response discard; destination-gone → review fallback; disabled-settings gating.
 - WAV encoder: known PCM fixture → expected 16 kHz mono 16-bit WAV bytes (header + payload); short/silence take flagged client-side.
-- Temp lifecycle: create/write/delete on every exit path; startup sweep deletes a planted leftover.
+- Temp lifecycle: create/write/delete on every exit path; startup sweep deletes a planted generated WAV under a confirmed exited owner, preserves live/unknown/legacy entries, and tolerates concurrent removal of the same owner.
 - Settings mapping: app_state keys round-trip; timeout validation bounds; stale-model marking.
 - Security: renderer-visible payloads assert absence of the token; new channels validated/sender-guarded; Electron flags asserted unchanged (existing pattern).
 - PromptInput/ChatTerminal tests: replace the always-disabled assertion with the enablement rule (AC5) and the state-driven button labels.
@@ -386,9 +441,10 @@ Requires validation (must be confirmed during implementation M2, on the real mac
 
 - V1. Accepted audio inputs of the installed bridge build: this spec mandates 16 kHz mono 16-bit WAV (safe Whisper-family default). If the bridge rejects it, negotiate sample rate/channels first; WebM/Opus from `MediaRecorder` is a fallback only if the bridge demonstrably accepts it. Renaming a file extension is never a conversion.
 - V2. Whether `/v1/transcribe` accepts additional optional fields (e.g. `language` values beyond ISO-639-1, `model` identity format `provider+model` vs bare name) — pin to observed behavior; the OpenWhispr backend is free to evolve.
+  Installed v1 source verified on 2026-10-10: `model` is a bare-name string; `language` is passed through when it is a non-empty string. Successful decoding/transcription of the mandated WAV and actual language support still require a downloaded model and live V1/V2 validation.
 - V3. Bridge behavior under concurrent requests (dictation while OpenWhispr itself transcribes) — single-session MVP sidesteps it; document any queueing observed.
 - V4. Installed OpenWhispr app version / upgrade policy of the bridge contract (v2 handling = explicit incompatibility error per FR-030; no guessing).
-- V5. Dictionary list upper bounds (page size, very large dictionaries) — pagination is implemented per FR-027; rendering caps at a reasonable window with a count if needed.
+- V5. Dictionary compatibility is pinned to the complete response in FR-027. Exact public [v1.10.2 bridge source](https://github.com/OpenWhispr/openwhispr/blob/v1.10.2/src/helpers/cliBridge.js#L462-L464) returns the complete string list with `has_more: false` and `next_cursor: null`; it defines no cursor request semantics. Future paged formats remain unsupported until their protocol is documented and accepted. The 10,000-entry acceptance limit and first-200 display cap are explicit NeKode bounds.
 
 Open questions (product): none blocking MVP. Post-MVP correction provider choice (Section 13) is deliberately open until an LLM integration exists in NeKode.
 
@@ -408,7 +464,7 @@ Explicitly LOW PRIORITY / deferred (keep backlog entries; do not implement here;
 - M1 Foundation: bridge-file parser, loopback client (bearer, 1.5 s health timeout), status model (FR-001..FR-005), error normalization, IPC surface skeleton. Verify: parser + client unit suites against mocked transport.
 - M2 Transcription: renderer capture + WAV encoder, temp-file lifecycle, `POST /v1/transcribe`, model discovery + selection + stale-model fallback, timeout/cancellation. Verify: mocked end-to-end session tests; on-machine validation of V1/V2 with the real bridge.
 - M3 Application UX: Dictation settings tab, button enablement + state labels (replace placeholder test), insertion via PromptInjection, review fallback, status/error surfaces. Verify: PromptInput/ChatTerminal/AppSettings suites + manual W1–W5.
-- M4 Dictionary: read-only list with pagination, limitation disclosure; optional explicit add/remove behind a flag (FR-028). Verify: mocked pagination suites; manual against the populated local dictionary.
+- M4 Dictionary: complete read-only list per FR-027, explicit unsupported-pagination/limit errors and limitation disclosure. Optional add/remove remains outside MVP (FR-028). Verify: mocked complete/empty/malformed/unavailable/paged/limit responses and read-only UI; a live dictionary request requires separate authorization.
 - M5 Optional correction (only if/when an LLM integration exists): conservative levels, protected-category fixtures, original preservation, disclosure. Separate plan before implementation.
 - M6 Validation: full automated suite, security checklist (AC14), Windows acceptance pass on the real installation, cleanup/leak checks (AC13), documentation touch-ups.
 
