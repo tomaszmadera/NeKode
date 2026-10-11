@@ -25,8 +25,9 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // Loading, typed error, empty board and not-configured states are inline text;
 // the not-configured state offers Configure (Project Settings on its Kanban
 // tab), mirroring the Resume picker's affordance. No drag-and-drop. Start is
-// always shown; Resume renders only for an item the batch handoff check proved
-// available. Neither control opens the review: Start asks the host to open the
+// always shown and disabled when Resume is shown. Resume renders only for an
+// item the batch handoff check proved available. Neither control opens the
+// review: Start asks the host to open the
 // launch confirmation, Resume asks the host to open the handoff confirmation.
 // Neither launches from the board.
 
@@ -43,7 +44,7 @@ interface KanbanBoardProps {
   onConfigureHandoffs?: () => void
   /**
    * Opens the Start confirmation in the app shell. Start is always shown, for
-   * every item, regardless of handoff availability.
+   * every item, and disabled when Resume is shown.
    */
   onStart?: (item: WorkItem) => void
   /**
@@ -241,7 +242,7 @@ function ItemTitleButton({
   )
 }
 
-/** Start stays visible. Resume only when the item has a confirmed handoff. */
+/** Start stays visible and is disabled while a confirmed handoff shows Resume. */
 function ItemLaunchButtons({
   item,
   resumeEnabled,
@@ -257,8 +258,9 @@ function ItemLaunchButtons({
     <div className="flex shrink-0 gap-1">
       <button
         type="button"
-        className={`${ITEM_CONTROL_CLASS} text-ink`}
+        className={`${ITEM_CONTROL_CLASS} text-ink disabled:pointer-events-none disabled:opacity-50`}
         data-testid={testIdFor.kanbanItemStart(item.ref)}
+        disabled={resumeEnabled}
         onClick={() => {
           onStart?.(item)
         }}

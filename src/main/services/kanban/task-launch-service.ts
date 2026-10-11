@@ -81,7 +81,7 @@ interface PreparedLaunch {
   shell: ShellSpec
 }
 
-/** The description, URL, project instructions and handoff directory. */
+/** Start context: the description, URL, project instructions and handoff directory. */
 function promptTail(item: WorkItem, handoffDir: string | null): string[] {
   const parts: string[] = []
   const description = item.description?.trim() ?? ''
@@ -111,17 +111,14 @@ export function buildStartPrompt(item: WorkItem, handoffDir: string | null): str
 /**
  * Resume prompt (spec Resume.4). The first line names the handoff path: the
  * project-relative form when the file is inside the project, the absolute form
- * otherwise. The rest continues the Start prompt content. The path is prompt
- * data, never shell code.
+ * otherwise. The agent reads the handoff and checks current requirements
+ * instead of receiving the Start description. The path is prompt data,
+ * never shell code.
  */
-export function buildResumePrompt(
-  item: WorkItem,
-  handoffPath: string,
-  handoffDir: string | null,
-): string {
+export function buildResumePrompt(item: WorkItem, handoffPath: string): string {
   return [
-    `Resume task ${item.ref}: ${item.title} from handoff ${handoffPath}. Read the handoff first and reconcile it with the current repository state before continuing.`,
-    ...promptTail(item, handoffDir),
+    `Resume task ${item.ref}: ${item.title} from handoff ${handoffPath}. Read the handoff first, reconcile it with the current repository state, and check the current task requirements on Kanban before continuing.`,
+    "Follow the project's instructions. Do not assume approval for actions that require it.",
   ].join('\n\n')
 }
 
@@ -358,7 +355,7 @@ export class TaskLaunchService {
     if (candidate === undefined || candidate.modifiedAt !== input.stamp) {
       throw new AppError('conflict', RESUME_REFRESH, CHANNEL)
     }
-    return buildResumePrompt(item, candidate.path, this.#handoffDir(input.projectId))
+    return buildResumePrompt(item, candidate.path)
   }
 
   #spawn(attempt: Attempt, cwd: string, prepared: PreparedLaunch): KanbanLaunchResult {
