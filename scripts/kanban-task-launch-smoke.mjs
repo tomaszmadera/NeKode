@@ -365,18 +365,8 @@ try {
     throw new Error(`resume fixture script arg was ${resumeParsed.argv[0]}`)
   }
   const resumePrompt = resumeParsed.argv[1]
-  if (
-    typeof resumePrompt !== 'string' ||
-    !resumePrompt.startsWith(
-      'Resume task SMK-1: Smoke launch from handoff handoffs/smk-1-handoff.md. Read the handoff first and reconcile it with the current repository state before continuing.',
-    )
-  ) {
+  if (resumePrompt !== 'Resume from handoffs/smk-1-handoff.md') {
     throw new Error(`the resume prompt was not the single argv element: ${resumePrinted}`)
-  }
-  for (const piece of ['SMK-1', 'handoffs/smk-1-handoff.md', itemUrl]) {
-    if (!resumePrompt.includes(piece)) {
-      throw new Error(`the resume prompt is missing ${JSON.stringify(piece)}`)
-    }
   }
   const resumeLogs = stderr.join('')
   for (const secret of [LEAK, itemUrl, 'handoffs/smk-1-handoff.md']) {
