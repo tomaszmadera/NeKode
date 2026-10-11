@@ -317,15 +317,11 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
 3. Tuż przed utworzeniem czatu main ponownie sprawdza plik, jego powiązanie
    i aktualną konfigurację. Usunięty, nieczytelny, podmieniony lub zmieniony
    po wyświetleniu plik wymaga odświeżenia wyboru. Nie powstaje wtedy czat.
-4. Dalej obowiązuje przepływ Start, ale prompt zaczyna się od
-   `Resume task <ref>: <title> from handoff <path>. Read the handoff first,
-   reconcile it with the current repository state, and check the current task
-   requirements on Kanban before continuing.`
-   Decyzja użytkownika 2026-10-11: Resume zawiera tylko to polecenie oraz
-   `Follow the project's instructions. Do not assume approval for actions that require it.`
-   Nie dołącza opisu, informacji o braku opisu, URL, katalogu handoffów ani
-   instrukcji nazewnictwa przyszłego rekordu. Agent sprawdza bieżące wymagania
-   na Kanbanie po przeczytaniu handoffu. Prompt Start zachowuje opis i kontekst.
+4. Dalej obowiązuje przepływ Start, ale cały prompt ma postać
+   `Resume from <handoff file path>`.
+   Decyzja użytkownika 2026-10-11: instrukcje wznowienia należą do skilla
+   handoff/resume. Resume przekazuje tylko polecenie i ścieżkę pliku.
+   Prompt Start zachowuje opis i kontekst.
    Ścieżka jest względna względem projektu, jeśli plik leży wewnątrz niego;
    w przeciwnym razie absolutna. Jest danymi promptu, nie kodem shell.
 5. Resume rozpoczyna nową sesję wybranego agenta z kontekstem pliku.

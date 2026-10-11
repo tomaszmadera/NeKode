@@ -371,19 +371,16 @@ describe('TaskLaunchService start', () => {
 })
 
 describe('buildResumePrompt', () => {
-  it('uses the handoff and asks for current requirements without repeating the description', () => {
-    const prompt = buildResumePrompt(liveItem(), 'handoffs/nekode-28-notes.md')
-    expect(prompt).toBe(
-      'Resume task DEMO-1: Ship the launch from handoff handoffs/nekode-28-notes.md. Read the handoff first, reconcile it with the current repository state, and check the current task requirements on Kanban before continuing.\n\n' +
-        "Follow the project's instructions. Do not assume approval for actions that require it.",
-    )
+  it('includes only the resume command and handoff path', () => {
+    const prompt = buildResumePrompt('handoffs/nekode-28-notes.md')
+    expect(prompt).toBe('Resume from handoffs/nekode-28-notes.md')
     expect(prompt).not.toContain(liveItem().description)
     expect(prompt).not.toContain(URL)
   })
 
-  it('does not add a missing-description notice', () => {
-    const prompt = buildResumePrompt(liveItem({ description: null }), 'handoffs/notes.md')
-    expect(prompt).not.toContain('This task has no description.')
+  it('preserves an absolute handoff path with spaces', () => {
+    const prompt = buildResumePrompt('D:/Shared handoffs/notes.md')
+    expect(prompt).toBe('Resume from D:/Shared handoffs/notes.md')
   })
 })
 
@@ -413,12 +410,9 @@ describe('TaskLaunchService resume', () => {
     expect(bundle.spawns).toHaveLength(1)
     const spawn = bundle.spawns[0]
     expect(spawn?.cwd).toBe(projectPath)
-    const prompt = buildResumePrompt(liveItem(), notesFile.path)
+    const prompt = buildResumePrompt(notesFile.path)
     expect(spawn?.args).toEqual(['--model', 'gpt', prompt, '--yolo'])
-    expect(spawn?.args[2]?.startsWith('Resume task DEMO-1: Ship the launch from handoff')).toBe(
-      true,
-    )
-    expect(spawn?.args[2]).toContain('handoffs/nekode-28-notes.md')
+    expect(spawn?.args[2]).toBe('Resume from handoffs/nekode-28-notes.md')
     expect(spawn?.args.filter((arg) => arg.includes(LEAK))).toHaveLength(0)
   })
 
@@ -458,9 +452,9 @@ describe('TaskLaunchService resume', () => {
   })
 
   it('dedups a resume by attempt id and keeps the prompt and handoff path out of logs', async () => {
-    const bundle = harness()
-    bundle.setItem(liveItem({ title: `needs SPAWN_FAIL ${LEAK}` }))
-    bundle.setScan(() => readyScan([{ ...notesFile, matchKind: 'filename' }]))
+    const bundle = harness({ failSpawn: true })
+    const handoffPath = `handoffs/${LEAK}-notes.md`
+    bundle.setScan(() => readyScan([{ ...notesFile, path: handoffPath }]))
     const errors: unknown[][] = []
     const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       errors.push(args)
@@ -476,7 +470,7 @@ describe('TaskLaunchService resume', () => {
     expect(bundle.chats.list(bundle.project.id)).toHaveLength(1)
     const logged = JSON.stringify(errors)
     expect(logged).not.toContain(LEAK)
-    expect(logged).not.toContain('handoffs/nekode-28-notes.md')
+    expect(logged).not.toContain(handoffPath)
     spy.mockRestore()
   })
 })
