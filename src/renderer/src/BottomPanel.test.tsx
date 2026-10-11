@@ -87,6 +87,8 @@ function createAppApiStub(): AppApi {
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
       openRoot: vi.fn().mockResolvedValue(undefined),
+      showInFolder: vi.fn().mockResolvedValue(undefined),
+      trash: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),

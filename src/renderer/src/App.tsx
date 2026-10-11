@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { createBottomTabId } from '../../shared/bottom-tab-id'
 import type {
   ActionControl,
@@ -25,6 +26,7 @@ import {
   markdownViewKey,
 } from './components/files/markdown-path'
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
+import { applyDirectoryRefresh } from './components/files/tree-refresh'
 import type { HeldLaunch } from './components/kanban/held-launch'
 import { KanbanSessions } from './components/kanban/KanbanSessions'
 import { TaskResumeModal } from './components/kanban/TaskResumeModal'
@@ -37,7 +39,7 @@ import { LeftPanelTrack } from './components/layout/LeftPanelTrack'
 import { PanelFooter } from './components/layout/PanelFooter'
 import { StatusBar } from './components/layout/StatusBar'
 import { AppSettings } from './components/settings/AppSettings'
-import { TabStrip } from './components/tabs/TabStrip'
+import { absoluteFilePath, TabStrip } from './components/tabs/TabStrip'
 import {
   activateTab,
   closeFileTab,
@@ -113,6 +115,50 @@ function parsePersistedSize(value: string | null, limits: RegionSizeLimits): num
 
 function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
+}
+
+function parentRelativePath(relativePath: string): string {
+  const slash = relativePath.lastIndexOf('/')
+  return slash === -1 ? '' : relativePath.slice(0, slash)
+}
+
+function pathIsAtOrUnder(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}/`)
+}
+
+/** Trash paths recorded after `start` that make one directory read stale. */
+function listingSuperseded(laterTrash: readonly string[], relativePath: string): boolean {
+  return laterTrash.some(
+    (path) => pathIsAtOrUnder(relativePath, path) || parentRelativePath(path) === relativePath,
+  )
+}
+
+function dropTrashedPath(session: ProjectFilesSession, relativePath: string): ProjectFilesSession {
+  const parent = parentRelativePath(relativePath)
+  const childrenByPath = { ...session.childrenByPath }
+  const parentEntries = childrenByPath[parent]
+  if (parentEntries !== undefined) {
+    childrenByPath[parent] = parentEntries.filter((entry) => entry.relativePath !== relativePath)
+  }
+  for (const key of Object.keys(childrenByPath)) {
+    if (pathIsAtOrUnder(key, relativePath)) {
+      delete childrenByPath[key]
+    }
+  }
+  const expandedPaths = new Set(
+    [...session.expandedPaths].filter((path) => !pathIsAtOrUnder(path, relativePath)),
+  )
+  return { ...session, childrenByPath, expandedPaths }
+}
+
+function closeTabsAtOrUnder(session: ProjectTabsSession, relativePath: string): ProjectTabsSession {
+  let next = session
+  for (const path of session.openFiles) {
+    if (pathIsAtOrUnder(path, relativePath)) {
+      next = closeFileTab(next, path)
+    }
+  }
+  return next
 }
 
 // True when the element can take focus. `display: none` on an ancestor (a
@@ -329,6 +375,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // (Behaviour 14). LeftPanelTrack owns the paired slide between the two views.
   const [filesProjectId, setFilesProjectId] = useState<string | null>(null)
   const [filesSessions, setFilesSessions] = useState<Record<string, ProjectFilesSession>>({})
+  // One Refresh per project (spec Behaviour 25). The generation drops a
+  // result that belongs to an older click.
+  const filesRefreshInFlight = useRef<Set<string>>(new Set())
+  const filesRefreshGeneration = useRef<Record<string, number>>({})
+  // Paths trashed in this session, in order. A directory or Git read that
+  // started earlier must not write a trashed path back (review:1).
+  const trashLog = useRef<Record<string, string[]>>({})
+  const trashInFlight = useRef<Set<string>>(new Set())
   // Per-project tab-strip sessions (center-layout-tabs-actions spec
   // Behaviour 3–5): open file tabs in open order, the active tab and the
   // previously active tab. Per-session UI state — never persisted.
@@ -1190,13 +1244,19 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   // One directory read per expansion (spec Behaviour 6): the children are
   // cached for the session, so collapsing and re-expanding never re-reads.
+  // Refresh (Behaviour 25) is the explicit re-read.
   const loadFilesDirectory = useCallback(
     (projectId: string, relativePath: string): void => {
+      const trashStart = (trashLog.current[projectId] ?? []).length
       void app.files
         .list(projectId, relativePath === '' ? null : relativePath)
         .then((entries: FileEntry[]) => {
-          // A load resolving after its project was removed is stale.
-          if (removedProjectIdsRef.current.has(projectId)) {
+          // A load resolving after its project was removed, or after a
+          // trash of this directory, is stale.
+          if (
+            removedProjectIdsRef.current.has(projectId) ||
+            listingSuperseded((trashLog.current[projectId] ?? []).slice(trashStart), relativePath)
+          ) {
             return
           }
           updateFilesSession(projectId, (session) => ({
@@ -1206,7 +1266,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           }))
         })
         .catch((error: unknown) => {
-          if (removedProjectIdsRef.current.has(projectId)) {
+          if (
+            removedProjectIdsRef.current.has(projectId) ||
+            listingSuperseded((trashLog.current[projectId] ?? []).slice(trashStart), relativePath)
+          ) {
             return
           }
           // Inline tree error (spec Errors): the app keeps working and
@@ -1225,16 +1288,23 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // tree undecorated (empty map) instead of failing the mode.
   const loadGitStatuses = useCallback(
     (projectId: string, projectPath: string): void => {
+      const trashStart = (trashLog.current[projectId] ?? []).length
       void app.git
         .fileStatuses(projectPath)
         .then((statuses) => {
-          if (removedProjectIdsRef.current.has(projectId)) {
+          if (
+            removedProjectIdsRef.current.has(projectId) ||
+            (trashLog.current[projectId] ?? []).length !== trashStart
+          ) {
             return
           }
           updateFilesSession(projectId, (session) => ({ ...session, gitStatuses: statuses }))
         })
         .catch(() => {
-          if (removedProjectIdsRef.current.has(projectId)) {
+          if (
+            removedProjectIdsRef.current.has(projectId) ||
+            (trashLog.current[projectId] ?? []).length !== trashStart
+          ) {
             return
           }
           updateFilesSession(projectId, (session) => ({ ...session, gitStatuses: {} }))
@@ -1293,6 +1363,103 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [filesProjectId, filesSessions, loadFilesDirectory, updateFilesSession],
   )
 
+  // Manual refresh (spec Behaviour 25, user decision 2026-10-11). One
+  // files:list for the root and for each directory expanded at the click,
+  // plus one Git status read. The open tree stays visible until the reads
+  // settle. Re-entering the mode does not call this.
+  const handleRefreshProjectFiles = useCallback((): void => {
+    if (filesProjectId === null) {
+      return
+    }
+    const projectId = filesProjectId
+    if (filesRefreshInFlight.current.has(projectId)) {
+      return
+    }
+    const session = filesSessions[projectId] ?? emptyProjectFilesSession()
+    const project = projects.find((item) => item.id === projectId)
+    filesRefreshInFlight.current.add(projectId)
+    const generation = (filesRefreshGeneration.current[projectId] ?? 0) + 1
+    filesRefreshGeneration.current[projectId] = generation
+    const trashStart = (trashLog.current[projectId] ?? []).length
+    setNotice(null)
+    updateFilesSession(projectId, (current) => ({ ...current, refreshing: true }))
+    const paths = ['', ...session.expandedPaths]
+    void (async () => {
+      try {
+        const [results, gitStatuses] = await Promise.all([
+          Promise.all(
+            paths.map(async (relativePath) => {
+              try {
+                const entries = await app.files.list(
+                  projectId,
+                  relativePath === '' ? null : relativePath,
+                )
+                return { relativePath, ok: true as const, entries }
+              } catch (error) {
+                return {
+                  relativePath,
+                  ok: false as const,
+                  message: errorMessage(
+                    error,
+                    relativePath === ''
+                      ? 'Failed to load project files.'
+                      : 'Failed to refresh a folder.',
+                  ),
+                }
+              }
+            }),
+          ),
+          project === undefined
+            ? Promise.resolve(null)
+            : app.git.fileStatuses(project.path).then(
+                (statuses) => statuses,
+                () => null,
+              ),
+        ])
+        if (
+          removedProjectIdsRef.current.has(projectId) ||
+          filesRefreshGeneration.current[projectId] !== generation ||
+          (trashLog.current[projectId] ?? []).length !== trashStart
+        ) {
+          return
+        }
+        let notice: string | null = null
+        // The notice is read from the same session the tree update uses.
+        // flushSync runs that update before setNotice, so a folder failure
+        // is not lost on the following render.
+        flushSync(() => {
+          updateFilesSession(projectId, (current) => {
+            if (
+              filesRefreshGeneration.current[projectId] !== generation ||
+              (trashLog.current[projectId] ?? []).length !== trashStart
+            ) {
+              return current
+            }
+            const outcome = applyDirectoryRefresh(current, results, gitStatuses)
+            notice = outcome.notice
+            return outcome.session
+          })
+        })
+        if (
+          filesRefreshGeneration.current[projectId] === generation &&
+          (trashLog.current[projectId] ?? []).length === trashStart &&
+          !removedProjectIdsRef.current.has(projectId)
+        ) {
+          setNotice(notice)
+        }
+      } finally {
+        if (filesRefreshGeneration.current[projectId] === generation) {
+          filesRefreshInFlight.current.delete(projectId)
+          if (!removedProjectIdsRef.current.has(projectId)) {
+            updateFilesSession(projectId, (current) =>
+              current.refreshing ? { ...current, refreshing: false } : current,
+            )
+          }
+        }
+      }
+    })()
+  }, [app, filesProjectId, filesSessions, projects, updateFilesSession])
+
   // Clicking a file in the tree opens its tab, or focuses it when already
   // open — a file never has two tabs (spec Behaviour 3).
   const handleFilesSelectFile = useCallback(
@@ -1305,6 +1472,111 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       updateTabsSession(projectId, (session) => openFileTab(session, relativePath))
     },
     [filesProjectId, updateFilesSession, updateTabsSession],
+  )
+
+  const handleFilesShowInFolder = useCallback(
+    (relativePath: string): void => {
+      if (filesProjectId === null) {
+        return
+      }
+      void app.files.showInFolder(filesProjectId, relativePath).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to show the item in the file explorer.'))
+      })
+    },
+    [app, filesProjectId],
+  )
+
+  const handleFilesCopyRelativePath = useCallback((relativePath: string): void => {
+    void navigator.clipboard.writeText(relativePath).catch(() => {
+      setNotice('Failed to copy the path.')
+    })
+  }, [])
+
+  const handleFilesCopyPath = useCallback(
+    (relativePath: string): void => {
+      const project = projects.find((item) => item.id === filesProjectId)
+      if (project === undefined) {
+        setNotice('Failed to copy the path.')
+        return
+      }
+      void navigator.clipboard.writeText(absoluteFilePath(project.path, relativePath)).catch(() => {
+        setNotice('Failed to copy the path.')
+      })
+    },
+    [filesProjectId, projects],
+  )
+
+  const handleFilesTrash = useCallback(
+    (relativePath: string): void => {
+      if (filesProjectId === null) {
+        return
+      }
+      const projectId = filesProjectId
+      const flightKey = `${projectId}\n${relativePath}`
+      if (trashInFlight.current.has(flightKey)) {
+        return
+      }
+      trashInFlight.current.add(flightKey)
+      const project = projects.find((item) => item.id === projectId)
+      void app.files
+        .trash(projectId, relativePath)
+        .then(() => {
+          if (removedProjectIdsRef.current.has(projectId)) {
+            return
+          }
+          const log = trashLog.current[projectId] ?? []
+          log.push(relativePath)
+          trashLog.current[projectId] = log
+          const trashStart = log.length
+          const current = (): boolean =>
+            !removedProjectIdsRef.current.has(projectId) &&
+            (trashLog.current[projectId] ?? []).length === trashStart
+          const parent = parentRelativePath(relativePath)
+          updateFilesSession(projectId, (session) => dropTrashedPath(session, relativePath))
+          updateTabsSession(projectId, (session) => closeTabsAtOrUnder(session, relativePath))
+          void app.files
+            .list(projectId, parent === '' ? null : parent)
+            .then((entries) => {
+              if (!current()) {
+                return
+              }
+              updateFilesSession(projectId, (session) => ({
+                ...session,
+                childrenByPath: { ...session.childrenByPath, [parent]: entries },
+                treeError: null,
+              }))
+            })
+            .catch((error: unknown) => {
+              if (!current()) {
+                return
+              }
+              setNotice(errorMessage(error, 'Failed to load project files.'))
+            })
+          if (project !== undefined) {
+            void app.git.fileStatuses(project.path).then(
+              (statuses) => {
+                if (!current()) {
+                  return
+                }
+                updateFilesSession(projectId, (session) => ({ ...session, gitStatuses: statuses }))
+              },
+              () => {
+                // A rejected follow-up read keeps the decorations already shown.
+              },
+            )
+          }
+        })
+        .catch((error: unknown) => {
+          if (removedProjectIdsRef.current.has(projectId)) {
+            return
+          }
+          setNotice(errorMessage(error, 'Failed to move the item to the Recycle Bin.'))
+        })
+        .finally(() => {
+          trashInFlight.current.delete(flightKey)
+        })
+    },
+    [app, filesProjectId, projects, updateFilesSession, updateTabsSession],
   )
 
   // Failed "Open externally" (spec Errors): a notice, never a silent drop.
@@ -2036,8 +2308,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 project={filesProject}
                 session={filesSession}
                 onBack={handleCloseProjectFiles}
+                onRefresh={handleRefreshProjectFiles}
                 onToggleDirectory={handleFilesToggleDirectory}
                 onSelectFile={handleFilesSelectFile}
+                onShowInFolder={handleFilesShowInFolder}
+                onCopyPath={handleFilesCopyPath}
+                onCopyRelativePath={handleFilesCopyRelativePath}
+                onTrash={handleFilesTrash}
                 notice={notice}
               >
                 <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />

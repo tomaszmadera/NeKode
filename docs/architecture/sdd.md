@@ -583,9 +583,11 @@ The project file tree must support:
 - folder expansion/collapse,
 - file selection,
 - lazy loading where practical,
+- a manual Refresh of the root and the expanded directories (user decision 2026-10-11),
 - ignored directory filtering,
 - configurable exclusion patterns,
 - Git status decoration per entry: a color plus a letter badge, with folder aggregation (NEKODE-31).
+- a context menu on file and directory rows: reveal in the file explorer, copy path, copy relative path, and move to the Windows Recycle Bin (NEKODE-38).
 
 Default exclusions may include:
 

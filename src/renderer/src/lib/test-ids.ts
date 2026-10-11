@@ -54,10 +54,18 @@ export const TEST_ID = {
   projectFilesPanel: 'project-files-panel',
   filesBackButton: 'files-back-button',
   filesProjectName: 'files-project-name',
+  /** Manual re-read of the open file tree (spec Behaviour 25). */
+  filesRefreshButton: 'files-refresh-button',
   fileTree: 'file-tree',
   fileTreeError: 'file-tree-error',
   /** Git status letter badge of a file-tree entry (NEKODE-31). */
   fileTreeGitBadge: 'file-tree-git-badge',
+  /** Context menu of a file or directory row (NEKODE-38). */
+  fileTreeContextMenu: 'file-tree-context-menu',
+  fileTreeShowInFolder: 'file-tree-show-in-folder',
+  fileTreeCopyPath: 'file-tree-copy-path',
+  fileTreeCopyRelativePath: 'file-tree-copy-relative-path',
+  fileTreeTrash: 'file-tree-trash',
   filePreviewError: 'file-preview-error',
   filePreviewTooLarge: 'file-preview-too-large',
   filePreviewBinary: 'file-preview-binary',
@@ -165,11 +173,23 @@ export const TEST_ID = {
   /** Sort select and direction toggle for Kanban list. */
   kanbanSortBy: 'kanban-sort-by',
   kanbanSortDirection: 'kanban-sort-direction',
-  /** Read-only review of one work item, opened from the board or the list. */
+  /** Header control that opens the New task form. */
+  kanbanNewTask: 'kanban-new-task',
+  /** New task form under the board header. */
+  kanbanNewTaskForm: 'kanban-new-task-form',
+  kanbanNewTaskStatus: 'kanban-new-task-status',
+  kanbanNewTaskTitle: 'kanban-new-task-title',
+  kanbanNewTaskDescription: 'kanban-new-task-description',
+  kanbanNewTaskCreate: 'kanban-new-task-create',
+  kanbanNewTaskCancel: 'kanban-new-task-cancel',
+  kanbanNewTaskError: 'kanban-new-task-error',
+  /** Item review opened from the board or the list. Status can change there. */
   kanbanReview: 'kanban-review',
   kanbanReviewBack: 'kanban-review-back',
   kanbanReviewTitle: 'kanban-review-title',
   kanbanReviewDescription: 'kanban-review-description',
+  kanbanReviewStatus: 'kanban-review-status',
+  kanbanReviewError: 'kanban-review-error',
   /** Start confirmation. Rendered by the app shell, not inside the board. */
   kanbanStartDialog: 'kanban-start-dialog',
   kanbanStartTask: 'kanban-start-task',
@@ -256,10 +276,8 @@ export const testIdFor = {
   kanbanColumn: (stateId: string): string => `kanban-column-${stateId}`,
   /** One work item on the board or the list, keyed by its ref (Plane slug). */
   kanbanItem: (ref: string): string => `kanban-item-${ref}`,
-  /** Ref control that opens the review. Not the row or card background. */
-  kanbanItemRef: (ref: string): string => `kanban-item-ref-${ref}`,
-  /** Title control that opens the review. */
-  kanbanItemTitle: (ref: string): string => `kanban-item-title-${ref}`,
+  /** Underlined ref and title link that opens the review. */
+  kanbanItemLink: (ref: string): string => `kanban-item-link-${ref}`,
   /** Visible Start control. Opens the launch confirmation in the app shell. */
   kanbanItemStart: (ref: string): string => `kanban-item-start-${ref}`,
   /** Visible Resume control. Opens the Resume and handoff confirmation. */

@@ -143,6 +143,8 @@ export interface AppServices {
      * project or missing root directory: not_found.
      */
     openRoot(projectId: string): Promise<void>
+    showInFolder(projectId: string, relativePath: string): Promise<void>
+    trash(projectId: string, relativePath: string): Promise<void>
   }
   handoffs: {
     /** Regular files of the project's configured handoff directory, newest first. */

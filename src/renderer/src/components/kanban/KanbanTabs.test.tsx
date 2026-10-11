@@ -85,6 +85,8 @@ function createAppApiStub(): AppApi {
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
       openRoot: vi.fn().mockResolvedValue(undefined),
+      showInFolder: vi.fn().mockResolvedValue(undefined),
+      trash: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
@@ -475,7 +477,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanViewBoard))
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle(fixture.items[0].ref)))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemLink(fixture.items[0].ref)))
     const board = screen.getByTestId(TEST_ID.kanbanBoard)
     const review = screen.getByTestId(TEST_ID.kanbanReview)
     board.scrollTop = 80

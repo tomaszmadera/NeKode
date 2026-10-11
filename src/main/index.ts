@@ -144,6 +144,10 @@ app.whenReady().then(() => {
     // The single OS-facing action of the project-files feature (spec
     // Behaviour 11): open with the OS default application. '' = success.
     openExternal: (absolutePath) => shell.openPath(absolutePath),
+    showInFolder: (absolutePath) => {
+      shell.showItemInFolder(absolutePath)
+    },
+    trashItem: (absolutePath) => shell.trashItem(absolutePath),
     // Native directory picker behind dialogs:pickDirectory (spec
     // handoff-resume-flow Data/API). Null = user cancel.
     pickDirectory: async (defaultPath) => {

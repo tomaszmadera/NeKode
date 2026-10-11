@@ -41,6 +41,8 @@ function setup() {
     dbPath: ':memory:',
     userDataPath: 'D:/scratch',
     openExternal: async () => '',
+    showInFolder: () => undefined,
+    trashItem: async () => undefined,
     pickDirectory: async () => null,
   })
   const project = services.projects.add('\\\\wsl.localhost\\Ubuntu\\home\\user\\Project')

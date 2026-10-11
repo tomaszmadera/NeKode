@@ -556,17 +556,20 @@ Selecting either activates the `Kanban` tab, which renders the board in the
 center surface; selecting the chat tab or a file tab returns to that surface.
 There is no separate `Files | Kanban` view-switch strip. Inside the Kanban tab,
 a List | Board icon switch on the header's right side changes how the loaded
-items are shown; List is the default. Both show each item's ref, title, and
-priority. Opening an item shows a read-only review with the full title and the
-description. The refresh icon sits on the right of the same header; every icon
-control carries an accessible name (§63).
+items are shown; List is the default. Both show one always-underlined link of
+each item's ref and title, and the priority. Opening that link shows a review
+with the full title and the description, where Status saves the selected state
+and the ref, title, description, and priority stay read-only. When the board
+is ready and the review is closed, the header shows `New task`. The refresh
+icon sits on the right of the same header; every icon control carries an
+accessible name (§63).
 
 Each visited project's board stays cached in memory for the app session.
 Tab return and Refresh keep the loaded content usable while showing
 `Refreshing board...`. View, scroll, and review survive tab switches;
 successful refreshes reconcile items and states, and failures keep cached
 content with an inline error. Project removal and saved Kanban settings
-invalidate the affected cache. The current read-only surface uses 12.6px body
+invalidate the affected cache. The Kanban surface uses 12.6px body
 text and 14.7px headings. See the
 [cached rendering contract](features/kanban-adapter-interface/spec.md#cached-board-rendering-amendment-user-decision-2026-10-06).
 
@@ -593,7 +596,9 @@ C   unmerged / conflict                                         red
 I   ignored                                                     dimmed
 ```
 
-A folder shows the strongest status found at any depth below it (conflict, then modified, then added, then untracked, then ignored), whether or not it is expanded. The statuses come from one read when Project Files mode is entered.
+A folder shows the strongest status found at any depth below it (conflict, then modified, then added, then untracked, then ignored), whether or not it is expanded. The statuses come from one read when Project Files mode is entered, and again from Refresh.
+
+The project-name row has a Refresh icon above the tree (user decision 2026-10-11). The icon spins while the read runs. Refresh re-reads the project root and every expanded folder, and reads Git status again. Returning to the tree keeps the listings already loaded. Collapsed folders are read again the next time they are expanded after a refresh.
 
 A markdown file (`md` or `markdown`) adds `Code` and `Preview` to the action row, in front of the settings control (user decision 2026-10-06). `Preview` is the default and renders that text as Markdown. `Code` shows the read-only Monaco preview. The choice stays with that file for the app session and is not saved. Raw HTML is not executed. Only `http` and `https` links open, through the existing external-URL allowlist. Remote and relative images show their alt text. A too-large or binary result keeps its fallback in either mode.
 
@@ -821,10 +826,14 @@ Project navigation: a bound Project exposes its board from the left-navigation
 `Kanban` tile (under the project name) and the top-tab-strip `Kanban` tab; both
 select the board in the center surface (§18). The adapter-backed board
 (`kanban-adapter-interface`) is the post-MVP realization of this surface: a
-read-only view of real backend states and items (`kanban:listBoard`), as a
-grouped list (the default) or columns, with a review of the item's ref, priority,
-full title, and description; the view switch and the refresh control are icons on
-the right of the surface header.
+view of real backend states and items (`kanban:listBoard`), as a
+grouped list (the default) or columns. Each item is one underlined link of its
+ref and title, plus its priority. The review shows Status, the ref, priority,
+full title, and description. Status saves the selected state, and the ref,
+title, description, and priority stay read-only. `New task` is in the header
+when the review is closed. The view switch and the refresh control are icons on
+the right of the surface header. The editing rules are in the Kanban adapter
+spec, section "Kanban item editing amendment (user decision 2026-10-11)".
 
 Future global navigation may also expose:
 
@@ -1552,6 +1561,8 @@ Saved actions appear in the action bar immediately and survive application resta
 Entering Project Files may transform the left panel into the Project file tree.
 
 Clicking a file opens it in a file tab of the tab strip and shows it in the main surface: the tab label is the file name and the tab tooltip is the path relative to the project root (e.g. `app / Services / Billing.php`). The breadcrumb and the `Files` view label are superseded by the tab model (user decision 2026-09-26) and are not rendered.
+
+A file row and a directory row open a context menu on right-click, the ContextMenu key, and Shift+F10. The items are `Show in file explorer`, `Copy path`, `Copy relative path`, and `Delete`. `Delete` moves the entry to the Windows Recycle Bin and does not ask first (NEKODE-38).
 
 Remember per Project:
 

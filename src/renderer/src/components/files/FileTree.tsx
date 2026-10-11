@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FileEntry, GitFileStatuses } from '../../../../shared/ipc-contract'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
@@ -13,8 +13,9 @@ import {
 
 // Lazy file tree (spec Behaviour 5–6): directories first, then files, in
 // case-insensitive alphabetical order (main pre-sorts and pre-filters the
-// listings). Expanding a folder reveals its already-loaded children — the
-// directory read happens once per expansion and is cached for the session.
+// listings). Expanding a folder reveals its already-loaded children. The
+// directory read happens once per expansion and stays cached until Refresh
+// (spec Behaviour 25).
 // Each entry also carries its Git status as a text color plus a letter badge
 // (spec Behaviour 16-18, NEKODE-31), aggregated up to folders whether or not
 // they are expanded.
@@ -28,6 +29,10 @@ interface FileTreeProps {
   statuses: GitFileStatuses
   onToggleDirectory: (relativePath: string) => void
   onSelectFile: (relativePath: string) => void
+  onShowInFolder: (relativePath: string) => void
+  onCopyPath: (relativePath: string) => void
+  onCopyRelativePath: (relativePath: string) => void
+  onTrash: (relativePath: string) => void
 }
 
 interface FileTreeLevelProps {
@@ -38,6 +43,14 @@ interface FileTreeLevelProps {
   statusIndex: TreeStatusIndex
   onToggleDirectory: (relativePath: string) => void
   onSelectFile: (relativePath: string) => void
+  onOpenContextMenu: (entry: FileEntry, x: number, y: number) => void
+}
+
+interface FileTreeMenuState {
+  relativePath: string
+  name: string
+  x: number
+  y: number
 }
 
 export function FileTree({
@@ -47,21 +60,59 @@ export function FileTree({
   statuses,
   onToggleDirectory,
   onSelectFile,
+  onShowInFolder,
+  onCopyPath,
+  onCopyRelativePath,
+  onTrash,
 }: FileTreeProps): React.JSX.Element {
   // One index per status map: the folder aggregates are precomputed, so a
   // deep or widely expanded tree stays linear to render.
   const statusIndex = useMemo(() => buildStatusIndex(statuses), [statuses])
+  const [menu, setMenu] = useState<FileTreeMenuState | null>(null)
+
+  useEffect(() => {
+    if (menu === null) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setMenu(null)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menu])
+
+  function openContextMenu(entry: FileEntry, x: number, y: number): void {
+    setMenu({ relativePath: entry.relativePath, name: entry.name, x, y })
+  }
+
   return (
-    <FileTreeLevel
-      parentPath=""
-      depth={0}
-      childrenByPath={childrenByPath}
-      expandedPaths={expandedPaths}
-      selectedPath={selectedPath}
-      statusIndex={statusIndex}
-      onToggleDirectory={onToggleDirectory}
-      onSelectFile={onSelectFile}
-    />
+    <>
+      <FileTreeLevel
+        parentPath=""
+        depth={0}
+        childrenByPath={childrenByPath}
+        expandedPaths={expandedPaths}
+        selectedPath={selectedPath}
+        statusIndex={statusIndex}
+        onToggleDirectory={onToggleDirectory}
+        onSelectFile={onSelectFile}
+        onOpenContextMenu={openContextMenu}
+      />
+      {menu !== null ? (
+        <FileTreeContextMenu
+          state={menu}
+          onClose={() => setMenu(null)}
+          onShowInFolder={onShowInFolder}
+          onCopyPath={onCopyPath}
+          onCopyRelativePath={onCopyRelativePath}
+          onTrash={onTrash}
+        />
+      ) : null}
+    </>
   )
 }
 
@@ -104,6 +155,7 @@ function FileTreeLevel({
   statusIndex,
   onToggleDirectory,
   onSelectFile,
+  onOpenContextMenu,
 }: FileTreeLevelProps & { parentPath: string; depth: number }): React.JSX.Element {
   const entries = childrenByPath[parentPath] ?? []
   return (
@@ -124,6 +176,17 @@ function FileTreeLevel({
                 data-git-status={decoration?.word}
                 aria-expanded={isExpanded}
                 onClick={() => onToggleDirectory(entry.relativePath)}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  onOpenContextMenu(entry, event.clientX, event.clientY)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+                    event.preventDefault()
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    onOpenContextMenu(entry, rect.left, rect.bottom)
+                  }
+                }}
               >
                 <span aria-hidden="true" className="flex shrink-0 text-ink-muted">
                   {isExpanded ? <Icon.chevronDown size={12} /> : <Icon.chevronRight size={12} />}
@@ -141,6 +204,7 @@ function FileTreeLevel({
                   statusIndex={statusIndex}
                   onToggleDirectory={onToggleDirectory}
                   onSelectFile={onSelectFile}
+                  onOpenContextMenu={onOpenContextMenu}
                 />
               ) : null}
             </li>
@@ -161,6 +225,17 @@ function FileTreeLevel({
               data-selected={isSelected ? 'true' : 'false'}
               data-git-status={decoration?.word}
               onClick={() => onSelectFile(entry.relativePath)}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                onOpenContextMenu(entry, event.clientX, event.clientY)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+                  event.preventDefault()
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  onOpenContextMenu(entry, rect.left, rect.bottom)
+                }
+              }}
             >
               <span className={cn('min-w-0 truncate', decoration?.className)}>{entry.name}</span>
               <GitStatusBadge decoration={decoration} />
@@ -169,5 +244,91 @@ function FileTreeLevel({
         )
       })}
     </ul>
+  )
+}
+
+function FileTreeContextMenu({
+  state,
+  onClose,
+  onShowInFolder,
+  onCopyPath,
+  onCopyRelativePath,
+  onTrash,
+}: {
+  state: FileTreeMenuState
+  onClose: () => void
+  onShowInFolder: (relativePath: string) => void
+  onCopyPath: (relativePath: string) => void
+  onCopyRelativePath: (relativePath: string) => void
+  onTrash: (relativePath: string) => void
+}): React.JSX.Element {
+  function run(action: (relativePath: string) => void): void {
+    onClose()
+    action(state.relativePath)
+  }
+
+  return (
+    <div
+      role="menu"
+      aria-label={state.name}
+      className="fixed inset-0 z-40"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          onClose()
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+    >
+      <div
+        className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
+        style={{ left: state.x, top: state.y }}
+        data-testid={TEST_ID.fileTreeContextMenu}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          data-testid={TEST_ID.fileTreeShowInFolder}
+          onClick={() => run(onShowInFolder)}
+        >
+          Show in file explorer
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          data-testid={TEST_ID.fileTreeCopyPath}
+          onClick={() => run(onCopyPath)}
+        >
+          Copy path
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          data-testid={TEST_ID.fileTreeCopyRelativePath}
+          onClick={() => run(onCopyRelativePath)}
+        >
+          Copy relative path
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="w-full px-3 py-1.5 text-left text-xs text-error hover:bg-error/10"
+          data-testid={TEST_ID.fileTreeTrash}
+          onClick={() => run(onTrash)}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
   )
 }

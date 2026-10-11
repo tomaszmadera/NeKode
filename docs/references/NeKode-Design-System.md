@@ -243,7 +243,7 @@ The terminal adds bundled Symbols Nerd Font Mono v3.4.0 for prompt glyphs, with 
 | Terminal (default) | 15px | 400 | xterm default |
 | Large status heading | 14px | 600 | 19px |
 
-The current read-only Kanban surface uses 12.6px body text and 14.7px header and
+The Kanban surface uses 12.6px body text and 14.7px header and
 review-title text (reduced by 30%, user decision 2026-10-06), retaining the established font
 family and colors. Priority labels reserve 96px; Board columns are 320px wide.
 The [Kanban contract](../features/kanban-adapter-interface/spec.md#cached-board-rendering-amendment-user-decision-2026-10-06)

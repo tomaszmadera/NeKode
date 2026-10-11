@@ -85,6 +85,8 @@ function fakeServices(): AppServices {
       read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
       openExternal: vi.fn(() => Promise.resolve()),
       openRoot: vi.fn(() => Promise.resolve()),
+      showInFolder: vi.fn(() => Promise.resolve()),
+      trash: vi.fn(() => Promise.resolve()),
     },
     handoffs: {
       list: vi.fn(() => Promise.resolve([])),
@@ -414,6 +416,17 @@ describe('ipc payload validation', () => {
     expect(() => openRoot?.parse([])).toThrow(/expected 1 argument/)
     expect(() => openRoot?.parse(['p1', 'extra'])).toThrow(/expected 1 argument/)
     expect(services.files.openRoot).toHaveBeenCalledTimes(1)
+
+    const showInFolder = channels.get('files:showInFolder')
+    showInFolder?.invoke(showInFolder.parse(['p1', 'src/app.ts']))
+    expect(services.files.showInFolder).toHaveBeenCalledWith('p1', 'src/app.ts')
+    expect(() => showInFolder?.parse(['p1'])).toThrow(/expected 2 argument/)
+    expect(() => showInFolder?.parse(['p1', ''])).toThrow(ValidationError)
+
+    const trash = channels.get('files:trash')
+    trash?.invoke(trash.parse(['p1', 'src']))
+    expect(services.files.trash).toHaveBeenCalledWith('p1', 'src')
+    expect(() => trash?.parse([42, 'src'])).toThrow(ValidationError)
   })
 
   it('ValidationError transports as a typed validation AppError', () => {
@@ -476,6 +489,8 @@ describe('ipc payload validation', () => {
       'files:read',
       'files:openExternal',
       'files:openRoot',
+      'files:showInFolder',
+      'files:trash',
       'handoffs:list',
       'dialogs:pickDirectory',
       'agentProfiles:get',
