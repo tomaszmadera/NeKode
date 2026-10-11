@@ -318,6 +318,8 @@ export const IPC_CHANNEL = {
   filesRead: 'files:read',
   filesOpenExternal: 'files:openExternal',
   filesOpenRoot: 'files:openRoot',
+  filesShowInFolder: 'files:showInFolder',
+  filesTrash: 'files:trash',
   actionsList: 'actions:list',
   actionsCreate: 'actions:create',
   actionsUpdate: 'actions:update',
@@ -713,6 +715,17 @@ export interface AppApi {
      * shell.openPath on the registered root). Unknown project: not_found.
      */
     openRoot(projectId: string): Promise<void>
+    /**
+     * Reveals the entry in the OS file manager (main: shell.showItemInFolder
+     * on the contained lexical path). Unknown project or a rejected path:
+     * not_found.
+     */
+    showInFolder(projectId: string, relativePath: string): Promise<void>
+    /**
+     * Moves the entry to the Windows Recycle Bin (main: shell.trashItem).
+     * A failure leaves the file in place. There is no direct-remove fallback.
+     */
+    trash(projectId: string, relativePath: string): Promise<void>
   }
   actions: {
     list(): Promise<ActionControl[]>

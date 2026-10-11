@@ -1,14 +1,14 @@
 import { promises as nodeFs } from 'node:fs'
-import { posix } from 'node:path'
+import { posix, win32 } from 'node:path'
 import type { FileEntry, FilePreview } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import { joinProjectPath } from '../project-path'
 
 // Project file listing and read-only preview classification (spec Data/API,
 // Business rules). The renderer never touches the filesystem: every listing
-// and read goes through this service behind the typed IPC channels. All
-// access is read-only; the only OS-facing action is openExternal
-// (shell.openPath in main, injected here).
+// and read goes through this service behind the typed IPC channels.
+// Listing and preview stay read-only. Reveal and Recycle Bin use
+// shell.showItemInFolder and shell.trashItem in main, injected here.
 //
 // Path containment: every request resolves against the registered project
 // root (projectId → ProjectService), and anything resolving outside that
@@ -150,6 +150,15 @@ export interface FilesServiceDeps {
    * success and an error description on failure (the Electron contract).
    */
   openExternal: (absolutePath: string) => Promise<string>
+  /** Reveals the lexical path in Explorer (shell.showItemInFolder). */
+  showInFolder: (absolutePath: string) => void
+  /** Moves the lexical path to the Windows Recycle Bin (shell.trashItem). */
+  trashItem: (absolutePath: string) => Promise<void>
+}
+
+/** Windows shell APIs require backslash paths, including UNC shares. */
+function toWindowsPath(lexicalPath: string): string {
+  return win32.normalize(lexicalPath)
 }
 
 /** Containment failures are indistinguishable from missing paths (spec Errors). */
@@ -222,11 +231,15 @@ export class FilesService {
   readonly #projects: FilesProjectLookup
   readonly #fs: FilesFsAdapter
   readonly #openExternal: (absolutePath: string) => Promise<string>
+  readonly #showInFolder: (absolutePath: string) => void
+  readonly #trashItem: (absolutePath: string) => Promise<void>
 
   constructor(deps: FilesServiceDeps) {
     this.#projects = deps.projects
     this.#fs = deps.fs ?? nodeFsAdapter
     this.#openExternal = deps.openExternal
+    this.#showInFolder = deps.showInFolder
+    this.#trashItem = deps.trashItem
   }
 
   /** One directory level of the project tree (null = project root). */
@@ -345,6 +358,31 @@ export class FilesService {
     }
   }
 
+  /** Reveals the entry in Explorer (spec Behaviour 21). */
+  async showInFolder(projectId: string, relativePath: string): Promise<void> {
+    const channel = 'files:showInFolder'
+    const { lexicalTarget } = await this.#locate(projectId, relativePath, channel)
+    try {
+      this.#showInFolder(toWindowsPath(lexicalTarget))
+    } catch {
+      throw new AppError('unknown', 'Failed to show the item in the file explorer.', channel)
+    }
+  }
+
+  /**
+   * Moves the entry to the Windows Recycle Bin (spec Behaviour 23). A
+   * rejection stops here: this method never removes the path directly.
+   */
+  async trash(projectId: string, relativePath: string): Promise<void> {
+    const channel = 'files:trash'
+    const { lexicalTarget } = await this.#locate(projectId, relativePath, channel)
+    try {
+      await this.#trashItem(toWindowsPath(lexicalTarget))
+    } catch {
+      throw new AppError('unknown', 'Failed to move the item to the Recycle Bin.', channel)
+    }
+  }
+
   /**
    * Resolves a request path against the registered project root and enforces
    * containment on the canonical (symlink-resolved) path.
@@ -353,14 +391,14 @@ export class FilesService {
     projectId: string,
     relativePath: string | null,
     channel: string,
-  ): Promise<{ root: string; target: string; requestRel: string }> {
+  ): Promise<{ root: string; target: string; requestRel: string; lexicalTarget: string }> {
     const project = this.#projects.get(projectId)
     if (project === null) {
       throw new AppError('not_found', 'Project not found.', channel)
     }
     const root = toPosix(project.path)
     if (relativePath === null) {
-      return { root, target: root, requestRel: '' }
+      return { root, target: root, requestRel: '', lexicalTarget: root }
     }
     const input = toPosix(relativePath)
     if (isAbsolutePosix(input) || input.includes(':')) {
@@ -413,6 +451,8 @@ export class FilesService {
         throw notFound(channel)
       }
     }
-    return { root: rootPosix, target: targetPosix, requestRel }
+    // Shell reveal and trash use the joined lexical path. The returned
+    // `target` stays the symlink-resolved path that list and read use.
+    return { root: rootPosix, target: targetPosix, requestRel, lexicalTarget: target }
   }
 }

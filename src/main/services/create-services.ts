@@ -50,6 +50,10 @@ export interface CreateServicesOptions {
    * an error description on failure (the Electron contract).
    */
   openExternal: (absolutePath: string) => Promise<string>
+  /** Reveals a path in Explorer (shell.showItemInFolder). */
+  showInFolder: (absolutePath: string) => void
+  /** Moves a path to the Windows Recycle Bin (shell.trashItem). */
+  trashItem: (absolutePath: string) => Promise<void>
   /**
    * Native directory picker (dialog.showOpenDialog in main/index.ts).
    * Resolves the chosen absolute path, or null when the user cancels.
@@ -110,7 +114,12 @@ export function createServices(options: CreateServicesOptions): AppServices {
   })
   const terminals = new TerminalService({ createPty: createNodePty })
   const git = new GitService()
-  const files = new FilesService({ projects, openExternal: options.openExternal })
+  const files = new FilesService({
+    projects,
+    openExternal: options.openExternal,
+    showInFolder: options.showInFolder,
+    trashItem: options.trashItem,
+  })
   const handoffs = new HandoffsService({ projects, state, handoffDirKey: projectHandoffDirKey })
   // Handoff match (stage 4): a shallow, read-only scan beside HandoffsService.
   // HandoffsService.list keeps its own contract; this service only reads the
@@ -298,6 +307,8 @@ export function createServices(options: CreateServicesOptions): AppServices {
       read: (projectId, relativePath) => files.read(projectId, relativePath),
       openExternal: (projectId, relativePath) => files.openExternal(projectId, relativePath),
       openRoot: (projectId) => files.openRoot(projectId),
+      showInFolder: (projectId, relativePath) => files.showInFolder(projectId, relativePath),
+      trash: (projectId, relativePath) => files.trash(projectId, relativePath),
     },
     handoffs: {
       list: (projectId) => handoffs.list(projectId),

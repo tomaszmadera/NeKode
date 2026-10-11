@@ -134,11 +134,17 @@ function createService(
   fs: FilesFsAdapter,
   openExternal?: (path: string) => Promise<string>,
   projectLookup: FilesProjectLookup = projects,
+  shell?: {
+    showInFolder?: (path: string) => void
+    trashItem?: (path: string) => Promise<void>
+  },
 ) {
   return new FilesService({
     projects: projectLookup,
     fs,
     openExternal: openExternal ?? (async () => ''),
+    showInFolder: shell?.showInFolder ?? (() => undefined),
+    trashItem: shell?.trashItem ?? (async () => undefined),
   })
 }
 
@@ -699,5 +705,106 @@ describe('files — drive-root projects and exclusion enforcement', () => {
     const service = createService(fs)
     const error = await captureError(() => service.read('p1', 'file.txt:stream'))
     expect(error.code).toBe('not_found')
+  })
+})
+
+describe('files:showInFolder and files:trash', () => {
+  function shellFixture(): {
+    fs: ReturnType<typeof createFakeFs>
+    showInFolder: ReturnType<typeof vi.fn>
+    trashItem: ReturnType<typeof vi.fn>
+    service: FilesService
+  } {
+    const fs = createFakeFs({
+      nodes: {
+        [ROOT]: { type: 'dir' },
+        [`${ROOT}/doc.pdf`]: { type: 'file', content: encode('pdf') },
+        [`${ROOT}/src`]: { type: 'dir' },
+        [`${ROOT}/src/app.ts`]: { type: 'file', content: encode('app') },
+        [`${ROOT}/link`]: { type: 'symlink', target: `${ROOT}/doc.pdf` },
+        [`${ROOT}/escape`]: { type: 'symlink', target: 'D:/outside/secret.txt' },
+        'D:/outside/secret.txt': { type: 'file', content: encode('secret') },
+        [`${ROOT}/node_modules`]: { type: 'dir' },
+        [`${ROOT}/coverage`]: { type: 'file', content: encode('c') },
+      },
+    })
+    const showInFolder = vi.fn()
+    const trashItem = vi.fn(async () => undefined)
+    const service = createService(fs, async () => '', projects, { showInFolder, trashItem })
+    return { fs, showInFolder, trashItem, service }
+  }
+
+  it('passes the contained lexical path in Windows form', async () => {
+    const { showInFolder, trashItem, service } = shellFixture()
+    await service.showInFolder('p1', 'src/app.ts')
+    await service.trash('p1', 'src')
+    expect(showInFolder).toHaveBeenCalledWith('D:\\proj\\src\\app.ts')
+    expect(trashItem).toHaveBeenCalledWith('D:\\proj\\src')
+  })
+
+  it('passes a WSL UNC path with backslashes', async () => {
+    const root = '//wsl.localhost/Ubuntu/home/user/My Project'
+    const fs = createFakeFs({
+      nodes: {
+        [root]: { type: 'dir' },
+        [`${root}/nested/file.txt`]: { type: 'file', content: encode('WSL') },
+        [`${root}/nested`]: { type: 'dir' },
+      },
+    })
+    const showInFolder = vi.fn()
+    const trashItem = vi.fn(async () => undefined)
+    const service = createService(
+      fs,
+      async () => '',
+      { get: () => ({ path: root.replace(/\//g, '\\') }) },
+      { showInFolder, trashItem },
+    )
+    await service.showInFolder('wsl', 'nested/file.txt')
+    await service.trash('wsl', 'nested/file.txt')
+    const windowsPath = '\\\\wsl.localhost\\Ubuntu\\home\\user\\My Project\\nested\\file.txt'
+    expect(showInFolder).toHaveBeenCalledWith(windowsPath)
+    expect(trashItem).toHaveBeenCalledWith(windowsPath)
+  })
+
+  it('passes a symlink link path and rejects a link that leaves the root', async () => {
+    const { showInFolder, trashItem, service } = shellFixture()
+    await service.trash('p1', 'link')
+    expect(trashItem).toHaveBeenCalledWith('D:\\proj\\link')
+    const error = await captureError(() => service.trash('p1', 'escape'))
+    expect(error.code).toBe('not_found')
+    expect(trashItem).toHaveBeenCalledTimes(1)
+    expect(showInFolder).not.toHaveBeenCalled()
+  })
+
+  it('does not call the shell for a rejected path', async () => {
+    const { showInFolder, trashItem, service } = shellFixture()
+    for (const path of ['../outside', 'D:/outside/secret.txt', 'file.txt:stream', 'node_modules']) {
+      expect((await captureError(() => service.trash('p1', path))).code).toBe('not_found')
+      expect((await captureError(() => service.showInFolder('p1', path))).code).toBe('not_found')
+    }
+    expect((await captureError(() => service.trash('missing', 'doc.pdf'))).code).toBe('not_found')
+    expect(showInFolder).not.toHaveBeenCalled()
+    expect(trashItem).not.toHaveBeenCalled()
+  })
+
+  it('trashes a same-named file and surfaces a rejected trash without a second removal', async () => {
+    const { trashItem, service } = shellFixture()
+    await service.trash('p1', 'coverage')
+    expect(trashItem).toHaveBeenCalledWith('D:\\proj\\coverage')
+    trashItem.mockRejectedValueOnce(new Error('recycle bin unavailable'))
+    const error = await captureError(() => service.trash('p1', 'doc.pdf'))
+    expect(error.code).toBe('unknown')
+    expect(error.message).toBe('Failed to move the item to the Recycle Bin.')
+    expect(trashItem).toHaveBeenCalledTimes(2)
+  })
+
+  it('surfaces a thrown reveal as a typed error', async () => {
+    const { showInFolder, service } = shellFixture()
+    showInFolder.mockImplementationOnce(() => {
+      throw new Error('explorer failed')
+    })
+    const error = await captureError(() => service.showInFolder('p1', 'doc.pdf'))
+    expect(error.code).toBe('unknown')
+    expect(error.message).toBe('Failed to show the item in the file explorer.')
   })
 })

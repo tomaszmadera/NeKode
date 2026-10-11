@@ -1,6 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AppApi, ChatInfo, FileEntry, ProjectInfo } from '../../../../shared/ipc-contract'
+import type {
+  AppApi,
+  ChatInfo,
+  FileEntry,
+  GitFileStatuses,
+  ProjectInfo,
+} from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
@@ -81,6 +87,8 @@ function createAppApiStub(): AppApi {
       read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
       openExternal: vi.fn().mockResolvedValue(undefined),
       openRoot: vi.fn().mockResolvedValue(undefined),
+      showInFolder: vi.fn().mockResolvedValue(undefined),
+      trash: vi.fn().mockResolvedValue(undefined),
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
@@ -577,6 +585,472 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     expect(screen.queryByTestId(testIdFor.fileEntry('src'))).toBeNull()
     expect(screen.queryByTestId(testIdFor.tabFile('src/app.ts'))).toBeNull()
     expect(screen.queryAllByTestId(/^tab-file-/)).toEqual([])
+  })
+})
+
+describe('project files — refresh (spec Behaviour 25)', () => {
+  let app: AppApi
+
+  function hold<T>(): { promise: Promise<T>; release: (value: T) => void } {
+    let release: (value: T) => void = () => undefined
+    const promise = new Promise<T>((resolve) => {
+      release = (value) => {
+        resolve(value)
+      }
+    })
+    return { promise, release }
+  }
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  function refreshButton(): HTMLElement {
+    return getByTestIdString(TEST_ID.filesRefreshButton)
+  }
+
+  function refreshIcon(): SVGElement {
+    const icon = refreshButton().querySelector('svg')
+    expect(icon).toBeTruthy()
+    return icon as SVGElement
+  }
+
+  it('places Refresh above the tree and lists a file added since the last read', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    const added: FileEntry = { name: 'new-file.ts', relativePath: 'new-file.ts', kind: 'file' }
+    let rootHold: ReturnType<typeof hold<FileEntry[]>> | null = null
+    let statusHold: ReturnType<typeof hold<Record<string, 'untracked'>>> | null = null
+    vi.mocked(app.files.list).mockImplementation((_projectId, relativePath) => {
+      if (relativePath === null && rootHold !== null) {
+        return rootHold.promise
+      }
+      return Promise.resolve(relativePath === null ? rootEntries : [])
+    })
+    vi.mocked(app.git.fileStatuses).mockImplementation(() => {
+      if (statusHold !== null) {
+        return statusHold.promise
+      }
+      return Promise.resolve({})
+    })
+
+    render(<App app={app} />)
+    await enterFilesMode()
+    const refresh = refreshButton()
+    const tree = getByTestIdString(TEST_ID.fileTree)
+    expect(refresh.getAttribute('aria-label')).toBe('Refresh')
+    expect(refresh.compareDocumentPosition(tree) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(screen.queryByTestId(testIdFor.fileEntry('new-file.ts'))).toBeNull()
+
+    rootHold = hold<FileEntry[]>()
+    statusHold = hold()
+    fireEvent.click(refresh)
+    await waitFor(() => expect(refreshIcon().classList.contains('animate-spin')).toBe(true))
+    expect(refreshButton().getAttribute('aria-busy')).toBe('true')
+    expect(refreshButton().getAttribute('aria-label')).toBe('Refreshing')
+    expect(screen.getByTestId(testIdFor.fileEntry('README.md'))).toBeTruthy()
+
+    rootHold.release([...rootEntries, added])
+    statusHold.release({ 'new-file.ts': 'untracked' })
+    await screen.findByTestId(testIdFor.fileEntry('new-file.ts'))
+    await waitFor(() => expect(refreshIcon().classList.contains('animate-spin')).toBe(false))
+    expect(refreshButton().getAttribute('aria-label')).toBe('Refresh')
+    expect(refreshButton().getAttribute('aria-busy')).toBe('false')
+    expect(app.files.list).toHaveBeenCalledTimes(2)
+    expect(app.git.fileStatuses).toHaveBeenCalledTimes(2)
+    expect(
+      within(screen.getByTestId(testIdFor.fileEntry('new-file.ts'))).getByTestId(
+        TEST_ID.fileTreeGitBadge,
+      ).textContent,
+    ).toBe('U')
+  })
+
+  it('re-reads an expanded directory and drops a collapsed listing', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    const extra: FileEntry = { name: 'extra.ts', relativePath: 'src/extra.ts', kind: 'file' }
+    vi.mocked(app.files.list).mockImplementation(async (projectId, relativePath) => {
+      if (projectId !== 'p1') {
+        return []
+      }
+      if (relativePath === null) {
+        return rootEntries
+      }
+      if (relativePath === 'src') {
+        return vi.mocked(app.files.list).mock.calls.length > 2 ? [...srcEntries, extra] : srcEntries
+      }
+      return []
+    })
+
+    render(<App app={app} />)
+    await enterFilesMode()
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
+    await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))
+    expect(app.files.list).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
+    expect(screen.queryByTestId(testIdFor.fileEntry('src/app.ts'))).toBeNull()
+    fireEvent.click(refreshButton())
+    await waitFor(() => expect(refreshButton().getAttribute('aria-label')).toBe('Refresh'))
+    expect(app.files.list).toHaveBeenCalledTimes(3)
+    expect(app.files.list).toHaveBeenLastCalledWith('p1', null)
+
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
+    await screen.findByTestId(testIdFor.fileEntry('src/extra.ts'))
+    expect(app.files.list).toHaveBeenLastCalledWith('p1', 'src')
+    expect(app.files.list).toHaveBeenCalledTimes(4)
+  })
+
+  it('shows the inline tree error when the root refresh fails', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockListings(app)
+    render(<App app={app} />)
+    await enterFilesMode()
+    await screen.findByTestId(testIdFor.fileEntry('README.md'))
+
+    vi.mocked(app.files.list).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'not_found',
+      message: 'File not found.',
+    })
+    fireEvent.click(refreshButton())
+    const error = await screen.findByTestId(TEST_ID.fileTreeError)
+    expect(error.textContent).toContain('File not found.')
+    await waitFor(() => expect(refreshButton().getAttribute('aria-label')).toBe('Refresh'))
+    expect(screen.queryByTestId(testIdFor.fileEntry('README.md'))).toBeNull()
+  })
+
+  it('keeps the rest of the tree when an expanded directory fails to refresh', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockListings(app)
+    render(<App app={app} />)
+    await enterFilesMode()
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
+    await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))
+
+    vi.mocked(app.files.list).mockImplementation(async (_projectId, relativePath) => {
+      if (relativePath === 'src') {
+        return Promise.reject({
+          nekodeAppError: true,
+          code: 'not_found',
+          message: 'Failed to refresh a folder.',
+        })
+      }
+      return rootEntries
+    })
+    fireEvent.click(refreshButton())
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toContain('Failed to refresh a folder.')
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.fileEntry('src')).getAttribute('aria-expanded')).toBe(
+        'false',
+      ),
+    )
+    expect(screen.queryByTestId(testIdFor.fileEntry('src/app.ts'))).toBeNull()
+    expect(screen.getByTestId(testIdFor.fileEntry('README.md'))).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.fileTreeError)).toBeNull()
+    expect(refreshButton().getAttribute('aria-label')).toBe('Refresh')
+  })
+})
+
+describe('project files: tree context menu (spec Behaviour 20-24, NEKODE-38)', () => {
+  let app: AppApi
+  let writeText: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+    writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  async function openFiles(): Promise<void> {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockListings(app)
+    render(<App app={app} />)
+    await enterFilesMode()
+    await screen.findByTestId(testIdFor.fileEntry('README.md'))
+  }
+
+  it('opens the four items on a file and a directory and does not toggle the directory', async () => {
+    await openFiles()
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('src')))
+    const menu = await screen.findByTestId(TEST_ID.fileTreeContextMenu)
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Show in file explorer', 'Copy path', 'Copy relative path', 'Delete'])
+    expect(screen.getByTestId(testIdFor.fileEntry('src')).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
+    expect(screen.queryByTestId(testIdFor.fileEntry('src/app.ts'))).toBeNull()
+    expect(app.files.list).toHaveBeenCalledTimes(1)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.fileTreeContextMenu)).toBeNull()
+
+    fireEvent.keyDown(screen.getByTestId(testIdFor.fileEntry('README.md')), { key: 'ContextMenu' })
+    await screen.findByTestId(TEST_ID.fileTreeContextMenu)
+    fireEvent.contextMenu(screen.getByTestId(TEST_ID.fileTreeContextMenu))
+    expect(screen.queryByTestId(TEST_ID.fileTreeContextMenu)).toBeNull()
+
+    fireEvent.keyDown(screen.getByTestId(testIdFor.fileEntry('README.md')), {
+      key: 'F10',
+      shiftKey: true,
+    })
+    await screen.findByTestId(TEST_ID.fileTreeContextMenu)
+    // The menu role is the backdrop. A click there dismisses; a click on the
+    // panel does not, because item clicks run their own action.
+    fireEvent.click(screen.getByRole('menu', { name: 'README.md' }))
+    expect(screen.queryByTestId(TEST_ID.fileTreeContextMenu)).toBeNull()
+
+    fireEvent.contextMenu(screen.getByTestId(TEST_ID.filesProjectName))
+    fireEvent.contextMenu(screen.getByTestId(TEST_ID.filesBackButton))
+    expect(screen.queryByTestId(TEST_ID.fileTreeContextMenu)).toBeNull()
+  })
+
+  it('copies the relative path and the file-tab absolute path', async () => {
+    await openFiles()
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeCopyRelativePath))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('README.md'))
+
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeCopyPath))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('D:/code/demo/README.md'))
+  })
+
+  it('copies a nested path and surfaces a clipboard failure', async () => {
+    await openFiles()
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
+    await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('src/app.ts')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeCopyPath))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('D:/code/demo/src/app.ts'))
+
+    writeText.mockRejectedValueOnce(new Error('denied'))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('src/app.ts')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeCopyRelativePath))
+    expect(await screen.findByTestId(TEST_ID.actionNotice)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.actionNotice).textContent).toContain(
+      'Failed to copy the path.',
+    )
+  })
+
+  it('reveals the entry and moves it to the Recycle Bin without a confirmation dialog', async () => {
+    await openFiles()
+    vi.mocked(app.files.showInFolder).mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'unknown',
+      message: 'Failed to show the item in the file explorer.',
+    })
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeShowInFolder))
+    expect((await screen.findByTestId(TEST_ID.actionNotice)).textContent).toContain(
+      'Failed to show the item in the file explorer.',
+    )
+    expect(screen.getByTestId(testIdFor.fileEntry('README.md'))).toBeTruthy()
+
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeShowInFolder))
+    await waitFor(() => expect(app.files.showInFolder).toHaveBeenCalledTimes(2))
+    expect(app.files.showInFolder).toHaveBeenCalledWith('p1', 'README.md')
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    await screen.findByTestId(testIdFor.tabFile('README.md'))
+    vi.mocked(app.files.list).mockImplementation(async (_projectId, relativePath) => {
+      if (relativePath === null) {
+        return rootEntries.filter((entry) => entry.relativePath !== 'README.md')
+      }
+      return relativePath === 'src' ? srcEntries : []
+    })
+    vi.mocked(app.git.fileStatuses).mockResolvedValue({ src: 'added' })
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeTrash))
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    await waitFor(() => expect(app.files.trash).toHaveBeenCalledWith('p1', 'README.md'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.fileEntry('README.md'))).toBeNull())
+    expect(screen.queryByTestId(testIdFor.tabFile('README.md'))).toBeNull()
+    expect(app.files.list).toHaveBeenCalledWith('p1', null)
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.fileEntry('src')).getAttribute('data-git-status')).toBe(
+        'added',
+      ),
+    )
+  })
+
+  it('leaves the row in place when trash is rejected', async () => {
+    await openFiles()
+    vi.mocked(app.files.trash).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'unknown',
+      message: 'Failed to move the item to the Recycle Bin.',
+    })
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeTrash))
+    expect(await screen.findByTestId(TEST_ID.actionNotice)).toBeTruthy()
+    expect(screen.getByTestId(testIdFor.fileEntry('README.md'))).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+  })
+
+  it('drops a directory, its expansion, and a nested file tab, and keeps decorations when status reread fails', async () => {
+    vi.mocked(app.git.fileStatuses).mockResolvedValue({
+      src: 'modified',
+      'README.md': 'modified',
+    })
+    await openFiles()
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.fileEntry('src')).getAttribute('data-git-status')).toBe(
+        'modified',
+      ),
+    )
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
+    await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src/app.ts')))
+    await screen.findByTestId(testIdFor.tabFile('src/app.ts'))
+
+    vi.mocked(app.files.list).mockImplementation(async () => [
+      { name: 'README.md', relativePath: 'README.md', kind: 'file' },
+    ])
+    vi.mocked(app.git.fileStatuses).mockRejectedValue(new Error('git failed'))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('src')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeTrash))
+    await waitFor(() => expect(app.files.trash).toHaveBeenCalledWith('p1', 'src'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.fileEntry('src'))).toBeNull())
+    expect(screen.queryByTestId(testIdFor.fileEntry('src/app.ts'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.tabFile('src/app.ts'))).toBeNull()
+    expect(
+      screen.getByTestId(testIdFor.fileEntry('README.md')).getAttribute('data-git-status'),
+    ).toBe('modified')
+    expect(screen.queryByTestId(TEST_ID.fileTreeError)).toBeNull()
+  })
+
+  it('keeps the updated cache and shows a notice when the parent re-read fails', async () => {
+    await openFiles()
+    vi.mocked(app.files.list).mockRejectedValue(new Error('disk'))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeTrash))
+    await waitFor(() => expect(app.files.trash).toHaveBeenCalledWith('p1', 'README.md'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.fileEntry('README.md'))).toBeNull())
+    expect(screen.getByTestId(testIdFor.fileEntry('src'))).toBeTruthy()
+    expect((await screen.findByTestId(TEST_ID.actionNotice)).textContent).toContain(
+      'Failed to load project files.',
+    )
+    expect(screen.queryByTestId(TEST_ID.fileTreeError)).toBeNull()
+  })
+
+  it('ignores a second trash of the same path while the first is still in flight', async () => {
+    await openFiles()
+    vi.mocked(app.files.list).mockImplementation(async (_projectId, relativePath) => {
+      if (relativePath === null) {
+        return rootEntries.filter((entry) => entry.relativePath !== 'README.md')
+      }
+      return relativePath === 'src' ? srcEntries : []
+    })
+    let releaseTrash: () => void = () => undefined
+    vi.mocked(app.files.trash).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseTrash = () => resolve()
+        }),
+    )
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeTrash))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeTrash))
+    expect(app.files.trash).toHaveBeenCalledTimes(1)
+    releaseTrash()
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.fileEntry('README.md'))).toBeNull())
+    expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
+  })
+
+  it('keeps a folder listing that was already in flight when another path is trashed', async () => {
+    await openFiles()
+    let releaseSrc: (entries: FileEntry[]) => void = () => undefined
+    vi.mocked(app.files.list).mockImplementation((_projectId, relativePath) => {
+      if (relativePath === 'src') {
+        return new Promise((resolve) => {
+          releaseSrc = resolve
+        })
+      }
+      if (relativePath === null) {
+        return Promise.resolve(rootEntries.filter((entry) => entry.relativePath !== 'README.md'))
+      }
+      return Promise.resolve([])
+    })
+    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeTrash))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.fileEntry('README.md'))).toBeNull())
+    releaseSrc(srcEntries)
+    expect(await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))).toBeTruthy()
+    expect(screen.getByTestId(testIdFor.fileEntry('src')).getAttribute('aria-expanded')).toBe(
+      'true',
+    )
+  })
+
+  it('keeps the post-trash tree when an earlier status read and listing resolve later', async () => {
+    const releaseStatus: Array<(statuses: GitFileStatuses) => void> = []
+    vi.mocked(app.git.fileStatuses).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseStatus.push(resolve)
+        }),
+    )
+    await openFiles()
+
+    let releaseRefresh: (entries: FileEntry[]) => void = () => undefined
+    let listCalls = 0
+    vi.mocked(app.files.list).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          listCalls += 1
+          if (listCalls === 1) {
+            releaseRefresh = resolve
+            return
+          }
+          resolve([{ name: 'src', relativePath: 'src', kind: 'directory' }])
+        }),
+    )
+    fireEvent.click(screen.getByTestId(TEST_ID.filesRefreshButton))
+    await waitFor(() => expect(releaseStatus).toHaveLength(2))
+
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeTrash))
+    await waitFor(() => expect(releaseStatus).toHaveLength(3))
+    const stale = { 'README.md': 'modified' as const, src: 'modified' as const }
+    releaseStatus[2]?.({ src: 'added' })
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.fileEntry('src')).getAttribute('data-git-status')).toBe(
+        'added',
+      ),
+    )
+    expect(screen.queryByTestId(testIdFor.fileEntry('README.md'))).toBeNull()
+
+    releaseStatus[1]?.(stale)
+    releaseRefresh(rootEntries)
+    releaseStatus[0]?.(stale)
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.filesRefreshButton).getAttribute('aria-label')).toBe(
+        'Refresh',
+      ),
+    )
+    expect(screen.queryByTestId(testIdFor.fileEntry('README.md'))).toBeNull()
+    expect(screen.getByTestId(testIdFor.fileEntry('src')).getAttribute('data-git-status')).toBe(
+      'added',
+    )
   })
 })
 

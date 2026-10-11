@@ -693,6 +693,12 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     // argument, existence checked in the service (a vanished root surfaces as
     // not_found like every other rejected shape).
     serviceChannel('files:openRoot', ['string'], (args) => services.files.openRoot(args[0])),
+    serviceChannel('files:showInFolder', ['string', 'relativePath'], (args) =>
+      services.files.showInFolder(args[0], args[1]),
+    ),
+    serviceChannel('files:trash', ['string', 'relativePath'], (args) =>
+      services.files.trash(args[0], args[1]),
+    ),
     // Handoff directory listing (spec handoff-resume-flow): read-only, one
     // registered project id argument. The configured directory may resolve
     // outside the project root by explicit user configuration, so unlike

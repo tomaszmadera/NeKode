@@ -194,6 +194,8 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
       read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
       openExternal: vi.fn(() => Promise.resolve()),
       openRoot: vi.fn(() => Promise.resolve()),
+      showInFolder: vi.fn(() => Promise.resolve()),
+      trash: vi.fn(() => Promise.resolve()),
     },
     handoffs: {
       list: vi.fn(() => Promise.resolve([])),
@@ -558,6 +560,8 @@ describe('registered ipc handlers', () => {
         read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
         openExternal: vi.fn(() => Promise.resolve()),
         openRoot: vi.fn(() => Promise.resolve()),
+        showInFolder: vi.fn(() => Promise.resolve()),
+        trash: vi.fn(() => Promise.resolve()),
       },
       handoffs: {
         list: vi.fn(() => Promise.resolve([])),
@@ -662,6 +666,8 @@ describe('registered ipc handlers', () => {
         read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
         openExternal: vi.fn(() => Promise.resolve()),
         openRoot: vi.fn(() => Promise.resolve()),
+        showInFolder: vi.fn(() => Promise.resolve()),
+        trash: vi.fn(() => Promise.resolve()),
       },
       handoffs: {
         list: vi.fn(() => Promise.resolve([])),
@@ -774,6 +780,8 @@ describe('registered ipc handlers', () => {
         read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
         openExternal: vi.fn(() => Promise.resolve()),
         openRoot: vi.fn(() => Promise.resolve()),
+        showInFolder: vi.fn(() => Promise.resolve()),
+        trash: vi.fn(() => Promise.resolve()),
       },
       handoffs: {
         list: vi.fn(() => Promise.resolve([])),

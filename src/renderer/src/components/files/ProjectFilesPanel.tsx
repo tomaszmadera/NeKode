@@ -7,19 +7,25 @@ import { FileTree } from './FileTree'
 import type { ProjectFilesSession } from './files-types'
 
 // Left panel of Project Files mode (spec Behaviour 4): a header with the
-// project name and a labelled "Back to Projects" button,
-// then the project's file tree. The application brand lives in the window
-// title bar. The tree area carries the inline error state (missing/unreadable
-// project directory — the rest of the app keeps working and the back
-// affordance always exits, spec Errors).
+// project name, a labelled "Back to Projects" button, and Refresh on the
+// project-name row, then the project's file tree. The application brand
+// lives in the window title bar. The tree area carries the inline error
+// state (missing or unreadable project directory). The rest of the app keeps
+// working and the back affordance always exits (spec Errors).
 
 interface ProjectFilesPanelProps {
   project: ProjectInfo
   session: ProjectFilesSession
   /** Exits Project Files mode (the back affordance, spec Behaviour 12). */
   onBack: () => void
+  /** Re-reads the root and every expanded directory (spec Behaviour 25). */
+  onRefresh: () => void
   onToggleDirectory: (relativePath: string) => void
   onSelectFile: (relativePath: string) => void
+  onShowInFolder: (relativePath: string) => void
+  onCopyPath: (relativePath: string) => void
+  onCopyRelativePath: (relativePath: string) => void
+  onTrash: (relativePath: string) => void
   notice: string | null
   /** Bottom-of-panel strip (App Settings opener), rendered after the
       tree area. The slot owns the resize handle. */
@@ -30,8 +36,13 @@ export function ProjectFilesPanel({
   project,
   session,
   onBack,
+  onRefresh,
   onToggleDirectory,
   onSelectFile,
+  onShowInFolder,
+  onCopyPath,
+  onCopyRelativePath,
+  onTrash,
   notice,
   children,
 }: ProjectFilesPanelProps): React.JSX.Element {
@@ -51,13 +62,31 @@ export function ProjectFilesPanel({
           <Icon.back size={12} aria-hidden />
           Back to Projects
         </button>
-        <span
-          className="min-w-0 truncate text-xs font-medium text-ink"
-          data-testid={TEST_ID.filesProjectName}
-          title={project.path}
-        >
-          {project.name}
-        </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="min-w-0 flex-1 truncate text-xs font-medium text-ink"
+            data-testid={TEST_ID.filesProjectName}
+            title={project.path}
+          >
+            {project.name}
+          </span>
+          <button
+            type="button"
+            className="no-drag flex size-6 shrink-0 items-center justify-center rounded-md border border-edge bg-panel text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-100"
+            data-testid={TEST_ID.filesRefreshButton}
+            aria-label={session.refreshing ? 'Refreshing' : 'Refresh'}
+            title={session.refreshing ? 'Refreshing' : 'Refresh'}
+            aria-busy={session.refreshing}
+            disabled={session.refreshing}
+            onClick={onRefresh}
+          >
+            <Icon.retry
+              size={14}
+              aria-hidden
+              className={session.refreshing ? 'animate-spin' : undefined}
+            />
+          </button>
+        </div>
       </div>
       <NoticeBanner notice={notice} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-testid={TEST_ID.fileTree}>
@@ -77,6 +106,10 @@ export function ProjectFilesPanel({
             statuses={session.gitStatuses}
             onToggleDirectory={onToggleDirectory}
             onSelectFile={onSelectFile}
+            onShowInFolder={onShowInFolder}
+            onCopyPath={onCopyPath}
+            onCopyRelativePath={onCopyRelativePath}
+            onTrash={onTrash}
           />
         )}
       </div>

@@ -327,6 +327,17 @@ describe('preload app api', () => {
     ])
   })
 
+  it('routes files:showInFolder and files:trash through their typed channels', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.files.showInFolder('p1', 'src/app.ts')
+    await api.files.trash('p1', 'src')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.filesShowInFolder, args: ['p1', 'src/app.ts'] },
+      { channel: IPC_CHANNEL.filesTrash, args: ['p1', 'src'] },
+    ])
+  })
+
   it('routes files:openRoot through its typed channel', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)

@@ -173,6 +173,10 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       openExternal: (projectId, relativePath) =>
         invoke<void>(IPC_CHANNEL.filesOpenExternal, projectId, relativePath),
       openRoot: (projectId) => invoke<void>(IPC_CHANNEL.filesOpenRoot, projectId),
+      showInFolder: (projectId, relativePath) =>
+        invoke<void>(IPC_CHANNEL.filesShowInFolder, projectId, relativePath),
+      trash: (projectId, relativePath) =>
+        invoke<void>(IPC_CHANNEL.filesTrash, projectId, relativePath),
     },
     handoffs: {
       list: (projectId) => invoke<HandoffEntry[]>(IPC_CHANNEL.handoffsList, projectId),

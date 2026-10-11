@@ -17,6 +17,8 @@ export interface ProjectFilesSession {
   gitStatuses: GitFileStatuses
   /** Inline error shown in the tree area (spec Errors: localized failure). */
   treeError: string | null
+  /** True while a manual Refresh is reading directories (spec Behaviour 25). */
+  refreshing: boolean
 }
 
 export function emptyProjectFilesSession(): ProjectFilesSession {
@@ -26,5 +28,6 @@ export function emptyProjectFilesSession(): ProjectFilesSession {
     selectedPath: null,
     gitStatuses: {},
     treeError: null,
+    refreshing: false,
   }
 }
