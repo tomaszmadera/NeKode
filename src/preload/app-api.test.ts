@@ -24,6 +24,79 @@ function createIpcMock() {
 }
 
 describe('preload app api', () => {
+  it('requests a read-only dictionary without transport or paging arguments', async () => {
+    const ipc = createIpcMock()
+    await createAppApi(ipc).dictation.dictionaryList()
+    expect(ipc.invocations).toEqual([{ channel: IPC_CHANNEL.dictationDictionaryList, args: [] }])
+  })
+  it('routes desktop activation with no keys, window or command arguments', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.dictation.desktopSetup()
+    await api.dictation.desktopConfigure({ enabled: true, confirmed: false })
+    await api.dictation.desktopActivate()
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.dictationDesktopSetup, args: [] },
+      {
+        channel: IPC_CHANNEL.dictationDesktopConfigure,
+        args: [{ enabled: true, confirmed: false }],
+      },
+      { channel: IPC_CHANNEL.dictationDesktopActivate, args: [] },
+    ])
+  })
+  it('routes session audio and cancel, validates result events and removes subscriptions', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    const wav = new ArrayBuffer(44)
+    await api.dictation.start('chat', null)
+    await api.dictation.audio('session', wav)
+    await api.dictation.cancel('session')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.dictationStart, args: ['chat', null] },
+      { channel: IPC_CHANNEL.dictationAudio, args: ['session', wav] },
+      { channel: IPC_CHANNEL.dictationCancel, args: ['session'] },
+    ])
+    const callback = vi.fn()
+    const unsubscribe = api.dictation.onResult(callback)
+    const listener = [...(ipc.listeners.get(IPC_CHANNEL.dictationResult) ?? [])][0]
+    listener({}, { text: 'malformed' })
+    expect(callback).not.toHaveBeenCalled()
+    const result = {
+      sessionId: 'session',
+      chatId: 'chat',
+      outcome: 'success',
+      text: 'hello',
+      warning: 'hint',
+      error: null,
+      retryable: false,
+    }
+    listener({}, result)
+    expect(callback).toHaveBeenCalledExactlyOnceWith(result)
+    unsubscribe()
+    expect(ipc.listeners.get(IPC_CHANNEL.dictationResult)?.size).toBe(0)
+  })
+  it('routes the five dictation methods without exposing transport controls', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    const settings = {
+      enabled: true,
+      language: 'pl',
+      model: 'default' as const,
+      timeoutSeconds: 30,
+    }
+    await api.dictation.status()
+    await api.dictation.testConnection()
+    await api.dictation.refreshModels()
+    await api.dictation.getSettings()
+    await api.dictation.setSettings(settings)
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.dictationStatus, args: [] },
+      { channel: IPC_CHANNEL.dictationTestConnection, args: [] },
+      { channel: IPC_CHANNEL.dictationRefreshModels, args: [] },
+      { channel: IPC_CHANNEL.dictationGetSettings, args: [] },
+      { channel: IPC_CHANNEL.dictationSetSettings, args: [settings] },
+    ])
+  })
   it('forwards WSL registration data and project shell context unchanged', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)

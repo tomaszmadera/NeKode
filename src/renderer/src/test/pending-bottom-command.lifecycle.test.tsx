@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActionControl, AppApi, ChatInfo, ProjectInfo } from '../../../shared/ipc-contract'
 import { APP_STATE_KEY, emptyGitWorktree } from '../../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from '../App'
+import { createDictationApiStub } from './dictation-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
 import { resetMockTerminals } from './xterm-mock'
 
@@ -17,6 +18,7 @@ vi.mock('@xterm/addon-fit', () => import('./fit-addon-mock'))
 
 function createAppApiStub(): AppApi {
   return {
+    dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),

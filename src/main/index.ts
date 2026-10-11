@@ -3,10 +3,14 @@ import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import nekodeIcon from '../../resources/icon.ico?asset'
+import { IPC_CHANNEL } from '../shared/ipc-contract'
 import { isSafeExternalUrl } from '../shared/safe-url'
 import { registerAppIpcHandlers } from './ipc/ipc-handlers'
+import { allowsMicrophone, allowsRendererClipboard } from './security/media-permissions'
 import { isTrustedRendererUrl } from './security/sender-guard'
 import { createServices } from './services/create-services'
+import { DesktopShortcutSender, desktopHelperPath } from './services/dictation/desktop-sender'
+import { registerShutdown } from './shutdown'
 
 // Isolated smoke/e2e runs (docs/development/setup.md §3): redirect userData
 // before the app is ready so the SQLite db and local settings stay out of the
@@ -63,6 +67,43 @@ function createWindow(): void {
     mainWindow.show()
   })
 
+  const permissions = mainWindow.webContents.session
+  permissions.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(
+      contents === mainWindow.webContents &&
+        (allowsMicrophone(
+          permission,
+          details.requestingUrl,
+          details.isMainFrame,
+          'mediaTypes' in details ? details.mediaTypes : undefined,
+          trustedRendererUrls,
+        ) ||
+          allowsRendererClipboard(
+            permission,
+            details.requestingUrl,
+            details.isMainFrame,
+            trustedRendererUrls,
+          )),
+    )
+  })
+  permissions.setPermissionCheckHandler(
+    (contents, permission, _origin, details) =>
+      contents === mainWindow.webContents &&
+      (allowsMicrophone(
+        permission,
+        details.requestingUrl,
+        details.isMainFrame,
+        details.mediaType ? [details.mediaType] : undefined,
+        trustedRendererUrls,
+      ) ||
+        allowsRendererClipboard(
+          permission,
+          details.requestingUrl,
+          details.isMainFrame,
+          trustedRendererUrls,
+        )),
+  )
+
   // New windows are always denied; external opens go through the protocol
   // allowlist (untrusted URLs never reach shell.openExternal).
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -93,7 +134,11 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  const desktopSender = new DesktopShortcutSender(
+    desktopHelperPath(app.isPackaged, app.getAppPath(), process.resourcesPath),
+  )
   const services = createServices({
+    desktopShortcut: (handle) => desktopSender.send(handle),
     dbPath: join(app.getPath('userData'), 'nekode.db'),
     userDataPath: app.getPath('userData'),
     // The single OS-facing action of the project-files feature (spec
@@ -114,6 +159,14 @@ app.whenReady().then(() => {
     },
   })
   registerAppIpcHandlers(ipcMain, services, {
+    desktopWindow: (event) => {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window || window.isDestroyed() || !window.isFocused()) return null
+      const handle = window.getNativeWindowHandle()
+      return (
+        handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE())
+      ).toString()
+    },
     trustedRendererUrls: getTrustedRendererUrls(),
     // Terminal data/exit events go to every window's webContents (single-window
     // app today; the fan-out keeps the contract window-agnostic).
@@ -122,15 +175,30 @@ app.whenReady().then(() => {
         window.webContents.send(channel, chatId, payload)
       }
     },
+    broadcastDictation: (result) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (isTrustedRendererUrl(window.webContents.getURL(), getTrustedRendererUrls()))
+          window.webContents.send(IPC_CHANNEL.dictationResult, result)
+      }
+    },
   })
 
   // App-quit PTY teardown (spec Behaviour 8): terminate every chat terminal
   // so no orphaned pwsh/powershell processes outlive the app. Quit is NOT a
   // chat exit: chat rows are never deleted here, and terminateAll suppresses
   // exit events so the renderer's chat-close flow cannot run while quitting.
-  app.on('before-quit', () => {
-    services.terminals.terminateAll()
-  })
+  registerShutdown(
+    app,
+    (reportTimeout) => services.terminals.shutdown(reportTimeout),
+    () => services.dictation.shutdown(),
+    () => {
+      console.error('[terminal] application shutdown did not complete')
+      dialog.showErrorBox(
+        'NeKode could not close',
+        'Terminal shutdown did not complete. NeKode is still running.',
+      )
+    },
+  )
 
   createWindow()
 

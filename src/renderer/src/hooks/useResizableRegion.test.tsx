@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../shared/ipc-contract'
 import { App, TEST_ID } from '../App'
+import { createDictationApiStub } from '../test/dictation-api-stub'
 import { BOTTOM_REGION_SIZE, useResizableRegion } from './useResizableRegion'
 
 // App renders the chat workspace (xterm) in Stage 3; keep jsdom free of the
@@ -18,6 +19,7 @@ vi.mock('@xterm/addon-fit', () => import('../test/fit-addon-mock'))
 
 function createAppApiStub(): AppApi {
   return {
+    dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),

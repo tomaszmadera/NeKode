@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
 import { APP_STATE_KEY, type AppApi, emptyGitWorktree } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
+import { createDictationApiStub } from './test/dictation-api-stub'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 
@@ -32,6 +33,7 @@ const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
 
 function createAppApiStub(): AppApi {
   return {
+    dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),

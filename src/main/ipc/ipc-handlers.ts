@@ -1,4 +1,5 @@
 import { dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import type { DictationResult } from '../../shared/dictation-contract'
 import {
   APP_STATE_KEY,
   IPC_CHANNEL,
@@ -30,6 +31,9 @@ export interface RegisterHandlersOptions {
    * every BrowserWindow webContents.
    */
   broadcast?: (channel: string, chatId: string, payload: string | number) => void
+  broadcastDictation?: (result: DictationResult) => void
+  /** Main-owned window identity. No renderer window/key/path is accepted. */
+  desktopWindow?: (event: IpcMainInvokeEvent) => string | null
 }
 
 export function registerAppIpcHandlers(
@@ -40,6 +44,7 @@ export function registerAppIpcHandlers(
   const trustedRendererUrls = options.trustedRendererUrls ?? []
   const showOpenDialog = options.showOpenDialog ?? dialog.showOpenDialog
   const broadcast = options.broadcast ?? (() => undefined)
+  services.dictation.onResult((result) => options.broadcastDictation?.(result))
 
   const validated = new Map<string, ValidatedChannel>()
   for (const entry of buildValidatedChannels(services)) {
@@ -60,11 +65,14 @@ export function registerAppIpcHandlers(
     }
   }
 
-  function handle(channel: string, run: (payload: unknown[]) => unknown): void {
+  function handle(
+    channel: string,
+    run: (payload: unknown[], event: IpcMainInvokeEvent) => unknown,
+  ): void {
     ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...payload: unknown[]) => {
       try {
         assertTrustedSender(event, channel)
-        const result = run(payload)
+        const result = run(payload, event)
         if (result instanceof Promise) {
           // Async service failures serialize like sync ones: the typed
           // AppError becomes the transport payload, never a raw rejection
@@ -161,8 +169,22 @@ export function registerAppIpcHandlers(
     services.terminals.terminate(chatId)
   })
 
+  handle(IPC_CHANNEL.dictationDesktopActivate, (payload, event) => {
+    const entry = validated.get(IPC_CHANNEL.dictationDesktopActivate)
+    if (!entry) throw new AppError('validation', 'Desktop activation validation is unavailable.')
+    entry.parse(payload)
+    const handle = options.desktopWindow?.(event)
+    if (!handle)
+      throw new AppError(
+        'validation',
+        'The owning NeKode window is unavailable. Select its prompt and try again.',
+      )
+    return services.dictation.desktopActivate(handle)
+  })
+
   for (const [channel, entry] of validated) {
     if (
+      channel === IPC_CHANNEL.dictationDesktopActivate ||
       channel === IPC_CHANNEL.projectsAdd ||
       channel === IPC_CHANNEL.projectsRemove ||
       channel === IPC_CHANNEL.chatsRemove

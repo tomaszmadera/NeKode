@@ -1,3 +1,11 @@
+import type { DesktopDictationSetup } from '../shared/desktop-dictation-contract'
+import {
+  type DictationDictionary,
+  type DictationSettings,
+  type DictationStart,
+  type DictationStatusSnapshot,
+  isDictationResult,
+} from '../shared/dictation-contract'
 import type {
   ActionControl,
   ActionExecution,
@@ -61,6 +69,30 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
   }
 
   return {
+    dictation: {
+      desktopSetup: () => invoke<DesktopDictationSetup>(IPC_CHANNEL.dictationDesktopSetup),
+      desktopConfigure: (settings) =>
+        invoke<DesktopDictationSetup>(IPC_CHANNEL.dictationDesktopConfigure, settings),
+      desktopActivate: () => invoke<void>(IPC_CHANNEL.dictationDesktopActivate),
+      status: () => invoke<DictationStatusSnapshot>(IPC_CHANNEL.dictationStatus),
+      testConnection: () => invoke<DictationStatusSnapshot>(IPC_CHANNEL.dictationTestConnection),
+      refreshModels: () => invoke<DictationStatusSnapshot>(IPC_CHANNEL.dictationRefreshModels),
+      dictionaryList: () => invoke<DictationDictionary>(IPC_CHANNEL.dictationDictionaryList),
+      getSettings: () => invoke<DictationSettings>(IPC_CHANNEL.dictationGetSettings),
+      setSettings: (settings) =>
+        invoke<DictationSettings>(IPC_CHANNEL.dictationSetSettings, settings),
+      start: (chatId, retrySessionId) =>
+        invoke<DictationStart>(IPC_CHANNEL.dictationStart, chatId, retrySessionId),
+      audio: (sessionId, wav) => invoke<void>(IPC_CHANNEL.dictationAudio, sessionId, wav),
+      cancel: (sessionId) => invoke<void>(IPC_CHANNEL.dictationCancel, sessionId),
+      onResult: (callback) => {
+        const listener = (...args: unknown[]) => {
+          if (isDictationResult(args[1])) callback(args[1])
+        }
+        ipc.on(IPC_CHANNEL.dictationResult, listener)
+        return () => ipc.off(IPC_CHANNEL.dictationResult, listener)
+      },
+    },
     actions: {
       list: () => invoke<ActionControl[]>(IPC_CHANNEL.actionsList),
       create: (input) => invoke<ActionControl>(IPC_CHANNEL.actionsCreate, input),

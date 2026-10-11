@@ -40,6 +40,7 @@ interface SessionRecord {
 }
 
 interface ChatWorkspaceProps {
+  dictation?: import('../../hooks/useDesktopDictation').DesktopDictationControl
   app: AppApi
   projects: ProjectInfo[]
   chatsByProject: Record<string, ChatInfo[]>
@@ -129,6 +130,7 @@ function freshRecord(cwd: string): SessionRecord {
 }
 
 export function ChatWorkspace({
+  dictation,
   app,
   projects,
   chatsByProject,
@@ -442,6 +444,7 @@ export function ChatWorkspace({
               data-testid={testIdFor.terminalView(chatId)}
             >
               <ChatTerminal
+                dictation={dictation}
                 app={app}
                 chatId={chatId}
                 cwd={record.cwd}

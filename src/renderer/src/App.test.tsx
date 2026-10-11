@@ -19,6 +19,7 @@ import { playAttentionChime } from './lib/chime'
 import { TERMINAL_FONT_SIZE_STORAGE_KEY } from './lib/terminal-font'
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { THEME_STORAGE_KEY } from './lib/theme'
+import { createDictationApiStub } from './test/dictation-api-stub'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 
@@ -33,6 +34,7 @@ vi.mock('./lib/chime', () => ({ playAttentionChime: vi.fn() }))
 
 function createAppApiStub(): AppApi {
   return {
+    dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
@@ -194,6 +196,60 @@ const buildAction: ActionControl = {
 }
 
 describe('app settings and themes', () => {
+  it('opens desktop setup without dispatch and wires confirmed activation through the chat prompt', async () => {
+    const app = createAppApiStub()
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    render(<App app={app} />)
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    expect(app.dictation.dictionaryList).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('tab', { name: 'Dictation' }))
+    await screen.findByRole('heading', { name: 'Dictionary (OpenWhispr)' })
+    await waitFor(() => expect(app.dictation.dictionaryList).toHaveBeenCalledOnce())
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('checkbox', { name: 'Enable desktop dictation' }) as HTMLInputElement)
+          .disabled,
+      ).toBe(false),
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable desktop dictation' }))
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('checkbox', { name: /I confirm/ }) as HTMLInputElement).disabled,
+      ).toBe(false),
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: /I confirm/ }))
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('checkbox', { name: /I confirm/ }) as HTMLInputElement).checked,
+      ).toBe(true),
+    )
+    expect(app.dictation.desktopActivate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.terminalPromptInput)).toBeTruthy())
+    const input = screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'draft' } })
+    vi.mocked(app.dictation.desktopActivate).mockImplementation(async () => {
+      expect(document.activeElement).toBe(input)
+      expect(input.value).toBe('draft')
+      expect(input.selectionStart).toBe(5)
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Dictation' }))
+    })
+    expect(app.dictation.desktopActivate).toHaveBeenCalledOnce()
+    expect(app.terminals.write).not.toHaveBeenCalled()
+    expect(app.dictation.start).not.toHaveBeenCalled()
+    expect(app.dictation.audio).not.toHaveBeenCalled()
+    expect(app.dictation.onResult).not.toHaveBeenCalled()
+  })
   it('defaults project names to uppercase and persists the original-case preference', async () => {
     const app = createAppApiStub()
     vi.mocked(app.projects.list).mockResolvedValue([projectA])

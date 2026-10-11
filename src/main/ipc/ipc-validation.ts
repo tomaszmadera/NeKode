@@ -1,5 +1,14 @@
 import { isAbsolute } from 'node:path'
 import { isBottomTabId } from '../../shared/bottom-tab-id'
+import {
+  type DesktopDictationSettings,
+  isDesktopDictationSettings,
+} from '../../shared/desktop-dictation-contract'
+import {
+  type DictationSettings,
+  isDictationSettings,
+  isDictationWav,
+} from '../../shared/dictation-contract'
 import type {
   ActionInput,
   AgentProfilePut,
@@ -9,7 +18,7 @@ import type {
   KanbanLaunchTaskInput,
   KanbanUpdatePatch,
 } from '../../shared/ipc-contract'
-import { agentProfileFieldError, KANBAN_PRIORITIES } from '../../shared/ipc-contract'
+import { agentProfileFieldError, IPC_CHANNEL, KANBAN_PRIORITIES } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import { wslProjectPath } from '../../shared/wsl-path'
 import type { AppServices } from './service-registry'
@@ -493,6 +502,65 @@ function shellContextChannel(
 
 export function buildValidatedChannels(services: AppServices): ValidatedChannel[] {
   return [
+    serviceChannel(IPC_CHANNEL.dictationStatus, [], () => services.dictation.status()),
+    serviceChannel(IPC_CHANNEL.dictationDesktopSetup, [], () => services.dictation.desktopSetup()),
+    // The handler derives the window identity after sender and payload validation.
+    serviceChannel(IPC_CHANNEL.dictationDesktopActivate, [], () => undefined),
+    {
+      channel: IPC_CHANNEL.dictationDesktopConfigure,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.dictationDesktopConfigure)
+        if (!isDesktopDictationSettings(payload[0]))
+          fail(IPC_CHANNEL.dictationDesktopConfigure, 'has invalid desktop settings')
+        return payload
+      },
+      invoke: (args) => services.dictation.desktopConfigure(args[0] as DesktopDictationSettings),
+    },
+    serviceChannel(IPC_CHANNEL.dictationTestConnection, [], () =>
+      services.dictation.testConnection(),
+    ),
+    serviceChannel(IPC_CHANNEL.dictationRefreshModels, [], () =>
+      services.dictation.refreshModels(),
+    ),
+    serviceChannel(IPC_CHANNEL.dictationGetSettings, [], () => services.dictation.getSettings()),
+    serviceChannel(IPC_CHANNEL.dictationDictionaryList, [], () =>
+      services.dictation.dictionaryList(),
+    ),
+    {
+      channel: IPC_CHANNEL.dictationStart,
+      parse: (payload) => {
+        requireArgs(payload, 2, IPC_CHANNEL.dictationStart)
+        assertString(payload[0], 'dictation:start chatId')
+        if (!payload[0]) fail(IPC_CHANNEL.dictationStart, 'requires a chatId')
+        if (payload[1] !== null) assertString(payload[1], 'dictation:start retrySessionId')
+        return payload
+      },
+      invoke: (args) => services.dictation.start(args[0] as string, args[1] as string | null),
+    },
+    {
+      channel: IPC_CHANNEL.dictationAudio,
+      parse: (payload) => {
+        requireArgs(payload, 2, IPC_CHANNEL.dictationAudio)
+        assertString(payload[0], 'dictation:audio sessionId')
+        if (!isDictationWav(payload[1]))
+          fail(IPC_CHANNEL.dictationAudio, 'requires mono 16 kHz PCM WAV')
+        return payload
+      },
+      invoke: (args) => services.dictation.audio(args[0] as string, args[1] as ArrayBuffer),
+    },
+    serviceChannel(IPC_CHANNEL.dictationCancel, ['string'], (args) =>
+      services.dictation.cancel(args[0]),
+    ),
+    {
+      channel: IPC_CHANNEL.dictationSetSettings,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.dictationSetSettings)
+        if (!isDictationSettings(payload[0]))
+          fail(IPC_CHANNEL.dictationSetSettings, 'has invalid settings')
+        return payload
+      },
+      invoke: (args) => services.dictation.setSettings(args[0] as DictationSettings),
+    },
     serviceChannel('actions:list', [], () => services.actions.list()),
     actionInputChannel('actions:create', false, (_, input) => services.actions.create(input)),
     actionInputChannel('actions:update', true, (id, input) =>

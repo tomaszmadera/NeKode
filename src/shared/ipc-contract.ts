@@ -1,3 +1,23 @@
+import type { DesktopDictationSettings, DesktopDictationSetup } from './desktop-dictation-contract'
+import type {
+  DictationDictionary,
+  DictationResult,
+  DictationSettings,
+  DictationStart,
+  DictationStatusSnapshot,
+} from './dictation-contract'
+
+export type {
+  DictationConnectionState,
+  DictationDictionary,
+  DictationModelSelection,
+  DictationResult,
+  DictationSettings,
+  DictationStart,
+  DictationStatusSnapshot,
+  LocalTranscribeModel,
+} from './dictation-contract'
+
 // Typed IPC contract shared by main, preload and renderer (SDD §6, §44).
 // Every channel is served by a real service in main: projects/chats/state by
 // the SQLite persistence services, terminals by real PTY sessions
@@ -258,6 +278,19 @@ export function relativeToProject(projectRoot: string, absolutePath: string): st
 // in the main process: chats:remove, projects:remove, and
 // TerminalService.terminateAll on app quit. Quit never goes through the renderer.
 export const IPC_CHANNEL = {
+  dictationStatus: 'dictation:status',
+  dictationDesktopSetup: 'dictation:desktopSetup',
+  dictationDesktopConfigure: 'dictation:desktopConfigure',
+  dictationDesktopActivate: 'dictation:desktopActivate',
+  dictationTestConnection: 'dictation:testConnection',
+  dictationRefreshModels: 'dictation:refreshModels',
+  dictationDictionaryList: 'dictation:dictionaryList',
+  dictationGetSettings: 'dictation:getSettings',
+  dictationSetSettings: 'dictation:setSettings',
+  dictationStart: 'dictation:start',
+  dictationAudio: 'dictation:audio',
+  dictationCancel: 'dictation:cancel',
+  dictationResult: 'dictation:result',
   projectsList: 'projects:list',
   projectsAdd: 'projects:add',
   projectsWslDistributions: 'projects:wslDistributions',
@@ -312,6 +345,13 @@ export const IPC_CHANNEL = {
 // Keys of the flat app_state key–value store (spec Data/API). Shared so the
 // renderer persists with the same keys the main process cleans up.
 export const APP_STATE_KEY = {
+  dictationEnabled: 'dictation.enabled',
+  dictationDesktop: 'dictation.desktop',
+  dictationLanguage: 'dictation.language',
+  dictationModel: 'dictation.model',
+  dictationTimeoutSeconds: 'dictation.timeoutSeconds',
+  /** JSON containing state and checkedAt only. Historical, not startup readiness. */
+  dictationStatus: 'dictation.status',
   selectedProjectId: 'selection.projectId',
   selectedChatId: 'selection.chatId',
   leftRegionWidth: 'region.left.width',
@@ -567,6 +607,21 @@ export function agentProfileFieldError(input: {
 }
 
 export interface AppApi {
+  dictation: {
+    desktopSetup(): Promise<DesktopDictationSetup>
+    desktopConfigure(settings: DesktopDictationSettings): Promise<DesktopDictationSetup>
+    desktopActivate(): Promise<void>
+    status(): Promise<DictationStatusSnapshot>
+    testConnection(): Promise<DictationStatusSnapshot>
+    refreshModels(): Promise<DictationStatusSnapshot>
+    dictionaryList(): Promise<DictationDictionary>
+    getSettings(): Promise<DictationSettings>
+    setSettings(settings: DictationSettings): Promise<DictationSettings>
+    start(chatId: string, retrySessionId: string | null): Promise<DictationStart>
+    audio(sessionId: string, wav: ArrayBuffer): Promise<void>
+    cancel(sessionId: string): Promise<void>
+    onResult(callback: (result: DictationResult) => void): Unsubscribe
+  }
   projects: {
     list(): Promise<ProjectInfo[]>
     /** Opens the native directory dialog in main. Resolves null when the user cancels. */

@@ -8,6 +8,7 @@ import type {
 } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
+import { createDictationApiStub } from '../../test/dictation-api-stub'
 import {
   gitHoverDetails,
   gitStatusText,
@@ -31,6 +32,7 @@ const projectA: ProjectInfo = {
 
 function createAppApiStub(gitStatus?: Partial<GitStatus>): AppApi {
   return {
+    dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),

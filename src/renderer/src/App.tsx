@@ -64,6 +64,7 @@ import {
 } from './components/terminal/bottom-tabs'
 import { chatSwitchDirection } from './components/terminal/chat-switch-chord'
 import { ChatWorkspace } from './components/workspace/ChatWorkspace'
+import { useDesktopDictation } from './hooks/useDesktopDictation'
 import {
   BOTTOM_REGION_SIZE,
   clampRegionSize,
@@ -168,6 +169,7 @@ function mergeFetchedChats(
 }
 
 export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
+  const desktopDictation = useDesktopDictation(app)
   const [appSettingsOpen, setAppSettingsOpen] = useState(false)
   const [themeState, setThemeState] = useState<{ theme: ThemeId; error: string | null }>(() => {
     try {
@@ -2161,6 +2163,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 data-testid={TEST_ID.chatSurfaceHost}
               >
                 <ChatWorkspace
+                  dictation={desktopDictation.control}
                   app={app}
                   projects={projects}
                   chatsByProject={chatsByProject}
@@ -2264,6 +2267,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       ) : null}
       {appSettingsOpen ? (
         <AppSettings
+          dictationApi={app.dictation}
+          desktopDictation={desktopDictation}
           theme={themeState.theme}
           chatSwitch={chatSwitchEnabled}
           projectNamesUppercase={projectNamesUppercase}

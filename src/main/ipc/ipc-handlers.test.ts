@@ -47,6 +47,25 @@ function fakeActions(): AppServices['actions'] {
   }
 }
 
+function fakeDictation(): AppServices['dictation'] {
+  return {
+    desktopSetup: vi.fn(),
+    desktopConfigure: vi.fn(),
+    desktopActivate: vi.fn(async () => {}),
+    status: vi.fn(),
+    testConnection: vi.fn(),
+    refreshModels: vi.fn(),
+    dictionaryList: vi.fn(),
+    getSettings: vi.fn(),
+    setSettings: vi.fn(),
+    start: vi.fn(),
+    audio: vi.fn(),
+    cancel: vi.fn(),
+    onResult: vi.fn(() => () => undefined),
+    shutdown: vi.fn(),
+  }
+}
+
 // Registered-handler tests (plan carry-over: the previous stub tests never
 // invoked the handlers, leaving sender guarding, payload slicing and the
 // dialog flow uncovered). A fake IpcMain captures the registered callbacks.
@@ -79,7 +98,7 @@ type Handler = (event: IpcMainInvokeEvent, ...payload: unknown[]) => unknown
 
 function createFakeIpcMain(): {
   ipcMain: IpcMain
-  invoke: (channel: string, payload: unknown[], url?: string) => unknown
+  invoke: (channel: string, payload: unknown[], url?: string, mainFrame?: boolean) => unknown
 } {
   const handlers = new Map<string, Handler>()
   const ipcMain = {
@@ -87,7 +106,12 @@ function createFakeIpcMain(): {
       handlers.set(channel, handler)
     },
   } as unknown as IpcMain
-  function invoke(channel: string, payload: unknown[], url = 'file:///renderer/index.html') {
+  function invoke(
+    channel: string,
+    payload: unknown[],
+    url = 'file:///renderer/index.html',
+    mainFrame = true,
+  ) {
     const handler = handlers.get(channel)
     if (handler === undefined) {
       throw new Error(`no handler registered for ${channel}`)
@@ -96,7 +120,7 @@ function createFakeIpcMain(): {
     const frame = { url }
     const event = {
       senderFrame: frame,
-      sender: { mainFrame: frame },
+      sender: { mainFrame: mainFrame ? frame : {} },
     } as unknown as IpcMainInvokeEvent
     return handler(event, ...payload)
   }
@@ -110,13 +134,14 @@ interface Harness {
   showOpenDialog: ReturnType<typeof vi.fn>
 }
 
-function createHarness(): Harness {
+function createHarness(desktopHandle: string | null = '123'): Harness {
   const terminalListeners: {
     data: Array<(chatId: string, data: string) => void>
     exit: Array<(chatId: string, exitCode: number) => void>
   } = { data: [], exit: [] }
 
   const services: AppServices = {
+    dictation: fakeDictation(),
     actions: fakeActions(),
     projects: {
       wslDirectories: vi.fn(() => []),
@@ -148,6 +173,7 @@ function createHarness(): Harness {
       terminate: vi.fn(),
       terminateProjectBottom: vi.fn(),
       terminateAll: vi.fn(),
+      shutdown: vi.fn(async () => {}),
       onData: (listener) => {
         terminalListeners.data.push(listener)
         return () => undefined
@@ -203,6 +229,7 @@ function createHarness(): Harness {
   const { ipcMain, invoke } = createFakeIpcMain()
   const showOpenDialog = vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] as string[] }))
   registerAppIpcHandlers(ipcMain, services, {
+    desktopWindow: () => desktopHandle,
     showOpenDialog: showOpenDialog as never,
     trustedRendererUrls: ['file:///renderer/index.html'],
     broadcast: (channel, chatId, payload) => {
@@ -218,6 +245,69 @@ function createHarness(): Harness {
 }
 
 describe('registered ipc handlers', () => {
+  it('rejects desktop activation when the owning window is unavailable or unfocused', () => {
+    const { invoke, services } = createHarness(null)
+    expect(() => invoke(IPC_CHANNEL.dictationDesktopActivate, [])).toThrow('owning NeKode window')
+    expect(services.dictation.desktopActivate).not.toHaveBeenCalled()
+  })
+  it('guards desktop dispatch and uses only the main-derived window identity', async () => {
+    const { invoke, services } = createHarness()
+    expect(() =>
+      invoke(IPC_CHANNEL.dictationDesktopActivate, [], 'https://untrusted.test'),
+    ).toThrow('Rejected untrusted')
+    expect(() => invoke(IPC_CHANNEL.dictationDesktopActivate, ['999'])).toThrow()
+    expect(() =>
+      invoke(IPC_CHANNEL.dictationDesktopActivate, [], 'file:///renderer/index.html', false),
+    ).toThrow('Rejected untrusted')
+    expect(services.dictation.desktopActivate).not.toHaveBeenCalled()
+    await invoke(IPC_CHANNEL.dictationDesktopActivate, [])
+    expect(services.dictation.desktopActivate).toHaveBeenCalledExactlyOnceWith('123')
+  })
+  it('guards binary audio before service invocation and forwards only validated audio', () => {
+    const { invoke, services } = createHarness()
+    expect(() =>
+      invoke(IPC_CHANNEL.dictationAudio, ['session', 'invalid'], 'https://untrusted.test'),
+    ).toThrow('Rejected untrusted IPC sender.')
+    expect(services.dictation.audio).not.toHaveBeenCalled()
+    const wav = new Uint8Array([
+      82, 73, 70, 70, 36, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0, 128,
+      62, 0, 0, 0, 125, 0, 0, 2, 0, 16, 0, 100, 97, 116, 97, 0, 0, 0, 0,
+    ]).buffer
+    invoke(IPC_CHANNEL.dictationAudio, ['session', wav])
+    expect(services.dictation.audio).toHaveBeenCalledExactlyOnceWith('session', wav)
+  })
+  it.each([
+    ['status', IPC_CHANNEL.dictationStatus, []],
+    ['testConnection', IPC_CHANNEL.dictationTestConnection, []],
+    ['refreshModels', IPC_CHANNEL.dictationRefreshModels, []],
+    ['dictionaryList', IPC_CHANNEL.dictationDictionaryList, []],
+    ['getSettings', IPC_CHANNEL.dictationGetSettings, []],
+    ['start', IPC_CHANNEL.dictationStart, ['chat', null]],
+    ['cancel', IPC_CHANNEL.dictationCancel, ['session']],
+    [
+      'setSettings',
+      IPC_CHANNEL.dictationSetSettings,
+      [{ enabled: true, language: 'pl', model: 'default', timeoutSeconds: 30 }],
+    ],
+  ] as const)('routes and sender-guards dictation %s', (method, channel, payload) => {
+    const { invoke, services } = createHarness()
+    expect(() => invoke(channel, [...payload], 'https://untrusted.example/')).toThrow(
+      'Rejected untrusted IPC sender.',
+    )
+    expect(services.dictation[method]).not.toHaveBeenCalled()
+    invoke(channel, [...payload])
+    expect(services.dictation[method]).toHaveBeenCalledExactlyOnceWith(...payload)
+  })
+  it('rejects dictionary subframes and arbitrary arguments before any authenticated read', () => {
+    const { invoke, services } = createHarness()
+    expect(() =>
+      invoke(IPC_CHANNEL.dictationDictionaryList, [], 'file:///renderer/index.html', false),
+    ).toThrow('Rejected untrusted IPC sender.')
+    expect(() => invoke(IPC_CHANNEL.dictationDictionaryList, ['cursor-or-token'])).toThrow()
+    expect(services.dictation.dictionaryList).not.toHaveBeenCalled()
+    invoke(IPC_CHANNEL.dictationDictionaryList, [])
+    expect(services.dictation.dictionaryList).toHaveBeenCalledOnce()
+  })
   it('routes directory suggestions only for trusted senders and transports listing errors', () => {
     const { invoke, services, showOpenDialog } = createHarness()
     invoke(IPC_CHANNEL.projectsWslDirectories, ['Ubuntu', '/home/'])
@@ -440,6 +530,7 @@ describe('registered ipc handlers', () => {
       { id: 't3', projectId: 'p2', name: 'c' },
     ]
     const services: AppServices = {
+      dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {
         wslDirectories: vi.fn(() => []),
@@ -543,6 +634,7 @@ describe('registered ipc handlers', () => {
       { id: 't3', projectId: 'p2', name: 'c' },
     ]
     const services: AppServices = {
+      dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {
         wslDirectories: vi.fn(() => []),
@@ -654,6 +746,7 @@ describe('registered ipc handlers', () => {
       shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
     })
     const services: AppServices = {
+      dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {
         wslDirectories: vi.fn(() => []),

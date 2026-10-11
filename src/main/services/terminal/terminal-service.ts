@@ -97,6 +97,7 @@ export class TerminalService {
   // them once so a late spawn cannot outlive the tab. Chat ids are not recorded.
   readonly #closedBottomTabs = new Set<string>()
   #quitting = false
+  #shutdown: Promise<void> | undefined
 
   constructor(options: TerminalServiceOptions) {
     this.#createPty = options.createPty
@@ -243,6 +244,36 @@ export class TerminalService {
     this.#sessions.clear()
   }
 
+  /**
+   * Wait for native exit callbacks before Electron destroys the Node environment.
+   * A missing exit at seven seconds is reported once and does not abandon the wait.
+   */
+  shutdown(reportTimeout?: (error: unknown) => void): Promise<void> {
+    if (this.#shutdown) return this.#shutdown
+    this.#quitting = true
+    let reported = false
+    const exits = [...this.#sessions.values()]
+      .filter((session) => session.status === 'running')
+      .map(
+        (session) =>
+          new Promise<void>((resolve) => {
+            const timer = setTimeout(() => {
+              if (reported) return
+              reported = true
+              reportTimeout?.(new Error('Terminal shutdown timed out.'))
+            }, 7000)
+            const subscription = session.pty.onExit(() => {
+              clearTimeout(timer)
+              subscription.dispose()
+              resolve()
+            })
+          }),
+      )
+    this.#shutdown = Promise.all(exits).then(() => undefined)
+    this.terminateAll()
+    return this.#shutdown
+  }
+
   onData(listener: (chatId: string, data: string) => void): Unsubscribe {
     this.#dataListeners.add(listener)
     return () => {
@@ -285,7 +316,7 @@ export class TerminalService {
     }
     session.subscriptions = []
     try {
-      session.pty.kill()
+      if (session.status === 'running') session.pty.kill()
     } catch {
       // The process may already be gone (exited session); kill stays idempotent.
     }
