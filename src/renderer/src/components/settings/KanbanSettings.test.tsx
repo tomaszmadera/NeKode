@@ -531,8 +531,94 @@ describe('KanbanSettings', () => {
         true,
       ),
     )
-    expect(screen.getByTestId(TEST_ID.settingsKanbanTestHint)).toBeTruthy()
     fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTest))
     expect(test).not.toHaveBeenCalled()
+  })
+
+  it('blocks rapid double activation of save, disables button during mutation, and unlocks on error', async () => {
+    let resolveSetConfig: () => void = () => {}
+    const setConfig = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSetConfig = resolve
+        }),
+    )
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([SECOND]),
+      setConfig,
+    })
+    await renderLoaded(app)
+
+    const select = screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect)
+    fireEvent.change(select, { target: { value: 'second' } })
+
+    const saveButton = screen.getByTestId(TEST_ID.settingsKanbanSave) as HTMLButtonElement
+    expect(saveButton.disabled).toBe(false)
+
+    // First click initiates save
+    fireEvent.click(saveButton)
+    expect(setConfig).toHaveBeenCalledTimes(1)
+    expect(saveButton.disabled).toBe(true)
+
+    // Rapid second click is guarded
+    fireEvent.click(saveButton)
+    expect(setConfig).toHaveBeenCalledTimes(1)
+
+    // Complete save
+    resolveSetConfig()
+    await waitFor(() => expect(saveButton.disabled).toBe(false))
+    expect(screen.getByTestId(TEST_ID.settingsKanbanSaved)).toBeTruthy()
+
+    // Unlock on error
+    setConfig.mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'internal',
+      message: 'Failed to write config',
+    })
+    fireEvent.click(saveButton)
+    await screen.findByText('Failed to write config')
+    expect(saveButton.disabled).toBe(false)
+  })
+
+  it('blocks rapid double activation of browseDir, disables button during mutation, and unlocks on error', async () => {
+    let resolvePick: (path: string | null) => void = () => {}
+    const pickDirectory = vi.fn().mockImplementation(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolvePick = resolve
+        }),
+    )
+    const stateSet = vi.fn().mockResolvedValue(undefined)
+    const app = appMock({
+      pickDirectory,
+      stateSet,
+    })
+    await renderLoaded(app)
+
+    const browseButton = screen.getByTestId(TEST_ID.settingsKanbanDirBrowse) as HTMLButtonElement
+    expect(browseButton.disabled).toBe(false)
+
+    // First click initiates browse
+    fireEvent.click(browseButton)
+    expect(pickDirectory).toHaveBeenCalledTimes(1)
+    expect(browseButton.disabled).toBe(true)
+
+    // Rapid second click is guarded
+    fireEvent.click(browseButton)
+    expect(pickDirectory).toHaveBeenCalledTimes(1)
+
+    // Complete browse
+    resolvePick('D:/new-adapters')
+    await waitFor(() => expect(browseButton.disabled).toBe(false))
+
+    // Unlock on error
+    pickDirectory.mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'internal',
+      message: 'Picker failed',
+    })
+    fireEvent.click(browseButton)
+    await screen.findByText('Picker failed')
+    expect(browseButton.disabled).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ActionControl, ActionInput, AppApi } from '../../../../shared/ipc-contract'
 import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
@@ -134,6 +134,8 @@ export function ActionSettings({
   const [handoffDir, setHandoffDir] = useState('')
   const [handoffDirSaved, setHandoffDirSaved] = useState(false)
   const [configError, setConfigError] = useState<string | null>(null)
+  const busyRef = useRef(false)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (projectId === null) {
@@ -164,7 +166,9 @@ export function ActionSettings({
   }, [app, projectId])
 
   async function saveHandoffDir(): Promise<void> {
-    if (projectId === null) return
+    if (projectId === null || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
     try {
       await app.state.set(projectHandoffDirKey(projectId), handoffDir.trim())
       setHandoffDirSaved(true)
@@ -178,10 +182,16 @@ export function ActionSettings({
       setConfigError(
         parseAppErrorPayload(cause)?.message ?? 'Failed to save the handoff directory.',
       )
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
   async function browseHandoffDir(): Promise<void> {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
     // The picker's defaultPath must be null or absolute (validator rule): a
     // relative current value falls back to the project root, like the empty
     // case (spec Behaviour 6: current value or project root). The confirmed
@@ -200,6 +210,9 @@ export function ActionSettings({
       }
     } catch (cause) {
       setConfigError(parseAppErrorPayload(cause)?.message ?? 'Failed to open the directory picker.')
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
@@ -222,28 +235,46 @@ export function ActionSettings({
   }
 
   async function save(): Promise<void> {
-    if (!form) return
+    if (!form || busyRef.current) return
     if (!form.title.trim() || !form.command.trim()) {
       setError('Title and command are required.')
       return
     }
+    const input = {
+      ...form,
+      icon: form.icon?.trim() ? form.icon.trim() : null,
+      command: runWithPowerShell ? powerShellCommand(form.command) : form.command,
+    }
+    busyRef.current = true
+    setBusy(true)
     try {
-      const input = {
-        ...form,
-        command: runWithPowerShell ? powerShellCommand(form.command) : form.command,
+      try {
+        if (editingId) await app.actions.update(editingId, input)
+        else await app.actions.create(input)
+      } catch (cause) {
+        setError(parseAppErrorPayload(cause)?.message ?? 'Failed to save action.')
+        return
       }
-      if (editingId) await app.actions.update(editingId, input)
-      else await app.actions.create(input)
-      await onRefresh()
+
       setForm(null)
       setEditingId(null)
       setError(null)
-    } catch (cause) {
-      setError(parseAppErrorPayload(cause)?.message ?? 'Failed to save action.')
+
+      try {
+        await onRefresh()
+      } catch (cause) {
+        setError(parseAppErrorPayload(cause)?.message ?? 'Failed to refresh actions.')
+      }
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
   async function remove(id: string): Promise<void> {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
     try {
       await app.actions.delete(id)
       await onRefresh()
@@ -254,6 +285,9 @@ export function ActionSettings({
       setError(null)
     } catch (cause) {
       setError(parseAppErrorPayload(cause)?.message ?? 'Failed to delete action.')
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
@@ -386,7 +420,8 @@ export function ActionSettings({
                             />
                             <button
                               type="button"
-                              className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover"
+                              disabled={busy}
+                              className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover disabled:opacity-50"
                               data-testid={TEST_ID.settingsHandoffDirBrowse}
                               onClick={() => {
                                 void browseHandoffDir()
@@ -400,7 +435,8 @@ export function ActionSettings({
                           <button
                             type="button"
                             aria-label="Save handoff directory"
-                            className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
+                            disabled={busy}
+                            className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
                             data-testid={TEST_ID.settingsHandoffDirSave}
                             onClick={() => {
                               void saveHandoffDir()
@@ -458,7 +494,8 @@ export function ActionSettings({
                         </button>
                         <button
                           type="button"
-                          className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error"
+                          disabled={busy}
+                          className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error disabled:opacity-50"
                           onClick={() => {
                             void remove(action.id)
                           }}
@@ -526,7 +563,7 @@ export function ActionSettings({
                             const value = event.target.value
                             setForm({
                               ...form,
-                              icon: value === ACTION_NONE || value === 'custom' ? null : value,
+                              icon: value === ACTION_NONE ? null : value === 'custom' ? '' : value,
                             })
                           }}
                         >
@@ -545,9 +582,7 @@ export function ActionSettings({
                             value={form.icon ?? ''}
                             placeholder="e.g. 🚀"
                             data-testid={TEST_ID.settingsActionIconEmoji}
-                            onChange={(event) =>
-                              setForm({ ...form, icon: event.target.value || null })
-                            }
+                            onChange={(event) => setForm({ ...form, icon: event.target.value })}
                           />
                         </label>
                       ) : null}
@@ -617,7 +652,8 @@ export function ActionSettings({
                       <div className="flex gap-2">
                         <button
                           type="submit"
-                          className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
+                          disabled={busy}
+                          className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover disabled:opacity-50"
                         >
                           Save
                         </button>

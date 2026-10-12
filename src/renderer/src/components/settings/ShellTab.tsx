@@ -31,6 +31,8 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
   const [customPath, setCustomPath] = useState('')
   const [customError, setCustomError] = useState<string | null>(null)
   const selectRef = useRef<HTMLSelectElement>(null)
+  const busyRef = useRef(false)
+  const [busy, setBusy] = useState(false)
 
   // One detection + per-project choice load per tab entry (the modal mounts
   // this component fresh on each entry, so a plain mount effect is the
@@ -39,12 +41,19 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
     let alive = true
     setDetecting(true)
     setDetectError(null)
+    let savedError: string | null = null
     const saved =
       projectId !== null
         ? app.state
             .get(projectShellKey(projectId))
             .then((value) => (alive ? (value ?? 'default') : 'default'))
-            .catch(() => 'default')
+            .catch((cause: unknown) => {
+              if (alive) {
+                savedError =
+                  parseAppErrorPayload(cause)?.message ?? 'Failed to load the stored shell choice.'
+              }
+              return 'default'
+            })
         : Promise.resolve('default')
     void Promise.all([saved, app.terminals.shellDetect(projectId)])
       .then(([choice, list]) => {
@@ -53,6 +62,9 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
           setSelected(list.some((shell) => shell.id === choice) ? choice : 'default')
           setShells(list)
           setDetecting(false)
+          if (savedError) {
+            setDetectError(savedError)
+          }
         }
       })
       .catch((cause: unknown) => {
@@ -71,7 +83,9 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
   }, [app, projectId])
 
   async function save(): Promise<void> {
-    if (projectId === null) return
+    if (projectId === null || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
     try {
       // Default stores an empty value (= unconfigured), matching the
       // handoff-dir convention: missing/empty means the platform default.
@@ -79,16 +93,22 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
       setSavedChoice(selected)
       setSaveState('saved')
       setSaveError(null)
+      setDetectError(null)
       onSettingsChanged?.()
     } catch (cause) {
       setSaveState('error')
       setSaveError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the shell choice.')
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
   async function addCustom(): Promise<void> {
     const path = customPath.trim()
-    if (path.length === 0) return
+    if (path.length === 0 || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
     try {
       const entry = await app.terminals.shellAddCustom(path, projectId)
       setShells((previous) => [...previous.filter((shell) => shell.id !== entry.id), entry])
@@ -96,6 +116,9 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
       setCustomError(null)
     } catch (cause) {
       setCustomError(parseAppErrorPayload(cause)?.message ?? 'Failed to add the shell path.')
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
@@ -147,7 +170,7 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
                   type="button"
                   aria-label="Save shell choice"
                   data-testid={TEST_ID.settingsShellSave}
-                  disabled={selected === savedChoice}
+                  disabled={busy || selected === savedChoice}
                   className="h-control shrink-0 rounded-md bg-button px-4 text-sm text-ink hover:bg-button-hover disabled:opacity-50"
                   onClick={() => {
                     void save()
@@ -193,7 +216,7 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
               <button
                 type="button"
                 data-testid={TEST_ID.settingsShellCustomAdd}
-                disabled={customPath.trim().length === 0}
+                disabled={busy || customPath.trim().length === 0}
                 className="h-control shrink-0 rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover disabled:opacity-50"
                 onClick={() => {
                   void addCustom()
