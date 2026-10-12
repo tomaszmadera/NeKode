@@ -24,6 +24,22 @@ ADAPTER = load_module("plane_adapter", "adapters/plane/plane_adapter.py")
 CLI = load_module("kanban_cli", ".agents/skills/kanban/scripts/kanban_cli.py")
 
 
+class UpdatePriorityTests(unittest.TestCase):
+    def test_explicit_null_clears_priority_and_an_omitted_key_does_not(self):
+        cfg = {"workspace": "ws"}
+        with patch.object(
+            ADAPTER, "resolve_issue_identity", return_value=("uuid-1", "proj", None)
+        ):
+            cleared = ADAPTER.action_update_item(
+                cfg, {"ref": "NEKODE-1", "priority": None, "dryRun": True}
+            )
+            renamed = ADAPTER.action_update_item(
+                cfg, {"ref": "NEKODE-1", "title": "Hello", "dryRun": True}
+            )
+        self.assertEqual(cleared["payload"], {"priority": "none"})
+        self.assertEqual(renamed["payload"], {"name": "Hello"})
+
+
 class DescriptionTextTests(unittest.TestCase):
     def test_html_keeps_paragraphs_lists_links_and_entities(self):
         source = (

@@ -744,8 +744,10 @@ def action_update_item(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str,
         payload["description_html"] = text_to_html(str(params["description"]))
     if params.get("stateRef") is not None:
         payload["state"] = resolve_state_ref(cfg, project_id, str(params["stateRef"]))
-    if params.get("priority") is not None:
-        payload["priority"] = to_plane_priority(params["priority"])
+    # A present null clears priority. An omitted key leaves it unchanged.
+    # params.get cannot tell those apart, so the key itself is the signal.
+    if "priority" in params:
+        payload["priority"] = to_plane_priority(params.get("priority"))
     if not payload:
         raise AdapterError("config", "updateItem requires at least one field to change")
 

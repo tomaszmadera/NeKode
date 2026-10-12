@@ -555,11 +555,14 @@ two equivalent entry points:
 Selecting either activates the `Kanban` tab, which renders the board in the
 center surface; selecting the chat tab or a file tab returns to that surface.
 There is no separate `Files | Kanban` view-switch strip. Inside the Kanban tab,
-a List | Board icon switch on the header's right side changes how the loaded
-items are shown; List is the default. Both show one always-underlined link of
-each item's ref and title, and the priority. Opening that link shows a review
-with the full title and the description, where Status saves the selected state
-and the ref, title, description, and priority stay read-only. When the board
+the loaded items are a grouped list. Each row shows the slug and the title in
+separate columns, and the priority. Hover highlights the whole row, and underlines the slug, the title,
+enabled Start, and shown Resume. Only those handle a click. Opening the
+slug or the title shows a two-column review: the full title and the
+description on the left, Priority and Status on the right. The right column
+is one quarter of the width. Status and Priority
+save, and the ref, title,
+and description stay read-only and can be selected and copied. When the board
 is ready and the review is closed, the header shows `New task`. The refresh
 icon sits on the right of the same header; every icon control carries an
 accessible name (§63).
@@ -827,13 +830,15 @@ Project navigation: a bound Project exposes its board from the left-navigation
 select the board in the center surface (§18). The adapter-backed board
 (`kanban-adapter-interface`) is the post-MVP realization of this surface: a
 view of real backend states and items (`kanban:listBoard`), as a
-grouped list (the default) or columns. Each item is one underlined link of its
-ref and title, plus its priority. The review shows Status, the ref, priority,
-full title, and description. Status saves the selected state, and the ref,
-title, description, and priority stay read-only. `New task` is in the header
-when the review is closed. The view switch and the refresh control are icons on
+grouped list. Each item shows its slug and title in
+separate columns, plus its priority. Hover highlights the whole row, and underlines the slug, the title,
+enabled Start, and shown Resume. Only those handle a click. The review
+is two columns: the ref, the full title, and the description on the left, and
+Priority and Status on the right. The right column is one quarter of the width. Status and Priority save, and the ref, title, and
+description stay read-only and can be selected and copied. `New task` is in the header
+when the review is closed. The refresh control is an icon on
 the right of the surface header. The editing rules are in the Kanban adapter
-spec, section "Kanban item editing amendment (user decision 2026-10-11)".
+spec, sections "Kanban item editing amendment (user decision 2026-10-11)" and "Kanban row and review amendment (user decision 2026-10-12)".
 
 Future global navigation may also expose:
 

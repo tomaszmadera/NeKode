@@ -22,10 +22,9 @@ import {
 import { KanbanSessions } from './KanbanSessions'
 
 // Read-only board surface (spec kanban-adapter-interface Behaviour 14, AC14):
-// list view (the default) and board columns in adapter order, item review, and
-// every inline state (loading, ready columns, empty board, typed error,
-// not-configured with a working Configure callback), plus the icon controls
-// (view switch + refresh) re-running the load.
+// the grouped list in adapter order, item review, and every inline state
+// (loading, ready groups, empty board, typed error, not-configured with a
+// working Configure callback), plus the refresh icon re-running the load.
 
 afterEach(() => {
   cleanup()
@@ -176,8 +175,7 @@ describe('cached background refresh', () => {
     const app = appWith(listBoard)
     const onConfigure = vi.fn()
     const ui = render(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active />)
-    await switchToBoard()
-    const unchanged = screen.getByTestId(testIdFor.kanbanItem('NK-1'))
+    const unchanged = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
     const root = screen.getByTestId(TEST_ID.kanbanBoard)
     root.scrollTop = 180
     ui.rerender(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active={false} />)
@@ -185,7 +183,7 @@ describe('cached background refresh', () => {
     expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBe(unchanged)
     expect(screen.getByRole('status').textContent).toBe('Refreshing board...')
     expect(root.scrollTop).toBe(180)
-    expect(screen.getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(listBoard).toHaveBeenCalledTimes(2)
     await act(async () =>
@@ -202,13 +200,15 @@ describe('cached background refresh', () => {
     )
     expect(screen.queryByTestId(testIdFor.kanbanItem('NK-3'))).toBeNull()
     expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBe(unchanged)
-    const backlog = screen.getByTestId(testIdFor.kanbanColumn('s1'))
+    const groups = screen.getAllByTestId(/^kanban-list-group-/)
+    expect(groups[0]?.getAttribute('data-testid')).toBe(testIdFor.kanbanListGroup('s2'))
+    expect(within(groups[0] as HTMLElement).getByText('Working')).toBeTruthy()
+    const backlog = screen.getByTestId(testIdFor.kanbanListGroup('s1'))
     expect(listedKanbanItemIds(backlog)).toEqual([
-      testIdFor.kanbanItem('NK-9'),
       testIdFor.kanbanItem('NK-1'),
       testIdFor.kanbanItem('NK-2'),
+      testIdFor.kanbanItem('NK-9'),
     ])
-    expect(screen.getAllByTestId(/^kanban-column-/)[0].textContent).toBe('Working')
     expect(root.scrollTop).toBe(180)
     expect(screen.queryByRole('status')).toBeNull()
   })
@@ -222,7 +222,7 @@ describe('cached background refresh', () => {
       .mockRejectedValueOnce({ nekodeAppError: true, code: 'network', message: 'Offline' })
       .mockResolvedValueOnce({ ...fixture, items: [] })
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const review = screen.getByTestId(TEST_ID.kanbanReview)
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
@@ -275,29 +275,20 @@ function appWith(listBoard: AppApi['kanban']['listBoard']): AppApi {
   } as unknown as AppApi
 }
 
-/**
- * The surface opens on the List view (user request 2026-10-05), so the column
- * tests switch to Board explicitly — which also proves the switch works.
- */
-async function switchToBoard(): Promise<void> {
-  fireEvent.click(await screen.findByTestId(TEST_ID.kanbanViewBoard))
-}
-
 describe('kanban board — columns (spec Behaviour 14, AC14)', () => {
   it('orders columns by the adapter order key and lists item titles underneath', async () => {
     const listBoard = vi.fn().mockResolvedValue(fixture)
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    await switchToBoard()
 
-    const backlog = await screen.findByTestId(testIdFor.kanbanColumn('s1'))
-    // Columns follow the adapter `order` (s1=1, s2=2, s3=3), not the array order.
+    const backlog = await screen.findByTestId(testIdFor.kanbanListGroup('s1'))
+    // Groups follow the adapter `order` (s1=1, s2=2, s3=3), not the array order.
     const columnIds = screen
-      .getAllByTestId(/^kanban-column-/)
+      .getAllByTestId(/^kanban-list-group-/)
       .map((element) => element.getAttribute('data-testid'))
     expect(columnIds).toEqual([
-      testIdFor.kanbanColumn('s1'),
-      testIdFor.kanbanColumn('s2'),
-      testIdFor.kanbanColumn('s3'),
+      testIdFor.kanbanListGroup('s1'),
+      testIdFor.kanbanListGroup('s2'),
+      testIdFor.kanbanListGroup('s3'),
     ])
     // State name is the heading; the item titles sit underneath.
     expect(within(backlog).getByText('Backlog')).toBeTruthy()
@@ -308,7 +299,7 @@ describe('kanban board — columns (spec Behaviour 14, AC14)', () => {
       'Third task',
     )
     // Items are grouped by their state, never leaked into another column.
-    const started = screen.getByTestId(testIdFor.kanbanColumn('s2'))
+    const started = screen.getByTestId(testIdFor.kanbanListGroup('s2'))
     expect(within(started).getByTestId(testIdFor.kanbanItem('NK-2')).textContent).toContain(
       'Second task',
     )
@@ -357,19 +348,18 @@ describe('kanban board — columns (spec Behaviour 14, AC14)', () => {
       ],
     } satisfies KanbanBoardData)
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    await switchToBoard()
 
-    const orphan = await screen.findByTestId(testIdFor.kanbanColumn('sx'))
+    const orphan = await screen.findByTestId(testIdFor.kanbanListGroup('sx'))
     expect(within(orphan).getByText('Ghost state')).toBeTruthy()
     expect(within(orphan).getByTestId(testIdFor.kanbanItem('NK-2')).textContent).toContain(
       'Orphan task',
     )
-    // The unmatched column trails the adapter-ordered states.
+    // The unmatched group trails the adapter-ordered states.
     expect(
       screen
-        .getAllByTestId(/^kanban-column-/)
+        .getAllByTestId(/^kanban-list-group-/)
         .map((element) => element.getAttribute('data-testid')),
-    ).toEqual([testIdFor.kanbanColumn('s1'), testIdFor.kanbanColumn('sx')])
+    ).toEqual([testIdFor.kanbanListGroup('s1'), testIdFor.kanbanListGroup('sx')])
   })
 
   it('does not treat a board with items but no states as empty', async () => {
@@ -378,15 +368,14 @@ describe('kanban board — columns (spec Behaviour 14, AC14)', () => {
       items: [{ ...item('NK-9', 'Orphan', 'sx'), stateName: 'Ghost state' }],
     } satisfies KanbanBoardData)
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    await switchToBoard()
 
-    expect(await screen.findByTestId(testIdFor.kanbanColumn('sx'))).toBeTruthy()
+    expect(await screen.findByTestId(testIdFor.kanbanListGroup('sx'))).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.kanbanBoardEmpty)).toBeNull()
   })
 })
 
-describe('kanban board — view switch (spec Behaviour 14, AC14)', () => {
-  it('opens on the List view, with an icon switch and icon refresh on the right', async () => {
+describe('kanban board — header (spec Behaviour 14, AC14)', () => {
+  it('opens on the list, with an icon refresh on the right and no board view', async () => {
     render(
       <KanbanBoard
         app={appWith(vi.fn().mockResolvedValue(richBoard()))}
@@ -395,37 +384,15 @@ describe('kanban board — view switch (spec Behaviour 14, AC14)', () => {
       />,
     )
 
-    // List is the default: the grouped list renders, no column does.
-    expect((await screen.findByTestId(TEST_ID.kanbanViewList)).getAttribute('aria-pressed')).toBe(
-      'true',
-    )
-    expect(screen.getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe('false')
-    expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
-    expect(screen.queryByTestId(testIdFor.kanbanColumn('s1'))).toBeNull()
+    expect(await screen.findByTestId(TEST_ID.kanbanList)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Board view' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'List view' })).toBeNull()
 
-    // Icon-only controls carry accessible names (UX-UI §63) and sit after the
-    // title, i.e. on the header's right side.
     const title = screen.getByRole('heading', { name: 'Kanban' })
-    for (const name of ['Board view', 'List view', 'Refresh']) {
-      const control = screen.getByLabelText(name)
-      expect(control.tagName).toBe('BUTTON')
-      expect(control.textContent).toBe('')
-      expect(title.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    }
-    // The switch reads List then Board: the default view's icon comes first.
-    expect(
-      screen
-        .getByTestId(TEST_ID.kanbanViewList)
-        .compareDocumentPosition(screen.getByTestId(TEST_ID.kanbanViewBoard)) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-
-    // Choosing Board swaps the arrangement, and the switch shows the choice.
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    expect(await screen.findByTestId(testIdFor.kanbanColumn('s1'))).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.kanbanList)).toBeNull()
-    expect(screen.getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByTestId(TEST_ID.kanbanViewList).getAttribute('aria-pressed')).toBe('false')
+    const refresh = screen.getByLabelText('Refresh')
+    expect(refresh.tagName).toBe('BUTTON')
+    expect(refresh.textContent).toBe('')
+    expect(title.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
@@ -477,8 +444,7 @@ describe('kanban board — load count and refresh (spec Behaviour 14, AC14)', ()
     const listBoard = vi.fn().mockResolvedValue(fixture)
     const app = appWith(listBoard)
     const view = render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
-    await switchToBoard()
-    await screen.findByTestId(testIdFor.kanbanColumn('s1'))
+    await screen.findByTestId(testIdFor.kanbanListGroup('s1'))
     expect(listBoard).toHaveBeenCalledTimes(1)
     view.rerender(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
     await waitFor(() => expect(listBoard).toHaveBeenCalledTimes(1))
@@ -491,8 +457,7 @@ describe('kanban board — load count and refresh (spec Behaviour 14, AC14)', ()
     }
     const listBoard = vi.fn().mockResolvedValueOnce(fixture).mockResolvedValueOnce(changed)
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    await switchToBoard()
-    await screen.findByTestId(testIdFor.kanbanColumn('s1'))
+    await screen.findByTestId(testIdFor.kanbanListGroup('s1'))
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(await screen.findByTestId(testIdFor.kanbanItem('NK-9'))).toBeTruthy()
@@ -543,7 +508,7 @@ function richBoard(): KanbanBoardData {
 }
 
 describe('kanban board: list view and item review (spec Behaviour 14, AC14)', () => {
-  it('shows one underlined ref and title link on the list and the board', async () => {
+  it('shows separate slug and title columns, and underlines those texts on hover', async () => {
     render(
       <KanbanBoard
         app={appWith(vi.fn().mockResolvedValue(richBoard()))}
@@ -552,8 +517,7 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
       />,
     )
 
-    // List is the default view (user request 2026-10-05).
-    await screen.findByTestId(TEST_ID.kanbanViewList)
+    await screen.findByTestId(TEST_ID.kanbanList)
     const groups = screen
       .getAllByTestId(/^kanban-list-group-/)
       .map((element) => element.getAttribute('data-testid'))
@@ -561,36 +525,33 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     const row = within(screen.getByTestId(testIdFor.kanbanListGroup('s1'))).getByTestId(
       testIdFor.kanbanItem('NK-1'),
     )
-    const link = within(row).getByTestId(testIdFor.kanbanItemLink('NK-1'))
-    expect(link.textContent).toBe(`NK-1 ${longTitle}`)
-    expect(classTokens(link)).toContain('underline')
-    expect(classTokens(link)).toContain('truncate')
-    expect(classTokens(link)).toContain('flex-1')
-    expect(classTokens(link)).not.toContain('break-words')
-    expect(within(row).queryByTestId('kanban-item-ref-NK-1')).toBeNull()
-    expect(within(row).queryByTestId('kanban-item-title-NK-1')).toBeNull()
-    expect(link.textContent).not.toContain('High')
+    const slug = within(row).getByTestId(testIdFor.kanbanItemRef('NK-1'))
+    const title = within(row).getByTestId(testIdFor.kanbanItemTitle('NK-1'))
+    expect(slug.textContent).toBe('NK-1')
+    expect(title.textContent).toBe(longTitle)
+    expect(row.className).toContain('hover:bg-highlight')
+    expect(row.style.gridTemplateColumns).toBe('7.5rem minmax(0, 1fr) auto auto')
+    for (const column of [slug, title]) {
+      expect(classTokens(column)).toContain('hover:underline')
+      expect(classTokens(column)).toContain('w-fit')
+      expect(classTokens(column)).not.toContain('underline')
+      expect(classTokens(column)).not.toContain('w-full')
+      expect(column.className).not.toContain('hover:bg-highlight')
+    }
+    expect(classTokens(title)).toContain('truncate')
+    expect(classTokens(title)).not.toContain('break-words')
+    expect(within(row).queryByTestId('kanban-item-link-NK-1')).toBeNull()
+    expect(title.textContent).not.toContain('High')
     expect(within(row).getByText('High')).toBeTruthy()
+    expect(within(row).queryByRole('combobox')).toBeNull()
     const blank = within(screen.getByTestId(testIdFor.kanbanListGroup('s1'))).getByTestId(
       testIdFor.kanbanItem('NK-2'),
     )
     expect(within(blank).getByText('None')).toBeTruthy()
-    expect(within(blank).getByTestId(testIdFor.kanbanItemLink('NK-2')).textContent).toBe(
-      'NK-2 Second task',
+    expect(within(blank).getByTestId(testIdFor.kanbanItemRef('NK-2')).textContent).toBe('NK-2')
+    expect(within(blank).getByTestId(testIdFor.kanbanItemTitle('NK-2')).textContent).toBe(
+      'Second task',
     )
-
-    // The card shows the same link, wrapped instead of truncated.
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    const card = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
-    const cardLink = within(card).getByTestId(testIdFor.kanbanItemLink('NK-1'))
-    expect(cardLink.textContent).toBe(`NK-1 ${longTitle}`)
-    expect(classTokens(cardLink)).toContain('underline')
-    expect(classTokens(cardLink)).toContain('break-words')
-    expect(classTokens(cardLink)).not.toContain('truncate')
-    expect(within(card).queryByTestId('kanban-item-ref-NK-1')).toBeNull()
-    expect(within(card).queryByTestId('kanban-item-title-NK-1')).toBeNull()
-    expect(cardLink.textContent).not.toContain('High')
-    expect(within(card).getByText('High')).toBeTruthy()
   })
 
   it('opens a review with the full title and the description, then Back returns to the list', async () => {
@@ -601,12 +562,26 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
         onConfigure={vi.fn()}
       />,
     )
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
 
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
     const title = within(review).getByTestId(TEST_ID.kanbanReviewTitle)
+    const priority = within(review).getByTestId(TEST_ID.kanbanReviewPriority)
+    const status = within(review).getByTestId(TEST_ID.kanbanReviewStatus)
+    const columns = title.parentElement?.parentElement
     expect(title.textContent).toBe(longTitle)
     expect(title.className).not.toContain('truncate')
+    expect(columns?.style.gridTemplateColumns).toBe('minmax(0, 3fr) minmax(0, 1fr)')
+    expect(columns?.children[0]?.contains(title)).toBe(true)
+    expect(columns?.children[1]?.contains(priority)).toBe(true)
+    expect(columns?.children[1]?.contains(status)).toBe(true)
+    expect(columns?.children[0]?.contains(priority)).toBe(false)
+    const back = screen.getByTestId(TEST_ID.kanbanReviewBack)
+    const heading = screen.getByRole('heading', { name: 'Kanban' })
+    expect(heading.nextElementSibling).toBe(back)
+    expect(back.className).toContain('border-edge')
+    expect(back.className).toContain('bg-panel')
+    expect(back.textContent).toBe('Back')
     expect(review.textContent).toContain('NK-1')
     expect(review.textContent).toContain('High')
     expect(review.textContent).toContain('Backlog')
@@ -615,10 +590,10 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     )
     expect(screen.queryByTestId(TEST_ID.kanbanList)).toBeNull()
 
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
+    fireEvent.click(back)
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
     expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
-    expect(screen.queryByTestId(testIdFor.kanbanColumn('s1'))).toBeNull()
+    expect(screen.queryByTestId(/^kanban-column-/)).toBeNull()
   })
 
   it('says there is no description when the item has none', async () => {
@@ -629,27 +604,11 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
         onConfigure={vi.fn()}
       />,
     )
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-2')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-2')))
     expect(await screen.findByTestId(TEST_ID.kanbanReviewDescription)).toHaveProperty(
       'textContent',
       'No description.',
     )
-  })
-
-  it('leaves the review for the view that was chosen', async () => {
-    render(
-      <KanbanBoard
-        app={appWith(vi.fn().mockResolvedValue(richBoard()))}
-        projectId="p1"
-        onConfigure={vi.fn()}
-      />,
-    )
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
-    await screen.findByTestId(TEST_ID.kanbanReview)
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
-    expect(screen.getByTestId(testIdFor.kanbanColumn('s1'))).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.kanbanList)).toBeNull()
   })
 
   it('closes the review when a refresh drops the open item', async () => {
@@ -660,7 +619,7 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     }
     const listBoard = vi.fn().mockResolvedValueOnce(kept).mockResolvedValueOnce(dropped)
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     await screen.findByTestId(TEST_ID.kanbanReview)
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
@@ -673,7 +632,7 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
   it('keeps the review open when a refresh still includes that item', async () => {
     const listBoard = vi.fn().mockResolvedValue(richBoard())
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     await screen.findByTestId(TEST_ID.kanbanReview)
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
@@ -933,20 +892,13 @@ describe('kanban list — sorting items', () => {
     expect(newDirection.getAttribute('aria-label')).toBe('Sort descending')
   })
 
-  it('hides sort controls when switched to board view or reviewing an item', async () => {
+  it('hides sort controls while reviewing an item', async () => {
     const listBoard = vi.fn().mockResolvedValue(richBoard())
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
 
     await screen.findByTestId(TEST_ID.kanbanSortBy)
 
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    expect(screen.queryByTestId(TEST_ID.kanbanSortBy)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.kanbanSortDirection)).toBeNull()
-
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewList))
-    expect(screen.getByTestId(TEST_ID.kanbanSortBy)).toBeTruthy()
-
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.kanbanSortBy)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanSortDirection)).toBeNull()
@@ -967,19 +919,27 @@ describe('kanban work item controls (task launch navigation)', () => {
     expect(row.tagName).toBe('DIV')
     expect(row.querySelector('button button')).toBeNull()
     expect(row.style.minHeight).toBe('40.35px')
-    expect(row.className).not.toContain('hover:bg-highlight')
+    expect(row.className).toContain('hover:bg-highlight')
     expect(within(row).getByTestId(testIdFor.kanbanItemStart('NK-1')).textContent).toBe('Start')
     expect((await within(row).findByTestId(testIdFor.kanbanItemResume('NK-1'))).textContent).toBe(
       'Resume',
     )
 
-    const link = within(row).getByTestId(testIdFor.kanbanItemLink('NK-1'))
+    const link = within(row).getByTestId(testIdFor.kanbanItemTitle('NK-1'))
+    const slug = within(row).getByTestId(testIdFor.kanbanItemRef('NK-1'))
     const start = within(row).getByTestId(testIdFor.kanbanItemStart('NK-1'))
     const resume = await within(row).findByTestId(testIdFor.kanbanItemResume('NK-1'))
     expect(classTokens(link)).toContain('truncate')
-    expect(link.className).toContain('hover:bg-highlight')
+    expect(link.className).not.toContain('hover:bg-highlight')
+    expect(classTokens(link)).toContain('hover:underline')
+    expect(classTokens(link)).not.toContain('underline')
+    expect(classTokens(slug)).toContain('hover:underline')
+    expect(classTokens(slug)).not.toContain('underline')
+    expect(start.hasAttribute('disabled')).toBe(true)
+    expect(start.className).not.toContain('hover:underline')
+    expect(classTokens(resume)).toContain('hover:underline')
     expect(link.className).toContain('focus-visible:outline-2')
-    for (const control of [link, resume]) {
+    for (const control of [slug, link, resume]) {
       expect(control.tagName).toBe('BUTTON')
       expect(control.getAttribute('type')).toBe('button')
       control.focus()
@@ -1005,42 +965,19 @@ describe('kanban work item controls (task launch navigation)', () => {
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe(longTitle)
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
 
-    const spaced = screen.getByTestId(testIdFor.kanbanItemLink('NK-1'))
+    const spaced = screen.getByTestId(testIdFor.kanbanItemTitle('NK-1'))
     spaced.focus()
     fireEvent.keyDown(spaced, { key: ' ' })
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
 
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
 
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    const card = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
-    expect(card.tagName).toBe('DIV')
-    expect(card.style.minHeight).toBe('')
-    expect(card.className).not.toContain('hover:bg-highlight')
-    expect(card.querySelector('button button')).toBeNull()
-    fireEvent.click(card)
-    fireEvent.click(within(card).getByText('High'))
-    const cardStart = within(card).getByTestId(testIdFor.kanbanItemStart('NK-1'))
-    const cardResume = await within(card).findByTestId(testIdFor.kanbanItemResume('NK-1'))
-    cardStart.focus()
-    expect(document.activeElement).not.toBe(cardStart)
-    fireEvent.keyDown(cardStart, { key: 'Enter' })
-    fireEvent.keyDown(cardStart, { key: ' ' })
-    fireEvent.click(cardStart)
-    fireEvent.click(cardResume)
-    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
-    expect(screen.queryByRole('dialog')).toBeNull()
-
-    const cardLink = within(card).getByTestId(testIdFor.kanbanItemLink('NK-1'))
-    cardLink.focus()
-    fireEvent.keyDown(cardLink, { key: 'Enter' })
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemRef('NK-1')))
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
-    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
   })
 
   it('asks the host to open Resume and blocks Start when Resume exists', async () => {
@@ -1109,14 +1046,14 @@ describe('kanban item copy menu', () => {
         onConfigure={vi.fn()}
       />,
     )
-    await screen.findByTestId(testIdFor.kanbanItemLink('NK-1'))
+    await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1'))
   }
 
   it('copies the ref or the exact url from the link menu and closes on success', async () => {
     const writeText = vi.fn(() => Promise.resolve())
     stubClipboard(writeText)
     await renderCopyList()
-    const link = screen.getByTestId(testIdFor.kanbanItemLink('NK-1'))
+    const link = screen.getByTestId(testIdFor.kanbanItemTitle('NK-1'))
     expect(fireEvent.contextMenu(link)).toBe(false)
     expect(screen.getByRole('menuitem', { name: 'Copy slug' }).textContent).toBe('Copy slug')
     expect(screen.getByRole('menuitem', { name: 'Copy link' }).textContent).toBe('Copy link')
@@ -1125,7 +1062,7 @@ describe('kanban item copy menu', () => {
     expect(screen.queryByRole('menu')).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
 
-    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(' https://plane.example/NK-1 '))
     expect(writeText).toHaveBeenCalledTimes(2)
@@ -1142,7 +1079,7 @@ describe('kanban item copy menu', () => {
     )
     stubClipboard(writeText)
     await renderCopyList()
-    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy slug' }))
     expect(writeText).toHaveBeenCalledWith('NK-1')
     expect(screen.getByRole('menu')).toBeTruthy()
@@ -1156,7 +1093,7 @@ describe('kanban item copy menu', () => {
     const writeText = vi.fn(() => Promise.reject(new Error('denied')))
     stubClipboard(writeText)
     await renderCopyList()
-    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy slug' }))
     expect((await screen.findByRole('alert')).textContent).toBe('Could not copy to the clipboard.')
     expect(screen.getByRole('menu')).toBeTruthy()
@@ -1168,7 +1105,7 @@ describe('kanban item copy menu', () => {
   it('shows a clipboard failure when the clipboard is missing', async () => {
     stubClipboard(null)
     await renderCopyList()
-    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy slug' }))
     expect((await screen.findByRole('alert')).textContent).toBe('Could not copy to the clipboard.')
     expect(screen.getByRole('menu')).toBeTruthy()
@@ -1179,7 +1116,7 @@ describe('kanban item copy menu', () => {
     stubClipboard(writeText)
     await renderCopyList()
     for (const ref of ['NK-2', 'NK-3']) {
-      fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemLink(ref)))
+      fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle(ref)))
       const copyLink = screen.getByRole('menuitem', { name: 'Copy link' }) as HTMLButtonElement
       expect(copyLink.disabled).toBe(true)
       fireEvent.click(copyLink)
@@ -1194,7 +1131,7 @@ describe('kanban item copy menu', () => {
     const writeText = vi.fn(() => Promise.resolve())
     stubClipboard(writeText)
     await renderCopyList()
-    const link = screen.getByTestId(testIdFor.kanbanItemLink('NK-1'))
+    const link = screen.getByTestId(testIdFor.kanbanItemTitle('NK-1'))
     link.focus()
     fireEvent.keyDown(link, { key: 'F10' })
     expect(screen.queryByRole('menu')).toBeNull()
@@ -1213,7 +1150,7 @@ describe('kanban item copy menu', () => {
     expect(writeText).not.toHaveBeenCalled()
   })
 
-  it('does not open from Start, Resume, priority, or the card background', async () => {
+  it('does not open from Start, Resume, priority, or the row background', async () => {
     await renderCopyList()
     const row = screen.getByTestId(testIdFor.kanbanItem('NK-1'))
     const start = within(row).getByTestId(testIdFor.kanbanItemStart('NK-1'))
@@ -1223,23 +1160,16 @@ describe('kanban item copy menu', () => {
     ).toBe(true)
     expect(fireEvent.contextMenu(within(row).getByText('None'))).toBe(true)
     expect(fireEvent.contextMenu(row)).toBe(true)
+    expect(fireEvent.contextMenu(within(row).getByTestId(testIdFor.kanbanItemRef('NK-1')))).toBe(
+      false,
+    )
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
     start.focus()
     fireEvent.keyDown(start, { key: 'ContextMenu' })
     fireEvent.keyDown(start, { key: 'F10', shiftKey: true })
     expect(screen.queryByRole('menu')).toBeNull()
-
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    const card = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
-    expect(fireEvent.contextMenu(card)).toBe(true)
-    expect(fireEvent.contextMenu(within(card).getByTestId(testIdFor.kanbanItemStart('NK-1')))).toBe(
-      true,
-    )
-    expect(fireEvent.contextMenu(within(card).getByText('None'))).toBe(true)
-    expect(screen.queryByRole('menu')).toBeNull()
-    expect(fireEvent.contextMenu(within(card).getByTestId(testIdFor.kanbanItemLink('NK-1')))).toBe(
-      false,
-    )
-    expect(screen.getByRole('menu')).toBeTruthy()
   })
 })
 
@@ -1253,55 +1183,59 @@ describe('kanban handoff availability', () => {
     return { kanban: { listBoard, handoffAvailability } } as unknown as AppApi
   }
 
-  it.each(['list', 'board'] as const)(
-    'disables Start only for items with Resume and re-enables it after handoff removal in %s',
-    async (view) => {
-      const availability = vi
-        .fn()
-        .mockResolvedValueOnce({
-          state: 'ready',
-          items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: true }],
-          rejections: [],
-        })
-        .mockResolvedValue({
-          state: 'ready',
-          items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: false }],
-          rejections: [],
-        })
-      const onStart = vi.fn()
-      const onResume = vi.fn()
-      const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), availability)
-      render(
-        <KanbanBoard
-          app={app}
-          projectId="p1"
-          onConfigure={vi.fn()}
-          onStart={onStart}
-          onResume={onResume}
-        />,
-      )
-      await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))
-      if (view === 'board') fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-      const start = screen.getByTestId(testIdFor.kanbanItemStart('NK-1')) as HTMLButtonElement
-      const otherStart = screen.getByTestId(testIdFor.kanbanItemStart('NK-2')) as HTMLButtonElement
-      expect(start.disabled).toBe(true)
-      start.focus()
-      expect(document.activeElement).not.toBe(start)
-      fireEvent.click(start)
-      expect(onStart).not.toHaveBeenCalled()
-      expect(otherStart.disabled).toBe(false)
-      fireEvent.click(otherStart)
-      expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-2' }))
-      fireEvent.click(screen.getByTestId(testIdFor.kanbanItemResume('NK-1')))
-      expect(onResume).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
-      fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
-      await screen.findByTestId(TEST_ID.kanbanHandoffEmpty)
-      expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull()
-      expect(start.disabled).toBe(false)
-      fireEvent.click(start)
-      expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
-    },
-  )
+  it('disables Start only for items with Resume and re-enables it after handoff removal', async () => {
+    const availability = vi
+      .fn()
+      .mockResolvedValueOnce({
+        state: 'ready',
+        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: true }],
+        rejections: [],
+      })
+      .mockResolvedValue({
+        state: 'ready',
+        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: false }],
+        rejections: [],
+      })
+    const onStart = vi.fn()
+    const onResume = vi.fn()
+    const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), availability)
+    render(
+      <KanbanBoard
+        app={app}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={onStart}
+        onResume={onResume}
+      />,
+    )
+    await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))
+    const start = screen.getByTestId(testIdFor.kanbanItemStart('NK-1')) as HTMLButtonElement
+    const otherStart = screen.getByTestId(testIdFor.kanbanItemStart('NK-2')) as HTMLButtonElement
+    expect(start.disabled).toBe(true)
+    expect(start.className).not.toContain('hover:underline')
+    expect(otherStart.className).toContain('hover:underline')
+    expect(screen.getByTestId(testIdFor.kanbanItemResume('NK-1')).className).toContain(
+      'hover:underline',
+    )
+    start.focus()
+    expect(document.activeElement).not.toBe(start)
+    fireEvent.click(start)
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItem('NK-2')))
+    fireEvent.click(within(screen.getByTestId(testIdFor.kanbanItem('NK-2'))).getByText('None'))
+    expect(onStart).not.toHaveBeenCalled()
+    expect(otherStart.disabled).toBe(false)
+    fireEvent.click(otherStart)
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-2' }))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemResume('NK-1')))
+    expect(onResume).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    await screen.findByTestId(TEST_ID.kanbanHandoffEmpty)
+    expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull()
+    expect(start.disabled).toBe(false)
+    expect(start.className).toContain('hover:underline')
+    fireEvent.click(start)
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
+  })
 
   it('hides Resume until the batch check succeeds, and always shows Start', async () => {
     const pending = deferred<KanbanHandoffAvailabilityResult>()
@@ -1409,7 +1343,7 @@ describe('kanban handoff availability', () => {
       vi.fn().mockResolvedValue({ state: 'ready', items: [], rejections: [] }),
     )
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} onResume={onResume} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
     expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull()
     expect(screen.queryByRole('button', { name: 'Link handoff' })).toBeNull()
@@ -1501,7 +1435,7 @@ describe('kanban new task form', () => {
     return Number(count)
   }
 
-  it('shows New task on Board and List only when the board is ready and the review is closed', async () => {
+  it('shows New task only when the board is ready and the review is closed', async () => {
     const pending = deferred<KanbanBoardData>()
     const listBoard = vi
       .fn()
@@ -1512,13 +1446,14 @@ describe('kanban new task form', () => {
 
     await act(async () => pending.resolve(todoBoard()))
     const opener = await screen.findByRole('button', { name: /^New task$/ })
-    expect(opener.textContent).toBe('New task')
+    expect(opener.textContent?.replace(/\s+/g, ' ').trim()).toBe('New task')
+    expect(opener.firstElementChild?.tagName.toLowerCase()).toBe('svg')
+    expect(opener.className).toContain('border-edge')
+    expect(opener.className).toContain('bg-panel')
     const headerBar = screen.getByRole('heading', { name: /^Kanban$/ }).parentElement
     expect(headerBar?.contains(opener)).toBe(true)
 
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    expect(screen.getByRole('button', { name: /^New task$/ })).toBeTruthy()
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^New task$/ })).toBeNull()
     expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
@@ -1608,7 +1543,6 @@ describe('kanban new task form', () => {
       .mockReturnValueOnce(pending.promise)
       .mockResolvedValueOnce(secondCreated)
     renderReady(todoBoard(), createItem)
-    await switchToBoard()
     const form = await openForm()
     fireEvent.change(field(form, 'Title'), { target: { value: '  Ship the form  ' } })
     fireEvent.change(field(form, 'Description'), { target: { value: '   ' } })
@@ -1626,14 +1560,13 @@ describe('kanban new task form', () => {
     await act(async () => pending.resolve(firstCreated))
     expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
-    expect(screen.getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.queryByTestId(TEST_ID.kanbanList)).toBeNull()
-    const column = screen.getByTestId(testIdFor.kanbanColumn('s-todo'))
-    expect(within(column).getByTestId(testIdFor.kanbanItemLink('NK-40')).textContent).toBe(
-      'NK-40 Ship the form',
+    expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
+    const column = screen.getByTestId(testIdFor.kanbanListGroup('s-todo'))
+    expect(within(column).getByTestId(testIdFor.kanbanItemTitle('NK-40')).textContent).toBe(
+      'Ship the form',
     )
     expect(
-      within(screen.getByTestId(testIdFor.kanbanColumn('s-backlog'))).queryByTestId(
+      within(screen.getByTestId(testIdFor.kanbanListGroup('s-backlog'))).queryByTestId(
         testIdFor.kanbanItem('NK-40'),
       ),
     ).toBeNull()
@@ -1653,7 +1586,7 @@ describe('kanban new task form', () => {
       { title: 'Another', stateRef: 'todo', description: ' Notes ' },
     ])
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
-    expect(screen.getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
   })
 
   it('keeps the draft and shows the error when create fails', async () => {
@@ -1685,7 +1618,7 @@ describe('kanban new task form', () => {
     ])
   })
 
-  it('drops the draft on Cancel, opening an item, switching view, and Escape inside the form', async () => {
+  it('drops the draft on Cancel, opening an item, and Escape inside the form', async () => {
     renderReady(todoBoard())
     const form = await openForm()
     fireEvent.change(field(form, 'Title'), { target: { value: 'Draft title' } })
@@ -1700,7 +1633,7 @@ describe('kanban new task form', () => {
     expect((field(reopened, 'Status') as HTMLSelectElement).value).toBe('todo')
 
     fireEvent.change(field(reopened, 'Title'), { target: { value: 'Draft title' } })
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^New task$/ })).toBeNull()
@@ -1709,18 +1642,8 @@ describe('kanban new task form', () => {
     const afterReview = await openForm()
     expect((field(afterReview, 'Title') as HTMLInputElement).value).toBe('')
     fireEvent.change(field(afterReview, 'Title'), { target: { value: 'Draft title' } })
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
-    expect(screen.getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe('true')
 
-    const onBoard = await openForm()
-    expect((field(onBoard, 'Title') as HTMLInputElement).value).toBe('')
-    fireEvent.change(field(onBoard, 'Title'), { target: { value: 'Draft title' } })
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewList))
-    expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
-    expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
-
-    const forEscape = await openForm()
+    const forEscape = screen.getByRole('form', { name: 'New task' })
     const title = field(forEscape, 'Title') as HTMLInputElement
     fireEvent.change(title, { target: { value: 'Escape me' } })
     title.focus()
@@ -1773,9 +1696,7 @@ describe('kanban new task form', () => {
       overlapping.resolve({ ...initial, items: [...initial.items, fromBoard] })
     })
     expect(groupItemCount('s-todo')).toBe(1)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-40')).textContent).toBe(
-      'NK-40 From board',
-    )
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-40')).textContent).toBe('From board')
 
     await act(async () => {
       createPending.resolve(created)
@@ -1783,9 +1704,7 @@ describe('kanban new task form', () => {
     expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
     expect(groupItemCount('s-todo')).toBe(1)
     expect(screen.getAllByTestId(testIdFor.kanbanItem('NK-40'))).toHaveLength(1)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-40')).textContent).toBe(
-      'NK-40 Ship the form',
-    )
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-40')).textContent).toBe('Ship the form')
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(listBoard).toHaveBeenCalledTimes(3)
@@ -1794,9 +1713,7 @@ describe('kanban new task form', () => {
     })
     expect(groupItemCount('s-todo')).toBe(1)
     expect(screen.getAllByTestId(testIdFor.kanbanItem('NK-40'))).toHaveLength(1)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-40')).textContent).toBe(
-      'NK-40 From board',
-    )
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-40')).textContent).toBe('From board')
   })
 
   it('keeps one copy when create lands before an in-flight list that already has that ref', async () => {
@@ -1837,9 +1754,7 @@ describe('kanban new task form', () => {
     })
     expect(groupItemCount('s-todo')).toBe(1)
     expect(screen.getAllByTestId(testIdFor.kanbanItem('NK-40'))).toHaveLength(1)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-40')).textContent).toBe(
-      'NK-40 From board',
-    )
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-40')).textContent).toBe('From board')
   })
 
   it('keeps a created ref omitted by an in-flight list and lets a later refresh remove it', async () => {
@@ -1873,7 +1788,7 @@ describe('kanban new task form', () => {
     })
     expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
     expect(groupItemCount('s-todo')).toBe(1)
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemLink('NK-40')))
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-40')))
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Ship the form')
 
     const takenBeforeCreate: KanbanBoardData = {
@@ -1889,8 +1804,8 @@ describe('kanban new task form', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
     expect(groupItemCount('s-todo')).toBe(1)
     expect(screen.getAllByTestId(testIdFor.kanbanItem('NK-40'))).toHaveLength(1)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')).textContent).toBe(
-      'NK-1 Renamed while creating',
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')).textContent).toBe(
+      'Renamed while creating',
     )
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
@@ -1900,7 +1815,7 @@ describe('kanban new task form', () => {
     })
     expect(screen.queryByTestId(testIdFor.kanbanItem('NK-40'))).toBeNull()
     expect(groupItemCount('s-todo')).toBe(0)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')).textContent).toBe('NK-1 First task')
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')).textContent).toBe('First task')
   })
 })
 
@@ -1947,7 +1862,7 @@ describe('kanban review status change', () => {
     }
   }
 
-  it('does not put a status control on the card or the list row', async () => {
+  it('does not put a status control on the list row', async () => {
     render(
       <KanbanBoard
         app={appWith(vi.fn().mockResolvedValue(statusBoard()))}
@@ -1958,11 +1873,6 @@ describe('kanban review status change', () => {
     const row = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
     expect(within(row).queryByRole('combobox')).toBeNull()
     expect(within(row).queryByLabelText('Status')).toBeNull()
-
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    const card = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
-    expect(within(card).queryByRole('combobox')).toBeNull()
-    expect(within(card).queryByLabelText('Status')).toBeNull()
   })
 
   it('saves only stateRef from the review and keeps that review on the returned item', async () => {
@@ -1973,7 +1883,7 @@ describe('kanban review status change', () => {
     const app = appWith(listBoard)
     app.kanban.updateItem = updateItem
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
 
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
     const status = within(review).getByLabelText('Status') as HTMLSelectElement
@@ -2033,7 +1943,7 @@ describe('kanban review status change', () => {
         onConfigure={vi.fn()}
       />,
     )
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const status = within(await screen.findByTestId(TEST_ID.kanbanReview)).getByLabelText(
       'Status',
     ) as HTMLSelectElement
@@ -2057,7 +1967,7 @@ describe('kanban review status change', () => {
     const app = appWith(listBoard)
     app.kanban.updateItem = updateItem
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
     const status = within(review).getByLabelText('Status') as HTMLSelectElement
     expect(status.value).toBe('Backlog')
@@ -2105,7 +2015,7 @@ describe('kanban review status change', () => {
     const app = appWith(listBoard)
     app.kanban.updateItem = updateItem
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
     const status = within(review).getByLabelText('Status') as HTMLSelectElement
     expect(status.disabled).toBe(false)
@@ -2154,9 +2064,7 @@ describe('kanban review status change', () => {
         testIdFor.kanbanItem('NK-1'),
       ),
     ).toBeNull()
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')).textContent).toBe(
-      'NK-1 Status saved',
-    )
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')).textContent).toBe('Status saved')
   })
 
   it('keeps one updated copy when an in-flight list still has the old item', async () => {
@@ -2177,7 +2085,7 @@ describe('kanban review status change', () => {
     const app = appWith(listBoard)
     app.kanban.updateItem = updateItem
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
@@ -2208,9 +2116,7 @@ describe('kanban review status change', () => {
         testIdFor.kanbanItem('NK-1'),
       ),
     ).toBeNull()
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')).textContent).toBe(
-      'NK-1 Status saved',
-    )
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')).textContent).toBe('Status saved')
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(listBoard).toHaveBeenCalledTimes(3)
@@ -2220,9 +2126,7 @@ describe('kanban review status change', () => {
     expect(screen.getAllByTestId(testIdFor.kanbanItem('NK-1'))).toHaveLength(1)
     expect(listGroupCount('s1')).toBe(2)
     expect(listGroupCount('s2')).toBe(0)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')).textContent).toBe(
-      'NK-1 Stale snapshot',
-    )
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')).textContent).toBe('Stale snapshot')
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(listBoard).toHaveBeenCalledTimes(4)
@@ -2231,9 +2135,7 @@ describe('kanban review status change', () => {
     })
     expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull()
     expect(listGroupCount('s1')).toBe(1)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-2')).textContent).toBe(
-      'NK-2 Second task',
-    )
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-2')).textContent).toBe('Second task')
   })
 
   it('keeps an updated ref that an in-flight list omits', async () => {
@@ -2249,7 +2151,7 @@ describe('kanban review status change', () => {
     const app = appWith(listBoard)
     app.kanban.updateItem = updateItem
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemLink('NK-1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
@@ -2272,9 +2174,164 @@ describe('kanban review status change', () => {
     expect(screen.getAllByTestId(testIdFor.kanbanItem('NK-1'))).toHaveLength(1)
     expect(listGroupCount('s2')).toBe(1)
     expect(listGroupCount('s1')).toBe(1)
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-1')).textContent).toBe(
-      'NK-1 Status saved',
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')).textContent).toBe('Status saved')
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-2')).textContent).toBe('Other kept')
+  })
+})
+
+describe('kanban review priority change', () => {
+  it('saves priority only from the review, including None', async () => {
+    const board = richBoard()
+    const lowered = { ...board.items[0], priority: 'low' as const }
+    const cleared = { ...lowered, priority: null }
+    const updateItem = vi.fn().mockResolvedValueOnce(lowered).mockResolvedValueOnce(cleared)
+    const app = appWith(vi.fn().mockResolvedValue(board))
+    app.kanban.updateItem = updateItem
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+
+    const row = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
+    expect(within(row).queryByLabelText('Priority')).toBeNull()
+    expect(within(row).queryByRole('combobox')).toBeNull()
+    fireEvent.click(within(row).getByTestId(testIdFor.kanbanItemTitle('NK-1')))
+
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    const priority = within(review).getByLabelText('Priority') as HTMLSelectElement
+    expect(priority.getAttribute('data-testid')).toBe(TEST_ID.kanbanReviewPriority)
+    expect(Array.from(priority.options).map((option) => option.value)).toEqual([
+      'urgent',
+      'high',
+      'medium',
+      'low',
+      'none',
+    ])
+    expect(Array.from(priority.options).map((option) => option.textContent)).toEqual([
+      'Urgent',
+      'High',
+      'Medium',
+      'Low',
+      'None',
+    ])
+    expect(priority.value).toBe('high')
+
+    fireEvent.change(priority, { target: { value: 'low' } })
+    await waitFor(() => {
+      expect((within(review).getByLabelText('Priority') as HTMLSelectElement).value).toBe('low')
+    })
+    expect(updateItem).toHaveBeenCalledTimes(1)
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { priority: 'low' }])
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
+
+    fireEvent.change(within(review).getByLabelText('Priority'), { target: { value: 'none' } })
+    await waitFor(() => {
+      expect(updateItem).toHaveBeenCalledTimes(2)
+    })
+    expect(updateItem.mock.calls[1]).toEqual(['p1', 'NK-1', { priority: null }])
+    expect((within(review).getByLabelText('Priority') as HTMLSelectElement).value).toBe('none')
+
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
+    const saved = screen.getByTestId(testIdFor.kanbanItem('NK-1'))
+    expect(within(saved).getByText('None')).toBeTruthy()
+    expect(within(saved).queryByRole('combobox')).toBeNull()
+  })
+
+  it('restores priority when the update fails and ignores another write while it is in flight', async () => {
+    const pendingUpdate = deferred<WorkItem>()
+    const board = richBoard()
+    const updateItem = vi.fn().mockReturnValueOnce(pendingUpdate.promise)
+    const app = appWith(vi.fn().mockResolvedValue(board))
+    app.kanban.updateItem = updateItem
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    const priority = within(review).getByLabelText('Priority') as HTMLSelectElement
+    const status = within(review).getByLabelText('Status') as HTMLSelectElement
+
+    fireEvent.change(priority, { target: { value: 'low' } })
+    expect(updateItem).toHaveBeenCalledTimes(1)
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { priority: 'low' }])
+    expect(priority.disabled).toBe(true)
+    expect(status.disabled).toBe(true)
+    expect(priority.value).toBe('low')
+
+    fireEvent.change(priority, { target: { value: 'urgent' } })
+    fireEvent.change(status, { target: { value: 'Done' } })
+    expect(updateItem).toHaveBeenCalledTimes(1)
+    expect(priority.value).toBe('low')
+    expect(status.value).toBe('Backlog')
+
+    await act(async () => {
+      pendingUpdate.reject({
+        nekodeAppError: true,
+        code: 'adapter',
+        message: 'Plane refused the priority.',
+      })
+    })
+    const alert = within(review).getByRole('alert')
+    expect(alert.textContent).toBe('Plane refused the priority.')
+    expect(alert.getAttribute('data-testid')).toBe(TEST_ID.kanbanReviewPriorityError)
+    expect((within(review).getByLabelText('Priority') as HTMLSelectElement).value).toBe('high')
+    expect((within(review).getByLabelText('Priority') as HTMLSelectElement).disabled).toBe(false)
+    expect((within(review).getByLabelText('Status') as HTMLSelectElement).disabled).toBe(false)
+    expect(updateItem).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('kanban review text selection', () => {
+  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+
+  afterEach(() => {
+    if (originalClipboard === undefined) {
+      Reflect.deleteProperty(navigator, 'clipboard')
+    } else {
+      Object.defineProperty(navigator, 'clipboard', originalClipboard)
+    }
+    vi.restoreAllMocks()
+  })
+
+  it('selects review text and copies that selection', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      writable: true,
+      value: { writeText },
+    })
+    render(
+      <KanbanBoard
+        app={appWith(vi.fn().mockResolvedValue(richBoard()))}
+        projectId="p1"
+        onConfigure={vi.fn()}
+      />,
     )
-    expect(screen.getByTestId(testIdFor.kanbanItemLink('NK-2')).textContent).toBe('NK-2 Other kept')
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    expect(review.className).toContain('select-text')
+    const title = within(review).getByTestId(TEST_ID.kanbanReviewTitle)
+    const description = within(review).getByTestId(TEST_ID.kanbanReviewDescription)
+    expect(title.tagName).toBe('H3')
+    expect(title.className).toContain('cursor-text')
+    expect(description.className).toContain('cursor-text')
+
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => 'Line one',
+    } as Selection)
+    expect(fireEvent.contextMenu(title)).toBe(false)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Line one'))
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => '   ',
+    } as Selection)
+    fireEvent.contextMenu(description)
+    const copy = screen.getByRole('menuitem', { name: 'Copy' }) as HTMLButtonElement
+    expect(copy.disabled).toBe(true)
+    fireEvent.click(copy)
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('menu', { name: 'Copy selection' })).toBeTruthy()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(fireEvent.contextMenu(screen.getByTestId(TEST_ID.kanbanReviewBack))).toBe(true)
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })

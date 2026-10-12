@@ -245,7 +245,11 @@ export interface KanbanUpdatePatch {
   title?: string
   description?: string
   stateRef?: string
-  priority?: KanbanPriority
+  /**
+   * Named priority, or null to clear it. Omit the field to leave priority
+   * unchanged. Create still uses `KanbanPriority` only and does not clear.
+   */
+  priority?: KanbanPriority | null
 }
 
 function toPosixSlashes(path: string): string {

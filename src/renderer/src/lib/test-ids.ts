@@ -165,10 +165,7 @@ export const TEST_ID = {
   kanbanHandoffRetry: 'kanban-handoff-retry',
   kanbanHandoffWarnings: 'kanban-handoff-warnings',
   kanbanHandoffEmpty: 'kanban-handoff-empty',
-  /** List | Board switch on the Kanban tab (list is the default). */
-  kanbanViewBoard: 'kanban-view-board',
-  kanbanViewList: 'kanban-view-list',
-  /** Grouped list of the same items the board shows as columns. */
+  /** Grouped list of the loaded items. */
   kanbanList: 'kanban-list',
   /** Sort select and direction toggle for Kanban list. */
   kanbanSortBy: 'kanban-sort-by',
@@ -183,13 +180,15 @@ export const TEST_ID = {
   kanbanNewTaskCreate: 'kanban-new-task-create',
   kanbanNewTaskCancel: 'kanban-new-task-cancel',
   kanbanNewTaskError: 'kanban-new-task-error',
-  /** Item review opened from the board or the list. Status can change there. */
+  /** Item review opened from the board or the list. Status and priority can change there. */
   kanbanReview: 'kanban-review',
   kanbanReviewBack: 'kanban-review-back',
   kanbanReviewTitle: 'kanban-review-title',
   kanbanReviewDescription: 'kanban-review-description',
   kanbanReviewStatus: 'kanban-review-status',
+  kanbanReviewPriority: 'kanban-review-priority',
   kanbanReviewError: 'kanban-review-error',
+  kanbanReviewPriorityError: 'kanban-review-priority-error',
   /** Start confirmation. Rendered by the app shell, not inside the board. */
   kanbanStartDialog: 'kanban-start-dialog',
   kanbanStartTask: 'kanban-start-task',
@@ -272,12 +271,12 @@ export const testIdFor = {
   kanbanField: (key: string): string => `settings-kanban-field-${key}`,
   /** "stored" indicator beside a secret field that holds a value in main. */
   kanbanSecretStored: (key: string): string => `settings-kanban-secret-stored-${key}`,
-  /** One Kanban board column, keyed by the adapter state id. */
-  kanbanColumn: (stateId: string): string => `kanban-column-${stateId}`,
-  /** One work item on the board or the list, keyed by its ref (Plane slug). */
+  /** One work item on the list, keyed by its ref (Plane slug). */
   kanbanItem: (ref: string): string => `kanban-item-${ref}`,
-  /** Underlined ref and title link that opens the review. */
-  kanbanItemLink: (ref: string): string => `kanban-item-link-${ref}`,
+  /** Slug column. Opens the review. Not underlined. */
+  kanbanItemRef: (ref: string): string => `kanban-item-ref-${ref}`,
+  /** Title column. Opens the review. Not underlined. */
+  kanbanItemTitle: (ref: string): string => `kanban-item-title-${ref}`,
   /** Visible Start control. Opens the launch confirmation in the app shell. */
   kanbanItemStart: (ref: string): string => `kanban-item-start-${ref}`,
   /** Visible Resume control. Opens the Resume and handoff confirmation. */
