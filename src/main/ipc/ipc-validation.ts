@@ -270,9 +270,10 @@ function assertKanbanUpdatePatch(
   }
   if (
     input.priority !== undefined &&
+    input.priority !== null &&
     (typeof input.priority !== 'string' || !KANBAN_PRIORITIES.includes(input.priority as never))
   ) {
-    fail(`${label}.priority`, `must be one of ${KANBAN_PRIORITIES.join('|')}`)
+    fail(`${label}.priority`, `must be one of ${KANBAN_PRIORITIES.join('|')} or null`)
   }
 }
 

@@ -85,9 +85,9 @@ configuration from argv or the environment.
 5. Click **Test connection**. This invokes the adapter's `test` action with the
    currently entered values; success is shown inline, and any failure is shown
    inline with the adapter's error message.
-6. Select the project's **Kanban** tile or its top **Kanban** tab. List is the
-   default view; the **Board view** icon switches to one column per state.
-   Select an item to review its full title and description. See the
+6. Select the project's **Kanban** tile or its top **Kanban** tab. The board
+   is a grouped list. Select an item to review its full title and description.
+   See the
    [application contract](../../docs/features/kanban-adapter-interface/spec.md)
    for loading, refresh, and error behavior.
 
@@ -145,6 +145,8 @@ The adapter implements the protocol v1 actions:
 - `getItem` — one work item by reference (a `PREFIX-<n>` ref or a UUID).
 - `createItem` — create a work item.
 - `updateItem` — patch an existing work item; only provided fields change.
+  A present JSON `null` for `priority` clears it to Plane `none`. An omitted
+  `priority` stays unchanged.
   **Adapter extension:** passing `"dryRun": true` in `params` returns the
   computed `{ "dryRun": true, "method": "PATCH", "path": ..., "payload": ... }`
   without calling Plane.

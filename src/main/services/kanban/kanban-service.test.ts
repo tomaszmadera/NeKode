@@ -471,6 +471,12 @@ describe('KanbanService actions', () => {
       const request = invoke.mock.calls[0]?.[1] as AdapterRequest
       expect(request.params).toEqual({ ref: 'DEMO-1', stateRef: 'done' })
       expect(updated.stateGroup).toBe('completed')
+      await service.updateItem('p1', 'DEMO-1', { priority: 'low' })
+      const named = invoke.mock.calls[1]?.[1] as AdapterRequest
+      expect(named.params).toEqual({ ref: 'DEMO-1', priority: 'low' })
+      await service.updateItem('p1', 'DEMO-1', { priority: null })
+      const cleared = invoke.mock.calls[2]?.[1] as AdapterRequest
+      expect(cleared.params).toEqual({ ref: 'DEMO-1', priority: null })
       await expect(service.updateItem('p1', 'DEMO-1', {})).rejects.toMatchObject({
         code: 'validation',
       })

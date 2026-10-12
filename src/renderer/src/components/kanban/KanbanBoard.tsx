@@ -15,29 +15,37 @@ import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 
 // Kanban surface (spec kanban-adapter-interface Behaviour 14, AC14).
-// List is the default: the same items grouped under the state names. Board is
-// one column per adapter state, ordered by `order`. Both show one underlined
-// link of the ref (Plane slug) and the title, plus the priority. The list link
-// truncates; the card link wraps. Opening the link replaces that view with a
-// review. Ref, priority, the full title, and the description stay read-only.
-// Status lists board.states in adapter order. Its label and stateRef value are
-// state.name. A change calls the existing `kanban:updateItem` with only
-// stateRef. Success replaces that item by ref and leaves the review open on
-// the returned item. Failure restores the confirmed state name and shows the
-// error on the review. The select stays disabled and ignores another change
-// until that update settles, so the first success is not dropped. A `listBoard`
-// already in flight keeps that updated item as the one copy, including when its
-// snapshot still has the old item. A later refresh still drops an absent ref.
-// When the board is ready and the review is
-// closed, the header shows
-// New task on List and Board. The form under the header calls the existing
+// The only arrangement is a list: the items grouped under the state names, in
+// adapter `order`. Each row shows the ref (Plane slug) and the title in
+// separate columns, plus the priority. The title truncates in a fixed slug
+// column. Nothing is underlined at rest. Hover underlines the slug, the
+// title, enabled Start, and shown Resume. Each of those is only as wide as
+// its text, and only those handle a click. The row highlights on hover.
+// Opening the slug or the title replaces the list with a review. The review
+// is two columns. The left is three quarters of the width and holds the ref,
+// full title, and description. The right is one quarter and holds Priority
+// and Status. Back sits in the header immediately after Kanban and uses
+// the same bordered style as Back to Projects. The ref,
+// full title, and description stay read-only and can be selected and copied.
+// Status and Priority save from the review only. Status lists board.states in
+// adapter order. Its label and stateRef value are state.name. Priority lists
+// Urgent, High, Medium, Low, and None. None sends priority null. A change
+// calls the existing `kanban:updateItem` with only that field. One review
+// write at a time: both selects stay disabled until it settles, so the first
+// success is not dropped. Success replaces that item by ref and leaves the
+// review open on the returned item. Failure restores the confirmed value and
+// shows the error on the review. A `listBoard` already in flight keeps that
+// updated item as the one copy, including when its snapshot still has the old
+// item. A later refresh still drops an absent ref.
+// When the board is ready and the review is closed, the header shows New
+// task as a bordered button with a plus before the label. The form under
+// the header calls the existing
 // `kanban:createItem` with title, stateRef, and an optional description, then
 // upserts the returned item by ref and sends no priority. A `listBoard` already
 // in flight keeps that ref when its snapshot omits it. A later refresh still
 // drops an absent ref. The header's right side
-// carries the icon controls (user request
-// 2026-10-05): a List | Board switch and the refresh icon, each with an
-// accessible name (UX-UI §63). The surface loads lazily: exactly one
+// carries the refresh icon, with an accessible name (UX-UI §63). The surface
+// loads lazily: exactly one
 // `kanban:listBoard` call on first activation. The host retains each visited
 // project session while hidden; activation and Refresh share a background load.
 // Loading, typed error, empty board and not-configured states are inline text;
@@ -47,9 +55,10 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // item the batch handoff check proved available. Neither control opens the
 // review: Start asks the host to open the
 // launch confirmation, Resume asks the host to open the handoff confirmation.
-// Neither launches from the board. The link menu copies the ref or `WorkItem.url`
-// through the renderer clipboard. It does not build a Plane address, and it does
-// not open on Start, Resume, priority, or the card background.
+// Neither launches from the board. The slug and title menu copies the ref or
+// `WorkItem.url` through the renderer clipboard. It does not build a Plane
+// address, and it does not open on Start, Resume, priority, or the row
+// background. The review's own menu copies the current text selection.
 
 /** Inline render phase of the board. */
 export type KanbanBoardPhase = 'loading' | 'ready' | 'error' | 'not-configured' | 'empty'
@@ -83,9 +92,6 @@ export interface KanbanColumn {
   name: string
   items: WorkItem[]
 }
-
-/** Which arrangement of the loaded items is on screen. List is the default. */
-type KanbanSurfaceView = 'board' | 'list'
 
 export type KanbanSortBy = 'slug' | 'priority'
 export type KanbanSortDirection = 'asc' | 'desc'
@@ -135,6 +141,14 @@ const PRIORITY_LABEL: Record<KanbanPriority, string> = {
   medium: 'Medium',
   low: 'Low',
 }
+
+const PRIORITY_OPTIONS: readonly { value: KanbanPriority | 'none'; label: string }[] = [
+  { value: 'urgent', label: PRIORITY_LABEL.urgent },
+  { value: 'high', label: PRIORITY_LABEL.high },
+  { value: 'medium', label: PRIORITY_LABEL.medium },
+  { value: 'low', label: PRIORITY_LABEL.low },
+  { value: 'none', label: 'None' },
+]
 
 /** Visible priority word. Null stays visible as None so the field is never dropped. */
 function priorityLabel(priority: KanbanPriority | null): string {
@@ -193,7 +207,10 @@ export function boardColumns(board: KanbanBoardData): KanbanColumn[] {
 }
 
 const ITEM_CONTROL_CLASS =
-  'rounded-md px-1.5 py-0.5 text-left hover:bg-highlight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+  'w-fit rounded-md px-1.5 py-0.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+
+/** Hover underline is the click affordance. Resting text stays plain. */
+const ACTION_HOVER_CLASS = 'hover:underline underline-offset-2'
 
 const COPY_FAILED = 'Could not copy to the clipboard.'
 
@@ -211,22 +228,19 @@ function blankUrl(url: string | null): boolean {
   return url === null || url.trim() === ''
 }
 
-function linkLayoutClass(layout: 'card' | 'row'): string {
-  if (layout === 'row') return 'min-w-0 max-w-full flex-1 truncate'
-  return 'min-w-0 flex-1 whitespace-normal break-words'
-}
+/** List rows share this track so the slug and title line up across items. */
+const LIST_ROW_COLUMNS = '7.5rem minmax(0, 1fr) auto auto'
+
+/** Review split. The Priority and Status column is one quarter of the free width. */
+const REVIEW_COLUMNS = 'minmax(0, 3fr) minmax(0, 1fr)'
+
+const IDENTITY_CLASS =
+  'w-fit max-w-full min-w-0 justify-self-start rounded-md px-0.5 py-0.5 text-left text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
 
 /** Border box of a single-line list row before this split: 26.9px.
  * Electron, default theme, deviceScaleFactor 1. The row is 1.5× that height.
  */
 const LIST_ROW_MIN_HEIGHT_PX = 40.35
-
-/** Header icon toggle: the selected view keeps a highlight fill. */
-function viewButtonClass(selected: boolean): string {
-  return selected
-    ? 'flex size-6 items-center justify-center rounded bg-highlight text-ink'
-    : 'flex size-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink'
-}
 
 /** Header icon control without a selected state (refresh). */
 const ICON_BUTTON_CLASS =
@@ -241,44 +255,64 @@ function PriorityText({ priority }: { priority: KanbanPriority | null }): React.
   )
 }
 
-function ItemLink({
+function identityHandlers(
+  item: WorkItem,
+  onOpen: (ref: string) => void,
+  onOpenMenu: (item: WorkItem, x: number, y: number) => void,
+): Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown' | 'onContextMenu'> {
+  return {
+    onClick: () => {
+      onOpen(item.ref)
+    },
+    onKeyDown: (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        onOpen(item.ref)
+        return
+      }
+      if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+        event.preventDefault()
+        const rect = event.currentTarget.getBoundingClientRect()
+        onOpenMenu(item, rect.left, rect.bottom)
+      }
+    },
+    onContextMenu: (event) => {
+      event.preventDefault()
+      onOpenMenu(item, event.clientX, event.clientY)
+    },
+  }
+}
+
+/** Slug and title. Hover underlines the text, and that text is the click target. */
+function ItemColumns({
   item,
-  layout,
   onOpen,
   onOpenMenu,
 }: {
   item: WorkItem
-  layout: 'card' | 'row'
   onOpen: (ref: string) => void
   onOpenMenu: (item: WorkItem, x: number, y: number) => void
 }): React.JSX.Element {
+  const handlers = identityHandlers(item, onOpen, onOpenMenu)
   return (
-    <button
-      type="button"
-      className={`${ITEM_CONTROL_CLASS} ${linkLayoutClass(layout)} text-ink underline`}
-      data-testid={testIdFor.kanbanItemLink(item.ref)}
-      onClick={() => {
-        onOpen(item.ref)
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onOpen(item.ref)
-          return
-        }
-        if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
-          event.preventDefault()
-          const rect = event.currentTarget.getBoundingClientRect()
-          onOpenMenu(item, rect.left, rect.bottom)
-        }
-      }}
-      onContextMenu={(event) => {
-        event.preventDefault()
-        onOpenMenu(item, event.clientX, event.clientY)
-      }}
-    >
-      {`${item.ref} ${item.title}`}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`${IDENTITY_CLASS} truncate ${ACTION_HOVER_CLASS}`}
+        data-testid={testIdFor.kanbanItemRef(item.ref)}
+        {...handlers}
+      >
+        {item.ref}
+      </button>
+      <button
+        type="button"
+        className={`${IDENTITY_CLASS} truncate ${ACTION_HOVER_CLASS}`}
+        data-testid={testIdFor.kanbanItemTitle(item.ref)}
+        {...handlers}
+      >
+        {item.title}
+      </button>
+    </>
   )
 }
 
@@ -381,7 +415,99 @@ function ItemCopyMenu({
   )
 }
 
-/** Start stays visible and is disabled while a confirmed handoff shows Resume. */
+/** Right-click on the review copies the selection captured when the menu opened. */
+function ReviewTextMenu({
+  text,
+  x,
+  y,
+  onClose,
+}: {
+  text: string
+  x: number
+  y: number
+  onClose: () => void
+}): React.JSX.Element {
+  const [copyError, setCopyError] = useState<string | null>(null)
+  const alive = useRef(true)
+  const copyDisabled = text.trim() === ''
+
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  async function writeClipboard(): Promise<void> {
+    if (copyDisabled) return
+    const clipboard = navigatorClipboard()
+    if (clipboard === null) {
+      setCopyError(COPY_FAILED)
+      return
+    }
+    try {
+      await clipboard.writeText(text)
+    } catch {
+      if (alive.current) setCopyError(COPY_FAILED)
+      return
+    }
+    if (alive.current) onClose()
+  }
+
+  return (
+    <div
+      role="menu"
+      aria-label="Copy selection"
+      className="fixed inset-0 z-40"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') onClose()
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+    >
+      <div
+        className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
+        style={{ left: x, top: y }}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          className={MENU_ITEM_CLASS}
+          disabled={copyDisabled}
+          onClick={() => {
+            void writeClipboard()
+          }}
+        >
+          Copy
+        </button>
+        {copyError !== null ? (
+          <p role="alert" className="px-3 py-1.5 text-xs text-error">
+            {copyError}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** Start stays visible and is disabled while a confirmed handoff shows Resume.
+ * Hover underlines Start only while it is enabled, and Resume while it is shown.
+ */
 function ItemLaunchButtons({
   item,
   resumeEnabled,
@@ -397,7 +523,7 @@ function ItemLaunchButtons({
     <div className="flex shrink-0 gap-1">
       <button
         type="button"
-        className={`${ITEM_CONTROL_CLASS} text-ink disabled:pointer-events-none disabled:opacity-50`}
+        className={`${ITEM_CONTROL_CLASS} text-ink disabled:pointer-events-none disabled:opacity-50${resumeEnabled ? '' : ` ${ACTION_HOVER_CLASS}`}`}
         data-testid={testIdFor.kanbanItemStart(item.ref)}
         disabled={resumeEnabled}
         onClick={() => {
@@ -409,7 +535,7 @@ function ItemLaunchButtons({
       {resumeEnabled ? (
         <button
           type="button"
-          className={`${ITEM_CONTROL_CLASS} text-ink`}
+          className={`${ITEM_CONTROL_CLASS} text-ink ${ACTION_HOVER_CLASS}`}
           data-testid={testIdFor.kanbanItemResume(item.ref)}
           onClick={() => {
             onResume?.(item)
@@ -422,10 +548,9 @@ function ItemLaunchButtons({
   )
 }
 
-/** Board card or list row. Only the link opens the review. */
+/** List row. Only the slug and the title open the review. */
 function WorkItemSurface({
   item,
-  layout,
   resumeEnabled,
   onOpen,
   onOpenMenu,
@@ -433,38 +558,19 @@ function WorkItemSurface({
   onResume,
 }: {
   item: WorkItem
-  layout: 'card' | 'row'
   resumeEnabled: boolean
   onOpen: (ref: string) => void
   onOpenMenu: (item: WorkItem, x: number, y: number) => void
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
 }): React.JSX.Element {
-  if (layout === 'card') {
-    return (
-      <div className="w-full rounded-md px-1.5 py-1" data-testid={testIdFor.kanbanItem(item.ref)}>
-        <div className="flex items-baseline justify-between gap-2">
-          <ItemLink item={item} layout="card" onOpen={onOpen} onOpenMenu={onOpenMenu} />
-          <PriorityText priority={item.priority} />
-        </div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <ItemLaunchButtons
-            item={item}
-            resumeEnabled={resumeEnabled}
-            onStart={onStart}
-            onResume={onResume}
-          />
-        </div>
-      </div>
-    )
-  }
   return (
     <div
-      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-1.5 py-1"
-      style={{ minHeight: LIST_ROW_MIN_HEIGHT_PX }}
+      className="grid w-full items-center gap-x-3 rounded-md px-1.5 py-1 hover:bg-highlight"
+      style={{ minHeight: LIST_ROW_MIN_HEIGHT_PX, gridTemplateColumns: LIST_ROW_COLUMNS }}
       data-testid={testIdFor.kanbanItem(item.ref)}
     >
-      <ItemLink item={item} layout="row" onOpen={onOpen} onOpenMenu={onOpenMenu} />
+      <ItemColumns item={item} onOpen={onOpen} onOpenMenu={onOpenMenu} />
       <PriorityText priority={item.priority} />
       <ItemLaunchButtons
         item={item}
@@ -479,22 +585,40 @@ function WorkItemSurface({
 const NEW_TASK_FIELD_CLASS =
   'w-full rounded-md border border-edge bg-app px-3 text-[12.6px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
 
+function prioritySelectValue(priority: KanbanPriority | null): string {
+  return priority === null ? 'none' : priority
+}
+
+function priorityFromSelect(value: string): KanbanPriority | null {
+  if (value === 'none') return null
+  if (value === 'urgent' || value === 'high' || value === 'medium' || value === 'low') {
+    return value
+  }
+  return null
+}
+
 function ItemReview({
   item,
   states,
   statusValue,
   statusError,
-  statusDisabled,
-  onBack,
+  priorityValue,
+  priorityError,
+  fieldsDisabled,
   onStatusChange,
+  onPriorityChange,
+  onCopyText,
 }: {
   item: WorkItem
   states: readonly KanbanState[]
   statusValue: string
   statusError: string | null
-  statusDisabled: boolean
-  onBack: () => void
+  priorityValue: KanbanPriority | null
+  priorityError: string | null
+  fieldsDisabled: boolean
   onStatusChange: (stateName: string) => void
+  onPriorityChange: (priority: KanbanPriority | null) => void
+  onCopyText: (text: string, x: number, y: number) => void
 }): React.JSX.Element {
   const ordered = statesInAdapterOrder(states)
   const names = new Set(ordered.map((state) => state.name))
@@ -502,69 +626,101 @@ function ItemReview({
     (name, index, all) => !names.has(name) && all.indexOf(name) === index,
   )
   return (
-    <article className="min-w-0" data-testid={TEST_ID.kanbanReview}>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="h-control rounded-md px-3 text-[12.6px] text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-          data-testid={TEST_ID.kanbanReviewBack}
-          onClick={onBack}
-        >
-          Back
-        </button>
-      </div>
-      <div className="mt-3 flex items-baseline justify-between gap-3">
-        <p className="font-medium text-ink">{item.ref}</p>
-        <PriorityText priority={item.priority} />
-      </div>
-      <div className="mt-3 flex flex-col gap-1">
-        <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanReviewStatus}>
-          Status
-        </label>
-        <select
-          id={TEST_ID.kanbanReviewStatus}
-          className={`h-control ${NEW_TASK_FIELD_CLASS} disabled:opacity-50`}
-          data-testid={TEST_ID.kanbanReviewStatus}
-          value={statusValue}
-          disabled={statusDisabled}
-          onChange={(event) => {
-            onStatusChange(event.target.value)
-          }}
-        >
-          {ordered.map((state) => (
-            <option key={state.id} value={state.name}>
-              {state.name}
-            </option>
-          ))}
-          {extras.map((name) => (
-            <option key={`extra-state-name:${name}`} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-        {statusError !== null ? (
-          <p
-            role="alert"
-            className="text-[12.6px] text-error"
-            data-testid={TEST_ID.kanbanReviewError}
+    <article
+      className="min-w-0 select-text"
+      data-testid={TEST_ID.kanbanReview}
+      onContextMenu={(event) => {
+        const target = event.target
+        if (target instanceof Element && target.closest('button, select')) return
+        event.preventDefault()
+        onCopyText(window.getSelection()?.toString() ?? '', event.clientX, event.clientY)
+      }}
+    >
+      <div className="grid items-start gap-6" style={{ gridTemplateColumns: REVIEW_COLUMNS }}>
+        <div className="min-w-0">
+          <p className="cursor-text font-medium text-ink">{item.ref}</p>
+          <h3
+            className="mt-2 cursor-text whitespace-pre-wrap break-words text-[14.7px] font-semibold text-ink"
+            data-testid={TEST_ID.kanbanReviewTitle}
           >
-            {statusError}
+            {item.title}
+          </h3>
+          <h4 className="mt-4 cursor-text font-semibold text-ink">Description</h4>
+          <p
+            className="mt-1 cursor-text whitespace-pre-wrap break-words text-ink-secondary"
+            data-testid={TEST_ID.kanbanReviewDescription}
+          >
+            {descriptionText(item.description)}
           </p>
-        ) : null}
+        </div>
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanReviewPriority}>
+              Priority
+            </label>
+            <select
+              id={TEST_ID.kanbanReviewPriority}
+              className={`h-control ${NEW_TASK_FIELD_CLASS} disabled:opacity-50`}
+              data-testid={TEST_ID.kanbanReviewPriority}
+              value={prioritySelectValue(priorityValue)}
+              disabled={fieldsDisabled}
+              onChange={(event) => {
+                onPriorityChange(priorityFromSelect(event.target.value))
+              }}
+            >
+              {PRIORITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {priorityError !== null ? (
+              <p
+                role="alert"
+                className="text-[12.6px] text-error"
+                data-testid={TEST_ID.kanbanReviewPriorityError}
+              >
+                {priorityError}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanReviewStatus}>
+              Status
+            </label>
+            <select
+              id={TEST_ID.kanbanReviewStatus}
+              className={`h-control ${NEW_TASK_FIELD_CLASS} disabled:opacity-50`}
+              data-testid={TEST_ID.kanbanReviewStatus}
+              value={statusValue}
+              disabled={fieldsDisabled}
+              onChange={(event) => {
+                onStatusChange(event.target.value)
+              }}
+            >
+              {ordered.map((state) => (
+                <option key={state.id} value={state.name}>
+                  {state.name}
+                </option>
+              ))}
+              {extras.map((name) => (
+                <option key={`extra-state-name:${name}`} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            {statusError !== null ? (
+              <p
+                role="alert"
+                className="text-[12.6px] text-error"
+                data-testid={TEST_ID.kanbanReviewError}
+              >
+                {statusError}
+              </p>
+            ) : null}
+          </div>
+        </div>
       </div>
-      <h3
-        className="mt-2 whitespace-pre-wrap break-words text-[14.7px] font-semibold text-ink"
-        data-testid={TEST_ID.kanbanReviewTitle}
-      >
-        {item.title}
-      </h3>
-      <h4 className="mt-4 font-semibold text-ink">Description</h4>
-      <p
-        className="mt-1 whitespace-pre-wrap break-words text-ink-secondary"
-        data-testid={TEST_ID.kanbanReviewDescription}
-      >
-        {descriptionText(item.description)}
-      </p>
     </article>
   )
 }
@@ -811,11 +967,11 @@ function createFailureMessage(cause: unknown): string {
   return 'Could not create the task.'
 }
 
-function updateFailureMessage(cause: unknown): string {
+function updateFailureMessage(cause: unknown, fallback: string): string {
   const payload = parseAppErrorPayload(cause)
   if (payload !== null) return payload.message
   if (cause instanceof Error && cause.message.trim() !== '') return cause.message
-  return 'Could not update the status.'
+  return fallback
 }
 
 function NewTaskForm({
@@ -946,7 +1102,6 @@ export function KanbanBoard({
   const [phase, setPhase] = useState<KanbanBoardPhase>('loading')
   const [board, setBoard] = useState<KanbanBoardData>({ states: [], items: [] })
   const [error, setError] = useState<string | null>(null)
-  const [view, setView] = useState<KanbanSurfaceView>('list')
   const [reviewRef, setReviewRef] = useState<string | null>(null)
   const [copyMenu, setCopyMenu] = useState<{ item: WorkItem; x: number; y: number } | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -969,7 +1124,10 @@ export function KanbanBoard({
   const [creatingBusy, setCreatingBusy] = useState(false)
   const [statusChoice, setStatusChoice] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
-  const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [priorityChoice, setPriorityChoice] = useState<KanbanPriority | null | undefined>(undefined)
+  const [priorityError, setPriorityError] = useState<string | null>(null)
+  const [reviewCopy, setReviewCopy] = useState<{ text: string; x: number; y: number } | null>(null)
+  const [updatingReview, setUpdatingReview] = useState(false)
   const pending = useRef(false)
   const generation = useRef(0)
   const hasSnapshot = useRef(false)
@@ -983,8 +1141,8 @@ export function KanbanBoard({
   // starts afterwards keeps the normal remove-absent rule.
   const retainedCreates = useRef(new Map<number, WorkItem[]>())
   const retainedUpdates = useRef(new Map<number, WorkItem[]>())
-  const statusGeneration = useRef(0)
-  const statusBusy = useRef(false)
+  const reviewGeneration = useRef(0)
+  const reviewBusy = useRef(false)
   const boardRef = useRef(board)
   const projectRef = useRef(projectId)
   const shownReviewRef = useRef<string | null>(null)
@@ -1006,9 +1164,12 @@ export function KanbanBoard({
     closeNewTask()
     setStatusChoice(null)
     setStatusError(null)
-    // The previous project's status write must not keep this select locked.
-    statusBusy.current = false
-    setUpdatingStatus(false)
+    setPriorityChoice(undefined)
+    setPriorityError(null)
+    setReviewCopy(null)
+    // The previous project's review write must not keep these selects locked.
+    reviewBusy.current = false
+    setUpdatingReview(false)
     // A project change (or a direct projectId switch in a test) is a new scan
     // generation: a late response for the previous project never restores Resume.
     handoffGeneration.current += 1
@@ -1266,25 +1427,39 @@ export function KanbanBoard({
     }
   }
 
-  async function submitStatus(nextName: string): Promise<void> {
+  async function submitReviewWrite(
+    write:
+      | { field: 'status'; stateRef: string }
+      | { field: 'priority'; priority: KanbanPriority | null },
+  ): Promise<void> {
     // A second change must not bump the generation: that drops this success
     // before the board or retainedUpdates is updated.
-    if (statusBusy.current) return
+    if (reviewBusy.current) return
     const ref = reviewRef
     if (ref === null) return
     const current = boardRef.current.items.find((entry) => entry.ref === ref)
     if (current === undefined) return
-    if (statusChoice === null && nextName === current.stateName) return
-    const request = ++statusGeneration.current
+    if (write.field === 'status') {
+      if (statusChoice === null && write.stateRef === current.stateName) return
+    } else if (priorityChoice === undefined && write.priority === current.priority) {
+      return
+    }
+    const request = ++reviewGeneration.current
     const sourceProject = projectId
-    const patch: KanbanUpdatePatch = { stateRef: nextName }
-    statusBusy.current = true
-    setUpdatingStatus(true)
-    setStatusChoice(nextName)
+    const patch: KanbanUpdatePatch =
+      write.field === 'status' ? { stateRef: write.stateRef } : { priority: write.priority }
+    reviewBusy.current = true
+    setUpdatingReview(true)
     setStatusError(null)
+    setPriorityError(null)
+    if (write.field === 'status') {
+      setStatusChoice(write.stateRef)
+    } else {
+      setPriorityChoice(write.priority)
+    }
     try {
       const updated = await app.kanban.updateItem(sourceProject, ref, patch)
-      if (request !== statusGeneration.current || sourceProject !== projectRef.current) return
+      if (request !== reviewGeneration.current || sourceProject !== projectRef.current) return
       setBoard((previous) => {
         const items = upsertWorkItem(previous.items, updated)
         return items === previous.items ? previous : { ...previous, items }
@@ -1295,37 +1470,56 @@ export function KanbanBoard({
         retainedUpdates.current.set(inFlight, upsertWorkItem(existing, updated))
       }
       if (shownReviewRef.current === ref) {
-        setStatusChoice(null)
+        if (write.field === 'status') {
+          setStatusChoice(null)
+        } else {
+          setPriorityChoice(undefined)
+        }
         setStatusError(null)
+        setPriorityError(null)
       }
     } catch (cause) {
-      if (request !== statusGeneration.current || sourceProject !== projectRef.current) return
+      if (request !== reviewGeneration.current || sourceProject !== projectRef.current) return
       if (shownReviewRef.current !== ref) return
-      setStatusChoice(null)
-      setStatusError(updateFailureMessage(cause))
+      const message = updateFailureMessage(
+        cause,
+        write.field === 'status'
+          ? 'Could not update the status.'
+          : 'Could not update the priority.',
+      )
+      if (write.field === 'status') {
+        setStatusChoice(null)
+        setStatusError(message)
+      } else {
+        setPriorityChoice(undefined)
+        setPriorityError(message)
+      }
     } finally {
-      if (request === statusGeneration.current) {
-        statusBusy.current = false
-        setUpdatingStatus(false)
+      if (request === reviewGeneration.current) {
+        reviewBusy.current = false
+        setUpdatingReview(false)
       }
     }
   }
 
-  const openReview = (ref: string): void => {
-    setCopyMenu(null)
-    closeNewTask()
-    setStatusChoice(null)
-    setStatusError(null)
-    setReviewRef(ref)
-  }
-
-  const selectView = (next: KanbanSurfaceView): void => {
-    if (next !== view) closeNewTask()
-    setView(next)
+  const closeReview = (): void => {
     setReviewRef(null)
     setStatusChoice(null)
     setStatusError(null)
+    setPriorityChoice(undefined)
+    setPriorityError(null)
+    setReviewCopy(null)
+  }
+
+  const openReview = (ref: string): void => {
     setCopyMenu(null)
+    setReviewCopy(null)
+    closeNewTask()
+    setStatusChoice(null)
+    setStatusError(null)
+    setPriorityChoice(undefined)
+    setPriorityError(null)
+    setReviewRef(ref)
   }
 
   const openCopyMenu = (item: WorkItem, x: number, y: number): void => {
@@ -1339,6 +1533,19 @@ export function KanbanBoard({
     >
       <div className="sticky top-0 z-10 -mx-3 mb-3 flex shrink-0 items-center gap-2 bg-app px-3 py-2">
         <h2 className="text-[14.7px] font-semibold text-ink">Kanban</h2>
+        {reviewItem !== null ? (
+          <button
+            type="button"
+            className="no-drag flex shrink-0 items-center gap-1.5 rounded-md border border-edge bg-panel px-2 py-1.5 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            data-testid={TEST_ID.kanbanReviewBack}
+            aria-label="Back"
+            title="Back"
+            onClick={closeReview}
+          >
+            <Icon.back size={12} aria-hidden />
+            Back
+          </button>
+        ) : null}
         {refreshing && phase !== 'loading' ? (
           <p role="status" className="min-w-0 truncate text-[12.6px] text-ink-secondary">
             Refreshing board...
@@ -1347,17 +1554,17 @@ export function KanbanBoard({
         {phase === 'ready' && reviewItem === null ? (
           <button
             type="button"
-            className="h-6 shrink-0 rounded px-2 text-[12.6px] text-ink hover:bg-highlight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-edge bg-panel px-2 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             data-testid={TEST_ID.kanbanNewTask}
             onClick={openNewTask}
           >
+            <Icon.plus size={14} aria-hidden />
             New task
           </button>
         ) : null}
-        {/* View switch and refresh sit on the right (user request 2026-10-05);
-            both are icon controls carrying accessible names (UX-UI §63). */}
+        {/* Refresh sits on the right (UX-UI §63). */}
         <div className="ml-auto flex items-center gap-1">
-          {phase === 'ready' && view === 'list' && reviewItem === null ? (
+          {phase === 'ready' && reviewItem === null ? (
             <div className="mr-1 flex items-center gap-1">
               <label htmlFor="kanban-sort-by" className="sr-only">
                 Sort by
@@ -1389,37 +1596,6 @@ export function KanbanBoard({
                 )}
               </button>
             </div>
-          ) : null}
-          {phase === 'ready' ? (
-            <fieldset className="flex items-center gap-1 border-0 p-0">
-              <legend className="sr-only">Kanban view</legend>
-              <button
-                type="button"
-                className={viewButtonClass(view === 'list')}
-                aria-label="List view"
-                aria-pressed={view === 'list'}
-                title="List"
-                data-testid={TEST_ID.kanbanViewList}
-                onClick={() => {
-                  selectView('list')
-                }}
-              >
-                <Icon.list size={14} aria-hidden />
-              </button>
-              <button
-                type="button"
-                className={viewButtonClass(view === 'board')}
-                aria-label="Board view"
-                aria-pressed={view === 'board'}
-                title="Board"
-                data-testid={TEST_ID.kanbanViewBoard}
-                onClick={() => {
-                  selectView('board')
-                }}
-              >
-                <Icon.board size={14} aria-hidden />
-              </button>
-            </fieldset>
           ) : null}
           <button
             type="button"
@@ -1502,48 +1678,21 @@ export function KanbanBoard({
           states={board.states}
           statusValue={statusChoice ?? reviewItem.stateName}
           statusError={statusError}
-          statusDisabled={updatingStatus}
+          priorityValue={priorityChoice !== undefined ? priorityChoice : reviewItem.priority}
+          priorityError={priorityError}
+          fieldsDisabled={updatingReview}
           onStatusChange={(nextName) => {
-            void submitStatus(nextName)
+            void submitReviewWrite({ field: 'status', stateRef: nextName })
           }}
-          onBack={() => {
-            setReviewRef(null)
-            setStatusChoice(null)
-            setStatusError(null)
+          onPriorityChange={(nextPriority) => {
+            void submitReviewWrite({ field: 'priority', priority: nextPriority })
+          }}
+          onCopyText={(text, x, y) => {
+            setReviewCopy({ text, x, y })
           }}
         />
       ) : null}
-      {phase === 'ready' && reviewItem === null && view === 'board' ? (
-        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto">
-          {boardColumns(board).map((column) => (
-            <section
-              key={column.stateId}
-              className="flex w-80 shrink-0 flex-col rounded border border-edge p-2"
-              data-testid={testIdFor.kanbanColumn(column.stateId)}
-            >
-              <h3 className="mb-2 border-b border-edge pb-1 text-[12.6px] font-semibold text-ink">
-                {column.name}
-              </h3>
-              <ul className="space-y-1">
-                {column.items.map((item) => (
-                  <li key={item.ref}>
-                    <WorkItemSurface
-                      item={item}
-                      layout="card"
-                      resumeEnabled={itemResumable(item)}
-                      onOpen={openReview}
-                      onOpenMenu={openCopyMenu}
-                      onStart={onStart}
-                      onResume={onResume}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      ) : null}
-      {phase === 'ready' && reviewItem === null && view === 'list' ? (
+      {phase === 'ready' && reviewItem === null ? (
         <div className="flex min-w-0 flex-col gap-3" data-testid={TEST_ID.kanbanList}>
           {boardColumns(board).map((column) => {
             const isCollapsed = collapsedStates.has(column.stateId)
@@ -1583,7 +1732,6 @@ export function KanbanBoard({
                       <li key={item.ref}>
                         <WorkItemSurface
                           item={item}
-                          layout="row"
                           resumeEnabled={itemResumable(item)}
                           onOpen={openReview}
                           onOpenMenu={openCopyMenu}
@@ -1606,6 +1754,16 @@ export function KanbanBoard({
           y={copyMenu.y}
           onClose={() => {
             setCopyMenu(null)
+          }}
+        />
+      ) : null}
+      {reviewCopy !== null ? (
+        <ReviewTextMenu
+          text={reviewCopy.text}
+          x={reviewCopy.x}
+          y={reviewCopy.y}
+          onClose={() => {
+            setReviewCopy(null)
           }}
         />
       ) : null}

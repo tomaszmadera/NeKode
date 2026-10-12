@@ -19,10 +19,10 @@ import { resetMockTerminals } from '../../test/xterm-mock'
 // project with a stored Kanban binding shows a `Kanban` tile as the first
 // element of its expanded left-navigation content and a non-closable `Kanban`
 // tab immediately after the chat tab; a project without a binding shows
-// neither. Selecting either entry point shows the board in the center surface
-// on its default List view (one lazy listBoard load), and the Board switch
-// turns it into columns; selecting the chat tab or a file tab returns to
-// that surface. No center-surface `Files | Kanban` view-switch strip exists.
+// neither. Selecting either entry point shows the grouped list in the center
+// surface (one lazy listBoard load). Selecting the chat tab or a file tab
+// returns to that surface. No center-surface `Files | Kanban` view-switch
+// strip exists.
 
 vi.mock('@xterm/xterm', () => import('../../test/xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('../../test/fit-addon-mock'))
@@ -320,9 +320,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     await screen.findByTestId(TEST_ID.kanbanList)
     expect(app.kanban.listBoard).toHaveBeenCalledTimes(1)
     expect(app.kanban.listBoard).toHaveBeenCalledWith('p1')
-    // The Board switch renders the fixture columns (state name + titles).
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanViewBoard))
-    const backlog = await screen.findByTestId(testIdFor.kanbanColumn('s1'))
+    const backlog = await screen.findByTestId(testIdFor.kanbanListGroup('s1'))
     expect(within(backlog).getByText('Backlog')).toBeTruthy()
     expect(within(backlog).getByTestId(testIdFor.kanbanItem('NK-1')).textContent).toContain(
       'First task',
@@ -476,8 +474,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanViewBoard))
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemLink(fixture.items[0].ref)))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle(fixture.items[0].ref)))
     const board = screen.getByTestId(TEST_ID.kanbanBoard)
     const review = screen.getByTestId(TEST_ID.kanbanReview)
     board.scrollTop = 80
@@ -510,9 +507,6 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     vi.mocked(app.kanban.listBoard).mockReturnValue(new Promise(() => {}))
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
     expect(board.parentElement?.style.display).toBe('flex')
-    expect(within(board).getByTestId(TEST_ID.kanbanViewBoard).getAttribute('aria-pressed')).toBe(
-      'true',
-    )
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
   })
 

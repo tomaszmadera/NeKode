@@ -632,6 +632,33 @@ describe('ipc payload validation', () => {
     expect(services.agentProfiles.delete).toHaveBeenCalledTimes(1)
   })
 
+  it('accepts a null priority on kanban:updateItem and rejects one on create', () => {
+    const services = fakeServices()
+    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
+    for (const entry of buildValidatedChannels(services)) {
+      channels.set(entry.channel, entry)
+    }
+    const updateItem = channels.get('kanban:updateItem')
+    updateItem?.invoke(updateItem.parse(['p1', 'DEMO-1', { priority: null }]))
+    updateItem?.invoke(updateItem.parse(['p1', 'DEMO-1', { priority: 'low' }]))
+    expect(services.kanban.updateItem).toHaveBeenNthCalledWith(1, 'p1', 'DEMO-1', {
+      priority: null,
+    })
+    expect(services.kanban.updateItem).toHaveBeenNthCalledWith(2, 'p1', 'DEMO-1', {
+      priority: 'low',
+    })
+    expect(() => updateItem?.parse(['p1', 'DEMO-1', { priority: 'highest' }])).toThrow(
+      ValidationError,
+    )
+    expect(() => updateItem?.parse(['p1', 'DEMO-1', {}])).toThrow(ValidationError)
+    const createItem = channels.get('kanban:createItem')
+    expect(() => createItem?.parse(['p1', { title: 'Task', priority: null }])).toThrow(
+      ValidationError,
+    )
+    expect(services.kanban.updateItem).toHaveBeenCalledTimes(2)
+    expect(services.kanban.createItem).not.toHaveBeenCalled()
+  })
+
   it('validates kanban:getItem and kanban:launchTask before the service', () => {
     const services = fakeServices()
     const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()

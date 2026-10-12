@@ -4,7 +4,7 @@ This file is the behavioral contract for a feature. Agents implement from it. Do
 
 ## Goal
 
-Let NeKode read and change work items from an external Kanban backend (Plane today, others later) through user-provided adapter plugins, without building any backend knowledge into the application. The user drops adapters into one directory, binds one adapter per project in Project Settings, fills the adapter's declared config fields, and the application talks to that backend only through a versioned process protocol. This feature also ships the first real Kanban surface, reached from a `Kanban` tile under the project's name in the left navigation and a `Kanban` tab in the top tab strip. The tab is unstyled beyond the basics: a List | Board icon switch (List is the default), a grouped list or state columns, one underlined link of each item's ref and title, the priority, Start and Resume, a New task form, an item review with Status plus the full title and description, and a refresh icon on the header's right side. In the review, Status saves the selected state, and the ref, title, description, and priority stay read-only. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)". Drag-and-drop and the visual design in UX-UI §26-30 remain later work.
+Let NeKode read and change work items from an external Kanban backend (Plane today, others later) through user-provided adapter plugins, without building any backend knowledge into the application. The user drops adapters into one directory, binds one adapter per project in Project Settings, fills the adapter's declared config fields, and the application talks to that backend only through a versioned process protocol. This feature also ships the first real Kanban surface, reached from a `Kanban` tile under the project's name in the left navigation and a `Kanban` tab in the top tab strip. The tab is unstyled beyond the basics: a grouped list, separate slug and title columns, a hover underline on the slug, the title, enabled Start, and shown Resume as the only click targets, the priority, Start and Resume, a New task form, an item review with Status and Priority plus the full title and description, and a refresh icon on the header's right side. In the review, Status and Priority save, and the ref, title, and description stay read-only and can be selected and copied. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)" and "Kanban row and review amendment (user decision 2026-10-12)". Drag-and-drop and the visual design in UX-UI §26-30 remain later work.
 
 ## Related requirements
 
@@ -17,12 +17,12 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
 - Shared: typed IPC contract additions (`kanban` namespace), normalized domain types (`KanbanState`, `WorkItem`, config-field types), `APP_STATE_KEY` entries and per-project key helpers.
 - Main: adapter discovery (manifest scan), adapter host (spawn + stdio JSON protocol + timeout + kill), `KanbanService` facade behind IPC, per-project config persistence and cleanup on `projects:remove`.
 - Renderer: Project Settings "Kanban" section — adapter select, dynamic config form driven by the adapter manifest (secret masking), Test connection, adapters directory display and override.
-- Board surface: a `Kanban` tile in the left navigation directly under the name of a project that has a stored Kanban binding, plus a `Kanban` tab in the top tab strip beside the chat and file tabs, both opening the board in that project's center surface. `kanban:listBoard` renders as a List view (the items grouped under the state names, the default) or a Board view (one column per state name); the view switch and the refresh control are icon controls on the header's right side, each with an accessible name. Each item shows one underlined link of its ref and title, plus its priority. Opening that link shows a review: Status saves the selected state, and the ref, title, description, and priority stay read-only. `New task` is in the header when the review is closed. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)". No styling beyond minimal layout. No separate center-surface `Files | Kanban` view-switch strip is added.
+- Board surface: a `Kanban` tile in the left navigation directly under the name of a project that has a stored Kanban binding, plus a `Kanban` tab in the top tab strip beside the chat and file tabs, both opening the board in that project's center surface. `kanban:listBoard` renders as a grouped list under the state names. The refresh control is an icon on the header's right side, with an accessible name. Each item shows its slug and title in separate columns, plus its priority. Hover underlines the slug, the title, enabled Start, and shown Resume, and only those handle a click. Opening the slug or the title shows a review: Status and Priority save, and the ref, title, and description stay read-only and can be selected and copied. `New task` is in the header when the review is closed. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)" and "Kanban row and review amendment (user decision 2026-10-12)". No styling beyond minimal layout. No separate center-surface `Files | Kanban` view-switch strip is added.
 - Reference adapter (Python, outside the app contract): a Plane adapter implementing protocol v1 against the Plane REST API, with the state groups, alias resolution, and `PLANE_*` configuration fields documented in the public adapter guide.
 
 ## Non-goals
 
-- Drag-and-drop and the visual design in UX-UI §26-30. Editing the title, description, or priority is out of scope. The review changes status only, and `New task` creates an item, as specified in the 2026-10-11 editing amendment.
+- Drag-and-drop and the visual design in UX-UI §26-30. Editing the title or description is out of scope. The review changes status and priority, and `New task` creates an item, as specified in the 2026-10-11 and 2026-10-12 editing amendments.
 - A separate center-surface `Files | Kanban` view-switch strip: the board is a `Kanban` tab in the existing top tab strip (beside the chat and file tabs) and a tile in the left navigation; no second, project-view tab pair is added.
 - The full tabbed Project Settings rebuild: in this feature the Kanban settings render as their own tab/section inside the existing Project Settings dialog without reworking the dialog's other sections.
 - Two-way automatic synchronization with a NeKode Task entity.
@@ -43,7 +43,7 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
    - `listItems` `{ stateId?, stateGroup? }` — items across all states when both omitted.
    - `getItem` `{ ref }`.
    - `createItem` `{ title, description?, stateRef?, priority? }`.
-   - `updateItem` `{ ref, title?, description?, stateRef?, priority? }` — patch semantics: only provided fields change.
+   - `updateItem` `{ ref, title?, description?, stateRef?, priority? }` — patch semantics: only provided fields change. `priority: null` clears the priority. An omitted `priority` leaves it unchanged.
    - `stateRef` accepts a concrete state name (case-insensitive) or a group alias (`backlog`, `todo`/`unstarted`, `in progress`/`started`, `done`/`completed`, `cancelled`) and is resolved by the adapter against its own states.
 5. Timeout: main enforces a per-invocation timeout (30 s default) and kills the adapter's process tree; expiry produces a typed `timeout` error naming the adapter and action.
 6. Config delivery: the request `config` object carries all stored field values, secrets included. No config values are placed on the command line (argv is world-readable on Windows) and no secrets go into environment variables or the manifest.
@@ -54,7 +54,7 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
 11. `projects:remove` deletes the project's adapter and config keys (same rule as `project.handoffDir` cleanup).
 12. The settings section shows the active adapters directory with a Browse button (`dialogs:pickDirectory`); confirming a directory persists it to `kanban.adaptersDir` and re-scans immediately.
 13. The Kanban settings render as their own tab (label `Kanban`) inside the existing Project Settings dialog, separate from Configuration and Actions, without reworking those sections.
-14. Board entry points: a project with a stored Kanban binding shows a `Kanban` tile in the left navigation directly under the project's name and a `Kanban` tab in the top tab strip beside the chat and file tabs; a project without a binding shows neither, and no separate center-surface `Files | Kanban` view-switch strip exists. The `Kanban` tab is present for as long as the project is bound and is not closable (it is a project view beside the chat tab, not a document), placed immediately after the chat tab. Selecting either entry point activates the `Kanban` tab, which renders `kanban:listBoard` in the center surface. The tab's header carries, on its right side, a List | Board icon switch and a refresh icon; all three are icon buttons with accessible names (`Board view`, `List view`, `Refresh`). List is the default: it shows the items in the adapter's state `order`, grouped under the state names. Board shows one plain column per state in that `order`, headed by the state name. On both, each item shows one always-underlined link of its `ref` (the Plane slug), one space, and its title, plus its priority (`Urgent`, `High`, `Medium`, `Low`, or `None` when priority is null). The list link truncates. The card link wraps. Choosing that link opens a review in place of the board or list: Status, the same ref and priority, the state name, the title wrapped in full, and the description (or `No description.` when the description is null or blank). Status lists the board states and saves the selected name through `kanban:updateItem` with only `stateRef`. The ref, title, description, and priority stay read-only. The card and the row have no status control. When the board is ready and the review is closed, the header shows `New task`. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)". Back returns to the current view. Choosing Board or List leaves the review for that view. The review uses the loaded board payload and does not call another action. Activating the tab triggers one lazy load; the refresh icon re-runs it. A refresh that drops the open item closes the review. Loading, typed-error, empty-board, and not-configured states are inline text (the not-configured state offers a button opening Project Settings on the Kanban tab, mirroring the Resume picker's Configure affordance). Selecting the chat tab or a file tab shows that surface instead; a content-selection gesture always activates the tab that shows it.
+14. Board entry points: a project with a stored Kanban binding shows a `Kanban` tile in the left navigation directly under the project's name and a `Kanban` tab in the top tab strip beside the chat and file tabs; a project without a binding shows neither, and no separate center-surface `Files | Kanban` view-switch strip exists. The `Kanban` tab is present for as long as the project is bound and is not closable (it is a project view beside the chat tab, not a document), placed immediately after the chat tab. Selecting either entry point activates the `Kanban` tab, which renders `kanban:listBoard` in the center surface. The tab's header carries a refresh icon on its right side, an icon button with the accessible name `Refresh`. The items are shown in the adapter's state `order`, grouped under the state names. Each item shows its `ref` (the Plane slug) and its title in separate columns, plus its priority (`Urgent`, `High`, `Medium`, `Low`, or `None` when priority is null). Hover underlines the slug, the title, enabled Start, and shown Resume. Only those handle a click. The row highlights on hover. The slug column is fixed and the title truncates. Choosing the slug or the title opens a two-column review in place of the list. The left column has the same ref, the title wrapped in full, and the description (or `No description.` when the description is null or blank). The right column is one quarter of the width and has Priority and Status. Status lists the board states and saves the selected name through `kanban:updateItem` with only `stateRef`. Priority saves through the same action with only `priority`, and None sends null. The ref, title, and description stay read-only and can be selected and copied. The card and the row have no status or priority control. When the board is ready and the review is closed, the header shows `New task`. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)" and "Kanban row and review amendment (user decision 2026-10-12)". Back returns to the current view. Choosing Board or List leaves the review for that view. The review uses the loaded board payload and does not call another action. Activating the tab triggers one lazy load; the refresh icon re-runs it. A refresh that drops the open item closes the review. Loading, typed-error, empty-board, and not-configured states are inline text (the not-configured state offers a button opening Project Settings on the Kanban tab, mirroring the Resume picker's Configure affordance). Selecting the chat tab or a file tab shows that surface instead; a content-selection gesture always activates the tab that shows it.
 
 ## Business rules
 
@@ -82,7 +82,7 @@ Renderer invokes stay behind the existing trusted-sender guard. `kanban:*` chann
   - `kanban:createItem(projectId, input: KanbanCreateInput)` → `WorkItem`
   - `kanban:updateItem(projectId, ref: string, patch: KanbanUpdatePatch)` → `WorkItem`
 - `KanbanAdapterInfo { id, name, configSchema: KanbanConfigField[] }`; `KanbanConfigField { key, label, type: 'string'|'secret'|'select'|'boolean', required: boolean, options?: string[], default?: string | boolean }`.
-- `KanbanCreateInput { title, description?, stateRef?, priority? }`; `KanbanUpdatePatch { title?, description?, stateRef?, priority? }`.
+- `KanbanCreateInput { title, description?, stateRef?, priority? }`; `KanbanUpdatePatch { title?, description?, stateRef?, priority? }`. On the patch, `priority` may be null to clear it. Create does not accept null.
 - `APP_STATE_KEY` addition: `kanbanAdaptersDir: 'kanban.adaptersDir'`; helpers `projectKanbanAdapterKey(projectId)`, `projectKanbanConfigKey(projectId)`.
 - No SQLite schema migration: all persistence uses the existing flat `app_state` key-value store.
 
@@ -117,7 +117,7 @@ Renderer invokes stay behind the existing trusted-sender guard. `kanban:*` chann
 11. The spawned process's command line never contains any config value: the fixture adapter writes its argv to stderr, and the test asserts none of the stored values appear.
 12. `projects:remove` removes both `project.kanbanAdapter:*` and `project.kanbanConfig:*` rows from `app_state`.
 13. Changing the adapters directory in settings persists `kanban.adaptersDir` and the list re-scans without restart.
-14. A project with a stored Kanban binding shows a `Kanban` tile directly under its name in the left navigation and a `Kanban` tab in the top tab strip beside the chat and file tabs; a project without one shows neither, and no separate `Files | Kanban` view-switch strip exists. Selecting the tile or the tab shows the board in the center surface on its default List view (the items grouped in state order; each item shows one underlined link of its ref and title, plus its priority), with a List | Board icon switch and a refresh icon on the header's right side; Board shows one column per state (state name as heading) and the item review shows Status, the full title, and the description. Status saves the selected state. The ref, title, description, and priority stay read-only. `New task` is in the header when the review is closed. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)". The refresh icon re-runs the load. Selecting the chat tab or a file tab returns to that surface. A bound-but-missing adapter surfaces the typed error inline; the not-configured inline state with a Configure button opening Project Settings on the Kanban tab renders when the board is shown for a project whose binding no longer resolves.
+14. A project with a stored Kanban binding shows a `Kanban` tile directly under its name in the left navigation and a `Kanban` tab in the top tab strip beside the chat and file tabs; a project without one shows neither, and no separate `Files | Kanban` view-switch strip exists. Selecting the tile or the tab shows the board in the center surface on its default List view (the items grouped in state order; each item shows its slug and title in separate columns, plus its priority; hover underlines the slug, the title, enabled Start, and shown Resume, and only those handle a click), with a refresh icon on the header's right side. The item review is two columns, and the right column is one quarter of the width: the ref, full title, and description on the left, and Priority and Status on the right. Status and Priority save. The ref, title, and description stay read-only and can be selected and copied. `New task` is in the header when the review is closed. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)" and "Kanban row and review amendment (user decision 2026-10-12)". The refresh icon re-runs the load. Selecting the chat tab or a file tab returns to that surface. A bound-but-missing adapter surfaces the typed error inline; the not-configured inline state with a Configure button opening Project Settings on the Kanban tab renders when the board is shown for a project whose binding no longer resolves.
 15. The Kanban section of Project Settings is reachable as its own tab labeled `Kanban`, without changing the existing Configuration or Actions sections' behavior.
 
 ## Cached board rendering amendment (user decision 2026-10-06)
@@ -131,16 +131,16 @@ extends AC14. It changes renderer presentation only; adapter protocol v1 and
   Returning from a chat, file, or another project shows the cached board
   immediately and starts one background refresh. Hidden boards do not poll.
 - Manual Refresh uses the same background path. While a request is pending,
-  keep the existing list, columns, and item review visible and usable. Show an
+  keep the existing list and item review visible and usable. Show an
   accessible `Refreshing board...` status and disable duplicate refreshes.
   Without cached data, retain the initial loading state.
 - Reconcile the returned snapshot by work-item `ref` and state `id`: add new
   entries, remove absent entries, and update changed fields and ordering.
   Preserve unchanged item identity and existing keyed DOM nodes where an item
   stays in the same group. Moving an item between states updates its group.
-- Preserve the chosen List/Board view, scroll position, and open review across
-  tab switches. A changed reviewed item updates in place; removing it returns
-  to the selected view. No additional request is made for the review.
+- Preserve scroll position and the open review across tab switches. A changed
+  reviewed item updates in place; removing it returns to the list. No
+  additional request is made for the review.
 - Refresh failures retain the last successful board and show the typed error
   inline. The refresh status ends and retry remains available. A missing or
   cleared binding shows the established error or not-configured state without
@@ -170,7 +170,7 @@ adding a non-empty title without changing the artwork.
 - Secret handling: `getConfig` masking plus `secretKeys`; setConfig keep-secret rule (empty secret field) and clear-on-empty rule (non-secret).
 - Persistence: adapter+config key roundtrip; `projects:remove` cleanup; `kanban.adaptersDir` override.
 - IPC contract: channel presence and typed payload roundtrips in the shared contract test style.
-- Renderer (vitest): settings tab states — no adapters, adapter selected with dynamic fields, required validation, test in-progress/success/failure, "(missing)" adapter, directory override flow; board surface states — the default List view, the icon controls (Board view, List view, Refresh: icon buttons with accessible names, on the header's right side), columns and list with ref, title, and priority, item review with the full title and description, loading, error, empty, not-configured with Configure, refresh; the left-navigation Kanban tile and the top-strip Kanban tab (both present only for a bound project, the tile directly under the project name), and the return to the chat tab and a file tab. The link, copy menu, New task form, and review status change are covered by the 2026-10-11 editing amendment.
+- Renderer (vitest): settings tab states — no adapters, adapter selected with dynamic fields, required validation, test in-progress/success/failure, "(missing)" adapter, directory override flow; board surface states — the grouped list, the Refresh icon on the header's right side, rows with ref, title, and priority, an item review in two columns with Priority and Status on the right, the full title and description, loading, error, empty, not-configured with Configure, refresh; the left-navigation Kanban tile and the top-strip Kanban tab (both present only for a bound project, the tile directly under the project name), and the return to the chat tab and a file tab. The link, copy menu, New task form, and review status change are covered by the 2026-10-11 editing amendment.
 - Fixture adapters (node scripts) serve as protocol doubles in vitest; the Python reference Plane adapter is verified manually against the user's Plane instance (documented steps in the task), not in vitest.
 
 ## Relevant SDD / ADR
@@ -213,8 +213,8 @@ Harness pozostaje niezależnym narzędziem agenta.
 
 1. Kliknięcie slugu (`WorkItem.ref`) lub tytułu otwiera istniejący widok
    szczegółów. Kliknięcie tła, priorytetu albo wolnego miejsca nie otwiera go.
-   Hover i fokus wskazują konkretne kontrolki, zamiast sugerować aktywność
-   całego wiersza lub karty. Start i Resume nie otwierają szczegółów.
+   Hover podświetla cały wiersz. Fokus i podkreślenie wskazują konkretne
+   kontrolki. Start i Resume nie otwierają szczegółów.
 2. Slug i tytuł są oddzielnymi kontrolkami dostępnymi z klawiatury. Nie wolno
    zagnieżdżać przycisków we wspólnym przycisku wiersza. Modal ma opis,
    obsługę Escape, utrzymanie fokusu wewnątrz i powrót fokusu po anulowaniu.
@@ -800,3 +800,41 @@ w etapach, które te zachowania wprowadzają.
   `src/shared/ipc-contract.ts`.
 - Adres pozycji Plane składa adapter w `adapters/plane/plane_adapter.py`
   (`issue_url`). Renderer kopiuje gotowe pole.
+
+## Kanban row and review amendment (user decision 2026-10-12)
+
+Ta sekcja zastępuje w sekcji "Kanban item editing amendment (user decision 2026-10-11)" jedno podkreślone łącze `ref title`, identyfikator `kanban-item-link-<ref>` oraz zdanie, że priorytet w podglądzie zostaje tylko do odczytu. Nie zmienia formularza `New task`, menu `Copy slug` i `Copy link`, zakazu przeciągania ani reguły, że status zmienia się tylko w podglądzie. Tworzenie zadania nadal nie wysyła priorytetu.
+
+Późniejsza decyzja tego samego dnia zostawia podświetlenie całego wiersza na hover. Hover podkreśla tylko slug, tytuł, włączony Start i pokazany Resume. Tylko te elementy mają akcję kliknięcia.
+
+Kolejna decyzja tego samego dnia usuwa widok Board i przełącznik List | Board. Zostaje sama lista. Podgląd jest w dwóch kolumnach: lewa ma trzy czwarte szerokości i zawiera ref, tytuł i opis, prawa ma jedną czwartą i zawiera Priority i Status. Przycisk Back ma ten sam styl co Back to Projects i jest w nagłówku zaraz po napisie Kanban.
+
+### Kolumny
+
+1. Na liście slug (`WorkItem.ref`) i tytuł są osobnymi kolumnami. W spoczynku żaden tekst nie jest podkreślony. Hover podkreśla slug, tytuł, włączony Start i pokazany Resume. Szerokość tych kontrolek jest szerokością tekstu, więc klik poza tekstem nic nie robi.
+2. Wiersze mają wspólną szerokość kolumny slugu. Tytuł jest obcinany.
+3. Hover podświetla cały wiersz. Podkreślenie jest tylko na tekście, który ma akcję.
+4. Klik, Enter i Space na slugu albo na tytule otwierają podgląd. Klik na włączonym Start otwiera potwierdzenie uruchomienia. Klik na pokazanym Resume otwiera potwierdzenie wznowienia. Wyłączony Start, tekst priorytetu i tło wiersza nie mają akcji i się nie podkreślają.
+5. Identyfikatory to `kanban-item-ref-<ref>` i `kanban-item-title-<ref>`.
+6. Menu kopiowania zostaje na slugu i na tytule. Nie otwiera się na Start, Resume, priorytecie ani tle.
+
+### Priorytet w podglądzie
+
+1. Podgląd ma listę Priority: Urgent, High, Medium, Low, None, w prawej kolumnie obok Status. Wiersz pokazuje priorytet jako tekst.
+2. Zmiana woła istniejące `kanban:updateItem` z samym `priority`. None wysyła `null`. Pominięte pole nadal nic nie zmienia.
+3. Sukces, błąd i blokada drugiej zmiany działają tak jak przy Status. Jeden zapis podglądu jest w toku naraz, więc Status i Priority nie wyprzedzają się nawzajem.
+4. `KanbanUpdatePatch.priority` przyjmuje nazwany priorytet albo `null`. `KanbanCreateInput.priority` nadal nie przyjmuje `null`.
+5. Adapter Plane traktuje obecny `null` jako `none`. Brak klucza zostawia priorytet bez zmiany.
+
+### Zaznaczanie tekstu
+
+1. Ref, tytuł i opis w podglądzie da się zaznaczyć, mimo `select-none` na `body`.
+2. Prawy przycisk poza przyciskiem i listą otwiera `Copy`. Pozycja kopiuje zaznaczenie z chwili otwarcia menu. Puste zaznaczenie zostawia ją nieaktywną.
+3. Ctrl+C kopiuje bieżące zaznaczenie przeglądarki.
+
+### Kryteria akceptacji
+
+1. Wiersz ma osobny slug i tytuł. Hover podświetla cały wiersz i podkreśla slug, tytuł, włączony Start i pokazany Resume. Tylko te elementy obsługują klik. Widoku Board nie ma.
+2. Priorytet zmienia się tylko w podglądzie. Lista nie ma tej kontrolki. Priority i Status są w prawej kolumnie podglądu. Ta kolumna ma jedną czwartą szerokości. Back ma obramowanie, tło panelu i ikonę, jak Back to Projects, i jest w nagłówku zaraz po napisie Kanban.
+3. None wysyła `priority: null`. Nazwany priorytet wysyła tę nazwę i nic więcej.
+4. Zaznaczony tekst podglądu da się skopiować. Puste zaznaczenie nie jest kopiowane jako sukces.
