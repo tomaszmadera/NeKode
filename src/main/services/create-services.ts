@@ -23,7 +23,7 @@ import { FilesService } from './files/files-service'
 import { GitService } from './git/git-service'
 import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
 import { HandoffsService } from './handoffs/handoffs-service'
-import { KanbanService } from './kanban/kanban-service'
+import { KanbanService, type SafeStorageLike } from './kanban/kanban-service'
 import { TaskLaunchService } from './kanban/task-launch-service'
 import { ProjectService } from './project-service'
 import { createNodePty } from './terminal/node-pty-factory'
@@ -59,6 +59,7 @@ export interface CreateServicesOptions {
    * Resolves the chosen absolute path, or null when the user cancels.
    */
   pickDirectory: (defaultPath: string | null) => Promise<string | null>
+  safeStorage?: SafeStorageLike
 }
 
 export function createServices(options: CreateServicesOptions): AppServices {
@@ -136,6 +137,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
         ? override
         : join(options.userDataPath, 'kanban-adapters')
     },
+    safeStorage: options.safeStorage,
   })
   const agentProfiles = new AgentProfilesService({ projects, state })
   const taskLaunch = new TaskLaunchService({
@@ -194,6 +196,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       execute: (id, projectId, confirmed) => actions.execute(id, projectId, confirmed),
       status: (id) => actions.status(id),
       stopForProject: (projectId) => actions.stopForProject(projectId),
+      stopAll: () => actions.stopAll(),
     },
     projects: {
       // Stale selection keys are cleaned on every list read (spec Edge cases:
@@ -337,6 +340,9 @@ export function createServices(options: CreateServicesOptions): AppServices {
     },
     dialogs: {
       pickDirectory: (defaultPath) => options.pickDirectory(defaultPath),
+    },
+    closeDatabase: () => {
+      if (db.open) db.close()
     },
   }
 }

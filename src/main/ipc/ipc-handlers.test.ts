@@ -44,6 +44,7 @@ function fakeActions(): AppServices['actions'] {
     execute: vi.fn(),
     status: vi.fn(),
     stopForProject: vi.fn(),
+    stopAll: vi.fn(),
   }
 }
 

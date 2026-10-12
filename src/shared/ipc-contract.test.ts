@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { relativeToProject } from './ipc-contract'
+import { isSecretStateKey, relativeToProject } from './ipc-contract'
 
 describe('relativeToProject', () => {
   it('returns a forward-slash relative path for a file inside the project root', () => {
@@ -26,5 +26,21 @@ describe('relativeToProject', () => {
 
   it('returns null on a casing mismatch (absolute-form fallback on Windows)', () => {
     expect(relativeToProject('D:/Code/Demo', 'D:/code/demo/handoffs/x.md')).toBeNull()
+  })
+})
+
+describe('isSecretStateKey', () => {
+  it('identifies exact and project-scoped kanbanConfig keys as secret-bearing', () => {
+    expect(isSecretStateKey('project.kanbanConfig')).toBe(true)
+    expect(isSecretStateKey('project.kanbanConfig:proj-123')).toBe(true)
+    expect(isSecretStateKey('project.kanbanConfig:')).toBe(true)
+  })
+
+  it('permits non-secret state keys', () => {
+    expect(isSecretStateKey('project.kanbanAdapter:proj-123')).toBe(false)
+    expect(isSecretStateKey('project.shell:proj-123')).toBe(false)
+    expect(isSecretStateKey('selection.projectId')).toBe(false)
+    expect(isSecretStateKey('region.left.width')).toBe(false)
+    expect(isSecretStateKey('kanban.adaptersDir')).toBe(false)
   })
 })

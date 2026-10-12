@@ -1003,7 +1003,7 @@ function NewTaskForm({
         onSubmit()
       }}
       onKeyDown={(event) => {
-        if (event.key !== 'Escape') return
+        if (busy || event.key !== 'Escape') return
         event.preventDefault()
         event.stopPropagation()
         onCancel()
@@ -1079,8 +1079,9 @@ function NewTaskForm({
         </button>
         <button
           type="button"
-          className="h-control rounded-md px-4 text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+          className="h-control rounded-md px-4 text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
           data-testid={TEST_ID.kanbanNewTaskCancel}
+          disabled={busy}
           onClick={onCancel}
         >
           Cancel
@@ -1151,14 +1152,26 @@ export function KanbanBoard({
   shownReviewRef.current = reviewRef
 
   const closeNewTask = useCallback(() => {
-    createGeneration.current += 1
-    createBusy.current = false
-    setCreatingBusy(false)
     setDraft(null)
     setCreateError(null)
   }, [])
 
   useEffect(() => {
+    generation.current += 1
+    pending.current = false
+    hasSnapshot.current = false
+    loadRequest.current += 1
+    retainedCreates.current.clear()
+    retainedUpdates.current.clear()
+    setBoard({ states: [], items: [] })
+    setPhase('loading')
+    setReviewRef(null)
+    setCopyMenu(null)
+    setError(null)
+    setRefreshing(false)
+    createGeneration.current += 1
+    createBusy.current = false
+    setCreatingBusy(false)
     setCollapsedStates(loadCollapsedStateIds(projectId))
     setSortState(loadKanbanSort(projectId))
     closeNewTask()
@@ -1231,6 +1244,10 @@ export function KanbanBoard({
       pending.current = false
       handoffGeneration.current += 1
       handoffPending.current = null
+      createGeneration.current += 1
+      createBusy.current = false
+      reviewGeneration.current += 1
+      reviewBusy.current = false
     }
   }, [])
 
@@ -1380,7 +1397,7 @@ export function KanbanBoard({
     handoffPhase === 'ready' && availableIds.has(item.id)
 
   const openNewTask = (): void => {
-    if (draft !== null) return
+    if (draft !== null || createBusy.current) return
     setCreateError(null)
     setDraft({
       stateRef: defaultNewTaskStateRef(board.states),
@@ -1554,8 +1571,9 @@ export function KanbanBoard({
         {phase === 'ready' && reviewItem === null ? (
           <button
             type="button"
-            className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-edge bg-panel px-2 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-edge bg-panel px-2 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
             data-testid={TEST_ID.kanbanNewTask}
+            disabled={creatingBusy}
             onClick={openNewTask}
           >
             <Icon.plus size={14} aria-hidden />

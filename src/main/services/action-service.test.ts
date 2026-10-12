@@ -496,6 +496,80 @@ describe('ActionService', () => {
     }
   })
 
+  it('stopAll terminates every active background child across all projects and global scope', () => {
+    const db = openDatabase(':memory:')
+    runMigrations(db)
+    db.prepare(
+      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run('p1', 'Demo 1', 'D:/code/demo1', null, '2026-01-01T00:00:00Z')
+    db.prepare(
+      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run('p2', 'Demo 2', 'D:/code/demo2', null, '2026-01-01T00:00:00Z')
+    const stops: Record<string, () => void> = {
+      p1: vi.fn(),
+      p2: vi.fn(),
+      global: vi.fn(),
+    }
+    const startBackground = vi.fn((command: string) => ({
+      stop: () => {
+        stops[command]?.()
+      },
+    }))
+    const service = new ActionService({
+      db,
+      startBackground,
+      createChat: vi.fn(),
+      createTerminal: vi.fn(),
+      isDirectory: () => true,
+    })
+    try {
+      const a1 = service.create({
+        scope: 'project',
+        projectId: 'p1',
+        title: 'P1',
+        icon: null,
+        command: 'p1',
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 0,
+      })
+      const a2 = service.create({
+        scope: 'project',
+        projectId: 'p2',
+        title: 'P2',
+        icon: null,
+        command: 'p2',
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 1,
+      })
+      const a3 = service.create({
+        scope: 'global',
+        projectId: null,
+        title: 'Global',
+        icon: null,
+        command: 'global',
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 2,
+      })
+      service.execute(a1.id, 'p1', false)
+      service.execute(a2.id, 'p2', false)
+      service.execute(a3.id, 'p1', false)
+
+      service.stopAll()
+
+      expect(stops.p1).toHaveBeenCalledTimes(1)
+      expect(stops.p2).toHaveBeenCalledTimes(1)
+      expect(stops.global).toHaveBeenCalledTimes(1)
+    } finally {
+      db.close()
+    }
+  })
+
   it('kills the retained shell process when the action is deleted', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'nekode-action-kill-'))
     const pidFile = join(directory, 'pid')

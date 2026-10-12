@@ -396,6 +396,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // binding key (no new IPC channel). A bound project shows the nav tile and
   // the top-strip Kanban tab; an unbound one shows neither.
   const [kanbanProjectIds, setKanbanProjectIds] = useState<ReadonlySet<string>>(new Set())
+  const [settledKanbanProjects, setSettledKanbanProjects] = useState<ReadonlySet<string>>(new Set())
+  const kanbanBindingsGeneration = useRef(0)
   const [kanbanVersions, setKanbanVersions] = useState<Record<string, number>>({})
   const [taskStart, setTaskStart] = useState<{ projectId: string; item: WorkItem } | null>(null)
   const [taskResume, setTaskResume] = useState<{ projectId: string; item: WorkItem } | null>(null)
@@ -469,14 +471,19 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // every projects-list change and when Project Settings closes, so a
   // bind/unbind shows up in the navigation and tab strip without a restart.
   const refreshKanbanBindings = useCallback(async (): Promise<void> => {
+    const requestGen = ++kanbanBindingsGeneration.current
+    const targetProjects = projects
     try {
       const ids = await Promise.all(
-        projects.map(async (project) =>
+        targetProjects.map(async (project) =>
           (await app.state.get(projectKanbanAdapterKey(project.id))) ? project.id : null,
         ),
       )
+      if (requestGen !== kanbanBindingsGeneration.current) return
       setKanbanProjectIds(new Set(ids.filter((id): id is string => id !== null)))
+      setSettledKanbanProjects(new Set(targetProjects.map((project) => project.id)))
     } catch (error) {
+      if (requestGen !== kanbanBindingsGeneration.current) return
       setNotice(errorMessage(error, 'Failed to load Kanban bindings.'))
     }
   }, [app, projects])
@@ -1166,6 +1173,21 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         // on the next read) and fall back to the default empty state only when
         // the removed project is the currently selected one. Pending chat
         // loads for this project become stale (see loadChats).
+        const projectChatIds = (chatsByProjectRef.current[projectId] ?? []).map((chat) => chat.id)
+        for (const chatId of projectChatIds) {
+          delete pendingTerminalCommandsRef.current[chatId]
+        }
+        setTerminalCwds((previous) => {
+          let changed = false
+          const next = { ...previous }
+          for (const chatId of projectChatIds) {
+            if (chatId in next) {
+              delete next[chatId]
+              changed = true
+            }
+          }
+          return changed ? next : previous
+        })
         setProjects((previous) => previous.filter((project) => project.id !== projectId))
         applyChatsUpdate((previous) => {
           const next = { ...previous }
@@ -1209,7 +1231,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           delete pendingBottomCommandsRef.current[tabId]
         }
         setBottomTabs((previous) => dropBottomProject(previous, projectId))
-        if (projectId === selectedProjectId) {
+        if (projectId === selectionRef.current.projectId) {
+          selectionRef.current = { projectId: null, chatId: null }
           setSelectedProjectId(null)
           setSelectedChatId(null)
           persistSelection(null, null)
@@ -1227,7 +1250,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
       })()
     },
-    [app, applyChatsUpdate, persistSelection, refreshActions, selectedProjectId],
+    [app, applyChatsUpdate, persistSelection, refreshActions],
   )
 
   // --- Project Files mode (spec Behaviour 1–2, 6, 12, 14–15) ---------------
@@ -1753,68 +1776,76 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // render snapshot — the selection can never end up pointing at a chat that
   // another flow already removed.
   const handleChatClosed = useCallback(
-    (chatId: string): void => {
+    async (chatId: string): Promise<boolean> => {
       setNotice(null)
-      void (async () => {
-        try {
-          await app.chats.remove(chatId)
-        } catch (error) {
-          setNotice(errorMessage(error, 'Failed to close the chat.'))
-          return
+      try {
+        await app.chats.remove(chatId)
+      } catch (error) {
+        setNotice(errorMessage(error, 'Failed to close the chat.'))
+        return false
+      }
+      // Tombstone before the map removal: fetched lists still in flight can
+      // predate this close, and mergeFetchedChats must not resurrect it.
+      removedChatIdsRef.current.add(chatId)
+      // A closed chat's held launch can no longer be retried: drop the entry
+      // so it does not outlive its chat in the renderer.
+      setHeldLaunches((previous) => {
+        if (!(chatId in previous)) {
+          return previous
         }
-        // Tombstone before the map removal: fetched lists still in flight can
-        // predate this close, and mergeFetchedChats must not resurrect it.
-        removedChatIdsRef.current.add(chatId)
-        // A closed chat's held launch can no longer be retried: drop the entry
-        // so it does not outlive its chat in the renderer.
-        setHeldLaunches((previous) => {
-          if (!(chatId in previous)) {
-            return previous
-          }
-          const next = { ...previous }
-          delete next[chatId]
-          return next
-        })
-        let successorChatId: string | null = null
-        for (const [projectId, chats] of Object.entries(chatsByProjectRef.current)) {
-          const index = chats.findIndex((chat) => chat.id === chatId)
-          if (index === -1) {
-            continue
-          }
-          const remaining = chats.filter((chat) => chat.id !== chatId)
-          // The successor rule applies to the currently viewed chat (the one
-          // whose terminal the user closed); a background chat that exits on
-          // its own is removed without stealing the current selection.
-          if (
-            projectId === selectionRef.current.projectId &&
-            chatId === selectionRef.current.chatId
-          ) {
-            successorChatId = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
-          }
-          applyChatsUpdate((previous) => ({
-            ...previous,
-            [projectId]: (previous[projectId] ?? []).filter((chat) => chat.id !== chatId),
-          }))
-          break
+        const next = { ...previous }
+        delete next[chatId]
+        return next
+      })
+      delete pendingTerminalCommandsRef.current[chatId]
+      setTerminalCwds((previous) => {
+        if (!(chatId in previous)) {
+          return previous
         }
-        // The selection must never point at a removed chat: rewrite it to the
-        // successor, or fall back to the "Start new chat" empty state. This
-        // also covers a chat already filtered out by an earlier close in the
-        // same tick (its own flow computed no successor).
-        const selectedChatIdNow = selectionRef.current.chatId
+        const next = { ...previous }
+        delete next[chatId]
+        return next
+      })
+      let successorChatId: string | null = null
+      for (const [projectId, chats] of Object.entries(chatsByProjectRef.current)) {
+        const index = chats.findIndex((chat) => chat.id === chatId)
+        if (index === -1) {
+          continue
+        }
+        const remaining = chats.filter((chat) => chat.id !== chatId)
+        // The successor rule applies to the currently viewed chat (the one
+        // whose terminal the user closed); a background chat that exits on
+        // its own is removed without stealing the current selection.
         if (
-          selectedChatIdNow !== null &&
-          !chatExistsIn(chatsByProjectRef.current, selectedChatIdNow)
+          projectId === selectionRef.current.projectId &&
+          chatId === selectionRef.current.chatId
         ) {
-          const nextChatId =
-            successorChatId !== null && chatExistsIn(chatsByProjectRef.current, successorChatId)
-              ? successorChatId
-              : null
-          selectionRef.current = { ...selectionRef.current, chatId: nextChatId }
-          setSelectedChatId(nextChatId)
-          persistSelection(selectionRef.current.projectId, nextChatId)
+          successorChatId = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
         }
-      })()
+        applyChatsUpdate((previous) => ({
+          ...previous,
+          [projectId]: (previous[projectId] ?? []).filter((chat) => chat.id !== chatId),
+        }))
+        break
+      }
+      // The selection must never point at a removed chat: rewrite it to the
+      // successor, or fall back to the "Start new chat" empty state. This
+      // also covers a chat already filtered out by an earlier close in the
+      // same tick (its own flow computed no successor).
+      const selectedChatIdNow = selectionRef.current.chatId
+      if (
+        selectedChatIdNow !== null &&
+        !chatExistsIn(chatsByProjectRef.current, selectedChatIdNow)
+      ) {
+        const nextChatId =
+          successorChatId !== null && chatExistsIn(chatsByProjectRef.current, successorChatId)
+            ? successorChatId
+            : null
+        selectionRef.current = { ...selectionRef.current, chatId: nextChatId }
+        setSelectedChatId(nextChatId)
+        persistSelection(selectionRef.current.projectId, nextChatId)
+      }
+      return true
     },
     [app, applyChatsUpdate, persistSelection],
   )
@@ -1842,7 +1873,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     }
     const chatId = chatToClose.id
     setChatToClose(null)
-    handleChatClosed(chatId)
+    void handleChatClosed(chatId)
   }, [chatToClose, handleChatClosed])
 
   // "Start new chat" empty state (spec Behaviour 11): create a chat
@@ -2162,7 +2193,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // Settings — the session falls back to the terminal tab during this render
   // (the documented "adjust state when a prop changes" idiom the view switch
   // used). The condition is false on the re-render, so this never loops.
-  if (tabProjectId !== null && activeTab.kind === 'kanban' && !kanbanProjectIds.has(tabProjectId)) {
+  if (
+    tabProjectId !== null &&
+    activeTab.kind === 'kanban' &&
+    settledKanbanProjects.has(tabProjectId) &&
+    !kanbanProjectIds.has(tabProjectId)
+  ) {
     updateTabsSession(tabProjectId, (session) => activateTab(session, TERMINAL_TAB))
   }
   // The terminal-chat tab shows the active chat's name only while the active

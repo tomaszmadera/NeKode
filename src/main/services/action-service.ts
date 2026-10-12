@@ -238,6 +238,16 @@ export class ActionService {
     }
   }
 
+  /** Stops every active background child on application quit. */
+  stopAll(): void {
+    const ids = [...this.#runs.keys()]
+    for (const id of ids) {
+      this.#invalidateRun(id)
+      this.#stopChild(id)
+      this.#status.delete(id)
+    }
+  }
+
   status(id: string): ActionExecution {
     this.#get(id, 'actions:status')
     return this.#status.get(id) ?? idle

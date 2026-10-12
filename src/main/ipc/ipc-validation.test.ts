@@ -44,6 +44,7 @@ function fakeServices(): AppServices {
       execute: vi.fn(),
       status: vi.fn(),
       stopForProject: vi.fn(),
+      stopAll: vi.fn(),
     },
     projects: {
       wslDirectories: vi.fn(() => []),
@@ -768,5 +769,34 @@ describe('ipc payload validation', () => {
       /Failed to start the terminal process/,
     )
     expect(services.terminals.create).not.toHaveBeenCalled()
+  })
+
+  it('state:get and state:set block access to secret-bearing keys', () => {
+    const services = fakeServices()
+    const channels = new Map(buildValidatedChannels(services).map((c) => [c.channel, c]))
+    const stateGet = channels.get('state:get')
+    const stateSet = channels.get('state:set')
+    if (!stateGet || !stateSet) throw new Error('Missing state channels')
+
+    // Protected secret keys throw ValidationError
+    for (const key of [
+      'project.kanbanConfig',
+      'project.kanbanConfig:p1',
+      'project.kanbanConfig:',
+    ]) {
+      expect(() => stateGet.parse([key])).toThrow(/is a protected key/)
+      expect(() => stateSet.parse([key, 'val'])).toThrow(/is a protected key/)
+    }
+
+    // Normal keys are accepted
+    expect(stateGet.parse(['selection.projectId'])).toEqual(['selection.projectId'])
+    expect(stateSet.parse(['selection.projectId', 'p1'])).toEqual(['selection.projectId', 'p1'])
+
+    // Service is invoked for valid keys
+    stateGet.invoke(stateGet.parse(['region.left.width']))
+    expect(services.state.get).toHaveBeenCalledWith('region.left.width')
+
+    stateSet.invoke(stateSet.parse(['region.left.width', '300']))
+    expect(services.state.set).toHaveBeenCalledWith('region.left.width', '300')
   })
 })

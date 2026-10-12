@@ -47,7 +47,7 @@ konkretny runtime.
 
 - **Proces główny (`src/main/`):**
   - Cykl życia aplikacji Electron.
-  - Usługi domenowe (`ProjectService`, `TaskService`, `WorkspaceService`, `TerminalService`).
+  - Usługi domenowe (`ProjectService`, `ChatService`, `AppStateService`, `ActionService`, `TerminalService` oraz moduły plików, Gita, powłok, handoffów, Kanbana i dyktanda).
   - Dostęp do bazy danych SQLite i operacji systemowych (PTY, system plików).
 - **Proces preload (`src/preload/`):**
   - Bezpieczny mostek IPC (`contextBridge.exposeInMainWorld`).

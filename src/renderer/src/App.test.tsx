@@ -1365,6 +1365,98 @@ describe('action row and settings', () => {
     expect(vi.mocked(app.terminals.write).mock.calls).toContainEqual(['t2', '\r'])
   })
 
+  it('prunes staged new-terminal command when chat closes before terminal is ready', async () => {
+    const action = {
+      ...buildAction,
+      runMode: 'new-terminal' as const,
+      command: 'pnpm dev',
+      cwd: 'D:/code/demo/app',
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([action])
+    vi.mocked(app.actions.execute).mockResolvedValue({
+      status: 'success',
+      exitCode: null,
+      completedAt: '2026-09-27T15:00:00Z',
+      error: null,
+      chat: chatTwo,
+      terminalCommand: 'pnpm dev',
+      terminalCwd: action.cwd,
+    })
+    await renderSelectedChat()
+    let finishSpawn: ((id: string) => void) | undefined
+    vi.mocked(app.terminals.create).mockImplementation((chatId) =>
+      chatId === 't2'
+        ? new Promise<string>((resolve) => {
+            finishSpawn = resolve
+          })
+        : Promise.resolve(chatId),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe(
+        'true',
+      ),
+    )
+
+    // Chat t2 is closed before the terminal finishes spawning / becoming ready
+    fireEvent.mouseOver(screen.getByTestId(testIdFor.chatRow('t2')))
+    fireEvent.click(screen.getByTestId(testIdFor.chatClose('t2')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(app.chats.remove).toHaveBeenCalledWith('t2'))
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatRow('t2'))).toBeNull())
+
+    // Now spawn resolves late: the staged command must have been pruned, so nothing is written
+    await act(async () => {
+      finishSpawn?.('t2')
+    })
+    expect(vi.mocked(app.terminals.write).mock.calls.filter(([id]) => id === 't2')).toHaveLength(0)
+  })
+
+  it('prunes staged new-terminal command when its project is removed before terminal is ready', async () => {
+    const action = {
+      ...buildAction,
+      runMode: 'new-terminal' as const,
+      command: 'pnpm dev',
+      cwd: 'D:/code/demo/app',
+    }
+    vi.mocked(app.actions.list).mockResolvedValue([action])
+    vi.mocked(app.actions.execute).mockResolvedValue({
+      status: 'success',
+      exitCode: null,
+      completedAt: '2026-09-27T15:00:00Z',
+      error: null,
+      chat: chatTwo,
+      terminalCommand: 'pnpm dev',
+      terminalCwd: action.cwd,
+    })
+    await renderSelectedChat()
+    let finishSpawn: ((id: string) => void) | undefined
+    vi.mocked(app.terminals.create).mockImplementation((chatId) =>
+      chatId === 't2'
+        ? new Promise<string>((resolve) => {
+            finishSpawn = resolve
+          })
+        : Promise.resolve(chatId),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe(
+        'true',
+      ),
+    )
+
+    // Project p1 is removed while the terminal spawn is still pending
+    fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
+
+    // Now spawn resolves late: staged command was pruned, so nothing is written
+    await act(async () => {
+      finishSpawn?.('t2')
+    })
+    expect(vi.mocked(app.terminals.write).mock.calls.filter(([id]) => id === 't2')).toHaveLength(0)
+  })
+
   it('delivers a bottom-terminal command into a new bottom tab after it is ready, without changing the selected chat', async () => {
     const action = {
       ...buildAction,
@@ -2105,6 +2197,88 @@ describe('project and chat data flow', () => {
     expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
   })
 
+  it('remove-project: does not clear selection if user switched projects while removal was in flight', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectNoRuntime])
+    vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
+      projectId === 'p1' ? [chatOne] : [chatOtherProject],
+    )
+    let resolveRemove: (() => void) | undefined
+    vi.mocked(app.projects.remove).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRemove = resolve
+        }),
+    )
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await screen.findByTestId(testIdFor.chatRow('t1'))
+    expect(getByTestIdString(testIdFor.projectRow('p1')).getAttribute('data-selected')).toBe('true')
+
+    // Start removing p1
+    fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
+
+    // While removal is in flight, user selects p2
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    expect(getByTestIdString(testIdFor.projectRow('p2')).getAttribute('data-selected')).toBe('true')
+
+    // Now removal of p1 settles
+    vi.mocked(app.projects.list).mockResolvedValue([projectNoRuntime])
+    await act(async () => {
+      resolveRemove?.()
+    })
+
+    // p2 must STILL be selected, not wiped to null!
+    await waitFor(() => {
+      expect(getByTestIdString(testIdFor.projectRow('p2')).getAttribute('data-selected')).toBe(
+        'true',
+      )
+    })
+  })
+
+  it('remove-project: clears selection if user switched to the project being removed while removal was in flight', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectNoRuntime])
+    vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
+      projectId === 'p1' ? [chatOne] : [chatOtherProject],
+    )
+    let resolveRemove: (() => void) | undefined
+    vi.mocked(app.projects.remove).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRemove = resolve
+        }),
+    )
+
+    render(<App app={app} />)
+    // Initially select p2
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
+    await screen.findByTestId(testIdFor.chatRow('u1'))
+    expect(getByTestIdString(testIdFor.projectRow('p2')).getAttribute('data-selected')).toBe('true')
+
+    // Start removing p1
+    fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.removeProject('p1')))
+    await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
+
+    // While removal is in flight, user selects p1
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    expect(getByTestIdString(testIdFor.projectRow('p1')).getAttribute('data-selected')).toBe('true')
+
+    // Now removal of p1 settles
+    vi.mocked(app.projects.list).mockResolvedValue([projectNoRuntime])
+    await act(async () => {
+      resolveRemove?.()
+    })
+
+    // p1 was removed, so selection must be cleared to null, NOT left dangling on p1!
+    await waitFor(() => {
+      expect(screen.queryByTestId(testIdFor.projectRow('p1'))).toBeNull()
+      expect(screen.queryByTestId(TEST_ID.statusProjectName)).toBeNull()
+    })
+  })
+
   it('writes the selection keys on every selection change', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
@@ -2585,11 +2759,8 @@ describe('chat closing on terminal exit (Stage 4)', () => {
     const notice = await screen.findByTestId(TEST_ID.actionNotice)
     expect(notice.textContent).toContain('Database error.')
     await waitFor(() => expect(app.chats.remove).toHaveBeenCalledTimes(1))
-    expect(screen.getByTestId(testIdFor.chatRow('t1'))).toBeTruthy()
-
-    // …but re-selecting it opens a fresh session whose exit must close it —
-    // the failed attempt must not leave the chat permanently un-closable.
-    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
+    // …and its workspace remains visible with a restored session without needing manual re-selection.
+    await waitFor(() => expect(screen.getByTestId(testIdFor.terminalView('t1'))).toBeTruthy())
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
     emitExit('t1', 0)
 
@@ -3286,5 +3457,52 @@ describe('kanban task resume — removing the project', () => {
     })
     expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('nekode-28.md'))).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanResumeDialog)).toBeNull()
+  })
+
+  it('drops stale out-of-order refreshKanbanBindings responses and does not fall back active kanban tab', async () => {
+    const projectA: ProjectInfo = {
+      id: 'p1',
+      name: 'Project A',
+      path: '/path/p1',
+      runtimeLabel: null,
+    }
+    const firstCallDeferred = deferred<string | null>()
+    let stateGetCallCount = 0
+
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.kanban.listBoard).mockResolvedValue(board)
+
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === projectKanbanAdapterKey('p1')) {
+        stateGetCallCount += 1
+        if (stateGetCallCount === 1) {
+          return firstCallDeferred.promise
+        }
+        return 'demo'
+      }
+      return null
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+
+    // Open Project Settings via context menu and close it to trigger second refreshKanbanBindings
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Project Settings$/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Close settings' }))
+
+    // Second call returned 'demo', so project is bound and Kanban tile is available
+    fireEvent.click(await screen.findByTestId(testIdFor.projectKanban('p1')))
+    await screen.findByTestId(TEST_ID.kanbanBoard)
+
+    // Now resolve the first (stale, older) call with null (unbound)
+    await act(async () => {
+      firstCallDeferred.resolve(null)
+      await Promise.resolve()
+    })
+
+    // The active tab should STILL be kanban, not fallen back to terminal
+    expect(screen.queryByTestId(TEST_ID.kanbanBoard)).not.toBeNull()
   })
 })

@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import nekodeIcon from '../../resources/icon.ico?asset'
 import { IPC_CHANNEL } from '../shared/ipc-contract'
 import { isSafeExternalUrl } from '../shared/safe-url'
@@ -141,6 +141,7 @@ app.whenReady().then(() => {
     desktopShortcut: (handle) => desktopSender.send(handle),
     dbPath: join(app.getPath('userData'), 'nekode.db'),
     userDataPath: app.getPath('userData'),
+    safeStorage,
     // The single OS-facing action of the project-files feature (spec
     // Behaviour 11): open with the OS default application. '' = success.
     openExternal: (absolutePath) => shell.openPath(absolutePath),
@@ -201,6 +202,10 @@ app.whenReady().then(() => {
         'NeKode could not close',
         'Terminal shutdown did not complete. NeKode is still running.',
       )
+    },
+    {
+      stopActions: () => services.actions.stopAll(),
+      closeDatabase: () => services.closeDatabase?.(),
     },
   )
 

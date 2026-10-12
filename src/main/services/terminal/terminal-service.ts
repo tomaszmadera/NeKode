@@ -246,7 +246,8 @@ export class TerminalService {
 
   /**
    * Wait for native exit callbacks before Electron destroys the Node environment.
-   * A missing exit at seven seconds is reported once and does not abandon the wait.
+   * If a PTY has not exited by seven seconds, the timeout is reported and the
+   * wait settles so the application can finish quitting.
    */
   shutdown(reportTimeout?: (error: unknown) => void): Promise<void> {
     if (this.#shutdown) return this.#shutdown
@@ -258,9 +259,17 @@ export class TerminalService {
         (session) =>
           new Promise<void>((resolve) => {
             const timer = setTimeout(() => {
-              if (reported) return
-              reported = true
-              reportTimeout?.(new Error('Terminal shutdown timed out.'))
+              if (!reported) {
+                reported = true
+                reportTimeout?.(new Error('Terminal shutdown timed out.'))
+              }
+              try {
+                session.pty.kill()
+              } catch {
+                // The process may already be gone; kill stays idempotent.
+              }
+              subscription.dispose()
+              resolve()
             }, 7000)
             const subscription = session.pty.onExit(() => {
               clearTimeout(timer)
