@@ -7,7 +7,8 @@ This document owns contribution rules for NeKode. It applies to human and agent-
 | Concern | Canonical owner |
 |---|---|
 | Approved product scope and terminology | [Product requirements](../product/requirements.md) |
-| Feature behavior, errors, acceptance, and future scope | The relevant [feature specification](../features/) |
+| Deferred product ideas and their status | [Backlog](../../BACKLOG.md) |
+| Feature behavior, errors, acceptance, and future scope | The relevant feature specification, indexed with its delivery status in [docs/features/](../features/README.md) |
 | Process boundaries, persistence, IPC, terminal ownership, security | [Architecture](../architecture/sdd.md), including [current implementation obligations](../architecture/sdd.md#current-implementation-obligations) |
 | Interaction and English-only UI | [UX/UI contract](../UX-UI.md) |
 | Visual tokens, typography, controls, and motion | [Design system](../references/NeKode-Design-System.md) |
@@ -79,5 +80,7 @@ Keep one canonical owner per concern and link to it. Requirements belong in prod
 The application UI is English-only. Literal terminal commands are data and remain as contracted even when their language differs. Follow the language of the document you edit, retain identifiers/commands, use sentence-case headings, straight quotes, and plain wording without em dashes. Use bold only for scanning, omit decorative emoji and redundant bold list prefixes, and prefer concrete measured statements over filler. Support repository claims with named paths and, where useful, line numbers or command evidence. State unresolved facts once with the evidence needed to settle them. Structured data, code, identifiers, and defined error-message contracts follow their own correctness rules.
 
 `AGENTS.md`, `.agents/`, and agent-specific runtime configuration are ignored local working configuration. Their absence must not prevent building, testing, contributing, or releasing from a public clone. You may build your own locally ignored guide from this source map; [Your own AGENTS.md](agents-md.md) gives the instructions and template. Link to project rules rather than duplicating them. Personal chat style, question tools, skills, phase/timing record formats, account settings, and orchestration are optional local choices. Configuration adapters may expose capabilities and point at your guide, but should not become another behavior contract.
+
+A few local, git-ignored working files also sit under `docs/`: `docs/development/agent-skills.md`, `docs/operations/github-publication-plan.md`, and `docs/references/mockups/archived/`. They are not part of the published documentation and no published page links to them; a full working tree shows them beside the published documents.
 
 An optional handoff-directory example or an explicitly excluded local path can mention `.agents`; no public instruction may require that directory as a command source, authority link, or hidden runtime prerequisite. The app's handoff directory is user-configured and has no harness-specific default. External agent notification configuration remains user-managed and optional, as described in [README](../../README.md#agent-notification-setup-attention-badge).

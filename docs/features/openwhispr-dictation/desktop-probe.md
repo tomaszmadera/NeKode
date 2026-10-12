@@ -53,7 +53,7 @@ Do not wire the product until the observed interface and insertion behavior supp
 | Completion/cancellation interface | Specific usable signal or explicit absence | Current installed 1.10.2 bridge route table, second-instance handler and tray callbacks expose no usable external desktop session-completion/cancellation interface. Manual finished-state observation is not NeKode telemetry. |
 | Ready with disabled actions | Actual count, mode, phase, held keys and control reasons | Earlier probe did not expose these diagnostics. Live cause unresolved; no modal reported. Corrected artifact passed independent review; live validation still needs separate approval. |
 
-Requirements: [specification](spec.md). Scope and approval gate: `.agents/tasks/nekode-22-openwhispr-dictation/plan.md`, Stage 2.
+Requirements: [specification](spec.md). Scope and approval gate: the approved desktop V1 scope and its amended execution plan (Stage 2); this file's own authorization limits remain as recorded above.
 
 ## Focus-change result (2026-10-11)
 

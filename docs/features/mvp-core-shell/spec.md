@@ -1,4 +1,7 @@
-# NeKode MVP Core Shell — first vertical slice
+# NeKode MVP Core Shell - first vertical slice
+
+Status: Delivered (first vertical slice: project registration, chat, live terminal).
+Path: `docs/features/mvp-core-shell/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 

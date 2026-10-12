@@ -1,5 +1,8 @@
 # Handoff/Resume flow: remembered Add Project path, auto-send, project configuration, handoff list
 
+Status: Delivered (Handoff and Resume actions, remembered directory, per-project handoff list).
+Path: `docs/features/handoff-resume-flow/spec.md`.
+
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal

@@ -1,8 +1,9 @@
 # Chat attention badge
 
-This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
-
+Status: Delivered (bell and OSC 9 detection, amber chat-row dot).
 Path: `docs/features/chat-attention-badge/spec.md`.
+
+This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal
 

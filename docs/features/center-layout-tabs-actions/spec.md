@@ -1,5 +1,8 @@
 # Center Layout: Tab Strip, Action Row, and Status Bar
 
+Status: Delivered (tab strip, action row, and status bar).
+Path: `docs/features/center-layout-tabs-actions/spec.md`.
+
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal

@@ -1,5 +1,8 @@
 # CI: automatyczna weryfikacja na GitHub Actions
 
+Status: Wdrożone (GitHub Actions uruchamia `pnpm run verify` przy każdej zmianie).
+Path: `docs/features/ci-pipeline/spec.md`.
+
 Kontrakt behawioralny zadania NEKODE-12. Implementacja korzysta z tego pliku; postęp prac trzyma rekord zadania, nie specyfikacja.
 
 ## Goal

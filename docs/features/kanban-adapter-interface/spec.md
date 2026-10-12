@@ -1,5 +1,8 @@
 # Kanban adapter interface: plugin discovery, project binding, normalized board data
 
+Status: Delivered (adapter-backed board with Start, Resume, New task, and item review); drag-and-drop and the UX-UI 26-30 visual design remain later work.
+Path: `docs/features/kanban-adapter-interface/spec.md`.
+
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal
@@ -437,9 +440,9 @@ określa poniższe uzupełnienie NEKODE-30.
 - Nowy czat i aktywacja powierzchni: `handleCreateChat` w
   `src/renderer/src/App.tsx:1204`; uruchomienie istniejącej akcji w nowym
   terminalu: `src/main/services/action-service.ts:278`.
-- Harness wymaga nazwy pliku zgodnej z lokalnym task_id:
-  `.agents/scripts/handoff-status:85`. Template `.agents/templates/handoff.md`
-  ma task_id, ale nie ma ref backendu. To uzasadnia oddzielne dopasowanie.
+- Powiązanie opiera się na zgodności pełnego refu z nazwą pliku handoffu:
+  nazwa pliku pochodzi od identyfikatora zadania i nie zawiera referencji
+  elementu pracy backendu. To uzasadnia oddzielne dopasowanie.
 - [Product requirements](../../product/requirements.md), sekcja 3, traktują
   Kanban i handoffy powiązane z zadaniami jako post-MVP bez obowiązkowego
   Harness. Ten kontrakt realizuje taki kierunek bez lokalnej encji Task.
@@ -662,10 +665,11 @@ wymaga kontaktu z modelem ani zapisu do produkcyjnego Kanbana.
   powiązaniem pozostaje zgodność pełnego ref z nazwą pliku.
 - `src/renderer/src/components/kanban/KanbanBoard.tsx:834` uzależnia Resume
   od udanego skanu i dostępności handoffu danego zadania.
-- `.agents/skills/handoff/SKILL.md:8` ustala katalog i nazwę producenta,
-  a `.agents/scripts/handoff-status:88` wymaga zgodności nazwy z task_id.
-- `.agents/templates/handoff.md:2` zawiera task_id. Nowy kontrakt nie wymaga
-  dodawania work_item_ref, work_item_id ani work_item_adapter do szablonu.
+- Katalog handoffów jest konfigurowany per projekt, a nazwa pliku pochodzi od
+  identyfikatora zadania; zgodność nazwy z pełnym refem jest wymaganiem
+  kontraktu konsumenta.
+- Szablon handoffu zawiera task_id. Nowy kontrakt nie wymaga dodawania
+  work_item_ref, work_item_id ani work_item_adapter do szablonu.
 
 ## Kanban item editing amendment (user decision 2026-10-11)
 

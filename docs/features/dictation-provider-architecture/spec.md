@@ -1,8 +1,9 @@
 # Dictation provider architecture
 
-This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
-
+Status: Not delivered (parent contract for dictation providers); the OpenWhispr specialization ships desktop V1 (see `openwhispr-dictation/spec.md`).
 Path: `docs/features/dictation-provider-architecture/spec.md`.
+
+This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal
 
