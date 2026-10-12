@@ -177,4 +177,131 @@ describe('ShellTab', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.settingsShellCustomAdd))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('executable file'))
   })
+
+  it('surfaces a visible error when reading the stored shell choice fails and keeps detected shells available', async () => {
+    const get = vi.fn().mockRejectedValue({
+      nekodeAppError: true,
+      code: 'internal',
+      message: 'Failed to read SQLite database.',
+    })
+    const detect = vi.fn().mockResolvedValue([
+      { id: 'default', label: 'PowerShell' },
+      { id: 'cmd', label: 'Command Prompt' },
+    ])
+    render(
+      <ShellTab
+        app={appMock({
+          detect,
+          get,
+        })}
+        projectId="p1"
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSelect)).toBeTruthy())
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain('Failed to read SQLite database.')
+    const options = (screen.getByTestId(TEST_ID.settingsShellSelect) as HTMLSelectElement).options
+    expect(Array.from(options).map((o) => o.value)).toEqual(['default', 'cmd'])
+  })
+
+  it('blocks rapid double activation of addCustom, disables button during mutation, and unlocks on error', async () => {
+    let resolveAdd: (val: { id: string; label: string }) => void = () => {}
+    const addCustom = vi.fn().mockImplementation(
+      () =>
+        new Promise<{ id: string; label: string }>((resolve) => {
+          resolveAdd = resolve
+        }),
+    )
+    render(
+      <ShellTab
+        app={appMock({
+          detect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
+          addCustom,
+        })}
+        projectId="p1"
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSelect)).toBeTruthy())
+    const input = screen.getByTestId(TEST_ID.settingsShellCustomInput)
+    const addButton = screen.getByTestId(TEST_ID.settingsShellCustomAdd) as HTMLButtonElement
+    fireEvent.change(input, { target: { value: 'D:\\tools\\nu.exe' } })
+    expect(addButton.disabled).toBe(false)
+
+    // First click initiates mutation
+    fireEvent.click(addButton)
+    expect(addCustom).toHaveBeenCalledTimes(1)
+    expect(addButton.disabled).toBe(true)
+
+    // Rapid second click is guarded and does not send duplicate IPC call
+    fireEvent.click(addButton)
+    expect(addCustom).toHaveBeenCalledTimes(1)
+
+    // Complete in-flight mutation
+    resolveAdd({ id: 'custom:D:\\tools\\nu.exe', label: 'nu.exe' })
+    await waitFor(() => expect(addButton.disabled).toBe(true))
+
+    // Unlock on error
+    addCustom.mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'validation',
+      message: 'Invalid executable path',
+    })
+    fireEvent.change(input, { target: { value: 'D:\\invalid.exe' } })
+    expect(addButton.disabled).toBe(false)
+    fireEvent.click(addButton)
+    await screen.findByText('Invalid executable path')
+    expect(addButton.disabled).toBe(false)
+  })
+
+  it('blocks rapid double activation of save, disables button during mutation, and unlocks on error', async () => {
+    let resolveSet: () => void = () => {}
+    const set = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSet = resolve
+        }),
+    )
+    render(
+      <ShellTab
+        app={appMock({
+          detect: vi.fn().mockResolvedValue([
+            { id: 'default', label: 'PowerShell' },
+            { id: 'cmd', label: 'Command Prompt' },
+          ]),
+          set,
+        })}
+        projectId="p1"
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSelect)).toBeTruthy())
+    const select = screen.getByTestId(TEST_ID.settingsShellSelect)
+    const saveButton = screen.getByTestId(TEST_ID.settingsShellSave) as HTMLButtonElement
+    fireEvent.change(select, { target: { value: 'cmd' } })
+    expect(saveButton.disabled).toBe(false)
+
+    // First click initiates save
+    fireEvent.click(saveButton)
+    expect(set).toHaveBeenCalledTimes(1)
+    expect(saveButton.disabled).toBe(true)
+
+    // Rapid second click is guarded
+    fireEvent.click(saveButton)
+    expect(set).toHaveBeenCalledTimes(1)
+
+    // Complete save
+    resolveSet()
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSaved)).toBeTruthy())
+
+    // Unlock on error
+    set.mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'internal',
+      message: 'Write failed',
+    })
+    fireEvent.change(select, { target: { value: 'default' } })
+    expect(saveButton.disabled).toBe(false)
+    fireEvent.click(saveButton)
+    await screen.findByText('Write failed')
+    expect(saveButton.disabled).toBe(false)
+  })
 })

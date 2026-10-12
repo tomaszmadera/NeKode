@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AppApi,
   KanbanAdapterInfo,
@@ -131,6 +131,8 @@ export function KanbanSettings({
   const [savedState, setSavedState] = useState<'idle' | 'saved'>('idle')
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState<string | null>(null)
+  const busyRef = useRef(false)
+  const [busy, setBusy] = useState(false)
 
   // One scan + config load on tab entry. The component mounts fresh each time
   // the tab is selected, so a plain mount effect is the entry hook (AC1: a
@@ -226,52 +228,63 @@ export function KanbanSettings({
   }
 
   async function save(): Promise<void> {
-    if (projectId === null) return
+    if (projectId === null || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
     setFormError(null)
     setSavedState('idle')
-    if (adapterId === null) {
-      // Deselecting clears the binding; stored field values stay (Behaviour 7).
+    try {
+      if (adapterId === null) {
+        // Deselecting clears the binding; stored field values stay (Behaviour 7).
+        try {
+          await app.kanban.setConfig(projectId, { adapterId: null, values: {} })
+          onInvalidate?.(projectId)
+          setPersistedAdapterId(null)
+          setSavedState('saved')
+        } catch (cause) {
+          setFormError(
+            parseAppErrorPayload(cause)?.message ?? 'Failed to save the Kanban settings.',
+          )
+        }
+        return
+      }
+      const invalid = requiredError(schema, values, secretKeys)
+      if (invalid !== null) {
+        setFormError(invalid)
+        return
+      }
       try {
-        await app.kanban.setConfig(projectId, { adapterId: null, values: {} })
-        onInvalidate?.(projectId)
-        setPersistedAdapterId(null)
+        await app.kanban.setConfig(projectId, {
+          adapterId,
+          values: valuesPayload(schema, values),
+        })
+      } catch (cause) {
+        // A failed setConfig leaves the binding unsaved (Test stays gated).
+        setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the Kanban settings.')
+        return
+      }
+      // setConfig resolved, so main holds this binding: mark it persisted/testable
+      // now, independently of the reload below, which may fail without
+      // un-persisting anything (Behaviour 7–8 gating).
+      onInvalidate?.(projectId)
+      setPersistedAdapterId(adapterId)
+      setSavedState('saved')
+      try {
+        // Refresh the stored-secret view: a typed secret now reads "stored" and
+        // its plaintext is dropped from the form (never re-rendered).
+        const state = await fetchState()
+        applyState(state)
         setSavedState('saved')
       } catch (cause) {
-        setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the Kanban settings.')
+        // The binding is persisted; only the refresh failed. Surface it inline
+        // without reverting the saved/persisted state.
+        setFormError(
+          parseAppErrorPayload(cause)?.message ?? 'Failed to reload the Kanban settings.',
+        )
       }
-      return
-    }
-    const invalid = requiredError(schema, values, secretKeys)
-    if (invalid !== null) {
-      setFormError(invalid)
-      return
-    }
-    try {
-      await app.kanban.setConfig(projectId, {
-        adapterId,
-        values: valuesPayload(schema, values),
-      })
-    } catch (cause) {
-      // A failed setConfig leaves the binding unsaved (Test stays gated).
-      setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the Kanban settings.')
-      return
-    }
-    // setConfig resolved, so main holds this binding: mark it persisted/testable
-    // now, independently of the reload below, which may fail without
-    // un-persisting anything (Behaviour 7–8 gating).
-    onInvalidate?.(projectId)
-    setPersistedAdapterId(adapterId)
-    setSavedState('saved')
-    try {
-      // Refresh the stored-secret view: a typed secret now reads "stored" and
-      // its plaintext is dropped from the form (never re-rendered).
-      const state = await fetchState()
-      applyState(state)
-      setSavedState('saved')
-    } catch (cause) {
-      // The binding is persisted; only the refresh failed. Surface it inline
-      // without reverting the saved/persisted state.
-      setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to reload the Kanban settings.')
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
@@ -279,7 +292,7 @@ export function KanbanSettings({
     // Guard the exact rule the button state expresses: never test against an
     // unsaved binding (the displayed adapter must equal the persisted one) and
     // never start a second run while one is already in flight.
-    if (projectId === null || !bindingSaved || testState === 'running') return
+    if (projectId === null || !bindingSaved || testState === 'running' || busyRef.current) return
     setTestState('running')
     setTestMessage(null)
     try {
@@ -292,6 +305,9 @@ export function KanbanSettings({
   }
 
   async function browseDir(): Promise<void> {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
     setLoadError(null)
     const current = adaptersDir.trim()
     try {
@@ -313,6 +329,9 @@ export function KanbanSettings({
       setLoadError(
         parseAppErrorPayload(cause)?.message ?? 'Failed to change the adapters directory.',
       )
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
@@ -439,7 +458,8 @@ export function KanbanSettings({
               <div className="mt-3 flex items-center gap-2">
                 <button
                   type="button"
-                  className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
+                  disabled={busy}
+                  className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
                   data-testid={TEST_ID.settingsKanbanSave}
                   onClick={() => {
                     void save()
@@ -451,7 +471,7 @@ export function KanbanSettings({
                   type="button"
                   className="h-control rounded-md px-4 text-ink-secondary hover:bg-highlight hover:text-ink disabled:opacity-50"
                   data-testid={TEST_ID.settingsKanbanTest}
-                  disabled={!bindingSaved || testState === 'running'}
+                  disabled={!bindingSaved || testState === 'running' || busy}
                   onClick={() => {
                     void runTest()
                   }}
@@ -508,7 +528,8 @@ export function KanbanSettings({
             </p>
             <button
               type="button"
-              className="mt-2 h-control rounded-md bg-button px-3 text-ink hover:bg-button-hover"
+              disabled={busy}
+              className="mt-2 h-control rounded-md bg-button px-3 text-ink hover:bg-button-hover disabled:opacity-50"
               data-testid={TEST_ID.settingsKanbanDirBrowse}
               onClick={() => {
                 void browseDir()
