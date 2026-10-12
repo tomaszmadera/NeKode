@@ -153,7 +153,27 @@ export const MIGRATIONS: readonly Migration[] = [
   },
 ]
 
-export function runMigrations(db: Database.Database): number {
+export function assertValidMigrations(migrations: readonly Migration[]): void {
+  let prevVersion = 0
+  for (const migration of migrations) {
+    if (!Number.isInteger(migration.version) || migration.version <= prevVersion) {
+      throw new Error(
+        `Invalid migration sequence: version ${migration.version} is not strictly greater than previous version ${prevVersion}.`,
+      )
+    }
+    prevVersion = migration.version
+  }
+}
+
+// Assert at startup that the built-in MIGRATIONS queue is unique and strictly ascending.
+assertValidMigrations(MIGRATIONS)
+
+export function runMigrations(
+  db: Database.Database,
+  migrations: readonly Migration[] = MIGRATIONS,
+): number {
+  assertValidMigrations(migrations)
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
@@ -164,9 +184,20 @@ export function runMigrations(db: Database.Database): number {
   const appliedRows = db.prepare('SELECT version FROM schema_migrations').all() as Array<{
     version: number
   }>
+  const maxSupportedVersion = migrations.length > 0 ? migrations[migrations.length - 1].version : 0
+  const knownVersions = new Set(migrations.map((m) => m.version))
+
+  for (const row of appliedRows) {
+    if (!knownVersions.has(row.version) || row.version > maxSupportedVersion) {
+      throw new Error(
+        `Database was created by a newer version (schema version ${row.version} is not supported; latest supported is ${maxSupportedVersion}).`,
+      )
+    }
+  }
+
   const applied = new Set(appliedRows.map((row) => row.version))
 
-  for (const migration of MIGRATIONS) {
+  for (const migration of migrations) {
     if (applied.has(migration.version)) {
       continue
     }

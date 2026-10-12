@@ -119,4 +119,36 @@ describe('renderer dictation controller', () => {
     expect(h.recording.discard).toHaveBeenCalled()
     h.controller.dispose()
   })
+  it('tolerates api.cancel rejections across cancel, dispose, and failure paths without unhandled rejection', async () => {
+    const h = harness()
+    ;(h.api.cancel as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('cancel transport failed'),
+    )
+    await h.controller.start('chat')
+    // Cancelling while active: api.cancel rejection must not escape
+    await expect(h.controller.cancel()).resolves.toBeUndefined()
+    expect(h.states.at(-1)?.result?.outcome).toBe('cancelled')
+
+    // Disposing: void this.cancel() must not throw unhandled rejection
+    await h.controller.start('chat')
+    expect(() => h.controller.dispose()).not.toThrow()
+  })
+  it('maps api.start rejections to transport error rather than recording-failure', async () => {
+    const h = harness()
+    ;(h.api.start as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('start IPC failed'))
+    await h.controller.start('chat')
+    expect(h.states.at(-1)?.result?.outcome).toBe('failed')
+    expect(h.states.at(-1)?.result?.error).toBe('unreachable')
+    expect(h.recorder.start).not.toHaveBeenCalled()
+    h.controller.dispose()
+  })
+  it('maps api.audio rejections to transport error rather than recording-failure', async () => {
+    const h = harness()
+    ;(h.api.audio as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('audio IPC failed'))
+    await h.controller.start('chat')
+    await h.controller.stop()
+    expect(h.states.at(-1)?.result?.outcome).toBe('failed')
+    expect(h.states.at(-1)?.result?.error).toBe('unreachable')
+    h.controller.dispose()
+  })
 })

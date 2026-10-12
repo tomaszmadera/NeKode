@@ -387,6 +387,31 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
     expect(isTabSelected('README.md')).toBe(true)
   })
 
+  it('clamps context menu coordinates when opened near viewport edges', async () => {
+    await openTwoTabs()
+    const originalInnerWidth = window.innerWidth
+    const originalInnerHeight = window.innerHeight
+    try {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+
+      fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')), {
+        clientX: 790,
+        clientY: 590,
+      })
+      const menu = await screen.findByTestId(TEST_ID.tabContextMenu)
+      // Clamped against 800 - 200 - 8 = 592, 600 - 120 - 8 = 472
+      expect(Number.parseInt(menu.style.left, 10)).toBeLessThanOrEqual(592)
+      expect(Number.parseInt(menu.style.top, 10)).toBeLessThanOrEqual(472)
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        value: originalInnerHeight,
+      })
+    }
+  })
+
   it('middle click closes the tab without changing the selection', async () => {
     await openTwoTabs()
     // Active = notes.txt; middle click closes the inactive README.md.

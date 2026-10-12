@@ -1,7 +1,8 @@
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
+import { clampMenuPosition } from '../../lib/menu-position'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { KANBAN_TAB, type TabId, TERMINAL_TAB } from './tabs-session'
 
@@ -263,6 +264,23 @@ function TabContextMenuOverlay({
   onClose: () => void
   onCloseFile: (relativePath: string) => void
 }): React.JSX.Element {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const position = clampMenuPosition(state.x, state.y, { menuWidth: 200, menuHeight: 120 })
+
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const refined = clampMenuPosition(state.x, state.y, {
+        menuWidth: rect.width,
+        menuHeight: rect.height,
+      })
+      el.style.left = `${refined.left}px`
+      el.style.top = `${refined.top}px`
+    }
+  }, [state.x, state.y])
+
   const copyLabel = fileName(state.relativePath)
   const absolutePath =
     projectRoot === null ? null : absoluteFilePath(projectRoot, state.relativePath)
@@ -288,8 +306,9 @@ function TabContextMenuOverlay({
       }}
     >
       <div
+        ref={menuRef}
         className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
-        style={{ left: state.x, top: state.y }}
+        style={{ left: position.left, top: position.top }}
         data-testid={TEST_ID.tabContextMenu}
       >
         <button

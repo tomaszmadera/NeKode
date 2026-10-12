@@ -8,6 +8,7 @@ import {
   AdapterHost,
   type AdapterHostError,
   type AdapterRequest,
+  killTree,
   MAX_STDOUT_BYTES,
 } from './adapter-host'
 
@@ -333,8 +334,66 @@ describe('AdapterHost', () => {
     const adapter = fixture('noisy.cjs', noisy)
     const host = new AdapterHost()
     await expect(host.invoke(adapter, request)).rejects.toMatchObject({
-      message: expect.stringContaining('no output'),
+      kind: 'protocol',
+      message: expect.stringMatching(/no output.*Adapter stderr tail: adapter diagnostics: boom/),
     })
+  })
+
+  it('appends stderr tail to invalid JSON protocol errors', async () => {
+    const noisy = `console.error('stderr diagnostic details'); console.log('bad json'); process.exit(0)`
+    const adapter = fixture('noisy-json.cjs', noisy)
+    const host = new AdapterHost()
+    await expect(host.invoke(adapter, request)).rejects.toMatchObject({
+      kind: 'protocol',
+      message: expect.stringMatching(
+        /not valid JSON.*Adapter stderr tail: stderr diagnostic details/,
+      ),
+    })
+  })
+
+  it('appends stderr tail to non-object response protocol errors', async () => {
+    const noisy = `console.error('stderr diagnostic details'); console.log(JSON.stringify([1, 2, 3])); process.exit(0)`
+    const adapter = fixture('noisy-array.cjs', noisy)
+    const host = new AdapterHost()
+    await expect(host.invoke(adapter, request)).rejects.toMatchObject({
+      kind: 'protocol',
+      message: expect.stringMatching(
+        /must be a JSON object.*Adapter stderr tail: stderr diagnostic details/,
+      ),
+    })
+  })
+
+  it('appends stderr tail to failure response missing error.message', async () => {
+    const noisy = `console.error('stderr diagnostic details'); console.log(JSON.stringify({ ok: false, error: {} })); process.exit(1)`
+    const adapter = fixture('noisy-fail-shape.cjs', noisy)
+    const host = new AdapterHost()
+    await expect(host.invoke(adapter, request)).rejects.toMatchObject({
+      kind: 'protocol',
+      message: expect.stringMatching(
+        /must carry error\.message.*Adapter stderr tail: stderr diagnostic details/,
+      ),
+    })
+  })
+
+  it('appends stderr tail to response missing ok boolean', async () => {
+    const noisy = `console.error('stderr diagnostic details'); console.log(JSON.stringify({ other: true })); process.exit(0)`
+    const adapter = fixture('noisy-no-ok.cjs', noisy)
+    const host = new AdapterHost()
+    await expect(host.invoke(adapter, request)).rejects.toMatchObject({
+      kind: 'protocol',
+      message: expect.stringMatching(
+        /must carry ok: true or ok: false.*Adapter stderr tail: stderr diagnostic details/,
+      ),
+    })
+  })
+
+  it('drains buffered stdout completely before resolving when adapter exits immediately', async () => {
+    const largeData = 'a'.repeat(64 * 1024)
+    const script = `process.stdout.write(JSON.stringify({ ok: true, data: '${largeData}' })); process.exit(0)`
+    const adapter = fixture('drain.cjs', script)
+    const host = new AdapterHost()
+    const result = await host.invoke<string>(adapter, request)
+    expect(result).toBe(largeData)
   })
 
   it('uses the default 30s timeout when none is given', () => {
@@ -342,5 +401,62 @@ describe('AdapterHost', () => {
     // Default asserted indirectly via construction without error; the exact
     // value is exported for the service and documented in the spec.
     expect(() => host).not.toThrow()
+  })
+
+  describe('killTree', () => {
+    it('attaches a no-op error listener and unrefs spawned taskkill child', () => {
+      const listeners: Record<string, ((...args: unknown[]) => void)[]> = {}
+      let unrefCalled = false
+      const fakeChild = {
+        pid: 1234,
+        exitCode: null,
+      } as unknown as import('node:child_process').ChildProcess
+
+      const fakeSpawner = ((_command: string, _args: string[]) => {
+        const killer = {
+          on: (event: string, handler: (...args: unknown[]) => void) => {
+            listeners[event] = listeners[event] || []
+            listeners[event].push(handler)
+            return killer
+          },
+          unref: () => {
+            unrefCalled = true
+            return killer
+          },
+        }
+        return killer
+      }) as unknown as typeof spawn
+
+      const origPlatform = process.platform
+      try {
+        Object.defineProperty(process, 'platform', { value: 'win32' })
+        killTree(fakeChild, fakeSpawner)
+        expect(listeners.error).toBeDefined()
+        expect(listeners.error.length).toBeGreaterThan(0)
+        expect(unrefCalled).toBe(true)
+        expect(() => listeners.error[0](new Error('spawn ENOENT'))).not.toThrow()
+      } finally {
+        Object.defineProperty(process, 'platform', { value: origPlatform })
+      }
+    })
+
+    it('handles synchronous spawn error during killTree without throwing', () => {
+      const fakeChild = {
+        pid: 1234,
+        exitCode: null,
+      } as unknown as import('node:child_process').ChildProcess
+
+      const throwingSpawner = (() => {
+        throw new Error('Immediate spawn failure')
+      }) as unknown as typeof spawn
+
+      const origPlatform = process.platform
+      try {
+        Object.defineProperty(process, 'platform', { value: 'win32' })
+        expect(() => killTree(fakeChild, throwingSpawner)).not.toThrow()
+      } finally {
+        Object.defineProperty(process, 'platform', { value: origPlatform })
+      }
+    })
   })
 })

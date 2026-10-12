@@ -1,6 +1,14 @@
 import type { DictationError, DictationResult } from '../../../../shared/dictation-contract'
 import type { AppApi } from '../../../../shared/ipc-contract'
+import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { type DictationRecorder, type Recording, RecordingFailure } from './recorder'
+
+function transportError(error: unknown): DictationError {
+  const payload = parseAppErrorPayload(error)
+  if (payload?.code === 'timeout') return 'timeout'
+  if (payload?.code === 'auth') return 'auth-failed'
+  return 'unreachable'
+}
 
 export interface DictationView {
   state: 'idle' | 'preparing' | 'recording' | 'transcribing'
@@ -48,7 +56,7 @@ export class DictationController {
       const started = await this.api.start(chatId, retrySessionId)
       active.id = started.sessionId
       if (this.active !== active) {
-        if (active.id) await this.api.cancel(active.id)
+        if (active.id) await this.api.cancel(active.id).catch(() => undefined)
         return
       }
       if (started.error) {
@@ -86,7 +94,7 @@ export class DictationController {
             ? 'recording-failure'
             : active.id
               ? 'microphone-unavailable'
-              : 'recording-failure',
+              : transportError(error),
         )
     }
   }
@@ -95,19 +103,26 @@ export class DictationController {
     const active = this.active
     if (!active?.id || !active.recorder || this.view.state !== 'recording') return
     this.update({ state: 'preparing', result: null })
+    let take: { wav: ArrayBuffer; noSpeech: boolean }
     try {
-      const take = await active.recorder.stop()
+      take = await active.recorder.stop()
       active.recorder = null
-      if (this.active !== active) return
-      if (take.noSpeech) {
-        this.finish(this.result(active, 'no-speech'))
-        await this.api.cancel(active.id)
-        return
-      }
-      this.update({ state: 'transcribing', result: null })
-      await this.api.audio(active.id, take.wav)
     } catch {
+      active.recorder = null
       if (this.active === active) await this.fail(active, 'recording-failure')
+      return
+    }
+    if (this.active !== active) return
+    if (take.noSpeech) {
+      this.finish(this.result(active, 'no-speech'))
+      await this.api.cancel(active.id).catch(() => undefined)
+      return
+    }
+    this.update({ state: 'transcribing', result: null })
+    try {
+      await this.api.audio(active.id, take.wav)
+    } catch (error) {
+      if (this.active === active) await this.fail(active, transportError(error))
     }
   }
 
@@ -115,9 +130,9 @@ export class DictationController {
     const active = this.active
     if (active) {
       this.finish(this.result(active, 'cancelled'))
-      if (active.id) await this.api.cancel(active.id)
+      if (active.id) await this.api.cancel(active.id).catch(() => undefined)
     } else if (this.view.result?.retryable) {
-      await this.api.cancel(this.view.result.sessionId)
+      await this.api.cancel(this.view.result.sessionId).catch(() => undefined)
       this.update({ state: 'idle', result: null })
     }
   }
@@ -130,7 +145,7 @@ export class DictationController {
 
   private async fail(active: Active, error: DictationError): Promise<void> {
     this.finish({ ...this.result(active, 'failed'), error })
-    if (active.id) await this.api.cancel(active.id)
+    if (active.id) await this.api.cancel(active.id).catch(() => undefined)
   }
 
   private result(active: Active, outcome: DictationResult['outcome']): DictationResult {

@@ -161,6 +161,8 @@ export function ChatTerminal({
   // Right-click menu state; null = closed. Coordinates are viewport-relative
   // (clientX/clientY), matching the fixed-position overlay.
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const contextMenuRef = useRef<{ x: number; y: number } | null>(null)
+  contextMenuRef.current = contextMenu
   // Latest PTY writer for the prompt input below the terminal (assigned inside
   // the mount effect; null outside it). A submission is Enter semantics: the
   // line plus CR goes to the PTY and the Ctrl+D prompt base is re-collected
@@ -448,6 +450,11 @@ export function ChatTerminal({
     // SelectAll binding followed by Backspace, which removes the whole input
     // even when the cursor is in the middle or the line wraps.
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+      // While context menu is open, swallow any key arriving at the terminal view
+      // so keystrokes do not leak into the PTY (NEKODE-60 / review 5.2).
+      if (contextMenuRef.current !== null) {
+        return false
+      }
       // The bottom-panel chord must never be written to this PTY, including
       // while the terminal textarea has focus (spec Behaviour 3).
       if (isBottomPanelChord(event)) {

@@ -14,7 +14,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_module(name, path):
-    spec = importlib.util.spec_from_file_location(name, ROOT / path)
+    target = ROOT / path
+    if not target.exists():
+        return None
+    spec = importlib.util.spec_from_file_location(name, target)
+    if spec is None or spec.loader is None:
+        return None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -22,6 +27,7 @@ def load_module(name, path):
 
 ADAPTER = load_module("plane_adapter", "adapters/plane/plane_adapter.py")
 CLI = load_module("kanban_cli", ".agents/skills/kanban/scripts/kanban_cli.py")
+MODULES = [m for m in (ADAPTER, CLI) if m is not None]
 
 
 class UpdatePriorityTests(unittest.TestCase):
@@ -52,12 +58,12 @@ class DescriptionTextTests(unittest.TestCase):
             'Plan & cel\n\nPierwsza\ndruga.\n\n- Sprawdź opis\n'
             '- Dokumentacja (https://example.com/a?x=1&y=2)\n\n3. Uruchom\n4. Zakończ'
         )
-        for module in (ADAPTER, CLI):
+        for module in MODULES:
             with self.subTest(module=module.__name__):
                 self.assertEqual(module.description_of({"description_html": source}), expected)
 
     def test_html_takes_precedence_over_flattened_text(self):
-        for module in (ADAPTER, CLI):
+        for module in MODULES:
             with self.subTest(module=module.__name__):
                 self.assertEqual(module.description_of({
                     "description_html": "<p>One</p><p>Two</p>",
@@ -65,7 +71,7 @@ class DescriptionTextTests(unittest.TestCase):
                 }), "One\n\nTwo")
 
     def test_plain_text_is_preserved_and_empty_description_is_null(self):
-        for module in (ADAPTER, CLI):
+        for module in MODULES:
             for key in ("description_stripped", "description"):
                 with self.subTest(module=module.__name__, key=key):
                     self.assertEqual(module.description_of({key: "Use <T> & keep\nlines"}),
@@ -74,6 +80,7 @@ class DescriptionTextTests(unittest.TestCase):
                 with self.subTest(module=module.__name__, issue=issue):
                     self.assertIsNone(module.description_of(issue))
 
+    @unittest.skipIf(CLI is None, "kanban_cli harness script is not available in clean checkouts")
     def test_cli_get_prints_text_but_json_preserves_api_response(self):
         issue = {"description_html": "<p>One &amp; two</p><p>Next</p>"}
         for as_json in (False, True):
@@ -96,7 +103,7 @@ class DescriptionTextTests(unittest.TestCase):
             '<p><a href="https://example.com">https://example.com</a> '
             '<a href="/path"></a></p>'
         )
-        for module in (ADAPTER, CLI):
+        for module in MODULES:
             with self.subTest(module=module.__name__):
                 self.assertEqual(module.description_of({"description_html": source}),
                                  "- Parent\n  - Child\n- Next\n\nhttps://example.com /path")
@@ -106,14 +113,14 @@ class DescriptionTextTests(unittest.TestCase):
             '<style>.x {color: red}</style><script>alert(1)</script>'
             '<p>Use &lt;T&gt; &amp; &quot;text&quot;.</p><!-- comment -->'
         )
-        for module in (ADAPTER, CLI):
+        for module in MODULES:
             with self.subTest(module=module.__name__):
                 self.assertEqual(module.description_of({"description_html": source}),
                                  'Use <T> & "text".')
 
     def test_write_conversion_round_trip(self):
         text = "First & <T>\nSecond line\n\nNext paragraph"
-        for module in (ADAPTER, CLI):
+        for module in MODULES:
             with self.subTest(module=module.__name__):
                 self.assertEqual(module.description_of({"description_html": module.text_to_html(text)}),
                                  text)
@@ -134,7 +141,7 @@ class DescriptionTextTests(unittest.TestCase):
 
     def test_code_blocks_keep_indentation_and_blank_lines(self):
         text = "  if x:\n    run()\n\n  done()"
-        for module in (ADAPTER, CLI):
+        for module in MODULES:
             with self.subTest(module=module.__name__):
                 self.assertEqual(module.description_of({"description_html": f"<pre><code>{text}</code></pre>"}),
                                  text)

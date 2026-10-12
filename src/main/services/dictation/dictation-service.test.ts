@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process'
+import * as fs from 'node:fs'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -92,6 +94,32 @@ describe('dictation sessions', () => {
     expect(() => new DictationService(client, directory, concurrentSweep).shutdown()).not.toThrow()
     expect(concurrentSweep).toHaveBeenCalledOnce()
     expect(existsSync(owner)).toBe(false)
+  })
+  it('skips a stale owner directory whose sweep fails with non-ENOENT error', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'nekode-dictation-test-'))
+    directories.push(directory)
+    const owner = join(directory, '101-12345678-1234-1234-1234-123456789abc')
+    mkdirSync(owner)
+    writeFileSync(join(owner, '12345678-1234-1234-1234-123456789abc.wav'), Buffer.from(wav()))
+    const client = {
+      getSettings: () => ({ enabled: true }),
+      status: () => ({ state: 'operational' }),
+    } as OpenWhisprClient
+    if (process.platform === 'win32') {
+      execSync(`icacls "${owner}" /deny *S-1-1-0:(RD)`, { stdio: 'ignore' })
+    } else {
+      fs.chmodSync(owner, 0)
+    }
+    try {
+      expect(() => new DictationService(client, directory, () => true).shutdown()).not.toThrow()
+      expect(existsSync(owner)).toBe(true)
+    } finally {
+      if (process.platform === 'win32') {
+        execSync(`icacls "${owner}" /remove:d *S-1-1-0`, { stdio: 'ignore' })
+      } else {
+        fs.chmodSync(owner, 0o755)
+      }
+    }
   })
   it('does not sweep a recording owned by another live service', async () => {
     let resolve!: (value: TranscriptionResponse) => void

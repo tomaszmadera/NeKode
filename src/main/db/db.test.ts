@@ -5,7 +5,7 @@ import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AppStateService } from '../services/app-state-service'
 import { openDatabase } from './connection'
-import { MIGRATIONS, runMigrations } from './migrations'
+import { assertValidMigrations, MIGRATIONS, runMigrations } from './migrations'
 
 const tempDirs: string[] = []
 
@@ -97,6 +97,56 @@ describe('runMigrations', () => {
       // The chat name is a display label; duplicates within a project are
       // allowed (spec Business rules, identity is the id).
       expect(() => insertChat.run('t2', 'p1', 'PowerShell', '2026-01-01T00:00:01Z')).not.toThrow()
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('migration sequence and downgrade safety', () => {
+  it('validates that MIGRATIONS versions are unique and strictly ascending', () => {
+    expect(() => assertValidMigrations(MIGRATIONS)).not.toThrow()
+
+    expect(() =>
+      assertValidMigrations([
+        { version: 1, up: () => {} },
+        { version: 1, up: () => {} },
+      ]),
+    ).toThrow(/strictly greater/i)
+
+    expect(() =>
+      assertValidMigrations([
+        { version: 2, up: () => {} },
+        { version: 1, up: () => {} },
+      ]),
+    ).toThrow(/strictly greater/i)
+
+    expect(() => assertValidMigrations([{ version: 0, up: () => {} }])).toThrow(/strictly greater/i)
+  })
+
+  it('fails fast when the database was created by a newer version (downgrade)', () => {
+    const db = openDatabase(':memory:')
+    try {
+      db.exec(`
+        CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+        INSERT INTO schema_migrations (version, applied_at) VALUES (1, '2026-01-01T00:00:00Z');
+        INSERT INTO schema_migrations (version, applied_at) VALUES (999, '2026-01-01T00:00:00Z');
+      `)
+      expect(() => runMigrations(db)).toThrow(/database was created by a newer version/i)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rejects execution when given an invalid migration sequence', () => {
+    const db = openDatabase(':memory:')
+    try {
+      expect(() =>
+        runMigrations(db, [
+          { version: 2, up: () => {} },
+          { version: 1, up: () => {} },
+        ]),
+      ).toThrow(/strictly greater/i)
     } finally {
       db.close()
     }

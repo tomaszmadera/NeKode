@@ -71,17 +71,8 @@ export class DictationService {
             if (generatedWav.test(file) && lstatSync(path).isFile()) unlinkSync(path)
           }
           if (readdirSync(directory).length === 0) rmdirSync(directory)
-        } catch (error) {
-          // Another startup can sweep this same exited owner after discovery.
-          if (
-            !(
-              typeof error === 'object' &&
-              error !== null &&
-              'code' in error &&
-              error.code === 'ENOENT'
-            )
-          )
-            throw error
+        } catch {
+          // Stale owner directory cleanup is best-effort. Failures (e.g. concurrent ENOENT, EACCES) skip that entry.
         }
       }
       mkdirSync(this.directory)

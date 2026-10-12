@@ -21,6 +21,7 @@
     "build:unpack": "pnpm run build && electron-builder --dir",
     "build:win": "pnpm run build && electron-builder --win",
     "test": "vitest run",
+    "test:adapters": "python -m unittest discover -s adapters/plane -p test_description_text.py",
     "test:watch": "vitest",
     "verify": "pnpm run lint && pnpm run typecheck && pnpm run test"
   },

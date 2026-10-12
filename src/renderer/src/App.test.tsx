@@ -938,6 +938,38 @@ describe('action row and settings', () => {
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
   })
 
+  it('cancels pending split-write CR when chat session is torn down before gap expires', async () => {
+    try {
+      window.NEKODE_PROMPT_SUBMIT_GAP_MS = 100
+      vi.mocked(app.state.get).mockImplementation(async (key) => {
+        if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+        if (key === APP_STATE_KEY.selectedChatId) return 't1'
+        if (key === APP_STATE_KEY.autoSendHandoffResume) return '1'
+        return null
+      })
+      vi.mocked(app.projects.list).mockResolvedValue([projectA])
+      vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+      const view = render(<App app={app} />)
+      await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+      await waitFor(() =>
+        expect(
+          (screen.getByRole('button', { name: 'Handoff' }) as HTMLButtonElement).disabled,
+        ).toBe(false),
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
+      await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff'))
+      expect(app.terminals.write).not.toHaveBeenCalledWith('t1', '\r')
+
+      // Unmounting before the submit gap must cancel the pending CR timer:
+      view.unmount()
+
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      expect(app.terminals.write).not.toHaveBeenCalledWith('t1', '\r')
+    } finally {
+      window.NEKODE_PROMPT_SUBMIT_GAP_MS = 0
+    }
+  })
+
   it('resume picker lists configured handoffs lazily and pastes the selected path', async () => {
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
@@ -2839,6 +2871,33 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
 
     // Leaving the tile entirely still hides it.
     fireEvent.mouseOut(row, { relatedTarget: document.body })
+    expect(closeButton.className).toContain('hidden')
+  })
+
+  it('reveals close control on row focus and keeps it revealed when focus shifts to close control (review 7.4)', async () => {
+    await renderWithChats([chatOne, chatTwo], 't1')
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+
+    const row = screen.getByTestId(testIdFor.chatRow('t1'))
+    const closeButton = screen.getByTestId(testIdFor.chatClose('t1'))
+    const li = row.closest('li')
+    expect(li).not.toBeNull()
+    if (li === null) return
+
+    // Verify DOM order: the row button precedes the close button so Tab naturally reaches X next.
+    expect(row.compareDocumentPosition(closeButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // Focus row button: reveals close control.
+    fireEvent.focus(row)
+    expect(closeButton.className).toContain('flex')
+
+    // Shift focus to close control inside the same li: remains revealed.
+    fireEvent.blur(row, { relatedTarget: closeButton })
+    fireEvent.focus(closeButton)
+    expect(closeButton.className).toContain('flex')
+
+    // Shift focus outside the li: hides close control.
+    fireEvent.blur(li, { relatedTarget: document.body })
     expect(closeButton.className).toContain('hidden')
   })
 

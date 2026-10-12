@@ -1479,6 +1479,17 @@ describe('ChatTerminal lifecycle', () => {
       fireEvent.click(screen.getByTestId(TEST_ID.terminalContextSelectAll))
       expect(terminal.selectAll).toHaveBeenCalled()
       expect(screen.queryByTestId(TEST_ID.terminalContextMenu)).toBeNull()
+
+      // Escape dismisses the context menu without delivering keys to the PTY
+      fireEvent.contextMenu(screen.getByTestId('terminal-canvas-t1'))
+      expect(screen.getByTestId(TEST_ID.terminalContextMenu)).toBeTruthy()
+      expect(pressKey(terminal, { key: 'a' })).toBe(false)
+      const aEvent = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+      window.dispatchEvent(aEvent)
+      expect(aEvent.defaultPrevented).toBe(true)
+
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(screen.queryByTestId(TEST_ID.terminalContextMenu)).toBeNull()
     })
   })
 

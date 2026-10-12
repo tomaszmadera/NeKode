@@ -43,6 +43,15 @@ describe('bounded desktop helper protocol', () => {
     expect(input()).toBe('')
     child.emit('close', 1)
   })
+  it('releases the serialization latch on child error before GO even if close is never emitted', async () => {
+    const { child, sender } = harness()
+    const first = sender.send('123')
+    child.emit('error', new Error('spawn failed'))
+    await expect(first).rejects.toThrow('could not start')
+    // Without close emitted, subsequent send must not fail with cleanup latch conflict
+    const second = sender.send('123')
+    await expect(second).rejects.not.toThrow('cleanup')
+  })
   it('sends only fixed arguments, waits for READY and completes only after cleanup/exit', async () => {
     const { child, sender, input, launch } = harness()
     const result = sender.send('123')
