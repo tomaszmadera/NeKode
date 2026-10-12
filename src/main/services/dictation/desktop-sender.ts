@@ -93,6 +93,12 @@ export class DesktopShortcutSender {
       }
       let go = false
       let settled = false
+      let activeReleased = false
+      const releaseActive = () => {
+        if (activeReleased) return
+        activeReleased = true
+        this.active = false
+      }
       let buffer = ''
       let startupStderr = ''
       let outputBytes = 0
@@ -165,15 +171,16 @@ export class DesktopShortcutSender {
       child.stdin.on('error', () =>
         abort(go ? uncertain : 'The shortcut helper could not initialize.'),
       )
-      child.on('error', () =>
+      child.on('error', () => {
+        if (!go) releaseActive()
         abort(
           go
             ? uncertain
             : 'The Windows shortcut helper could not start. Repair your NeKode installation.',
-        ),
-      )
+        )
+      })
       child.once('close', (code) => {
-        this.active = false
+        releaseActive()
         if (code === 0 && outcome === 'OK') finish()
         else
           finish(

@@ -78,15 +78,27 @@ export function toAppError(error: unknown, channel: string): AppError {
  * child (adapters may shell out), so taskkill /T /F takes the tree. Elsewhere
  * SIGKILL on the direct child; adapters are plain scripts without groups.
  */
-function killTree(child: ChildProcess): void {
+export function killTree(child: ChildProcess, spawner: typeof spawn = spawn): void {
   if (child.pid === undefined || child.exitCode !== null) {
     return
   }
   if (process.platform === 'win32') {
-    spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
+    try {
+      const killer = spawner('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+      })
+      killer.on('error', () => {})
+      killer.unref?.()
+    } catch {
+      // Ignore synchronous spawn failure during process tree cleanup.
+    }
     return
   }
-  child.kill('SIGKILL')
+  try {
+    child.kill('SIGKILL')
+  } catch {
+    // Ignore synchronous kill failure during process tree cleanup.
+  }
 }
 
 function stderrTail(stderr: string): string {
@@ -97,17 +109,17 @@ function stderrTail(stderr: string): string {
   return ` Adapter stderr tail: ${cleaned.slice(-STDERR_TAIL_CHARS)}`
 }
 
-function parseSingleJson(text: string): unknown {
+function parseSingleJson(text: string, stderr: string): unknown {
   const trimmed = text.trim()
   if (trimmed.length === 0) {
-    throw new AdapterHostError('protocol', 'Adapter produced no output.')
+    throw new AdapterHostError('protocol', `Adapter produced no output.${stderrTail(stderr)}`)
   }
   try {
     // JSON.parse accepts exactly one JSON value (trailing garbage throws),
     // which enforces the "no second object" rule with the whitespace slack.
     return JSON.parse(trimmed)
   } catch {
-    throw new AdapterHostError('protocol', 'Adapter output is not valid JSON.')
+    throw new AdapterHostError('protocol', `Adapter output is not valid JSON.${stderrTail(stderr)}`)
   }
 }
 
@@ -168,14 +180,14 @@ export class AdapterHost {
       stdoutBytes += chunk.length
       if (stdoutBytes > MAX_STDOUT_BYTES) {
         oversized = true
-        killTree(child)
+        killTree(child, this.#spawn)
         return
       }
       try {
         stdout += decoder.decode(chunk, { stream: true })
       } catch {
         invalidEncoding = true
-        killTree(child)
+        killTree(child, this.#spawn)
       }
     })
     let stderr = ''
@@ -190,7 +202,7 @@ export class AdapterHost {
     // while the framing stays exactly one JSON object followed by EOF.
     const stdin = child.stdin
     if (stdin === null) {
-      killTree(child)
+      killTree(child, this.#spawn)
       throw new AdapterHostError('protocol', `Adapter "${adapter.id}" stdin is unavailable.`)
     }
     let stdinError: Error | null = null
@@ -207,11 +219,11 @@ export class AdapterHost {
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
-      killTree(child)
+      killTree(child, this.#spawn)
     }, this.#timeoutMs)
 
     const exitCode = await new Promise<number>((resolve) => {
-      child.once('exit', (code) => resolve(code ?? -1))
+      child.once('close', (code) => resolve(code ?? -1))
       child.once('error', () => resolve(-1))
     })
     clearTimeout(timer)
@@ -270,9 +282,12 @@ export class AdapterHost {
       )
     }
 
-    const parsed = parseSingleJson(stdout)
+    const parsed = parseSingleJson(stdout, stderr)
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new AdapterHostError('protocol', 'Adapter response must be a JSON object.')
+      throw new AdapterHostError(
+        'protocol',
+        `Adapter response must be a JSON object.${stderrTail(stderr)}`,
+      )
     }
     const response = parsed as { ok?: unknown; data?: unknown; error?: unknown }
 
@@ -299,7 +314,10 @@ export class AdapterHost {
         error === null ||
         typeof (error as { message?: unknown }).message !== 'string'
       ) {
-        throw new AdapterHostError('protocol', 'Adapter failure response must carry error.message.')
+        throw new AdapterHostError(
+          'protocol',
+          `Adapter failure response must carry error.message.${stderrTail(stderr)}`,
+        )
       }
       const code = (error as { code?: unknown }).code
       const failureCode = FAILURE_CODES.includes(code as AdapterFailureCode)
@@ -308,6 +326,9 @@ export class AdapterHost {
       throw new AdapterError(failureCode, (error as { message: string }).message)
     }
 
-    throw new AdapterHostError('protocol', 'Adapter response must carry ok: true or ok: false.')
+    throw new AdapterHostError(
+      'protocol',
+      `Adapter response must carry ok: true or ok: false.${stderrTail(stderr)}`,
+    )
   }
 }

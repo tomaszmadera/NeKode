@@ -5,6 +5,8 @@ import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electro
 import nekodeIcon from '../../resources/icon.ico?asset'
 import { IPC_CHANNEL } from '../shared/ipc-contract'
 import { isSafeExternalUrl } from '../shared/safe-url'
+import { bootstrap } from './bootstrap'
+import { broadcastToTrustedWindows } from './ipc/broadcast'
 import { registerAppIpcHandlers } from './ipc/ipc-handlers'
 import { allowsMicrophone, allowsRendererClipboard } from './security/media-permissions'
 import { isTrustedRendererUrl } from './security/sender-guard'
@@ -127,96 +129,119 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.nekode.app')
+app
+  .whenReady()
+  .then(() =>
+    bootstrap(
+      async () => {
+        electronApp.setAppUserModelId('com.nekode.app')
 
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
-  })
+        app.on('browser-window-created', (_, window) => {
+          optimizer.watchWindowShortcuts(window)
+        })
 
-  const desktopSender = new DesktopShortcutSender(
-    desktopHelperPath(app.isPackaged, app.getAppPath(), process.resourcesPath),
+        const desktopSender = new DesktopShortcutSender(
+          desktopHelperPath(app.isPackaged, app.getAppPath(), process.resourcesPath),
+        )
+        const services = createServices({
+          desktopShortcut: (handle) => desktopSender.send(handle),
+          dbPath: join(app.getPath('userData'), 'nekode.db'),
+          userDataPath: app.getPath('userData'),
+          safeStorage,
+          // The single OS-facing action of the project-files feature (spec
+          // Behaviour 11): open with the OS default application. '' = success.
+          openExternal: (absolutePath) => shell.openPath(absolutePath),
+          showInFolder: (absolutePath) => {
+            shell.showItemInFolder(absolutePath)
+          },
+          trashItem: (absolutePath) => shell.trashItem(absolutePath),
+          // Native directory picker behind dialogs:pickDirectory (spec
+          // handoff-resume-flow Data/API). Null = user cancel.
+          pickDirectory: async (defaultPath) => {
+            const result = await dialog.showOpenDialog({
+              properties: ['openDirectory'],
+              title: 'Choose Directory',
+              defaultPath: defaultPath ?? undefined,
+            })
+            if (result.canceled || result.filePaths.length === 0) {
+              return null
+            }
+            return result.filePaths[0]
+          },
+        })
+        registerAppIpcHandlers(ipcMain, services, {
+          desktopWindow: (event) => {
+            const window = BrowserWindow.fromWebContents(event.sender)
+            if (!window || window.isDestroyed() || !window.isFocused()) return null
+            const handle = window.getNativeWindowHandle()
+            return (
+              handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE())
+            ).toString()
+          },
+          trustedRendererUrls: getTrustedRendererUrls(),
+          // Terminal data/exit events go to every trusted window's webContents.
+          broadcast: (channel, chatId, payload) => {
+            broadcastToTrustedWindows(
+              BrowserWindow.getAllWindows(),
+              getTrustedRendererUrls(),
+              channel,
+              chatId,
+              payload,
+            )
+          },
+          broadcastDictation: (result) => {
+            broadcastToTrustedWindows(
+              BrowserWindow.getAllWindows(),
+              getTrustedRendererUrls(),
+              IPC_CHANNEL.dictationResult,
+              result,
+            )
+          },
+        })
+
+        // App-quit PTY teardown (spec Behaviour 8): terminate every chat terminal
+        // so no orphaned pwsh/powershell processes outlive the app. Quit is NOT a
+        // chat exit: chat rows are never deleted here, and terminateAll suppresses
+        // exit events so the renderer's chat-close flow cannot run while quitting.
+        registerShutdown(
+          app,
+          (reportTimeout) => services.terminals.shutdown(reportTimeout),
+          () => services.dictation.shutdown(),
+          () => {
+            console.error('[terminal] application shutdown did not complete')
+            dialog.showErrorBox(
+              'NeKode could not close',
+              'Terminal shutdown did not complete. NeKode is still running.',
+            )
+          },
+          {
+            stopActions: () => services.actions.stopAll(),
+            closeDatabase: () => services.closeDatabase?.(),
+          },
+        )
+
+        createWindow()
+
+        app.on('activate', () => {
+          if (BrowserWindow.getAllWindows().length === 0) {
+            createWindow()
+          }
+        })
+      },
+      {
+        showErrorBox: (title, content) => dialog.showErrorBox(title, content),
+        quit: () => app.quit(),
+      },
+    ),
   )
-  const services = createServices({
-    desktopShortcut: (handle) => desktopSender.send(handle),
-    dbPath: join(app.getPath('userData'), 'nekode.db'),
-    userDataPath: app.getPath('userData'),
-    safeStorage,
-    // The single OS-facing action of the project-files feature (spec
-    // Behaviour 11): open with the OS default application. '' = success.
-    openExternal: (absolutePath) => shell.openPath(absolutePath),
-    showInFolder: (absolutePath) => {
-      shell.showItemInFolder(absolutePath)
-    },
-    trashItem: (absolutePath) => shell.trashItem(absolutePath),
-    // Native directory picker behind dialogs:pickDirectory (spec
-    // handoff-resume-flow Data/API). Null = user cancel.
-    pickDirectory: async (defaultPath) => {
-      const result = await dialog.showOpenDialog({
-        properties: ['openDirectory'],
-        title: 'Choose Directory',
-        defaultPath: defaultPath ?? undefined,
-      })
-      if (result.canceled || result.filePaths.length === 0) {
-        return null
-      }
-      return result.filePaths[0]
-    },
+  .catch((error) => {
+    console.error('[bootstrap] unexpected startup error', error)
+    dialog.showErrorBox(
+      'NeKode failed to start',
+      error instanceof Error ? error.message : String(error),
+    )
+    app.quit()
   })
-  registerAppIpcHandlers(ipcMain, services, {
-    desktopWindow: (event) => {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      if (!window || window.isDestroyed() || !window.isFocused()) return null
-      const handle = window.getNativeWindowHandle()
-      return (
-        handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE())
-      ).toString()
-    },
-    trustedRendererUrls: getTrustedRendererUrls(),
-    // Terminal data/exit events go to every window's webContents (single-window
-    // app today; the fan-out keeps the contract window-agnostic).
-    broadcast: (channel, chatId, payload) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send(channel, chatId, payload)
-      }
-    },
-    broadcastDictation: (result) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (isTrustedRendererUrl(window.webContents.getURL(), getTrustedRendererUrls()))
-          window.webContents.send(IPC_CHANNEL.dictationResult, result)
-      }
-    },
-  })
-
-  // App-quit PTY teardown (spec Behaviour 8): terminate every chat terminal
-  // so no orphaned pwsh/powershell processes outlive the app. Quit is NOT a
-  // chat exit: chat rows are never deleted here, and terminateAll suppresses
-  // exit events so the renderer's chat-close flow cannot run while quitting.
-  registerShutdown(
-    app,
-    (reportTimeout) => services.terminals.shutdown(reportTimeout),
-    () => services.dictation.shutdown(),
-    () => {
-      console.error('[terminal] application shutdown did not complete')
-      dialog.showErrorBox(
-        'NeKode could not close',
-        'Terminal shutdown did not complete. NeKode is still running.',
-      )
-    },
-    {
-      stopActions: () => services.actions.stopAll(),
-      closeDatabase: () => services.closeDatabase?.(),
-    },
-  )
-
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
-  })
-})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

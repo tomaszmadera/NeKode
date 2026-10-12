@@ -363,6 +363,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // Bottom-terminal action commands waiting for their new tab's terminal to
   // become ready. Keyed by bottom tab id; consumed exactly once (AC10).
   const pendingBottomCommandsRef = useRef<Record<string, string>>({})
+  // Pending split-write submissions (lib/pty-submit.ts) waiting for their CR.
+  // Keyed by chat id or bottom tab id; cancelled on teardown or when replaced.
+  const pendingSubmitCancelsRef = useRef<Record<string, () => void>>({})
   const [leftWidth, setLeftWidth] = useState(LEFT_REGION_SIZE.default)
   const [bottomHeight, setBottomHeight] = useState(BOTTOM_REGION_SIZE.default)
   const [bottomOpen, setBottomOpen] = useState(false)
@@ -617,6 +620,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   }, [app])
 
   // Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): auto-send
+  // Pending split-write submission cancellation: cancels the delayed CR timer
+  // so a pending Enter never reaches a disposed or terminated session.
+  const cancelPendingSubmit = useCallback((id: string): void => {
+    const cancel = pendingSubmitCancelsRef.current[id]
+    if (cancel !== undefined) {
+      delete pendingSubmitCancelsRef.current[id]
+      cancel()
+    }
+  }, [])
+
+  // Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): auto-send
   // writes the English command plus CR straight to the PTY; the default paste
   // mode fills the addressed chat's prompt input and waits for the user. The
   // CR goes through the split-write helper (lib/pty-submit.ts) — a single
@@ -629,7 +643,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       if (chatId === null || !liveChatIds.has(chatId)) return
       if (autoSendHandoff) {
         const appApi = app
-        writeSubmitLine((data) => {
+        cancelPendingSubmit(chatId)
+        pendingSubmitCancelsRef.current[chatId] = writeSubmitLine((data) => {
+          if (data === '\r') {
+            delete pendingSubmitCancelsRef.current[chatId]
+          }
           void appApi.terminals.write(chatId, data).catch((error: unknown) => {
             setNotice(errorMessage(error, 'Failed to send the command.'))
           })
@@ -639,7 +657,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       promptInjectionNonceRef.current += 1
       setPromptInjection({ chatId, text, nonce: promptInjectionNonceRef.current })
     },
-    [app, autoSendHandoff, liveChatIds],
+    [app, autoSendHandoff, cancelPendingSubmit, liveChatIds],
   )
 
   const handlePromptInjected = useCallback((nonce: number): void => {
@@ -648,14 +666,20 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     )
   }, [])
 
-  const handleSessionStatus = useCallback((chatId: string, live: boolean): void => {
-    setLiveChatIds((previous) => {
-      const next = new Set(previous)
-      if (live) next.add(chatId)
-      else next.delete(chatId)
-      return next
-    })
-  }, [])
+  const handleSessionStatus = useCallback(
+    (chatId: string, live: boolean): void => {
+      if (!live) {
+        cancelPendingSubmit(chatId)
+      }
+      setLiveChatIds((previous) => {
+        const next = new Set(previous)
+        if (live) next.add(chatId)
+        else next.delete(chatId)
+        return next
+      })
+    },
+    [cancelPendingSubmit],
+  )
 
   const handleSessionReady = useCallback(
     (chatId: string): void => {
@@ -664,13 +688,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       delete pendingTerminalCommandsRef.current[chatId]
       // Split-write submission (lib/pty-submit.ts): the CR must arrive as its
       // own chunk, or prompt_toolkit agent TUIs parse the burst as a paste.
-      writeSubmitLine((data) => {
+      cancelPendingSubmit(chatId)
+      pendingSubmitCancelsRef.current[chatId] = writeSubmitLine((data) => {
+        if (data === '\r') {
+          delete pendingSubmitCancelsRef.current[chatId]
+        }
         void app.terminals.write(chatId, data).catch((error: unknown) => {
           setNotice(errorMessage(error, 'Failed to write the action command.'))
         })
       }, command)
     },
-    [app],
+    [app, cancelPendingSubmit],
   )
 
   // Ready callback for bottom-tab terminals: same delivery contract as chat
@@ -680,14 +708,28 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       const command = pendingBottomCommandsRef.current[tabId]
       if (command === undefined) return
       delete pendingBottomCommandsRef.current[tabId]
-      writeSubmitLine((data) => {
+      cancelPendingSubmit(tabId)
+      pendingSubmitCancelsRef.current[tabId] = writeSubmitLine((data) => {
+        if (data === '\r') {
+          delete pendingSubmitCancelsRef.current[tabId]
+        }
         void app.terminals.write(tabId, data).catch((error: unknown) => {
           setNotice(errorMessage(error, 'Failed to write the action command.'))
         })
       }, command)
     },
-    [app],
+    [app, cancelPendingSubmit],
   )
+
+  // Teardown unmount cleanup: cancel any in-flight split-write submission CR timers.
+  useEffect(() => {
+    return () => {
+      for (const cancel of Object.values(pendingSubmitCancelsRef.current)) {
+        cancel()
+      }
+      pendingSubmitCancelsRef.current = {}
+    }
+  }, [])
 
   // Startup hydration: real project list, persisted selection (dropped when
   // it no longer matches existing records) and persisted region sizes.
@@ -1176,6 +1218,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         const projectChatIds = (chatsByProjectRef.current[projectId] ?? []).map((chat) => chat.id)
         for (const chatId of projectChatIds) {
           delete pendingTerminalCommandsRef.current[chatId]
+          cancelPendingSubmit(chatId)
         }
         setTerminalCwds((previous) => {
           let changed = false
@@ -1229,6 +1272,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         // same leak class as the close/exit paths).
         for (const tabId of bottomIds) {
           delete pendingBottomCommandsRef.current[tabId]
+          cancelPendingSubmit(tabId)
         }
         setBottomTabs((previous) => dropBottomProject(previous, projectId))
         if (projectId === selectionRef.current.projectId) {
@@ -1250,7 +1294,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
       })()
     },
-    [app, applyChatsUpdate, persistSelection, refreshActions],
+    [app, applyChatsUpdate, cancelPendingSubmit, persistSelection, refreshActions],
   )
 
   // --- Project Files mode (spec Behaviour 1–2, 6, 12, 14–15) ---------------
@@ -1798,6 +1842,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         return next
       })
       delete pendingTerminalCommandsRef.current[chatId]
+      cancelPendingSubmit(chatId)
       setTerminalCwds((previous) => {
         if (!(chatId in previous)) {
           return previous
@@ -1847,7 +1892,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       }
       return true
     },
-    [app, applyChatsUpdate, persistSelection],
+    [app, applyChatsUpdate, cancelPendingSubmit, persistSelection],
   )
 
   // Close-chat control on a chat row (user request 2026-10-04): the row's X
@@ -1896,6 +1941,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         // it — the tab's ready event consumes it.
         if (tabId !== undefined) {
           delete pendingBottomCommandsRef.current[tabId]
+          cancelPendingSubmit(tabId)
         }
       }
       if (removedProjectIdsRef.current.has(projectId)) {
@@ -1947,13 +1993,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           // bottom-terminal action staged one) must not survive either.
           if (tabId !== undefined) {
             delete pendingBottomCommandsRef.current[tabId]
+            cancelPendingSubmit(tabId)
           }
           return previous
         }
         return addBottomTab(previous, tab)
       })
     },
-    [app],
+    [app, cancelPendingSubmit],
   )
 
   const handleNewBottomTerminal = useCallback((): void => {
@@ -1987,6 +2034,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           s.tabs.some((tab) => tab.id === tabId),
         )
         delete pendingBottomCommandsRef.current[tabId]
+        cancelPendingSubmit(tabId)
         setBottomTabs((previous) => closeBottomTab(previous, tabId))
         if (viaShortcut) {
           const activeProjectId = tabProjectIdRef.current
@@ -2002,7 +2050,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
       })()
     },
-    [app],
+    [app, cancelPendingSubmit],
   )
 
   const handleBottomExit = useCallback(
@@ -2011,10 +2059,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       // (review:4 follow-up). A spawn failure keeps the entry — the retry
       // remount fires a fresh ready event that must still deliver it.
       delete pendingBottomCommandsRef.current[tabId]
+      cancelPendingSubmit(tabId)
       setBottomTabs((previous) => closeBottomTab(previous, tabId))
       void app.terminals.terminate(tabId).catch(() => undefined)
     },
-    [app],
+    [app, cancelPendingSubmit],
   )
 
   const hideBottomPanel = useCallback((): void => {

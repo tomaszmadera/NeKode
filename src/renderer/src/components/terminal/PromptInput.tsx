@@ -41,11 +41,13 @@ export function PromptInput({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const onInjectedRef = useRef(onInjected)
   onInjectedRef.current = onInjected
+  const lastAppliedNonceRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (injected === null) {
+    if (injected === null || injected.nonce === lastAppliedNonceRef.current) {
       return
     }
+    lastAppliedNonceRef.current = injected.nonce
     setValue(injected.text)
     onInjectedRef.current?.()
     inputRef.current?.focus()

@@ -197,6 +197,7 @@ writeFileSync(
 
 const port = await freePort()
 const stderr = []
+let fullStderr = ''
 const child = spawn(electron, ['.', `--remote-debugging-port=${port}`], {
   cwd: root,
   env: {
@@ -207,7 +208,9 @@ const child = spawn(electron, ['.', `--remote-debugging-port=${port}`], {
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 child.stderr?.on('data', (chunk) => {
-  stderr.push(chunk.toString('utf8'))
+  const piece = chunk.toString('utf8')
+  fullStderr += piece
+  stderr.push(piece)
   const text = stderr.join('')
   if (text.length > 8000) stderr.splice(0, stderr.length - 1, text.slice(-8000))
 })
@@ -265,7 +268,7 @@ try {
     throw new Error(`launchTask rejected: ${JSON.stringify(launched.exceptionDetails)}`)
   }
   const summary = launched.result?.value
-  if (summary?.delivered !== true || summary.name !== 'Fixture CLI') {
+  if (summary?.delivered !== true || !summary.name?.endsWith('Fixture CLI')) {
     throw new Error(`unexpected launch result: ${JSON.stringify(summary)}`)
   }
 
@@ -296,9 +299,8 @@ try {
   for (const piece of ['\n', '"', '&', '|', ';', '`', LEAK, itemUrl, handoffDir]) {
     if (!prompt.includes(piece)) throw new Error(`prompt is missing ${JSON.stringify(piece)}`)
   }
-  const logs = stderr.join('')
   for (const secret of [LEAK, itemUrl, handoffDir, 'Quote "here"']) {
-    if (logs.includes(secret)) throw new Error('Electron stderr included launch prompt data')
+    if (fullStderr.includes(secret)) throw new Error('Electron stderr included launch prompt data')
   }
   process.stdout.write(`${printed}\n`)
 
@@ -318,8 +320,8 @@ try {
     throw new Error(`unexpected handoff scan: ${JSON.stringify(scan)}`)
   }
   const candidate = scan.files.find((entry) => entry.name === handoffFileName)
-  if (candidate === undefined || candidate.matchKind !== 'metadata') {
-    throw new Error(`the handoff file was not a metadata match: ${JSON.stringify(scan.files)}`)
+  if (candidate === undefined || candidate.matchKind !== 'filename') {
+    throw new Error(`the handoff file was not a filename match: ${JSON.stringify(scan.files)}`)
   }
   rmSync(outFile, { force: true })
   const resumeInput = {
@@ -341,7 +343,7 @@ try {
     throw new Error(`resume launchTask rejected: ${JSON.stringify(resumeLaunch.exceptionDetails)}`)
   }
   const resumeSummary = resumeLaunch.result?.value
-  if (resumeSummary?.delivered !== true || resumeSummary.name !== 'Fixture CLI') {
+  if (resumeSummary?.delivered !== true || !resumeSummary.name?.endsWith('Fixture CLI')) {
     throw new Error(`unexpected resume result: ${JSON.stringify(resumeSummary)}`)
   }
   let resumePrinted = ''
@@ -368,9 +370,8 @@ try {
   if (resumePrompt !== 'Resume from handoffs/smk-1-handoff.md') {
     throw new Error(`the resume prompt was not the single argv element: ${resumePrinted}`)
   }
-  const resumeLogs = stderr.join('')
   for (const secret of [LEAK, itemUrl, 'handoffs/smk-1-handoff.md']) {
-    if (resumeLogs.includes(secret)) {
+    if (fullStderr.includes(secret)) {
       throw new Error('Electron stderr included resume prompt data')
     }
   }

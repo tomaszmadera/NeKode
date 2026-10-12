@@ -313,16 +313,59 @@ export function LeftNavigation({
                                 <li
                                   key={chat.id}
                                   className="relative pl-6"
-                                  onMouseLeave={() => {
+                                  onFocus={() => setRevealedChatId(chat.id)}
+                                  onBlur={(event) => {
+                                    if (
+                                      !event.currentTarget.contains(event.relatedTarget as Node)
+                                    ) {
+                                      if (revealedChatId === chat.id) {
+                                        setRevealedChatId(null)
+                                      }
+                                    }
+                                  }}
+                                  onMouseLeave={(event) => {
+                                    // If keyboard focus is anywhere inside the row, keep the close
+                                    // control revealed so the user does not lose focus (NEKODE-60 / review 7.4).
+                                    if (event.currentTarget.contains(document.activeElement)) {
+                                      return
+                                    }
                                     if (revealedChatId === chat.id) {
                                       setRevealedChatId(null)
                                     }
                                   }}
                                 >
-                                  {/* Close control (user request 2026-10-04): an
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      'flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-chat-title transition-colors duration-fast ease-standard',
+                                      isChatSelected
+                                        ? 'bg-highlight text-ink'
+                                        : 'hover:bg-row-hover',
+                                    )}
+                                    data-testid={testIdFor.chatRow(chat.id)}
+                                    data-selected={isChatSelected ? 'true' : 'false'}
+                                    onMouseEnter={() => setRevealedChatId(chat.id)}
+                                    onClick={() => onSelectChat(project.id, chat.id)}
+                                  >
+                                    <Icon.chat size={12} aria-hidden className="shrink-0" />
+                                    <span className="min-w-0 truncate">{chat.name}</span>
+                                    {badgeVisible && revealedChatId !== chat.id ? (
+                                      <span
+                                        role="img"
+                                        className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning"
+                                        data-testid={testIdFor.chatAttentionBadge(chat.id)}
+                                        title={badgeTitle}
+                                        aria-label={`${chat.name} needs attention`}
+                                      />
+                                    ) : null}
+                                  </button>
+                                  {/* Close control (user request 2026-10-04, review 7.4): an
                                     X on the shared 24px right-edge axis with
                                     Add Project and Show project files, centered
                                     in the row and shown on hover or focus.
+                                    Ordered after the row button in the DOM so
+                                    keyboard users can tab from the row to the X
+                                    without losing focus or hiding the button.
                                     Absolute positioning keeps the tile size
                                     stable. Clicking stages a confirmation
                                     dialog — closing removes the chat with its
@@ -345,37 +388,6 @@ export function LeftNavigation({
                                     }}
                                   >
                                     <Icon.close size={12} aria-hidden />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={cn(
-                                      'flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-chat-title transition-colors duration-fast ease-standard',
-                                      isChatSelected
-                                        ? 'bg-highlight text-ink'
-                                        : 'hover:bg-row-hover',
-                                    )}
-                                    data-testid={testIdFor.chatRow(chat.id)}
-                                    data-selected={isChatSelected ? 'true' : 'false'}
-                                    onMouseEnter={() => setRevealedChatId(chat.id)}
-                                    onFocus={() => setRevealedChatId(chat.id)}
-                                    onBlur={() => {
-                                      if (revealedChatId === chat.id) {
-                                        setRevealedChatId(null)
-                                      }
-                                    }}
-                                    onClick={() => onSelectChat(project.id, chat.id)}
-                                  >
-                                    <Icon.chat size={12} aria-hidden className="shrink-0" />
-                                    <span className="min-w-0 truncate">{chat.name}</span>
-                                    {badgeVisible && revealedChatId !== chat.id ? (
-                                      <span
-                                        role="img"
-                                        className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning"
-                                        data-testid={testIdFor.chatAttentionBadge(chat.id)}
-                                        title={badgeTitle}
-                                        aria-label={`${chat.name} needs attention`}
-                                      />
-                                    ) : null}
                                   </button>
                                 </li>
                               )
