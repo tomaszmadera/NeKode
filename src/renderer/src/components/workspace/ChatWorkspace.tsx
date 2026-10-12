@@ -63,7 +63,7 @@ interface ChatWorkspaceProps {
    * from the tree and the database and continues on the next chat of the
    * project. Never called for teardown caused by application quit.
    */
-  onChatClosed: (chatId: string) => void
+  onChatClosed: (chatId: string) => boolean | undefined | Promise<boolean | undefined>
   /**
    * "Start new chat" empty state: create a chat immediately (no naming form,
    * spec Behaviour 3).
@@ -377,21 +377,53 @@ export function ChatWorkspace({
   // Terminal exit closes the chat (spec Behaviour 11): dispose the terminal
   // view (dropping the session record unmounts it) and hand the close flow to
   // the host — chat removal from the tree/database plus next-chat selection.
+  // If the host reports that chat removal failed, restore a fresh session
+  // record for the surviving chat and clear the close guard.
   const handleExit = useCallback((chatId: string): void => {
     if (closingChatIdsRef.current.has(chatId)) {
       return
     }
     closingChatIdsRef.current.add(chatId)
     onSessionStatusRef.current?.(chatId, false)
+    let evictedRecord: SessionRecord | undefined
     setSessions((previous) => {
-      if (previous[chatId] === undefined) {
+      const existing = previous[chatId]
+      if (existing === undefined) {
         return previous
       }
+      evictedRecord = existing
       const next = { ...previous }
       delete next[chatId]
       return next
     })
-    onChatClosedRef.current(chatId)
+    const restoreSession = (): void => {
+      closingChatIdsRef.current.delete(chatId)
+      setSessions((previous) => {
+        if (previous[chatId] !== undefined) {
+          return previous
+        }
+        const lookup = lookupRef.current
+        const info = findChatProject(lookup.projects, lookup.chatsByProject, chatId)
+        if (info === null) {
+          return previous
+        }
+        const cwd = lookup.terminalCwds[chatId] ?? evictedRecord?.cwd ?? info.project.path
+        const generation = (evictedRecord?.generation ?? 0) + 1
+        return {
+          ...previous,
+          [chatId]: { ...freshRecord(cwd), generation },
+        }
+      })
+    }
+    void Promise.resolve(onChatClosedRef.current(chatId))
+      .then((outcome) => {
+        if (outcome === false) {
+          restoreSession()
+        }
+      })
+      .catch(() => {
+        restoreSession()
+      })
   }, [])
 
   const handleSpawnError = useCallback((chatId: string, message: string): void => {
@@ -552,4 +584,22 @@ function findChat(
 /** Whether a chat id still exists in any project's chat list. */
 function chatExists(chatsByProject: Record<string, ChatInfo[]>, chatId: string): boolean {
   return Object.values(chatsByProject).some((chats) => chats.some((chat) => chat.id === chatId))
+}
+
+/** Finds the project and chat info for a chat id across all loaded projects. */
+function findChatProject(
+  projects: ProjectInfo[],
+  chatsByProject: Record<string, ChatInfo[]>,
+  chatId: string,
+): { project: ProjectInfo; chat: ChatInfo } | null {
+  for (const [projectId, chats] of Object.entries(chatsByProject)) {
+    const chat = chats.find((item) => item.id === chatId)
+    if (chat !== undefined) {
+      const project = projects.find((item) => item.id === projectId)
+      if (project !== undefined) {
+        return { project, chat }
+      }
+    }
+  }
+  return null
 }

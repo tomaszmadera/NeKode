@@ -52,6 +52,7 @@ export function KanbanSessions({
           style={{ display: activeProjectId === id ? 'flex' : 'none' }}
         >
           <KanbanBoard
+            key={`${id}:${version}`}
             app={app}
             projectId={id}
             active={activeProjectId === id}

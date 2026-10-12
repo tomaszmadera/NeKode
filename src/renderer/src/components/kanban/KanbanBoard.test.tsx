@@ -450,6 +450,67 @@ describe('kanban board — load count and refresh (spec Behaviour 14, AC14)', ()
     await waitFor(() => expect(listBoard).toHaveBeenCalledTimes(1))
   })
 
+  it('invalidates in-flight listBoard and resets board when projectId changes on mounted board', async () => {
+    const pendingP1 = deferred<KanbanBoardData>()
+    const boardP2: KanbanBoardData = {
+      states: [{ id: 's-done', name: 'Done', group: 'completed', order: 1 }],
+      items: [
+        {
+          id: 'i-p2-1',
+          ref: 'P2-1',
+          title: 'Project 2 Task',
+          description: null,
+          stateId: 's-done',
+          stateName: 'Done',
+          stateGroup: 'completed',
+          priority: null,
+          assignee: null,
+          url: null,
+          updatedAt: null,
+        },
+      ],
+    }
+    const listBoard = vi.fn().mockImplementation((projectId: string) => {
+      if (projectId === 'p1') return pendingP1.promise
+      if (projectId === 'p2') return Promise.resolve(boardP2)
+      return Promise.reject(new Error('Unknown project'))
+    })
+    const app = appWith(listBoard)
+    const ui = render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} active />)
+    expect(listBoard).toHaveBeenCalledWith('p1')
+
+    // While listBoard('p1') is in flight, projectId changes to 'p2'
+    ui.rerender(<KanbanBoard app={app} projectId="p2" onConfigure={vi.fn()} active />)
+
+    // listBoard should be called for 'p2' (not swallowed by pending guard!)
+    await waitFor(() => expect(listBoard).toHaveBeenCalledWith('p2'))
+
+    // Now resolve the old p1 load
+    const boardP1: KanbanBoardData = {
+      states: [{ id: 's-todo', name: 'Todo', group: 'unstarted', order: 1 }],
+      items: [
+        {
+          id: 'i-p1-1',
+          ref: 'P1-1',
+          title: 'Project 1 Task',
+          description: null,
+          stateId: 's-todo',
+          stateName: 'Todo',
+          stateGroup: 'unstarted',
+          priority: null,
+          assignee: null,
+          url: null,
+          updatedAt: null,
+        },
+      ],
+    }
+    await act(async () => pendingP1.resolve(boardP1))
+
+    // The component should display P2's board and NOT P1's board
+    await screen.findByTestId(testIdFor.kanbanItem('P2-1'))
+    expect(screen.queryByTestId(testIdFor.kanbanItem('P1-1'))).toBeNull()
+  })
+
   it('re-runs the load when the refresh control is used', async () => {
     const changed: KanbanBoardData = {
       states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
@@ -1659,6 +1720,49 @@ describe('kanban new task form', () => {
     fireEvent.keyDown(opener, { key: 'Escape' })
     expect(screen.getByRole('form', { name: 'New task' })).toBeTruthy()
     expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Stay')
+  })
+
+  it('keeps in-flight create valid and upserts the item when form is dismissed by opening an item', async () => {
+    const pending = deferred<WorkItem>()
+    const createItem = vi.fn().mockReturnValue(pending.promise)
+    renderReady(todoBoard(), createItem)
+    const form = await openForm()
+    fireEvent.change(field(form, 'Title'), { target: { value: 'In flight task' } })
+    const createBtn = within(form).getByRole('button', { name: /^Create$/ })
+    fireEvent.click(createBtn)
+    expect(createItem).toHaveBeenCalledTimes(1)
+
+    // Cancel button should be disabled while busy
+    const cancelBtn = within(form).getByRole('button', { name: /^Cancel$/ }) as HTMLButtonElement
+    expect(cancelBtn.disabled).toBe(true)
+
+    // Escape should be ignored while busy
+    fireEvent.keyDown(field(form, 'Title'), { key: 'Escape' })
+    expect(screen.queryByRole('form', { name: 'New task' })).not.toBeNull()
+
+    // Dismissing by clicking an existing item title to open review
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
+    expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
+
+    // Resolve the in-flight create
+    const createdItem: WorkItem = {
+      ...item('NK-40', 'In flight task', 's-todo'),
+      stateName: 'todo',
+    }
+    await act(async () => pending.resolve(createdItem))
+
+    // Close review to return to list
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
+    expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
+
+    // The created item MUST be present on the board
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-40'))).toBeTruthy()
+    expect(
+      within(screen.getByTestId(testIdFor.kanbanListGroup('s-todo'))).getByTestId(
+        testIdFor.kanbanItemTitle('NK-40'),
+      ).textContent,
+    ).toBe('In flight task')
   })
 
   it('keeps one copy when an in-flight list already contains the created ref', async () => {

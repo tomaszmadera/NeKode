@@ -296,6 +296,22 @@ describe('ChatWorkspace session host', () => {
     expect(screen.queryByTestId(TEST_ID.terminalSpawnError)).toBeNull()
   })
 
+  it('restores a fresh session record and terminal view when onChatClosed reports removal failure', async () => {
+    const bundle = createAppMock()
+    const onChatClosed = vi.fn().mockResolvedValue(false)
+    const props = workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })
+    render(<ChatWorkspace {...props} onChatClosed={onChatClosed} />)
+    await waitFor(() => expect(bundle.app.terminals.create).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      bundle.emitExit('t1', 1)
+    })
+
+    await waitFor(() => expect(onChatClosed).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(screen.getByTestId(testIdFor.terminalView('t1'))).toBeTruthy())
+    expect(bundle.app.terminals.create).toHaveBeenCalledTimes(2)
+  })
+
   it('a duplicate exit event closes the chat exactly once', async () => {
     const bundle = createAppMock()
     const props = workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })

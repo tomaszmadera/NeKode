@@ -35,7 +35,7 @@ Confirm the commit contains all and only the approved changes. Larger work reach
 
 ## Version commit and annotated tag
 
-On the resulting verified `main`, require a clean worktree and select the approved semver. Existing tags use numeric names such as `0.12.6`, without a `v` prefix. Increment patch for a compatible fix, minor for compatible added functionality, and major for an incompatible release, with an explicit maintainer decision during the pre-1.0 period. Inspect the current manifest and local/remote tags before choosing a version.
+On the resulting verified `main`, require a clean worktree and select the approved semver. Existing tags use numeric names such as `0.13.4`, without a `v` prefix. Increment patch for a compatible fix, minor for compatible added functionality, and major for an incompatible release, with an explicit maintainer decision during the pre-1.0 period. Inspect the current manifest and local/remote tags before choosing a version.
 
 ```powershell
 git branch --show-current

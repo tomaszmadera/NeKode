@@ -126,10 +126,10 @@ describe('terminal service (fake PTY)', () => {
     expect(exits).not.toHaveBeenCalled()
   })
 
-  it('shutdown reports a missing PTY exit and resolves when that exit arrives', async () => {
+  it('shutdown reports a missing PTY exit and resolves on timeout so quit completes', async () => {
     vi.useFakeTimers()
     try {
-      const { service, ptys } = createHarness()
+      const { service } = createHarness()
       service.create('t1', 'D:/a')
       const reporter = vi.fn()
       const outcome = { state: 'pending' as 'pending' | 'resolved' | 'rejected' }
@@ -141,16 +141,17 @@ describe('terminal service (fake PTY)', () => {
           outcome.state = 'rejected'
         },
       )
-      await vi.advanceTimersByTimeAsync(7000)
       expect(outcome.state).toBe('pending')
+      await vi.advanceTimersByTimeAsync(6999)
+      expect(outcome.state).toBe('pending')
+      expect(reporter).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
       expect(reporter).toHaveBeenCalledOnce()
       const reported = reporter.mock.calls[0]?.[0]
       expect(reported).toBeInstanceOf(Error)
       expect((reported as Error).message).toBe('Terminal shutdown timed out.')
-      ptys[0]?.emitExit(0)
       await pending
       expect(outcome.state).toBe('resolved')
-      expect(reporter).toHaveBeenCalledOnce()
     } finally {
       vi.useRealTimers()
     }
@@ -487,5 +488,30 @@ describe('WSL terminal routing', () => {
       }),
     ).toThrow(/Linux executable/)
     expect(spawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('TerminalService.shutdown', () => {
+  it('resolves session shutdown on timeout when PTY does not deliver an exit event', async () => {
+    vi.useFakeTimers()
+    try {
+      const { service } = createHarness({ killEmitsExit: false })
+      service.create('t1', 'D:/a')
+      const reportTimeout = vi.fn()
+      let settled = false
+      const promise = service.shutdown(reportTimeout).then(() => {
+        settled = true
+      })
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(6999)
+      expect(settled).toBe(false)
+      expect(reportTimeout).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(reportTimeout).toHaveBeenCalledOnce()
+      expect(settled).toBe(true)
+      await promise
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -18,7 +18,12 @@ import type {
   KanbanLaunchTaskInput,
   KanbanUpdatePatch,
 } from '../../shared/ipc-contract'
-import { agentProfileFieldError, IPC_CHANNEL, KANBAN_PRIORITIES } from '../../shared/ipc-contract'
+import {
+  agentProfileFieldError,
+  IPC_CHANNEL,
+  isSecretStateKey,
+  KANBAN_PRIORITIES,
+} from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import { wslProjectPath } from '../../shared/wsl-path'
 import type { AppServices } from './service-registry'
@@ -86,6 +91,13 @@ const assertRelativePath: Validator = (value, label) => {
   }
   if (path.length === 0) {
     fail(label, 'must be a non-empty relative path')
+  }
+}
+
+const assertStateKey: Validator = (value, label) => {
+  assertString(value, label)
+  if (isSecretStateKey(value as string)) {
+    fail(label, 'is a protected key')
   }
 }
 
@@ -443,7 +455,7 @@ export interface ValidatedChannel {
 }
 
 /** Type list for each positional argument of a channel payload. */
-type ArgType = 'string' | 'number' | 'path' | 'relativePath' | 'relativePath?'
+type ArgType = 'string' | 'stateKey' | 'number' | 'path' | 'relativePath' | 'relativePath?'
 
 /**
  * Channel backed by a real service. Payloads must match the declared arity
@@ -462,6 +474,8 @@ function serviceChannel(
         const label = `${channel} arg[${index}]`
         if (type === 'string') {
           assertString(payload[index], label)
+        } else if (type === 'stateKey') {
+          assertStateKey(payload[index], label)
         } else if (type === 'path') {
           assertSafePath(payload[index], label)
         } else if (type === 'relativePath') {
@@ -617,8 +631,8 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     // Terminal-exit close flow (spec Behaviour 11): the renderer-driven chat
     // removal; never invoked on application quit.
     serviceChannel('chats:remove', ['string'], (args) => services.chats.remove(args[0])),
-    serviceChannel('state:get', ['string'], (args) => services.state.get(args[0])),
-    serviceChannel('state:set', ['string', 'string'], (args) =>
+    serviceChannel('state:get', ['stateKey'], (args) => services.state.get(args[0])),
+    serviceChannel('state:set', ['stateKey', 'string'], (args) =>
       services.state.set(args[0], args[1]),
     ),
     // Chat terminals: one PTY per chat, spawned lazily on create. A failed

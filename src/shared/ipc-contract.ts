@@ -409,6 +409,11 @@ export function projectKanbanConfigKey(projectId: string): string {
   return `project.kanbanConfig:${projectId}`
 }
 
+/** Keys that carry secret values and must never be accessed via generic state IPC. */
+export function isSecretStateKey(key: string): boolean {
+  return key === 'project.kanbanConfig' || key.startsWith('project.kanbanConfig:')
+}
+
 /**
  * Per-project shell choice key (spec project-shell-selection). The stored
  * value is a `ShellChoice` id; empty or missing means `default` (the

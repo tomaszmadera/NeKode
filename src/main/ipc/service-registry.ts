@@ -70,6 +70,8 @@ export interface AppServices {
      * Not part of the renderer bridge.
      */
     stopForProject(projectId: string): void
+    /** Stops every active background child on application quit. */
+    stopAll(): void
   }
   projects: {
     list(): ProjectInfo[]
@@ -207,4 +209,6 @@ export interface AppServices {
      */
     pickDirectory(defaultPath: string | null): Promise<string | null>
   }
+  /** Closes the SQLite database connection on application quit. */
+  closeDatabase?(): void
 }

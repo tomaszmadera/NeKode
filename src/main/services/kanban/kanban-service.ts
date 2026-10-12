@@ -47,12 +47,20 @@ export interface KanbanStateStore {
   delete(key: string): void
 }
 
+/** Minimal Electron safeStorage interface for encryption at rest. */
+export interface SafeStorageLike {
+  isEncryptionAvailable(): boolean
+  encryptString(plainText: string): Buffer
+  decryptString(encrypted: Buffer): string
+}
+
 export interface KanbanServiceDeps {
   projects: KanbanProjectLookup
   state: KanbanStateStore
   /** Absolute adapters directory (userData default or the stored override). */
   adaptersDir: () => string
   host?: AdapterHost
+  safeStorage?: SafeStorageLike
 }
 
 export interface KanbanSetConfigInput {
@@ -92,12 +100,75 @@ export class KanbanService {
   readonly #state: KanbanStateStore
   readonly #adaptersDir: () => string
   readonly #host: AdapterHost
+  readonly #safeStorage: SafeStorageLike | undefined
 
   constructor(deps: KanbanServiceDeps) {
     this.#projects = deps.projects
     this.#state = deps.state
     this.#adaptersDir = deps.adaptersDir
     this.#host = deps.host ?? new AdapterHost()
+    this.#safeStorage = deps.safeStorage
+  }
+
+  private encryptSecret(value: string): string {
+    if (value.startsWith('enc:v1:')) {
+      return value
+    }
+    if (!this.#safeStorage?.isEncryptionAvailable()) {
+      return value
+    }
+    try {
+      const buffer = this.#safeStorage.encryptString(value)
+      return `enc:v1:${buffer.toString('base64')}`
+    } catch (error) {
+      console.warn('[kanban] Failed to encrypt secret:', error)
+      return value
+    }
+  }
+
+  private decryptSecret(value: string): string {
+    if (!value.startsWith('enc:v1:')) {
+      return value
+    }
+    if (!this.#safeStorage?.isEncryptionAvailable()) {
+      console.warn('[kanban] Cannot decrypt secret: safeStorage is unavailable')
+      return ''
+    }
+    try {
+      const buffer = Buffer.from(value.slice('enc:v1:'.length), 'base64')
+      return this.#safeStorage.decryptString(buffer)
+    } catch (error) {
+      console.warn('[kanban] Failed to decrypt secret:', error)
+      return ''
+    }
+  }
+
+  private readStoredConfig(projectId: string, adapterId?: string | null): StoredConfig {
+    const raw = this.#state.get(projectKanbanConfigKey(projectId))
+    const stored = parseStoredConfig(raw)
+    const resolvedAdapterId =
+      adapterId !== undefined ? adapterId : this.#state.get(projectKanbanAdapterKey(projectId))
+    const schema = this.schemaFor(resolvedAdapterId)
+
+    if (this.#safeStorage?.isEncryptionAvailable() && schema.length > 0) {
+      let migrated = false
+      const updatedValues = { ...stored.values }
+      for (const field of schema) {
+        if (field.type === 'secret') {
+          const val = updatedValues[field.key]
+          if (typeof val === 'string' && val.length > 0 && !val.startsWith('enc:v1:')) {
+            updatedValues[field.key] = this.encryptSecret(val)
+            migrated = true
+          }
+        }
+      }
+      if (migrated) {
+        this.#state.set(projectKanbanConfigKey(projectId), JSON.stringify(updatedValues))
+        stored.values = updatedValues
+      }
+    }
+
+    return stored
   }
 
   /** Fresh one-level scan; warnings go to the main log, never to the UI. */
@@ -112,22 +183,25 @@ export class KanbanService {
   getConfig(projectId: string): KanbanProjectConfig {
     this.assertProject(projectId)
     const adapterId = this.#state.get(projectKanbanAdapterKey(projectId))
-    const stored = parseStoredConfig(this.#state.get(projectKanbanConfigKey(projectId)))
+    const stored = this.readStoredConfig(projectId, adapterId)
     const schema = this.schemaFor(adapterId)
     const values: Record<string, string | null> = {}
     const secretKeys: string[] = []
     for (const field of schema) {
-      const value = stored.values[field.key]
-      if (value === undefined) {
+      const rawValue = stored.values[field.key]
+      if (rawValue === undefined) {
         values[field.key] = null
         continue
       }
       if (field.type === 'secret') {
-        secretKeys.push(field.key)
+        const decrypted = this.decryptSecret(rawValue)
+        if (decrypted.length > 0) {
+          secretKeys.push(field.key)
+        }
         values[field.key] = null
         continue
       }
-      values[field.key] = value
+      values[field.key] = rawValue
     }
     // Keys without a schema entry (adapter replaced/removed) still surface as
     // null values so the renderer form stays exhaustive.
@@ -184,11 +258,14 @@ export class KanbanService {
     }
 
     const schema = this.schemaFor(adapterId)
-    const stored = parseStoredConfig(this.#state.get(projectKanbanConfigKey(projectId)))
+    const stored = this.readStoredConfig(projectId, adapterId)
     const merged: Record<string, string> = { ...stored.values }
     // Effective view after the apply rules below: required-field validation
     // counts only values that will remain stored (spec Behaviour 7).
-    const effective: Record<string, string> = { ...merged }
+    const effective: Record<string, string> = {}
+    for (const [key, val] of Object.entries(merged)) {
+      effective[key] = this.decryptSecret(val)
+    }
     for (const [key, value] of Object.entries(input.values)) {
       const isSecret = schema.find((field) => field.key === key)?.type === 'secret'
       if (value === '' && !isSecret) {
@@ -213,7 +290,16 @@ export class KanbanService {
       if (value === '' && !isSecret) {
         delete merged[key]
       } else if (value !== '') {
-        merged[key] = value
+        merged[key] = isSecret ? this.encryptSecret(value) : value
+      }
+    }
+    for (const field of schema) {
+      if (
+        field.type === 'secret' &&
+        merged[field.key] !== undefined &&
+        merged[field.key].length > 0
+      ) {
+        merged[field.key] = this.encryptSecret(merged[field.key])
       }
     }
     this.#state.set(projectKanbanAdapterKey(projectId), adapterId)
@@ -345,13 +431,17 @@ export class KanbanService {
     projectId: string,
     override?: Record<string, string>,
   ): Record<string, string> {
+    const stored = this.readStoredConfig(projectId)
+    const decryptedStored: Record<string, string> = {}
+    for (const [key, val] of Object.entries(stored.values)) {
+      decryptedStored[key] = this.decryptSecret(val)
+    }
     if (override !== undefined) {
-      const stored = parseStoredConfig(this.#state.get(projectKanbanConfigKey(projectId))).values
       // Test-with-unsaved-edits (spec Behaviour 8): explicit values win,
       // absent keys fall back to stored ones.
-      return { ...stored, ...override }
+      return { ...decryptedStored, ...override }
     }
-    return parseStoredConfig(this.#state.get(projectKanbanConfigKey(projectId))).values
+    return decryptedStored
   }
 
   private async invoke<T>(

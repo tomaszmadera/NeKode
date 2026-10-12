@@ -10,4 +10,4 @@ Start with the [public project contract](docs/development/project-contract.md). 
 
 Maintainers publish versions through the separate [release procedure](docs/operations/releases.md). A contribution or approved implementation plan does not authorize publication.
 
-The local `AGENTS.md`, `.agents/` harness, and agent configuration are ignored working files. A clean public clone needs none of them. If you create a personal guide, link to public owners rather than copying project rules into a second contract.
+The local `AGENTS.md`, `.agents/` harness, and agent configuration are ignored working files. A clean public clone needs none of them. If you create a personal guide, follow [Your own AGENTS.md](docs/development/agents-md.md): link to public owners rather than copying project rules into a second contract.
