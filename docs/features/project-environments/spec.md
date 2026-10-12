@@ -1,6 +1,7 @@
 # Project environments: opening WSL projects
 
-Status: WSL opening approved with the user's scope correction on 2026-10-08. The NEKODE-34 UI extension below was approved on 2026-10-09.
+Status: Delivered (WSL project opening; the add-project UI extension was completed 2026-10-09).
+Path: `docs/features/project-environments/spec.md`.
 
 ## Goal
 

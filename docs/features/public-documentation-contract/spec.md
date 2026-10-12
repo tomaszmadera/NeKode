@@ -1,5 +1,8 @@
 # Public documentation contract independent of the local harness
 
+Status: Delivered (public project contract, source map, and the personal AGENTS.md guide).
+Path: `docs/features/public-documentation-contract/spec.md`.
+
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal

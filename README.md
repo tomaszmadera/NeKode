@@ -97,10 +97,13 @@ Why: a clean clone must be enough to build, test, and contribute, and every cont
 ## Documentation
 
 - `docs/product/` - approved product requirements.
-- `docs/features/` - feature behavior contracts.
+- `docs/features/` - feature behavior contracts, indexed with their delivery status in [`docs/features/README.md`](docs/features/README.md).
 - `docs/architecture/` - architecture decisions and documentation.
 - `docs/development/` - instructions for contributors.
 - `docs/operations/` - deployment and maintenance runbooks.
+- `docs/references/` - the design system and historical or visual references, which are not behavior contracts.
+- `adapters/plane/` - the optional Plane adapter with its own toolchain and setup instructions.
+- [`BACKLOG.md`](BACKLOG.md) - deferred product ideas, not an active plan.
 
 ## License
 

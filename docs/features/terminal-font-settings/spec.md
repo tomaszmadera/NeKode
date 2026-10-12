@@ -1,5 +1,8 @@
 # Terminal font settings
 
+Status: Delivered (Fonts settings tab: text font, icon font, size).
+Path: `docs/features/terminal-font-settings/spec.md`.
+
 ## Goal
 
 Let a NeKode user inspect and edit the terminal text font, icon font, and text size in a dedicated Fonts settings tab. Render Nerd Font prompt icons using a bundled symbols font.

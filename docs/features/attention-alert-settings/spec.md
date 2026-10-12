@@ -1,8 +1,9 @@
 # Attention alert settings
 
-This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
-
+Status: Delivered (attention alert toggles in App Settings, General tab).
 Path: `docs/features/attention-alert-settings/spec.md`.
+
+This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal
 

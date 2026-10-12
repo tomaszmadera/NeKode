@@ -1,5 +1,8 @@
 # Project Files: File Tree and Read-Only Preview
 
+Status: Delivered (file tree and read-only Monaco preview).
+Path: `docs/features/project-files-view/spec.md`.
+
 This file is the behavioral contract for the feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal

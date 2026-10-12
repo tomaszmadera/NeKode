@@ -1,5 +1,8 @@
 # Per-project terminal shell selection with system shell detection
 
+Status: Delivered (per-project shell selection with system shell detection).
+Path: `docs/features/project-shell-selection/spec.md`.
+
 This file is the behavioral contract for the feature. Agents implement from it. Execution progress, file checklists, and architecture history live in the task record, not here.
 
 ## Goal

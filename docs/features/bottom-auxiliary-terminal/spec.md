@@ -1,8 +1,9 @@
 # Bottom auxiliary terminal
 
-This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
-
+Status: Delivered (bottom terminal panel with tabs).
 Path: `docs/features/bottom-auxiliary-terminal/spec.md`.
+
+This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal
 

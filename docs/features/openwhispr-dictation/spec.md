@@ -1,9 +1,10 @@
 # OpenWhispr dictation integration: functional specification
 
+Status: Delivered for desktop V1 (implementation issue NEKODE-22); the public Cloud API remains deferred to the optional backlog item NEKODE-37.
+Path: `docs/features/openwhispr-dictation/spec.md`.
+
 This file is the behavioral contract for the OpenWhispr dictation feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
-Path: `docs/features/openwhispr-dictation/spec.md`.
-Status: desktop V1 contract and amended execution plan approved. Implementation issue: `NEKODE-22`. Public Cloud API remains deferred to optional backlog item `NEKODE-37`.
 Parent contract: `docs/features/dictation-provider-architecture/spec.md` (generic provider registry). This document is the concrete OpenWhispr specialization and takes precedence for OpenWhispr behavior. Plane NEKODE-21 (the generic provider architecture) is deprioritized; this integration ships first.
 
 ## Desktop V1 contract
