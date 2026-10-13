@@ -239,7 +239,7 @@ export function ActionBar({
     <div
       role="toolbar"
       aria-label="Agent controls"
-      className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-edge px-3 py-2"
+      className="flex shrink-0 items-center gap-2 overflow-x-auto bg-panel border-b border-edge px-3 py-2"
       data-testid={TEST_ID.actionRowSlot}
     >
       {[

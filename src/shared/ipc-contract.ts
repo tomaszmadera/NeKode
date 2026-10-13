@@ -613,7 +613,10 @@ export function agentProfileFieldError(input: {
     return 'Arguments must be a list of strings.'
   }
   const placeholders = input.args.filter((arg) => arg === AGENT_PROMPT_PLACEHOLDER).length
-  if (placeholders !== 1) {
+  const hasSubstring = input.args.some(
+    (arg) => arg !== AGENT_PROMPT_PLACEHOLDER && arg.includes(AGENT_PROMPT_PLACEHOLDER),
+  )
+  if (placeholders !== 1 || hasSubstring) {
     return 'Arguments must include {prompt} exactly once.'
   }
   return null

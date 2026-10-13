@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isSecretStateKey, relativeToProject } from './ipc-contract'
+import {
+  AGENT_PROMPT_PLACEHOLDER,
+  agentProfileFieldError,
+  isSecretStateKey,
+  relativeToProject,
+} from './ipc-contract'
 
 describe('relativeToProject', () => {
   it('returns a forward-slash relative path for a file inside the project root', () => {
@@ -42,5 +47,106 @@ describe('isSecretStateKey', () => {
     expect(isSecretStateKey('selection.projectId')).toBe(false)
     expect(isSecretStateKey('region.left.width')).toBe(false)
     expect(isSecretStateKey('kanban.adaptersDir')).toBe(false)
+  })
+})
+
+describe('agentProfileFieldError', () => {
+  it('accepts a profile with valid fields and exactly one placeholder argv element', () => {
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: ['--flag', AGENT_PROMPT_PLACEHOLDER, 'value'],
+      }),
+    ).toBeNull()
+  })
+
+  it('rejects missing or blank names and executables', () => {
+    expect(
+      agentProfileFieldError({
+        name: '   ',
+        executable: 'agent-cli',
+        args: [AGENT_PROMPT_PLACEHOLDER],
+      }),
+    ).toBe('Name is required.')
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: '   ',
+        args: [AGENT_PROMPT_PLACEHOLDER],
+      }),
+    ).toBe('Executable is required.')
+  })
+
+  it('rejects invalid args arrays', () => {
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: null as unknown as readonly string[],
+      }),
+    ).toBe('Arguments must be a list of strings.')
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: [AGENT_PROMPT_PLACEHOLDER, 123 as unknown as string],
+      }),
+    ).toBe('Arguments must be a list of strings.')
+  })
+
+  it('rejects args with missing or multiple exact placeholders', () => {
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: ['--flag'],
+      }),
+    ).toBe('Arguments must include {prompt} exactly once.')
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: [AGENT_PROMPT_PLACEHOLDER, AGENT_PROMPT_PLACEHOLDER],
+      }),
+    ).toBe('Arguments must include {prompt} exactly once.')
+  })
+
+  it('rejects args containing the placeholder as a substring alone or mixed with exact placeholder', () => {
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: ['pre{prompt}'],
+      }),
+    ).toBe('Arguments must include {prompt} exactly once.')
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: ['{prompt}post'],
+      }),
+    ).toBe('Arguments must include {prompt} exactly once.')
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: [AGENT_PROMPT_PLACEHOLDER, 'pre{prompt}'],
+      }),
+    ).toBe('Arguments must include {prompt} exactly once.')
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: ['pre{prompt}', AGENT_PROMPT_PLACEHOLDER],
+      }),
+    ).toBe('Arguments must include {prompt} exactly once.')
+    expect(
+      agentProfileFieldError({
+        name: 'Agent',
+        executable: 'agent-cli',
+        args: [AGENT_PROMPT_PLACEHOLDER, '{prompt}post'],
+      }),
+    ).toBe('Arguments must include {prompt} exactly once.')
   })
 })

@@ -14,6 +14,8 @@ interface AppSettingsProps {
   dictationApi: AppApi['dictation']
   desktopDictation: ReturnType<typeof import('../../hooks/useDesktopDictation').useDesktopDictation>
   theme: ThemeId
+  quickThemeSwitch: boolean
+  onQuickThemeSwitchChange: (next: boolean) => void
   chatSwitch: boolean
   projectNamesUppercase: boolean
   onProjectNamesUppercaseChange: (next: boolean) => void
@@ -65,6 +67,8 @@ export function AppSettings({
   dictationApi,
   desktopDictation,
   theme,
+  quickThemeSwitch,
+  onQuickThemeSwitchChange,
   chatSwitch,
   projectNamesUppercase,
   onProjectNamesUppercaseChange,
@@ -249,6 +253,19 @@ export function AppSettings({
                       </option>
                     ))}
                   </select>
+                  <label
+                    htmlFor="app-quick-theme-switch"
+                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
+                  >
+                    <input
+                      id="app-quick-theme-switch"
+                      type="checkbox"
+                      checked={quickThemeSwitch}
+                      data-testid={TEST_ID.settingsQuickThemeSwitch}
+                      onChange={(event) => onQuickThemeSwitchChange(event.target.checked)}
+                    />
+                    Show quick theme switcher in status bar
+                  </label>
                   <label
                     htmlFor="app-project-names-uppercase"
                     className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"

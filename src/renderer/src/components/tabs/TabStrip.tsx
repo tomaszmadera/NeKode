@@ -18,8 +18,8 @@ import { KANBAN_TAB, type TabId, TERMINAL_TAB } from './tabs-session'
 
 interface TabStripProps {
   /**
-   * Floating theme: the strip sits directly on the app background (bg-app)
-   * rather than the panel background (bg-panel).
+   * Floating theme: drops the attached bottom hairline border (user decision
+   * 2026-10-08, 2026-10-13).
    */
   floating?: boolean
   /** Active chat's shell display name; null shows the neutral "Chat" label. */
@@ -101,7 +101,7 @@ export function TabStrip({
     <nav
       className={cn(
         'drag-region flex h-[calc(var(--spacing-control)+0.5rem)] shrink-0 items-stretch gap-1.5 px-2 pt-2',
-        floating ? 'bg-app' : 'bg-panel border-b border-edge',
+        floating ? 'bg-app' : 'bg-app border-b border-edge',
       )}
       // The strip shares the action row's metrics (round 4, design doc 26.2):
       // 8px left and top insets so the first tab aligns with the first button
@@ -113,9 +113,9 @@ export function TabStrip({
       // Windows caption buttons sit in the window title bar above this strip
       // (user decision 2026-10-01), in the floating theme too, so no
       // caption-button inset is needed here. Tabs draw only the top and side
-      // edges (user decision 2026-10-06): the hairline under this row is
-      // their bottom border in attached themes (dropped in the floating theme,
-      // user request 2026-10-08), so they read as tabs rather than closed blocks.
+      // edges (user decision 2026-10-06): the hairline under this row runs
+      // under inactive tabs and empty space, while the active tab connects
+      // seamlessly to the panel below with no bottom line (user request 2026-10-13).
       data-testid={TEST_ID.tabStrip}
     >
       <button

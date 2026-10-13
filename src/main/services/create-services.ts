@@ -284,12 +284,14 @@ export function createServices(options: CreateServicesOptions): AppServices {
           return result.shells
         }
         const result = shells.detect(readCustomShellPaths())
-        if (result.prunedCustomPaths.length > 0) {
-          writeCustomShellPaths(shells.customPaths())
+        try {
+          if (result.prunedCustomPaths.length > 0) {
+            writeCustomShellPaths(shells.customPaths())
+          }
+          return result.shells
+        } finally {
+          shells.endDetect()
         }
-        const list = result.shells
-        shells.endDetect()
-        return list
       },
       shellAddCustom: (path, projectId) => {
         const projectPath = projectId == null ? undefined : requireProjectPath(projectId)

@@ -76,11 +76,26 @@ describe('AgentProfilesService', () => {
       { ...valid('Claude'), args: [`${AGENT_PROMPT_PLACEHOLDER} extra`] },
       { ...valid('Claude'), args: [` ${AGENT_PROMPT_PLACEHOLDER}`] },
       { ...valid('Claude'), args: ['x{prompt}x'] },
+      { ...valid('Claude'), args: [AGENT_PROMPT_PLACEHOLDER, 'pre{prompt}'] },
+      { ...valid('Claude'), args: ['pre{prompt}', AGENT_PROMPT_PLACEHOLDER] },
+      { ...valid('Claude'), args: [AGENT_PROMPT_PLACEHOLDER, `${AGENT_PROMPT_PLACEHOLDER}extra`] },
     ]
     for (const input of invalid) {
       try {
         service.put('p1', input)
         expect.unreachable(`validation must reject ${JSON.stringify(input)}`)
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError)
+        expect((error as AppError).code).toBe('validation')
+      }
+      expect(state.get(key)).toBeNull()
+    }
+
+    const malformedPayloads: unknown[] = [null, undefined, 'not-an-object', 123, true, []]
+    for (const payload of malformedPayloads) {
+      try {
+        service.put('p1', payload as AgentProfilePut)
+        expect.unreachable(`malformed payload must be rejected: ${String(payload)}`)
       } catch (error) {
         expect(error).toBeInstanceOf(AppError)
         expect((error as AppError).code).toBe('validation')
