@@ -18,12 +18,25 @@ import { MonacoPreview } from './MonacoPreview'
 // unmount disposes the editor and the model. Monaco is mocked at the module
 // boundary (./monaco-setup), the same convention as the xterm mocks.
 
-vi.mock('./monaco-setup', () => import('../../test/monaco-mock'))
+let mockSetupReject: Error | null = null
+
+vi.mock('./monaco-setup', async () => {
+  const actual = await import('../../test/monaco-mock')
+  return {
+    get monaco() {
+      if (mockSetupReject !== null) {
+        throw mockSetupReject
+      }
+      return actual.monaco
+    },
+  }
+})
 
 describe('MonacoPreview context menu', () => {
   let clipboard: { writeText: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
+    mockSetupReject = null
     resetMockMonaco()
     clipboard = stubClipboard()
   })
@@ -31,6 +44,7 @@ describe('MonacoPreview context menu', () => {
   afterEach(() => {
     cleanup()
     restoreClipboard()
+    mockSetupReject = null
   })
 
   async function renderPreview(): Promise<HTMLElement> {
@@ -103,5 +117,50 @@ describe('MonacoPreview context menu', () => {
     cleanup()
     expect(editor.disposed).toBe(true)
     expect(model.disposed).toBe(true)
+  })
+
+  it('surfaces an alert and keeps the menu open when clipboard copy fails', async () => {
+    const host = await renderPreview()
+    mockEditors[0].selection = new MockSelection(1, 7, 1, 8)
+    clipboard.writeText.mockRejectedValueOnce(new Error('Permission denied'))
+
+    fireEvent.contextMenu(host)
+    fireEvent.click(screen.getByTestId(TEST_ID.editorContextCopy))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe('Could not copy to the clipboard.')
+    expect(screen.getByTestId(TEST_ID.editorContextMenu)).toBeTruthy()
+  })
+
+  it('surfaces an alert and keeps the menu open when clipboard is unavailable', async () => {
+    const host = await renderPreview()
+    mockEditors[0].selection = new MockSelection(1, 7, 1, 8)
+    restoreClipboard()
+
+    fireEvent.contextMenu(host)
+    fireEvent.click(screen.getByTestId(TEST_ID.editorContextCopy))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe('Could not copy to the clipboard.')
+    expect(screen.getByTestId(TEST_ID.editorContextMenu)).toBeTruthy()
+  })
+
+  it('renders fallback on dynamic import failure and recovers on retry without double content', async () => {
+    mockSetupReject = new Error('simulated dynamic import failure')
+    const { container, rerender } = render(
+      <MonacoPreview content="initial fallback content" language="typescript" />,
+    )
+
+    const fallback = await screen.findByText('initial fallback content')
+    expect(fallback.tagName).toBe('PRE')
+    expect(mockEditors).toHaveLength(0)
+
+    // Simulate subsequent successful import on new file/content change
+    mockSetupReject = null
+    rerender(<MonacoPreview content="recovered content" language="typescript" />)
+
+    await waitFor(() => expect(mockEditors).toHaveLength(1))
+    expect(container.querySelector('pre')).toBeNull()
+    expect(mockModels[0].value).toBe('recovered content')
   })
 })

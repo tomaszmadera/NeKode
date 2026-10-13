@@ -53,13 +53,18 @@ export class MockModel {
 
 export class MockEditor {
   options: unknown
-  model: MockModel
+  model: MockModel | null
   /** The selection the test put into the editor (null = collapsed cursor). */
   selection: MockSelection | null = null
   disposed = false
 
-  constructor(model: MockModel) {
+  constructor(model: MockModel | null, options?: unknown) {
     this.model = model
+    this.options = options
+  }
+
+  getModel(): MockModel | null {
+    return this.model
   }
 
   getSelection(): MockSelection | null {
@@ -94,7 +99,14 @@ export const monaco: MockMonacoInstance = {
       return model
     }),
     create: vi.fn((_host: HTMLElement, options: unknown) => {
-      const editor = new MockEditor(mockModels[mockModels.length - 1])
+      const opts = options as { model?: MockModel | null; value?: string } | undefined
+      let model: MockModel | null = null
+      if (opts?.model !== undefined) {
+        model = opts.model
+      } else if (typeof opts?.value === 'string') {
+        model = monaco.editor.createModel(opts.value)
+      }
+      const editor = new MockEditor(model, options)
       mockEditors.push(editor)
       mockOptions.push(options)
       return editor
