@@ -34,6 +34,7 @@
     "chokidar": "^4.0.3",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
+    "mermaid": "^12.1.0",
     "monaco-editor": "^0.52.2",
     "node-pty": "^1.1.0",
     "react": "^19.0.0",
