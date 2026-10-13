@@ -576,41 +576,50 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       },
       invoke: (args) => services.dictation.setSettings(args[0] as DictationSettings),
     },
-    serviceChannel('actions:list', [], () => services.actions.list()),
-    actionInputChannel('actions:create', false, (_, input) => services.actions.create(input)),
-    actionInputChannel('actions:update', true, (id, input) =>
+    serviceChannel(IPC_CHANNEL.actionsList, [], () => services.actions.list()),
+    actionInputChannel(IPC_CHANNEL.actionsCreate, false, (_, input) =>
+      services.actions.create(input),
+    ),
+    actionInputChannel(IPC_CHANNEL.actionsUpdate, true, (id, input) =>
       services.actions.update(id as string, input),
     ),
-    serviceChannel('actions:delete', ['string'], (args) => services.actions.delete(args[0])),
+    serviceChannel(IPC_CHANNEL.actionsDelete, ['string'], (args) =>
+      services.actions.delete(args[0]),
+    ),
     {
-      channel: 'actions:execute',
+      channel: IPC_CHANNEL.actionsExecute,
       parse: (payload) => {
-        requireArgs(payload, 3, 'actions:execute')
-        assertString(payload[0], 'actions:execute id')
-        if (payload[1] !== null) assertString(payload[1], 'actions:execute projectId')
-        if (typeof payload[2] !== 'boolean') fail('actions:execute confirmed', 'must be a boolean')
+        requireArgs(payload, 3, IPC_CHANNEL.actionsExecute)
+        assertString(payload[0], `${IPC_CHANNEL.actionsExecute} id`)
+        if (payload[1] !== null) assertString(payload[1], `${IPC_CHANNEL.actionsExecute} projectId`)
+        if (typeof payload[2] !== 'boolean')
+          fail(`${IPC_CHANNEL.actionsExecute} confirmed`, 'must be a boolean')
         return payload
       },
       invoke: (args) =>
         services.actions.execute(args[0] as string, args[1] as string | null, args[2] as boolean),
     },
-    serviceChannel('actions:status', ['string'], (args) => services.actions.status(args[0])),
-    serviceChannel('projects:list', [], () => services.projects.list()),
-    serviceChannel('projects:wslDistributions', [], () => services.projects.wslDistributions()),
-    serviceChannel('projects:wslDirectories', ['string', 'string'], (args) =>
+    serviceChannel(IPC_CHANNEL.actionsStatus, ['string'], (args) =>
+      services.actions.status(args[0]),
+    ),
+    serviceChannel(IPC_CHANNEL.projectsList, [], () => services.projects.list()),
+    serviceChannel(IPC_CHANNEL.projectsWslDistributions, [], () =>
+      services.projects.wslDistributions(),
+    ),
+    serviceChannel(IPC_CHANNEL.projectsWslDirectories, ['string', 'string'], (args) =>
       services.projects.wslDirectories(args[0], args[1]),
     ),
     {
-      channel: 'projects:addWsl',
+      channel: IPC_CHANNEL.projectsAddWsl,
       parse(payload) {
-        requireArgs(payload, 2, 'projects:addWsl')
+        requireArgs(payload, 2, IPC_CHANNEL.projectsAddWsl)
         assertString(payload[0], 'distribution')
         assertString(payload[1], 'linuxPath')
         try {
           wslProjectPath(payload[0] as string, payload[1] as string)
         } catch {
           fail(
-            'projects:addWsl',
+            IPC_CHANNEL.projectsAddWsl,
             'requires a valid distribution and absolute Linux project directory',
           )
         }
@@ -620,25 +629,40 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     },
     // The Add Project flow opens the native dialog in main (ipc-handlers);
     // the channel payload is empty and the path comes from the dialog.
-    serviceChannel('projects:add', [], () =>
-      (services.projects.add as (path?: string) => ProjectInfoLike)(),
+    // The entry's invoke is unreachable through normal routing; throwing protects
+    // against accidental invocation without a dialog-chosen path.
+    {
+      channel: IPC_CHANNEL.projectsAdd,
+      parse: (payload) => {
+        requireArgs(payload, 0, IPC_CHANNEL.projectsAdd)
+        return payload
+      },
+      invoke: () => {
+        throw new AppError(
+          'validation',
+          `${IPC_CHANNEL.projectsAdd} must be routed through the folder dialog handler`,
+          IPC_CHANNEL.projectsAdd,
+        )
+      },
+    },
+    serviceChannel(IPC_CHANNEL.projectsRemove, ['string'], (args) =>
+      services.projects.remove(args[0]),
     ),
-    serviceChannel('projects:remove', ['string'], (args) => services.projects.remove(args[0])),
-    serviceChannel('chats:list', ['string'], (args) => services.chats.list(args[0])),
+    serviceChannel(IPC_CHANNEL.chatsList, ['string'], (args) => services.chats.list(args[0])),
     // No name payload: the chat name is derived from the platform shell in
     // main (spec Behaviour 3) and duplicates within a project are allowed.
-    serviceChannel('chats:create', ['string'], (args) => services.chats.create(args[0])),
+    serviceChannel(IPC_CHANNEL.chatsCreate, ['string'], (args) => services.chats.create(args[0])),
     // Agent chat launch (spec new-chat-agent-menu Data/API): the profile choice
     // is an AgentProfile.id; main owns the name and the agent process. A failed
     // spawn removes the chat again, so no chat id reaches the renderer.
     {
-      channel: 'chats:createWithAgent',
+      channel: IPC_CHANNEL.chatsCreateWithAgent,
       parse: (payload) => {
-        requireArgs(payload, 2, 'chats:createWithAgent')
-        assertString(payload[0], 'chats:createWithAgent arg[0]')
-        assertString(payload[1], 'chats:createWithAgent arg[1]')
+        requireArgs(payload, 2, IPC_CHANNEL.chatsCreateWithAgent)
+        assertString(payload[0], `${IPC_CHANNEL.chatsCreateWithAgent} arg[0]`)
+        assertString(payload[1], `${IPC_CHANNEL.chatsCreateWithAgent} arg[1]`)
         if ((payload[0] as string).length === 0 || (payload[1] as string).length === 0) {
-          fail('chats:createWithAgent', 'requires non-empty projectId and profileId')
+          fail(IPC_CHANNEL.chatsCreateWithAgent, 'requires non-empty projectId and profileId')
         }
         return payload
       },
@@ -646,106 +670,118 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     },
     // Terminal-exit close flow (spec Behaviour 11): the renderer-driven chat
     // removal; never invoked on application quit.
-    serviceChannel('chats:remove', ['string'], (args) => services.chats.remove(args[0])),
-    serviceChannel('state:get', ['stateKey'], (args) => services.state.get(args[0])),
-    serviceChannel('state:set', ['stateKey', 'string'], (args) =>
+    serviceChannel(IPC_CHANNEL.chatsRemove, ['string'], (args) => services.chats.remove(args[0])),
+    serviceChannel(IPC_CHANNEL.stateGet, ['stateKey'], (args) => services.state.get(args[0])),
+    serviceChannel(IPC_CHANNEL.stateSet, ['stateKey', 'string'], (args) =>
       services.state.set(args[0], args[1]),
     ),
     // Chat terminals: one PTY per chat, spawned lazily on create. A failed
     // task launch owns that chat until argv is delivered; the renderer must
     // not start the project shell in its place.
-    serviceChannel('terminals:create', ['string', 'path'], (args) => {
+    serviceChannel(IPC_CHANNEL.terminalsCreate, ['string', 'path'], (args) => {
       const chatId = args[0] as string
       if (services.kanban.blocksProjectShell(chatId)) {
-        throw new AppError('conflict', 'Failed to start the terminal process.', 'terminals:create')
+        throw new AppError(
+          'conflict',
+          'Failed to start the terminal process.',
+          IPC_CHANNEL.terminalsCreate,
+        )
       }
       return services.terminals.create(chatId, args[1] as string)
     }),
-    serviceChannel('terminals:write', ['string', 'string'], (args) =>
+    serviceChannel(IPC_CHANNEL.terminalsWrite, ['string', 'string'], (args) =>
       services.terminals.write(args[0], args[1]),
     ),
-    serviceChannel('terminals:resize', ['string', 'number', 'number'], (args) =>
+    serviceChannel(IPC_CHANNEL.terminalsResize, ['string', 'number', 'number'], (args) =>
       services.terminals.resize(args[0], args[1], args[2]),
     ),
     // Shell selection (spec project-shell-selection): shellName resolves the
     // project's stored choice; shellList reads the cache (never probes);
     // shellDetect runs one explicit detection (the Shell tab calls it on
     // entry); shellAddCustom validates an absolute executable path in main.
-    serviceChannel('terminals:shellName', ['string'], (args) =>
+    serviceChannel(IPC_CHANNEL.terminalsShellName, ['string'], (args) =>
       services.terminals.shellName(args[0]),
     ),
-    shellContextChannel('terminals:shellList', false, (args) =>
+    shellContextChannel(IPC_CHANNEL.terminalsShellList, false, (args) =>
       args.length === 0
         ? services.terminals.shellList()
         : services.terminals.shellList(args[0] as string | null),
     ),
-    shellContextChannel('terminals:shellDetect', false, (args) =>
+    shellContextChannel(IPC_CHANNEL.terminalsShellDetect, false, (args) =>
       args.length === 0
         ? services.terminals.shellDetect()
         : services.terminals.shellDetect(args[0] as string | null),
     ),
-    shellContextChannel('terminals:shellAddCustom', true, (args) =>
+    shellContextChannel(IPC_CHANNEL.terminalsShellAddCustom, true, (args) =>
       args.length === 1
         ? services.terminals.shellAddCustom(args[0] as string)
         : services.terminals.shellAddCustom(args[0] as string, args[1] as string | null),
     ),
     {
-      channel: 'terminals:terminate',
+      channel: IPC_CHANNEL.terminalsTerminate,
       parse: (payload) => {
-        requireArgs(payload, 1, 'terminals:terminate')
-        assertString(payload[0], 'terminals:terminate arg[0]')
+        requireArgs(payload, 1, IPC_CHANNEL.terminalsTerminate)
+        assertString(payload[0], `${IPC_CHANNEL.terminalsTerminate} arg[0]`)
         const sessionId = payload[0] as string
         if (!isBottomTabId(sessionId)) {
-          throw new ValidationError('terminals:terminate arg[0] must be a bottom tab id')
+          throw new ValidationError(
+            `${IPC_CHANNEL.terminalsTerminate} arg[0] must be a bottom tab id`,
+          )
         }
         return payload
       },
       invoke: (args) => services.terminals.terminate(args[0] as string),
     },
     // Read-only git status; failures degrade to "no git" inside the service.
-    serviceChannel('git:status', ['string'], (args) => services.git.getStatus(args[0])),
+    serviceChannel(IPC_CHANNEL.gitStatus, ['string'], (args) => services.git.getStatus(args[0])),
     // Per-path status for the file-tree decoration (NEKODE-31): resolves
     // via registered projectId; a failure degrades to {}.
-    serviceChannel('git:fileStatuses', ['string'], (args) => services.git.fileStatuses(args[0])),
+    serviceChannel(IPC_CHANNEL.gitFileStatuses, ['string'], (args) =>
+      services.git.fileStatuses(args[0]),
+    ),
     // Project files (spec Data/API): read-only tree listing, preview
     // classification and the single OS action (openExternal). Relative-path
     // shape is validated here; containment (`..`, absolute, symlinks leaving
     // the root) is enforced by the service and surfaces as not_found.
-    serviceChannel('files:list', ['string', 'relativePath?'], (args) =>
+    serviceChannel(IPC_CHANNEL.filesList, ['string', 'relativePath?'], (args) =>
       services.files.list(args[0], args[1] as string | null),
     ),
-    serviceChannel('files:read', ['string', 'relativePath'], (args) =>
+    serviceChannel(IPC_CHANNEL.filesRead, ['string', 'relativePath'], (args) =>
       services.files.read(args[0], args[1]),
     ),
-    serviceChannel('files:openExternal', ['string', 'relativePath'], (args) =>
+    serviceChannel(IPC_CHANNEL.filesOpenExternal, ['string', 'relativePath'], (args) =>
       services.files.openExternal(args[0], args[1]),
     ),
     // Open the registered project root in the OS file manager: one project id
     // argument, existence checked in the service (a vanished root surfaces as
     // not_found like every other rejected shape).
-    serviceChannel('files:openRoot', ['string'], (args) => services.files.openRoot(args[0])),
-    serviceChannel('files:showInFolder', ['string', 'relativePath'], (args) =>
+    serviceChannel(IPC_CHANNEL.filesOpenRoot, ['string'], (args) =>
+      services.files.openRoot(args[0]),
+    ),
+    serviceChannel(IPC_CHANNEL.filesShowInFolder, ['string', 'relativePath'], (args) =>
       services.files.showInFolder(args[0], args[1]),
     ),
-    serviceChannel('files:trash', ['string', 'relativePath'], (args) =>
+    serviceChannel(IPC_CHANNEL.filesTrash, ['string', 'relativePath'], (args) =>
       services.files.trash(args[0], args[1]),
     ),
     // Handoff directory listing (spec handoff-resume-flow): read-only, one
     // registered project id argument. The configured directory may resolve
     // outside the project root by explicit user configuration, so unlike
     // files:* there is no containment rule here.
-    serviceChannel('handoffs:list', ['string'], (args) => services.handoffs.list(args[0])),
+    serviceChannel(IPC_CHANNEL.handoffsList, ['string'], (args) => services.handoffs.list(args[0])),
     // Kanban adapter channels (spec kanban-adapter-interface Data/API).
     // adaptersList/getConfig/setConfig are synchronous app-side operations;
     // test/listBoard/create/update invoke adapter processes (async).
-    serviceChannel('kanban:adaptersList', [], () => services.kanban.adaptersList()),
-    serviceChannel('kanban:getConfig', ['string'], (args) => services.kanban.getConfig(args[0])),
+    serviceChannel(IPC_CHANNEL.kanbanAdaptersList, [], () => services.kanban.adaptersList()),
+    serviceChannel(IPC_CHANNEL.kanbanGetConfig, ['string'], (args) =>
+      services.kanban.getConfig(args[0]),
+    ),
     {
-      channel: 'kanban:setConfig',
+      channel: IPC_CHANNEL.kanbanSetConfig,
       parse: (payload) => {
-        requireArgs(payload, 2, 'kanban:setConfig')
-        assertString(payload[0], 'kanban:setConfig arg[0]')
-        assertKanbanSetConfig(payload[1], 'kanban:setConfig arg[1]')
+        requireArgs(payload, 2, IPC_CHANNEL.kanbanSetConfig)
+        assertString(payload[0], `${IPC_CHANNEL.kanbanSetConfig} arg[0]`)
+        assertKanbanSetConfig(payload[1], `${IPC_CHANNEL.kanbanSetConfig} arg[1]`)
         return payload
       },
       invoke: (args) =>
@@ -755,34 +791,36 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         ),
     },
     {
-      channel: 'kanban:test',
+      channel: IPC_CHANNEL.kanbanTest,
       parse: (payload) => {
-        requireArgs(payload, 2, 'kanban:test')
-        assertString(payload[0], 'kanban:test arg[0]')
-        assertOptionalKanbanValues(payload[1], 'kanban:test arg[1]')
+        requireArgs(payload, 2, IPC_CHANNEL.kanbanTest)
+        assertString(payload[0], `${IPC_CHANNEL.kanbanTest} arg[0]`)
+        assertOptionalKanbanValues(payload[1], `${IPC_CHANNEL.kanbanTest} arg[1]`)
         return payload
       },
       invoke: (args) =>
         services.kanban.test(args[0] as string, args[1] as Record<string, string> | undefined),
     },
-    serviceChannel('kanban:listBoard', ['string'], (args) => services.kanban.listBoard(args[0])),
+    serviceChannel(IPC_CHANNEL.kanbanListBoard, ['string'], (args) =>
+      services.kanban.listBoard(args[0]),
+    ),
     {
-      channel: 'kanban:createItem',
+      channel: IPC_CHANNEL.kanbanCreateItem,
       parse: (payload) => {
-        requireArgs(payload, 2, 'kanban:createItem')
-        assertString(payload[0], 'kanban:createItem arg[0]')
-        assertKanbanCreateInput(payload[1], 'kanban:createItem arg[1]')
+        requireArgs(payload, 2, IPC_CHANNEL.kanbanCreateItem)
+        assertString(payload[0], `${IPC_CHANNEL.kanbanCreateItem} arg[0]`)
+        assertKanbanCreateInput(payload[1], `${IPC_CHANNEL.kanbanCreateItem} arg[1]`)
         return payload
       },
       invoke: (args) => services.kanban.createItem(args[0] as string, args[1] as KanbanCreateInput),
     },
     {
-      channel: 'kanban:updateItem',
+      channel: IPC_CHANNEL.kanbanUpdateItem,
       parse: (payload) => {
-        requireArgs(payload, 3, 'kanban:updateItem')
-        assertString(payload[0], 'kanban:updateItem arg[0]')
-        assertString(payload[1], 'kanban:updateItem arg[1]')
-        assertKanbanUpdatePatch(payload[2], 'kanban:updateItem arg[2]')
+        requireArgs(payload, 3, IPC_CHANNEL.kanbanUpdateItem)
+        assertString(payload[0], `${IPC_CHANNEL.kanbanUpdateItem} arg[0]`)
+        assertString(payload[1], `${IPC_CHANNEL.kanbanUpdateItem} arg[1]`)
+        assertKanbanUpdatePatch(payload[2], `${IPC_CHANNEL.kanbanUpdateItem} arg[2]`)
         return payload
       },
       invoke: (args) =>
@@ -793,88 +831,82 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         ),
     },
     {
-      channel: 'kanban:getItem',
+      channel: IPC_CHANNEL.kanbanGetItem,
       parse: (payload) => {
-        requireArgs(payload, 2, 'kanban:getItem')
-        assertString(payload[0], 'kanban:getItem arg[0]')
-        assertString(payload[1], 'kanban:getItem arg[1]')
+        requireArgs(payload, 2, IPC_CHANNEL.kanbanGetItem)
+        assertString(payload[0], `${IPC_CHANNEL.kanbanGetItem} arg[0]`)
+        assertString(payload[1], `${IPC_CHANNEL.kanbanGetItem} arg[1]`)
         if ((payload[0] as string).length === 0 || (payload[1] as string).length === 0) {
-          fail('kanban:getItem', 'requires non-empty projectId and ref')
+          fail(IPC_CHANNEL.kanbanGetItem, 'requires non-empty projectId and ref')
         }
         return payload
       },
       invoke: (args) => services.kanban.getItem(args[0] as string, args[1] as string),
     },
     {
-      channel: 'kanban:launchTask',
+      channel: IPC_CHANNEL.kanbanLaunchTask,
       parse: (payload) => {
-        requireArgs(payload, 1, 'kanban:launchTask')
-        assertKanbanLaunchTask(payload[0], 'kanban:launchTask')
+        requireArgs(payload, 1, IPC_CHANNEL.kanbanLaunchTask)
+        assertKanbanLaunchTask(payload[0], IPC_CHANNEL.kanbanLaunchTask)
         return payload
       },
       invoke: (args) => services.kanban.launchTask(args[0] as KanbanLaunchTaskInput),
     },
     {
-      channel: 'kanban:handoffCandidates',
+      channel: IPC_CHANNEL.kanbanHandoffCandidates,
       parse: (payload) => {
-        requireArgs(payload, 1, 'kanban:handoffCandidates')
-        assertKanbanHandoffCandidates(payload[0], 'kanban:handoffCandidates')
+        requireArgs(payload, 1, IPC_CHANNEL.kanbanHandoffCandidates)
+        assertKanbanHandoffCandidates(payload[0], IPC_CHANNEL.kanbanHandoffCandidates)
         return payload
       },
       invoke: (args) => services.kanban.handoffCandidates(args[0] as KanbanHandoffCandidatesInput),
     },
     {
-      channel: 'kanban:handoffAvailability',
+      channel: IPC_CHANNEL.kanbanHandoffAvailability,
       parse: (payload) => {
-        requireArgs(payload, 1, 'kanban:handoffAvailability')
-        assertKanbanHandoffAvailability(payload[0], 'kanban:handoffAvailability')
+        requireArgs(payload, 1, IPC_CHANNEL.kanbanHandoffAvailability)
+        assertKanbanHandoffAvailability(payload[0], IPC_CHANNEL.kanbanHandoffAvailability)
         return payload
       },
       invoke: (args) =>
         services.kanban.handoffAvailability(args[0] as KanbanHandoffAvailabilityInput),
     },
-    serviceChannel('agentProfiles:get', ['string'], (args) => services.agentProfiles.get(args[0])),
+    serviceChannel(IPC_CHANNEL.agentProfilesGet, ['string'], (args) =>
+      services.agentProfiles.get(args[0]),
+    ),
     {
-      channel: 'agentProfiles:put',
+      channel: IPC_CHANNEL.agentProfilesPut,
       parse: (payload) => {
-        requireArgs(payload, 2, 'agentProfiles:put')
-        assertString(payload[0], 'agentProfiles:put arg[0]')
-        assertAgentProfilePut(payload[1], 'agentProfiles:put arg[1]')
+        requireArgs(payload, 2, IPC_CHANNEL.agentProfilesPut)
+        assertString(payload[0], `${IPC_CHANNEL.agentProfilesPut} arg[0]`)
+        assertAgentProfilePut(payload[1], `${IPC_CHANNEL.agentProfilesPut} arg[1]`)
         return payload
       },
       invoke: (args) => services.agentProfiles.put(args[0] as string, args[1] as AgentProfilePut),
     },
     {
-      channel: 'agentProfiles:delete',
+      channel: IPC_CHANNEL.agentProfilesDelete,
       parse: (payload) => {
-        requireArgs(payload, 2, 'agentProfiles:delete')
-        assertString(payload[0], 'agentProfiles:delete arg[0]')
-        assertString(payload[1], 'agentProfiles:delete arg[1]')
+        requireArgs(payload, 2, IPC_CHANNEL.agentProfilesDelete)
+        assertString(payload[0], `${IPC_CHANNEL.agentProfilesDelete} arg[0]`)
+        assertString(payload[1], `${IPC_CHANNEL.agentProfilesDelete} arg[1]`)
         if ((payload[1] as string).length === 0) {
-          fail('agentProfiles:delete arg[1]', 'must be non-empty')
+          fail(`${IPC_CHANNEL.agentProfilesDelete} arg[1]`, 'must be non-empty')
         }
         return payload
       },
       invoke: (args) => services.agentProfiles.delete(args[0] as string, args[1] as string),
     },
     {
-      channel: 'dialogs:pickDirectory',
+      channel: IPC_CHANNEL.dialogsPickDirectory,
       parse: (payload) => {
-        requireArgs(payload, 1, 'dialogs:pickDirectory')
+        requireArgs(payload, 1, IPC_CHANNEL.dialogsPickDirectory)
         if (payload[0] !== null) {
-          assertSafePath(payload[0], 'dialogs:pickDirectory defaultPath')
+          assertSafePath(payload[0], `${IPC_CHANNEL.dialogsPickDirectory} defaultPath`)
         }
         return payload
       },
       invoke: (args) => services.dialogs.pickDirectory(args[0] as string | null),
     },
   ]
-}
-
-/** Local structural type keeping the projects:add cast self-documenting. */
-interface ProjectInfoLike {
-  id: string
-  name: string
-  path: string
-  runtimeLabel: string | null
 }
