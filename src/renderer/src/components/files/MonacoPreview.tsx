@@ -27,6 +27,8 @@ interface MonacoPreviewProps {
   language: string | null
 }
 
+const COPY_FAILED = 'Could not copy to the clipboard.'
+
 interface MenuState {
   x: number
   y: number
@@ -42,12 +44,13 @@ function navigatorClipboard(): { writeText(text: string): Promise<void> } | null
 export function MonacoPreview({ content, language }: MonacoPreviewProps): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<MenuState | null>(null)
   // Live copy/select-all entry points of the mounted editor, for the
   // right-click menu rendered outside the load effect. Null while unloaded.
   const editorCommandsRef = useRef<{
     hasSelection: () => boolean
-    copy: () => boolean
+    copy: () => Promise<boolean>
     selectAll: () => void
   } | null>(null)
 
@@ -60,11 +63,14 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
     let editor: MonacoApi.editor.IStandaloneCodeEditor | null = null
     let model: MonacoApi.editor.ITextModel | null = null
 
+    setLoadFailed(false)
+
     void import('./monaco-setup')
       .then(({ monaco }) => {
         if (disposed) {
           return
         }
+        setLoadFailed(false)
         model = monaco.editor.createModel(content, language ?? 'plaintext')
         editor = monaco.editor.create(host, {
           model,
@@ -87,7 +93,7 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
             const selection = editor?.getSelection()
             return selection !== null && selection !== undefined && !selection.isEmpty()
           },
-          copy: (): boolean => {
+          copy: async (): Promise<boolean> => {
             const selection = editor?.getSelection()
             if (selection === null || selection === undefined) {
               return false
@@ -96,10 +102,16 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
             if (text.length === 0) {
               return false
             }
-            void navigatorClipboard()
-              ?.writeText(text)
-              .catch(() => undefined)
-            return true
+            const clipboard = navigatorClipboard()
+            if (clipboard === null) {
+              return false
+            }
+            try {
+              await clipboard.writeText(text)
+              return true
+            } catch {
+              return false
+            }
           },
           selectAll: (): void => {
             editor?.setSelection(
@@ -138,6 +150,7 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         setContextMenu(null)
+        setCopyError(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -150,14 +163,15 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
     <>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the host carries the context-menu gesture (right click); the menu items are real buttons and the menu closes on Escape. */}
       <div
-        ref={hostRef}
-        className="h-full w-full"
+        className="relative h-full w-full"
         data-testid={TEST_ID.filePreviewMonaco}
         onContextMenu={(event) => {
           event.preventDefault()
+          setCopyError(null)
           setContextMenu({ x: event.clientX, y: event.clientY })
         }}
       >
+        <div ref={hostRef} className={loadFailed ? 'hidden' : 'h-full w-full'} />
         {loadFailed ? (
           <pre className="h-full w-full overflow-auto p-4 text-xs whitespace-pre-wrap text-ink-secondary">
             {content}
@@ -169,15 +183,25 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
           x={contextMenu.x}
           y={contextMenu.y}
           hasSelection={editorCommandsRef.current?.hasSelection() ?? false}
-          onCopy={() => {
-            editorCommandsRef.current?.copy()
-            setContextMenu(null)
+          copyError={copyError}
+          onCopy={async () => {
+            const success = (await editorCommandsRef.current?.copy()) ?? false
+            if (success) {
+              setContextMenu(null)
+              setCopyError(null)
+            } else {
+              setCopyError(COPY_FAILED)
+            }
           }}
           onSelectAll={() => {
             editorCommandsRef.current?.selectAll()
             setContextMenu(null)
+            setCopyError(null)
           }}
-          onClose={() => setContextMenu(null)}
+          onClose={() => {
+            setContextMenu(null)
+            setCopyError(null)
+          }}
         />
       ) : null}
     </>

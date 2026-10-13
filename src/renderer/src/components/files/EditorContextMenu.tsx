@@ -7,6 +7,7 @@ interface Props {
   y: number
   /** Copy is enabled only while the editor holds a non-empty selection. */
   hasSelection: boolean
+  copyError?: string | null
   onCopy: () => void
   onSelectAll: () => void
   onClose: () => void
@@ -22,6 +23,7 @@ export function EditorContextMenu({
   x,
   y,
   hasSelection,
+  copyError,
   onCopy,
   onSelectAll,
   onClose,
@@ -71,6 +73,11 @@ export function EditorContextMenu({
         >
           Select All
         </button>
+        {copyError !== null && copyError !== undefined ? (
+          <p role="alert" className="px-3 py-1.5 text-xs text-error">
+            {copyError}
+          </p>
+        ) : null}
       </div>
     </div>
   )

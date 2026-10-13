@@ -156,7 +156,12 @@ export interface FilesServiceDeps {
   trashItem: (absolutePath: string) => Promise<void>
 }
 
-/** Windows shell APIs require backslash paths, including UNC shares. */
+/**
+ * Windows shell COM APIs (SHOpenFolderAndSelectItems in showInFolder,
+ * IFileOperation in trashItem) require backslash paths, including UNC shares.
+ * In contrast, shell.openPath (openExternal, openRoot) uses ShellExecuteExW
+ * which accepts forward-slash paths and forward-slash WSL UNC roots natively.
+ */
 function toWindowsPath(lexicalPath: string): string {
   return win32.normalize(lexicalPath)
 }
