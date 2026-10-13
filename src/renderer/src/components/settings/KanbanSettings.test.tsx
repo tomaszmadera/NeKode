@@ -535,7 +535,27 @@ describe('KanbanSettings', () => {
     expect(test).not.toHaveBeenCalled()
   })
 
-  it('blocks rapid double activation of save, disables button during mutation, and unlocks on error', async () => {
+  // One parameterized contract for the guarded handlers, one named row per
+  // original scenario. Every row keeps the same failure mode provable: a rapid
+  // double activation must not start a second mutation, the button is disabled
+  // while the mutation is in flight, and it re-enables after resolve and after
+  // rejection (unlock on error).
+  interface GuardCase {
+    /** The control the guard protects. */
+    button: HTMLButtonElement
+    /** The mutation's call. */
+    call: ReturnType<typeof vi.fn>
+    /** Resolves the in-flight mutation and asserts the row's completion state. */
+    complete: () => Promise<void>
+    /** Arms the rejection and re-triggers the mutation; returns the control. */
+    rearm: () => HTMLButtonElement
+    /** Message the rejected mutation surfaces. */
+    errorMessage: string
+  }
+
+  // Original scenario: 'blocks rapid double activation of save, disables button
+  // during mutation, and unlocks on error'.
+  async function saveCase(): Promise<GuardCase> {
     let resolveSetConfig: () => void = () => {}
     const setConfig = vi.fn().mockImplementation(
       () =>
@@ -548,39 +568,34 @@ describe('KanbanSettings', () => {
       setConfig,
     })
     await renderLoaded(app)
-
-    const select = screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect)
-    fireEvent.change(select, { target: { value: 'second' } })
-
-    const saveButton = screen.getByTestId(TEST_ID.settingsKanbanSave) as HTMLButtonElement
-    expect(saveButton.disabled).toBe(false)
-
-    // First click initiates save
-    fireEvent.click(saveButton)
-    expect(setConfig).toHaveBeenCalledTimes(1)
-    expect(saveButton.disabled).toBe(true)
-
-    // Rapid second click is guarded
-    fireEvent.click(saveButton)
-    expect(setConfig).toHaveBeenCalledTimes(1)
-
-    // Complete save
-    resolveSetConfig()
-    await waitFor(() => expect(saveButton.disabled).toBe(false))
-    expect(screen.getByTestId(TEST_ID.settingsKanbanSaved)).toBeTruthy()
-
-    // Unlock on error
-    setConfig.mockRejectedValueOnce({
-      nekodeAppError: true,
-      code: 'internal',
-      message: 'Failed to write config',
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect), {
+      target: { value: 'second' },
     })
-    fireEvent.click(saveButton)
-    await screen.findByText('Failed to write config')
-    expect(saveButton.disabled).toBe(false)
-  })
+    const button = screen.getByTestId(TEST_ID.settingsKanbanSave) as HTMLButtonElement
+    return {
+      button,
+      call: setConfig,
+      complete: async () => {
+        resolveSetConfig()
+        await waitFor(() => expect(button.disabled).toBe(false))
+        // Original non-guard step: a resolved save shows the saved indicator.
+        expect(screen.getByTestId(TEST_ID.settingsKanbanSaved)).toBeTruthy()
+      },
+      rearm: () => {
+        setConfig.mockRejectedValueOnce({
+          nekodeAppError: true,
+          code: 'internal',
+          message: 'Failed to write config',
+        })
+        return button
+      },
+      errorMessage: 'Failed to write config',
+    }
+  }
 
-  it('blocks rapid double activation of browseDir, disables button during mutation, and unlocks on error', async () => {
+  // Original scenario: 'blocks rapid double activation of browseDir, disables
+  // button during mutation, and unlocks on error'.
+  async function browseDirCase(): Promise<GuardCase> {
     let resolvePick: (path: string | null) => void = () => {}
     const pickDirectory = vi.fn().mockImplementation(
       () =>
@@ -594,31 +609,55 @@ describe('KanbanSettings', () => {
       stateSet,
     })
     await renderLoaded(app)
+    const button = screen.getByTestId(TEST_ID.settingsKanbanDirBrowse) as HTMLButtonElement
+    return {
+      button,
+      call: pickDirectory,
+      complete: async () => {
+        resolvePick('D:/new-adapters')
+        await waitFor(() => expect(button.disabled).toBe(false))
+      },
+      rearm: () => {
+        pickDirectory.mockRejectedValueOnce({
+          nekodeAppError: true,
+          code: 'internal',
+          message: 'Picker failed',
+        })
+        return button
+      },
+      errorMessage: 'Picker failed',
+    }
+  }
 
-    const browseButton = screen.getByTestId(TEST_ID.settingsKanbanDirBrowse) as HTMLButtonElement
-    expect(browseButton.disabled).toBe(false)
+  const guardRows: Array<[string, () => Promise<GuardCase>]> = [
+    ['save', saveCase],
+    ['browseDir', browseDirCase],
+  ]
 
-    // First click initiates browse
-    fireEvent.click(browseButton)
-    expect(pickDirectory).toHaveBeenCalledTimes(1)
-    expect(browseButton.disabled).toBe(true)
+  it.each(guardRows)(
+    'blocks rapid double activation of %s, disables button during mutation, and unlocks on error',
+    async (_name, mount) => {
+      const guard = await mount()
+      expect(guard.button.disabled).toBe(false)
 
-    // Rapid second click is guarded
-    fireEvent.click(browseButton)
-    expect(pickDirectory).toHaveBeenCalledTimes(1)
+      // First activation starts the mutation.
+      fireEvent.click(guard.button)
+      expect(guard.call).toHaveBeenCalledTimes(1)
+      expect(guard.button.disabled).toBe(true)
 
-    // Complete browse
-    resolvePick('D:/new-adapters')
-    await waitFor(() => expect(browseButton.disabled).toBe(false))
+      // Rapid second activation is blocked: one call only.
+      fireEvent.click(guard.button)
+      expect(guard.call).toHaveBeenCalledTimes(1)
 
-    // Unlock on error
-    pickDirectory.mockRejectedValueOnce({
-      nekodeAppError: true,
-      code: 'internal',
-      message: 'Picker failed',
-    })
-    fireEvent.click(browseButton)
-    await screen.findByText('Picker failed')
-    expect(browseButton.disabled).toBe(false)
-  })
+      // Resolve: the row's completion state lands and the guard releases.
+      await guard.complete()
+
+      // Rejection: the error surfaces and the button unlocks.
+      const retryButton = guard.rearm()
+      expect(retryButton.disabled).toBe(false)
+      fireEvent.click(retryButton)
+      await screen.findByText(guard.errorMessage)
+      expect(retryButton.disabled).toBe(false)
+    },
+  )
 })

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IPC_CHANNEL } from '../shared/ipc-contract'
+import { AppError, serializeAppError } from '../shared/ipc-error'
 import { createAppApi } from './app-api'
 
 function createIpcMock() {
@@ -28,6 +29,25 @@ describe('preload app api', () => {
     const ipc = createIpcMock()
     await createAppApi(ipc).dictation.dictionaryList()
     expect(ipc.invocations).toEqual([{ channel: IPC_CHANNEL.dictationDictionaryList, args: [] }])
+  })
+  it('decodes a rejected invoke in the wire error shape into the typed payload', async () => {
+    // Regression: main transports typed errors as a serialized payload inside
+    // the rejection message; the bridge must decode that wire shape to the
+    // structured AppErrorPayload the renderer contract promises (a silent
+    // mis-decode would surface as a generic failure).
+    const ipc = createIpcMock()
+    ipc.invoke = () =>
+      Promise.reject(
+        new Error(
+          serializeAppError(new AppError('not_found', 'No such project.', 'projects:remove')),
+        ),
+      )
+    await expect(createAppApi(ipc).projects.remove('p1')).rejects.toEqual({
+      nekodeAppError: true,
+      code: 'not_found',
+      message: 'No such project.',
+      channel: 'projects:remove',
+    })
   })
   it('routes desktop activation with no keys, window or command arguments', async () => {
     const ipc = createIpcMock()

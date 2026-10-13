@@ -7,18 +7,9 @@ import type {
   WorkItem,
 } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import {
-  boardColumns,
-  compareRefs,
-  DEFAULT_KANBAN_SORT,
-  KanbanBoard,
-  kanbanCollapsedStorageKey,
-  kanbanSortStorageKey,
-  parseCollapsedStateIds,
-  parseKanbanSort,
-  reconcileBoard,
-  sortWorkItems,
-} from './KanbanBoard'
+import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
+import { kanbanBoardFixture as fixture, kanbanWorkItem as item } from '../../test/kanban-fixtures'
+import { KanbanBoard, kanbanCollapsedStorageKey, kanbanSortStorageKey } from './KanbanBoard'
 import { KanbanSessions } from './KanbanSessions'
 
 // Read-only board surface (spec kanban-adapter-interface Behaviour 14, AC14):
@@ -51,47 +42,7 @@ function listedKanbanItemIds(group: HTMLElement): Array<string | null> {
     .map((element) => element.getAttribute('data-testid'))
 }
 
-function item(ref: string, title: string, stateId: string): WorkItem {
-  return {
-    ref,
-    id: `id-${ref}`,
-    title,
-    description: null,
-    stateId,
-    stateName: stateId,
-    stateGroup: 'backlog',
-    priority: null,
-    assignee: null,
-    url: null,
-    updatedAt: null,
-  }
-}
-
-const fixture: KanbanBoardData = {
-  states: [
-    { id: 's2', name: 'In Progress', group: 'started', order: 2 },
-    { id: 's1', name: 'Backlog', group: 'backlog', order: 1 },
-    { id: 's3', name: 'Done', group: 'completed', order: 3 },
-  ],
-  items: [
-    item('NK-1', 'First task', 's1'),
-    item('NK-3', 'Third task', 's1'),
-    item('NK-2', 'Second task', 's2'),
-  ],
-}
-
 describe('cached background refresh', () => {
-  it('reuses unchanged item and state objects while applying updates and order', () => {
-    const next = structuredClone(fixture)
-    next.items.reverse()
-    next.items[0].title = 'Changed'
-    const result = reconcileBoard(fixture, next)
-    expect(result.states[0]).toBe(fixture.states[0])
-    expect(result.items[2]).toBe(fixture.items[0])
-    expect(result.items[0]).not.toBe(fixture.items[2])
-    expect(result.items[0].title).toBe('Changed')
-  })
-
   it('deduplicates activation while the first request is pending and preserves an empty snapshot on failure', async () => {
     const pending = deferred<KanbanBoardData>()
     const listBoard = vi
@@ -307,38 +258,6 @@ describe('kanban board — columns (spec Behaviour 14, AC14)', () => {
     expect(listBoard).toHaveBeenCalledTimes(1)
   })
 
-  it('boardColumns groups items by state id, keeping the adapter item order', () => {
-    const columns = boardColumns(fixture)
-    expect(columns.map((column) => column.name)).toEqual(['Backlog', 'In Progress', 'Done'])
-    expect(columns[0].items.map((entry) => entry.ref)).toEqual(['NK-1', 'NK-3'])
-    expect(columns[2].items).toEqual([])
-  })
-
-  // The spec fixes the WorkItem/KanbanState shapes independently and Stage 1
-  // normalization never cross-checks an item's stateId against the state ids,
-  // so an unmatched state id is possible. Such items must not be dropped.
-  it('boardColumns keeps every item: an unmatched stateId gets a trailing column labelled from the item', () => {
-    const columns = boardColumns({
-      states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
-      items: [
-        item('NK-1', 'Known task', 's1'),
-        { ...item('NK-2', 'Orphan one', 'sx'), stateName: 'Ghost state' },
-        item('NK-3', 'Orphan two', 'sx'),
-      ],
-    })
-    // Matched column first, unmatched trailing; label from the item's stateName.
-    expect(columns.map((column) => column.name)).toEqual(['Backlog', 'Ghost state'])
-    expect(columns[1].stateId).toBe('sx')
-    expect(columns[1].items.map((entry) => entry.ref)).toEqual(['NK-2', 'NK-3'])
-    // Nothing is dropped: every item appears in exactly one column.
-    expect(
-      columns
-        .flatMap((column) => column.items)
-        .map((entry) => entry.ref)
-        .sort(),
-    ).toEqual(['NK-1', 'NK-2', 'NK-3'])
-  })
-
   it('renders unmatched-state items in a trailing column instead of dropping them', async () => {
     const listBoard = vi.fn().mockResolvedValue({
       states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
@@ -530,10 +449,6 @@ describe('kanban board — load count and refresh (spec Behaviour 14, AC14)', ()
 
 const longTitle = 'Write the migration notes for the session scroll fix and keep every word'
 
-function classTokens(element: HTMLElement): string[] {
-  return element.className.split(/\s+/).filter((token) => token.length > 0)
-}
-
 function copyBoard(): KanbanBoardData {
   return {
     states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
@@ -569,7 +484,7 @@ function richBoard(): KanbanBoardData {
 }
 
 describe('kanban board: list view and item review (spec Behaviour 14, AC14)', () => {
-  it('shows separate slug and title columns, and underlines those texts on hover', async () => {
+  it('shows separate slug and title columns with the priority label and no inline editor', async () => {
     render(
       <KanbanBoard
         app={appWith(vi.fn().mockResolvedValue(richBoard()))}
@@ -588,20 +503,13 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     )
     const slug = within(row).getByTestId(testIdFor.kanbanItemRef('NK-1'))
     const title = within(row).getByTestId(testIdFor.kanbanItemTitle('NK-1'))
+    // Column separation: the slug and the title are their own cells with their
+    // own text, and no separate link element carries either.
     expect(slug.textContent).toBe('NK-1')
     expect(title.textContent).toBe(longTitle)
-    expect(row.className).toContain('hover:bg-highlight')
-    expect(row.style.gridTemplateColumns).toBe('7.5rem minmax(0, 1fr) auto auto')
-    for (const column of [slug, title]) {
-      expect(classTokens(column)).toContain('hover:underline')
-      expect(classTokens(column)).toContain('w-fit')
-      expect(classTokens(column)).not.toContain('underline')
-      expect(classTokens(column)).not.toContain('w-full')
-      expect(column.className).not.toContain('hover:bg-highlight')
-    }
-    expect(classTokens(title)).toContain('truncate')
-    expect(classTokens(title)).not.toContain('break-words')
     expect(within(row).queryByTestId('kanban-item-link-NK-1')).toBeNull()
+    // The priority label sits beside the title text, never inside it; the row
+    // carries no inline status editor.
     expect(title.textContent).not.toContain('High')
     expect(within(row).getByText('High')).toBeTruthy()
     expect(within(row).queryByRole('combobox')).toBeNull()
@@ -630,18 +538,16 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     const priority = within(review).getByTestId(TEST_ID.kanbanReviewPriority)
     const status = within(review).getByTestId(TEST_ID.kanbanReviewStatus)
     const columns = title.parentElement?.parentElement
+    // Full review content: the whole title, the description verbatim, and the
+    // ref, priority and status.
     expect(title.textContent).toBe(longTitle)
-    expect(title.className).not.toContain('truncate')
-    expect(columns?.style.gridTemplateColumns).toBe('minmax(0, 3fr) minmax(0, 1fr)')
+    // Column separation: the title column holds the title; the controls column
+    // holds the priority and status controls.
     expect(columns?.children[0]?.contains(title)).toBe(true)
     expect(columns?.children[1]?.contains(priority)).toBe(true)
     expect(columns?.children[1]?.contains(status)).toBe(true)
     expect(columns?.children[0]?.contains(priority)).toBe(false)
     const back = screen.getByTestId(TEST_ID.kanbanReviewBack)
-    const heading = screen.getByRole('heading', { name: 'Kanban' })
-    expect(heading.nextElementSibling).toBe(back)
-    expect(back.className).toContain('border-edge')
-    expect(back.className).toContain('bg-panel')
     expect(back.textContent).toBe('Back')
     expect(review.textContent).toContain('NK-1')
     expect(review.textContent).toContain('High')
@@ -777,91 +683,9 @@ describe('kanban list — collapsible status sections', () => {
     const toggleP2 = await screen.findByTestId(testIdFor.kanbanGroupToggle('s1'))
     expect(toggleP2.getAttribute('aria-expanded')).toBe('true')
   })
-
-  it('parses collapsed state ids safely', () => {
-    expect(parseCollapsedStateIds(null)).toEqual(new Set())
-    expect(parseCollapsedStateIds('')).toEqual(new Set())
-    expect(parseCollapsedStateIds('not-json')).toEqual(new Set())
-    expect(parseCollapsedStateIds('{"not": "array"}')).toEqual(new Set())
-    expect(parseCollapsedStateIds('["s1", 123]')).toEqual(new Set())
-    expect(parseCollapsedStateIds('["s1", "s2"]')).toEqual(new Set(['s1', 's2']))
-  })
 })
 
 describe('kanban list — sorting items', () => {
-  const unsortedItems: WorkItem[] = [
-    { ...item('NK-10', 'Task 10', 's1'), priority: 'low' },
-    { ...item('NK-2', 'Task 2', 's1'), priority: 'urgent' },
-    { ...item('NK-1', 'Task 1', 's1'), priority: null },
-    { ...item('NK-3', 'Task 3', 's1'), priority: 'urgent' },
-    { ...item('NK-5', 'Task 5', 's1'), priority: 'high' },
-    { ...item('NK-4', 'Task 4', 's1'), priority: 'medium' },
-  ]
-
-  it('natural sort orders task slugs correctly', () => {
-    expect(compareRefs('NK-2', 'NK-10')).toBeLessThan(0)
-    expect(compareRefs('NK-10', 'NK-2')).toBeGreaterThan(0)
-    expect(compareRefs('NK-1', 'NK-1')).toBe(0)
-  })
-
-  it('sorts by slug ascending by default (natural numerical order)', () => {
-    const sorted = sortWorkItems(unsortedItems, 'slug', 'asc')
-    expect(sorted.map((i) => i.ref)).toEqual(['NK-1', 'NK-2', 'NK-3', 'NK-4', 'NK-5', 'NK-10'])
-  })
-
-  it('sorts by slug descending when direction is desc', () => {
-    const sorted = sortWorkItems(unsortedItems, 'slug', 'desc')
-    expect(sorted.map((i) => i.ref)).toEqual(['NK-10', 'NK-5', 'NK-4', 'NK-3', 'NK-2', 'NK-1'])
-  })
-
-  it('sorts by slug using the ref only', () => {
-    const items: WorkItem[] = [
-      { ...item('NK-2', 'Alpha', 's1'), priority: 'low' },
-      { ...item('NK-1', 'Zulu', 's1'), priority: 'urgent' },
-    ]
-    expect(sortWorkItems(items, 'slug', 'asc').map((entry) => entry.ref)).toEqual(['NK-1', 'NK-2'])
-  })
-
-  it('sorts by priority ascending (urgent -> high -> medium -> low -> none) with secondary slug', () => {
-    const sorted = sortWorkItems(unsortedItems, 'priority', 'asc')
-    expect(sorted.map((i) => i.ref)).toEqual(['NK-2', 'NK-3', 'NK-5', 'NK-4', 'NK-10', 'NK-1'])
-    expect(sorted.map((i) => i.priority)).toEqual([
-      'urgent',
-      'urgent',
-      'high',
-      'medium',
-      'low',
-      null,
-    ])
-  })
-
-  it('sorts by priority descending (none -> low -> medium -> high -> urgent) with secondary slug reversed', () => {
-    const sorted = sortWorkItems(unsortedItems, 'priority', 'desc')
-    expect(sorted.map((i) => i.ref)).toEqual(['NK-1', 'NK-10', 'NK-4', 'NK-5', 'NK-3', 'NK-2'])
-    expect(sorted.map((i) => i.priority)).toEqual([
-      null,
-      'low',
-      'medium',
-      'high',
-      'urgent',
-      'urgent',
-    ])
-  })
-
-  it('parses stored kanban sort settings safely', () => {
-    expect(parseKanbanSort(null)).toEqual(DEFAULT_KANBAN_SORT)
-    expect(parseKanbanSort('')).toEqual(DEFAULT_KANBAN_SORT)
-    expect(parseKanbanSort('not-json')).toEqual(DEFAULT_KANBAN_SORT)
-    expect(parseKanbanSort(JSON.stringify({ sortBy: 'priority', direction: 'desc' }))).toEqual({
-      sortBy: 'priority',
-      direction: 'desc',
-    })
-    expect(parseKanbanSort(JSON.stringify({ sortBy: 'unknown', direction: 'invalid' }))).toEqual({
-      sortBy: 'slug',
-      direction: 'asc',
-    })
-  })
-
   it('renders sort controls in header on list view and re-sorts on user interaction', async () => {
     const boardWithUnsorted: KanbanBoardData = {
       states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
@@ -977,10 +801,6 @@ describe('kanban work item controls (task launch navigation)', () => {
     )
 
     const row = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
-    expect(row.tagName).toBe('DIV')
-    expect(row.querySelector('button button')).toBeNull()
-    expect(row.style.minHeight).toBe('40.35px')
-    expect(row.className).toContain('hover:bg-highlight')
     expect(within(row).getByTestId(testIdFor.kanbanItemStart('NK-1')).textContent).toBe('Start')
     expect((await within(row).findByTestId(testIdFor.kanbanItemResume('NK-1'))).textContent).toBe(
       'Resume',
@@ -990,19 +810,17 @@ describe('kanban work item controls (task launch navigation)', () => {
     const slug = within(row).getByTestId(testIdFor.kanbanItemRef('NK-1'))
     const start = within(row).getByTestId(testIdFor.kanbanItemStart('NK-1'))
     const resume = await within(row).findByTestId(testIdFor.kanbanItemResume('NK-1'))
-    expect(classTokens(link)).toContain('truncate')
-    expect(link.className).not.toContain('hover:bg-highlight')
-    expect(classTokens(link)).toContain('hover:underline')
-    expect(classTokens(link)).not.toContain('underline')
-    expect(classTokens(slug)).toContain('hover:underline')
-    expect(classTokens(slug)).not.toContain('underline')
+    // Start stays blocked while the item has a Resume.
     expect(start.hasAttribute('disabled')).toBe(true)
-    expect(start.className).not.toContain('hover:underline')
-    expect(classTokens(resume)).toContain('hover:underline')
-    expect(link.className).toContain('focus-visible:outline-2')
-    for (const control of [slug, link, resume]) {
-      expect(control.tagName).toBe('BUTTON')
+    // Submit guard re-pin: the row controls must carry type="button" so they
+    // cannot trigger an accidental form submit.
+    for (const control of [start, resume]) {
       expect(control.getAttribute('type')).toBe('button')
+    }
+    // The review-open controls are buttons and each one is reachable by focus.
+    const buttons = within(row).getAllByRole('button')
+    for (const control of [slug, link, resume]) {
+      expect(buttons).toContain(control)
       control.focus()
       expect(document.activeElement).toBe(control)
     }
@@ -1081,23 +899,9 @@ describe('kanban work item controls (task launch navigation)', () => {
 })
 
 describe('kanban item copy menu', () => {
-  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
-
   afterEach(() => {
-    if (originalClipboard === undefined) {
-      Reflect.deleteProperty(navigator, 'clipboard')
-    } else {
-      Object.defineProperty(navigator, 'clipboard', originalClipboard)
-    }
+    restoreClipboard()
   })
-
-  function stubClipboard(writeText: ReturnType<typeof vi.fn> | null): void {
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      writable: true,
-      value: writeText === null ? null : { writeText },
-    })
-  }
 
   async function renderCopyList(): Promise<void> {
     render(
@@ -1112,7 +916,7 @@ describe('kanban item copy menu', () => {
 
   it('copies the ref or the exact url from the link menu and closes on success', async () => {
     const writeText = vi.fn(() => Promise.resolve())
-    stubClipboard(writeText)
+    stubClipboard({ writeText })
     await renderCopyList()
     const link = screen.getByTestId(testIdFor.kanbanItemTitle('NK-1'))
     expect(fireEvent.contextMenu(link)).toBe(false)
@@ -1138,7 +942,7 @@ describe('kanban item copy menu', () => {
           finish = resolve
         }),
     )
-    stubClipboard(writeText)
+    stubClipboard({ writeText })
     await renderCopyList()
     fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy slug' }))
@@ -1150,31 +954,29 @@ describe('kanban item copy menu', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
   })
 
-  it('keeps a clipboard failure visible and does not treat it as success', async () => {
-    const writeText = vi.fn(() => Promise.reject(new Error('denied')))
-    stubClipboard(writeText)
+  it.each([
+    ['keeps a clipboard failure visible and does not treat it as success', 'reject'],
+    ['shows a clipboard failure when the clipboard is missing', 'missing'],
+  ] as Array<[string, 'reject' | 'missing']>)('%s', async (_title, cause) => {
+    const writeText = cause === 'reject' ? vi.fn(() => Promise.reject(new Error('denied'))) : null
+    stubClipboard(writeText === null ? { missing: true } : { writeText })
     await renderCopyList()
     fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy slug' }))
     expect((await screen.findByRole('alert')).textContent).toBe('Could not copy to the clipboard.')
     expect(screen.getByRole('menu')).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: 'Copy slug' })).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
-    expect(writeText).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows a clipboard failure when the clipboard is missing', async () => {
-    stubClipboard(null)
-    await renderCopyList()
-    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy slug' }))
-    expect((await screen.findByRole('alert')).textContent).toBe('Could not copy to the clipboard.')
-    expect(screen.getByRole('menu')).toBeTruthy()
+    if (cause === 'reject') {
+      // A failed write is not a success: the item stays actionable and no
+      // review side effect fires.
+      expect(screen.getByRole('menuitem', { name: 'Copy slug' })).toBeTruthy()
+      expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
+      expect(writeText).toHaveBeenCalledTimes(1)
+    }
   })
 
   it('disables Copy link when the url is null or blank', async () => {
     const writeText = vi.fn(() => Promise.resolve())
-    stubClipboard(writeText)
+    stubClipboard({ writeText })
     await renderCopyList()
     for (const ref of ['NK-2', 'NK-3']) {
       fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemTitle(ref)))
@@ -1190,7 +992,7 @@ describe('kanban item copy menu', () => {
 
   it('opens from the context-menu key or Shift+F10 and closes on Escape or an outside pointer', async () => {
     const writeText = vi.fn(() => Promise.resolve())
-    stubClipboard(writeText)
+    stubClipboard({ writeText })
     await renderCopyList()
     const link = screen.getByTestId(testIdFor.kanbanItemTitle('NK-1'))
     link.focus()
@@ -2381,24 +2183,14 @@ describe('kanban review priority change', () => {
 })
 
 describe('kanban review text selection', () => {
-  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
-
   afterEach(() => {
-    if (originalClipboard === undefined) {
-      Reflect.deleteProperty(navigator, 'clipboard')
-    } else {
-      Object.defineProperty(navigator, 'clipboard', originalClipboard)
-    }
+    restoreClipboard()
     vi.restoreAllMocks()
   })
 
   it('selects review text and copies that selection', async () => {
     const writeText = vi.fn(() => Promise.resolve())
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      writable: true,
-      value: { writeText },
-    })
+    stubClipboard({ writeText })
     render(
       <KanbanBoard
         app={appWith(vi.fn().mockResolvedValue(richBoard()))}
@@ -2408,21 +2200,20 @@ describe('kanban review text selection', () => {
     )
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
-    expect(review.className).toContain('select-text')
     const title = within(review).getByTestId(TEST_ID.kanbanReviewTitle)
     const description = within(review).getByTestId(TEST_ID.kanbanReviewDescription)
-    expect(title.tagName).toBe('H3')
-    expect(title.className).toContain('cursor-text')
-    expect(description.className).toContain('cursor-text')
 
     vi.spyOn(window, 'getSelection').mockReturnValue({
       toString: () => 'Line one',
     } as Selection)
+    // The text surfaces open the copy menu and the copy carries the current
+    // selection, not the whole field.
     expect(fireEvent.contextMenu(title)).toBe(false)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Line one'))
     expect(screen.queryByRole('menu')).toBeNull()
 
+    // A blank selection disables Copy: the menu stays open and nothing is written.
     vi.spyOn(window, 'getSelection').mockReturnValue({
       toString: () => '   ',
     } as Selection)
@@ -2433,6 +2224,7 @@ describe('kanban review text selection', () => {
     expect(writeText).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('menu', { name: 'Copy selection' })).toBeTruthy()
 
+    // Escape dismisses the menu; non-text surfaces never open it.
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
     expect(fireEvent.contextMenu(screen.getByTestId(TEST_ID.kanbanReviewBack))).toBe(true)

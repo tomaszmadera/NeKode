@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AgentProfile, AgentProfilesDocument, AppApi } from '../../../../shared/ipc-contract'
 import { AGENT_PROMPT_PLACEHOLDER, agentProfileFieldError } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { TEST_ID } from '../../lib/test-ids'
 
 // Agents tab of Project Settings (kanban task launch amendment, Profile
@@ -44,8 +45,7 @@ export function AgentProfilesSettings({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [form, setForm] = useState<ProfileForm | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const busyRef = useRef(false)
+  const guard = useMutationGuard()
   const projectRef = useRef(projectId)
   const argKey = useRef(0)
   projectRef.current = projectId
@@ -57,11 +57,13 @@ export function AgentProfilesSettings({
 
   useEffect(() => {
     let alive = true
-    busyRef.current = false
+    // A project switch supersedes any in-flight mutation: drop the guard so
+    // the new project's controls start enabled (the superseded run's own
+    // release is skipped via `isCurrent` below).
+    guard.reset()
     setForm(null)
     setFormError(null)
     setLoadError(null)
-    setBusy(false)
     if (projectId === null) {
       setDocument(EMPTY_DOCUMENT)
       setLoadedFor(null)
@@ -87,16 +89,12 @@ export function AgentProfilesSettings({
     return () => {
       alive = false
     }
-  }, [app, projectId])
-
-  function releaseBusy(savedFor: string): void {
-    if (savedFor !== projectRef.current) return
-    busyRef.current = false
-    setBusy(false)
-  }
+  }, [app, projectId, guard.reset])
 
   async function save(): Promise<void> {
-    if (projectId === null || form === null || busyRef.current) return
+    // The in-flight check stays before the field validation: while a save is
+    // in flight a second activation must return silently, not re-report.
+    if (projectId === null || form === null || guard.inFlight()) return
     const message = agentProfileFieldError({
       name: form.name,
       executable: form.executable,
@@ -107,47 +105,53 @@ export function AgentProfilesSettings({
       return
     }
     const savedFor = projectId
-    busyRef.current = true
-    setBusy(true)
-    setFormError(null)
-    try {
-      const next = await app.agentProfiles.put(projectId, {
-        id: form.id,
-        name: form.name.trim(),
-        executable: form.executable.trim(),
-        args: form.args.map((row) => row.value),
-        isDefault: form.isDefault,
-      })
-      if (savedFor !== projectRef.current) return
-      setDocument(next)
-      setLoadedFor(savedFor)
-      setForm(null)
-    } catch (cause) {
-      if (savedFor !== projectRef.current) return
-      setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the agent profile.')
-    } finally {
-      releaseBusy(savedFor)
-    }
+    await guard.run(
+      async () => {
+        setFormError(null)
+        try {
+          const next = await app.agentProfiles.put(projectId, {
+            id: form.id,
+            name: form.name.trim(),
+            executable: form.executable.trim(),
+            args: form.args.map((row) => row.value),
+            isDefault: form.isDefault,
+          })
+          if (savedFor !== projectRef.current) return
+          setDocument(next)
+          setLoadedFor(savedFor)
+          setForm(null)
+        } catch (cause) {
+          if (savedFor !== projectRef.current) return
+          setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the agent profile.')
+        }
+      },
+      // A superseded run (project switch) must not unlock its replacement.
+      () => savedFor === projectRef.current,
+    )
   }
 
   async function remove(profileId: string): Promise<void> {
-    if (projectId === null || busyRef.current) return
+    if (projectId === null) return
     const savedFor = projectId
-    busyRef.current = true
-    setBusy(true)
-    setFormError(null)
-    try {
-      const next = await app.agentProfiles.delete(projectId, profileId)
-      if (savedFor !== projectRef.current) return
-      setDocument(next)
-      setLoadedFor(savedFor)
-      if (form?.id === profileId) setForm(null)
-    } catch (cause) {
-      if (savedFor !== projectRef.current) return
-      setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to delete the agent profile.')
-    } finally {
-      releaseBusy(savedFor)
-    }
+    await guard.run(
+      async () => {
+        setFormError(null)
+        try {
+          const next = await app.agentProfiles.delete(projectId, profileId)
+          if (savedFor !== projectRef.current) return
+          setDocument(next)
+          setLoadedFor(savedFor)
+          if (form?.id === profileId) setForm(null)
+        } catch (cause) {
+          if (savedFor !== projectRef.current) return
+          setFormError(
+            parseAppErrorPayload(cause)?.message ?? 'Failed to delete the agent profile.',
+          )
+        }
+      },
+      // A superseded run (project switch) must not unlock its replacement.
+      () => savedFor === projectRef.current,
+    )
   }
 
   function startAdd(): void {
@@ -292,7 +296,7 @@ export function AgentProfilesSettings({
                 <button
                   type="button"
                   className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
-                  disabled={busy}
+                  disabled={guard.busy}
                   onClick={() => {
                     void save()
                   }}
@@ -366,7 +370,7 @@ export function AgentProfilesSettings({
                   type="button"
                   className="rounded-md px-2 py-1 text-ink-secondary hover:bg-error/10 hover:text-error disabled:opacity-50"
                   aria-label={`Delete ${profile.name}`}
-                  disabled={busy}
+                  disabled={guard.busy}
                   onClick={() => {
                     void remove(profile.id)
                   }}

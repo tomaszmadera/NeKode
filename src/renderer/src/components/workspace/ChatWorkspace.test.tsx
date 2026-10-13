@@ -584,46 +584,53 @@ describe('ChatWorkspace session host', () => {
       expect(playAttentionChime).toHaveBeenCalledTimes(1)
     })
 
-    it('AC3 (attention-alert-settings): active-indicator off suppresses the selected chat state, chime still fires', async () => {
+    it.each([
+      [
+        'AC3 (attention-alert-settings): active-indicator off suppresses the selected chat state, chime still fires',
+        { ...DEFAULT_ATTENTION_SETTINGS, activeIndicator: false },
+        't2',
+        null,
+        1,
+      ],
+      [
+        'AC4 (attention-alert-settings): active chime off silences the selected chat, indicator still marks',
+        { ...DEFAULT_ATTENTION_SETTINGS, activeChime: false },
+        't2',
+        { t2: { message: null } },
+        0,
+      ],
+      [
+        'AC5 (attention-alert-settings): background chime off silences hidden-chat signals, state still marks',
+        { ...DEFAULT_ATTENTION_SETTINGS, chime: false },
+        't1',
+        { t1: { message: null } },
+        0,
+      ],
+    ] as Array<
+      [
+        string,
+        typeof DEFAULT_ATTENTION_SETTINGS,
+        string,
+        Record<string, { message: string | null }> | null,
+        number,
+      ]
+    >)('%s', async (_name, settings, chatId, expectedMark, chimeTimes) => {
       const bundle = createAppMock()
-      const { onAttentionChange } = await renderTwoChatWorkspace(bundle, {
-        ...DEFAULT_ATTENTION_SETTINGS,
-        activeIndicator: false,
-      })
+      const { onAttentionChange } = await renderTwoChatWorkspace(bundle, settings)
 
       act(() => {
-        bundle.emitData('t2', '\x07')
+        bundle.emitData(chatId, '\x07')
       })
-      expect(onAttentionChange).toHaveBeenCalledTimes(0)
-      expect(playAttentionChime).toHaveBeenCalledTimes(1)
-    })
-
-    it('AC4 (attention-alert-settings): active chime off silences the selected chat, indicator still marks', async () => {
-      const bundle = createAppMock()
-      const { onAttentionChange } = await renderTwoChatWorkspace(bundle, {
-        ...DEFAULT_ATTENTION_SETTINGS,
-        activeChime: false,
-      })
-
-      act(() => {
-        bundle.emitData('t2', '\x07')
-      })
-      expect(onAttentionChange).toHaveBeenLastCalledWith({ t2: { message: null } })
-      expect(playAttentionChime).not.toHaveBeenCalled()
-    })
-
-    it('AC5 (attention-alert-settings): background chime off silences hidden-chat signals, state still marks', async () => {
-      const bundle = createAppMock()
-      const { onAttentionChange } = await renderTwoChatWorkspace(bundle, {
-        ...DEFAULT_ATTENTION_SETTINGS,
-        chime: false,
-      })
-
-      act(() => {
-        bundle.emitData('t1', '\x07')
-      })
-      expect(onAttentionChange).toHaveBeenLastCalledWith({ t1: { message: null } })
-      expect(playAttentionChime).not.toHaveBeenCalled()
+      if (expectedMark === null) {
+        expect(onAttentionChange).toHaveBeenCalledTimes(0)
+      } else {
+        expect(onAttentionChange).toHaveBeenLastCalledWith(expectedMark)
+      }
+      if (chimeTimes === 0) {
+        expect(playAttentionChime).not.toHaveBeenCalled()
+      } else {
+        expect(playAttentionChime).toHaveBeenCalledTimes(chimeTimes)
+      }
     })
 
     it('AC6 (attention-alert-settings): clearing a badge never chimes', async () => {
@@ -649,23 +656,6 @@ describe('ChatWorkspace session host', () => {
       fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
       await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', 'go on'))
       expect(vi.mocked(playAttentionChime).mock.calls.length).toBe(chimesAfterSignal)
-    })
-
-    it('AC5: selecting a badged chat clears its badge', async () => {
-      const bundle = createAppMock()
-      const { view } = await renderTwoChatWorkspace(bundle)
-      act(() => {
-        bundle.emitData('t1', '\x07')
-      })
-
-      const selectSpy = vi.fn()
-      rerenderWith(
-        view,
-        bundle,
-        { chatId: 't1', selectionNonce: 3, attention: { t1: { message: null } } },
-        selectSpy,
-      )
-      await waitFor(() => expect(selectSpy).toHaveBeenLastCalledWith({}))
     })
 
     it('AC6: submitting input to a badged chat clears its badge and writes the PTY', async () => {

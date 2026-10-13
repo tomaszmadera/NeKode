@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type {
   AppApi,
   KanbanAdapterInfo,
@@ -8,6 +8,7 @@ import type {
 } from '../../../../shared/ipc-contract'
 import { APP_STATE_KEY } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 
 // Kanban tab of the Project Settings modal (spec kanban-adapter-interface
@@ -131,8 +132,7 @@ export function KanbanSettings({
   const [savedState, setSavedState] = useState<'idle' | 'saved'>('idle')
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState<string | null>(null)
-  const busyRef = useRef(false)
-  const [busy, setBusy] = useState(false)
+  const guard = useMutationGuard()
 
   // One scan + config load on tab entry. The component mounts fresh each time
   // the tab is selected, so a plain mount effect is the entry hook (AC1: a
@@ -228,12 +228,10 @@ export function KanbanSettings({
   }
 
   async function save(): Promise<void> {
-    if (projectId === null || busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    setFormError(null)
-    setSavedState('idle')
-    try {
+    if (projectId === null) return
+    await guard.run(async () => {
+      setFormError(null)
+      setSavedState('idle')
       if (adapterId === null) {
         // Deselecting clears the binding; stored field values stay (Behaviour 7).
         try {
@@ -282,17 +280,14 @@ export function KanbanSettings({
           parseAppErrorPayload(cause)?.message ?? 'Failed to reload the Kanban settings.',
         )
       }
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
+    })
   }
 
   async function runTest(): Promise<void> {
     // Guard the exact rule the button state expresses: never test against an
     // unsaved binding (the displayed adapter must equal the persisted one) and
     // never start a second run while one is already in flight.
-    if (projectId === null || !bindingSaved || testState === 'running' || busyRef.current) return
+    if (projectId === null || !bindingSaved || testState === 'running' || guard.inFlight()) return
     setTestState('running')
     setTestMessage(null)
     try {
@@ -305,34 +300,30 @@ export function KanbanSettings({
   }
 
   async function browseDir(): Promise<void> {
-    if (busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    setLoadError(null)
-    const current = adaptersDir.trim()
-    try {
-      const picked = await app.dialogs.pickDirectory(current.length > 0 ? current : null)
-      if (picked === null) return
-      await app.state.set(APP_STATE_KEY.kanbanAdaptersDir, picked)
-      onInvalidate?.(null)
-      // Persist-then-rescan (Behaviour 12 / AC13): the list reflects the new
-      // directory immediately, with no restart.
-      const list = await app.kanban.adaptersList()
-      if (projectId === null) {
-        setAdapters(list)
-        setAdaptersDir(picked)
-        return
+    await guard.run(async () => {
+      setLoadError(null)
+      const current = adaptersDir.trim()
+      try {
+        const picked = await app.dialogs.pickDirectory(current.length > 0 ? current : null)
+        if (picked === null) return
+        await app.state.set(APP_STATE_KEY.kanbanAdaptersDir, picked)
+        onInvalidate?.(null)
+        // Persist-then-rescan (Behaviour 12 / AC13): the list reflects the new
+        // directory immediately, with no restart.
+        const list = await app.kanban.adaptersList()
+        if (projectId === null) {
+          setAdapters(list)
+          setAdaptersDir(picked)
+          return
+        }
+        const config = await app.kanban.getConfig(projectId)
+        applyState({ list, dir: picked, config })
+      } catch (cause) {
+        setLoadError(
+          parseAppErrorPayload(cause)?.message ?? 'Failed to change the adapters directory.',
+        )
       }
-      const config = await app.kanban.getConfig(projectId)
-      applyState({ list, dir: picked, config })
-    } catch (cause) {
-      setLoadError(
-        parseAppErrorPayload(cause)?.message ?? 'Failed to change the adapters directory.',
-      )
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
+    })
   }
 
   function renderField(field: KanbanConfigField): React.JSX.Element {
@@ -458,7 +449,7 @@ export function KanbanSettings({
               <div className="mt-3 flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={guard.busy}
                   className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
                   data-testid={TEST_ID.settingsKanbanSave}
                   onClick={() => {
@@ -471,7 +462,7 @@ export function KanbanSettings({
                   type="button"
                   className="h-control rounded-md px-4 text-ink-secondary hover:bg-highlight hover:text-ink disabled:opacity-50"
                   data-testid={TEST_ID.settingsKanbanTest}
-                  disabled={!bindingSaved || testState === 'running' || busy}
+                  disabled={!bindingSaved || testState === 'running' || guard.busy}
                   onClick={() => {
                     void runTest()
                   }}
@@ -528,7 +519,7 @@ export function KanbanSettings({
             </p>
             <button
               type="button"
-              disabled={busy}
+              disabled={guard.busy}
               className="mt-2 h-control rounded-md bg-button px-3 text-ink hover:bg-button-hover disabled:opacity-50"
               data-testid={TEST_ID.settingsKanbanDirBrowse}
               onClick={() => {

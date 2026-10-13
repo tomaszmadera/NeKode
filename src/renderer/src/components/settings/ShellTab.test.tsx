@@ -204,7 +204,27 @@ describe('ShellTab', () => {
     expect(Array.from(options).map((o) => o.value)).toEqual(['default', 'cmd'])
   })
 
-  it('blocks rapid double activation of addCustom, disables button during mutation, and unlocks on error', async () => {
+  // One parameterized contract for the guarded handlers, one named row per
+  // original scenario. Every row keeps the same failure mode provable: a rapid
+  // double activation must not start a second mutation, the button is disabled
+  // while the mutation is in flight, and it re-enables after resolve and after
+  // rejection (unlock on error).
+  interface GuardCase {
+    /** The control the guard protects. */
+    button: HTMLButtonElement
+    /** The mutation's call. */
+    call: ReturnType<typeof vi.fn>
+    /** Resolves the in-flight mutation and asserts the row's completion state. */
+    complete: () => Promise<void>
+    /** Arms the rejection and re-triggers the mutation; returns the control. */
+    rearm: () => HTMLButtonElement
+    /** Message the rejected mutation surfaces. */
+    errorMessage: string
+  }
+
+  // Original scenario: 'blocks rapid double activation of addCustom, disables
+  // button during mutation, and unlocks on error'.
+  async function addCustomCase(): Promise<GuardCase> {
     let resolveAdd: (val: { id: string; label: string }) => void = () => {}
     const addCustom = vi.fn().mockImplementation(
       () =>
@@ -223,37 +243,33 @@ describe('ShellTab', () => {
     )
     await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSelect)).toBeTruthy())
     const input = screen.getByTestId(TEST_ID.settingsShellCustomInput)
-    const addButton = screen.getByTestId(TEST_ID.settingsShellCustomAdd) as HTMLButtonElement
+    const button = screen.getByTestId(TEST_ID.settingsShellCustomAdd) as HTMLButtonElement
     fireEvent.change(input, { target: { value: 'D:\\tools\\nu.exe' } })
-    expect(addButton.disabled).toBe(false)
+    return {
+      button,
+      call: addCustom,
+      complete: async () => {
+        resolveAdd({ id: 'custom:D:\\tools\\nu.exe', label: 'nu.exe' })
+        // Original non-guard step: the completed add clears the input, so Add
+        // disables again once the guard released.
+        await waitFor(() => expect(button.disabled).toBe(true))
+      },
+      rearm: () => {
+        addCustom.mockRejectedValueOnce({
+          nekodeAppError: true,
+          code: 'validation',
+          message: 'Invalid executable path',
+        })
+        fireEvent.change(input, { target: { value: 'D:\\invalid.exe' } })
+        return button
+      },
+      errorMessage: 'Invalid executable path',
+    }
+  }
 
-    // First click initiates mutation
-    fireEvent.click(addButton)
-    expect(addCustom).toHaveBeenCalledTimes(1)
-    expect(addButton.disabled).toBe(true)
-
-    // Rapid second click is guarded and does not send duplicate IPC call
-    fireEvent.click(addButton)
-    expect(addCustom).toHaveBeenCalledTimes(1)
-
-    // Complete in-flight mutation
-    resolveAdd({ id: 'custom:D:\\tools\\nu.exe', label: 'nu.exe' })
-    await waitFor(() => expect(addButton.disabled).toBe(true))
-
-    // Unlock on error
-    addCustom.mockRejectedValueOnce({
-      nekodeAppError: true,
-      code: 'validation',
-      message: 'Invalid executable path',
-    })
-    fireEvent.change(input, { target: { value: 'D:\\invalid.exe' } })
-    expect(addButton.disabled).toBe(false)
-    fireEvent.click(addButton)
-    await screen.findByText('Invalid executable path')
-    expect(addButton.disabled).toBe(false)
-  })
-
-  it('blocks rapid double activation of save, disables button during mutation, and unlocks on error', async () => {
+  // Original scenario: 'blocks rapid double activation of save, disables button
+  // during mutation, and unlocks on error'.
+  async function saveCase(): Promise<GuardCase> {
     let resolveSet: () => void = () => {}
     const set = vi.fn().mockImplementation(
       () =>
@@ -275,33 +291,58 @@ describe('ShellTab', () => {
     )
     await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSelect)).toBeTruthy())
     const select = screen.getByTestId(TEST_ID.settingsShellSelect)
-    const saveButton = screen.getByTestId(TEST_ID.settingsShellSave) as HTMLButtonElement
+    const button = screen.getByTestId(TEST_ID.settingsShellSave) as HTMLButtonElement
     fireEvent.change(select, { target: { value: 'cmd' } })
-    expect(saveButton.disabled).toBe(false)
+    return {
+      button,
+      call: set,
+      complete: async () => {
+        resolveSet()
+        // Original non-guard step: a resolved save shows the saved indicator.
+        await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSaved)).toBeTruthy())
+      },
+      rearm: () => {
+        set.mockRejectedValueOnce({
+          nekodeAppError: true,
+          code: 'internal',
+          message: 'Write failed',
+        })
+        fireEvent.change(select, { target: { value: 'default' } })
+        return button
+      },
+      errorMessage: 'Write failed',
+    }
+  }
 
-    // First click initiates save
-    fireEvent.click(saveButton)
-    expect(set).toHaveBeenCalledTimes(1)
-    expect(saveButton.disabled).toBe(true)
+  const guardRows: Array<[string, () => Promise<GuardCase>]> = [
+    ['addCustom', addCustomCase],
+    ['save', saveCase],
+  ]
 
-    // Rapid second click is guarded
-    fireEvent.click(saveButton)
-    expect(set).toHaveBeenCalledTimes(1)
+  it.each(guardRows)(
+    'blocks rapid double activation of %s, disables button during mutation, and unlocks on error',
+    async (_name, mount) => {
+      const guard = await mount()
+      expect(guard.button.disabled).toBe(false)
 
-    // Complete save
-    resolveSet()
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSaved)).toBeTruthy())
+      // First activation starts the mutation.
+      fireEvent.click(guard.button)
+      expect(guard.call).toHaveBeenCalledTimes(1)
+      expect(guard.button.disabled).toBe(true)
 
-    // Unlock on error
-    set.mockRejectedValueOnce({
-      nekodeAppError: true,
-      code: 'internal',
-      message: 'Write failed',
-    })
-    fireEvent.change(select, { target: { value: 'default' } })
-    expect(saveButton.disabled).toBe(false)
-    fireEvent.click(saveButton)
-    await screen.findByText('Write failed')
-    expect(saveButton.disabled).toBe(false)
-  })
+      // Rapid second activation is blocked: one call only.
+      fireEvent.click(guard.button)
+      expect(guard.call).toHaveBeenCalledTimes(1)
+
+      // Resolve: the row's completion state lands and the guard releases.
+      await guard.complete()
+
+      // Rejection: the error surfaces and the button unlocks.
+      const retryButton = guard.rearm()
+      expect(retryButton.disabled).toBe(false)
+      fireEvent.click(retryButton)
+      await screen.findByText(guard.errorMessage)
+      expect(retryButton.disabled).toBe(false)
+    },
+  )
 })

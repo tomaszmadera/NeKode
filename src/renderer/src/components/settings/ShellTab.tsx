@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AppApi, ShellInfo } from '../../../../shared/ipc-contract'
 import { projectShellKey } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { TEST_ID } from '../../lib/test-ids'
 
 // Shell tab of the Project Settings modal (spec project-shell-selection).
@@ -31,8 +32,7 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
   const [customPath, setCustomPath] = useState('')
   const [customError, setCustomError] = useState<string | null>(null)
   const selectRef = useRef<HTMLSelectElement>(null)
-  const busyRef = useRef(false)
-  const [busy, setBusy] = useState(false)
+  const guard = useMutationGuard()
 
   // One detection + per-project choice load per tab entry (the modal mounts
   // this component fresh on each entry, so a plain mount effect is the
@@ -83,43 +83,37 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
   }, [app, projectId])
 
   async function save(): Promise<void> {
-    if (projectId === null || busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    try {
-      // Default stores an empty value (= unconfigured), matching the
-      // handoff-dir convention: missing/empty means the platform default.
-      await app.state.set(projectShellKey(projectId), selected === 'default' ? '' : selected)
-      setSavedChoice(selected)
-      setSaveState('saved')
-      setSaveError(null)
-      setDetectError(null)
-      onSettingsChanged?.()
-    } catch (cause) {
-      setSaveState('error')
-      setSaveError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the shell choice.')
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
+    if (projectId === null) return
+    await guard.run(async () => {
+      try {
+        // Default stores an empty value (= unconfigured), matching the
+        // handoff-dir convention: missing/empty means the platform default.
+        await app.state.set(projectShellKey(projectId), selected === 'default' ? '' : selected)
+        setSavedChoice(selected)
+        setSaveState('saved')
+        setSaveError(null)
+        setDetectError(null)
+        onSettingsChanged?.()
+      } catch (cause) {
+        setSaveState('error')
+        setSaveError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the shell choice.')
+      }
+    })
   }
 
   async function addCustom(): Promise<void> {
     const path = customPath.trim()
-    if (path.length === 0 || busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    try {
-      const entry = await app.terminals.shellAddCustom(path, projectId)
-      setShells((previous) => [...previous.filter((shell) => shell.id !== entry.id), entry])
-      setCustomPath('')
-      setCustomError(null)
-    } catch (cause) {
-      setCustomError(parseAppErrorPayload(cause)?.message ?? 'Failed to add the shell path.')
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
+    if (path.length === 0) return
+    await guard.run(async () => {
+      try {
+        const entry = await app.terminals.shellAddCustom(path, projectId)
+        setShells((previous) => [...previous.filter((shell) => shell.id !== entry.id), entry])
+        setCustomPath('')
+        setCustomError(null)
+      } catch (cause) {
+        setCustomError(parseAppErrorPayload(cause)?.message ?? 'Failed to add the shell path.')
+      }
+    })
   }
 
   return (
@@ -170,7 +164,7 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
                   type="button"
                   aria-label="Save shell choice"
                   data-testid={TEST_ID.settingsShellSave}
-                  disabled={busy || selected === savedChoice}
+                  disabled={guard.busy || selected === savedChoice}
                   className="h-control shrink-0 rounded-md bg-button px-4 text-sm text-ink hover:bg-button-hover disabled:opacity-50"
                   onClick={() => {
                     void save()
@@ -216,7 +210,7 @@ export function ShellTab({ app, projectId, onSettingsChanged }: ShellTabProps): 
               <button
                 type="button"
                 data-testid={TEST_ID.settingsShellCustomAdd}
-                disabled={busy || customPath.trim().length === 0}
+                disabled={guard.busy || customPath.trim().length === 0}
                 className="h-control shrink-0 rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover disabled:opacity-50"
                 onClick={() => {
                   void addCustom()

@@ -1,8 +1,9 @@
 import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ActionControl, ActionInput, AppApi } from '../../../../shared/ipc-contract'
 import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { ACTION_ICON_NAMES, ACTION_NONE, actionIconGlyph } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 import { AgentProfilesSettings } from '../settings/AgentProfilesSettings'
@@ -134,8 +135,7 @@ export function ActionSettings({
   const [handoffDir, setHandoffDir] = useState('')
   const [handoffDirSaved, setHandoffDirSaved] = useState(false)
   const [configError, setConfigError] = useState<string | null>(null)
-  const busyRef = useRef(false)
-  const [busy, setBusy] = useState(false)
+  const guard = useMutationGuard()
 
   useEffect(() => {
     if (projectId === null) {
@@ -166,54 +166,49 @@ export function ActionSettings({
   }, [app, projectId])
 
   async function saveHandoffDir(): Promise<void> {
-    if (projectId === null || busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    try {
-      await app.state.set(projectHandoffDirKey(projectId), handoffDir.trim())
-      setHandoffDirSaved(true)
-      setConfigError(null)
-      // A saved directory invalidates the previous availability result: the
-      // board session is keyed by this version, so it re-scans (spec
-      // Dostępność Resume pkt 6).
-      onKanbanInvalidate?.(projectId)
-    } catch (cause) {
-      setHandoffDirSaved(false)
-      setConfigError(
-        parseAppErrorPayload(cause)?.message ?? 'Failed to save the handoff directory.',
-      )
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
+    if (projectId === null) return
+    await guard.run(async () => {
+      try {
+        await app.state.set(projectHandoffDirKey(projectId), handoffDir.trim())
+        setHandoffDirSaved(true)
+        setConfigError(null)
+        // A saved directory invalidates the previous availability result: the
+        // board session is keyed by this version, so it re-scans (spec
+        // Dostępność Resume pkt 6).
+        onKanbanInvalidate?.(projectId)
+      } catch (cause) {
+        setHandoffDirSaved(false)
+        setConfigError(
+          parseAppErrorPayload(cause)?.message ?? 'Failed to save the handoff directory.',
+        )
+      }
+    })
   }
 
   async function browseHandoffDir(): Promise<void> {
-    if (busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    // The picker's defaultPath must be null or absolute (validator rule): a
-    // relative current value falls back to the project root, like the empty
-    // case (spec Behaviour 6: current value or project root). The confirmed
-    // directory stores relative to the project root when it lies inside it
-    // (absolute otherwise): the relative form is the norm for this setting.
-    const current = handoffDir.trim()
-    const fallback = current.length > 0 && isAbsolutePath(current) ? current : projectPath
-    try {
-      const picked = await app.dialogs.pickDirectory(fallback)
-      if (picked !== null) {
-        // The root itself (relative form '') stores absolute: an empty stored
-        // value means unconfigured, so Browse never produces one.
-        const relative = projectPath !== null ? relativeToProject(projectPath, picked) : null
-        setHandoffDir(relative !== null && relative.length > 0 ? relative : picked)
-        setHandoffDirSaved(false)
+    await guard.run(async () => {
+      // The picker's defaultPath must be null or absolute (validator rule): a
+      // relative current value falls back to the project root, like the empty
+      // case (spec Behaviour 6: current value or project root). The confirmed
+      // directory stores relative to the project root when it lies inside it
+      // (absolute otherwise): the relative form is the norm for this setting.
+      const current = handoffDir.trim()
+      const fallback = current.length > 0 && isAbsolutePath(current) ? current : projectPath
+      try {
+        const picked = await app.dialogs.pickDirectory(fallback)
+        if (picked !== null) {
+          // The root itself (relative form '') stores absolute: an empty stored
+          // value means unconfigured, so Browse never produces one.
+          const relative = projectPath !== null ? relativeToProject(projectPath, picked) : null
+          setHandoffDir(relative !== null && relative.length > 0 ? relative : picked)
+          setHandoffDirSaved(false)
+        }
+      } catch (cause) {
+        setConfigError(
+          parseAppErrorPayload(cause)?.message ?? 'Failed to open the directory picker.',
+        )
       }
-    } catch (cause) {
-      setConfigError(parseAppErrorPayload(cause)?.message ?? 'Failed to open the directory picker.')
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
+    })
   }
 
   function edit(action: ActionControl): void {
@@ -235,7 +230,9 @@ export function ActionSettings({
   }
 
   async function save(): Promise<void> {
-    if (!form || busyRef.current) return
+    // The in-flight check stays before the validation error: while a save is
+    // in flight a second activation must return silently, not re-report.
+    if (!form || guard.inFlight()) return
     if (!form.title.trim() || !form.command.trim()) {
       setError('Title and command are required.')
       return
@@ -245,9 +242,7 @@ export function ActionSettings({
       icon: form.icon?.trim() ? form.icon.trim() : null,
       command: runWithPowerShell ? powerShellCommand(form.command) : form.command,
     }
-    busyRef.current = true
-    setBusy(true)
-    try {
+    await guard.run(async () => {
       try {
         if (editingId) await app.actions.update(editingId, input)
         else await app.actions.create(input)
@@ -265,30 +260,23 @@ export function ActionSettings({
       } catch (cause) {
         setError(parseAppErrorPayload(cause)?.message ?? 'Failed to refresh actions.')
       }
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
+    })
   }
 
   async function remove(id: string): Promise<void> {
-    if (busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    try {
-      await app.actions.delete(id)
-      await onRefresh()
-      if (editingId === id) {
-        setForm(null)
-        setEditingId(null)
+    await guard.run(async () => {
+      try {
+        await app.actions.delete(id)
+        await onRefresh()
+        if (editingId === id) {
+          setForm(null)
+          setEditingId(null)
+        }
+        setError(null)
+      } catch (cause) {
+        setError(parseAppErrorPayload(cause)?.message ?? 'Failed to delete action.')
       }
-      setError(null)
-    } catch (cause) {
-      setError(parseAppErrorPayload(cause)?.message ?? 'Failed to delete action.')
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
+    })
   }
 
   // Escape closes the dialog from anywhere: the trigger button keeps focus
@@ -420,7 +408,7 @@ export function ActionSettings({
                             />
                             <button
                               type="button"
-                              disabled={busy}
+                              disabled={guard.busy}
                               className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover disabled:opacity-50"
                               data-testid={TEST_ID.settingsHandoffDirBrowse}
                               onClick={() => {
@@ -435,7 +423,7 @@ export function ActionSettings({
                           <button
                             type="button"
                             aria-label="Save handoff directory"
-                            disabled={busy}
+                            disabled={guard.busy}
                             className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
                             data-testid={TEST_ID.settingsHandoffDirSave}
                             onClick={() => {
@@ -494,7 +482,7 @@ export function ActionSettings({
                         </button>
                         <button
                           type="button"
-                          disabled={busy}
+                          disabled={guard.busy}
                           className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error disabled:opacity-50"
                           onClick={() => {
                             void remove(action.id)
@@ -652,7 +640,7 @@ export function ActionSettings({
                       <div className="flex gap-2">
                         <button
                           type="submit"
-                          disabled={busy}
+                          disabled={guard.busy}
                           className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover disabled:opacity-50"
                         >
                           Save

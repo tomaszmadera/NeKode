@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatInfo, ProjectInfo } from '../../shared/ipc-contract'
-import { APP_STATE_KEY, type AppApi, emptyGitWorktree } from '../../shared/ipc-contract'
+import { APP_STATE_KEY, type AppApi } from '../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from './App'
-import { createDictationApiStub } from './test/dictation-api-stub'
+import { createAppApiStub as appApiStub } from './test/app-api-stub'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 
@@ -32,95 +32,13 @@ const projectB: ProjectInfo = {
 const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
 
 function createAppApiStub(): AppApi {
+  // Divergence from the shared factory: chats.create stays unresolved here.
+  const stub = appApiStub()
   return {
-    dictation: createDictationApiStub(),
-    actions: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      execute: vi.fn(),
-      status: vi.fn(),
-    },
-    projects: {
-      wslDirectories: vi.fn(() => Promise.resolve([])),
-      wslDistributions: vi.fn().mockResolvedValue([]),
-      addWsl: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
-      add: vi.fn().mockResolvedValue(null),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    chats: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    state: {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
-    },
-    terminals: {
-      create: vi.fn().mockResolvedValue('term-1'),
-      write: vi.fn().mockResolvedValue(undefined),
-      resize: vi.fn().mockResolvedValue(undefined),
-      shellName: vi.fn().mockResolvedValue('PowerShell'),
-      shellList: vi.fn().mockResolvedValue([]),
-      // Shell tab detection (spec project-shell-selection): Project Settings
-      // opens on the Shell tab and runs one detection on entry.
-      shellDetect: vi.fn().mockResolvedValue([
-        { id: 'default', label: 'PowerShell' },
-        { id: 'wsl:Ubuntu-24.04', label: 'WSL: Ubuntu-24.04' },
-      ]),
-      shellAddCustom: vi.fn().mockResolvedValue({ id: 'custom:D:\\sh.exe', label: 'sh.exe' }),
-      terminate: vi.fn().mockResolvedValue(undefined),
-      onData: vi.fn().mockReturnValue(() => undefined),
-      onExit: vi.fn().mockReturnValue(() => undefined),
-    },
-    git: {
-      getStatus: vi
-        .fn()
-        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
-      fileStatuses: vi.fn().mockResolvedValue({}),
-    },
-    files: {
-      list: vi.fn().mockResolvedValue([]),
-      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
-      openExternal: vi.fn().mockResolvedValue(undefined),
-      openRoot: vi.fn().mockResolvedValue(undefined),
-      showInFolder: vi.fn().mockResolvedValue(undefined),
-      trash: vi.fn().mockResolvedValue(undefined),
-    },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
-    },
-    kanban: {
-      adaptersList: vi.fn().mockResolvedValue([]),
-      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
-      setConfig: vi.fn().mockResolvedValue(undefined),
-      test: vi.fn().mockResolvedValue(undefined),
-      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
-      createItem: vi.fn(),
-      updateItem: vi.fn(),
-      getItem: vi.fn(),
-      launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
-      handoffAvailability: vi.fn(async () => ({
-        state: 'ready' as const,
-        items: [],
-        rejections: [],
-      })),
-    },
-    agentProfiles: {
-      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-    },
-    dialogs: {
-      pickDirectory: vi.fn().mockResolvedValue(null),
-    },
+    ...stub,
+    chats: { ...stub.chats, create: vi.fn() },
   }
 }
-
 function pressChord(init: KeyboardEventInit = {}): void {
   fireEvent.keyDown(window, {
     code: 'Backquote',
@@ -226,7 +144,11 @@ describe('bottom auxiliary terminal panel', () => {
     expect(screen.queryByRole('button', { name: 'PowerShell' })).toBeNull()
   })
 
-  it('keeps the panel above the status bar and full width of the shell', async () => {
+  // jsdom proves structural placement only: the panel host sits in the shell
+  // DOM before the status bar. The visual claims of the original title (the
+  // panel painted above the status bar, full width of the shell) have no
+  // automated verification: no E2E harness exists.
+  it('keeps the panel host in the shell DOM before the status bar', async () => {
     render(<App app={app} />)
     await waitFor(() => expect(app.projects.list).toHaveBeenCalled())
     const shell = screen.getByTestId(TEST_ID.appShell)

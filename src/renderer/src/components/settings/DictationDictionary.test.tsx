@@ -89,37 +89,65 @@ describe('read-only OpenWhispr dictionary', () => {
     expect(screen.queryByText('old term')).toBeNull()
     expect(screen.queryByText('1 entry')).toBeNull()
   })
+  // Code-to-message mapping: one named row per dictionary error code. The
+  // full unavailable scenario (alert, desktop readiness, manual retry,
+  // desktopActivate, no-call negatives) runs once below instead of per code.
   it.each([
-    'bridge-missing',
-    'bridge-invalid',
-    'auth-failed',
-    'unreachable',
-    'malformed-response',
-    'unsupported-pagination',
-    'dictionary-limit',
-  ] as const)(
-    'shows %s without disabling desktop readiness and supports manual retry',
-    async (error) => {
-      const api = createDictationApiStub()
-      vi.mocked(api.dictionaryList).mockResolvedValue({ state: 'unavailable', error })
-      vi.mocked(api.desktopSetup).mockResolvedValue({
-        supported: true,
-        settings: { enabled: true, confirmed: true },
-      })
-      const hook = renderHook(() => useDesktopDictation({ dictation: api } as AppApi))
-      render(<DictationDictionary api={api} />)
-      await screen.findByRole('alert')
-      await waitFor(() => expect(hook.result.current.control.disabledReason).toBeNull())
-      expect(screen.queryByText(/entries$/)).toBeNull()
-      vi.mocked(api.dictionaryList).mockResolvedValue({ state: 'ready', terms: ['fixed'] })
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh dictionary' }))
-      await screen.findByText('1 entry')
-      await act(async () => hook.result.current.control.activate())
-      expect(api.desktopActivate).toHaveBeenCalledOnce()
-      for (const call of [api.status, api.refreshModels, api.testConnection, api.start, api.audio])
-        expect(call).not.toHaveBeenCalled()
-    },
-  )
+    [
+      'bridge-missing',
+      'The OpenWhispr local bridge is missing. Start OpenWhispr, then refresh the dictionary.',
+    ],
+    [
+      'bridge-invalid',
+      'The OpenWhispr local bridge configuration is invalid. Restart OpenWhispr, then refresh the dictionary.',
+    ],
+    [
+      'unreachable',
+      'The OpenWhispr local bridge is unavailable. Check OpenWhispr, then refresh the dictionary.',
+    ],
+    [
+      'auth-failed',
+      'The OpenWhispr local bridge rejected authentication. Restart OpenWhispr, then refresh the dictionary.',
+    ],
+    [
+      'malformed-response',
+      'The OpenWhispr dictionary response is invalid. No complete dictionary could be displayed.',
+    ],
+    [
+      'unsupported-pagination',
+      'This OpenWhispr bridge requires unsupported dictionary pagination. No complete dictionary could be displayed.',
+    ],
+    [
+      'dictionary-limit',
+      'The OpenWhispr dictionary exceeds the supported limit of 10,000 entries. No complete dictionary could be displayed.',
+    ],
+  ] as const)('shows the %s message in the alert', async (error, message) => {
+    const api = createDictationApiStub()
+    vi.mocked(api.dictionaryList).mockResolvedValue({ state: 'unavailable', error })
+    render(<DictationDictionary api={api} />)
+    expect((await screen.findByRole('alert')).textContent).toContain(message)
+  })
+
+  it('shows an unavailable dictionary without disabling desktop readiness and supports manual retry', async () => {
+    const api = createDictationApiStub()
+    vi.mocked(api.dictionaryList).mockResolvedValue({ state: 'unavailable', error: 'unreachable' })
+    vi.mocked(api.desktopSetup).mockResolvedValue({
+      supported: true,
+      settings: { enabled: true, confirmed: true },
+    })
+    const hook = renderHook(() => useDesktopDictation({ dictation: api } as AppApi))
+    render(<DictationDictionary api={api} />)
+    await screen.findByRole('alert')
+    await waitFor(() => expect(hook.result.current.control.disabledReason).toBeNull())
+    expect(screen.queryByText(/entries$/)).toBeNull()
+    vi.mocked(api.dictionaryList).mockResolvedValue({ state: 'ready', terms: ['fixed'] })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh dictionary' }))
+    await screen.findByText('1 entry')
+    await act(async () => hook.result.current.control.activate())
+    expect(api.desktopActivate).toHaveBeenCalledOnce()
+    for (const call of [api.status, api.refreshModels, api.testConnection, api.start, api.audio])
+      expect(call).not.toHaveBeenCalled()
+  })
   it('sanitizes IPC failure and ignores a completion after unmount', async () => {
     const api = createDictationApiStub()
     vi.mocked(api.dictionaryList).mockRejectedValueOnce(new Error('private transport detail'))

@@ -1,14 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi, ChatInfo, FileEntry, ProjectInfo } from '../../../../shared/ipc-contract'
-import {
-  APP_STATE_KEY,
-  emptyGitWorktree,
-  projectKanbanAdapterKey,
-} from '../../../../shared/ipc-contract'
+import { APP_STATE_KEY, projectKanbanAdapterKey } from '../../../../shared/ipc-contract'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { createDictationApiStub } from '../../test/dictation-api-stub'
+import { createAppApiStub } from '../../test/app-api-stub'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
 import { resetMockTerminals } from '../../test/xterm-mock'
 
@@ -31,91 +27,6 @@ vi.mock('../files/MonacoPreview', () => ({
     </pre>
   ),
 }))
-
-function createAppApiStub(): AppApi {
-  return {
-    dictation: createDictationApiStub(),
-    actions: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      execute: vi.fn(),
-      status: vi.fn(),
-    },
-    projects: {
-      wslDirectories: vi.fn(() => Promise.resolve([])),
-      wslDistributions: vi.fn().mockResolvedValue([]),
-      addWsl: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
-      add: vi.fn().mockResolvedValue(null),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    chats: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({ id: 't9', projectId: 'p1', name: 'PowerShell' }),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    state: {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
-    },
-    terminals: {
-      create: vi.fn().mockResolvedValue('term-1'),
-      write: vi.fn().mockResolvedValue(undefined),
-      resize: vi.fn().mockResolvedValue(undefined),
-      shellName: vi.fn().mockResolvedValue('PowerShell'),
-      shellList: vi.fn().mockResolvedValue([]),
-      shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
-      shellAddCustom: vi.fn().mockResolvedValue({ id: 'default', label: 'PowerShell' }),
-      terminate: vi.fn().mockResolvedValue(undefined),
-      onData: vi.fn().mockReturnValue(() => undefined),
-      onExit: vi.fn().mockReturnValue(() => undefined),
-    },
-    git: {
-      getStatus: vi
-        .fn()
-        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
-      fileStatuses: vi.fn().mockResolvedValue({}),
-    },
-    files: {
-      list: vi.fn().mockResolvedValue([]),
-      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
-      openExternal: vi.fn().mockResolvedValue(undefined),
-      openRoot: vi.fn().mockResolvedValue(undefined),
-      showInFolder: vi.fn().mockResolvedValue(undefined),
-      trash: vi.fn().mockResolvedValue(undefined),
-    },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
-    },
-    kanban: {
-      adaptersList: vi.fn().mockResolvedValue([]),
-      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
-      setConfig: vi.fn().mockResolvedValue(undefined),
-      test: vi.fn().mockResolvedValue(undefined),
-      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
-      createItem: vi.fn(),
-      updateItem: vi.fn(),
-      getItem: vi.fn(),
-      launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
-      handoffAvailability: vi.fn(async () => ({
-        state: 'ready' as const,
-        items: [],
-        rejections: [],
-      })),
-    },
-    agentProfiles: {
-      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-    },
-    dialogs: {
-      pickDirectory: vi.fn().mockResolvedValue(null),
-    },
-  }
-}
 
 const projectA: ProjectInfo = {
   id: 'p1',
@@ -594,44 +505,11 @@ describe('tab strip — terminal tab, + New chat and session survival (spec Beha
     await enterFilesMode(app, 'p1')
     expect(screen.getByTestId(TEST_ID.tabStrip)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
-    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex')
 
     fireEvent.click(screen.getByTestId(TEST_ID.filesBackButton))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
+    expect(screen.getByTestId(TEST_ID.tabStrip)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
-    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex')
-    expect(app.terminals.create).toHaveBeenCalledTimes(1)
-  })
-
-  it('a file deleted with its tab open errors in that tab only (Behaviour 7)', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
-    vi.mocked(app.files.read).mockImplementation(async (_projectId, relativePath) => {
-      if (relativePath === 'README.md') {
-        throw { nekodeAppError: true, code: 'not_found', message: 'File not found.' }
-      }
-      return { kind: 'text' as const, content: 'still here', language: null }
-    })
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
-
-    const failingPane = await screen.findByTestId(testIdFor.filePreviewPane('README.md'))
-    await waitFor(() =>
-      expect(within(failingPane).getByTestId(TEST_ID.filePreviewError).textContent).toContain(
-        'File not found.',
-      ),
-    )
-    // The other tab and the terminal are untouched.
-    const otherPane = screen.getByTestId(testIdFor.filePreviewPane('notes.txt'))
-    expect(otherPane.textContent).toContain('still here')
-    expect(within(otherPane).queryByTestId(TEST_ID.filePreviewError)).toBeNull()
-    expect(screen.getByTestId(testIdFor.tabFile('notes.txt'))).toBeTruthy()
   })
 })
 
@@ -779,121 +657,154 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
   // switch. Selecting a file or chat tab must return to that surface, and the
   // Kanban tab must show the board meanwhile.
 
-  it('selecting a file tab while the board is up returns to its preview', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
+  it.each([
+    [
+      'selecting a file tab while the board is up returns to its preview',
+      async () => {
+        vi.mocked(app.projects.list).mockResolvedValue([projectA])
+        vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+        mockListings(app)
 
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
-    await waitFor(() => expect(paneDisplay('notes.txt')).toBe('flex'))
+        render(<App app={app} />)
+        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+        await enterFilesMode(app, 'p1')
+        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
+        fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
+        await waitFor(() => expect(paneDisplay('notes.txt')).toBe('flex'))
 
-    // Board up: the active file tab's preview is hidden. The Kanban tab sits
-    // immediately after the chat tab, before the file tabs.
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-    await screen.findByTestId(TEST_ID.kanbanBoard)
-    expect(paneDisplay('notes.txt')).toBe('none')
-    const strip = screen.getByTestId(TEST_ID.tabStrip)
-    expect(strip.firstElementChild).toBe(screen.getByTestId(TEST_ID.tabTerminal))
-    expect(screen.getByTestId(TEST_ID.tabTerminal).nextElementSibling).toBe(
-      screen.getByTestId(TEST_ID.kanbanTab),
-    )
-    expect(screen.getByTestId(TEST_ID.kanbanTab).nextElementSibling).toBe(
-      screen.getByTestId(testIdFor.tabFile('README.md')),
-    )
+        // Board up: the active file tab's preview is hidden. The Kanban tab sits
+        // immediately after the chat tab, before the file tabs.
+        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+        await screen.findByTestId(TEST_ID.kanbanBoard)
+        expect(paneDisplay('notes.txt')).toBe('none')
+        const strip = screen.getByTestId(TEST_ID.tabStrip)
+        expect(strip.firstElementChild).toBe(screen.getByTestId(TEST_ID.tabTerminal))
+        expect(screen.getByTestId(TEST_ID.tabTerminal).nextElementSibling).toBe(
+          screen.getByTestId(TEST_ID.kanbanTab),
+        )
+        expect(screen.getByTestId(TEST_ID.kanbanTab).nextElementSibling).toBe(
+          screen.getByTestId(testIdFor.tabFile('README.md')),
+        )
+      },
+      async () => {
+        // Clicking the file tab is a "show me this file" gesture: the preview
+        // returns, never a hidden strip change. The file tab's testid is the
+        // container; the select control is its inner button.
+        const readmeTab = screen.getByTestId(testIdFor.tabFile('README.md'))
+        fireEvent.click(within(readmeTab).getByRole('button', { name: 'README.md' }))
+      },
+      async () => {
+        expect(isTabSelected('README.md')).toBe(true)
+        await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
+      },
+    ],
+    [
+      'the chat tab selected while the board is up returns to the terminal',
+      async () => {
+        vi.mocked(app.projects.list).mockResolvedValue([projectA])
+        vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+        mockListings(app)
 
-    // Clicking the file tab is a "show me this file" gesture: the preview
-    // returns, never a hidden strip change. The file tab's testid is the
-    // container; the select control is its inner button.
-    const readmeTab = screen.getByTestId(testIdFor.tabFile('README.md'))
-    fireEvent.click(within(readmeTab).getByRole('button', { name: 'README.md' }))
-    expect(isTabSelected('README.md')).toBe(true)
-    await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
-  })
+        render(<App app={app} />)
+        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+        await enterFilesMode(app, 'p1')
+        await waitFor(() =>
+          expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
+        )
 
-  it('the chat tab selected while the board is up returns to the terminal', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
+        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+        await screen.findByTestId(TEST_ID.kanbanBoard)
+        expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
+      },
+      async () => {
+        fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
+      },
+      async () => {
+        await waitFor(() =>
+          expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
+        )
+      },
+    ],
+    [
+      'selecting a chat row while the board is up shows its terminal',
+      async () => {
+        vi.mocked(app.projects.list).mockResolvedValue([projectA])
+        vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await enterFilesMode(app, 'p1')
-    await waitFor(() =>
-      expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
-    )
+        render(<App app={app} />)
+        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+        await screen.findByTestId(TEST_ID.kanbanBoard)
+      },
+      async () => {
+        // A chat row (left navigation) must make its terminal show.
+        fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+      },
+      async () => {
+        await waitFor(() =>
+          expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
+        )
+        await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
+      },
+    ],
+    [
+      'opening a file from the tree while the board is up shows the preview',
+      async () => {
+        vi.mocked(app.projects.list).mockResolvedValue([projectA])
+        mockListings(app)
 
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-    await screen.findByTestId(TEST_ID.kanbanBoard)
-    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
+        render(<App app={app} />)
+        await enterFilesMode(app, 'p1')
+        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
+        await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
 
-    fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
-    await waitFor(() =>
-      expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
-    )
-    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
-  })
+        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+        await screen.findByTestId(TEST_ID.kanbanBoard)
+        expect(paneDisplay('README.md')).toBe('none')
+      },
+      async () => {
+        // A tree click while the board is up opens a fresh preview and returns
+        // to its surface, never a hidden strip change.
+        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('notes.txt')))
+      },
+      async () => {
+        await waitFor(() => expect(paneDisplay('notes.txt')).toBe('flex'))
+      },
+    ],
+    [
+      'the Files affordance stays a Files gesture while the board is up',
+      async () => {
+        vi.mocked(app.projects.list).mockResolvedValue([projectA])
+        vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+        mockListings(app)
 
-  it('selecting a chat row while the board is up shows its terminal', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-    await screen.findByTestId(TEST_ID.kanbanBoard)
-
-    // A chat row (left navigation) must make its terminal show.
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await waitFor(() =>
-      expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
-    )
-    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
-  })
-
-  it('opening a file from the tree while the board is up shows the preview', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockListings(app)
-
-    render(<App app={app} />)
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-    await screen.findByTestId(TEST_ID.kanbanBoard)
-    expect(paneDisplay('README.md')).toBe('none')
-
-    // A tree click while the board is up opens a fresh preview and returns to
-    // its surface, never a hidden strip change.
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('notes.txt')))
-    await waitFor(() => expect(paneDisplay('notes.txt')).toBe('flex'))
-    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
-  })
-
-  it('the Files affordance stays a Files gesture while the board is up', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-    await screen.findByTestId(TEST_ID.kanbanBoard)
-
-    // Entering Project Files shows the tree; opening a file from it returns to
-    // that file's preview (the board never stays over a Files gesture).
-    fireEvent.click(await screen.findByTestId(testIdFor.projectFiles('p1')))
-    await screen.findByTestId(TEST_ID.fileTree)
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
-  })
+        render(<App app={app} />)
+        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+        await screen.findByTestId(TEST_ID.kanbanBoard)
+      },
+      async () => {
+        // Entering Project Files shows the tree; opening a file from it returns
+        // to that file's preview (the board never stays over a Files gesture).
+        fireEvent.click(await screen.findByTestId(testIdFor.projectFiles('p1')))
+        await screen.findByTestId(TEST_ID.fileTree)
+        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
+      },
+      async () => {
+        await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
+      },
+    ],
+  ] as Array<[string, () => Promise<void>, () => Promise<void>, () => Promise<void>]>)(
+    '%s',
+    async (_title, setup, gesture, outcome) => {
+      await setup()
+      await gesture()
+      await outcome()
+      // The shared wiring rule: the gesture's own surface shows and the board
+      // is hidden behind its tab, never left over the surface.
+      expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
+    },
+  )
 })

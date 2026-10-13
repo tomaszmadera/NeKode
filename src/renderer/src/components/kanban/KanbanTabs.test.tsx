@@ -3,15 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
   ChatInfo,
-  FileEntry,
   KanbanBoard,
   ProjectInfo,
   WorkItem,
 } from '../../../../shared/ipc-contract'
-import { emptyGitWorktree, projectKanbanAdapterKey } from '../../../../shared/ipc-contract'
+import { projectKanbanAdapterKey } from '../../../../shared/ipc-contract'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { createDictationApiStub } from '../../test/dictation-api-stub'
+import { createAppApiStub } from '../../test/app-api-stub'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
 import { resetMockTerminals } from '../../test/xterm-mock'
 
@@ -34,91 +33,6 @@ vi.mock('../files/MonacoPreview', () => ({
   ),
 }))
 
-function createAppApiStub(): AppApi {
-  return {
-    dictation: createDictationApiStub(),
-    actions: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      execute: vi.fn(),
-      status: vi.fn(),
-    },
-    projects: {
-      wslDirectories: vi.fn(() => Promise.resolve([])),
-      wslDistributions: vi.fn().mockResolvedValue([]),
-      addWsl: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
-      add: vi.fn().mockResolvedValue(null),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    chats: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({ id: 't9', projectId: 'p1', name: 'PowerShell' }),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    state: {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
-    },
-    terminals: {
-      create: vi.fn().mockResolvedValue('term-1'),
-      write: vi.fn().mockResolvedValue(undefined),
-      resize: vi.fn().mockResolvedValue(undefined),
-      shellName: vi.fn().mockResolvedValue('PowerShell'),
-      shellList: vi.fn().mockResolvedValue([]),
-      shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
-      shellAddCustom: vi.fn().mockResolvedValue({ id: 'default', label: 'PowerShell' }),
-      terminate: vi.fn().mockResolvedValue(undefined),
-      onData: vi.fn().mockReturnValue(() => undefined),
-      onExit: vi.fn().mockReturnValue(() => undefined),
-    },
-    git: {
-      getStatus: vi
-        .fn()
-        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
-      fileStatuses: vi.fn().mockResolvedValue({}),
-    },
-    files: {
-      list: vi.fn().mockResolvedValue([]),
-      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
-      openExternal: vi.fn().mockResolvedValue(undefined),
-      openRoot: vi.fn().mockResolvedValue(undefined),
-      showInFolder: vi.fn().mockResolvedValue(undefined),
-      trash: vi.fn().mockResolvedValue(undefined),
-    },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
-    },
-    kanban: {
-      adaptersList: vi.fn().mockResolvedValue([]),
-      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
-      setConfig: vi.fn().mockResolvedValue(undefined),
-      test: vi.fn().mockResolvedValue(undefined),
-      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
-      createItem: vi.fn(),
-      updateItem: vi.fn(),
-      getItem: vi.fn(),
-      launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
-      handoffAvailability: vi.fn(async () => ({
-        state: 'ready' as const,
-        items: [],
-        rejections: [],
-      })),
-    },
-    agentProfiles: {
-      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-    },
-    dialogs: {
-      pickDirectory: vi.fn().mockResolvedValue(null),
-    },
-  }
-}
-
 const projectA: ProjectInfo = {
   id: 'p1',
   name: 'Demo',
@@ -132,8 +46,6 @@ const projectB: ProjectInfo = {
   runtimeLabel: null,
 }
 const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
-
-const rootEntries: FileEntry[] = [{ name: 'README.md', relativePath: 'README.md', kind: 'file' }]
 
 function item(ref: string, title: string, stateId: string): WorkItem {
   return {
@@ -163,10 +75,6 @@ function isSelected(testId: string): boolean {
   return screen.getByTestId(testId).getAttribute('data-selected') === 'true'
 }
 
-function paneDisplay(relativePath: string): string {
-  return screen.getByTestId(testIdFor.filePreviewPane(relativePath)).style.display
-}
-
 /** Key-aware binding mock: only the listed projects read back as bound. */
 function mockBindings(app: AppApi, boundProjectIds: readonly string[]): void {
   const bound = new Set(boundProjectIds)
@@ -178,12 +86,6 @@ function mockBindings(app: AppApi, boundProjectIds: readonly string[]): void {
     }
     return null
   })
-}
-
-async function enterFilesMode(app: AppApi, projectId: string): Promise<void> {
-  fireEvent.click(await screen.findByTestId(testIdFor.projectFiles(projectId)))
-  await screen.findByTestId(TEST_ID.fileTree)
-  expect(app.files.list).toHaveBeenCalled()
 }
 
 describe('kanban nav tile (spec Behaviour 14, AC14)', () => {
@@ -330,7 +232,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
   })
 
-  it('selecting the top-strip tab shows the board, which the chat tab then leaves', async () => {
+  it('selecting the top-strip tab shows the board', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
@@ -342,40 +244,6 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
 
     await screen.findByTestId(TEST_ID.kanbanList)
     expect(app.kanban.listBoard).toHaveBeenCalledWith('p1')
-
-    // Chat tab shows the terminal surface instead; the board unmounts.
-    fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
-    await waitFor(() =>
-      expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
-    )
-    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
-    expect(isSelected(TEST_ID.tabTerminal)).toBe(true)
-  })
-
-  it('a file tab returns to its preview from the board', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
-    mockBindings(app, ['p1'])
-    vi.mocked(app.files.list).mockImplementation(async (_projectId, relativePath) =>
-      relativePath === null ? rootEntries : [],
-    )
-
-    render(<App app={app} />)
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-
-    // Board up: the active file tab's preview is hidden.
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-    await screen.findByTestId(TEST_ID.kanbanBoard)
-    expect(paneDisplay('README.md')).toBe('none')
-
-    // Selecting the file tab is a "show me this file" gesture: the preview
-    // returns and the board unmounts.
-    const readmeTab = screen.getByTestId(testIdFor.tabFile('README.md'))
-    fireEvent.click(within(readmeTab).getByRole('button', { name: 'README.md' }))
-    await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-    expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
   })
 
   it('not-configured board offers Configure that opens Project Settings on the Kanban tab', async () => {

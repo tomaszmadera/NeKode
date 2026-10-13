@@ -91,6 +91,11 @@ describe('desktop dictation prompt', () => {
     expect(screen.getByRole('button', { name: 'Dictation' }).textContent).toContain(
       'Sending shortcut',
     )
+    // Not wired at all (no control provided): the control renders disabled.
+    view.rerender(<PromptInput onSubmit={vi.fn()} />)
+    expect((screen.getByRole('button', { name: 'Dictation' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
   })
 })
 
