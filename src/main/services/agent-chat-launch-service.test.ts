@@ -1,0 +1,215 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { AgentProfile } from '../../shared/ipc-contract'
+import { AppError, type AppErrorCode } from '../../shared/ipc-error'
+import { openDatabase } from '../db/connection'
+import { runMigrations } from '../db/migrations'
+import { AgentChatLaunchService } from './agent-chat-launch-service'
+import { ChatService } from './chat-service'
+import { ProjectService } from './project-service'
+import type { ShellSpec } from './terminal/terminal-service'
+
+// Agent chat launch unit tests (spec new-chat-agent-menu): the left panel's
+// profile menu creates exactly one chat named for the profile and starts that
+// profile in the chat's terminal at the project root. The chat rows are real
+// (ChatService on an :memory: database) so the name and the rollback are
+// asserted against stored state, not against a mock.
+
+const openDatabases: Array<{ close(): void }> = []
+
+afterEach(() => {
+  while (openDatabases.length > 0) {
+    openDatabases.pop()?.close()
+  }
+})
+
+const demoPath = join(tmpdir(), 'nekode-agent-chat-tests', 'demo-project')
+
+const codexProfile: AgentProfile = {
+  id: 'prof-1',
+  name: 'Codex',
+  executable: 'codex.exe',
+  args: ['--flag', '{prompt}', '--keep'],
+}
+
+function expectAppError(run: () => unknown, code: AppErrorCode): AppError {
+  try {
+    run()
+  } catch (error) {
+    if (error instanceof AppError) {
+      expect(error.code).toBe(code)
+      return error
+    }
+    throw error
+  }
+  throw new Error('expected the call to throw an AppError')
+}
+
+interface HarnessOptions {
+  profiles?: AgentProfile[]
+  /** Thrown by the terminal service instead of spawning. */
+  spawnError?: unknown
+}
+
+function createHarness(options: HarnessOptions = {}) {
+  const db = openDatabase(':memory:')
+  openDatabases.push(db)
+  runMigrations(db)
+  const projects = new ProjectService({
+    db,
+    fs: { stat: () => ({ isDirectory: () => true }) },
+  })
+  const chats = new ChatService({ db, chatNameForProject: () => 'PowerShell' })
+  const spawns: ShellSpec[] = []
+  const terminals = {
+    create: vi.fn((chatId: string, _cwd: string, shell?: ShellSpec) => {
+      if (options.spawnError !== undefined) {
+        throw options.spawnError
+      }
+      if (shell === undefined) {
+        throw new Error('agent launch must spawn with an explicit shell spec')
+      }
+      spawns.push(shell)
+      return chatId
+    }),
+  }
+  const service = new AgentChatLaunchService({
+    projects,
+    profiles: { get: () => ({ defaultId: null, profiles: options.profiles ?? [codexProfile] }) },
+    createChat: (projectId, name) => chats.createNamed(projectId, name, 'chats:createWithAgent'),
+    removeChat: (chatId) => chats.remove(chatId),
+    terminals,
+  })
+  const project = projects.add(demoPath)
+  return { service, projects, chats, spawns, terminals, project }
+}
+
+describe('AgentChatLaunchService', () => {
+  it('creates one chat named for the profile and spawns its executable at the project root', () => {
+    const { service, chats, spawns, terminals, project } = createHarness()
+
+    const chat = service.createWithAgent(project.id, 'prof-1')
+
+    // The name follows the existing `[shell] <profile name>` contract.
+    expect(chat.name).toBe('[PowerShell] Codex')
+    expect(chat.projectId).toBe(project.id)
+    expect(chats.list(project.id)).toEqual([chat])
+    // The agent is the chat's process, started at the project root.
+    expect(terminals.create).toHaveBeenCalledWith(chat.id, project.path, {
+      file: 'codex.exe',
+      args: ['--flag', '--keep'],
+    })
+    expect(spawns).toEqual([{ file: 'codex.exe', args: ['--flag', '--keep'] }])
+  })
+
+  it('removes exactly the prompt argv element and starts the agent interactively', () => {
+    const { service, spawns, project } = createHarness({
+      profiles: [{ id: 'prof-1', name: 'Codex', executable: 'codex.exe', args: ['{prompt}'] }],
+    })
+
+    service.createWithAgent(project.id, 'prof-1')
+
+    // No prompt is typed anywhere: the agent gets an empty argv.
+    expect(spawns).toEqual([{ file: 'codex.exe', args: [] }])
+  })
+
+  it('keeps the other argv elements in order and never substitutes the prompt', () => {
+    const { service, spawns, project } = createHarness({
+      profiles: [
+        {
+          id: 'prof-1',
+          name: 'Codex',
+          executable: 'codex.exe',
+          args: ['-a', '{prompt}', '--model', 'gpt', '--'],
+        },
+      ],
+    })
+
+    service.createWithAgent(project.id, 'prof-1')
+
+    expect(spawns).toEqual([{ file: 'codex.exe', args: ['-a', '--model', 'gpt', '--'] }])
+  })
+
+  it('rolls the chat back and surfaces the classified spawn error', () => {
+    const spawnError = new AppError(
+      'not_found',
+      'The project directory does not exist. Terminal sessions need an existing project directory.',
+      'terminals:create',
+    )
+    const { service, chats, project } = createHarness({ spawnError })
+
+    const error = expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'not_found')
+
+    expect(error.message).toContain('project directory does not exist')
+    // No half-chat survives the failed launch, and no fallback shell chat is
+    // ever started in its place (spec Errors).
+    expect(chats.list(project.id)).toEqual([])
+  })
+
+  it('rolls the chat back and reports the launch failure for an unclassified spawn error', () => {
+    const { service, chats, project } = createHarness({ spawnError: new Error('EPERM: spawn') })
+
+    const error = expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'unknown')
+
+    // A raw OS error never reaches the renderer: it becomes the launch's typed
+    // failure with its fallback message.
+    expect(error.message).toBe('Failed to start the agent chat.')
+    expect(error.channel).toBe('chats:createWithAgent')
+    expect(chats.list(project.id)).toEqual([])
+  })
+
+  it('creates no chat for an unknown project', () => {
+    const { service, chats, terminals, project } = createHarness()
+
+    const error = expectAppError(
+      () => service.createWithAgent('ghost-project', 'prof-1'),
+      'not_found',
+    )
+
+    expect(error.message).toBe('Project not found.')
+    expect(chats.list(project.id)).toEqual([])
+    expect(terminals.create).not.toHaveBeenCalled()
+  })
+
+  it('creates no chat for a profile that no longer exists', () => {
+    const { service, chats, terminals, project } = createHarness()
+
+    const error = expectAppError(
+      () => service.createWithAgent(project.id, 'ghost-profile'),
+      'not_found',
+    )
+
+    expect(error.message).toBe('The selected agent profile is no longer available.')
+    expect(chats.list(project.id)).toEqual([])
+    expect(terminals.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a profile whose argv has no single prompt element', () => {
+    const { service, chats, terminals, project } = createHarness({
+      profiles: [{ id: 'prof-1', name: 'Codex', executable: 'codex.exe', args: ['--flag'] }],
+    })
+
+    const error = expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'validation')
+
+    expect(error.message).toBe('The selected agent profile is invalid.')
+    expect(chats.list(project.id)).toEqual([])
+    expect(terminals.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a profile with two prompt elements instead of dropping an argument', () => {
+    const { service, chats, project } = createHarness({
+      profiles: [
+        {
+          id: 'prof-1',
+          name: 'Codex',
+          executable: 'codex.exe',
+          args: ['{prompt}', '--flag', '{prompt}'],
+        },
+      ],
+    })
+
+    expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'validation')
+    expect(chats.list(project.id)).toEqual([])
+  })
+})

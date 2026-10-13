@@ -628,6 +628,22 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     // No name payload: the chat name is derived from the platform shell in
     // main (spec Behaviour 3) and duplicates within a project are allowed.
     serviceChannel('chats:create', ['string'], (args) => services.chats.create(args[0])),
+    // Agent chat launch (spec new-chat-agent-menu Data/API): the profile choice
+    // is an AgentProfile.id; main owns the name and the agent process. A failed
+    // spawn removes the chat again, so no chat id reaches the renderer.
+    {
+      channel: 'chats:createWithAgent',
+      parse: (payload) => {
+        requireArgs(payload, 2, 'chats:createWithAgent')
+        assertString(payload[0], 'chats:createWithAgent arg[0]')
+        assertString(payload[1], 'chats:createWithAgent arg[1]')
+        if ((payload[0] as string).length === 0 || (payload[1] as string).length === 0) {
+          fail('chats:createWithAgent', 'requires non-empty projectId and profileId')
+        }
+        return payload
+      },
+      invoke: (args) => services.chats.createWithAgent(args[0] as string, args[1] as string),
+    },
     // Terminal-exit close flow (spec Behaviour 11): the renderer-driven chat
     // removal; never invoked on application quit.
     serviceChannel('chats:remove', ['string'], (args) => services.chats.remove(args[0])),

@@ -1,6 +1,11 @@
 import type React from 'react'
 import { useEffect, useState } from 'react'
-import type { ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
+import type {
+  AgentProfile,
+  AgentProfilesDocument,
+  ChatInfo,
+  ProjectInfo,
+} from '../../../../shared/ipc-contract'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
@@ -55,6 +60,16 @@ interface LeftNavigationProps {
   onOpenProjectSettings: (projectId: string) => void
   /** Creates a chat immediately with the shell-derived name (no form). */
   onCreateChat: (projectId: string) => Promise<boolean>
+  /**
+   * Starts one chat with the chosen agent profile (spec new-chat-agent-menu):
+   * main names the chat and runs the profile in its terminal. Resolves true
+   * when the chat was adopted; the host owns the notice on failure.
+   */
+  onCreateAgentChat: (projectId: string, profileId: string) => Promise<boolean>
+  /** Reads a project's agent profiles for the New Chat menu (agentProfiles:get). */
+  loadAgentProfiles: (projectId: string) => Promise<AgentProfilesDocument>
+  /** Opens Project Settings on the Agents tab without creating a chat. */
+  onConfigureAgents: (projectId: string) => void
   /** Opens the project root in the OS file explorer. */
   onOpenInFileExplorer: (projectId: string) => void
   /**
@@ -70,6 +85,13 @@ interface LeftNavigationProps {
 }
 
 interface ContextMenuState {
+  projectId: string
+  x: number
+  y: number
+}
+
+/** Open position of the New Chat button's agent profile menu. */
+interface NewChatMenuState {
   projectId: string
   x: number
   y: number
@@ -95,35 +117,52 @@ export function LeftNavigation({
   onOpenProjectKanban,
   onOpenProjectSettings,
   onCreateChat,
+  onCreateAgentChat,
+  loadAgentProfiles,
+  onConfigureAgents,
   onOpenInFileExplorer,
   onRequestCloseChat,
   notice,
   children,
 }: LeftNavigationProps): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  // Agent profile menu of one project's New Chat button (spec
+  // new-chat-agent-menu): presentation-only state; the profiles themselves
+  // come from agentProfiles:get through the host.
+  const [newChatMenu, setNewChatMenu] = useState<NewChatMenuState | null>(null)
   // Chat row whose close control is revealed (row hover or keyboard focus).
   // JS state instead of CSS :hover so the attention badge can yield the same
   // corner while the X is visible.
   const [revealedChatId, setRevealedChatId] = useState<string | null>(null)
 
-  // Escape closes the context menu (the overlay handles pointer dismissal).
+  // Escape closes the open menu (the overlay handles pointer dismissal).
   useEffect(() => {
-    if (contextMenu === null) {
+    if (contextMenu === null && newChatMenu === null) {
       return
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         setContextMenu(null)
+        setNewChatMenu(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [contextMenu])
+  }, [contextMenu, newChatMenu])
 
   function openContextMenu(projectId: string, x: number, y: number): void {
+    // One menu at a time (spec Behaviour 7: a gesture while a menu is open
+    // closes the old menu first). Only pointer gestures are swallowed by the
+    // open overlay; a keyboard gesture reaches the other opener directly.
+    setNewChatMenu(null)
     setContextMenu({ projectId, x, y })
+  }
+
+  function openNewChatMenu(projectId: string, x: number, y: number): void {
+    setContextMenu(null)
+    setNewChatMenu({ projectId, x, y })
   }
 
   return (
@@ -403,6 +442,25 @@ export function LeftNavigation({
                             onClick={() => {
                               void onCreateChat(project.id)
                             }}
+                            onContextMenu={(event) => {
+                              // The gesture itself creates no chat (spec
+                              // Behaviour 1) and opens at the pointer.
+                              event.preventDefault()
+                              openNewChatMenu(project.id, event.clientX, event.clientY)
+                            }}
+                            onKeyDown={(event) => {
+                              // Keyboard context-menu invocation (spec
+                              // Behaviour 1): the ContextMenu key or Shift+F10
+                              // opens the menu below the button.
+                              if (
+                                event.key === 'ContextMenu' ||
+                                (event.key === 'F10' && event.shiftKey)
+                              ) {
+                                event.preventDefault()
+                                const rect = event.currentTarget.getBoundingClientRect()
+                                openNewChatMenu(project.id, rect.left, rect.bottom)
+                              }
+                            }}
                           >
                             <Icon.plus size={12} aria-hidden className="shrink-0" />
                             New Chat
@@ -438,6 +496,15 @@ export function LeftNavigation({
             setContextMenu(null)
             onOpenProjectSettings(projectId)
           }}
+        />
+      ) : null}
+      {newChatMenu !== null ? (
+        <NewChatAgentMenu
+          state={newChatMenu}
+          loadProfiles={loadAgentProfiles}
+          onCreateChat={onCreateAgentChat}
+          onConfigureAgents={onConfigureAgents}
+          onClose={() => setNewChatMenu(null)}
         />
       ) : null}
     </div>
@@ -516,6 +583,137 @@ function ContextMenuOverlay({
         >
           Remove Project
         </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Agent profile menu of one project's New Chat button (spec
+ * new-chat-agent-menu). Rendered as a fixed overlay like the project-row menu:
+ * an outside click, Escape, a further context-menu gesture, or activating an
+ * item closes it. The profiles are read through the host's `loadProfiles`
+ * (`agentProfiles:get`), so this component owns no domain data: while the list
+ * loads it shows a non-actionable row, and a failed load shows the failure row
+ * — neither creates a chat.
+ */
+function NewChatAgentMenu({
+  state,
+  loadProfiles,
+  onCreateChat,
+  onConfigureAgents,
+  onClose,
+}: {
+  state: NewChatMenuState
+  loadProfiles: (projectId: string) => Promise<AgentProfilesDocument>
+  onCreateChat: (projectId: string, profileId: string) => Promise<boolean>
+  onConfigureAgents: (projectId: string) => void
+  onClose: () => void
+}): React.JSX.Element {
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [profiles, setProfiles] = useState<AgentProfile[]>([])
+
+  // The menu opens immediately; the list arrives through the host.
+  useEffect(() => {
+    let active = true
+    void loadProfiles(state.projectId)
+      .then((document) => {
+        if (!active) {
+          return
+        }
+        setProfiles(document.profiles)
+        setPhase('ready')
+      })
+      .catch(() => {
+        if (!active) {
+          return
+        }
+        setPhase('error')
+      })
+    return () => {
+      active = false
+    }
+  }, [loadProfiles, state.projectId])
+
+  const itemClass =
+    'w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink'
+
+  return (
+    <div
+      role="menu"
+      aria-label="New chat with agent"
+      className="fixed inset-0 z-40"
+      onClick={(event) => {
+        // Only the backdrop dismisses: menu-item clicks run their own action.
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          onClose()
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+    >
+      <div
+        className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
+        style={{ left: state.x, top: state.y }}
+        data-testid={TEST_ID.newChatAgentMenu}
+      >
+        {phase === 'loading' ? (
+          <p
+            className="px-3 py-1.5 text-xs text-ink-muted"
+            data-testid={TEST_ID.newChatAgentMenuLoading}
+          >
+            Loading…
+          </p>
+        ) : null}
+        {phase === 'error' ? (
+          <p
+            className="px-3 py-1.5 text-xs text-ink-muted"
+            data-testid={TEST_ID.newChatAgentMenuError}
+          >
+            Failed to load agent profiles.
+          </p>
+        ) : null}
+        {phase === 'ready' && profiles.length === 0 ? (
+          <button
+            type="button"
+            role="menuitem"
+            className={itemClass}
+            data-testid={TEST_ID.newChatAgentConfigure}
+            onClick={() => {
+              // Closing first keeps one gesture to one outcome.
+              onClose()
+              onConfigureAgents(state.projectId)
+            }}
+          >
+            Configure agents
+          </button>
+        ) : null}
+        {phase === 'ready' && profiles.length > 0
+          ? profiles.map((profile) => (
+              <button
+                key={profile.id}
+                type="button"
+                role="menuitem"
+                className={itemClass}
+                data-testid={testIdFor.newChatAgentProfile(profile.id)}
+                onClick={() => {
+                  // One gesture creates at most one chat: the menu is gone
+                  // before the launch resolves, so it cannot fire twice.
+                  onClose()
+                  void onCreateChat(state.projectId, profile.id)
+                }}
+              >
+                {profile.name}
+              </button>
+            ))
+          : null}
       </div>
     </div>
   )

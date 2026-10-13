@@ -169,7 +169,9 @@ function harness(options: { handoff?: string | null; failSpawn?: boolean } = {})
       const value = options.handoff === undefined ? HANDOFF : options.handoff
       return value
     },
-    createChat: (projectId, name) => chats.createNamed(projectId, name),
+    // The launch flow owns the name and supplies its own channel (spec
+    // new-chat-agent-menu Data/API): task launch keeps its kanban channel.
+    createChat: (projectId, name) => chats.createNamed(projectId, name, 'kanban:launchTask'),
     terminals,
   })
   return {

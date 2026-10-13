@@ -160,6 +160,7 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
     chats: {
       list: vi.fn(() => []),
       create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
+      createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
       remove: vi.fn(),
     },
     state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
@@ -555,6 +556,7 @@ describe('registered ipc handlers', () => {
       chats: {
         list: vi.fn((projectId: string) => chats.filter((chat) => chat.projectId === projectId)),
         create: vi.fn(() => chats[0]),
+        createWithAgent: vi.fn(() => chats[0]),
         remove: vi.fn(),
       },
       state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
@@ -661,6 +663,7 @@ describe('registered ipc handlers', () => {
       chats: {
         list: vi.fn((projectId: string) => chats.filter((chat) => chat.projectId === projectId)),
         create: vi.fn(() => chats[0]),
+        createWithAgent: vi.fn(() => chats[0]),
         remove: vi.fn(),
       },
       state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
@@ -775,6 +778,7 @@ describe('registered ipc handlers', () => {
       chats: {
         list: vi.fn(() => []),
         create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'a' })),
+        createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'a' })),
         remove: vi.fn(),
       },
       state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },

@@ -72,11 +72,10 @@ export class ChatService {
 
   /**
    * Inserts a chat with a main-owned `[shell] profile` name. Task launch supplies
-   * the agent profile name. `chats:create` does not accept a name
-   * from the renderer.
+   * the agent profile name. `chats:create` does not accept a name from the
+   * renderer; `channel` names the flow that owns the name (and its errors).
    */
-  createNamed(projectId: string, name: string): ChatInfo {
-    const channel = 'kanban:launchTask'
+  createNamed(projectId: string, name: string, channel: string): ChatInfo {
     return this.insert(projectId, this.formatName(projectId, channel, name), channel)
   }
 

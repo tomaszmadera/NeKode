@@ -28,6 +28,7 @@ export function createAppApiStub(): AppApi {
     chats: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn().mockResolvedValue({ id: 't9', projectId: 'p1', name: 'PowerShell' }),
+      createWithAgent: vi.fn().mockResolvedValue({ id: 't9', projectId: 'p1', name: 'PowerShell' }),
       remove: vi.fn().mockResolvedValue(undefined),
     },
     state: {
