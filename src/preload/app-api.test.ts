@@ -209,8 +209,8 @@ describe('preload app api', () => {
     await api.terminals.shellDetect()
     await api.terminals.shellAddCustom('D:/tools/nu.exe')
     await api.terminals.terminate('bottom:p1:tab-a')
-    await api.git.getStatus('D:/code/demo')
-    await api.git.fileStatuses('D:/code/demo')
+    await api.git.getStatus('proj-1')
+    await api.git.fileStatuses('proj-1')
     expect(ipc.invocations.map((i) => i.channel)).toEqual([
       IPC_CHANNEL.stateGet,
       IPC_CHANNEL.stateSet,
@@ -228,7 +228,8 @@ describe('preload app api', () => {
     expect(ipc.invocations[5]?.args).toEqual(['p1'])
     expect(ipc.invocations[8]?.args).toEqual(['D:/tools/nu.exe'])
     expect(ipc.invocations[9]?.args).toEqual(['bottom:p1:tab-a'])
-    expect(ipc.invocations[11]?.args).toEqual(['D:/code/demo'])
+    expect(ipc.invocations[10]?.args).toEqual(['proj-1'])
+    expect(ipc.invocations[11]?.args).toEqual(['proj-1'])
   })
 
   it('delivers terminal data events only for the matching chat', () => {

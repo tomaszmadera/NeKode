@@ -1354,10 +1354,10 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // is entered for a project, again on re-entry. A failed read leaves the
   // tree undecorated (empty map) instead of failing the mode.
   const loadGitStatuses = useCallback(
-    (projectId: string, projectPath: string): void => {
+    (projectId: string): void => {
       const trashStart = (trashLog.current[projectId] ?? []).length
       void app.git
-        .fileStatuses(projectPath)
+        .fileStatuses(projectId)
         .then((statuses) => {
           if (
             removedProjectIdsRef.current.has(projectId) ||
@@ -1388,7 +1388,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setFilesProjectId(projectId)
       const project = projects.find((item) => item.id === projectId)
       if (project !== undefined) {
-        loadGitStatuses(projectId, project.path)
+        loadGitStatuses(projectId)
       }
       const session = filesSessions[projectId] ?? emptyProjectFilesSession()
       if (session.childrenByPath[''] === undefined) {
@@ -1478,7 +1478,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           ),
           project === undefined
             ? Promise.resolve(null)
-            : app.git.fileStatuses(project.path).then(
+            : app.git.fileStatuses(project.id).then(
                 (statuses) => statuses,
                 () => null,
               ),
@@ -1620,7 +1620,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               setNotice(errorMessage(error, 'Failed to load project files.'))
             })
           if (project !== undefined) {
-            void app.git.fileStatuses(project.path).then(
+            void app.git.fileStatuses(project.id).then(
               (statuses) => {
                 if (!current()) {
                   return

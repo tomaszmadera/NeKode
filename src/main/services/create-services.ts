@@ -114,7 +114,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       shells.chatLabel(state.get(projectShellKey(projectId)), projects.get(projectId)?.path),
   })
   const terminals = new TerminalService({ createPty: createNodePty })
-  const git = new GitService()
+  const git = new GitService({ projects })
   const files = new FilesService({
     projects,
     openExternal: options.openExternal,
@@ -302,8 +302,8 @@ export function createServices(options: CreateServicesOptions): AppServices {
       onExit: (listener) => terminals.onExit(listener),
     },
     git: {
-      getStatus: (projectPath) => git.getStatus(projectPath),
-      fileStatuses: (projectPath) => git.getFileStatuses(projectPath),
+      getStatus: (projectId) => git.getStatus(projectId),
+      fileStatuses: (projectId) => git.getFileStatuses(projectId),
     },
     files: {
       list: (projectId, relativePath) => files.list(projectId, relativePath),

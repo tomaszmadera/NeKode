@@ -2461,7 +2461,7 @@ describe('chat workspace (Stage 3)', () => {
 
       // App-level wiring only: the fetched git status reaches the status bar.
       // The worktree form strings are owned by StatusBar.test.tsx.
-      await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('D:/code/demo'))
+      await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('p1'))
       expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toContain(
         status.branch,
       )

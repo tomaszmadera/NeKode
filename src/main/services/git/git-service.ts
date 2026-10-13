@@ -6,6 +6,7 @@ import {
   type GitStatus,
   type GitWorktreeStatus,
 } from '../../../shared/ipc-contract'
+import { AppError } from '../../../shared/ipc-error'
 import { parseWslPath } from '../../../shared/wsl-path'
 
 // Read-only git status for the status bar (UX-UI §14–16) and, since
@@ -247,26 +248,53 @@ export function parseGitFileStatuses(output: string): GitFileStatuses {
   return statuses
 }
 
+export const GIT_TIMEOUT_MS = 15000
+export const GIT_MAX_BUFFER_BYTES = 16 * 1024 * 1024
+
+export interface GitProjectLookup {
+  get(projectId: string): { path: string } | null
+}
+
 export interface GitServiceOptions {
   run?: GitStatusRunner
+  projects?: GitProjectLookup
 }
 
 export class GitService {
   readonly #run: GitStatusRunner
+  readonly #projects?: GitProjectLookup
 
   constructor(options: GitServiceOptions = {}) {
     this.#run = options.run ?? execFileRunner
+    this.#projects = options.projects
   }
 
-  async getStatus(projectPath: string): Promise<GitStatus> {
+  #resolveProjectPath(target: string, channel: string): string {
+    if (this.#projects !== undefined) {
+      const project = this.#projects.get(target)
+      if (project === null) {
+        throw new AppError('not_found', 'Project not found.', channel)
+      }
+      return project.path
+    }
+    return target
+  }
+
+  async getStatus(projectId: string): Promise<GitStatus> {
+    const projectPath = this.#resolveProjectPath(projectId, 'git:status')
     try {
       const result = await this.#run(['status', '--porcelain=v2', '--branch'], projectPath)
       if (result.exitCode !== 0) {
+        if (result.exitCode !== 128) {
+          console.warn(
+            `[git] git:status exited with code ${result.exitCode} for "${projectPath}": ${result.stderr.trim()}`,
+          )
+        }
         return degradedGitStatus()
       }
       return parseGitStatus(result.stdout)
-    } catch {
-      // git missing, not a repository, or any other failure: degrade quietly.
+    } catch (error) {
+      console.warn(`[git] git:status failed for "${projectPath}":`, error)
       return degradedGitStatus()
     }
   }
@@ -279,20 +307,27 @@ export class GitService {
    * a bounded map. Any failure degrades to the empty map: the tree renders
    * undecorated instead of failing.
    */
-  async getFileStatuses(projectPath: string): Promise<GitFileStatuses> {
+  async getFileStatuses(projectId: string): Promise<GitFileStatuses> {
+    const projectPath = this.#resolveProjectPath(projectId, 'git:fileStatuses')
     try {
       const result = await this.#run(FILE_STATUS_ARGS, projectPath)
       if (result.exitCode !== 0) {
+        if (result.exitCode !== 128) {
+          console.warn(
+            `[git] git:fileStatuses exited with code ${result.exitCode} for "${projectPath}": ${result.stderr.trim()}`,
+          )
+        }
         return {}
       }
       return parseGitFileStatuses(result.stdout)
-    } catch {
+    } catch (error) {
+      console.warn(`[git] git:fileStatuses failed for "${projectPath}":`, error)
       return {}
     }
   }
 }
 
-function execFileRunner(args: string[], cwd: string): Promise<GitStatusRunResult> {
+export function execFileRunner(args: string[], cwd: string): Promise<GitStatusRunResult> {
   return new Promise((resolve) => {
     const location = parseWslPath(cwd)
     const file = location === null ? 'git' : 'wsl.exe'
@@ -311,7 +346,12 @@ function execFileRunner(args: string[], cwd: string): Promise<GitStatusRunResult
     execFile(
       file,
       commandArgs,
-      { cwd: location === null ? cwd : process.cwd(), timeout: 5000, windowsHide: true },
+      {
+        cwd: location === null ? cwd : process.cwd(),
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: GIT_MAX_BUFFER_BYTES,
+        windowsHide: true,
+      },
       (error, stdout, stderr) => {
         const exitCode =
           error !== null && typeof (error as { code?: unknown }).code === 'number'
@@ -319,6 +359,12 @@ function execFileRunner(args: string[], cwd: string): Promise<GitStatusRunResult
             : error !== null
               ? 1
               : 0
+        if (error !== null && exitCode !== 128) {
+          console.warn(
+            `[git] runner failed for "${cwd}" (${args.join(' ')}):`,
+            (error as Error).message || error,
+          )
+        }
         resolve({ stdout, stderr, exitCode })
       },
     )

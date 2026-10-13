@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { emptyGitWorktree } from '../../../shared/ipc-contract'
 import type { GitStatusRunner } from './git-service'
 import { GitService, parseGitFileStatuses, parseGitStatus } from './git-service'
@@ -187,6 +187,7 @@ describe('GitService (injected runner)', () => {
   })
 
   it('git missing (runner rejects) degrades to "no git"', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const service = new GitService({
       run: () => Promise.reject(new Error('spawn git ENOENT')),
     })
@@ -195,6 +196,11 @@ describe('GitService (injected runner)', () => {
       dirty: false,
       worktree: expectedWorktree({}),
     })
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[git] git:status failed for "D:/code/demo":',
+      expect.any(Error),
+    )
+    warnSpy.mockRestore()
   })
 })
 
@@ -310,9 +316,67 @@ describe('GitService file statuses (injected runner)', () => {
         }),
     })
     await expect(nonRepo.getFileStatuses('D:/code/demo')).resolves.toEqual({})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const missing = new GitService({
       run: () => Promise.reject(new Error('spawn git ENOENT')),
     })
     await expect(missing.getFileStatuses('D:/code/demo')).resolves.toEqual({})
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[git] git:fileStatuses failed for "D:/code/demo":',
+      expect.any(Error),
+    )
+    warnSpy.mockRestore()
+  })
+})
+
+describe('GitService project boundary (projectId resolution)', () => {
+  const runner = vi.fn(() =>
+    Promise.resolve({
+      stdout: `# branch.oid 3b1075d9a2f1c4d6e8f0a1b2c3d4e5f6a7b8c9d0
+# branch.head main
+`,
+      stderr: '',
+      exitCode: 0,
+    }),
+  )
+  const projects = {
+    get: (id: string) => (id === 'proj-valid' ? { path: 'D:/projects/valid' } : null),
+  }
+
+  it('resolves projectId to project.path and runs in that directory', async () => {
+    const service = new GitService({ run: runner, projects })
+    await service.getStatus('proj-valid')
+    expect(runner).toHaveBeenCalledWith(
+      ['status', '--porcelain=v2', '--branch'],
+      'D:/projects/valid',
+    )
+  })
+
+  it('rejects unknown projectId with not_found and never invokes runner', async () => {
+    const calls: string[] = []
+    const service = new GitService({
+      run: (_args, cwd) => {
+        calls.push(cwd)
+        return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 })
+      },
+      projects,
+    })
+    await expect(service.getStatus('proj-unknown')).rejects.toThrow(/Project not found/)
+    await expect(service.getFileStatuses('proj-unknown')).rejects.toThrow(/Project not found/)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('logs warning when runner returns unexpected non-zero exit code', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const service = new GitService({
+      run: () => Promise.resolve({ stdout: '', stderr: 'fatal: locked', exitCode: 1 }),
+    })
+    await service.getStatus('D:/code/demo')
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '[git] git:status exited with code 1 for "D:/code/demo": fatal: locked',
+      ),
+    )
+    warnSpy.mockRestore()
   })
 })

@@ -19,10 +19,14 @@ import './StatusBar.css'
 // itself stays. A git failure degrades to "no git" (no branch, neutral
 // status) instead of failing the workspace (spec Errors / Edge cases).
 
-interface StatusBarProps {
+export const STATUS_BAR_GIT_REFRESH_INTERVAL_MS = 10_000
+
+export interface StatusBarProps {
   app: AppApi
   /** The active workspace project (Files-mode project, else the selected one). */
   project: ProjectInfo | null
+  /** Optional external refresh trigger / version nonce. */
+  refreshTrigger?: unknown
 }
 
 const NEWLINE = String.fromCharCode(10)
@@ -64,35 +68,54 @@ export function gitHoverDetails(worktree: GitWorktreeStatus): string {
   return rows.map(([label, value]) => `${label.padEnd(12)}${value}`).join(NEWLINE)
 }
 
-export function StatusBar({ app, project }: StatusBarProps): React.JSX.Element {
+export function StatusBar({ app, project, refreshTrigger }: StatusBarProps): React.JSX.Element {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
 
   const projectId = project?.id ?? null
-  const projectPath = project?.path ?? null
 
   useEffect(() => {
-    if (projectId === null || projectPath === null) {
+    if (projectId === null) {
       setGitStatus(null)
       return
     }
     let cancelled = false
-    void app.git
-      .getStatus(projectPath)
-      .then((status) => {
-        if (!cancelled) {
-          setGitStatus(status)
-        }
-      })
-      .catch(() => {
-        // Spec Errors: a git failure degrades to the "no git" state.
-        if (!cancelled) {
-          setGitStatus({ branch: null, dirty: false, worktree: emptyGitWorktree() })
-        }
-      })
+    void refreshTrigger
+
+    const fetchStatus = () => {
+      void app.git
+        .getStatus(projectId)
+        .then((status) => {
+          if (!cancelled) {
+            setGitStatus(status)
+          }
+        })
+        .catch(() => {
+          // Spec Errors: a git failure degrades to the "no git" state.
+          if (!cancelled) {
+            setGitStatus({ branch: null, dirty: false, worktree: emptyGitWorktree() })
+          }
+        })
+    }
+
+    fetchStatus()
+
+    const onFocus = () => {
+      fetchStatus()
+    }
+    window.addEventListener('focus', onFocus)
+
+    const interval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        fetchStatus()
+      }
+    }, STATUS_BAR_GIT_REFRESH_INTERVAL_MS)
+
     return () => {
       cancelled = true
+      window.removeEventListener('focus', onFocus)
+      clearInterval(interval)
     }
-  }, [app, projectId, projectPath])
+  }, [app, projectId, refreshTrigger])
 
   const labels = runtimeLabels(project?.runtimeLabel ?? null)
   const visibleLabels = labels.slice(0, MAX_RUNTIME_BADGES)
