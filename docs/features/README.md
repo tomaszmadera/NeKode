@@ -37,6 +37,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [dictation-provider-architecture](dictation-provider-architecture/spec.md) | Dictation provider architecture | Not delivered (parent contract); the OpenWhispr specialization ships desktop V1 |
 | [handoff-resume-flow](handoff-resume-flow/spec.md) | Handoff/Resume flow | Delivered |
 | [kanban-adapter-interface](kanban-adapter-interface/spec.md) | Kanban adapter interface | Delivered (adapter-backed board); drag-and-drop and the UX-UI 26-30 visual design remain later work |
+| [markdown-mermaid-diagrams](markdown-mermaid-diagrams/spec.md) | Markdown preview: Mermaid diagrams | Delivered |
 | [mvp-core-shell](mvp-core-shell/spec.md) | NeKode MVP Core Shell - first vertical slice | Delivered |
 | [openwhispr-dictation](openwhispr-dictation/spec.md) | OpenWhispr dictation integration | Delivered for desktop V1; the public Cloud API stays deferred (backlog item NEKODE-37) |
 | [project-environments](project-environments/spec.md) | Project environments: opening WSL projects | Delivered (WSL opening and the add-project UI extension) |

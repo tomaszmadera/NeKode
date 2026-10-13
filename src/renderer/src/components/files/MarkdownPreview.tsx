@@ -3,6 +3,8 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { isSafeExternalUrl } from '../../../../shared/safe-url'
 import { TEST_ID } from '../../lib/test-ids'
+import { MermaidDiagram } from './MermaidDiagram'
+import { mermaidSourceFromPre } from './mermaid-block'
 
 // Rendered Markdown for a read-only file tab (user decision 2026-10-06).
 // react-markdown escapes raw HTML and does not load rehype-raw, so a script
@@ -11,6 +13,14 @@ import { TEST_ID } from '../../lib/test-ids'
 // main-process window-open handler). Remote and relative images are not
 // requested: the renderer CSP allows only self, data, and blob, so those
 // sources are shown as their alt text. data:image sources render in place.
+//
+// One fence is special (NEKODE-76): a `mermaid` block renders as a diagram,
+// through a component that keeps this same code block as its pending and
+// failure state. Every other fence, including one this component cannot draw,
+// is the plain code block below.
+
+const PRE_CLASS =
+  'my-3 overflow-auto rounded-md border border-edge bg-panel p-3 font-mono text-xs text-ink'
 
 const components: Components = {
   a: ({ href, children }) => {
@@ -67,11 +77,14 @@ const components: Components = {
   li: ({ children, className }) => <li className={className}>{children}</li>,
   ol: ({ children }) => <ol className="my-3 list-decimal pl-5">{children}</ol>,
   p: ({ children }) => <p className="my-3 text-ink">{children}</p>,
-  pre: ({ children }) => (
-    <pre className="my-3 overflow-auto rounded-md border border-edge bg-panel p-3 font-mono text-xs text-ink">
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => {
+    const source = mermaidSourceFromPre(children)
+    const codeBlock = <pre className={PRE_CLASS}>{children}</pre>
+    if (source === null) {
+      return codeBlock
+    }
+    return <MermaidDiagram source={source}>{codeBlock}</MermaidDiagram>
+  },
   table: ({ children }) => (
     <div className="my-3 overflow-auto">
       <table className="w-full border-collapse text-left">{children}</table>

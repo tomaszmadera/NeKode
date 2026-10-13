@@ -76,6 +76,9 @@ export const TEST_ID = {
   fileMarkdownPreview: 'file-markdown-preview',
   /** Rendered Markdown surface inside a file tab. */
   fileMarkdownRender: 'file-markdown-render',
+  /** Rendered Mermaid diagram inside that surface (NEKODE-76). */
+  fileMarkdownDiagram: 'file-markdown-diagram',
+  fileMarkdownDiagramError: 'file-markdown-diagram-error',
   /** Right-click menu of the read-only file preview (Copy / Select All). */
   editorContextMenu: 'editor-context-menu',
   editorContextCopy: 'editor-context-copy',

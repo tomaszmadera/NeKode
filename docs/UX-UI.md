@@ -603,7 +603,7 @@ A folder shows the strongest status found at any depth below it (conflict, then 
 
 The project-name row has a Refresh icon above the tree (user decision 2026-10-11). The icon spins while the read runs. Refresh re-reads the project root and every expanded folder, and reads Git status again. Returning to the tree keeps the listings already loaded. Collapsed folders are read again the next time they are expanded after a refresh.
 
-A markdown file (`md` or `markdown`) adds `Code` and `Preview` to the action row, in front of the settings control (user decision 2026-10-06). `Preview` is the default and renders that text as Markdown. `Code` shows the read-only Monaco preview. The choice stays with that file for the app session and is not saved. Raw HTML is not executed. Only `http` and `https` links open, through the existing external-URL allowlist. Remote and relative images show their alt text. A too-large or binary result keeps its fallback in either mode.
+A markdown file (`md` or `markdown`) adds `Code` and `Preview` to the action row, in front of the settings control (user decision 2026-10-06). `Preview` is the default and renders that text as Markdown. `Code` shows the read-only Monaco preview. The choice stays with that file for the app session and is not saved. Raw HTML is not executed. Only `http` and `https` links open, through the existing external-URL allowlist. Remote and relative images show their alt text. A fenced `mermaid` block renders as a diagram (NEKODE-76). A block whose diagram cannot be drawn keeps its source and shows one error line. A too-large or binary result keeps its fallback in either mode.
 
 MVP does not require editing.
 
