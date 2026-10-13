@@ -64,6 +64,10 @@ function expectAppError(run: () => unknown, code: AppErrorCode): AppError {
 const demoPath = join(tmpdir(), 'nekode-chat-service-tests', 'demo-project')
 const otherPath = join(tmpdir(), 'nekode-chat-service-tests', 'other-project')
 
+// The launch flow that owns the name supplies its own channel; the service
+// stamps it on the errors that flow can surface (spec Errors).
+const NAMED_CHANNEL = 'chats:createWithAgent'
+
 describe('ChatService', () => {
   it('create takes no name and stores the shell-named chat (no status field)', () => {
     const { projects, chats } = createServices({ chatName: () => 'PowerShell' })
@@ -92,7 +96,7 @@ describe('ChatService', () => {
   it('stores the shell prefix with an optional trimmed profile name', () => {
     const { projects, chats } = createServices({ chatName: () => 'PowerShell' })
     const project = projects.add(demoPath)
-    const named = chats.createNamed(project.id, '  Codex  ')
+    const named = chats.createNamed(project.id, '  Codex  ', NAMED_CHANNEL)
     expect(named.name).toBe('[PowerShell] Codex')
     const shell = chats.create(project.id)
     expect(shell.name).toBe('[PowerShell]')
@@ -113,7 +117,7 @@ describe('ChatService', () => {
       db,
       chatNameForProject: (id) => (id === project.id ? projectShell : 'PowerShell 7'),
     })
-    const named = chats.createNamed(project.id, 'Codex')
+    const named = chats.createNamed(project.id, 'Codex', NAMED_CHANNEL)
     const shell = chats.create(otherProject.id)
     expect(named.name).toBe('[bash] Codex')
     expect(shell.name).toBe('[PowerShell 7]')
@@ -127,8 +131,17 @@ describe('ChatService', () => {
   it('rejects an empty profile or shell without storing a chat', () => {
     const { projects, chats, chatsNamed } = createServices({ chatName: () => 'PowerShell' })
     const project = projects.add(demoPath)
-    expectAppError(() => chats.createNamed(project.id, '   '), 'validation')
-    expectAppError(() => chatsNamed(() => '  ').createNamed(project.id, 'Codex'), 'validation')
+    const emptyProfile = expectAppError(
+      () => chats.createNamed(project.id, '   ', NAMED_CHANNEL),
+      'validation',
+    )
+    // The owning flow's channel travels with the error (spec Errors): the
+    // renderer's notice can name the launch that failed.
+    expect(emptyProfile.channel).toBe(NAMED_CHANNEL)
+    expectAppError(
+      () => chatsNamed(() => '  ').createNamed(project.id, 'Codex', NAMED_CHANNEL),
+      'validation',
+    )
     expect(chats.list(project.id)).toEqual([])
   })
 

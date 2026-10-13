@@ -118,6 +118,10 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       list: (projectId) => invoke<ChatInfo[]>(IPC_CHANNEL.chatsList, projectId),
       // No name argument: the main process derives it from the shell.
       create: (projectId) => invoke<ChatInfo>(IPC_CHANNEL.chatsCreate, projectId),
+      // The profile choice is an AgentProfile.id; main owns the name and the
+      // agent process (spec Data/API).
+      createWithAgent: (projectId, profileId) =>
+        invoke<ChatInfo>(IPC_CHANNEL.chatsCreateWithAgent, projectId, profileId),
       remove: (chatId) => invoke<void>(IPC_CHANNEL.chatsRemove, chatId),
     },
     state: {

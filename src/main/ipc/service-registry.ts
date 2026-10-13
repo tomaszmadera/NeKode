@@ -85,6 +85,12 @@ export interface AppServices {
     list(projectId: string): ChatInfo[]
     /** Name is derived from the platform shell (spec Behaviour 3); duplicates allowed. */
     create(projectId: string): ChatInfo
+    /**
+     * Creates one `[shell] <profile name>` chat and starts the profile's agent
+     * in its terminal (new-chat-agent-menu). Rolls the chat back and throws a
+     * typed error when the agent cannot start.
+     */
+    createWithAgent(projectId: string, profileId: string): ChatInfo
     /** Removes one chat row (terminal-exit close flow, spec Behaviour 11). */
     remove(chatId: string): void
   }

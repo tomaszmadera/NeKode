@@ -5,6 +5,7 @@ import { createBottomTabId } from '../../shared/bottom-tab-id'
 import type {
   ActionControl,
   ActionExecution,
+  AgentProfilesDocument,
   ChatInfo,
   FileEntry,
   KanbanLaunchResult,
@@ -1710,6 +1711,33 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [applyChatsUpdate, persistSelection, updateTabsSession],
   )
 
+  // New Chat profile menu (spec new-chat-agent-menu): the menu reads the
+  // project's profiles through the existing channel, and a chosen profile
+  // launches one chat that is adopted exactly like a Kanban Start chat.
+  const loadAgentProfiles = useCallback(
+    (projectId: string): Promise<AgentProfilesDocument> => app.agentProfiles.get(projectId),
+    [app],
+  )
+
+  const handleCreateAgentChat = useCallback(
+    (projectId: string, profileId: string): Promise<boolean> => {
+      setNotice(null)
+      return (async () => {
+        try {
+          const chat = await app.chats.createWithAgent(projectId, profileId)
+          adoptLaunchedChat(projectId, chat)
+          return true
+        } catch (error) {
+          // No silent fallback to a plain shell chat (spec Errors): a failed
+          // launch surfaces the typed error and main keeps no chat.
+          setNotice(errorMessage(error, 'Failed to start the agent chat.'))
+          return false
+        }
+      })()
+    },
+    [adoptLaunchedChat, app],
+  )
+
   const handleTaskLaunched = useCallback(
     (projectId: string, result: KanbanLaunchResult & { input: KanbanLaunchTaskInput }): void => {
       if (removedProjectIdsRef.current.has(projectId)) {
@@ -2381,6 +2409,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 setActionSettingsOpen(true)
               }}
               onCreateChat={handleCreateChat}
+              onCreateAgentChat={handleCreateAgentChat}
+              loadAgentProfiles={loadAgentProfiles}
+              onConfigureAgents={openAgentsSettings}
               onRequestCloseChat={handleRequestCloseChat}
               notice={notice}
             >

@@ -65,6 +65,7 @@ function createAppMock(): AppMockBundle {
     chats: {
       list: vi.fn().mockResolvedValue([chatOne, chatTwo]),
       create: vi.fn().mockResolvedValue(chatTwo),
+      createWithAgent: vi.fn().mockResolvedValue(chatTwo),
       remove: vi.fn().mockResolvedValue(undefined),
     },
     state: {

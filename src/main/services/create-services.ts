@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '../../shared/bottom-tab-id'
 import {
   APP_STATE_KEY,
+  IPC_CHANNEL,
   projectHandoffDirKey,
   projectShellKey,
   projectWslShellsKey,
@@ -13,6 +14,7 @@ import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import type { AppServices } from '../ipc/service-registry'
 import { ActionService } from './action-service'
+import { AgentChatLaunchService } from './agent-chat-launch-service'
 import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
 import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
@@ -140,6 +142,15 @@ export function createServices(options: CreateServicesOptions): AppServices {
     safeStorage: options.safeStorage,
   })
   const agentProfiles = new AgentProfilesService({ projects, state })
+  const agentChats = new AgentChatLaunchService({
+    projects,
+    profiles: agentProfiles,
+    // The chat name and its errors belong to this flow, not to a task launch.
+    createChat: (projectId, name) =>
+      chats.createNamed(projectId, name, IPC_CHANNEL.chatsCreateWithAgent),
+    removeChat: (chatId) => chats.remove(chatId),
+    terminals,
+  })
   const taskLaunch = new TaskLaunchService({
     projects,
     profiles: agentProfiles,
@@ -154,7 +165,8 @@ export function createServices(options: CreateServicesOptions): AppServices {
       }
       return value
     },
-    createChat: (projectId, name) => chats.createNamed(projectId, name),
+    createChat: (projectId, name) =>
+      chats.createNamed(projectId, name, IPC_CHANNEL.kanbanLaunchTask),
     terminals,
   })
   const actions = new ActionService({
@@ -216,6 +228,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
     chats: {
       list: (projectId) => chats.list(projectId),
       create: (projectId) => chats.create(projectId),
+      createWithAgent: (projectId, profileId) => agentChats.createWithAgent(projectId, profileId),
       remove: (chatId) => chats.remove(chatId),
     },
     state: {

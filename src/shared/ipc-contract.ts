@@ -303,6 +303,8 @@ export const IPC_CHANNEL = {
   projectsRemove: 'projects:remove',
   chatsList: 'chats:list',
   chatsCreate: 'chats:create',
+  /** Creates a chat with one agent profile running in its terminal. */
+  chatsCreateWithAgent: 'chats:createWithAgent',
   chatsRemove: 'chats:remove',
   stateGet: 'state:get',
   stateSet: 'state:set',
@@ -652,6 +654,14 @@ export interface AppApi {
      * renderer).
      */
     create(projectId: string): Promise<ChatInfo>
+    /**
+     * Creates one chat named `[shell] <profile name>` and starts the profile's
+     * agent process in that chat's terminal at the project root (the Kanban
+     * launch path: argv, never a shell; the `{prompt}` element is removed so
+     * the agent starts interactively). A spawn failure removes the chat again
+     * and rejects with a typed error; there is no fallback to a shell chat.
+     */
+    createWithAgent(projectId: string, profileId: string): Promise<ChatInfo>
     /**
      * Removes a chat from the tree and the database (the terminal-exit close
      * flow, spec Behaviour 11). Main also drops the chat's terminal session.

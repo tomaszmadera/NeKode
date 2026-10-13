@@ -57,6 +57,7 @@ function fakeServices(): AppServices {
     chats: {
       list: () => [],
       create: () => ({ id: 't1', projectId: 'p1', name: 'n' }),
+      createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
       remove: vi.fn(),
     },
     state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
@@ -337,6 +338,34 @@ describe('ipc payload validation', () => {
     expect(() => entry.parse(['p1', 'name', 'extra'])).toThrow(/expected 1 argument/)
     expect(() => entry.parse(['p1', 'name'])).toThrow(/expected 1 argument/)
     expect(entry.parse(['p1'])).toEqual(['p1'])
+  })
+
+  it('validates the agent chat launch payload before the service', () => {
+    const services = fakeServices()
+    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
+    for (const entry of buildValidatedChannels(services)) {
+      channels.set(entry.channel, entry)
+    }
+    const launch = channels.get('chats:createWithAgent')
+    expect(launch?.parse(['p1', 'prof-1'])).toEqual(['p1', 'prof-1'])
+    launch?.invoke(launch.parse(['p1', 'prof-1']))
+    expect(services.chats.createWithAgent).toHaveBeenCalledWith('p1', 'prof-1')
+
+    // Malformed payloads never reach the launch: arity, types and the
+    // non-empty ids the service looks up (spec Errors).
+    const invalid: unknown[][] = [
+      [],
+      ['p1'],
+      ['p1', 'prof-1', 'extra'],
+      [1, 'prof-1'],
+      ['p1', 1],
+      ['', 'prof-1'],
+      ['p1', ''],
+    ]
+    for (const payload of invalid) {
+      expect(() => launch?.parse(payload)).toThrow(ValidationError)
+    }
+    expect(services.chats.createWithAgent).toHaveBeenCalledTimes(1)
   })
 
   it('rejects non-string and non-finite arguments', () => {

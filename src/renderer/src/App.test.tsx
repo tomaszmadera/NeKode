@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ActionControl,
+  AgentProfile,
+  AgentProfilesDocument,
   ChatInfo,
   HandoffCandidatesResult,
   KanbanBoard as KanbanBoardData,
@@ -126,6 +128,18 @@ const projectNoRuntime: ProjectInfo = {
 const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
 const chatTwo: ChatInfo = { id: 't2', projectId: 'p1', name: 'Second chat' }
 const chatOtherProject: ChatInfo = { id: 'u1', projectId: 'p2', name: 'Other project chat' }
+const codexProfile: AgentProfile = {
+  id: 'prof-1',
+  name: 'Codex',
+  executable: 'codex.exe',
+  args: ['{prompt}'],
+}
+const claudeProfile: AgentProfile = {
+  id: 'prof-2',
+  name: 'Claude',
+  executable: 'claude.exe',
+  args: ['--print', '{prompt}'],
+}
 const buildAction: ActionControl = {
   id: 'a1',
   scope: 'project',
@@ -2145,6 +2159,242 @@ describe('project and chat data flow', () => {
 
     const notice = await screen.findByTestId(TEST_ID.actionNotice)
     expect(notice.textContent).toContain('Project not found.')
+  })
+
+  // New Chat agent profile menu (spec new-chat-agent-menu). The menu is opened
+  // on the left panel's per-project New Chat button; a plain left click keeps
+  // the existing chat flow (covered by the new-chat tests above).
+  async function openAgentMenu(): Promise<HTMLElement> {
+    // The project selector toggles, so only select the project when its
+    // expanded New Chat button is not on screen yet.
+    if (screen.queryByTestId(TEST_ID.newChatButton) === null) {
+      fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    }
+    fireEvent.contextMenu(await screen.findByTestId(TEST_ID.newChatButton))
+    return screen.findByTestId(TEST_ID.newChatAgentMenu)
+  }
+
+  it('new-chat agent menu: right click lists the project profiles and creates no chat', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({
+      defaultId: null,
+      profiles: [codexProfile, claudeProfile],
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.contextMenu(await screen.findByTestId(TEST_ID.newChatButton), {
+      clientX: 40,
+      clientY: 60,
+    })
+
+    const menu = await screen.findByTestId(TEST_ID.newChatAgentMenu)
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.newChatAgentProfile('prof-1')).textContent).toBe('Codex'),
+    )
+    // Stored document order, one item per profile, from this project's document.
+    expect(screen.getByTestId(testIdFor.newChatAgentProfile('prof-2')).textContent).toBe('Claude')
+    expect(app.agentProfiles.get).toHaveBeenCalledWith('p1')
+    // The pointer gesture positions the menu at the pointer.
+    expect(menu.style.left).toBe('40px')
+    expect(menu.style.top).toBe('60px')
+    // The gesture itself creates no chat.
+    expect(app.chats.create).not.toHaveBeenCalled()
+    expect(app.chats.createWithAgent).not.toHaveBeenCalled()
+  })
+
+  it('new-chat agent menu: ContextMenu / Shift+F10 opens it below the button, Escape and outside click close it', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({
+      defaultId: null,
+      profiles: [codexProfile],
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    const button = await screen.findByTestId(TEST_ID.newChatButton)
+    // jsdom reports a zero rect; the button's real geometry decides the
+    // keyboard position (below the button).
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      x: 12,
+      y: 10,
+      top: 10,
+      left: 12,
+      right: 100,
+      bottom: 34,
+      width: 88,
+      height: 24,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    fireEvent.keyDown(button, { key: 'ContextMenu' })
+    const menu = await screen.findByTestId(TEST_ID.newChatAgentMenu)
+    expect(menu.style.left).toBe('12px')
+    expect(menu.style.top).toBe('34px')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.newChatAgentMenu)).toBeNull())
+
+    fireEvent.keyDown(button, { key: 'F10', shiftKey: true })
+    const reopened = await screen.findByTestId(TEST_ID.newChatAgentMenu)
+    // An outside click (the backdrop) closes it.
+    fireEvent.click(reopened.parentElement as HTMLElement)
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.newChatAgentMenu)).toBeNull())
+    expect(app.chats.createWithAgent).not.toHaveBeenCalled()
+  })
+
+  it('new-chat agent menu: a keyboard gesture closes the other menu first', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({
+      defaultId: null,
+      profiles: [codexProfile],
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    // The project-row menu is open (spec Behaviour 7: one menu at a time)…
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    expect(await screen.findByTestId(TEST_ID.projectContextMenu)).toBeTruthy()
+
+    // …and a keyboard gesture on the New Chat button swaps it for the agent
+    // menu instead of stacking a second overlay on top.
+    fireEvent.keyDown(screen.getByTestId(TEST_ID.newChatButton), { key: 'ContextMenu' })
+    expect(await screen.findByTestId(TEST_ID.newChatAgentMenu)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.projectContextMenu)).toBeNull()
+
+    // The other direction: a keyboard gesture on the project row closes the
+    // agent menu and opens the project menu.
+    fireEvent.keyDown(screen.getByTestId(testIdFor.projectRow('p1')), { key: 'ContextMenu' })
+    expect(await screen.findByTestId(TEST_ID.projectContextMenu)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.newChatAgentMenu)).toBeNull()
+  })
+
+  it('new-chat agent menu: choosing a profile creates and adopts the agent chat', async () => {
+    const agentChat: ChatInfo = { id: 'a7', projectId: 'p1', name: '[PowerShell] Codex' }
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({
+      defaultId: null,
+      profiles: [codexProfile, claudeProfile],
+    })
+    vi.mocked(app.chats.createWithAgent).mockResolvedValue(agentChat)
+
+    render(<App app={app} />)
+    await openAgentMenu()
+    fireEvent.click(await screen.findByTestId(testIdFor.newChatAgentProfile('prof-1')))
+
+    await waitFor(() => expect(app.chats.createWithAgent).toHaveBeenCalledWith('p1', 'prof-1'))
+    // One gesture, one chat: the menu is gone before the launch resolves.
+    expect(app.chats.createWithAgent).toHaveBeenCalledTimes(1)
+    expect(app.chats.create).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.newChatAgentMenu)).toBeNull())
+    // Adopted like a Kanban Start chat: selected, project expanded, terminal
+    // tab active.
+    const row = await screen.findByTestId(testIdFor.chatRow('a7'))
+    expect(row.getAttribute('data-selected')).toBe('true')
+    expect(screen.getByTestId(testIdFor.projectChats('p1'))).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('[PowerShell] Codex')
+    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 'a7')
+  })
+
+  it('new-chat agent menu: no profiles offers Configure agents and opens the Agents settings', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({ defaultId: null, profiles: [] })
+
+    render(<App app={app} />)
+    await openAgentMenu()
+    fireEvent.click(await screen.findByTestId(TEST_ID.newChatAgentConfigure))
+
+    // Project Settings on the Agents tab, and no chat of any kind.
+    const agentsTab = await screen.findByTestId(TEST_ID.settingsAgentsTab)
+    expect(agentsTab.getAttribute('aria-selected')).toBe('true')
+    expect(await screen.findByRole('dialog', { name: 'Project Settings' })).toBeTruthy()
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.newChatAgentMenu)).toBeNull())
+    expect(app.chats.createWithAgent).not.toHaveBeenCalled()
+    expect(app.chats.create).not.toHaveBeenCalled()
+  })
+
+  it('new-chat agent menu: the loading row shows while the profiles are read, then the names', async () => {
+    let release: (document: AgentProfilesDocument) => void = () => undefined
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockReturnValue(
+      new Promise<AgentProfilesDocument>((resolve) => {
+        release = resolve
+      }),
+    )
+
+    render(<App app={app} />)
+    await openAgentMenu()
+
+    // Non-actionable loading row: nothing can be chosen yet.
+    expect(screen.getByTestId(TEST_ID.newChatAgentMenuLoading).textContent).toBe('Loading…')
+    expect(screen.queryByRole('menuitem')).toBeNull()
+    await act(async () => {
+      release({ defaultId: null, profiles: [codexProfile] })
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.newChatAgentProfile('prof-1')).textContent).toBe('Codex'),
+    )
+    expect(screen.queryByTestId(TEST_ID.newChatAgentMenuLoading)).toBeNull()
+    expect(app.chats.createWithAgent).not.toHaveBeenCalled()
+  })
+
+  it('new-chat agent menu: a failed profile load shows the failure row and creates no chat', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'unknown',
+      message: 'Database error.',
+    })
+
+    render(<App app={app} />)
+    await openAgentMenu()
+
+    const failure = await screen.findByTestId(TEST_ID.newChatAgentMenuError)
+    expect(failure.textContent).toBe('Failed to load agent profiles.')
+    expect(screen.queryByRole('menuitem')).toBeNull()
+    expect(app.chats.createWithAgent).not.toHaveBeenCalled()
+  })
+
+  it('new-chat agent menu: a failed launch surfaces a typed notice and keeps the affordance', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({
+      defaultId: null,
+      profiles: [codexProfile, claudeProfile],
+    })
+    vi.mocked(app.chats.createWithAgent).mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'not_found',
+      message: 'The selected agent profile is no longer available.',
+    })
+
+    render(<App app={app} />)
+    await openAgentMenu()
+    fireEvent.click(await screen.findByTestId(testIdFor.newChatAgentProfile('prof-1')))
+
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toContain('The selected agent profile is no longer available.')
+    expect(screen.queryByTestId(testIdFor.chatRow('t9'))).toBeNull()
+    expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
+
+    // An unclassified failure falls back to the launch's own message; no chat
+    // is ever adopted for a failed launch.
+    vi.mocked(app.chats.createWithAgent).mockRejectedValueOnce(new Error('EPERM: spawn'))
+    await openAgentMenu()
+    fireEvent.click(await screen.findByTestId(testIdFor.newChatAgentProfile('prof-2')))
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.actionNotice).textContent).toContain(
+        'Failed to start the agent chat.',
+      ),
+    )
+    expect(screen.queryByTestId(testIdFor.chatRow('t9'))).toBeNull()
   })
 
   it('remove-project: falls back to the default empty state and drops removed data', async () => {
