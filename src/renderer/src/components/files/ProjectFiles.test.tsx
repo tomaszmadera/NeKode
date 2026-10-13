@@ -7,10 +7,9 @@ import type {
   GitFileStatuses,
   ProjectInfo,
 } from '../../../../shared/ipc-contract'
-import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { createDictationApiStub } from '../../test/dictation-api-stub'
+import { createAppApiStub } from '../../test/app-api-stub'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
 import { resetMockTerminals } from '../../test/xterm-mock'
 
@@ -35,91 +34,6 @@ vi.mock('./MonacoPreview', () => ({
     </pre>
   ),
 }))
-
-function createAppApiStub(): AppApi {
-  return {
-    dictation: createDictationApiStub(),
-    actions: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      execute: vi.fn(),
-      status: vi.fn(),
-    },
-    projects: {
-      wslDirectories: vi.fn(() => Promise.resolve([])),
-      wslDistributions: vi.fn().mockResolvedValue([]),
-      addWsl: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
-      add: vi.fn().mockResolvedValue(null),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    chats: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({ id: 't9', projectId: 'p1', name: 'PowerShell' }),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    state: {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
-    },
-    terminals: {
-      create: vi.fn().mockResolvedValue('term-1'),
-      write: vi.fn().mockResolvedValue(undefined),
-      resize: vi.fn().mockResolvedValue(undefined),
-      shellName: vi.fn().mockResolvedValue('PowerShell'),
-      shellList: vi.fn().mockResolvedValue([]),
-      shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
-      shellAddCustom: vi.fn().mockResolvedValue({ id: 'default', label: 'PowerShell' }),
-      terminate: vi.fn().mockResolvedValue(undefined),
-      onData: vi.fn().mockReturnValue(() => undefined),
-      onExit: vi.fn().mockReturnValue(() => undefined),
-    },
-    git: {
-      getStatus: vi
-        .fn()
-        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
-      fileStatuses: vi.fn().mockResolvedValue({}),
-    },
-    files: {
-      list: vi.fn().mockResolvedValue([]),
-      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
-      openExternal: vi.fn().mockResolvedValue(undefined),
-      openRoot: vi.fn().mockResolvedValue(undefined),
-      showInFolder: vi.fn().mockResolvedValue(undefined),
-      trash: vi.fn().mockResolvedValue(undefined),
-    },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
-    },
-    kanban: {
-      adaptersList: vi.fn().mockResolvedValue([]),
-      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
-      setConfig: vi.fn().mockResolvedValue(undefined),
-      test: vi.fn().mockResolvedValue(undefined),
-      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
-      createItem: vi.fn(),
-      updateItem: vi.fn(),
-      getItem: vi.fn(),
-      launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
-      handoffAvailability: vi.fn(async () => ({
-        state: 'ready' as const,
-        items: [],
-        rejections: [],
-      })),
-    },
-    agentProfiles: {
-      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-    },
-    dialogs: {
-      pickDirectory: vi.fn().mockResolvedValue(null),
-    },
-  }
-}
 
 const projectA: ProjectInfo = {
   id: 'p1',
@@ -315,53 +229,56 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     await screen.findByTestId(testIdFor.tabFile('src/app.ts'))
   })
 
-  it('previews a text file read-only in its tab, with mapped language and path tooltip', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockListings(app)
-    vi.mocked(app.files.read).mockResolvedValue({
-      kind: 'text',
-      content: 'const x: number = 1',
-      language: 'typescript',
-    })
+  it.each([
+    [
+      'previews a text file read-only in its tab, with mapped language and path tooltip',
+      'const x: number = 1',
+      'typescript',
+      'typescript',
+    ],
+    [
+      'falls back to plain text when the extension has no language mapping',
+      'notes',
+      null,
+      'plaintext',
+    ],
+  ] as Array<[string, string, string | null, string]>)(
+    '%s',
+    async (_title, content, language, expectedLanguage) => {
+      vi.mocked(app.projects.list).mockResolvedValue([projectA])
+      mockListings(app)
+      vi.mocked(app.files.read).mockResolvedValue({
+        kind: 'text',
+        content,
+        language,
+      })
 
-    render(<App app={app} />)
-    await enterFilesMode()
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
+      render(<App app={app} />)
+      await enterFilesMode()
+      fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
 
-    // Tab label = file name; tooltip = the path relative to the project root.
-    const tab = screen.getByTestId(testIdFor.tabFile('README.md'))
-    expect(within(tab).getByText('README.md')).toBeTruthy()
-    expect(tab.getAttribute('title')).toBe('README.md')
-    // README.md opens rendered. Code still hands the mapped language to Monaco.
-    fireEvent.click(screen.getByTestId(TEST_ID.fileMarkdownCode))
-    const monaco = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewMonaco)
-    expect(monaco.getAttribute('data-language')).toBe('typescript')
-    expect(monaco.textContent).toBe('const x: number = 1')
-    expect(app.files.read).toHaveBeenCalledWith('p1', 'README.md')
+      if (language !== null) {
+        // Tab label = file name; tooltip = the path relative to the project root.
+        const tab = screen.getByTestId(testIdFor.tabFile('README.md'))
+        expect(within(tab).getByText('README.md')).toBeTruthy()
+        expect(tab.getAttribute('title')).toBe('README.md')
+      }
+      // README.md opens rendered. Code still hands the mapped language to Monaco.
+      fireEvent.click(screen.getByTestId(TEST_ID.fileMarkdownCode))
+      const monaco = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewMonaco)
+      expect(monaco.getAttribute('data-language')).toBe(expectedLanguage)
+      if (language !== null) {
+        expect(monaco.textContent).toBe(content)
+        expect(app.files.read).toHaveBeenCalledWith('p1', 'README.md')
 
-    // Nested paths tooltip as segments (spec Behaviour 7).
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
-    const nestedTab = screen.getByTestId(testIdFor.tabFile('src/app.ts'))
-    expect(nestedTab.getAttribute('title')).toBe('src / app.ts')
-  })
-
-  it('falls back to plain text when the extension has no language mapping', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockListings(app)
-    vi.mocked(app.files.read).mockResolvedValue({
-      kind: 'text',
-      content: 'notes',
-      language: null,
-    })
-
-    render(<App app={app} />)
-    await enterFilesMode()
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(screen.getByTestId(TEST_ID.fileMarkdownCode))
-    const monaco = await within(pane('README.md')).findByTestId(TEST_ID.filePreviewMonaco)
-    expect(monaco.getAttribute('data-language')).toBe('plaintext')
-  })
+        // Nested paths tooltip as segments (spec Behaviour 7).
+        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
+        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
+        const nestedTab = screen.getByTestId(testIdFor.tabFile('src/app.ts'))
+        expect(nestedTab.getAttribute('title')).toBe('src / app.ts')
+      }
+    },
+  )
 
   it('switches a markdown file between code and rendered preview from the action row', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
@@ -490,6 +407,10 @@ describe('project files — tree and preview (spec Behaviour 5–10)', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
     expect(await within(pane('src/app.ts')).findByTestId(TEST_ID.filePreviewMonaco)).toBeTruthy()
+    // The error stays in its own tab (Behaviour 7): the other pane is
+    // untouched and the failing tab still shows its error.
+    expect(within(pane('src/app.ts')).queryByTestId(TEST_ID.filePreviewError)).toBeNull()
+    expect(within(pane('README.md')).getByTestId(TEST_ID.filePreviewError)).toBeTruthy()
   })
 })
 
@@ -1088,17 +1009,15 @@ describe('project files: Git status decoration (spec Behaviour 16-19, NEKODE-31)
     expect(srcRow.getAttribute('aria-expanded')).toBe('false')
     const srcBadge = within(srcRow).getByTestId(TEST_ID.fileTreeGitBadge)
     expect(srcBadge.textContent).toBe('M')
-    expect(srcBadge.className).toContain('text-warning')
-    expect(within(srcRow).getByText('src').className).toContain('text-warning')
     // The status word joins the accessible name: never color alone.
+    // (The letter-to-color mapping is owned by git-decoration.test.ts.)
     expect(srcRow.textContent).toContain('modified')
 
-    // Ignored entry: the dimmed token plus its own letter.
+    // Ignored entry: its own letter.
     const readmeRow = screen.getByTestId(testIdFor.fileEntry('README.md'))
     expect(readmeRow.getAttribute('data-git-status')).toBe('ignored')
     const readmeBadge = within(readmeRow).getByTestId(TEST_ID.fileTreeGitBadge)
     expect(readmeBadge.textContent).toBe('I')
-    expect(readmeBadge.className).toContain('text-ink-disabled')
 
     // Expanding reveals the changed file and the untracked directory.
     fireEvent.click(srcRow)
@@ -1109,7 +1028,6 @@ describe('project files: Git status decoration (spec Behaviour 16-19, NEKODE-31)
     expect(nestedRow.getAttribute('data-git-status')).toBe('untracked')
     const nestedBadge = within(nestedRow).getByTestId(TEST_ID.fileTreeGitBadge)
     expect(nestedBadge.textContent).toBe('U')
-    expect(nestedBadge.className).toContain('text-success')
   })
 
   it('shows the A and C badges for a staged addition and a conflicted file', async () => {
@@ -1142,13 +1060,11 @@ describe('project files: Git status decoration (spec Behaviour 16-19, NEKODE-31)
     expect(srcRow.getAttribute('data-git-status')).toBe('added')
     const srcBadge = within(srcRow).getByTestId(TEST_ID.fileTreeGitBadge)
     expect(srcBadge.textContent).toBe('A')
-    expect(srcBadge.className).toContain('text-success')
 
     const conflictRow = screen.getByTestId(testIdFor.fileEntry('conflict.txt'))
     expect(conflictRow.getAttribute('data-git-status')).toBe('conflicted')
     const conflictBadge = within(conflictRow).getByTestId(TEST_ID.fileTreeGitBadge)
     expect(conflictBadge.textContent).toBe('C')
-    expect(conflictBadge.className).toContain('text-error')
     expect(conflictRow.textContent).toContain('conflicted')
 
     fireEvent.click(srcRow)
@@ -1157,42 +1073,38 @@ describe('project files: Git status decoration (spec Behaviour 16-19, NEKODE-31)
     expect(within(newRow).getByTestId(TEST_ID.fileTreeGitBadge).textContent).toBe('A')
   })
 
-  it('renders the undecorated tree and no error when the status read rejects', async () => {
+  it.each([
+    ['renders the undecorated tree and no error when the status read rejects', 'reject'],
+    ['renders the plain tree with no badge when the read yields no statuses', 'empty'],
+  ] as Array<[string, 'reject' | 'empty']>)('%s', async (_title, cause) => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     mockListings(app)
-    vi.mocked(app.git.fileStatuses).mockRejectedValue(new Error('ipc-error: invalid argument'))
+    if (cause === 'reject') {
+      vi.mocked(app.git.fileStatuses).mockRejectedValue(new Error('ipc-error: invalid argument'))
+    } else {
+      vi.mocked(app.git.fileStatuses).mockResolvedValue({})
+    }
 
     render(<App app={app} />)
     await enterFilesMode()
     await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
 
-    // Behaviour 19 / Errors: a failed read leaves every entry undecorated
-    // and never surfaces an error banner or notice.
+    // Behaviour 19 / Errors: a failed or empty read leaves every entry
+    // undecorated with no badge.
     for (const path of ['src', 'README.md']) {
       const row = screen.getByTestId(testIdFor.fileEntry(path))
       expect(row.getAttribute('data-git-status')).toBeNull()
       expect(within(row).queryByTestId(TEST_ID.fileTreeGitBadge)).toBeNull()
     }
-    expect(screen.queryByTestId(TEST_ID.fileTreeError)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
-  })
-
-  it('renders the plain tree with no badge when the read yields no statuses', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockListings(app)
-    vi.mocked(app.git.fileStatuses).mockResolvedValue({})
-
-    render(<App app={app} />)
-    await enterFilesMode()
-    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
-
-    for (const path of ['src', 'README.md']) {
-      const row = screen.getByTestId(testIdFor.fileEntry(path))
-      expect(row.getAttribute('data-git-status')).toBeNull()
-      expect(within(row).queryByTestId(TEST_ID.fileTreeGitBadge)).toBeNull()
+    if (cause === 'reject') {
+      // A failed read never surfaces an error banner or notice.
+      expect(screen.queryByTestId(TEST_ID.fileTreeError)).toBeNull()
+      expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
+    } else {
+      expect(
+        within(screen.getByTestId(testIdFor.fileEntry('README.md'))).getByText('README.md')
+          .className,
+      ).not.toContain('text-')
     }
-    expect(
-      within(screen.getByTestId(testIdFor.fileEntry('README.md'))).getByText('README.md').className,
-    ).not.toContain('text-')
   })
 })

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID } from '../../lib/test-ids'
+import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
 import {
   MockSelection,
   mockEditors,
@@ -19,15 +20,6 @@ import { MonacoPreview } from './MonacoPreview'
 
 vi.mock('./monaco-setup', () => import('../../test/monaco-mock'))
 
-function stubClipboard(): { writeText: ReturnType<typeof vi.fn> } {
-  const writeText = vi.fn(() => Promise.resolve())
-  Object.defineProperty(navigator, 'clipboard', {
-    configurable: true,
-    value: { writeText },
-  })
-  return { writeText }
-}
-
 describe('MonacoPreview context menu', () => {
   let clipboard: { writeText: ReturnType<typeof vi.fn> }
 
@@ -38,6 +30,7 @@ describe('MonacoPreview context menu', () => {
 
   afterEach(() => {
     cleanup()
+    restoreClipboard()
   })
 
   async function renderPreview(): Promise<HTMLElement> {

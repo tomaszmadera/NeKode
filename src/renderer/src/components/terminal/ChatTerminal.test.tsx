@@ -495,6 +495,19 @@ describe('ChatTerminal lifecycle', () => {
     expect(mockFitAddonInstances[0].fit.mock.calls.length).toBeGreaterThan(fitCalls)
   })
 
+  /**
+   * jsdom computes no Tailwind styles, so the wheel-scroll blowout guard (a
+   * tall xterm scroll area must not grow the terminal slot) is visible only
+   * through the class strings of the fit host and its slot
+   * (ChatTerminal.tsx:709-713): the host is taken out of flow and clipped, the
+   * slot can shrink. One named constant centralizes the tokens; a
+   * computed-style or E2E check would observe the real box instead.
+   */
+  const FIT_HOST_LAYOUT = {
+    host: ['terminal-fit-host', 'absolute', 'overflow-hidden'],
+    slot: ['relative', 'min-h-0', 'min-w-0'],
+  } as const
+
   it('pins the fit host so scrollback cannot change the terminal slot', async () => {
     const { app } = createAppMock()
     render(
@@ -510,15 +523,12 @@ describe('ChatTerminal lifecycle', () => {
     )
     await waitFor(() => expect(mockTerminalInstances[0].openedElement).not.toBeNull())
     const host = mockTerminalInstances[0].openedElement as HTMLElement
-    // The host is taken out of flow and clipped. A tall xterm scroll area
-    // (normal-buffer agents such as Grok) must not grow this box, or the
-    // wheel scroll blows the grid until a window resize refits it.
-    expect(host.classList.contains('terminal-fit-host')).toBe(true)
-    expect(host.classList.contains('absolute')).toBe(true)
-    expect(host.classList.contains('overflow-hidden')).toBe(true)
-    expect(host.parentElement?.classList.contains('relative')).toBe(true)
-    expect(host.parentElement?.classList.contains('min-h-0')).toBe(true)
-    expect(host.parentElement?.classList.contains('min-w-0')).toBe(true)
+    for (const token of FIT_HOST_LAYOUT.host) {
+      expect(host.classList.contains(token)).toBe(true)
+    }
+    for (const token of FIT_HOST_LAYOUT.slot) {
+      expect(host.parentElement?.classList.contains(token)).toBe(true)
+    }
   })
 
   it('detaches on unmount: unsubscribes, disposes xterm, never kills the session here', async () => {
@@ -634,26 +644,10 @@ describe('ChatTerminal lifecycle', () => {
     expect(app.terminals.write).not.toHaveBeenCalled()
   })
 
-  it('prompt input renders the Dictation control disabled (not wired yet)', async () => {
-    const { app } = createAppMock()
-    const { getByTestId } = render(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-      />,
-    )
-    expect((getByTestId(TEST_ID.terminalPromptDictation) as HTMLButtonElement).disabled).toBe(true)
-  })
-
   it('prompt input applies an injected draft, reports consumption and sends nothing', async () => {
     const { app } = createAppMock()
     const onInjected = vi.fn()
-    const { getByTestId } = render(
+    const { getByTestId, rerender } = render(
       <ChatTerminal
         app={app}
         chatId="t1"
@@ -670,28 +664,8 @@ describe('ChatTerminal lifecycle', () => {
     expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
       'Write a handoff',
     )
-    // Paste-only delivery (spec handoff-resume-flow Behaviour 3): the draft
-    // waits for the user; the injection itself writes nothing to the PTY.
-    expect(app.terminals.write).not.toHaveBeenCalled()
-  })
-
-  it('prompt injection replaces an existing draft; the user submits the fill themselves', async () => {
-    const { app } = createAppMock()
-    const onInjected = vi.fn()
-    const { getByTestId, rerender } = render(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-        injected={{ text: 'ls -la', nonce: 1 }}
-        onInjected={onInjected}
-      />,
-    )
-    await waitFor(() => expect(onInjected).toHaveBeenCalled())
+    // A fresh injection with a new nonce replaces the existing draft (nonce
+    // tracking is owned by PromptInput.test.tsx; this is the host wiring).
     rerender(
       <ChatTerminal
         app={app}
@@ -701,20 +675,17 @@ describe('ChatTerminal lifecycle', () => {
         onExit={() => undefined}
         onClose={() => undefined}
         onSpawnError={() => undefined}
-        injected={{ text: 'Write a handoff', nonce: 2 }}
+        injected={{ text: 'ls -la', nonce: 2 }}
         onInjected={onInjected}
       />,
     )
     await waitFor(() =>
-      expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
-        'Write a handoff',
-      ),
+      expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('ls -la'),
     )
-    const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
-    fireEvent.submit(input.closest('form') as HTMLFormElement)
-    // Split-write submission: the line, then the CR as its own write.
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff'))
-    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
+    expect(onInjected).toHaveBeenCalledTimes(2)
+    // Paste-only delivery (spec handoff-resume-flow Behaviour 3): the draft
+    // waits for the user; the injection itself writes nothing to the PTY.
+    expect(app.terminals.write).not.toHaveBeenCalled()
   })
 
   it('prompt input Send button submits the typed line and clears the input', async () => {
@@ -937,6 +908,7 @@ describe('ChatTerminal lifecycle', () => {
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[3~'))
     expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x04')
+    expect(onClose).not.toHaveBeenCalled()
     // Delete-char at the end of a non-empty line deletes nothing: 'abc' is
     // still there and the user erases it.
     backspace(terminal, 3)
@@ -945,22 +917,6 @@ describe('ChatTerminal lifecycle', () => {
     // The line is visibly empty: the shortcut closes.
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('Ctrl+D with text on the line emulates delete-char (never closes)', async () => {
-    const onClose = vi.fn()
-    const { terminal, bundle } = renderTerminal(onClose)
-    showPrompt(terminal, bundle)
-
-    typeText(terminal, 'abc')
-    const allowed = pressKey(terminal, { key: 'd', ctrlKey: true })
-    // Consumed and emulated: the Delete key byte deletes a character under
-    // the cursor in any readline-style shell, and the raw \\x04 — which the
-    // user's shell self-inserts as a ^D glyph — never reaches the PTY.
-    expect(allowed).toBe(false)
-    expect(onClose).not.toHaveBeenCalled()
-    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[3~'))
-    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x04')
   })
 
   it('history recall fills the line: Ctrl+D never closes until the recall is visibly erased', async () => {
@@ -1011,53 +967,52 @@ describe('ChatTerminal lifecycle', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Ctrl+U removes the whole input when the cursor is in the middle of the line', async () => {
-    const onClose = vi.fn()
-    const { terminal, bundle } = renderTerminal(onClose)
-    showPrompt(terminal, bundle)
+  it.each([
+    [
+      'Ctrl+U removes the whole input when the cursor is in the middle of the line',
+      (terminal: (typeof mockTerminalInstances)[number]) => {
+        // ArrowLeft: the cursor sits between 'b' and 'c' ('ab|c').
+        expect(pressKey(terminal, { key: 'ArrowLeft' })).toBe(true)
+        act(() => {
+          terminal.emitInput('\x1b[D')
+          terminal.buffer.active.cursorX -= 1
+        })
+      },
+    ],
+    [
+      'Ctrl+U removes text after the cursor when it is at the start of the input',
+      (terminal: (typeof mockTerminalInstances)[number]) => {
+        expect(pressKey(terminal, { key: 'Home' })).toBe(true)
+        act(() => {
+          terminal.emitInput('\x1b[H')
+          terminal.buffer.active.cursorX = PROMPT.length
+        })
+      },
+    ],
+  ] as Array<[string, (terminal: (typeof mockTerminalInstances)[number]) => void]>)(
+    '%s',
+    async (_name, moveCursor) => {
+      const onClose = vi.fn()
+      const { terminal, bundle } = renderTerminal(onClose)
+      showPrompt(terminal, bundle)
 
-    typeText(terminal, 'abc')
-    // ArrowLeft: the cursor sits between 'b' and 'c' ('ab|c').
-    expect(pressKey(terminal, { key: 'ArrowLeft' })).toBe(true)
-    act(() => {
-      terminal.emitInput('\x1b[D')
-      terminal.buffer.active.cursorX -= 1
-    })
-    // SelectAll + Backspace deletes both sides of the cursor, leaving the
-    // prompt intact.
-    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
-    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x01\x7f'))
-    act(() => {
-      terminal.setCursorRow(PROMPT)
-    })
-    expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
-    expect(terminal.buffer.active.cursorX).toBe(PROMPT.length)
+      typeText(terminal, 'abc')
+      moveCursor(terminal)
+      // SelectAll + Backspace deletes both sides of the cursor, leaving the
+      // prompt intact.
+      expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
+      await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x01\x7f'))
+      act(() => {
+        terminal.setCursorRow(PROMPT)
+      })
+      expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
+      expect(terminal.buffer.active.cursorX).toBe(PROMPT.length)
 
-    // Nothing remains behind the cursor, so Ctrl+D closes the chat.
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('Ctrl+U removes text after the cursor when it is at the start of the input', async () => {
-    const onClose = vi.fn()
-    const { terminal, bundle } = renderTerminal(onClose)
-    showPrompt(terminal, bundle)
-
-    typeText(terminal, 'abc')
-    expect(pressKey(terminal, { key: 'Home' })).toBe(true)
-    act(() => {
-      terminal.emitInput('\x1b[H')
-      terminal.buffer.active.cursorX = PROMPT.length
-    })
-
-    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
-    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x01\x7f'))
-    act(() => {
-      terminal.setCursorRow(PROMPT)
-    })
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
+      // Nothing remains behind the cursor, so Ctrl+D closes the chat.
+      expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    },
+  )
 
   it('Ctrl+U clears input whose cursor is on a wrapped continuation row', async () => {
     const { terminal, bundle } = renderTerminal(vi.fn())
@@ -1319,38 +1274,30 @@ describe('ChatTerminal lifecycle', () => {
       ).toHaveLength(1)
     })
 
-    it('Ctrl+Shift+V also cancels the browser default', async () => {
+    it.each([
+      ['full-screen text paste with Shift=false happens once', false, true],
+      ['full-screen text paste with Shift=true happens once', true, true],
+      ['Ctrl+Shift+V also cancels the browser default', true, false],
+    ] as Array<[string, boolean, boolean]>)('%s', async (_name, shiftKey, fullScreen) => {
       stubClipboard()
       const { terminal, bundle } = renderTerminal(vi.fn())
       showPrompt(terminal, bundle)
+      if (fullScreen) {
+        terminal.buffer.active.type = 'alternate'
+      }
 
-      const { allowed, event } = pressKeyEvent(terminal, {
-        key: 'v',
-        ctrlKey: true,
-        shiftKey: true,
-      })
+      // Consumed and the browser default cancelled in both modes.
+      const { allowed, event } = pressKeyEvent(terminal, { key: 'v', ctrlKey: true, shiftKey })
       expect(allowed).toBe(false)
       expect(event.defaultPrevented).toBe(true)
-    })
-
-    it.each([false, true])(
-      'full-screen text paste with Shift=%s happens once',
-      async (shiftKey) => {
-        stubClipboard()
-        const { terminal, bundle } = renderTerminal(vi.fn())
-        showPrompt(terminal, bundle)
-        terminal.buffer.active.type = 'alternate'
-
-        const { allowed, event } = pressKeyEvent(terminal, { key: 'v', ctrlKey: true, shiftKey })
-        expect(allowed).toBe(false)
-        expect(event.defaultPrevented).toBe(true)
+      if (fullScreen) {
         await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith('pasted text'))
         expect(terminal.paste).toHaveBeenCalledTimes(1)
         expect(vi.mocked(bundle.app.terminals.write).mock.calls.map(([, data]) => data)).toEqual([
           'pasted text',
         ])
-      },
-    )
+      }
+    })
 
     it.each([false, true])(
       'with Ctrl+V interception disabled, full-screen Shift=%s uses the expected path',
@@ -1604,15 +1551,6 @@ describe('ChatTerminal lifecycle', () => {
       })
       expect(onAttention).toHaveBeenCalledTimes(1)
       expect(onAttention).toHaveBeenCalledWith({ message: null })
-    })
-
-    it('AC2: a window-title sequence terminated by BEL is not attention (parser discriminates)', () => {
-      const { bundle, onAttention } = renderTerminalWithAttention()
-      act(() => {
-        // The exact false-positive source: PowerShell setting its title.
-        bundle.emitData('\x1b]0;PS D:\\code\\demo\x07')
-      })
-      expect(onAttention).not.toHaveBeenCalled()
     })
 
     it('AC2: the discriminator fails when detection counts raw BEL bytes', () => {

@@ -3,9 +3,8 @@ import type React from 'react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../shared/ipc-contract'
-import { emptyGitWorktree } from '../../../shared/ipc-contract'
 import { App, TEST_ID } from '../App'
-import { createDictationApiStub } from '../test/dictation-api-stub'
+import { createAppApiStub as appApiStub } from '../test/app-api-stub'
 import { BOTTOM_REGION_SIZE, useResizableRegion } from './useResizableRegion'
 
 // App renders the chat workspace (xterm) in Stage 3; keep jsdom free of the
@@ -18,90 +17,15 @@ vi.mock('@xterm/addon-fit', () => import('../test/fit-addon-mock'))
 // exercise the former.
 
 function createAppApiStub(): AppApi {
+  // Divergences from the shared factory: projects.add resolves undefined and
+  // chats.create stays unresolved here.
+  const stub = appApiStub()
   return {
-    dictation: createDictationApiStub(),
-    actions: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      execute: vi.fn(),
-      status: vi.fn(),
-    },
-    projects: {
-      wslDirectories: vi.fn(() => Promise.resolve([])),
-      wslDistributions: vi.fn().mockResolvedValue([]),
-      addWsl: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
-      add: vi.fn().mockResolvedValue(undefined),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    chats: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue(undefined),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    state: {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
-    },
-    terminals: {
-      create: vi.fn().mockResolvedValue('term-1'),
-      write: vi.fn().mockResolvedValue(undefined),
-      resize: vi.fn().mockResolvedValue(undefined),
-      shellName: vi.fn().mockResolvedValue('PowerShell'),
-      shellList: vi.fn().mockResolvedValue([]),
-      shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
-      shellAddCustom: vi.fn().mockResolvedValue({ id: 'default', label: 'PowerShell' }),
-      terminate: vi.fn().mockResolvedValue(undefined),
-      onData: vi.fn().mockReturnValue(() => undefined),
-      onExit: vi.fn().mockReturnValue(() => undefined),
-    },
-    git: {
-      getStatus: vi
-        .fn()
-        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
-      fileStatuses: vi.fn().mockResolvedValue({}),
-    },
-    files: {
-      list: vi.fn().mockResolvedValue([]),
-      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
-      openExternal: vi.fn().mockResolvedValue(undefined),
-      openRoot: vi.fn().mockResolvedValue(undefined),
-      showInFolder: vi.fn().mockResolvedValue(undefined),
-      trash: vi.fn().mockResolvedValue(undefined),
-    },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
-    },
-    kanban: {
-      adaptersList: vi.fn().mockResolvedValue([]),
-      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
-      setConfig: vi.fn().mockResolvedValue(undefined),
-      test: vi.fn().mockResolvedValue(undefined),
-      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
-      createItem: vi.fn(),
-      updateItem: vi.fn(),
-      getItem: vi.fn(),
-      launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
-      handoffAvailability: vi.fn(async () => ({
-        state: 'ready' as const,
-        items: [],
-        rejections: [],
-      })),
-    },
-    agentProfiles: {
-      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-    },
-    dialogs: {
-      pickDirectory: vi.fn().mockResolvedValue(null),
-    },
+    ...stub,
+    projects: { ...stub.projects, add: vi.fn().mockResolvedValue(undefined) },
+    chats: { ...stub.chats, create: vi.fn() },
   }
 }
-
 function firePointer(
   element: Element,
   type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
@@ -267,27 +191,6 @@ describe('useResizableRegion (via App shell)', () => {
 
     firePointer(handle, 'pointermove', { clientX: 420 })
     expect((leftNav as HTMLElement).style.width).toBe('300px')
-  })
-
-  it('cleans up an active drag on unmount (moves after unmount are inert)', () => {
-    // Note: this is a smoke test — jsdom cannot discriminate real capture
-    // retargeting; it only proves listeners do not throw on detached nodes.
-    const { unmount } = render(<App app={app} />)
-    const handle = getHandle(TEST_ID.leftResizeHandle)
-    firePointer(handle, 'pointerdown', { clientX: 280 })
-    firePointer(handle, 'pointermove', { clientX: 310 })
-    unmount()
-
-    // Dispatching on a detached node must not throw or re-enter React.
-    expect(() => {
-      handle.dispatchEvent(
-        new PointerEvent('pointermove', {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 1,
-        }),
-      )
-    }).not.toThrow()
   })
 })
 

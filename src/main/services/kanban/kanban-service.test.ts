@@ -89,9 +89,40 @@ const CONFIG_INPUT: KanbanSetConfigInput = {
 
 describe('KanbanService adaptersList', () => {
   it('returns adapter infos from discovery (fresh scan each call)', () => {
-    const { service } = makeService()
-    // No real dir on disk: discovery of 'unused-dir' yields [] without error.
-    expect(service.adaptersList()).toEqual([])
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
+      require('node:fs') as typeof import('node:fs')
+    const { tmpdir } = require('node:os') as typeof import('node:os')
+    const { join } = require('node:path') as typeof import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-list-'))
+    const writeAdapter = (name: string, id: string): void => {
+      const adapterDir = join(dir, name)
+      mkdirSync(adapterDir)
+      writeFileSync(
+        join(adapterDir, 'adapter.json'),
+        JSON.stringify({
+          id,
+          name: id,
+          protocolVersion: 1,
+          invocation: { command: 'node', args: ['a.js'] },
+          configSchema: [{ key: 'base_url', label: 'Base URL', type: 'string', required: true }],
+        }),
+      )
+    }
+    try {
+      writeAdapter('demo', 'demo')
+      const { service } = makeService({ adaptersDir: dir })
+      expect(service.adaptersList().map((info) => info.id)).toEqual(['demo'])
+      // Fresh scan each call: an adapter added after the first call shows up.
+      writeAdapter('extra', 'extra')
+      expect(
+        service
+          .adaptersList()
+          .map((info) => info.id)
+          .sort(),
+      ).toEqual(['demo', 'extra'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

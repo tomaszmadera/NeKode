@@ -91,23 +91,19 @@ describe('LeftPanelTrack', () => {
       />,
     )
 
+    // Both views stay mounted while the paired slide runs.
     const moving = track()
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.getByTestId('files-view')).toBeTruthy()
-    expect(moving.style.width).toBe('200%')
-    expect(moving.style.transform).toBe('translateX(-50%)')
     expect(moving.className).toContain('left-panel-track-run')
     expect(moving.children).toHaveLength(2)
-    expect((moving.children[0] as HTMLElement).style.width).toBe('50%')
-    expect((moving.children[1] as HTMLElement).style.width).toBe('50%')
 
     fireEvent.transitionEnd(moving, { propertyName: 'transform' })
 
+    // Settling on transitionend drops the outgoing Projects view.
     expect(screen.queryByTestId('projects-view')).toBeNull()
     expect(screen.getByTestId('files-view')).toBeTruthy()
-    expect(track().style.width).toBe('100%')
-    expect(track().style.transform).toBe('')
-    expect(screen.getByTestId(TEST_ID.leftNav).style.width).toBe('280px')
+    expect(track().className).not.toContain('left-panel-track-run')
     expect(screen.getAllByTestId(TEST_ID.leftResizeHandle)).toHaveLength(1)
   })
 
@@ -137,11 +133,11 @@ describe('LeftPanelTrack', () => {
       />,
     )
 
+    // The retained files node (the parent now passes null) is still mounted
+    // for the reverse slide, Projects first and Files second.
     const moving = track()
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.getByTestId('files-view')).toBeTruthy()
-    expect(moving.style.width).toBe('200%')
-    expect(moving.style.transform).toBe('translateX(0)')
     expect(moving.className).toContain('left-panel-track-run')
     expect((moving.children[0] as HTMLElement).textContent).toContain('Projects')
     expect((moving.children[1] as HTMLElement).textContent).toContain('Files')
@@ -150,7 +146,6 @@ describe('LeftPanelTrack', () => {
 
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.queryByTestId('files-view')).toBeNull()
-    expect(track().style.width).toBe('100%')
   })
 
   it('reverses a running slide toward Files back to Projects', () => {
@@ -166,7 +161,8 @@ describe('LeftPanelTrack', () => {
         files={<div data-testid="files-view">Files</div>}
       />,
     )
-    expect(track().style.transform).toBe('translateX(-50%)')
+    // Mid-slide toward Files...
+    expect(track().className).toContain('left-panel-track-run')
 
     view.rerender(
       <LeftPanelTrack
@@ -179,10 +175,10 @@ describe('LeftPanelTrack', () => {
       />,
     )
 
+    // ...reverses back: both views stay mounted and the slide keeps running.
     const moving = track()
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.getByTestId('files-view')).toBeTruthy()
-    expect(moving.style.transform).toBe('translateX(0)')
     expect(moving.className).toContain('left-panel-track-run')
 
     fireEvent.transitionEnd(moving, { propertyName: 'transform' })

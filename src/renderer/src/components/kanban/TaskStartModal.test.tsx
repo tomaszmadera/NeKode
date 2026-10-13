@@ -252,14 +252,39 @@ describe('TaskStartModal', () => {
     }
   }
 
-  it('ignores Escape while a launch is in flight and still calls onLaunched', async () => {
+  // Named rows keep each scenario's literal title (the backdrop row reads
+  // "the backdrop", a Stage 1 review nit on the %s expansion).
+  it.each([
+    {
+      title: 'ignores Escape while a launch is in flight and still calls onLaunched',
+      gesture: 'Escape',
+    },
+    {
+      title: 'ignores the backdrop while a launch is in flight and still calls onLaunched',
+      gesture: 'backdrop',
+    },
+    {
+      title: 'ignores Cancel while a launch is in flight and still calls onLaunched',
+      gesture: 'Cancel',
+    },
+  ] as const)('$title', async ({ gesture }) => {
     const { app, onCancel, onLaunched, resolveLaunch } = busyLaunchSetup()
     const confirm = await screen.findByTestId(TEST_ID.kanbanStartConfirm)
     await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(confirm)
     await waitFor(() => expect(app.kanban.launchTask).toHaveBeenCalledTimes(1))
 
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    // The Cancel control is locked while the launch is in flight.
+    const cancel = screen.getByTestId(TEST_ID.kanbanStartCancel) as HTMLButtonElement
+    expect(cancel.disabled).toBe(true)
+
+    if (gesture === 'Escape') {
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    } else if (gesture === 'backdrop') {
+      fireEvent.mouseDown(screen.getByRole('presentation'))
+    } else {
+      fireEvent.click(cancel)
+    }
 
     expect(onCancel).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog')).toBeTruthy()
@@ -271,52 +296,6 @@ describe('TaskStartModal', () => {
     expect(onLaunched.mock.calls[0]?.[0]).toMatchObject({
       delivered: true,
       input: { projectId: 'p1', itemId: 'native-1', ref: 'NK-1', mode: 'start' },
-    })
-  })
-
-  it('ignores the backdrop while a launch is in flight and still calls onLaunched', async () => {
-    const { app, onCancel, onLaunched, resolveLaunch } = busyLaunchSetup()
-    const confirm = await screen.findByTestId(TEST_ID.kanbanStartConfirm)
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
-    fireEvent.click(confirm)
-    await waitFor(() => expect(app.kanban.launchTask).toHaveBeenCalledTimes(1))
-
-    fireEvent.mouseDown(screen.getByRole('presentation'))
-
-    expect(onCancel).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog')).toBeTruthy()
-
-    await act(async () => {
-      resolveLaunch({ chat: { id: 'chat-2', projectId: 'p1', name: 'Codex' }, delivered: true })
-    })
-    expect(onLaunched).toHaveBeenCalledTimes(1)
-    expect(onLaunched.mock.calls[0]?.[0]).toMatchObject({
-      delivered: true,
-      input: { ref: 'NK-1', mode: 'start' },
-    })
-  })
-
-  it('ignores Cancel while a launch is in flight and still calls onLaunched', async () => {
-    const { app, onCancel, onLaunched, resolveLaunch } = busyLaunchSetup()
-    const confirm = await screen.findByTestId(TEST_ID.kanbanStartConfirm)
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
-    fireEvent.click(confirm)
-    await waitFor(() => expect(app.kanban.launchTask).toHaveBeenCalledTimes(1))
-
-    const cancel = screen.getByTestId(TEST_ID.kanbanStartCancel)
-    expect((cancel as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(cancel)
-
-    expect(onCancel).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog')).toBeTruthy()
-
-    await act(async () => {
-      resolveLaunch({ chat: { id: 'chat-3', projectId: 'p1', name: 'Codex' }, delivered: true })
-    })
-    expect(onLaunched).toHaveBeenCalledTimes(1)
-    expect(onLaunched.mock.calls[0]?.[0]).toMatchObject({
-      delivered: true,
-      input: { ref: 'NK-1', mode: 'start' },
     })
   })
 })

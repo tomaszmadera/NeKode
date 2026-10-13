@@ -151,4 +151,37 @@ describe('renderer dictation controller', () => {
     expect(h.states.at(-1)?.result?.error).toBe('unreachable')
     h.controller.dispose()
   })
+  it('cancels the retryable session behind an idle result on cancel', async () => {
+    const h = harness()
+    await h.controller.start('chat')
+    await h.controller.stop()
+    h.emit({ outcome: 'failed', error: 'timeout', retryable: true })
+    expect(h.states.at(-1)?.result?.retryable).toBe(true)
+    await h.controller.cancel()
+    expect(h.api.cancel).toHaveBeenCalledWith('session')
+    expect(h.states.at(-1)).toEqual({ state: 'idle', chatId: null, result: null })
+
+    // The idle-cancel gate is the retryable flag: a settled non-retryable
+    // result is not cancelled away.
+    await h.controller.start('chat')
+    await h.controller.stop()
+    h.emit({ retryable: false })
+    ;(h.api.cancel as ReturnType<typeof vi.fn>).mockClear()
+    await h.controller.cancel()
+    expect(h.api.cancel).not.toHaveBeenCalled()
+    expect(h.states.at(-1)?.result?.text).toBe('hello')
+    h.controller.dispose()
+  })
+  it('ignores a result whose sessionId does not match the active session', async () => {
+    const h = harness()
+    await h.controller.start('chat')
+    const count = h.states.length
+    h.emit({ sessionId: 'other-session' })
+    expect(h.states).toHaveLength(count)
+    expect(h.states.at(-1)?.state).toBe('recording')
+    // The matching result still lands normally.
+    h.emit()
+    expect(h.states.at(-1)?.result?.text).toBe('hello')
+    h.controller.dispose()
+  })
 })

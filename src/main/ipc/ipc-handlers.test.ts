@@ -382,11 +382,20 @@ describe('registered ipc handlers', () => {
     await invoke(IPC_CHANNEL.terminalsCreate, ['t1', 'D:/code/demo'])
     expect(services.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo')
 
+    await invoke(IPC_CHANNEL.terminalsWrite, ['t1', 'ls\r'])
+    expect(services.terminals.write).toHaveBeenCalledWith('t1', 'ls\r')
+
     await invoke(IPC_CHANNEL.terminalsResize, ['t1', 120, 40])
     expect(services.terminals.resize).toHaveBeenCalledWith('t1', 120, 40)
 
     await invoke(IPC_CHANNEL.stateSet, ['k', 'v'])
     expect(services.state.set).toHaveBeenCalledWith('k', 'v')
+
+    await invoke(IPC_CHANNEL.gitStatus, ['D:/code/demo'])
+    expect(services.git.getStatus).toHaveBeenCalledWith('D:/code/demo')
+
+    await invoke(IPC_CHANNEL.gitFileStatuses, ['D:/code/demo'])
+    expect(services.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo')
   })
 
   it('rejects invalid payloads with a typed serialized error', () => {

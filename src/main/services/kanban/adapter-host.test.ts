@@ -200,38 +200,22 @@ describe('AdapterHost', () => {
     })
   })
 
-  it('maps ENOENT to a protocol error naming the command', async () => {
+  it('maps ENOENT to a protocol error naming the adapter and the command', async () => {
     const host = new AdapterHost()
-    await expect(
-      host.invoke(
+    const error = await host
+      .invoke(
         {
           id: 'missing-adapter',
           dir,
           invocation: { command: 'definitely-not-a-real-command-xyz', args: [] },
         },
         request,
-      ),
-    ).rejects.toMatchObject({
-      kind: 'protocol',
-      message: expect.stringContaining('definitely-not-a-real-command-xyz'),
-    })
-  })
-
-  it('names the adapter and the command in the ENOENT error', async () => {
-    const host = new AdapterHost()
-    await expect(
-      host.invoke(
-        {
-          id: 'missing-adapter',
-          dir,
-          invocation: { command: 'definitely-not-a-real-command-xyz', args: [] },
-        },
-        request,
-      ),
-    ).rejects.toMatchObject({
-      kind: 'protocol',
-      message: expect.stringContaining('missing-adapter'),
-    })
+      )
+      .catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as { kind?: string }).kind).toBe('protocol')
+    expect((error as Error).message).toContain('definitely-not-a-real-command-xyz')
+    expect((error as Error).message).toContain('missing-adapter')
   })
 
   it('times out and rejects quickly when the adapter sleeps past the limit', async () => {
@@ -394,13 +378,6 @@ describe('AdapterHost', () => {
     const host = new AdapterHost()
     const result = await host.invoke<string>(adapter, request)
     expect(result).toBe(largeData)
-  })
-
-  it('uses the default 30s timeout when none is given', () => {
-    const host = new AdapterHost()
-    // Default asserted indirectly via construction without error; the exact
-    // value is exported for the service and documented in the spec.
-    expect(() => host).not.toThrow()
   })
 
   describe('killTree', () => {

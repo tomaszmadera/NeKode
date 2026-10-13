@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActionControl, AppApi, ChatInfo, ProjectInfo } from '../../../shared/ipc-contract'
-import { APP_STATE_KEY, emptyGitWorktree } from '../../../shared/ipc-contract'
+import { APP_STATE_KEY } from '../../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from '../App'
-import { createDictationApiStub } from './dictation-api-stub'
+import { createAppApiStub as appApiStub } from './app-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
 import { resetMockTerminals } from './xterm-mock'
 
@@ -17,99 +17,26 @@ vi.mock('@xterm/xterm', () => import('./xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('./fit-addon-mock'))
 
 function createAppApiStub(): AppApi {
+  // Divergences from the shared factory: this file's stub resolves
+  // projects.add and chats.create with its Demo fixtures.
+  const stub = appApiStub()
   return {
-    dictation: createDictationApiStub(),
-    actions: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      execute: vi.fn(),
-      status: vi.fn(),
-    },
+    ...stub,
     projects: {
-      wslDirectories: vi.fn(() => Promise.resolve([])),
-      wslDistributions: vi.fn().mockResolvedValue([]),
-      addWsl: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
+      ...stub.projects,
       add: vi.fn().mockResolvedValue({
         id: 'p1',
         name: 'Demo',
         path: 'D:/code/demo',
         runtimeLabel: 'Node',
       }),
-      remove: vi.fn().mockResolvedValue(undefined),
     },
     chats: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({
-        id: 't1',
-        projectId: 'p1',
-        name: 'Demo chat',
-      }),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    state: {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
-    },
-    terminals: {
-      create: vi.fn().mockResolvedValue('term-1'),
-      write: vi.fn().mockResolvedValue(undefined),
-      resize: vi.fn().mockResolvedValue(undefined),
-      shellName: vi.fn().mockResolvedValue('PowerShell'),
-      shellList: vi.fn().mockResolvedValue([]),
-      shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
-      shellAddCustom: vi.fn().mockResolvedValue({ id: 'default', label: 'PowerShell' }),
-      terminate: vi.fn().mockResolvedValue(undefined),
-      onData: vi.fn().mockReturnValue(() => undefined),
-      onExit: vi.fn().mockReturnValue(() => undefined),
-    },
-    git: {
-      getStatus: vi
-        .fn()
-        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
-      fileStatuses: vi.fn().mockResolvedValue({}),
-    },
-    files: {
-      list: vi.fn().mockResolvedValue([]),
-      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
-      openExternal: vi.fn().mockResolvedValue(undefined),
-      openRoot: vi.fn().mockResolvedValue(undefined),
-      showInFolder: vi.fn().mockResolvedValue(undefined),
-      trash: vi.fn().mockResolvedValue(undefined),
-    },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
-    },
-    kanban: {
-      adaptersList: vi.fn().mockResolvedValue([]),
-      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
-      setConfig: vi.fn().mockResolvedValue(undefined),
-      test: vi.fn().mockResolvedValue(undefined),
-      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
-      createItem: vi.fn(),
-      updateItem: vi.fn(),
-      getItem: vi.fn(),
-      launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
-      handoffAvailability: vi.fn(async () => ({
-        state: 'ready' as const,
-        items: [],
-        rejections: [],
-      })),
-    },
-    agentProfiles: {
-      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-    },
-    dialogs: {
-      pickDirectory: vi.fn().mockResolvedValue(null),
+      ...stub.chats,
+      create: vi.fn().mockResolvedValue({ id: 't1', projectId: 'p1', name: 'Demo chat' }),
     },
   }
 }
-
 const projectA: ProjectInfo = {
   id: 'p1',
   name: 'Demo',

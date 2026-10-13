@@ -436,71 +436,29 @@ describe('ipc payload validation', () => {
     expect(error.code).toBe('validation')
   })
 
-  it('slices validated payloads and invokes the services with the declared args', () => {
-    const services = fakeServices()
-    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
-    for (const entry of buildValidatedChannels(services)) {
-      channels.set(entry.channel, entry)
-    }
-
-    const create = channels.get('terminals:create')
-    create?.invoke(create.parse(['t1', 'D:/code/demo']))
-    expect(services.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo')
-
-    const write = channels.get('terminals:write')
-    write?.invoke(write.parse(['t1', 'ls\r']))
-    expect(services.terminals.write).toHaveBeenCalledWith('t1', 'ls\r')
-
-    const resize = channels.get('terminals:resize')
-    resize?.invoke(resize.parse(['t1', 120, 40]))
-    expect(services.terminals.resize).toHaveBeenCalledWith('t1', 120, 40)
-
-    const gitStatus = channels.get('git:status')
-    gitStatus?.invoke(gitStatus.parse(['D:/code/demo']))
-    expect(services.git.getStatus).toHaveBeenCalledWith('D:/code/demo')
-
-    const gitFileStatuses = channels.get('git:fileStatuses')
-    gitFileStatuses?.invoke(gitFileStatuses.parse(['D:/code/demo']))
-    expect(services.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo')
-
-    const stateSet = channels.get('state:set')
-    stateSet?.invoke(stateSet.parse(['k', 'v']))
-    expect(services.state.set).toHaveBeenCalledWith('k', 'v')
-  })
-
   it('every wire channel has a validated entry (no unvalidated invokes)', () => {
     const channels = channelMap()
-    for (const channel of [
-      'projects:list',
-      'projects:add',
-      'projects:remove',
-      'chats:list',
-      'chats:create',
-      'chats:remove',
-      'state:get',
-      'state:set',
-      'terminals:create',
-      'terminals:write',
-      'terminals:resize',
-      'terminals:shellName',
-      'terminals:terminate',
-      'git:status',
-      'git:fileStatuses',
-      'files:list',
-      'files:read',
-      'files:openExternal',
-      'files:openRoot',
-      'files:showInFolder',
-      'files:trash',
-      'handoffs:list',
-      'dialogs:pickDirectory',
-      'agentProfiles:get',
-      'agentProfiles:put',
-      'agentProfiles:delete',
-      'kanban:handoffCandidates',
-      'kanban:handoffAvailability',
-    ]) {
-      expect(channels.has(channel)).toBe(true)
+    // Main-to-renderer push channels are broadcast (webContents.send), never
+    // registered for invoke, so they carry no ValidatedChannel. Every other
+    // channel in the wire contract must be validated: a newly added channel
+    // fails here until it gets an entry (or is consciously listed as a push
+    // channel).
+    const pushChannels = new Set<string>([
+      IPC_CHANNEL.dictationResult,
+      IPC_CHANNEL.terminalsData,
+      IPC_CHANNEL.terminalsExit,
+    ])
+    const unvalidated = Object.values(IPC_CHANNEL).filter(
+      (channel) => !pushChannels.has(channel) && !channels.has(channel),
+    )
+    expect(unvalidated).toEqual([])
+
+    // The push-channel classification must stay honest: every listed push
+    // channel is still part of the wire contract, and none of them may gain a
+    // validated invoke entry (it would mean an unvalidated invoke slipped in).
+    for (const channel of pushChannels) {
+      expect(Object.values(IPC_CHANNEL)).toContain(channel)
+      expect(channels.has(channel)).toBe(false)
     }
   })
 

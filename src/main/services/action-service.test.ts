@@ -96,7 +96,9 @@ describe('ActionService', () => {
       first.close()
       const reopened = openDatabase(path)
       try {
-        expect(runMigrations(reopened)).toBe(5)
+        // Migration count is owned by db.test.ts; reopen only needs the
+        // schema current to prove row durability below.
+        runMigrations(reopened)
         expect(
           new ActionService({ db: reopened, ...deps }).list().map((action) => action.title),
         ).toEqual(['Build'])

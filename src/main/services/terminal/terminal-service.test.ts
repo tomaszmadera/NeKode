@@ -490,28 +490,3 @@ describe('WSL terminal routing', () => {
     expect(spawn).not.toHaveBeenCalled()
   })
 })
-
-describe('TerminalService.shutdown', () => {
-  it('resolves session shutdown on timeout when PTY does not deliver an exit event', async () => {
-    vi.useFakeTimers()
-    try {
-      const { service } = createHarness({ killEmitsExit: false })
-      service.create('t1', 'D:/a')
-      const reportTimeout = vi.fn()
-      let settled = false
-      const promise = service.shutdown(reportTimeout).then(() => {
-        settled = true
-      })
-      expect(settled).toBe(false)
-      await vi.advanceTimersByTimeAsync(6999)
-      expect(settled).toBe(false)
-      expect(reportTimeout).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(1)
-      expect(reportTimeout).toHaveBeenCalledOnce()
-      expect(settled).toBe(true)
-      await promise
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-})

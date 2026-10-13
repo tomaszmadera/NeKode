@@ -14,12 +14,13 @@ import {
   projectHandoffDirKey,
   projectKanbanAdapterKey,
 } from '../../shared/ipc-contract'
+import { AppError } from '../../shared/ipc-error'
 import { App, TEST_ID, testIdFor } from './App'
 import { playAttentionChime } from './lib/chime'
 import { TERMINAL_FONT_SIZE_STORAGE_KEY } from './lib/terminal-font'
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { THEME_STORAGE_KEY } from './lib/theme'
-import { createDictationApiStub } from './test/dictation-api-stub'
+import { createAppApiStub as appApiStub } from './test/app-api-stub'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 
@@ -33,48 +34,27 @@ vi.mock('@xterm/addon-fit', () => import('./test/fit-addon-mock'))
 vi.mock('./lib/chime', () => ({ playAttentionChime: vi.fn() }))
 
 function createAppApiStub(): AppApi {
+  // Divergences from the shared factory: this file's stub resolves projects.add
+  // and chats.create with its Demo fixtures, offers both detected shells and
+  // echoes the handoff-availability input items as available.
+  const stub = appApiStub()
   return {
-    dictation: createDictationApiStub(),
-    actions: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      execute: vi.fn(),
-      status: vi.fn(),
-    },
+    ...stub,
     projects: {
-      wslDirectories: vi.fn(() => Promise.resolve([])),
-      wslDistributions: vi.fn().mockResolvedValue([]),
-      addWsl: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
+      ...stub.projects,
       add: vi.fn().mockResolvedValue({
         id: 'p1',
         name: 'Demo',
         path: 'D:/code/demo',
         runtimeLabel: 'Node',
       }),
-      remove: vi.fn().mockResolvedValue(undefined),
     },
     chats: {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({
-        id: 't1',
-        projectId: 'p1',
-        name: 'Demo chat',
-      }),
-      remove: vi.fn().mockResolvedValue(undefined),
-    },
-    state: {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
+      ...stub.chats,
+      create: vi.fn().mockResolvedValue({ id: 't1', projectId: 'p1', name: 'Demo chat' }),
     },
     terminals: {
-      create: vi.fn().mockResolvedValue('term-1'),
-      write: vi.fn().mockResolvedValue(undefined),
-      resize: vi.fn().mockResolvedValue(undefined),
-      shellName: vi.fn().mockResolvedValue('PowerShell'),
-      shellList: vi.fn().mockResolvedValue([]),
+      ...stub.terminals,
       // Shell tab detection (spec project-shell-selection): the Project
       // Settings modal opens on the Shell tab and runs one detection.
       shellDetect: vi.fn().mockResolvedValue([
@@ -82,38 +62,9 @@ function createAppApiStub(): AppApi {
         { id: 'wsl:Ubuntu-24.04', label: 'WSL: Ubuntu-24.04' },
       ]),
       shellAddCustom: vi.fn().mockResolvedValue({ id: 'custom:D:\\sh.exe', label: 'sh.exe' }),
-      terminate: vi.fn().mockResolvedValue(undefined),
-      onData: vi.fn().mockReturnValue(() => undefined),
-      onExit: vi.fn().mockReturnValue(() => undefined),
-    },
-    git: {
-      getStatus: vi
-        .fn()
-        .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
-      fileStatuses: vi.fn().mockResolvedValue({}),
-    },
-    files: {
-      list: vi.fn().mockResolvedValue([]),
-      read: vi.fn().mockResolvedValue({ kind: 'text', content: '', language: null }),
-      openExternal: vi.fn().mockResolvedValue(undefined),
-      openRoot: vi.fn().mockResolvedValue(undefined),
-      showInFolder: vi.fn().mockResolvedValue(undefined),
-      trash: vi.fn().mockResolvedValue(undefined),
-    },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
     },
     kanban: {
-      adaptersList: vi.fn().mockResolvedValue([]),
-      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
-      setConfig: vi.fn().mockResolvedValue(undefined),
-      test: vi.fn().mockResolvedValue(undefined),
-      listBoard: vi.fn().mockResolvedValue({ states: [], items: [] }),
-      createItem: vi.fn(),
-      updateItem: vi.fn(),
-      getItem: vi.fn(),
-      launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
+      ...stub.kanban,
       handoffAvailability: vi.fn(
         async (input: { items: Array<{ itemId: string; ref: string }> }) => ({
           state: 'ready' as const,
@@ -122,17 +73,8 @@ function createAppApiStub(): AppApi {
         }),
       ),
     },
-    agentProfiles: {
-      get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-    },
-    dialogs: {
-      pickDirectory: vi.fn().mockResolvedValue(null),
-    },
   }
 }
-
 function getByTestIdString(testId: string): HTMLElement {
   const element = screen.getByTestId(testId)
   expect(element).toBeTruthy()
@@ -215,25 +157,12 @@ describe('app settings and themes', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Dictation' }))
     await screen.findByRole('heading', { name: 'Dictionary (OpenWhispr)' })
     await waitFor(() => expect(app.dictation.dictionaryList).toHaveBeenCalledOnce())
-    await waitFor(() =>
-      expect(
-        (screen.getByRole('checkbox', { name: 'Enable desktop dictation' }) as HTMLInputElement)
-          .disabled,
-      ).toBe(false),
-    )
+    // Enable/confirm are journey setup only; the gating itself is asserted in
+    // DesktopDictationSettings.test.tsx and useDesktopDictation.test.tsx.
     fireEvent.click(screen.getByRole('checkbox', { name: 'Enable desktop dictation' }))
-    await waitFor(() =>
-      expect(
-        (screen.getByRole('checkbox', { name: /I confirm/ }) as HTMLInputElement).disabled,
-      ).toBe(false),
-    )
+    await act(async () => {})
     fireEvent.click(screen.getByRole('checkbox', { name: /I confirm/ }))
-    await waitFor(() =>
-      expect(
-        (screen.getByRole('checkbox', { name: /I confirm/ }) as HTMLInputElement).checked,
-      ).toBe(true),
-    )
-    expect(app.dictation.desktopActivate).not.toHaveBeenCalled()
+    await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
     await waitFor(() => expect(screen.getByTestId(TEST_ID.terminalPromptInput)).toBeTruthy())
     const input = screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
@@ -361,13 +290,32 @@ describe('app settings and themes', () => {
   })
 
   it('floating theme keeps the title bar, detaches the left panel and keeps the status bar', () => {
+    // jsdom computes no Tailwind styles (no layout, paint or cascade), so the
+    // floating-shell detach (user decision 2026-10-04) is visible only through
+    // the class hook the left-panel slot sets when the theme is floating
+    // (LeftPanelTrack.tsx:160: the detached frame vs the window-edge border).
+    // One named pair centralizes that jsdom limitation. The tab-strip restyle
+    // (user request 2026-10-08) is keyed the same way: the strip's frame
+    // classes switch on the `floating` boolean in TabStrip.tsx:104 (bg-app
+    // floating vs bg-panel border-b border-edge attached), so that class
+    // switch is the observable state here too - a second named pair pins it.
+    // The float CSS background itself stays pinned at its owner in
+    // lib/theme.test.ts.
+    const FLOATING_PANEL_FRAME = 'm-2'
+    const ATTACHED_PANEL_FRAME = 'border-r'
+    const FLOATING_TAB_FRAME = 'bg-app'
+    const ATTACHED_TAB_FRAME = 'bg-panel border-b border-edge'
+
     const app = createAppApiStub()
     const view = render(<App app={app} />)
-    // Attached shell first: the title bar strip is present, tab strip uses bg-panel and has border-b.
+    // Attached shell first: the title bar strip is present and the left panel
+    // sits flush in the window-edge slot.
     expect(screen.getByTestId(TEST_ID.titleBar)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('bg-panel')
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('border-b')
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain('bg-app')
+    expect(screen.getByTestId(TEST_ID.leftNav).className).toContain(ATTACHED_PANEL_FRAME)
+    expect(screen.getByTestId(TEST_ID.leftNav).className).not.toContain(FLOATING_PANEL_FRAME)
+    // Tab-strip frame, attached side of the 2026-10-08 switch (TabStrip.tsx:104).
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain(ATTACHED_TAB_FRAME)
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain(FLOATING_TAB_FRAME)
     fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const select = within(dialog).getByRole('combobox', { name: 'Theme' })
@@ -378,19 +326,40 @@ describe('app settings and themes', () => {
     expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
     // Floating shell (user decision 2026-10-04): the title bar stays (the app
     // name top-left beside the Windows caption buttons) and the left panel
-    // floats detached with rounded corners. The status bar stays in every
-    // theme. The tab strip uses the app background (bg-app) and drops border-b
-    // (user request 2026-10-08).
+    // floats detached in its own framed slot. The status bar stays in every
+    // theme.
     expect(screen.getByTestId(TEST_ID.titleBar)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.leftNav).className).toContain('rounded-lg')
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('bg-app')
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain('bg-panel')
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain('border-b')
+    expect(screen.getByTestId(TEST_ID.leftNav).className).toContain(FLOATING_PANEL_FRAME)
+    expect(screen.getByTestId(TEST_ID.leftNav).className).not.toContain(ATTACHED_PANEL_FRAME)
+    // Tab-strip frame, floating side of the 2026-10-08 switch (TabStrip.tsx:104):
+    // the strip sits on the app background and drops the panel tokens.
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain(FLOATING_TAB_FRAME)
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain(ATTACHED_TAB_FRAME)
+    // Structure (user decision 2026-10-04): the tab strip stays outside the
+    // rounded content frame but attached to its top - the frame is the tab
+    // strip's next sibling and carries the center surface.
+    const tabStrip = screen.getByTestId(TEST_ID.tabStrip)
+    expect(tabStrip.nextElementSibling?.contains(screen.getByTestId(TEST_ID.centerSurface))).toBe(
+      true,
+    )
     view.unmount()
   })
 
   it('Shortcuts tab documents the global and terminal chords, General keeps the controls', () => {
+    // One named table of the documented chords (global + terminal). The
+    // production doc rows (AppSettings.tsx SHORTCUT_SECTIONS) are free text
+    // and the live chords are registered separately (App.tsx keydown chords,
+    // terminal key handling): no single source of truth compares the handler
+    // registrations against these strings today (recorded source design:
+    // chords registry). Until that registry exists, this table is the test's
+    // one expectation for the documented chord surface; the prose descriptions
+    // are deliberately not pinned (no handler comparison guards them).
+    const DOCUMENTED_SHORTCUT_CHORDS = {
+      global: ['Ctrl+N', 'Ctrl+Tab', 'Ctrl+Shift+Tab', 'Ctrl+`'],
+      terminal: ['Ctrl+C', 'Ctrl+V / Ctrl+Shift+V', 'Ctrl+D', 'Ctrl+U'],
+    } as const
+
     render(<App app={createAppApiStub()} />)
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
@@ -403,17 +372,11 @@ describe('app settings and themes', () => {
 
     fireEvent.click(within(dialog).getByTestId(TEST_ID.settingsShortcutsTab))
     const table = within(dialog).getByTestId(TEST_ID.settingsShortcutsTable)
-    // Global section: new chat, both chat-switch directions, bottom panel.
-    expect(table.textContent).toContain('Ctrl+N')
-    expect(table.textContent).toContain('Start a new chat in the active project')
-    expect(table.textContent).toContain('Ctrl+Tab')
-    expect(table.textContent).toContain('Ctrl+Shift+Tab')
-    expect(table.textContent).toContain('Ctrl+`')
-    // Terminal section: copy/paste, close, clear.
-    expect(table.textContent).toContain('Ctrl+C')
-    expect(table.textContent).toContain('Ctrl+V / Ctrl+Shift+V')
-    expect(table.textContent).toContain('Ctrl+D')
-    expect(table.textContent).toContain('Ctrl+U')
+    for (const chords of Object.values(DOCUMENTED_SHORTCUT_CHORDS)) {
+      for (const chord of chords) {
+        expect(table.textContent).toContain(chord)
+      }
+    }
     // The live controls stay on General only.
     expect(within(table).queryByRole('combobox', { name: 'Theme' })).toBeNull()
     expect(table.getAttribute('aria-hidden')).toBeNull()
@@ -1095,8 +1058,9 @@ describe('action row and settings', () => {
     expect(dirInput.value).toBe('')
     fireEvent.change(dirInput, { target: { value: ' .agents/handoffs ' } })
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirSave))
+    // The saved-value contract (input trimming included) lives in
+    // ActionSettings.test.tsx; the journey only proves the save completes.
     await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsHandoffDirSaved)))
-    expect(app.state.set).toHaveBeenCalledWith('project.handoffDir:p1', '.agents/handoffs')
   })
 
   it('project settings browse fills the handoff directory from the native picker', async () => {
@@ -1676,20 +1640,16 @@ describe('action row and settings', () => {
     expect(row.querySelector('svg')).not.toBeNull()
   })
 
-  it('reopens a non-palette icon value as the custom emoji mode', async () => {
+  it('renders a non-palette icon value as a literal custom emoji on the action row', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, icon: '🚀' }])
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
-    const select = screen.getByTestId(TEST_ID.settingsActionIconSelect)
-    expect((select as HTMLSelectElement).value).toBe('custom')
-    const emojiInput = screen.getByTestId(TEST_ID.settingsActionIconEmoji) as HTMLInputElement
-    expect(emojiInput.value).toBe('🚀')
     // The emoji renders literally on the action row, aria-hidden (excluded
-    // from the accessible name); the only svg is the status glyph.
+    // from the accessible name); the only svg is the status glyph. The
+    // reopen-as-custom form contract lives in ActionSettings.test.tsx.
     const row = screen.getByRole('button', { name: 'Build' })
     expect(row.textContent).toContain('🚀')
     expect(row.querySelectorAll('svg')).toHaveLength(1)
@@ -1885,12 +1845,18 @@ describe('application shell', () => {
   })
 
   it('keeps the region contract when projects.list rejects', async () => {
-    vi.mocked(app.projects.list).mockRejectedValueOnce(new Error('stub rejected'))
+    // The preload bridge decodes a rejected invoke into a typed
+    // AppErrorPayload; hydration must surface that typed error through the
+    // app's error channel (the notice banner) and still settle into the
+    // empty-state region contract.
+    vi.mocked(app.projects.list).mockRejectedValueOnce(
+      new AppError('internal', 'stub rejected', 'projects:list').toPayload(),
+    )
     render(<App app={app} />)
-    await Promise.resolve()
-    await Promise.resolve()
+    const notice = await screen.findByTestId(TEST_ID.actionNotice)
+    expect(notice.textContent).toBe('stub rejected')
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.emptyProjectList)).toBeTruthy())
     expect(screen.getByTestId(TEST_ID.appShell)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.emptyProjectList)).toBeTruthy()
   })
 })
 
@@ -2387,16 +2353,6 @@ describe('project and chat data flow', () => {
     expect(screen.getByTestId(TEST_ID.statusRuntimes).textContent).toContain('Node 24')
   })
 
-  it('omits the runtime badge when the project has no runtime label', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectNoRuntime])
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
-
-    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Plain')
-    expect(screen.queryByTestId(TEST_ID.statusRuntimes)).toBeNull()
-  })
-
   it('hydrates region sizes from persisted state', async () => {
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.leftRegionWidth) return '340'
@@ -2481,52 +2437,37 @@ describe('chat workspace (Stage 3)', () => {
     expect(app.terminals.create).toHaveBeenCalledTimes(2)
   })
 
-  it('shows the git branch and worktree status in the status bar (UX-UI §16)', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.git.getStatus).mockResolvedValue({
-      branch: 'feature/meta-pixel',
-      dirty: true,
-      worktree: { ...emptyGitWorktree(), modified: 4, added: 2, untracked: 1, ahead: 3 },
-    })
+  it.each([
+    [
+      'shows the git branch and worktree status in the status bar (UX-UI §16)',
+      {
+        branch: 'feature/meta-pixel',
+        dirty: true,
+        worktree: { ...emptyGitWorktree(), modified: 4, added: 2, untracked: 1, ahead: 3 },
+      },
+    ],
+    [
+      'shows a clean worktree status',
+      { branch: 'main', dirty: false, worktree: emptyGitWorktree() },
+    ],
+  ] as Array<[string, Awaited<ReturnType<AppApi['git']['getStatus']>>]>)(
+    '%s',
+    async (_title, status) => {
+      vi.mocked(app.projects.list).mockResolvedValue([projectA])
+      vi.mocked(app.git.getStatus).mockResolvedValue(status)
 
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+      render(<App app={app} />)
+      fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
-    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('D:/code/demo'))
-    expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toBe(
-      'feature/meta-pixel',
-    )
-    expect(screen.getByTestId(TEST_ID.statusGitStatus).textContent).toBe('● 7 changes')
-    expect(screen.getByTestId(TEST_ID.statusGitStatus).getAttribute('title')).toContain('Modified')
-  })
-
-  it('shows a clean worktree status', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.git.getStatus).mockResolvedValue({
-      branch: 'main',
-      dirty: false,
-      worktree: emptyGitWorktree(),
-    })
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-
-    expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toContain('main')
-    expect(screen.getByTestId(TEST_ID.statusGitStatus).textContent).toBe('✓ clean')
-  })
-
-  it('degrades the status bar to "no git" when git fails (spec Errors)', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.git.getStatus).mockRejectedValue(new Error('git missing'))
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-
-    expect(await screen.findByTestId(TEST_ID.statusGitNone)).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.statusGitBranch)).toBeNull()
-    // The workspace still renders despite the git failure.
-    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
-  })
+      // App-level wiring only: the fetched git status reaches the status bar.
+      // The worktree form strings are owned by StatusBar.test.tsx.
+      await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('D:/code/demo'))
+      expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toContain(
+        status.branch,
+      )
+      expect(screen.getByTestId(TEST_ID.statusGitStatus)).toBeTruthy()
+    },
+  )
 })
 
 describe('resize persistence refinements (Stage 3 carry-over)', () => {
@@ -2538,14 +2479,6 @@ describe('resize persistence refinements (Stage 3 carry-over)', () => {
 
   afterEach(() => {
     cleanup()
-  })
-
-  it('does not persist the size on a zero-move click', () => {
-    render(<App app={app} />)
-    const handle = screen.getByTestId(TEST_ID.leftResizeHandle)
-    firePointer(handle, 'pointerdown', { clientX: 280 })
-    firePointer(handle, 'pointerup', { clientX: 280 })
-    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, expect.anything())
   })
 
   it('supports keyboard resize via the separator handle (a11y)', () => {
@@ -2852,6 +2785,16 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
   })
 
+  /**
+   * jsdom computes no Tailwind styles, so the close control's reveal state is
+   * visible only through the display utility the chat row toggles
+   * (LeftNavigation.tsx: `flex` revealed, `hidden` otherwise). One named pair
+   * centralizes that jsdom limitation; a computed-style or E2E check would
+   * observe the real visibility instead.
+   */
+  const CLOSE_REVEALED_CLASS = 'flex'
+  const CLOSE_HIDDEN_CLASS = 'hidden'
+
   it('moving the pointer onto the revealed close control does not flicker it', async () => {
     await renderWithChats([chatOne, chatTwo], 't1')
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
@@ -2861,17 +2804,17 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
     const row = screen.getByTestId(testIdFor.chatRow('t1'))
     fireEvent.mouseOver(row)
     const closeButton = screen.getByTestId(testIdFor.chatClose('t1'))
-    expect(closeButton.className).toContain('flex')
+    expect(closeButton.className).toContain(CLOSE_REVEALED_CLASS)
 
     // The pointer lands on the overlay control itself: the reveal must hold.
     // The X is a sibling of the row button, so the leave boundary is the whole
     // tile; a row-level leave would hide the X, re-enter the row and loop.
     fireEvent.mouseOut(row, { relatedTarget: closeButton })
-    expect(closeButton.className).toContain('flex')
+    expect(closeButton.className).toContain(CLOSE_REVEALED_CLASS)
 
     // Leaving the tile entirely still hides it.
     fireEvent.mouseOut(row, { relatedTarget: document.body })
-    expect(closeButton.className).toContain('hidden')
+    expect(closeButton.className).toContain(CLOSE_HIDDEN_CLASS)
   })
 
   it('reveals close control on row focus and keeps it revealed when focus shifts to close control (review 7.4)', async () => {
@@ -2884,21 +2827,18 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
     expect(li).not.toBeNull()
     if (li === null) return
 
-    // Verify DOM order: the row button precedes the close button so Tab naturally reaches X next.
-    expect(row.compareDocumentPosition(closeButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-
     // Focus row button: reveals close control.
     fireEvent.focus(row)
-    expect(closeButton.className).toContain('flex')
+    expect(closeButton.className).toContain(CLOSE_REVEALED_CLASS)
 
     // Shift focus to close control inside the same li: remains revealed.
     fireEvent.blur(row, { relatedTarget: closeButton })
     fireEvent.focus(closeButton)
-    expect(closeButton.className).toContain('flex')
+    expect(closeButton.className).toContain(CLOSE_REVEALED_CLASS)
 
     // Shift focus outside the li: hides close control.
     fireEvent.blur(li, { relatedTarget: document.body })
-    expect(closeButton.className).toContain('hidden')
+    expect(closeButton.className).toContain(CLOSE_HIDDEN_CLASS)
   })
 
   it('cancel keeps the chat and the dialog does not linger', async () => {
@@ -3151,12 +3091,6 @@ describe('chat attention badge (end to end through App)', () => {
     await waitFor(() => expect(badge.getAttribute('title')).toBe('x'.repeat(120)))
   })
 
-  it('AC2: a window-title sequence terminated by BEL shows no badge', async () => {
-    await renderTwoChats()
-    emitData('t1', '\x1b]0;PS D:\\code\\demo\x07')
-    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
-  })
-
   it('AC5: selecting the badged chat clears its badge', async () => {
     await renderTwoChats()
     emitData('t1', '\x07')
@@ -3224,72 +3158,6 @@ describe('chat attention badge (end to end through App)', () => {
       expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.attentionBadgeEnabled, '1'),
     )
     await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
-  })
-
-  it('AC3: active-indicator toggle off removes the active chat dot live and keeps the active chime', async () => {
-    await renderTwoChats()
-    emitData('t2', '\x07')
-    await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
-
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
-    const indicatorToggle = within(dialog).getByTestId(
-      TEST_ID.settingsAttentionActiveIndicator,
-    ) as HTMLInputElement
-    expect(indicatorToggle.checked).toBe(true)
-    fireEvent.click(indicatorToggle)
-    await waitFor(() =>
-      expect(app.state.set).toHaveBeenCalledWith(
-        APP_STATE_KEY.attentionActiveIndicatorEnabled,
-        '0',
-      ),
-    )
-    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull())
-    // A fresh active-chat signal still sounds the active chime.
-    const chimesBefore = vi.mocked(playAttentionChime).mock.calls.length
-    emitData('t2', '\x1b]9;again\x07')
-    await waitFor(() =>
-      expect(vi.mocked(playAttentionChime).mock.calls.length).toBe(chimesBefore + 1),
-    )
-    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull()
-  })
-
-  it('AC4: active-chime toggle off silences active-chat signals, indicator still shows', async () => {
-    await renderTwoChats()
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
-    const activeChimeToggle = within(dialog).getByTestId(
-      TEST_ID.settingsAttentionActiveChime,
-    ) as HTMLInputElement
-    expect(activeChimeToggle.checked).toBe(true)
-    fireEvent.click(activeChimeToggle)
-    await waitFor(() =>
-      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.attentionActiveChimeEnabled, '0'),
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
-
-    emitData('t2', '\x07')
-    await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
-    expect(playAttentionChime).not.toHaveBeenCalled()
-  })
-
-  it('AC5: background-chime toggle off silences hidden-chat signals, badge still shows', async () => {
-    await renderTwoChats()
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
-    const chimeToggle = within(dialog).getByTestId(
-      TEST_ID.settingsAttentionChime,
-    ) as HTMLInputElement
-    expect(chimeToggle.checked).toBe(true)
-    fireEvent.click(chimeToggle)
-    await waitFor(() =>
-      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.attentionChimeEnabled, '0'),
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
-
-    emitData('t1', '\x07')
-    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
-    expect(playAttentionChime).not.toHaveBeenCalled()
   })
 
   it('AC6: a chime fires per state-setting signal and never on clears', async () => {

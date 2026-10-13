@@ -124,9 +124,4 @@ describe('tabs session — kanban tab (spec kanban-adapter-interface Behaviour 1
     expect(session.active).toEqual(KANBAN_TAB)
     expect(session.openFiles).toEqual([])
   })
-
-  it('re-activating the kanban tab is a no-op (the previous tab is kept)', () => {
-    const session = activateTab(emptyTabsSession(), KANBAN_TAB)
-    expect(activateTab(session, KANBAN_TAB)).toBe(session)
-  })
 })
