@@ -21,7 +21,7 @@ import { App, TEST_ID, testIdFor } from './App'
 import { playAttentionChime } from './lib/chime'
 import { TERMINAL_FONT_SIZE_STORAGE_KEY } from './lib/terminal-font'
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
-import { THEME_STORAGE_KEY } from './lib/theme'
+import { QUICK_THEME_SWITCH_STORAGE_KEY, THEME_STORAGE_KEY } from './lib/theme'
 import { createAppApiStub as appApiStub } from './test/app-api-stub'
 import { resetMockFitAddons } from './test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
@@ -309,16 +309,12 @@ describe('app settings and themes', () => {
     // the class hook the left-panel slot sets when the theme is floating
     // (LeftPanelTrack.tsx:160: the detached frame vs the window-edge border).
     // One named pair centralizes that jsdom limitation. The tab-strip restyle
-    // (user request 2026-10-08) is keyed the same way: the strip's frame
-    // classes switch on the `floating` boolean in TabStrip.tsx:104 (bg-app
-    // floating vs bg-panel border-b border-edge attached), so that class
-    // switch is the observable state here too - a second named pair pins it.
-    // The float CSS background itself stays pinned at its owner in
-    // lib/theme.test.ts.
+    // (user requests 2026-10-08, 2026-10-13) is keyed the same way: both themes
+    // sit on the darker app background (bg-app), while attached keeps the
+    // hairline under the row (border-b border-edge) that floating drops.
     const FLOATING_PANEL_FRAME = 'm-2'
     const ATTACHED_PANEL_FRAME = 'border-r'
-    const FLOATING_TAB_FRAME = 'bg-app'
-    const ATTACHED_TAB_FRAME = 'bg-panel border-b border-edge'
+    const ATTACHED_TAB_FRAME = 'border-b border-edge'
 
     const app = createAppApiStub()
     const view = render(<App app={app} />)
@@ -327,9 +323,9 @@ describe('app settings and themes', () => {
     expect(screen.getByTestId(TEST_ID.titleBar)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.leftNav).className).toContain(ATTACHED_PANEL_FRAME)
     expect(screen.getByTestId(TEST_ID.leftNav).className).not.toContain(FLOATING_PANEL_FRAME)
-    // Tab-strip frame, attached side of the 2026-10-08 switch (TabStrip.tsx:104).
+    // Tab-strip frame: attached keeps the bottom border hairline and dark app background.
     expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain(ATTACHED_TAB_FRAME)
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain(FLOATING_TAB_FRAME)
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('bg-app')
     fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const select = within(dialog).getByRole('combobox', { name: 'Theme' })
@@ -346,9 +342,8 @@ describe('app settings and themes', () => {
     expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.leftNav).className).toContain(FLOATING_PANEL_FRAME)
     expect(screen.getByTestId(TEST_ID.leftNav).className).not.toContain(ATTACHED_PANEL_FRAME)
-    // Tab-strip frame, floating side of the 2026-10-08 switch (TabStrip.tsx:104):
-    // the strip sits on the app background and drops the panel tokens.
-    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain(FLOATING_TAB_FRAME)
+    // Tab-strip frame, floating drops the attached hairline border.
+    expect(screen.getByTestId(TEST_ID.tabStrip).className).toContain('bg-app')
     expect(screen.getByTestId(TEST_ID.tabStrip).className).not.toContain(ATTACHED_TAB_FRAME)
     // Structure (user decision 2026-10-04): the tab strip stays outside the
     // rounded content frame but attached to its top - the frame is the tab
@@ -358,6 +353,53 @@ describe('app settings and themes', () => {
       true,
     )
     view.unmount()
+  })
+
+  it('toggles quick theme switcher from app settings and switches theme via status bar', () => {
+    const app = createAppApiStub()
+    render(<App app={app} />)
+
+    // Initially switcher is not visible in status bar
+    expect(screen.queryByTestId(TEST_ID.statusThemeSwitcher)).toBeNull()
+
+    // Open App Settings
+    fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    const toggle = within(dialog).getByTestId(TEST_ID.settingsQuickThemeSwitch)
+    expect((toggle as HTMLInputElement).checked).toBe(false)
+
+    // Check the toggle
+    fireEvent.click(toggle)
+    expect((toggle as HTMLInputElement).checked).toBe(true)
+    expect(localStorage.getItem(QUICK_THEME_SWITCH_STORAGE_KEY)).toBe('1')
+
+    // Close App Settings
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close app settings' }))
+
+    // Quick theme switcher is now visible in the status bar showing "NeKode Flat"
+    const switcher = screen.getByTestId(TEST_ID.statusThemeSwitcher)
+    expect(switcher).toBeTruthy()
+    expect(switcher.textContent).toContain('NeKode Flat')
+
+    // Click quick theme switcher to toggle theme to "NeKode Float"
+    fireEvent.click(switcher)
+    expect(switcher.textContent).toContain('NeKode Float')
+    expect(document.documentElement.dataset.theme).toBe('nekode-float')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
+
+    // Click again to toggle back to "NeKode Flat"
+    fireEvent.click(switcher)
+    expect(switcher.textContent).toContain('NeKode Flat')
+    expect(document.documentElement.dataset.theme).toBe('default')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default')
+  })
+
+  it('restores quick theme switcher setting from localStorage on load', () => {
+    localStorage.setItem(QUICK_THEME_SWITCH_STORAGE_KEY, '1')
+    render(<App app={createAppApiStub()} />)
+    const switcher = screen.getByTestId(TEST_ID.statusThemeSwitcher)
+    expect(switcher).toBeTruthy()
+    expect(switcher.textContent).toContain('NeKode Flat')
   })
 
   it('Shortcuts tab documents the global and terminal chords, General keeps the controls', () => {
@@ -2310,6 +2352,27 @@ describe('project and chat data flow', () => {
     fireEvent.click(await screen.findByTestId(TEST_ID.newChatAgentConfigure))
 
     // Project Settings on the Agents tab, and no chat of any kind.
+    const agentsTab = await screen.findByTestId(TEST_ID.settingsAgentsTab)
+    expect(agentsTab.getAttribute('aria-selected')).toBe('true')
+    expect(await screen.findByRole('dialog', { name: 'Project Settings' })).toBeTruthy()
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.newChatAgentMenu)).toBeNull())
+    expect(app.chats.createWithAgent).not.toHaveBeenCalled()
+    expect(app.chats.create).not.toHaveBeenCalled()
+  })
+
+  it('new-chat agent menu: with profiles loaded, Add profile at the bottom opens the Agents settings', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({
+      defaultId: null,
+      profiles: [codexProfile],
+    })
+
+    render(<App app={app} />)
+    await openAgentMenu()
+    expect(await screen.findByTestId(testIdFor.newChatAgentProfile('prof-1'))).toBeTruthy()
+    fireEvent.click(await screen.findByTestId(TEST_ID.newChatAgentConfigure))
+
     const agentsTab = await screen.findByTestId(TEST_ID.settingsAgentsTab)
     expect(agentsTab.getAttribute('aria-selected')).toBe('true')
     expect(await screen.findByRole('dialog', { name: 'Project Settings' })).toBeTruthy()

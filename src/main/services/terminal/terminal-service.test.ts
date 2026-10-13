@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { createBottomTabId } from '../../../shared/bottom-tab-id'
 import { AppError } from '../../../shared/ipc-error'
 import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-service'
-import { shellDisplayName, TerminalService } from './terminal-service'
+import {
+  CLOSED_BOTTOM_TAB_TTL_MS,
+  MAX_CLOSED_BOTTOM_TABS,
+  shellDisplayName,
+  TerminalService,
+} from './terminal-service'
 
 // Terminal service unit tests with a fake PTY injected (plan Stage 3): no
 // real processes are spawned in vitest. Covers lazy spawn keyed by chatId,
@@ -84,6 +89,7 @@ function createHarness(
     spawnError?: Error
     isDirectory?: (path: string) => boolean
     killEmitsExit?: boolean
+    now?: () => number
   } = {},
 ): Harness {
   const ptys: FakePty[] = []
@@ -101,6 +107,7 @@ function createHarness(
     shell: { file: 'powershell.exe', args: ['-NoLogo'] },
     cols: 80,
     rows: 24,
+    now: options.now,
   })
   return { service, ptys, spawn }
 }
@@ -381,14 +388,62 @@ describe('terminal service (fake PTY)', () => {
     expect(service.hasRunningSession(bottomP2)).toBe(false)
   })
 
-  it('a bottom tab closed before create does not spawn', () => {
-    const { service, spawn } = createHarness()
+  it('a bottom tab closed before create within TTL does not spawn', () => {
+    let currentTime = 10_000
+    const { service, spawn } = createHarness({ now: () => currentTime })
     const bottomId = createBottomTabId('p1')
     service.terminate(bottomId)
+    expect(service.closedBottomTabsCount()).toBe(1)
     expect(spawn).not.toHaveBeenCalled()
+    currentTime += 5_000
     expect(() => service.create(bottomId, 'D:/a')).toThrow(AppError)
     expect(spawn).not.toHaveBeenCalled()
     expect(service.hasRunningSession(bottomId)).toBe(false)
+    expect(service.closedBottomTabsCount()).toBe(0)
+  })
+
+  it('a bottom tab closed before create after TTL has expired is allowed to spawn', () => {
+    let currentTime = 10_000
+    const { service, spawn } = createHarness({ now: () => currentTime })
+    const bottomId = createBottomTabId('p1')
+    service.terminate(bottomId)
+    expect(service.closedBottomTabsCount()).toBe(1)
+    // Advance past TTL (30s)
+    currentTime += CLOSED_BOTTOM_TAB_TTL_MS + 1
+    // create now succeeds because the refusal token has expired
+    service.create(bottomId, 'D:/a')
+    expect(spawn).toHaveBeenCalledTimes(1)
+    expect(service.hasRunningSession(bottomId)).toBe(true)
+    expect(service.closedBottomTabsCount()).toBe(0)
+  })
+
+  it('closedBottomTabs bounds capacity and evicts oldest entry when exceeding MAX_CLOSED_BOTTOM_TABS', () => {
+    let currentTime = 1_000
+    const { service } = createHarness({ now: () => currentTime })
+    const ids: string[] = []
+    for (let i = 0; i < MAX_CLOSED_BOTTOM_TABS + 5; i++) {
+      currentTime += 10
+      const id = createBottomTabId(`p${i}`)
+      ids.push(id)
+      service.terminate(id)
+    }
+    expect(service.closedBottomTabsCount()).toBe(MAX_CLOSED_BOTTOM_TABS)
+    // The first 5 IDs were evicted
+    for (let i = 0; i < 5; i++) {
+      // Evicted tabs are no longer in the map, so create does not throw conflict
+      service.create(ids[i], 'D:/a')
+    }
+    // The 6th ID (ids[5]) was NOT evicted and should throw
+    expect(() => service.create(ids[5], 'D:/a')).toThrow(AppError)
+  })
+
+  it('terminateAll clears closed bottom tabs tracking', () => {
+    const { service } = createHarness()
+    const bottomId = createBottomTabId('p1')
+    service.terminate(bottomId)
+    expect(service.closedBottomTabsCount()).toBe(1)
+    service.terminateAll()
+    expect(service.closedBottomTabsCount()).toBe(0)
   })
 
   it('unsubscribing stops data/exit delivery', () => {

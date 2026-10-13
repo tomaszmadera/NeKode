@@ -24,6 +24,8 @@ export const TEST_ID = {
   statusGitBranch: 'status-git-branch',
   statusGitStatus: 'status-git-status',
   statusGitNone: 'status-git-none',
+  /** Quick theme switcher in the status bar. */
+  statusThemeSwitcher: 'status-theme-switcher',
   centerSurface: 'region-center-surface',
   rightRegion: 'region-right',
   bottomRegion: 'region-bottom',
@@ -120,6 +122,8 @@ export const TEST_ID = {
   appSettingsButton: 'app-settings-button',
   settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
+  /** App Settings: quick theme switcher in status bar toggle. */
+  settingsQuickThemeSwitch: 'settings-quick-theme-switch',
   /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
   settingsChatSwitch: 'settings-chat-switch',
   /** App Settings: attention alert toggles (attention-alert-settings spec). */

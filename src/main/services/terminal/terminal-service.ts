@@ -45,6 +45,11 @@ interface TerminalSession {
   subscriptions: Array<{ dispose(): void }>
 }
 
+/** Maximum time a terminated bottom tab ID is kept to guard against racing create IPCs. */
+export const CLOSED_BOTTOM_TAB_TTL_MS = 30_000
+/** Maximum capacity of the closed bottom tab cache. */
+export const MAX_CLOSED_BOTTOM_TABS = 100
+
 export interface TerminalServiceOptions {
   /** Injected PTY spawner (node-pty in production, a fake in tests). */
   createPty: PtyFactory
@@ -55,6 +60,8 @@ export interface TerminalServiceOptions {
   /** Initial PTY geometry; the renderer resizes on attach. */
   cols?: number
   rows?: number
+  /** Timestamp generator; injectable for tests. */
+  now?: () => number
 }
 
 /** The user's default shell: PowerShell on Windows, $SHELL elsewhere. */
@@ -93,9 +100,11 @@ export class TerminalService {
   readonly #sessions = new Map<string, TerminalSession>()
   readonly #dataListeners = new Set<(chatId: string, data: string) => void>()
   readonly #exitListeners = new Set<(chatId: string, exitCode: number) => void>()
+  readonly #now: () => number
   // Bottom-tab ids closed before their create IPC arrived. create() refuses
   // them once so a late spawn cannot outlive the tab. Chat ids are not recorded.
-  readonly #closedBottomTabs = new Set<string>()
+  // Entries are timestamped, pruned by TTL, and bounded to prevent unbounded growth.
+  readonly #closedBottomTabs = new Map<string, number>()
   #quitting = false
   #shutdown: Promise<void> | undefined
 
@@ -105,6 +114,7 @@ export class TerminalService {
     this.#shell = options.shell ?? defaultShell()
     this.#cols = options.cols ?? 80
     this.#rows = options.rows ?? 24
+    this.#now = options.now ?? Date.now
   }
 
   /**
@@ -119,9 +129,12 @@ export class TerminalService {
     if (this.#quitting) {
       throw new AppError('conflict', 'The application is closing.')
     }
-    if (this.#closedBottomTabs.has(chatId)) {
+    const closedAt = this.#closedBottomTabs.get(chatId)
+    if (closedAt !== undefined) {
       this.#closedBottomTabs.delete(chatId)
-      throw new AppError('conflict', 'The terminal was closed before it started.')
+      if (this.#now() - closedAt <= CLOSED_BOTTOM_TAB_TTL_MS) {
+        throw new AppError('conflict', 'The terminal was closed before it started.')
+      }
     }
     const existing = this.#sessions.get(chatId)
     if (existing !== undefined && existing.status === 'running') {
@@ -206,7 +219,15 @@ export class TerminalService {
   /** Terminates one session; safe to call repeatedly. */
   terminate(chatId: string): void {
     if (isBottomTabId(chatId)) {
-      this.#closedBottomTabs.add(chatId)
+      const now = this.#now()
+      this.#pruneClosedBottomTabs(now)
+      this.#closedBottomTabs.set(chatId, now)
+      if (this.#closedBottomTabs.size > MAX_CLOSED_BOTTOM_TABS) {
+        const oldest = this.#closedBottomTabs.keys().next().value
+        if (oldest !== undefined) {
+          this.#closedBottomTabs.delete(oldest)
+        }
+      }
     }
     const session = this.#sessions.get(chatId)
     if (session === undefined) {
@@ -238,10 +259,21 @@ export class TerminalService {
    */
   terminateAll(): void {
     this.#quitting = true
+    this.#closedBottomTabs.clear()
     for (const session of [...this.#sessions.values()]) {
       this.#disposeSession(session)
     }
     this.#sessions.clear()
+  }
+
+  #pruneClosedBottomTabs(now: number): void {
+    for (const [id, timestamp] of this.#closedBottomTabs) {
+      if (now - timestamp > CLOSED_BOTTOM_TAB_TTL_MS) {
+        this.#closedBottomTabs.delete(id)
+      } else {
+        break
+      }
+    }
   }
 
   /**
@@ -300,6 +332,11 @@ export class TerminalService {
   /** Test/debug helper: whether a live (running) session exists for a chat. */
   hasRunningSession(chatId: string): boolean {
     return this.#sessions.get(chatId)?.status === 'running'
+  }
+
+  /** Test/debug helper: number of tracked closed bottom tabs. */
+  closedBottomTabsCount(): number {
+    return this.#closedBottomTabs.size
   }
 
   #requireRunning(chatId: string): TerminalSession {

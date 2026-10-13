@@ -13,15 +13,15 @@ import { isTrustedRendererUrl } from './security/sender-guard'
 import { createServices } from './services/create-services'
 import { DesktopShortcutSender, desktopHelperPath } from './services/dictation/desktop-sender'
 import { registerShutdown } from './shutdown'
+import { applyUserDataOverride } from './user-data-override'
 
 // Isolated smoke/e2e runs (docs/development/setup.md §3): redirect userData
 // before the app is ready so the SQLite db and local settings stay out of the
 // developer's real profile. Windows ignores the APPDATA override (Known
 // Folder), so app.setPath is the only reliable isolation path.
-const smokeUserData = process.env.NEKODE_USER_DATA
-if (smokeUserData !== undefined && smokeUserData.length > 0) {
-  app.setPath('userData', smokeUserData)
-}
+applyUserDataOverride(process.env.NEKODE_USER_DATA, (name, targetPath) => {
+  app.setPath(name as 'userData', targetPath)
+})
 
 // The single trusted renderer document: the dev server root in dev, the
 // built index.html in production. Used for both navigation locking and the

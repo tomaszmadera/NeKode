@@ -695,8 +695,9 @@ function NewChatAgentMenu({
             Configure agents
           </button>
         ) : null}
-        {phase === 'ready' && profiles.length > 0
-          ? profiles.map((profile) => (
+        {phase === 'ready' && profiles.length > 0 ? (
+          <>
+            {profiles.map((profile) => (
               <button
                 key={profile.id}
                 type="button"
@@ -712,8 +713,22 @@ function NewChatAgentMenu({
               >
                 {profile.name}
               </button>
-            ))
-          : null}
+            ))}
+            <div className="my-1 border-t border-edge" />
+            <button
+              type="button"
+              role="menuitem"
+              className={itemClass}
+              data-testid={TEST_ID.newChatAgentConfigure}
+              onClick={() => {
+                onClose()
+                onConfigureAgents(state.projectId)
+              }}
+            >
+              Add profile…
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   )

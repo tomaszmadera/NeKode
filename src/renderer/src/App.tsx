@@ -95,7 +95,13 @@ import {
 } from './lib/terminal-font'
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { TEST_ID, testIdFor } from './lib/test-ids'
-import { isThemeId, THEME_STORAGE_KEY, THEMES, type ThemeId } from './lib/theme'
+import {
+  isThemeId,
+  QUICK_THEME_SWITCH_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  THEMES,
+  type ThemeId,
+} from './lib/theme'
 
 // Re-exported so existing imports keep working; the definitions live in
 // lib/test-ids.ts to break the App ↔ component import cycle.
@@ -226,6 +232,19 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       return { theme: 'default', error: 'Failed to load the saved theme.' }
     }
   })
+  const [quickThemeSwitchState, setQuickThemeSwitchState] = useState<{
+    enabled: boolean
+    error: string | null
+  }>(() => {
+    try {
+      return {
+        enabled: localStorage.getItem(QUICK_THEME_SWITCH_STORAGE_KEY) === '1',
+        error: null,
+      }
+    } catch {
+      return { enabled: false, error: 'Failed to load the quick theme switch setting.' }
+    }
+  })
   const [terminalFontSize, setTerminalFontSize] = useState<number>(() => {
     try {
       return parseTerminalFontSize(localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY))
@@ -298,6 +317,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setThemeState({ theme, error: null })
     } catch {
       setThemeState((previous) => ({ ...previous, error: 'Failed to save the theme.' }))
+    }
+  }
+
+  function handleQuickThemeSwitchChange(enabled: boolean): void {
+    try {
+      localStorage.setItem(QUICK_THEME_SWITCH_STORAGE_KEY, enabled ? '1' : '0')
+      setQuickThemeSwitchState({ enabled, error: null })
+    } catch {
+      setQuickThemeSwitchState((previous) => ({
+        ...previous,
+        error: 'Failed to save the quick theme switch setting.',
+      }))
     }
   }
 
@@ -2663,11 +2694,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           dictationApi={app.dictation}
           desktopDictation={desktopDictation}
           theme={themeState.theme}
+          quickThemeSwitch={quickThemeSwitchState.enabled}
+          onQuickThemeSwitchChange={handleQuickThemeSwitchChange}
           chatSwitch={chatSwitchEnabled}
           projectNamesUppercase={projectNamesUppercase}
           onProjectNamesUppercaseChange={handleProjectNamesUppercaseChange}
           error={
             themeState.error ??
+            quickThemeSwitchState.error ??
             terminalPasteState.error ??
             terminalFontState.error ??
             terminalFontSizeError
@@ -2757,7 +2791,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       />
       {/* Status bar: the very bottom of the window, full width (spec
           Behaviour 18). */}
-      <StatusBar app={app} project={statusProject} />
+      <StatusBar
+        app={app}
+        project={statusProject}
+        theme={themeState.theme}
+        quickThemeSwitch={quickThemeSwitchState.enabled}
+        onThemeChange={handleThemeChange}
+      />
     </div>
   )
 }

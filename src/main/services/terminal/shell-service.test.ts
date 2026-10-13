@@ -120,6 +120,22 @@ describe('detect', () => {
     const third = service.detect(['D:\\kept.exe'])
     expect(third).not.toBe(first)
   })
+
+  it('frees pending slot when caller wraps post-detect work in try/finally', () => {
+    const { service } = makeService({ exists: [], files: [] })
+    let first: ReturnType<typeof service.detect> | undefined
+    expect(() => {
+      first = service.detect([])
+      try {
+        throw new Error('persisting pruned paths failed')
+      } finally {
+        service.endDetect()
+      }
+    }).toThrow('persisting pruned paths failed')
+
+    const second = service.detect([])
+    expect(second).not.toBe(first)
+  })
 })
 
 describe('list (cache read, never probes)', () => {

@@ -9,6 +9,7 @@ import type {
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
+import { nextThemeId, THEMES, type ThemeId } from '../../lib/theme'
 import './StatusBar.css'
 
 // Status bar at the very bottom of the window (UX-UI §14): the project
@@ -27,6 +28,12 @@ export interface StatusBarProps {
   project: ProjectInfo | null
   /** Optional external refresh trigger / version nonce. */
   refreshTrigger?: unknown
+  /** Active theme ID. */
+  theme?: ThemeId
+  /** Whether the quick theme switcher in the status bar is enabled. */
+  quickThemeSwitch?: boolean
+  /** Callback when the user switches theme from the status bar. */
+  onThemeChange?: (theme: ThemeId) => void
 }
 
 const NEWLINE = String.fromCharCode(10)
@@ -68,7 +75,14 @@ export function gitHoverDetails(worktree: GitWorktreeStatus): string {
   return rows.map(([label, value]) => `${label.padEnd(12)}${value}`).join(NEWLINE)
 }
 
-export function StatusBar({ app, project, refreshTrigger }: StatusBarProps): React.JSX.Element {
+export function StatusBar({
+  app,
+  project,
+  refreshTrigger,
+  theme,
+  quickThemeSwitch = false,
+  onThemeChange,
+}: StatusBarProps): React.JSX.Element {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
 
   const projectId = project?.id ?? null
@@ -162,7 +176,36 @@ export function StatusBar({ app, project, refreshTrigger }: StatusBarProps): Rea
           <GitSection status={gitStatus} />
         </>
       ) : null}
+      {quickThemeSwitch && onThemeChange && theme ? (
+        <ThemeSwitchSection theme={theme} onThemeChange={onThemeChange} />
+      ) : null}
     </footer>
+  )
+}
+
+function ThemeSwitchSection({
+  theme,
+  onThemeChange,
+}: {
+  theme: ThemeId
+  onThemeChange: (theme: ThemeId) => void
+}): React.JSX.Element {
+  const currentTheme = THEMES[theme] ?? THEMES.default
+  const next = nextThemeId(theme)
+  const nextLabel = THEMES[next]?.label ?? next
+
+  return (
+    <button
+      type="button"
+      className="status-bar-theme-switcher ml-auto flex shrink-0 cursor-pointer select-none items-center gap-1.5 rounded border border-edge bg-button px-2 py-0.5 text-xs text-ink transition-colors hover:bg-button-hover hover:text-ink focus-visible:outline focus-visible:outline-info"
+      data-testid={TEST_ID.statusThemeSwitcher}
+      aria-label={`Current theme: ${currentTheme.label}. Click to switch to ${nextLabel}`}
+      title={`Current theme: ${currentTheme.label} (click to switch to ${nextLabel})`}
+      onClick={() => onThemeChange(next)}
+    >
+      <Icon.theme size={12} aria-hidden className="text-ink-secondary" />
+      <span className="font-medium">{currentTheme.label}</span>
+    </button>
   )
 }
 

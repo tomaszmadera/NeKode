@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
@@ -240,5 +240,93 @@ describe('status bar helpers (UX-UI §15–16 forms)', () => {
     expect(rows[0].endsWith('4')).toBe(true)
     expect(rows[5]).toContain('Ahead')
     expect(rows[5].endsWith('3')).toBe(true)
+  })
+})
+
+describe('status bar — quick theme switcher', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('does not render quick theme switcher when quickThemeSwitch is false or omitted', () => {
+    render(<StatusBar app={app} project={projectA} theme="default" onThemeChange={vi.fn()} />)
+    expect(screen.queryByTestId(TEST_ID.statusThemeSwitcher)).toBeNull()
+
+    render(
+      <StatusBar
+        app={app}
+        project={projectA}
+        theme="default"
+        quickThemeSwitch={false}
+        onThemeChange={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId(TEST_ID.statusThemeSwitcher)).toBeNull()
+  })
+
+  it('renders quick theme switcher with current theme name when quickThemeSwitch is true', () => {
+    render(
+      <StatusBar
+        app={app}
+        project={projectA}
+        theme="default"
+        quickThemeSwitch={true}
+        onThemeChange={vi.fn()}
+      />,
+    )
+    const switcher = screen.getByTestId(TEST_ID.statusThemeSwitcher)
+    expect(switcher).toBeTruthy()
+    expect(switcher.textContent).toContain('NeKode Flat')
+    expect(switcher.className).toContain('ml-auto')
+  })
+
+  it('calls onThemeChange with the next theme when clicked', () => {
+    const onThemeChange = vi.fn()
+    const { rerender } = render(
+      <StatusBar
+        app={app}
+        project={projectA}
+        theme="default"
+        quickThemeSwitch={true}
+        onThemeChange={onThemeChange}
+      />,
+    )
+    const switcher = screen.getByTestId(TEST_ID.statusThemeSwitcher)
+    fireEvent.click(switcher)
+    expect(onThemeChange).toHaveBeenCalledWith('nekode-float')
+
+    rerender(
+      <StatusBar
+        app={app}
+        project={projectA}
+        theme="nekode-float"
+        quickThemeSwitch={true}
+        onThemeChange={onThemeChange}
+      />,
+    )
+    expect(screen.getByTestId(TEST_ID.statusThemeSwitcher).textContent).toContain('NeKode Float')
+    fireEvent.click(screen.getByTestId(TEST_ID.statusThemeSwitcher))
+    expect(onThemeChange).toHaveBeenCalledWith('default')
+  })
+
+  it('renders quick theme switcher on the right even when project is null', () => {
+    render(
+      <StatusBar
+        app={app}
+        project={null}
+        theme="default"
+        quickThemeSwitch={true}
+        onThemeChange={vi.fn()}
+      />,
+    )
+    const switcher = screen.getByTestId(TEST_ID.statusThemeSwitcher)
+    expect(switcher).toBeTruthy()
+    expect(switcher.textContent).toContain('NeKode Flat')
+    expect(switcher.className).toContain('ml-auto')
   })
 })

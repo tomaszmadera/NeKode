@@ -146,6 +146,9 @@ export class AgentProfilesService {
   }
 
   private assertPut(input: AgentProfilePut): void {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+      throw new AppError('validation', 'Profile payload must be an object.', CHANNEL.put)
+    }
     if (input.id !== null && (typeof input.id !== 'string' || input.id.length === 0)) {
       throw new AppError(
         'validation',

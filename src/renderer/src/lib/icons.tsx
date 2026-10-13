@@ -40,6 +40,7 @@ import {
   Mic,
   Minus,
   Package,
+  Palette,
   PanelLeft,
   PanelRight,
   Play,
@@ -109,6 +110,7 @@ export const Icon = {
   stop: Square,
   terminal: SquareTerminal,
   test: FlaskConical,
+  theme: Palette,
   timer: Zap,
   web: Globe,
 } satisfies Record<string, LucideIcon>
