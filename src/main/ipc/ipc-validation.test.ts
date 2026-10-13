@@ -347,32 +347,28 @@ describe('ipc payload validation', () => {
     )
   })
 
-  it('validates path arguments: absolute, no traversal, no NUL', () => {
+  it('validates git:status projectId argument', () => {
     const entry = channelMap().get('git:status')
     expect(entry).toBeDefined()
     if (!entry) {
       return
     }
-    expect(entry.parse(['D:/code/demo'])).toEqual(['D:/code/demo'])
-    expect(entry.parse(['C:\\code\\demo'])).toEqual(['C:\\code\\demo'])
-    expect(() => entry.parse(['code/demo'])).toThrow(/absolute path/)
-    expect(() => entry.parse(['D:/code/../secrets'])).toThrow(/"\.\." segments/)
-    expect(() => entry.parse(['..\\..\\windows'])).toThrow(ValidationError)
-    expect(() => entry.parse(['D:/code/de\u0000mo'])).toThrow(/NUL/)
+    expect(entry.parse(['proj-1'])).toEqual(['proj-1'])
+    expect(() => entry.parse([123])).toThrow(ValidationError)
+    expect(() => entry.parse([])).toThrow(/expected 1 argument/)
+    expect(() => entry.parse(['proj-1', 'extra'])).toThrow(/expected 1 argument/)
   })
 
-  it('git:fileStatuses shares the absolute-path validation of git:status', () => {
+  it('validates git:fileStatuses projectId argument', () => {
     const entry = channelMap().get('git:fileStatuses')
     expect(entry).toBeDefined()
     if (!entry) {
       return
     }
-    expect(entry.parse(['D:/code/demo'])).toEqual(['D:/code/demo'])
-    expect(() => entry.parse(['code/demo'])).toThrow(/absolute path/)
-    expect(() => entry.parse(['D:/code/../secrets'])).toThrow(/"\.\." segments/)
-    expect(() => entry.parse(['D:/code/de\u0000mo'])).toThrow(/NUL/)
-    expect(() => entry.parse([])).toThrow(ValidationError)
-    expect(() => entry.parse(['D:/code/demo', 'extra'])).toThrow(ValidationError)
+    expect(entry.parse(['proj-1'])).toEqual(['proj-1'])
+    expect(() => entry.parse([123])).toThrow(ValidationError)
+    expect(() => entry.parse([])).toThrow(/expected 1 argument/)
+    expect(() => entry.parse(['proj-1', 'extra'])).toThrow(/expected 1 argument/)
   })
 
   it('validates the terminal cwd as a safe path', () => {

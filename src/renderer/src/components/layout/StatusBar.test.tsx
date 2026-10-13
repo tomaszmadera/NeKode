@@ -14,6 +14,7 @@ import {
   gitStatusText,
   MAX_RUNTIME_BADGES,
   runtimeLabels,
+  STATUS_BAR_GIT_REFRESH_INTERVAL_MS,
   StatusBar,
 } from './StatusBar'
 
@@ -73,7 +74,7 @@ describe('status bar — project context (UX-UI §14)', () => {
     // itself is not observable in jsdom).
     expect(path.textContent).toBe('D:/Projects/gerde.pl')
     expect(path.getAttribute('title')).toBe('D:/Projects/gerde.pl')
-    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('D:/Projects/gerde.pl'))
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('p1'))
   })
 
   it('renders runtime badges and collapses the overflow to +N (UX-UI §15)', async () => {
@@ -184,6 +185,36 @@ describe('status bar — git forms (UX-UI §16)', () => {
     await screen.findByTestId(TEST_ID.statusGitNone)
     expect(screen.queryByTestId(TEST_ID.statusGitBranch)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.statusGitStatus)).toBeNull()
+  })
+
+  it('refetches git status on window focus event', async () => {
+    app = createAppApiStub()
+    render(<StatusBar app={app} project={projectA} />)
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledTimes(1))
+
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledTimes(2))
+  })
+
+  it('refetches git status on periodic interval when document is visible', async () => {
+    vi.useFakeTimers()
+    app = createAppApiStub()
+    render(<StatusBar app={app} project={projectA} />)
+    expect(app.git.getStatus).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(STATUS_BAR_GIT_REFRESH_INTERVAL_MS)
+    expect(app.git.getStatus).toHaveBeenCalledTimes(2)
+
+    vi.useRealTimers()
+  })
+
+  it('refetches git status when refreshTrigger prop changes', async () => {
+    app = createAppApiStub()
+    const { rerender } = render(<StatusBar app={app} project={projectA} refreshTrigger={1} />)
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledTimes(1))
+
+    rerender(<StatusBar app={app} project={projectA} refreshTrigger={2} />)
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledTimes(2))
   })
 })
 

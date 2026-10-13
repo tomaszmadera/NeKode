@@ -391,11 +391,11 @@ describe('registered ipc handlers', () => {
     await invoke(IPC_CHANNEL.stateSet, ['k', 'v'])
     expect(services.state.set).toHaveBeenCalledWith('k', 'v')
 
-    await invoke(IPC_CHANNEL.gitStatus, ['D:/code/demo'])
-    expect(services.git.getStatus).toHaveBeenCalledWith('D:/code/demo')
+    await invoke(IPC_CHANNEL.gitStatus, ['proj-1'])
+    expect(services.git.getStatus).toHaveBeenCalledWith('proj-1')
 
-    await invoke(IPC_CHANNEL.gitFileStatuses, ['D:/code/demo'])
-    expect(services.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo')
+    await invoke(IPC_CHANNEL.gitFileStatuses, ['proj-1'])
+    expect(services.git.fileStatuses).toHaveBeenCalledWith('proj-1')
   })
 
   it('rejects invalid payloads with a typed serialized error', () => {

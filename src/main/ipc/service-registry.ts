@@ -126,12 +126,12 @@ export interface AppServices {
     onExit(listener: (chatId: string, exitCode: number) => void): Unsubscribe
   }
   git: {
-    getStatus(projectPath: string): Promise<GitStatus>
+    getStatus(projectId: string): Promise<GitStatus>
     /**
      * Per-path working-tree status for the file-tree decoration (NEKODE-31).
      * One read-only call; any failure degrades to the empty map.
      */
-    fileStatuses(projectPath: string): Promise<GitFileStatuses>
+    fileStatuses(projectId: string): Promise<GitFileStatuses>
   }
   files: {
     /** One directory level of the project tree (null = project root). */

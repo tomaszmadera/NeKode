@@ -999,8 +999,8 @@ describe('project files: Git status decoration (spec Behaviour 16-19, NEKODE-31)
     render(<App app={app} />)
     await enterFilesMode()
 
-    // One read per mode entry, against the project path (Behaviour 19).
-    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
+    // One read per mode entry, against the project id (Behaviour 19).
+    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('p1'))
 
     // A collapsed folder already shows the strongest status below it
     // (Behaviour 17): modified wins over the untracked directory inside.
@@ -1053,7 +1053,7 @@ describe('project files: Git status decoration (spec Behaviour 16-19, NEKODE-31)
 
     render(<App app={app} />)
     await enterFilesMode()
-    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
+    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('p1'))
 
     // The collapsed folder aggregates the staged addition (Behaviour 17).
     const srcRow = screen.getByTestId(testIdFor.fileEntry('src'))
@@ -1087,7 +1087,7 @@ describe('project files: Git status decoration (spec Behaviour 16-19, NEKODE-31)
 
     render(<App app={app} />)
     await enterFilesMode()
-    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('D:/code/demo'))
+    await waitFor(() => expect(app.git.fileStatuses).toHaveBeenCalledWith('p1'))
 
     // Behaviour 19 / Errors: a failed or empty read leaves every entry
     // undecorated with no badge.

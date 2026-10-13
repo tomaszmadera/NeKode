@@ -700,13 +700,13 @@ export interface AppApi {
     onExit(chatId: string, callback: (exitCode: number) => void): Unsubscribe
   }
   git: {
-    getStatus(projectPath: string): Promise<GitStatus>
+    getStatus(projectId: string): Promise<GitStatus>
     /**
      * One read of the project's per-path working-tree status for the file
      * tree decoration. Any failure (not a repository, git missing, timeout)
      * degrades to the empty map; the caller never sees an error state.
      */
-    fileStatuses(projectPath: string): Promise<GitFileStatuses>
+    fileStatuses(projectId: string): Promise<GitFileStatuses>
   }
   files: {
     /**

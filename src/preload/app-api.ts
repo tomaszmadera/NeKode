@@ -161,9 +161,8 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
         ),
     },
     git: {
-      getStatus: (projectPath) => invoke<GitStatus>(IPC_CHANNEL.gitStatus, projectPath),
-      fileStatuses: (projectPath) =>
-        invoke<GitFileStatuses>(IPC_CHANNEL.gitFileStatuses, projectPath),
+      getStatus: (projectId) => invoke<GitStatus>(IPC_CHANNEL.gitStatus, projectId),
+      fileStatuses: (projectId) => invoke<GitFileStatuses>(IPC_CHANNEL.gitFileStatuses, projectId),
     },
     files: {
       list: (projectId, relativePath) =>
