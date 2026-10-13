@@ -462,6 +462,8 @@ describe('ipc payload validation', () => {
   })
 
   it('every wire channel has a validated entry (no unvalidated invokes)', () => {
+    const services = fakeServices()
+    const validatedEntries = buildValidatedChannels(services)
     const channels = channelMap()
     // Main-to-renderer push channels are broadcast (webContents.send), never
     // registered for invoke, so they carry no ValidatedChannel. Every other
@@ -473,10 +475,15 @@ describe('ipc payload validation', () => {
       IPC_CHANNEL.terminalsData,
       IPC_CHANNEL.terminalsExit,
     ])
-    const unvalidated = Object.values(IPC_CHANNEL).filter(
-      (channel) => !pushChannels.has(channel) && !channels.has(channel),
+    const expectedInvokeChannels = new Set(
+      Object.values(IPC_CHANNEL).filter((channel) => !pushChannels.has(channel)),
     )
-    expect(unvalidated).toEqual([])
+    const validatedChannels = new Set(channels.keys())
+
+    // Set equality: the validated set equals the full invoke-channel set,
+    // with no unvalidated invoke channels and no unregistered or misspelled channels.
+    expect(validatedChannels).toEqual(expectedInvokeChannels)
+    expect(validatedEntries.length).toBe(expectedInvokeChannels.size)
 
     // The push-channel classification must stay honest: every listed push
     // channel is still part of the wire contract, and none of them may gain a
@@ -485,6 +492,17 @@ describe('ipc payload validation', () => {
       expect(Object.values(IPC_CHANNEL)).toContain(channel)
       expect(channels.has(channel)).toBe(false)
     }
+  })
+
+  it('projects:add parses argument-free payloads and forbids direct invoke without dialog', () => {
+    const channels = channelMap()
+    const entry = channels.get(IPC_CHANNEL.projectsAdd)
+    if (!entry) throw new Error('Missing projects:add channel')
+
+    expect(entry.parse([])).toEqual([])
+    expect(() => entry.parse(['unexpected-path'])).toThrow(ValidationError)
+    expect(() => entry.invoke([])).toThrow(AppError)
+    expect(() => entry.invoke([])).toThrow(/must be routed through the folder dialog handler/)
   })
 
   it('does not expose the removed kanban:linkHandoff channel', () => {
