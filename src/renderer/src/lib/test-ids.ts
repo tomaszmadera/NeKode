@@ -40,6 +40,14 @@ export const TEST_ID = {
   welcomeSurface: 'welcome-surface',
   actionNotice: 'action-notice',
   newChatButton: 'new-chat-button',
+  /** Agent profile menu of the New Chat button (right click / ContextMenu key). */
+  newChatAgentMenu: 'new-chat-agent-menu',
+  /** Menu row while the project's agent profiles load. */
+  newChatAgentMenuLoading: 'new-chat-agent-menu-loading',
+  /** Menu row when the agent profiles could not be read. */
+  newChatAgentMenuError: 'new-chat-agent-menu-error',
+  /** Empty profile list: opens Project Settings on the Agents tab. */
+  newChatAgentConfigure: 'new-chat-agent-configure',
   chatWorkspace: 'chat-workspace',
   chatSurfaceHost: 'chat-surface-host',
   terminalHost: 'terminal-host',
@@ -79,6 +87,13 @@ export const TEST_ID = {
   /** Rendered Mermaid diagram inside that surface (NEKODE-76). */
   fileMarkdownDiagram: 'file-markdown-diagram',
   fileMarkdownDiagramError: 'file-markdown-diagram-error',
+  /** Always-visible control bar of a rendered diagram (user decision 2026-10-13). */
+  fileMarkdownDiagramControls: 'file-markdown-diagram-controls',
+  fileMarkdownDiagramZoomOut: 'file-markdown-diagram-zoom-out',
+  fileMarkdownDiagramZoomLevel: 'file-markdown-diagram-zoom-level',
+  fileMarkdownDiagramZoomIn: 'file-markdown-diagram-zoom-in',
+  fileMarkdownDiagramFit: 'file-markdown-diagram-fit',
+  fileMarkdownDiagramMode: 'file-markdown-diagram-mode',
   /** Right-click menu of the read-only file preview (Copy / Select All). */
   editorContextMenu: 'editor-context-menu',
   editorContextCopy: 'editor-context-copy',
@@ -286,6 +301,8 @@ export const testIdFor = {
   kanbanItemResume: (ref: string): string => `kanban-item-resume-${ref}`,
   /** One agent profile radio in the Start confirmation. */
   kanbanStartProfile: (profileId: string): string => `kanban-start-profile-${profileId}`,
+  /** One agent profile item in the New Chat menu. */
+  newChatAgentProfile: (profileId: string): string => `new-chat-agent-profile-${profileId}`,
   /** One handoff candidate row in the Resume modal, keyed by file name. */
   kanbanResumeCandidate: (name: string): string => `kanban-resume-candidate-${name}`,
   /** One agent profile radio in the Resume modal. */
