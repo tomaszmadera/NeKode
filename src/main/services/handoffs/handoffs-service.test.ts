@@ -100,6 +100,48 @@ describe('handoffs service', () => {
     expect((failure as AppError).message).toContain('D:/code/demo/missing-dir')
   })
 
+  it('reports a permission failure on the configured directory as an unreadable error', async () => {
+    const dir = 'D:/code/demo/forbidden'
+    const handoffs = new HandoffsService({
+      projects: { get: () => ({ path: 'D:/code/demo' }) },
+      state: { get: () => 'forbidden' },
+      handoffDirKey: (id) => `project.handoffDir:${id}`,
+      fs: {
+        async readdir() {
+          throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
+        },
+        async stat() {
+          return null
+        },
+      },
+    })
+    const failure = await handoffs.list('p1').catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(AppError)
+    expect((failure as AppError).code).toBe('unknown')
+    expect((failure as AppError).message).toBe(`Handoff directory is not readable: ${dir}`)
+  })
+
+  it('reports EPERM like EACCES as a permission failure, not a missing directory', async () => {
+    const dir = 'D:/code/demo/locked'
+    const handoffs = new HandoffsService({
+      projects: { get: () => ({ path: 'D:/code/demo' }) },
+      state: { get: () => 'locked' },
+      handoffDirKey: (id) => `project.handoffDir:${id}`,
+      fs: {
+        async readdir() {
+          throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+        },
+        async stat() {
+          return null
+        },
+      },
+    })
+    const failure = await handoffs.list('p1').catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(AppError)
+    expect((failure as AppError).code).toBe('unknown')
+    expect((failure as AppError).message).toBe(`Handoff directory is not readable: ${dir}`)
+  })
+
   it('skips broken symlinks and non-file targets', async () => {
     const dir = 'D:/code/demo/h'
     const handoffs = service({

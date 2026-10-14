@@ -103,7 +103,11 @@ export class HandoffsService {
     let listed: HandoffsFsEntry[]
     try {
       listed = await this.#fs.readdir(dir)
-    } catch {
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code
+      if (code === 'EACCES' || code === 'EPERM') {
+        throw new AppError('unknown', `Handoff directory is not readable: ${dir}`, channel)
+      }
       throw new AppError('not_found', `Handoff directory not found: ${dir}`, channel)
     }
 

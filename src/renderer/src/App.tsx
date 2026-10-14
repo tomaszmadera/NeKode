@@ -2746,7 +2746,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onConfigure={() => {
             setHandoffPickerOpen(false)
             setActionSettingsProjectId(tabProjectId)
-            setActionSettingsTab('shell')
+            setActionSettingsTab('actions')
             setActionSettingsOpen(true)
           }}
           onClose={() => setHandoffPickerOpen(false)}

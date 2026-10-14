@@ -1053,12 +1053,13 @@ describe('action row and settings', () => {
     )
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
 
-    // Configure opens Project Settings for the active project.
+    // Configure opens Project Settings for the active project on the Actions tab.
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     await screen.findByTestId(TEST_ID.handoffPickerUnconfigured)
     fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerConfigure))
     await screen.findByText('Project Settings')
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.settingsHandoffDir)).toBeTruthy()
   })
 
   it('closes the resume picker on a backdrop mouse down', async () => {
