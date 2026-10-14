@@ -87,20 +87,54 @@ function Stop-Safe {
 }
 
 $state = $null
+$startedAt = $null
 if (Test-Path $StateFile) {
     $state = Get-Content -Raw $StateFile | ConvertFrom-Json
+    if ($state -and $state.startedAt) {
+        try { $startedAt = ([datetime]$state.startedAt).ToUniversalTime() } catch { $startedAt = $null }
+    }
 }
 
 # --- Attribution ---------------------------------------------------------
 $attributable = New-Object 'System.Collections.Generic.HashSet[int]'
 
-if ($state -and (Get-Process -Id $state.rootPid -ErrorAction SilentlyContinue)) {
-    Write-Host "Stopping NeKode run (mode $($state.mode), root PID $($state.rootPid))..."
-    [void]$attributable.Add([int]$state.rootPid)
-    foreach ($d in Get-Descendants -Root ([int]$state.rootPid)) { [void]$attributable.Add($d) }
+$rootPid = 0
+$rootProc = $null
+if ($state -and $state.rootPid) {
+    $parsedPid = 0
+    if ([int]::TryParse([string]$state.rootPid, [ref]$parsedPid) -and $parsedPid -gt 0) {
+        $rootPid = $parsedPid
+        if ($byPid.ContainsKey($rootPid)) {
+            $rootProc = $byPid[$rootPid]
+        }
+    }
+}
+
+$rootValid = $false
+if ($rootProc -and $startedAt -and $rootProc.created) {
+    try {
+        $createdUtc = ([datetime]$rootProc.created).ToUniversalTime()
+        if ($createdUtc -ge $startedAt -and (Get-Process -Id $rootPid -ErrorAction SilentlyContinue)) {
+            $rootValid = $true
+        }
+    }
+    catch {
+        $rootValid = $false
+    }
+}
+
+if ($rootValid) {
+    Write-Host "Stopping NeKode run (mode $($state.mode), root PID $rootPid)..."
+    [void]$attributable.Add($rootPid)
+    foreach ($d in Get-Descendants -Root $rootPid) { [void]$attributable.Add($d) }
 }
 elseif ($state) {
-    Write-Host 'Run state found but the root process is already gone; sweeping leftovers.'
+    if ($rootProc) {
+        Write-Host "Run state found but root PID $rootPid was created before run started; treating as stale and sweeping leftovers."
+    }
+    else {
+        Write-Host 'Run state found but the root process is already gone; sweeping leftovers.'
+    }
 }
 else {
     Write-Host 'No run state (tmp\nekode-run.json); sweeping for repo-attributable leftovers only.'
@@ -141,8 +175,8 @@ foreach ($procId in @($attributable)) {
 # (e.g. Windows Terminal sessions) are never reported.
 $orphanReport = New-Object 'System.Collections.Generic.List[object]'
 $runStart = $null
-if ($state -and $state.startedAt) {
-    try { $runStart = ([datetime]$state.startedAt).AddMinutes(-1) } catch { $runStart = $null }
+if ($startedAt) {
+    $runStart = $startedAt.AddMinutes(-1)
 }
 foreach ($procId in @($byPid.Keys)) {
     if ($protected.Contains($procId) -or $attributable.Contains($procId)) { continue }
@@ -151,7 +185,7 @@ foreach ($procId in @($byPid.Keys)) {
     if (!(Get-Process -Id $procId -ErrorAction SilentlyContinue)) { continue }
     $candidate = $false
     if ($runStart -and $info.created) {
-        $candidate = ([datetime]$info.created) -ge $runStart
+        $candidate = ([datetime]$info.created).ToUniversalTime() -ge $runStart
     }
     elseif (-not $runStart) {
         $candidate = -not (Get-Process -Id $info.parent -ErrorAction SilentlyContinue)
