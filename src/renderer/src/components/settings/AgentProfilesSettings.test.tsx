@@ -1,182 +1,211 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type {
-  AgentProfilePut,
-  AgentProfilesDocument,
-  AppApi,
-} from '../../../../shared/ipc-contract'
-import { AGENT_PROMPT_PLACEHOLDER } from '../../../../shared/ipc-contract'
-import { TEST_ID } from '../../lib/test-ids'
+import type { AgentProfile, AgentProjectSelection, AppApi } from '../../../../shared/ipc-contract'
+import { createAppApiStub } from '../../test/app-api-stub'
 import { AgentProfilesSettings } from './AgentProfilesSettings'
 
 afterEach(cleanup)
+const alpha: AgentProfile = { id: 'a', name: 'Alpha', executable: 'alpha', args: ['{prompt}'] }
+const beta: AgentProfile = { id: 'b', name: 'Beta', executable: 'beta', args: ['{prompt}'] }
+const EMPTY: AgentProjectSelection = { version: 1, selectedIds: [], defaultId: null }
 
-const EMPTY: AgentProfilesDocument = { defaultId: null, profiles: [] }
-
-function profile(id: string, name: string) {
-  return {
-    id,
-    name,
-    executable: name.toLowerCase(),
-    args: [AGENT_PROMPT_PLACEHOLDER],
-  }
+function appStub() {
+  const app = createAppApiStub()
+  vi.mocked(app.agentProfiles.libraryGet).mockResolvedValue({ version: 1, profiles: [alpha, beta] })
+  vi.mocked(app.agentProfiles.selectionSet).mockImplementation(async (_id, input) => ({
+    version: 1,
+    ...input,
+  }))
+  return app
 }
 
-function renderProfiles(
-  projectId: string | null,
-  options: {
-    get?: ReturnType<typeof vi.fn>
-    put?: ReturnType<typeof vi.fn>
-    delete?: ReturnType<typeof vi.fn>
-  } = {},
-): {
-  get: ReturnType<typeof vi.fn>
-  put: ReturnType<typeof vi.fn>
-  deleteProfile: ReturnType<typeof vi.fn>
-} {
-  const get = options.get ?? vi.fn().mockResolvedValue(EMPTY)
-  const put = options.put ?? vi.fn()
-  const deleteProfile = options.delete ?? vi.fn()
-  const app = {
-    agentProfiles: { get, put, delete: deleteProfile },
-  } as unknown as AppApi
-  render(<AgentProfilesSettings app={app} projectId={projectId} />)
-  return { get, put, deleteProfile }
-}
-
-describe('AgentProfilesSettings', () => {
-  it('shows an empty state when the project has no profiles', async () => {
-    const { get } = renderProfiles('p1')
-    expect(await screen.findByTestId(TEST_ID.settingsAgentsEmpty)).toBeTruthy()
-    expect(screen.getByText('No agent profiles for this project.')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Edit Alpha' })).toBeNull()
-    expect(get).toHaveBeenCalledWith('p1')
-  })
-
-  it('rejects an invalid form without saving, then saves a valid profile', async () => {
-    const put = vi.fn().mockImplementation(async (_projectId: string, input: AgentProfilePut) => ({
-      defaultId: input.isDefault ? 'minted' : null,
-      profiles: [
-        {
-          id: 'minted',
-          name: input.name,
-          executable: input.executable,
-          args: input.args,
-        },
-      ],
-    }))
-    const { put: save } = renderProfiles('p1', { put })
-    await screen.findByTestId(TEST_ID.settingsAgentsEmpty)
-    fireEvent.click(screen.getByRole('button', { name: 'Add profile' }))
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(screen.getByTestId(TEST_ID.settingsAgentsError).textContent).toContain(
-      'Name is required.',
-    )
-    expect(save).not.toHaveBeenCalled()
-
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  Claude  ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(screen.getByTestId(TEST_ID.settingsAgentsError).textContent).toContain(
-      'Executable is required.',
-    )
-    expect(save).not.toHaveBeenCalled()
-
-    fireEvent.change(screen.getByLabelText('Executable'), { target: { value: '  claude.exe  ' } })
-    fireEvent.change(screen.getByLabelText('Argument 1'), { target: { value: '' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(screen.getByTestId(TEST_ID.settingsAgentsError).textContent).toContain('{prompt}')
-    expect(save).not.toHaveBeenCalled()
-
-    fireEvent.change(screen.getByLabelText('Argument 1'), { target: { value: '{prompt}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add argument' }))
-    fireEvent.change(screen.getByLabelText('Argument 2'), { target: { value: '{prompt}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(screen.getByTestId(TEST_ID.settingsAgentsError).textContent).toContain('exactly once')
-    expect(save).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove argument 2' }))
-    fireEvent.click(screen.getByLabelText('Default profile'))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(save).toHaveBeenCalledOnce())
-    expect(save).toHaveBeenCalledWith('p1', {
-      id: null,
-      name: 'Claude',
-      executable: 'claude.exe',
-      args: ['{prompt}'],
-      isDefault: true,
-    })
-    expect(screen.getByText('Claude')).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.settingsAgentsDefaultBadge).textContent).toBe('Default')
-    expect(screen.queryByTestId(TEST_ID.settingsAgentsEmpty)).toBeNull()
-  })
-
-  it('edits a profile in place and clears the default badge when that profile is deleted', async () => {
-    const initial: AgentProfilesDocument = {
-      defaultId: 'a',
-      profiles: [profile('a', 'Alpha'), profile('b', 'Beta')],
-    }
-    const put = vi.fn().mockImplementation(async (_projectId: string, input: AgentProfilePut) => ({
-      defaultId: input.isDefault ? input.id : null,
-      profiles: [
-        {
-          id: input.id,
-          name: input.name,
-          executable: input.executable,
-          args: input.args,
-        },
-        profile('b', 'Beta'),
-      ],
-    }))
-    const deleteProfile = vi.fn().mockResolvedValue({
+describe('project agent opt-in', () => {
+  it('saves unchanged and default-only drafts without the stored format version', async () => {
+    const app = appStub()
+    vi.mocked(app.agentProfiles.selectionGet).mockResolvedValue({
+      version: 1,
+      selectedIds: ['a'],
       defaultId: null,
-      profiles: [profile('b', 'Beta')],
     })
-    renderProfiles('p1', {
-      get: vi.fn().mockResolvedValue(initial),
-      put,
-      delete: deleteProfile,
-    })
-    expect(await screen.findByText('Alpha')).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.settingsAgentsDefaultBadge)).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha' }))
-    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Alpha')
-    expect((screen.getByLabelText('Default profile') as HTMLInputElement).checked).toBe(true)
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Alpha Two' } })
+    render(<AgentProfilesSettings app={app} projectId="p1" />)
+    await screen.findByRole('checkbox', { name: /Enable Alpha/ })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(put).toHaveBeenCalledOnce())
-    expect(put).toHaveBeenCalledWith('p1', {
-      id: 'a',
-      name: 'Alpha Two',
-      executable: 'alpha',
-      args: [AGENT_PROMPT_PLACEHOLDER],
-      isDefault: true,
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha Two' }))
-    await waitFor(() => expect(deleteProfile).toHaveBeenCalledWith('p1', 'a'))
-    expect(screen.queryByText('Alpha Two')).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.settingsAgentsDefaultBadge)).toBeNull()
-    expect(screen.getByText('Beta')).toBeTruthy()
+    await waitFor(() =>
+      expect(app.agentProfiles.selectionSet).toHaveBeenLastCalledWith('p1', {
+        selectedIds: ['a'],
+        defaultId: null,
+      }),
+    )
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'a' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.agentProfiles.selectionSet).toHaveBeenLastCalledWith('p1', {
+        selectedIds: ['a'],
+        defaultId: 'a',
+      }),
+    )
+  })
+  it('has an empty selection despite populated library and never selects a default automatically', async () => {
+    const app = appStub()
+    render(<AgentProfilesSettings app={app} projectId="p1" />)
+    const checkbox = await screen.findByRole('checkbox', { name: /Enable Alpha/ })
+    expect((checkbox as HTMLInputElement).checked).toBe(false)
+    expect(screen.getByText(/No agents selected for this project/)).toBeTruthy()
+    expect(screen.queryByLabelText('Command')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add agent' })).toBeNull()
+    fireEvent.click(checkbox)
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.agentProfiles.selectionSet).toHaveBeenCalledWith('p1', {
+        selectedIds: ['a'],
+        defaultId: null,
+      }),
+    )
   })
 
-  it('does not keep another project’s profiles on screen', async () => {
-    const get = vi.fn(async (projectId: string) => {
-      if (projectId === 'p1') {
-        return { defaultId: 'a', profiles: [profile('a', 'Alpha')] }
-      }
-      return { defaultId: null, profiles: [profile('b', 'Beta')] }
+  it('clears the default on deselection and Cancel restores saved choices without persistence', async () => {
+    const app = appStub()
+    vi.mocked(app.agentProfiles.selectionGet).mockResolvedValue({
+      version: 1,
+      selectedIds: ['a'],
+      defaultId: 'a',
     })
-    const app = { agentProfiles: { get, put: vi.fn(), delete: vi.fn() } } as unknown as AppApi
-    const view = render(<AgentProfilesSettings app={app} projectId="p1" />)
-    expect(await screen.findByText('Alpha')).toBeTruthy()
-    expect(screen.queryByText('Beta')).toBeNull()
+    render(<AgentProfilesSettings app={app} projectId="p1" />)
+    const alphaInput = await screen.findByRole('checkbox', { name: /Enable Alpha/ })
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('a')
+    expect(screen.queryByRole('option', { name: /Beta/ })).toBeNull()
+    fireEvent.click(alphaInput)
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect((alphaInput as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('a')
+    expect(app.agentProfiles.selectionSet).not.toHaveBeenCalled()
+    fireEvent.click(alphaInput)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.agentProfiles.selectionSet).toHaveBeenCalledWith('p1', {
+        selectedIds: [],
+        defaultId: null,
+      }),
+    )
+  })
 
+  it('refreshes definitions after Manage agents while preserving unsaved opt-in and default choices', async () => {
+    const app = appStub()
+    const manage = vi.fn()
+    const view = render(<AgentProfilesSettings app={app} projectId="p1" onManageAgents={manage} />)
+    fireEvent.click(await screen.findByRole('checkbox', { name: /Enable Alpha/ }))
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'a' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Manage agents' }))
+    expect(manage).toHaveBeenCalledOnce()
+    vi.mocked(app.agentProfiles.libraryGet).mockResolvedValue({
+      version: 1,
+      profiles: [{ ...alpha, name: 'Edited' }, beta, { ...beta, id: 'c', name: 'Copy' }],
+    })
+    view.rerender(
+      <AgentProfilesSettings
+        app={app}
+        projectId="p1"
+        onManageAgents={manage}
+        libraryRefreshKey={1}
+      />,
+    )
+    expect(
+      ((await screen.findByRole('checkbox', { name: /Enable Edited/ })) as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+    expect(
+      (screen.getByRole('checkbox', { name: /Enable Copy/ }) as HTMLInputElement).checked,
+    ).toBe(false)
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('a')
+    expect(app.agentProfiles.selectionGet).toHaveBeenCalledOnce()
+    expect(app.agentProfiles.selectionSet).not.toHaveBeenCalled()
+  })
+
+  it('keeps the draft after save rejection and reports empty-library and read errors distinctly', async () => {
+    const app = appStub()
+    vi.mocked(app.agentProfiles.selectionSet).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'validation',
+      message: 'Agent no longer exists.',
+      channel: 'agentProfiles:selectionSet',
+    })
+    render(<AgentProfilesSettings app={app} projectId="p1" />)
+    const input = await screen.findByRole('checkbox', { name: /Enable Alpha/ })
+    fireEvent.click(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'Agent no longer exists.',
+    )
+    expect((input as HTMLInputElement).checked).toBe(true)
+    cleanup()
+    vi.mocked(app.agentProfiles.libraryGet).mockResolvedValue({ version: 1, profiles: [] })
+    render(<AgentProfilesSettings app={app} projectId="p1" />)
+    expect(await screen.findByText(/No global agents/)).toBeTruthy()
+    cleanup()
+    vi.mocked(app.agentProfiles.libraryGet).mockRejectedValue(new Error('failed'))
+    render(<AgentProfilesSettings app={app} projectId="p1" />)
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'Failed to load agent profiles.',
+    )
+    expect(screen.queryByText(/No global agents/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+  })
+
+  it('ignores delayed load and save responses from the previous project', async () => {
+    const app = appStub()
+    let resolveLoad!: (selection: AgentProjectSelection) => void
+    vi.mocked(app.agentProfiles.selectionGet).mockImplementation(async (id) =>
+      id === 'p1'
+        ? new Promise((resolve) => {
+            resolveLoad = resolve
+          })
+        : EMPTY,
+    )
+    const view = render(<AgentProfilesSettings app={app} projectId="p1" />)
     view.rerender(<AgentProfilesSettings app={app} projectId="p2" />)
-    expect(screen.queryByText('Alpha')).toBeNull()
-    expect(await screen.findByText('Beta')).toBeTruthy()
-    expect(screen.queryByText('Alpha')).toBeNull()
-    expect(get).toHaveBeenCalledWith('p2')
+    await screen.findByRole('checkbox', { name: /Enable Alpha/ })
+    resolveLoad({ version: 1, selectedIds: ['a'], defaultId: 'a' })
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('checkbox', { name: /Enable Alpha/ }) as HTMLInputElement).checked,
+      ).toBe(false),
+    )
+    let resolveSave!: (selection: AgentProjectSelection) => void
+    vi.mocked(app.agentProfiles.selectionSet).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve
+        }),
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: /Enable Alpha/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(app.agentProfiles.selectionSet).toHaveBeenCalledWith('p2', {
+      selectedIds: ['a'],
+      defaultId: null,
+    })
+    view.rerender(<AgentProfilesSettings app={app} projectId="p3" />)
+    await screen.findByRole('checkbox', { name: /Enable Alpha/ })
+    resolveSave({ version: 1, selectedIds: ['a'], defaultId: 'a' })
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('checkbox', { name: /Enable Alpha/ }) as HTMLInputElement).checked,
+      ).toBe(false),
+    )
+  })
+
+  it('does not read project configuration without a project', () => {
+    const app: AppApi = appStub()
+    render(<AgentProfilesSettings app={app} projectId={null} />)
+    expect(screen.getByText('Select a project to choose agents.')).toBeTruthy()
+    expect(app.agentProfiles.selectionGet).not.toHaveBeenCalled()
   })
 })

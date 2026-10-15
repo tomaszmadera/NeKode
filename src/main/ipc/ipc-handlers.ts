@@ -133,6 +133,9 @@ export function registerAppIpcHandlers(
       throw new AppError('validation', 'projects:remove arg[0] must be a string')
     }
     const chatIds = services.chats.list(projectId).map((chat) => chat.id)
+    // Preserve legacy definitions before deleting their project or any chats.
+    // Migration failure must leave both persistent rows and running sessions intact.
+    services.agentProfiles.libraryGet()
     const result = services.projects.remove(projectId)
     // An in-flight Start must not spawn into the project that was just removed.
     services.kanban.dropLaunchProject(projectId)

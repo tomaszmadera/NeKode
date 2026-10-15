@@ -45,6 +45,7 @@ describe('preload app api', () => {
     await expect(createAppApi(ipc).projects.remove('p1')).rejects.toEqual({
       nekodeAppError: true,
       code: 'not_found',
+      kind: 'not_found',
       message: 'No such project.',
       channel: 'projects:remove',
     })
@@ -293,17 +294,24 @@ describe('preload app api', () => {
     const input = {
       id: null,
       name: 'Claude',
-      executable: 'claude',
-      args: ['{prompt}'],
-      isDefault: true,
+      command: 'claude "{prompt}"',
     }
     await api.agentProfiles.get('p1')
-    await api.agentProfiles.put('p1', input)
-    await api.agentProfiles.delete('p1', 'id-1')
+    await api.agentProfiles.libraryGet()
+    await api.agentProfiles.templatesGet()
+    await api.agentProfiles.put(input)
+    await api.agentProfiles.delete('id-1')
+    await api.agentProfiles.selectionGet('p1')
+    const selection = { selectedIds: ['id-1'], defaultId: null }
+    await api.agentProfiles.selectionSet('p1', selection)
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.agentProfilesGet, args: ['p1'] },
-      { channel: IPC_CHANNEL.agentProfilesPut, args: ['p1', input] },
-      { channel: IPC_CHANNEL.agentProfilesDelete, args: ['p1', 'id-1'] },
+      { channel: IPC_CHANNEL.agentProfilesLibraryGet, args: [] },
+      { channel: IPC_CHANNEL.agentProfilesTemplatesGet, args: [] },
+      { channel: IPC_CHANNEL.agentProfilesPut, args: [input] },
+      { channel: IPC_CHANNEL.agentProfilesDelete, args: ['id-1'] },
+      { channel: IPC_CHANNEL.agentProfilesSelectionGet, args: ['p1'] },
+      { channel: IPC_CHANNEL.agentProfilesSelectionSet, args: ['p1', selection] },
     ])
   })
 

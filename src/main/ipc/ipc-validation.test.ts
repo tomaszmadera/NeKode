@@ -111,8 +111,12 @@ function fakeServices(): AppServices {
     },
     agentProfiles: {
       get: vi.fn(() => ({ defaultId: null, profiles: [] })),
-      put: vi.fn(() => ({ defaultId: null, profiles: [] })),
-      delete: vi.fn(() => ({ defaultId: null, profiles: [] })),
+      libraryGet: vi.fn(() => ({ version: 1 as const, profiles: [] })),
+      templatesGet: vi.fn(() => []),
+      put: vi.fn(() => ({ version: 1 as const, profiles: [] })),
+      delete: vi.fn(() => ({ version: 1 as const, profiles: [] })),
+      selectionGet: vi.fn(() => ({ version: 1 as const, selectedIds: [], defaultId: null })),
+      selectionSet: vi.fn(() => ({ version: 1 as const, selectedIds: [], defaultId: null })),
       cleanupProject: vi.fn(),
     },
     dialogs: {
@@ -581,57 +585,107 @@ describe('ipc payload validation', () => {
     const input = {
       id: null,
       name: 'Claude',
-      executable: 'claude',
-      args: ['{prompt}', 'a b', '"q"', 'line\nbreak'],
-      isDefault: false,
+      command: 'claude "{prompt}" "a b"',
     }
     const get = channels.get('agentProfiles:get')
     get?.invoke(get.parse(['p1']))
     expect(services.agentProfiles.get).toHaveBeenCalledWith('p1')
 
     const put = channels.get('agentProfiles:put')
-    expect(put?.parse(['p1', input])).toEqual(['p1', input])
-    put?.invoke(put.parse(['p1', input]))
-    expect(services.agentProfiles.put).toHaveBeenCalledWith('p1', input)
+    expect(put?.parse([input])).toEqual([input])
+    put?.invoke(put.parse([input]))
+    expect(services.agentProfiles.put).toHaveBeenCalledWith(input)
 
     const remove = channels.get('agentProfiles:delete')
-    remove?.invoke(remove.parse(['p1', 'id-1']))
-    expect(services.agentProfiles.delete).toHaveBeenCalledWith('p1', 'id-1')
+    remove?.invoke(remove.parse(['id-1']))
+    expect(services.agentProfiles.delete).toHaveBeenCalledWith('id-1')
 
     const invalid: unknown[][] = [
       [],
-      ['p1'],
-      [1, input],
-      ['p1', { ...input, name: '   ' }],
-      ['p1', { ...input, executable: '' }],
-      ['p1', { ...input, args: [] }],
-      ['p1', { ...input, args: ['--flag'] }],
-      ['p1', { ...input, args: ['{prompt}', '{prompt}'] }],
-      ['p1', { ...input, args: ['pre{prompt}'] }],
-      ['p1', { ...input, args: [' {prompt}'] }],
-      ['p1', { ...input, args: ['{prompt}', 1] }],
-      ['p1', { ...input, args: 'claude {prompt}' }],
-      ['p1', { ...input, isDefault: 'true' }],
-      ['p1', { ...input, id: 1 }],
-      ['p1', { ...input, id: '' }],
-      ['p1', { ...input, extra: true }],
-      ['p1', { name: 'Claude' }],
+      [input, 'extra'],
+      [1],
+      [null],
+      [{ ...input, name: '   ' }],
+      [{ ...input, name: 1 }],
+      [{ ...input, command: '' }],
+      [{ ...input, command: 1 }],
+      [{ ...input, command: 'claude' }],
+      [{ ...input, command: 'claude {prompt} {prompt}' }],
+      [{ ...input, command: 'claude pre{prompt}' }],
+      [{ ...input, command: 'claude " {prompt}"' }],
+      [{ ...input, command: 'claude | echo' }],
+      [{ ...input, command: 'claude\n{prompt}' }],
+      [{ ...input, command: 'claude "open' }],
+      [{ ...input, command: 'claude\u0000 {prompt}' }],
+      [{ ...input, id: 1 }],
+      [{ ...input, id: '' }],
+      [{ ...input, id: 'a\u0000' }],
+      [{ ...input, extra: true }],
+      [{ name: 'Claude' }],
     ]
     for (const payload of invalid) {
       expect(() => put?.parse(payload)).toThrow(ValidationError)
     }
-    expect(() => put?.parse(['p1', { ...input, args: ['{prompt}', '{prompt}'] }])).toThrow(
+    expect(() => put?.parse([{ ...input, command: 'claude {prompt} {prompt}' }])).toThrow(
       /exactly once/,
     )
     expect(() => get?.parse([])).toThrow(ValidationError)
     expect(() => get?.parse([1])).toThrow(ValidationError)
     expect(() => get?.parse(['p1', 'extra'])).toThrow(ValidationError)
-    expect(() => remove?.parse(['p1'])).toThrow(ValidationError)
-    expect(() => remove?.parse(['p1', ''])).toThrow(ValidationError)
-    expect(() => remove?.parse([1, 'id'])).toThrow(ValidationError)
+    expect(() => remove?.parse([])).toThrow(ValidationError)
+    expect(() => remove?.parse([''])).toThrow(ValidationError)
+    expect(() => remove?.parse([1])).toThrow(ValidationError)
     expect(services.agentProfiles.get).toHaveBeenCalledTimes(1)
     expect(services.agentProfiles.put).toHaveBeenCalledTimes(1)
     expect(services.agentProfiles.delete).toHaveBeenCalledTimes(1)
+  })
+
+  it('validates library/template arity and project selection fields before service calls', () => {
+    const services = fakeServices()
+    const channels = new Map(
+      buildValidatedChannels(services).map((entry) => [entry.channel, entry]),
+    )
+    for (const [channel, method] of [
+      ['agentProfiles:libraryGet', 'libraryGet'],
+      ['agentProfiles:templatesGet', 'templatesGet'],
+    ] as const) {
+      const entry = channels.get(channel)
+      if (entry === undefined) throw new Error(`Missing channel: ${channel}`)
+      entry.invoke(entry.parse([]))
+      expect(services.agentProfiles[method]).toHaveBeenCalledOnce()
+      expect(() => entry.parse(['extra'])).toThrow(ValidationError)
+    }
+    const read = channels.get('agentProfiles:selectionGet')
+    if (read === undefined) throw new Error('Missing agentProfiles:selectionGet')
+    read.invoke(read.parse(['p1']))
+    expect(services.agentProfiles.selectionGet).toHaveBeenCalledWith('p1')
+    for (const args of [[], [1], ['p1', 'extra'], ['p1\u0000']])
+      expect(() => read.parse(args)).toThrow(ValidationError)
+    const write = channels.get('agentProfiles:selectionSet')
+    if (write === undefined) throw new Error('Missing agentProfiles:selectionSet')
+    const selection = { selectedIds: ['a', 'b'], defaultId: 'a' }
+    write.invoke(write.parse(['p1', selection]))
+    expect(services.agentProfiles.selectionSet).toHaveBeenCalledWith('p1', selection)
+    write.parse(['p1', { selectedIds: [], defaultId: null }])
+    for (const args of [
+      [],
+      ['p1'],
+      [1, selection],
+      ['p1', null],
+      ['p1', []],
+      ['p1', { ...selection, extra: true }],
+      ['p1', { selectedIds: 'a', defaultId: null }],
+      ['p1', { selectedIds: [1], defaultId: null }],
+      ['p1', { selectedIds: [''], defaultId: null }],
+      ['p1', { selectedIds: ['a\u0000'], defaultId: null }],
+      ['p1', { selectedIds: ['a', 'a'], defaultId: null }],
+      ['p1', { selectedIds: ['a'], defaultId: 1 }],
+      ['p1', { selectedIds: [], defaultId: 'a' }],
+      ['p1', { selectedIds: [] }],
+      ['p1', selection, 'extra'],
+    ])
+      expect(() => write.parse(args)).toThrow(ValidationError)
+    expect(services.agentProfiles.selectionSet).toHaveBeenCalledOnce()
   })
 
   it('accepts a null priority on kanban:updateItem and rejects one on create', () => {

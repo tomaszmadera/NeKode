@@ -286,7 +286,7 @@ export class TaskLaunchService {
     if (project === null) {
       throw new AppError('not_found', 'Project not found.', CHANNEL)
     }
-    const profile = this.#profiles
+    let profile = this.#profiles
       .get(input.projectId)
       .profiles.find((candidate) => candidate.id === input.profileId)
     if (profile === undefined) {
@@ -317,6 +317,14 @@ export class TaskLaunchService {
       this.#projects.get(input.projectId) === null
     ) {
       throw new AppError('not_found', 'Project not found.', CHANNEL)
+    }
+    // Adapter reads and resume scans await. Recheck opt-in and use the current
+    // global definition immediately before creating a chat and spawning.
+    profile = this.#profiles
+      .get(input.projectId)
+      .profiles.find((candidate) => candidate.id === input.profileId)
+    if (profile === undefined) {
+      throw new AppError('not_found', 'The selected agent profile is no longer available.', CHANNEL)
     }
     return {
       projectPath: current.path,

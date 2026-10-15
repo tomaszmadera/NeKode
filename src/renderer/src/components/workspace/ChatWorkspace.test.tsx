@@ -134,8 +134,12 @@ function createAppMock(): AppMockBundle {
     },
     agentProfiles: {
       get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-      delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
+      libraryGet: vi.fn().mockResolvedValue({ version: 1, profiles: [] }),
+      templatesGet: vi.fn().mockResolvedValue([]),
+      put: vi.fn().mockResolvedValue({ version: 1, profiles: [] }),
+      delete: vi.fn().mockResolvedValue({ version: 1, profiles: [] }),
+      selectionGet: vi.fn().mockResolvedValue({ version: 1, selectedIds: [], defaultId: null }),
+      selectionSet: vi.fn().mockResolvedValue({ version: 1, selectedIds: [], defaultId: null }),
     },
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),

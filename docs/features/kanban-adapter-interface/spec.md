@@ -239,18 +239,23 @@ Harness pozostaje niezależnym narzędziem agenta.
 
 ### Profile agentów
 
-Osobne profile w Project Settings są zaakceptowaną decyzją użytkownika
-z 2026-10-07. Nie są listą wszystkich Actions i nie wykrywają agentów
-automatycznie na podstawie nazw przycisków.
+Decyzja użytkownika z 2026-10-14 zastępuje projektowe definicje profili
+z 2026-10-07 globalną biblioteką i projektowym opt-in. Właścicielem
+konfiguracji, formularza, przypisań i migracji jest
+[global-agent-profiles](../global-agent-profiles/spec.md). To zaakceptowany
+kontrakt do wdrożenia, nie deklaracja ukończonej implementacji. Profile nie
+są listą wszystkich Actions i nie są wykrywane na podstawie nazw przycisków.
 
 - Profil zawiera stabilny lokalny id, nazwę oraz konfigurację uruchomienia:
   executable i tablicę argumentów. W argumentach dokładnie jeden element
   `{prompt}` oznacza całe początkowe polecenie przekazane jako jeden argument.
   Profil jest przeznaczony dla interaktywnego CLI przyjmującego taki prompt.
   Wrapper może obsłużyć CLI o innym interfejsie, ale aplikacja go nie generuje.
-- Project Settings pozwala dodawać, edytować i usuwać profile oraz ustawić
-  profil domyślny. Bez profili modal pokazuje Configure agents; nie tworzy
-  czatu. Formularz odrzuca pustą nazwę, executable i niepoprawny placeholder.
+- Definicje są zarządzane w App Settings. Project Settings pozwala zaznaczyć
+  dostępne profile i ustawić profil domyślny spośród zaznaczonych. Nowy
+  projekt ma pusty wybór (opt-in). Bez zaznaczonych profili modal pokazuje
+  Configure agents i otwiera projektową zakładkę Agents; nie tworzy czatu.
+  Walidację komendy i migrację określa kontrakt global-agent-profiles.
 - Katalog pracy to katalog projektu, z którego pochodzi zadanie. Profile
   nie zmieniają globalnej konfiguracji shell ani istniejących Actions.
 - Lista w modalu pokazuje nazwy profili i zaznacza domyślny. Użytkownik
