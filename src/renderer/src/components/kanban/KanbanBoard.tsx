@@ -86,54 +86,45 @@ interface KanbanBoardProps {
   active?: boolean
 }
 
-/** One rendered column: a state with the items that belong to it. */
-export interface KanbanColumn {
-  stateId: string
-  name: string
-  items: WorkItem[]
-}
+export {
+  boardColumns,
+  compareRefs,
+  compareWorkItems,
+  DEFAULT_KANBAN_SORT,
+  type KanbanColumn,
+  type KanbanSortBy,
+  type KanbanSortDirection,
+  type KanbanSortState,
+  kanbanCollapsedStorageKey,
+  kanbanSortStorageKey,
+  loadCollapsedStateIds,
+  loadKanbanSort,
+  PRIORITY_NONE_RANK,
+  PRIORITY_RANK,
+  parseCollapsedStateIds,
+  parseKanbanSort,
+  reconcileBoard,
+  reconcileBoardResponse,
+  reconcileKeepingCreates,
+  saveCollapsedStateIds,
+  saveKanbanSort,
+  sortWorkItems,
+  upsertWorkItem,
+  workItemsMatch,
+} from './kanban-board-logic'
 
-export type KanbanSortBy = 'slug' | 'priority'
-export type KanbanSortDirection = 'asc' | 'desc'
-
-export const PRIORITY_RANK: Record<KanbanPriority, number> = {
-  urgent: 1,
-  high: 2,
-  medium: 3,
-  low: 4,
-}
-
-export const PRIORITY_NONE_RANK = 5
-
-export function compareRefs(a: string, b: string): number {
-  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
-}
-
-export function compareWorkItems(
-  a: WorkItem,
-  b: WorkItem,
-  sortBy: KanbanSortBy,
-  direction: KanbanSortDirection,
-): number {
-  let diff = 0
-  if (sortBy === 'priority') {
-    const rankA = a.priority !== null ? PRIORITY_RANK[a.priority] : PRIORITY_NONE_RANK
-    const rankB = b.priority !== null ? PRIORITY_RANK[b.priority] : PRIORITY_NONE_RANK
-    diff = rankA - rankB
-  }
-  if (diff === 0) {
-    diff = compareRefs(a.ref, b.ref)
-  }
-  return direction === 'asc' ? diff : -diff
-}
-
-export function sortWorkItems(
-  items: readonly WorkItem[],
-  sortBy: KanbanSortBy,
-  direction: KanbanSortDirection,
-): WorkItem[] {
-  return [...items].sort((a, b) => compareWorkItems(a, b, sortBy, direction))
-}
+import {
+  boardColumns,
+  type KanbanSortBy,
+  type KanbanSortState,
+  loadCollapsedStateIds,
+  loadKanbanSort,
+  reconcileBoardResponse,
+  saveCollapsedStateIds,
+  saveKanbanSort,
+  sortWorkItems,
+  upsertWorkItem,
+} from './kanban-board-logic'
 
 const PRIORITY_LABEL: Record<KanbanPriority, string> = {
   urgent: 'Urgent',
@@ -161,49 +152,6 @@ function descriptionText(description: string | null): string {
     return 'No description.'
   }
   return description
-}
-
-/**
- * Columns in the adapter's `order`, items grouped by their state id keeping
- * the adapter's item order. Pure so the column contract is testable.
- *
- * An item's `stateId` is NOT guaranteed to be one of the returned states'
- * ids: the spec fixes only the WorkItem and KanbanState shapes independently
- * (Business rules) and the Stage 1 normalization validates each separately —
- * `normalizeItem` requires a non-empty `stateId`/`stateName`, `normalizeStates`
- * requires state ids, but nothing cross-checks that an item's `stateId` is a
- * known state id (`src/main/services/kanban/adapter-protocol.ts`). Dropping
- * such items would silently lose data, so any item whose `stateId` matches no
- * state is collected into a TRAILING column per unmatched state id, labelled
- * from the item's own `stateName` (never invented), in first-seen item order.
- * Every item in `board.items` therefore appears in exactly one column.
- */
-export function boardColumns(board: KanbanBoardData): KanbanColumn[] {
-  const columns = [...board.states]
-    .sort((a, b) => a.order - b.order)
-    .map((state) => ({
-      stateId: state.id,
-      name: state.name,
-      items: board.items.filter((item) => item.stateId === state.id),
-    }))
-  const knownStateIds = new Set(board.states.map((state) => state.id))
-  const unmatched = new Map<string, KanbanColumn>()
-  for (const item of board.items) {
-    if (knownStateIds.has(item.stateId)) {
-      continue
-    }
-    const column = unmatched.get(item.stateId)
-    if (column === undefined) {
-      unmatched.set(item.stateId, {
-        stateId: item.stateId,
-        name: item.stateName,
-        items: [item],
-      })
-    } else {
-      column.items.push(item)
-    }
-  }
-  return [...columns, ...unmatched.values()]
 }
 
 const ITEM_CONTROL_CLASS =
@@ -802,147 +750,6 @@ function HandoffNotices({
   )
 }
 
-/** Retain unchanged normalized records; React keys retain same-group DOM nodes. */
-export function reconcileBoard(previous: KanbanBoardData, next: KanbanBoardData): KanbanBoardData {
-  const items = new Map(previous.items.map((item) => [item.ref, item]))
-  const states = new Map(previous.states.map((state) => [state.id, state]))
-  return {
-    states: next.states.map((state) => {
-      const old = states.get(state.id)
-      return old !== undefined &&
-        old.name === state.name &&
-        old.group === state.group &&
-        old.order === state.order
-        ? old
-        : state
-    }),
-    items: next.items.map((item) => {
-      const old = items.get(item.ref)
-      return old !== undefined && workItemsMatch(old, item) ? old : item
-    }),
-  }
-}
-
-function workItemsMatch(left: WorkItem, right: WorkItem): boolean {
-  return (Object.keys(right) as (keyof WorkItem)[]).every((key) => left[key] === right[key])
-}
-
-/** Replace the item with this ref, or append it once. Equal fields keep the stored object. */
-function upsertWorkItem(items: WorkItem[], created: WorkItem): WorkItem[] {
-  const index = items.findIndex((entry) => entry.ref === created.ref)
-  if (index === -1) return [...items, created]
-  if (workItemsMatch(items[index], created)) return items
-  const next = items.slice()
-  next[index] = created
-  return next
-}
-
-/** Creates fill omitted refs. Status updates replace that same ref. */
-function reconcileKeepingCreates(
-  previous: KanbanBoardData,
-  next: KanbanBoardData,
-  keptCreates: readonly WorkItem[],
-  keptUpdates: readonly WorkItem[],
-): KanbanBoardData {
-  const reconciled = reconcileBoard(previous, next)
-  if (keptCreates.length === 0 && keptUpdates.length === 0) return reconciled
-  let items = reconciled.items
-  for (const created of keptCreates) {
-    items = upsertWorkItem(items, created)
-  }
-  for (const updated of keptUpdates) {
-    items = upsertWorkItem(items, updated)
-  }
-  return items === reconciled.items ? reconciled : { ...reconciled, items }
-}
-
-export const KANBAN_COLLAPSED_STORAGE_KEY_PREFIX = 'nekode.kanban-collapsed-states.v1'
-
-export function kanbanCollapsedStorageKey(projectId: string): string {
-  return `${KANBAN_COLLAPSED_STORAGE_KEY_PREFIX}.${projectId}`
-}
-
-export function parseCollapsedStateIds(raw: string | null): Set<string> {
-  if (raw === null) return new Set()
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
-      return new Set(parsed)
-    }
-  } catch {
-    // Malformed JSON falls back safely to empty set
-  }
-  return new Set()
-}
-
-export function loadCollapsedStateIds(projectId: string): Set<string> {
-  try {
-    return parseCollapsedStateIds(localStorage.getItem(kanbanCollapsedStorageKey(projectId)))
-  } catch {
-    return new Set()
-  }
-}
-
-export function saveCollapsedStateIds(projectId: string, ids: Set<string>): void {
-  try {
-    if (ids.size === 0) {
-      localStorage.removeItem(kanbanCollapsedStorageKey(projectId))
-    } else {
-      localStorage.setItem(kanbanCollapsedStorageKey(projectId), JSON.stringify([...ids]))
-    }
-  } catch {
-    // Ignore storage quota or access errors
-  }
-}
-
-export const KANBAN_SORT_STORAGE_KEY_PREFIX = 'nekode.kanban-sort.v1'
-
-export function kanbanSortStorageKey(projectId: string): string {
-  return `${KANBAN_SORT_STORAGE_KEY_PREFIX}.${projectId}`
-}
-
-export interface KanbanSortState {
-  sortBy: KanbanSortBy
-  direction: KanbanSortDirection
-}
-
-export const DEFAULT_KANBAN_SORT: KanbanSortState = {
-  sortBy: 'slug',
-  direction: 'asc',
-}
-
-export function parseKanbanSort(raw: string | null): KanbanSortState {
-  if (raw === null) return DEFAULT_KANBAN_SORT
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed === 'object' && parsed !== null) {
-      const candidate = parsed as Record<string, unknown>
-      const sortBy: KanbanSortBy = candidate.sortBy === 'priority' ? 'priority' : 'slug'
-      const direction: KanbanSortDirection = candidate.direction === 'desc' ? 'desc' : 'asc'
-      return { sortBy, direction }
-    }
-  } catch {
-    // Malformed JSON falls back safely
-  }
-  return DEFAULT_KANBAN_SORT
-}
-
-export function loadKanbanSort(projectId: string): KanbanSortState {
-  try {
-    return parseKanbanSort(localStorage.getItem(kanbanSortStorageKey(projectId)))
-  } catch {
-    return DEFAULT_KANBAN_SORT
-  }
-}
-
-export function saveKanbanSort(projectId: string, state: KanbanSortState): void {
-  try {
-    localStorage.setItem(kanbanSortStorageKey(projectId), JSON.stringify(state))
-  } catch {
-    // Ignore storage quota or access errors
-  }
-}
-
 interface NewTaskDraft {
   stateRef: string
   title: string
@@ -1328,31 +1135,18 @@ export function KanbanBoard({
       hasSnapshot.current = true
       const retained = retainedCreates.current.get(requestId) ?? []
       retainedCreates.current.delete(requestId)
-      const keptCreates = retained.filter(
-        (entry) => !next.items.some((item) => item.ref === entry.ref),
-      )
       const keptUpdates = retainedUpdates.current.get(requestId) ?? []
       retainedUpdates.current.delete(requestId)
-      const keptUpdateExtras = keptUpdates.filter(
-        (entry) =>
-          !next.items.some((item) => item.ref === entry.ref) &&
-          !keptCreates.some((created) => created.ref === entry.ref),
-      )
-      setBoard((previous) => reconcileKeepingCreates(previous, next, keptCreates, keptUpdates))
-      // A refresh that drops the open item closes the review. A ref kept by an
-      // in-flight create or status update stays open. The first load has no
-      // open review.
-      const visibleRefs = new Set<string>([
-        ...next.items.map((entry) => entry.ref),
-        ...keptCreates.map((entry) => entry.ref),
-        ...keptUpdates.map((entry) => entry.ref),
-      ])
-      setReviewRef((current) => (current !== null && visibleRefs.has(current) ? current : null))
-      // A board with items but no states is not empty: those items still
-      // render in unmatched-state columns (see boardColumns), so the empty
-      // state only fires when there is genuinely nothing to show.
-      const visibleItemCount = next.items.length + keptCreates.length + keptUpdateExtras.length
-      setPhase(next.states.length === 0 && visibleItemCount === 0 ? 'empty' : 'ready')
+      const result = reconcileBoardResponse({
+        previousBoard: boardRef.current,
+        incomingBoard: next,
+        retainedCreates: retained,
+        retainedUpdates: keptUpdates,
+        currentReviewRef: shownReviewRef.current,
+      })
+      setBoard(result.board)
+      setReviewRef(result.reviewRef)
+      setPhase(result.phase)
       // Availability is checked on activation, tab return and Refresh; the
       // board render never waits for it (spec Dostępność Resume pkt 7).
       void loadHandoff(next.items.map((entry) => ({ itemId: entry.id, ref: entry.ref })))

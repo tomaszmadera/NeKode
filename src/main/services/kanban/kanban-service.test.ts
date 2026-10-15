@@ -3,13 +3,57 @@ import type { KanbanState, WorkItem } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import type { AdapterInvocation } from './adapter-host'
 import { AdapterError, AdapterHostError, type AdapterRequest } from './adapter-host'
+import type { DiscoveredAdapter } from './adapter-manifest'
 import { discoverAdapters } from './adapter-manifest'
-import { KanbanService, type KanbanSetConfigInput, type SafeStorageLike } from './kanban-service'
+import {
+  DEFAULT_KANBAN_STORED_CONFIG,
+  KanbanService,
+  type KanbanSetConfigInput,
+  parseKanbanStoredConfig,
+  type SafeStorageLike,
+  serializeKanbanStoredConfig,
+} from './kanban-service'
 
 // KanbanService behavior (spec kanban-adapter-interface Business rules,
 // Acceptance criteria 4–9, 12). The adapter host is a vi.fn standing in for
 // the process transport; manifest/persistence rules are asserted through the
 // service surface.
+
+const DEMO_SCHEMA_ADAPTER: DiscoveredAdapter = {
+  id: 'demo',
+  dir: 'mock-demo-dir',
+  info: {
+    id: 'demo',
+    name: 'Demo',
+    configSchema: [
+      { key: 'base_url', label: 'Base URL', type: 'string', required: true },
+      { key: 'api_key', label: 'API Key', type: 'secret', required: true },
+    ],
+  },
+  invocation: { command: 'node', args: ['a.js'] },
+}
+
+const DEMO_EMPTY_SCHEMA_ADAPTER: DiscoveredAdapter = {
+  id: 'demo',
+  dir: 'mock-demo-dir',
+  info: {
+    id: 'demo',
+    name: 'Demo',
+    configSchema: [],
+  },
+  invocation: { command: 'node', args: ['a.js'] },
+}
+
+const DEMO_SECRET_ONLY_ADAPTER: DiscoveredAdapter = {
+  id: 'demo',
+  dir: 'mock-demo-dir',
+  info: {
+    id: 'demo',
+    name: 'Demo',
+    configSchema: [{ key: 'api_key', label: 'API Key', type: 'secret', required: true }],
+  },
+  invocation: { command: 'node', args: ['a.js'] },
+}
 
 function fakeSafeStorage(available = true): SafeStorageLike {
   return {
@@ -40,6 +84,7 @@ function makeService(
     hostResult?: unknown
     hostError?: Error
     safeStorage?: SafeStorageLike
+    adapters?: DiscoveredAdapter[]
   } = {},
 ) {
   const state = stateStore(options.store)
@@ -57,6 +102,9 @@ function makeService(
     adaptersDir: () => options.adaptersDir ?? 'unused-dir',
     host: { invoke } as unknown as ConstructorParameters<typeof KanbanService>[0]['host'],
     safeStorage: options.safeStorage,
+    ...(options.adapters !== undefined
+      ? { discoverAdapters: () => ({ adapters: options.adapters ?? [], warnings: [] }) }
+      : {}),
   })
   return { service, state, invoke }
 }
@@ -86,6 +134,44 @@ const CONFIG_INPUT: KanbanSetConfigInput = {
   adapterId: 'demo',
   values: { base_url: 'https://api.example.com', api_key: 'tok' },
 }
+
+describe('parseKanbanStoredConfig and serializeKanbanStoredConfig', () => {
+  it('returns default empty values for null, empty or whitespace', () => {
+    expect(parseKanbanStoredConfig(null)).toEqual(DEFAULT_KANBAN_STORED_CONFIG)
+    expect(parseKanbanStoredConfig('')).toEqual(DEFAULT_KANBAN_STORED_CONFIG)
+    expect(parseKanbanStoredConfig('   ')).toEqual(DEFAULT_KANBAN_STORED_CONFIG)
+  })
+
+  it('gracefully returns empty values for corrupted or non-object JSON', () => {
+    expect(parseKanbanStoredConfig('not-json')).toEqual({ values: {} })
+    expect(parseKanbanStoredConfig('123')).toEqual({ values: {} })
+    expect(parseKanbanStoredConfig('["array"]')).toEqual({ values: {} })
+  })
+
+  it('parses flat key-value records (legacy format) extracting string fields', () => {
+    const raw = JSON.stringify({ base_url: 'https://example.com', api_key: 'tok', invalid: 42 })
+    expect(parseKanbanStoredConfig(raw)).toEqual({
+      values: { base_url: 'https://example.com', api_key: 'tok' },
+    })
+  })
+
+  it('parses nested values envelopes extracting string fields', () => {
+    const raw = JSON.stringify({ values: { base_url: 'https://nested.com', token: 'xyz' } })
+    expect(parseKanbanStoredConfig(raw)).toEqual({
+      values: { base_url: 'https://nested.com', token: 'xyz' },
+    })
+  })
+
+  it('serializes stored config to json string', () => {
+    const serialized = serializeKanbanStoredConfig({
+      values: { base_url: 'https://example.com', api_key: 'tok' },
+    })
+    expect(JSON.parse(serialized)).toEqual({
+      base_url: 'https://example.com',
+      api_key: 'tok',
+    })
+  })
+})
 
 describe('KanbanService adaptersList', () => {
   it('returns adapter infos from discovery (fresh scan each call)', () => {
@@ -160,44 +246,19 @@ describe('KanbanService config', () => {
   })
 
   it('never returns a secret value through getConfig even with a schema', () => {
-    // Direct schema path: point adaptersDir at a real fixture manifest.
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [
-            { key: 'base_url', label: 'Base URL', type: 'string', required: true },
-            { key: 'api_key', label: 'API Key', type: 'secret', required: true },
-          ],
-        }),
-      )
-      const stored = {
-        'project.kanbanAdapter:p1': 'demo',
-        'project.kanbanConfig:p1': JSON.stringify({
-          base_url: 'https://x',
-          api_key: 'supersecret',
-        }),
-      }
-      const { service } = makeService({ adaptersDir: dir, store: stored })
-      const config = service.getConfig('p1')
-      expect(config.values.base_url).toBe('https://x')
-      expect(config.values.api_key).toBeNull()
-      expect(config.secretKeys).toEqual(['api_key'])
-      expect(JSON.stringify(config)).not.toContain('supersecret')
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
+    const stored = {
+      'project.kanbanAdapter:p1': 'demo',
+      'project.kanbanConfig:p1': JSON.stringify({
+        base_url: 'https://x',
+        api_key: 'supersecret',
+      }),
     }
+    const { service } = makeService({ adapters: [DEMO_SCHEMA_ADAPTER], store: stored })
+    const config = service.getConfig('p1')
+    expect(config.values.base_url).toBe('https://x')
+    expect(config.values.api_key).toBeNull()
+    expect(config.secretKeys).toEqual(['api_key'])
+    expect(JSON.stringify(config)).not.toContain('supersecret')
   })
 
   it('setConfig persists binding and values', () => {
@@ -216,75 +277,30 @@ describe('KanbanService config', () => {
       'project.kanbanAdapter:p1': 'demo',
       'project.kanbanConfig:p1': JSON.stringify({ base_url: 'https://old', api_key: 'old-tok' }),
     }
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc2-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [
-            { key: 'base_url', label: 'Base URL', type: 'string', required: true },
-            { key: 'api_key', label: 'API Key', type: 'secret', required: true },
-          ],
-        }),
-      )
-      const { service, state } = makeService({ adaptersDir: dir, store: stored })
-      // Left-empty secret keeps the stored secret; untouched non-secret
-      // keys are not submitted and stay as stored (Behaviour 7).
-      service.setConfig('p1', { adapterId: 'demo', values: { api_key: '' } })
-      expect(JSON.parse(state.dump()['project.kanbanConfig:p1'] as string)).toEqual({
-        base_url: 'https://old',
-        api_key: 'old-tok',
-      })
-      // A re-typed secret replaces the stored one.
-      service.setConfig('p1', {
-        adapterId: 'demo',
-        values: { base_url: 'https://new', api_key: 'new-tok' },
-      })
-      expect(JSON.parse(state.dump()['project.kanbanConfig:p1'] as string)).toEqual({
-        base_url: 'https://new',
-        api_key: 'new-tok',
-      })
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const { service, state } = makeService({ adapters: [DEMO_SCHEMA_ADAPTER], store: stored })
+    // Left-empty secret keeps the stored secret; untouched non-secret
+    // keys are not submitted and stay as stored (Behaviour 7).
+    service.setConfig('p1', { adapterId: 'demo', values: { api_key: '' } })
+    expect(JSON.parse(state.dump()['project.kanbanConfig:p1'] as string)).toEqual({
+      base_url: 'https://old',
+      api_key: 'old-tok',
+    })
+    // A re-typed secret replaces the stored one.
+    service.setConfig('p1', {
+      adapterId: 'demo',
+      values: { base_url: 'https://new', api_key: 'new-tok' },
+    })
+    expect(JSON.parse(state.dump()['project.kanbanConfig:p1'] as string)).toEqual({
+      base_url: 'https://new',
+      api_key: 'new-tok',
+    })
   })
 
   it('setConfig with a required empty field rejects with validation', () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc3-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [{ key: 'base_url', label: 'Base URL', type: 'string', required: true }],
-        }),
-      )
-      const { service } = makeService({ adaptersDir: dir })
-      expect(() =>
-        service.setConfig('p1', { adapterId: 'demo', values: { base_url: '' } }),
-      ).toThrow(/required/i)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const { service } = makeService({ adapters: [DEMO_SCHEMA_ADAPTER] })
+    expect(() => service.setConfig('p1', { adapterId: 'demo', values: { base_url: '' } })).toThrow(
+      /required/i,
+    )
   })
 
   it('setConfig null adapterId keeps stored values and clears the binding', () => {
@@ -313,284 +329,160 @@ describe('KanbanService config', () => {
 
 describe('KanbanService secret protection and safeStorage', () => {
   it('encrypts secret fields at rest with enc:v1: prefix when safeStorage is available', () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-sec-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [
-            { key: 'base_url', label: 'Base URL', type: 'string', required: true },
-            { key: 'api_key', label: 'API Key', type: 'secret', required: true },
-          ],
-        }),
-      )
-      const safeStorage = fakeSafeStorage(true)
-      const { service, state } = makeService({ adaptersDir: dir, safeStorage })
+    const safeStorage = fakeSafeStorage(true)
+    const { service, state } = makeService({ adapters: [DEMO_SCHEMA_ADAPTER], safeStorage })
 
-      service.setConfig('p1', {
-        adapterId: 'demo',
-        values: { base_url: 'https://api.example.com', api_key: 'super-secret-pat' },
-      })
+    service.setConfig('p1', {
+      adapterId: 'demo',
+      values: { base_url: 'https://api.example.com', api_key: 'super-secret-pat' },
+    })
 
-      const rawConfig = state.dump()['project.kanbanConfig:p1'] as string
-      // Plaintext secret must never appear on disk / in store
-      expect(rawConfig).not.toContain('super-secret-pat')
-      const parsed = JSON.parse(rawConfig) as Record<string, string>
-      expect(parsed.base_url).toBe('https://api.example.com')
-      expect(parsed.api_key).toMatch(/^enc:v1:/)
+    const rawConfig = state.dump()['project.kanbanConfig:p1'] as string
+    // Plaintext secret must never appear on disk / in store
+    expect(rawConfig).not.toContain('super-secret-pat')
+    const parsed = JSON.parse(rawConfig) as Record<string, string>
+    expect(parsed.base_url).toBe('https://api.example.com')
+    expect(parsed.api_key).toMatch(/^enc:v1:/)
 
-      // getConfig preserves masked contract
-      const config = service.getConfig('p1')
-      expect(config.values.base_url).toBe('https://api.example.com')
-      expect(config.values.api_key).toBeNull()
-      expect(config.secretKeys).toEqual(['api_key'])
-      expect(JSON.stringify(config)).not.toContain('super-secret-pat')
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    // getConfig preserves masked contract
+    const config = service.getConfig('p1')
+    expect(config.values.base_url).toBe('https://api.example.com')
+    expect(config.values.api_key).toBeNull()
+    expect(config.secretKeys).toEqual(['api_key'])
+    expect(JSON.stringify(config)).not.toContain('super-secret-pat')
   })
 
   it('effectiveConfig decrypts secrets for adapter host calls', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-sec2-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [
-            { key: 'base_url', label: 'Base URL', type: 'string', required: true },
-            { key: 'api_key', label: 'API Key', type: 'secret', required: true },
-          ],
-        }),
-      )
-      const safeStorage = fakeSafeStorage(true)
-      const encKey = `enc:v1:${Buffer.from('mock_enc:decrypted-secret-token').toString('base64')}`
-      const stored = {
-        'project.kanbanAdapter:p1': 'demo',
-        'project.kanbanConfig:p1': JSON.stringify({
-          base_url: 'https://api.example.com',
-          api_key: encKey,
-        }),
-      }
-      const { service, invoke } = makeService({ adaptersDir: dir, store: stored, safeStorage })
-      invoke.mockResolvedValue(undefined)
-
-      await service.test('p1')
-
-      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
-      expect(request.config).toEqual({
+    const safeStorage = fakeSafeStorage(true)
+    const encKey = `enc:v1:${Buffer.from('mock_enc:decrypted-secret-token').toString('base64')}`
+    const stored = {
+      'project.kanbanAdapter:p1': 'demo',
+      'project.kanbanConfig:p1': JSON.stringify({
         base_url: 'https://api.example.com',
-        api_key: 'decrypted-secret-token',
-      })
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
+        api_key: encKey,
+      }),
     }
+    const { service, invoke } = makeService({
+      adapters: [DEMO_SCHEMA_ADAPTER],
+      store: stored,
+      safeStorage,
+    })
+    invoke.mockResolvedValue(undefined)
+
+    await service.test('p1')
+
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.config).toEqual({
+      base_url: 'https://api.example.com',
+      api_key: 'decrypted-secret-token',
+    })
   })
 
   it('migrates legacy plaintext secrets to safeStorage encryption at rest without value loss', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-sec3-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [
-            { key: 'base_url', label: 'Base URL', type: 'string', required: true },
-            { key: 'api_key', label: 'API Key', type: 'secret', required: true },
-          ],
-        }),
-      )
-      const safeStorage = fakeSafeStorage(true)
-      const stored = {
-        'project.kanbanAdapter:p1': 'demo',
-        'project.kanbanConfig:p1': JSON.stringify({
-          base_url: 'https://api.example.com',
-          api_key: 'legacy-plaintext-token',
-        }),
-      }
-      const { service, state, invoke } = makeService({
-        adaptersDir: dir,
-        store: stored,
-        safeStorage,
-      })
-      invoke.mockResolvedValue(undefined)
-
-      // On read (getConfig), migration should run and encrypt the plaintext secret on disk
-      const config = service.getConfig('p1')
-      expect(config.values.api_key).toBeNull()
-      expect(config.secretKeys).toEqual(['api_key'])
-
-      // Persisted store must now contain encrypted secret instead of plaintext
-      const migratedRaw = state.dump()['project.kanbanConfig:p1'] as string
-      expect(migratedRaw).not.toContain('legacy-plaintext-token')
-      const parsed = JSON.parse(migratedRaw) as Record<string, string>
-      expect(parsed.api_key).toMatch(/^enc:v1:/)
-
-      // Adapter invocation must still receive the decrypted secret without value loss
-      await service.test('p1')
-      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
-      expect(request.config.api_key).toBe('legacy-plaintext-token')
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
+    const safeStorage = fakeSafeStorage(true)
+    const stored = {
+      'project.kanbanAdapter:p1': 'demo',
+      'project.kanbanConfig:p1': JSON.stringify({
+        base_url: 'https://api.example.com',
+        api_key: 'legacy-plaintext-token',
+      }),
     }
+    const { service, state, invoke } = makeService({
+      adapters: [DEMO_SCHEMA_ADAPTER],
+      store: stored,
+      safeStorage,
+    })
+    invoke.mockResolvedValue(undefined)
+
+    // On read (getConfig), migration should run and encrypt the plaintext secret on disk
+    const config = service.getConfig('p1')
+    expect(config.values.api_key).toBeNull()
+    expect(config.secretKeys).toEqual(['api_key'])
+
+    // Persisted store must now contain encrypted secret instead of plaintext
+    const migratedRaw = state.dump()['project.kanbanConfig:p1'] as string
+    expect(migratedRaw).not.toContain('legacy-plaintext-token')
+    const parsed = JSON.parse(migratedRaw) as Record<string, string>
+    expect(parsed.api_key).toMatch(/^enc:v1:/)
+
+    // Adapter invocation must still receive the decrypted secret without value loss
+    await service.test('p1')
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.config.api_key).toBe('legacy-plaintext-token')
   })
 
   it('re-saving config with empty secret preserves stored encrypted secret', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-sec4-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [
-            { key: 'base_url', label: 'Base URL', type: 'string', required: true },
-            { key: 'api_key', label: 'API Key', type: 'secret', required: true },
-          ],
-        }),
-      )
-      const safeStorage = fakeSafeStorage(true)
-      const { service, state, invoke } = makeService({ adaptersDir: dir, safeStorage })
-      invoke.mockResolvedValue(undefined)
+    const safeStorage = fakeSafeStorage(true)
+    const { service, state, invoke } = makeService({
+      adapters: [DEMO_SCHEMA_ADAPTER],
+      safeStorage,
+    })
+    invoke.mockResolvedValue(undefined)
 
-      // Save initial config with secret
-      service.setConfig('p1', {
-        adapterId: 'demo',
-        values: { base_url: 'https://initial.com', api_key: 'my-initial-secret' },
-      })
+    // Save initial config with secret
+    service.setConfig('p1', {
+      adapterId: 'demo',
+      values: { base_url: 'https://initial.com', api_key: 'my-initial-secret' },
+    })
 
-      // Edit only base_url with empty secret (keeps stored secret)
-      service.setConfig('p1', {
-        adapterId: 'demo',
-        values: { base_url: 'https://updated.com', api_key: '' },
-      })
+    // Edit only base_url with empty secret (keeps stored secret)
+    service.setConfig('p1', {
+      adapterId: 'demo',
+      values: { base_url: 'https://updated.com', api_key: '' },
+    })
 
-      const raw = state.dump()['project.kanbanConfig:p1'] as string
-      expect(raw).not.toContain('my-initial-secret')
-      const parsed = JSON.parse(raw) as Record<string, string>
-      expect(parsed.base_url).toBe('https://updated.com')
-      expect(parsed.api_key).toMatch(/^enc:v1:/)
+    const raw = state.dump()['project.kanbanConfig:p1'] as string
+    expect(raw).not.toContain('my-initial-secret')
+    const parsed = JSON.parse(raw) as Record<string, string>
+    expect(parsed.base_url).toBe('https://updated.com')
+    expect(parsed.api_key).toMatch(/^enc:v1:/)
 
-      // Secret is still successfully decrypted and used
-      await service.test('p1')
-      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
-      expect(request.config.api_key).toBe('my-initial-secret')
-      expect(request.config.base_url).toBe('https://updated.com')
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    // Secret is still successfully decrypted and used
+    await service.test('p1')
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.config.api_key).toBe('my-initial-secret')
+    expect(request.config.base_url).toBe('https://updated.com')
   })
 
   it('corrupt encrypted secret degrades gracefully without throwing', () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-sec5-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [{ key: 'api_key', label: 'API Key', type: 'secret', required: true }],
-        }),
-      )
-      const safeStorage = fakeSafeStorage(true)
-      // Invalid ciphertext that fakeSafeStorage cannot decrypt
-      const stored = {
-        'project.kanbanAdapter:p1': 'demo',
-        'project.kanbanConfig:p1': JSON.stringify({
-          api_key: `enc:v1:${Buffer.from('corrupt_not_mock_enc').toString('base64')}`,
-        }),
-      }
-      const { service } = makeService({ adaptersDir: dir, store: stored, safeStorage })
-
-      // getConfig degrades gracefully: does not throw, secretKeys is empty
-      const config = service.getConfig('p1')
-      expect(config.values.api_key).toBeNull()
-      expect(config.secretKeys).toEqual([])
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
+    const safeStorage = fakeSafeStorage(true)
+    // Invalid ciphertext that fakeSafeStorage cannot decrypt
+    const stored = {
+      'project.kanbanAdapter:p1': 'demo',
+      'project.kanbanConfig:p1': JSON.stringify({
+        api_key: `enc:v1:${Buffer.from('corrupt_not_mock_enc').toString('base64')}`,
+      }),
     }
+    const { service } = makeService({
+      adapters: [DEMO_SECRET_ONLY_ADAPTER],
+      store: stored,
+      safeStorage,
+    })
+
+    // getConfig degrades gracefully: does not throw, secretKeys is empty
+    const config = service.getConfig('p1')
+    expect(config.values.api_key).toBeNull()
+    expect(config.secretKeys).toEqual([])
   })
 
   it('gracefully stores values when safeStorage is unavailable', () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-sec6-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [{ key: 'api_key', label: 'API Key', type: 'secret', required: true }],
-        }),
-      )
-      const safeStorage = fakeSafeStorage(false)
-      const { service, state } = makeService({ adaptersDir: dir, safeStorage })
+    const safeStorage = fakeSafeStorage(false)
+    const { service, state } = makeService({
+      adapters: [DEMO_SECRET_ONLY_ADAPTER],
+      safeStorage,
+    })
 
-      service.setConfig('p1', {
-        adapterId: 'demo',
-        values: { api_key: 'fallback-secret' },
-      })
+    service.setConfig('p1', {
+      adapterId: 'demo',
+      values: { api_key: 'fallback-secret' },
+    })
 
-      const parsed = JSON.parse(state.dump()['project.kanbanConfig:p1'] as string)
-      expect(parsed.api_key).toBe('fallback-secret')
+    const parsed = JSON.parse(state.dump()['project.kanbanConfig:p1'] as string)
+    expect(parsed.api_key).toBe('fallback-secret')
 
-      const config = service.getConfig('p1')
-      expect(config.values.api_key).toBeNull()
-      expect(config.secretKeys).toEqual(['api_key'])
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const config = service.getConfig('p1')
+    expect(config.values.api_key).toBeNull()
+    expect(config.secretKeys).toEqual(['api_key'])
   })
 })
 
@@ -618,243 +510,123 @@ describe('KanbanService actions', () => {
 
   it('listBoard composes states and items through one host call per action', async () => {
     const stored = { 'project.kanbanAdapter:p1': 'demo' }
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc4-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [],
-        }),
-      )
-      const { service, invoke } = makeService({ adaptersDir: dir, store: stored })
-      invoke.mockImplementationOnce(async (_adapter: unknown, request: AdapterRequest) => {
-        expect((request as AdapterRequest).action).toBe('listStates')
-        return [state]
-      })
-      invoke.mockImplementationOnce(async (_adapter: unknown, request: AdapterRequest) => {
-        expect((request as AdapterRequest).action).toBe('listItems')
-        return [item]
-      })
-      const board = await service.listBoard('p1')
-      expect(board).toEqual({ states: [state], items: [item] })
-      expect(invoke).toHaveBeenCalledTimes(2)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const { service, invoke } = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: stored,
+    })
+    invoke.mockImplementationOnce(async (_adapter: unknown, request: AdapterRequest) => {
+      expect((request as AdapterRequest).action).toBe('listStates')
+      return [state]
+    })
+    invoke.mockImplementationOnce(async (_adapter: unknown, request: AdapterRequest) => {
+      expect((request as AdapterRequest).action).toBe('listItems')
+      return [item]
+    })
+    const board = await service.listBoard('p1')
+    expect(board).toEqual({ states: [state], items: [item] })
+    expect(invoke).toHaveBeenCalledTimes(2)
   })
 
   it('sends protocolVersion, action, config and params on each request', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc5-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [],
-        }),
-      )
-      const stored = {
-        'project.kanbanAdapter:p1': 'demo',
-        'project.kanbanConfig:p1': JSON.stringify({ api_key: 'tok' }),
-      }
-      const { service, invoke } = makeService({ adaptersDir: dir, store: stored })
-      invoke.mockResolvedValue(undefined)
-      await service.test('p1')
-      const [adapter, request] = invoke.mock.calls[0] as unknown as [
-        { dir: string },
-        AdapterRequest,
-      ]
-      expect(request).toEqual({
-        protocolVersion: 1,
-        action: 'test',
-        config: { api_key: 'tok' },
-        params: {},
-      })
-      expect(adapter.dir).toContain('demo')
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
+    const stored = {
+      'project.kanbanAdapter:p1': 'demo',
+      'project.kanbanConfig:p1': JSON.stringify({ api_key: 'tok' }),
     }
+    const { service, invoke } = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: stored,
+    })
+    invoke.mockResolvedValue(undefined)
+    await service.test('p1')
+    const [adapter, request] = invoke.mock.calls[0] as unknown as [{ dir: string }, AdapterRequest]
+    expect(request).toEqual({
+      protocolVersion: 1,
+      action: 'test',
+      config: { api_key: 'tok' },
+      params: {},
+    })
+    expect(adapter.dir).toContain('demo')
   })
 
   it('test with unsaved values merges stored config under the override', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc6-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [],
-        }),
-      )
-      const stored = {
-        'project.kanbanAdapter:p1': 'demo',
-        'project.kanbanConfig:p1': JSON.stringify({ base_url: 'stored', api_key: 'stored-tok' }),
-      }
-      const { service, invoke } = makeService({ adaptersDir: dir, store: stored })
-      invoke.mockResolvedValue(undefined)
-      await service.test('p1', { base_url: 'edited' })
-      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
-      expect(request.config).toEqual({ base_url: 'edited', api_key: 'stored-tok' })
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
+    const stored = {
+      'project.kanbanAdapter:p1': 'demo',
+      'project.kanbanConfig:p1': JSON.stringify({ base_url: 'stored', api_key: 'stored-tok' }),
     }
+    const { service, invoke } = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: stored,
+    })
+    invoke.mockResolvedValue(undefined)
+    await service.test('p1', { base_url: 'edited' })
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.config).toEqual({ base_url: 'edited', api_key: 'stored-tok' })
   })
 
   it('createItem forwards input as params and normalizes the returned item', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc7-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [],
-        }),
-      )
-      const { service, invoke } = makeService({
-        adaptersDir: dir,
-        store: { 'project.kanbanAdapter:p1': 'demo' },
-      })
-      invoke.mockResolvedValue(item)
-      const created = await service.createItem('p1', {
-        title: 'First item',
-        stateRef: 'done',
-        priority: 'high',
-      })
-      expect(created).toEqual(item)
-      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
-      expect(request.action).toBe('createItem')
-      expect(request.params).toEqual({ title: 'First item', stateRef: 'done', priority: 'high' })
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const { service, invoke } = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: { 'project.kanbanAdapter:p1': 'demo' },
+    })
+    invoke.mockResolvedValue(item)
+    const created = await service.createItem('p1', {
+      title: 'First item',
+      stateRef: 'done',
+      priority: 'high',
+    })
+    expect(created).toEqual(item)
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.action).toBe('createItem')
+    expect(request.params).toEqual({ title: 'First item', stateRef: 'done', priority: 'high' })
   })
 
   it('updateItem sends stateRef unresolved and rejects an empty patch', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc8-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [],
-        }),
-      )
-      const { service, invoke } = makeService({
-        adaptersDir: dir,
-        store: { 'project.kanbanAdapter:p1': 'demo' },
-      })
-      invoke.mockResolvedValue({
-        ...item,
-        stateId: 'st-done',
-        stateName: 'Done',
-        stateGroup: 'completed',
-      })
-      const updated = await service.updateItem('p1', 'DEMO-1', { stateRef: 'done' })
-      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
-      expect(request.params).toEqual({ ref: 'DEMO-1', stateRef: 'done' })
-      expect(updated.stateGroup).toBe('completed')
-      await service.updateItem('p1', 'DEMO-1', { priority: 'low' })
-      const named = invoke.mock.calls[1]?.[1] as AdapterRequest
-      expect(named.params).toEqual({ ref: 'DEMO-1', priority: 'low' })
-      await service.updateItem('p1', 'DEMO-1', { priority: null })
-      const cleared = invoke.mock.calls[2]?.[1] as AdapterRequest
-      expect(cleared.params).toEqual({ ref: 'DEMO-1', priority: null })
-      await expect(service.updateItem('p1', 'DEMO-1', {})).rejects.toMatchObject({
-        code: 'validation',
-      })
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const { service, invoke } = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: { 'project.kanbanAdapter:p1': 'demo' },
+    })
+    invoke.mockResolvedValue({
+      ...item,
+      stateId: 'st-done',
+      stateName: 'Done',
+      stateGroup: 'completed',
+    })
+    const updated = await service.updateItem('p1', 'DEMO-1', { stateRef: 'done' })
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.params).toEqual({ ref: 'DEMO-1', stateRef: 'done' })
+    expect(updated.stateGroup).toBe('completed')
+    await service.updateItem('p1', 'DEMO-1', { priority: 'low' })
+    const named = invoke.mock.calls[1]?.[1] as AdapterRequest
+    expect(named.params).toEqual({ ref: 'DEMO-1', priority: 'low' })
+    await service.updateItem('p1', 'DEMO-1', { priority: null })
+    const cleared = invoke.mock.calls[2]?.[1] as AdapterRequest
+    expect(cleared.params).toEqual({ ref: 'DEMO-1', priority: null })
+    await expect(service.updateItem('p1', 'DEMO-1', {})).rejects.toMatchObject({
+      code: 'validation',
+    })
   })
 
   it('maps AdapterHostError timeout and protocol kinds onto typed codes', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc9-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [],
-        }),
-      )
-      const timeout = makeService({
-        adaptersDir: dir,
-        store: { 'project.kanbanAdapter:p1': 'demo' },
-        hostError: new AdapterHostError('timeout', 'boom'),
-      })
-      await expect(timeout.service.listBoard('p1')).rejects.toMatchObject({ code: 'timeout' })
-      const protocol = makeService({
-        adaptersDir: dir,
-        store: { 'project.kanbanAdapter:p1': 'demo' },
-        hostError: new AdapterHostError('protocol', 'bad framing'),
-      })
-      await expect(protocol.service.listBoard('p1')).rejects.toMatchObject({ code: 'protocol' })
-      const adapter = makeService({
-        adaptersDir: dir,
-        store: { 'project.kanbanAdapter:p1': 'demo' },
-        hostError: new AdapterError('network', 'dns failed'),
-      })
-      // The adapter's own code is surfaced verbatim (spec Errors), not
-      // collapsed into the generic 'adapter' code.
-      await expect(adapter.service.listBoard('p1')).rejects.toMatchObject({ code: 'network' })
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const timeout = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: { 'project.kanbanAdapter:p1': 'demo' },
+      hostError: new AdapterHostError('timeout', 'boom'),
+    })
+    await expect(timeout.service.listBoard('p1')).rejects.toMatchObject({ code: 'timeout' })
+    const protocol = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: { 'project.kanbanAdapter:p1': 'demo' },
+      hostError: new AdapterHostError('protocol', 'bad framing'),
+    })
+    await expect(protocol.service.listBoard('p1')).rejects.toMatchObject({ code: 'protocol' })
+    const adapter = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: { 'project.kanbanAdapter:p1': 'demo' },
+      hostError: new AdapterError('network', 'dns failed'),
+    })
+    // The adapter's own code is surfaced verbatim (spec Errors), not
+    // collapsed into the generic 'adapter' code.
+    await expect(adapter.service.listBoard('p1')).rejects.toMatchObject({ code: 'network' })
   })
 })
 
@@ -866,37 +638,16 @@ describe('KanbanService getItem', () => {
   })
 
   it('calls adapter getItem with { ref } and returns the normalized item', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-      require('node:fs') as typeof import('node:fs')
-    const { tmpdir } = require('node:os') as typeof import('node:os')
-    const { join } = require('node:path') as typeof import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'nekode-ksvc-getitem-'))
-    try {
-      const adapterDir = join(dir, 'demo')
-      mkdirSync(adapterDir)
-      writeFileSync(
-        join(adapterDir, 'adapter.json'),
-        JSON.stringify({
-          id: 'demo',
-          name: 'Demo',
-          protocolVersion: 1,
-          invocation: { command: 'node', args: ['a.js'] },
-          configSchema: [],
-        }),
-      )
-      const { service, invoke } = makeService({
-        adaptersDir: dir,
-        store: { 'project.kanbanAdapter:p1': 'demo' },
-      })
-      invoke.mockResolvedValue(item)
-      await expect(service.getItem('p1', 'DEMO-1')).resolves.toEqual(item)
-      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
-      expect(request.protocolVersion).toBe(1)
-      expect(request.action).toBe('getItem')
-      expect(request.params).toEqual({ ref: 'DEMO-1' })
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const { service, invoke } = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: { 'project.kanbanAdapter:p1': 'demo' },
+    })
+    invoke.mockResolvedValue(item)
+    await expect(service.getItem('p1', 'DEMO-1')).resolves.toEqual(item)
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.protocolVersion).toBe(1)
+    expect(request.action).toBe('getItem')
+    expect(request.params).toEqual({ ref: 'DEMO-1' })
   })
 })
 

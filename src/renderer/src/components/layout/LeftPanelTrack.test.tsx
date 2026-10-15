@@ -58,6 +58,8 @@ describe('LeftPanelTrack', () => {
     expect(screen.queryByTestId('files-view')).toBeNull()
     expect(screen.getByTestId(TEST_ID.leftNav).style.width).toBe('280px')
     expect(track().style.width).toBe('100%')
+    expect(track().getAttribute('data-slide-state')).toBe('closed')
+    expect(screen.getByTestId(TEST_ID.leftNav).getAttribute('data-slide-state')).toBe('closed')
 
     view.rerender(
       <LeftPanelTrack
@@ -74,6 +76,8 @@ describe('LeftPanelTrack', () => {
     expect(screen.getByTestId('files-view')).toBeTruthy()
     expect(track().style.transform).toBe('')
     expect(track().className).not.toContain('left-panel-track-run')
+    expect(track().getAttribute('data-slide-state')).toBe('open')
+    expect(screen.getByTestId(TEST_ID.leftNav).getAttribute('data-slide-state')).toBe('open')
   })
 
   it('slides Projects out to the left as Files arrives, then settles on Files', () => {
@@ -96,6 +100,7 @@ describe('LeftPanelTrack', () => {
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.getByTestId('files-view')).toBeTruthy()
     expect(moving.className).toContain('left-panel-track-run')
+    expect(moving.getAttribute('data-slide-state')).toBe('sliding')
     expect(moving.children).toHaveLength(2)
 
     fireEvent.transitionEnd(moving, { propertyName: 'transform' })
@@ -104,6 +109,8 @@ describe('LeftPanelTrack', () => {
     expect(screen.queryByTestId('projects-view')).toBeNull()
     expect(screen.getByTestId('files-view')).toBeTruthy()
     expect(track().className).not.toContain('left-panel-track-run')
+    expect(track().getAttribute('data-slide-state')).toBe('open')
+    expect(screen.getByTestId(TEST_ID.leftNav).getAttribute('data-slide-state')).toBe('open')
     expect(screen.getAllByTestId(TEST_ID.leftResizeHandle)).toHaveLength(1)
   })
 
@@ -139,6 +146,7 @@ describe('LeftPanelTrack', () => {
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.getByTestId('files-view')).toBeTruthy()
     expect(moving.className).toContain('left-panel-track-run')
+    expect(moving.getAttribute('data-slide-state')).toBe('sliding')
     expect((moving.children[0] as HTMLElement).textContent).toContain('Projects')
     expect((moving.children[1] as HTMLElement).textContent).toContain('Files')
 
@@ -146,6 +154,8 @@ describe('LeftPanelTrack', () => {
 
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.queryByTestId('files-view')).toBeNull()
+    expect(track().getAttribute('data-slide-state')).toBe('closed')
+    expect(screen.getByTestId(TEST_ID.leftNav).getAttribute('data-slide-state')).toBe('closed')
   })
 
   it('reverses a running slide toward Files back to Projects', () => {
@@ -163,6 +173,7 @@ describe('LeftPanelTrack', () => {
     )
     // Mid-slide toward Files...
     expect(track().className).toContain('left-panel-track-run')
+    expect(track().getAttribute('data-slide-state')).toBe('sliding')
 
     view.rerender(
       <LeftPanelTrack
@@ -180,10 +191,13 @@ describe('LeftPanelTrack', () => {
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.getByTestId('files-view')).toBeTruthy()
     expect(moving.className).toContain('left-panel-track-run')
+    expect(moving.getAttribute('data-slide-state')).toBe('sliding')
 
     fireEvent.transitionEnd(moving, { propertyName: 'transform' })
 
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.queryByTestId('files-view')).toBeNull()
+    expect(track().getAttribute('data-slide-state')).toBe('closed')
+    expect(screen.getByTestId(TEST_ID.leftNav).getAttribute('data-slide-state')).toBe('closed')
   })
 })

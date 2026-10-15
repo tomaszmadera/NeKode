@@ -98,6 +98,8 @@ describe('status bar — project context (UX-UI §14)', () => {
 
   it('shows at most three runtime badges with no collapse marker for few labels', () => {
     render(<StatusBar app={app} project={projectA} />)
+    expect(screen.getByTestId(TEST_ID.statusBar).getAttribute('data-panel-visible')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.statusBar).getAttribute('data-slide-state')).toBe('open')
     const runtimes = screen.getByTestId(TEST_ID.statusRuntimes)
     expect(runtimes.textContent).toBe('PHP 8.5')
     expect(screen.queryByTestId(TEST_ID.statusRuntimeMore)).toBeNull()
@@ -110,7 +112,10 @@ describe('status bar — project context (UX-UI §14)', () => {
 
   it('keeps the bar with an empty project section when no project is active', () => {
     render(<StatusBar app={app} project={null} />)
-    expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
+    const bar = screen.getByTestId(TEST_ID.statusBar)
+    expect(bar).toBeTruthy()
+    expect(bar.getAttribute('data-panel-visible')).toBe('false')
+    expect(bar.getAttribute('data-slide-state')).toBe('closed')
     expect(screen.queryByTestId(TEST_ID.statusProjectName)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.statusGitBranch)).toBeNull()
     expect(app.git.getStatus).not.toHaveBeenCalled()

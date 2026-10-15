@@ -18,7 +18,8 @@ export interface MutationGuard {
    * without calling `task`. The guard releases when `task` resolves or
    * rejects. With `isCurrent` given, the release is skipped while it returns
    * false: a stale run that was superseded (e.g. by a project switch) must
-   * not unlock the run that replaced it.
+   * not unlock the run that replaced it (latched-release contract: a skipped
+   * release keeps the guard locked until `reset()`).
    */
   run: (task: () => Promise<void>, isCurrent?: () => boolean) => Promise<void>
   /** Releases the guard unconditionally (panel reset, e.g. on project switch). */

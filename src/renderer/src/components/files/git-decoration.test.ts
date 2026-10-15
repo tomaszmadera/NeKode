@@ -73,6 +73,28 @@ describe('buildStatusIndex directory aggregation', () => {
     expect(mixed.directory('b')).toBe('modified')
   })
 
+  it('orders added over untracked and ignored', () => {
+    const addedUntracked = buildStatusIndex({
+      'c/added.ts': 'added',
+      'c/untracked.ts': 'untracked',
+    })
+    expect(addedUntracked.directory('c')).toBe('added')
+
+    const addedIgnored = buildStatusIndex({
+      'c/added.ts': 'added',
+      'c/ignored.ts': 'ignored',
+    })
+    expect(addedIgnored.directory('c')).toBe('added')
+  })
+
+  it('orders untracked over ignored', () => {
+    const untrackedIgnored = buildStatusIndex({
+      'd/untracked.ts': 'untracked',
+      'd/ignored.ts': 'ignored',
+    })
+    expect(untrackedIgnored.directory('d')).toBe('untracked')
+  })
+
   it('covers every descendant of an untracked or ignored directory key', () => {
     // Behaviour 18: a directory key stands for its whole subtree, so a
     // nested folder below it inherits the status too (not only files).

@@ -14,4 +14,11 @@ describe('isMarkdownPath', () => {
     expect(isMarkdownPath('.md')).toBe(false)
     expect(isMarkdownPath('file.md.bak')).toBe(false)
   })
+
+  it('handles Windows backslash separators', () => {
+    expect(isMarkdownPath('docs\\guide.markdown')).toBe(true)
+    expect(isMarkdownPath('nested\\sub\\README.MD')).toBe(true)
+    expect(isMarkdownPath('src\\components\\app.tsx')).toBe(false)
+    expect(isMarkdownPath('folder\\.md')).toBe(false)
+  })
 })

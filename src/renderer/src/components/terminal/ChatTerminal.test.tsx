@@ -126,7 +126,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
       put: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
       delete: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
-    },
+    } as unknown as AppApi['agentProfiles'],
     dialogs: {
       pickDirectory: vi.fn().mockResolvedValue(null),
     },
@@ -879,69 +879,71 @@ describe('ChatTerminal lifecycle', () => {
     expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[I')
   })
 
-  it("typed 'abc' erased with Backspace x3 is visibly the prompt again: Ctrl+D closes", async () => {
+  it.each([
+    {
+      name: "typed 'abc' erased with Backspace x3 is visibly the prompt again: Ctrl+D closes",
+      populate: (terminal: (typeof mockTerminalInstances)[number]) => {
+        typeText(terminal, 'abc')
+      },
+      eraseCount: 3,
+    },
+    {
+      name: 'earlier Ctrl+D at a non-empty line never wedges the gate: a visibly erased line closes',
+      populate: (terminal: (typeof mockTerminalInstances)[number]) => {
+        typeText(terminal, 'abc')
+      },
+      eraseCount: 3,
+      testEarlierCtrlD: true,
+    },
+    {
+      name: 'history recall fills the line: Ctrl+D never closes until the recall is visibly erased',
+      populate: (terminal: (typeof mockTerminalInstances)[number]) => {
+        expect(pressKey(terminal, { key: 'ArrowUp' })).toBe(true)
+        act(() => {
+          terminal.emitInput('\x1b[A')
+          terminal.echo('git status')
+        })
+      },
+      eraseCount: 10,
+      partialErase: { count: 3, expectedRow: `${PROMPT}git sta` },
+    },
+    {
+      name: 'pasted text fills the line: Ctrl+D never closes until it is visibly erased',
+      populate: (terminal: (typeof mockTerminalInstances)[number]) => {
+        act(() => {
+          terminal.emitInput('\x1b[200~git status\x1b[201~')
+          terminal.echo('git status')
+        })
+      },
+      eraseCount: 10,
+    },
+  ])('$name', async ({ populate, eraseCount, testEarlierCtrlD, partialErase }) => {
     const onClose = vi.fn()
     const { terminal, bundle } = renderTerminal(onClose)
     showPrompt(terminal, bundle)
 
-    typeText(terminal, 'abc')
-    backspace(terminal, 3)
-    // The row visibly reads as the prompt base again — the line is empty.
-    expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
+    populate(terminal)
 
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  // Regression (user retests 2026-09-25/26): an earlier Ctrl+D with text on
-  // the line must never poison what follows. It emulates delete-char — a
-  // no-op at the end of the line — instead of forwarding \\x04, which the
-  // user's shell self-inserts as a visible ^D glyph that then breaks the
-  // erase-to-empty flow. 'abc' survives untouched, erasing it visibly
-  // returns the row to the prompt base and Ctrl+D closes.
-  it('earlier Ctrl+D at a non-empty line never wedges the gate: a visibly erased line closes', async () => {
-    const onClose = vi.fn()
-    const { terminal, bundle } = renderTerminal(onClose)
-    showPrompt(terminal, bundle)
-
-    typeText(terminal, 'abc')
-    // Text on the line: emulated delete-char; no raw \\x04 reaches the PTY.
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x1b[3~'))
     expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x04')
     expect(onClose).not.toHaveBeenCalled()
-    // Delete-char at the end of a non-empty line deletes nothing: 'abc' is
-    // still there and the user erases it.
-    backspace(terminal, 3)
-    expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
 
-    // The line is visibly empty: the shortcut closes.
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
+    if (testEarlierCtrlD) {
+      expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+      expect(onClose).not.toHaveBeenCalled()
+    }
 
-  it('history recall fills the line: Ctrl+D never closes until the recall is visibly erased', async () => {
-    const onClose = vi.fn()
-    const { terminal, bundle } = renderTerminal(onClose)
-    showPrompt(terminal, bundle)
+    if (partialErase) {
+      backspace(terminal, partialErase.count)
+      expect(terminal.buffer.active.rows[0]).toBe(partialErase.expectedRow)
+      expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
+      expect(onClose).not.toHaveBeenCalled()
+      backspace(terminal, eraseCount - partialErase.count)
+    } else {
+      backspace(terminal, eraseCount)
+    }
 
-    // ArrowUp recalls 'git status'; the recalled text is drawn by the shell.
-    expect(pressKey(terminal, { key: 'ArrowUp' })).toBe(true)
-    act(() => {
-      terminal.emitInput('\x1b[A')
-      terminal.echo('git status')
-    })
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).not.toHaveBeenCalled()
-
-    // Partial erase still leaves text on the line — never close.
-    backspace(terminal, 3)
-    expect(terminal.buffer.active.rows[0]).toBe(`${PROMPT}git sta`)
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).not.toHaveBeenCalled()
-
-    // Erased back to the prompt base: the line is visibly empty again.
-    backspace(terminal, 7)
     expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -1047,28 +1049,6 @@ describe('ChatTerminal lifecycle', () => {
     expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
     expect(vi.mocked(bundle.app.terminals.write).mock.calls.length).toBe(writesBefore)
     expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('pasted text fills the line: Ctrl+D never closes until it is visibly erased', async () => {
-    const onClose = vi.fn()
-    const { terminal, bundle } = renderTerminal(onClose)
-    showPrompt(terminal, bundle)
-
-    // Ctrl+V / right-click / Shift+Insert paste produces data only — no
-    // printable keydown ever fires for the pasted text (bracketed paste).
-    act(() => {
-      terminal.emitInput('\x1b[200~git status\x1b[201~')
-      terminal.echo('git status')
-    })
-    // Not empty (pasted text): Ctrl+D emulates delete-char, never closes.
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).not.toHaveBeenCalled()
-
-    // Erased back to the prompt base: the line is visibly empty again.
-    backspace(terminal, 10)
-    expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
-    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
-    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('Ctrl+D inside a full-screen program (alternate buffer) never closes', async () => {

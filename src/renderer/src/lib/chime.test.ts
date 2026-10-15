@@ -27,13 +27,17 @@ function fakeNode(name: string) {
 }
 
 /** Installs a fake AudioContext and returns its recorded calls. */
-function installFakeAudioContext(): {
+function installFakeAudioContext(options?: {
+  state?: string
+  onResume?: () => Promise<void>
+  throwOnCreateOscillator?: boolean
+}): {
   contexts: Array<Record<string, unknown>>
   uninstall: () => void
 } {
   const contexts: Array<Record<string, unknown>> = []
   class FakeAudioContext {
-    state = 'running'
+    state = options?.state ?? 'running'
     currentTime = 0
     destination = fakeNode('destination')
     // One oscillator/gain per context: the module creates one of each, and
@@ -74,14 +78,17 @@ function installFakeAudioContext(): {
       return gain
     }
     createOscillator(): Record<string, unknown> {
+      if (options?.throwOnCreateOscillator) {
+        throw new Error('createOscillator failed')
+      }
       return this.oscillator
     }
     createGain(): Record<string, unknown> {
       return this.gain
     }
-    resume(): Promise<void> {
-      return Promise.resolve()
-    }
+    resume = vi.fn((): Promise<void> => {
+      return options?.onResume ? options.onResume() : Promise.resolve()
+    })
     close = vi.fn((): Promise<void> => Promise.resolve())
   }
   const globalObject = globalThis as unknown as { AudioContext?: unknown }
@@ -118,6 +125,38 @@ describe('playAttentionChime', () => {
     }
     expect(() => playAttentionChime()).not.toThrow()
     delete globalObject.AudioContext
+  })
+
+  it('resumes a suspended AudioContext and handles resume failure gracefully', async () => {
+    let resumeCalled = false
+    const { contexts, uninstall } = installFakeAudioContext({
+      state: 'suspended',
+      onResume: () => {
+        resumeCalled = true
+        return Promise.reject(new Error('autoplay blocked'))
+      },
+    })
+    try {
+      expect(() => playAttentionChime()).not.toThrow()
+      expect(contexts).toHaveLength(1)
+      expect(resumeCalled).toBe(true)
+    } finally {
+      uninstall()
+    }
+  })
+
+  it('catches audio graph setup errors, closes the context, and does not throw', () => {
+    const { contexts, uninstall } = installFakeAudioContext({
+      throwOnCreateOscillator: true,
+    })
+    try {
+      expect(() => playAttentionChime()).not.toThrow()
+      expect(contexts).toHaveLength(1)
+      const context = contexts[0] as unknown as { close: Mock<() => Promise<void>> }
+      expect(context.close).toHaveBeenCalledTimes(1)
+    } finally {
+      uninstall()
+    }
   })
 
   it('plays one synthesized tone: starts the oscillator into the destination and tears the graph down when it ends', async () => {

@@ -148,6 +148,7 @@ export function LeftPanelTrack({
   const showFiles = sliding || shown === 'files'
   const filesShifted = slide !== null && (slide.run ? slide.to === 'files' : slide.from === 'files')
   const filesNode = files ?? retainedFiles.current
+  const slideState = slide?.run ? 'sliding' : shown === 'files' ? 'open' : 'closed'
 
   return (
     <aside
@@ -161,6 +162,8 @@ export function LeftPanelTrack({
       )}
       style={{ width }}
       data-testid={TEST_ID.leftNav}
+      data-slide-state={sliding ? 'sliding' : view === 'files' ? 'open' : 'closed'}
+      data-panel-visible={view === 'files' ? 'true' : 'false'}
     >
       <div
         ref={trackRef}
@@ -179,6 +182,7 @@ export function LeftPanelTrack({
           // the property to mean "0" skips the return trip.
           transform: sliding ? (filesShifted ? 'translateX(-50%)' : 'translateX(0)') : undefined,
         }}
+        data-slide-state={slideState}
         onTransitionEnd={settle}
       >
         {showProjects ? (

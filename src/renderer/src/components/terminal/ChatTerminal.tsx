@@ -17,6 +17,7 @@ import {
 import { themeColor } from '../lib/theme-color'
 import { isBottomPanelChord } from './bottom-panel-chord'
 import { chatSwitchDirection } from './chat-switch-chord'
+import { type CursorLine, decideCtrlDAction } from './ctrl-d-gate'
 import { type PromptInjection, PromptInput } from './PromptInput'
 import { TerminalContextMenu } from './TerminalContextMenu'
 
@@ -337,7 +338,7 @@ export function ChatTerminal({
     // The cursor row as the user sees it: `before` is the visible text in
     // columns [0, cursorX) — prompt plus typed input — and `after` is what
     // survives behind the cursor.
-    function visibleLine(): { before: string; after: string } | null {
+    function visibleLine(): CursorLine | null {
       const buffer = terminal.buffer.active
       const line = buffer.getLine(buffer.baseY + buffer.cursorY)
       if (line === undefined) {
@@ -524,46 +525,36 @@ export function ChatTerminal({
         resetBytePending = true
         return true
       }
-      // Matched on the physical key (event.code) so the shortcuts also work on
-      // non-Latin layouts where Ctrl+D/Ctrl+U report a different event.key.
       const isCtrlD = (event.code === 'KeyD' || event.key === 'd' || event.key === 'D') && ctrlOnly
       const isCtrlU = (event.code === 'KeyU' || event.key === 'u' || event.key === 'U') && ctrlOnly
-      if ((!isCtrlD && !isCtrlU) || terminal.buffer.active.type === 'alternate') {
+      if (!isCtrlD && !isCtrlU) {
         return true
       }
       if (isCtrlD) {
-        if (isInputLineEmpty()) {
+        const action = decideCtrlDAction({
+          promptBase,
+          baseFrozen,
+          cursorLine: visibleLine(),
+          bufferType: terminal.buffer.active.type,
+        })
+        if (action === 'eof') {
           onCloseRef.current({ viaShortcut: true })
           return false
         }
-        sendToPty('\x1b[3~')
-        return false
+        if (action === 'delete') {
+          sendToPty('\x1b[3~')
+          return false
+        }
+        return true
+      }
+      if (terminal.buffer.active.type === 'alternate') {
+        return true
       }
       if (hasAttributableInputLine()) {
         sendToPty('\x01\x7f')
       }
       return false
     })
-
-    function isInputLineEmpty(): boolean {
-      if (promptBase === null) {
-        // Nothing has been drawn since mount/reset: no write means no text on
-        // the row either (only writes render), so with no input since the
-        // reset the line is empty; input without a drawn base stays shut.
-        return !baseFrozen
-      }
-      const line = visibleLine()
-      if (line === null) {
-        return false
-      }
-      // The visible text before the cursor must read exactly as the prompt
-      // base …
-      if (line.before !== promptBase) {
-        return false
-      }
-      // … and nothing may survive behind the cursor.
-      return line.after === ''
-    }
 
     // Lazy spawn: the main process creates the PTY on this first attach.
     // An exit can unmount this view before create resolves. Completion after
