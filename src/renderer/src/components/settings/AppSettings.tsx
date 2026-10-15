@@ -9,8 +9,11 @@ import { isThemeId, THEME_IDS, THEMES, type ThemeId } from '../../lib/theme'
 import { DesktopDictationSettings } from './DesktopDictationSettings'
 import { DictationDictionary } from './DictationDictionary'
 import { FontsSettings } from './FontsSettings'
+import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
 
 interface AppSettingsProps {
+  app: AppApi
+  initialTab?: SettingsTab
   dictationApi: AppApi['dictation']
   desktopDictation: ReturnType<typeof import('../../hooks/useDesktopDictation').useDesktopDictation>
   theme: ThemeId
@@ -35,7 +38,14 @@ interface AppSettingsProps {
   onClose: () => void
 }
 
-type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation'
+type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation' | 'agents'
+const SETTINGS_TABS: SettingsTab[] = ['general', 'fonts', 'shortcuts', 'dictation', 'agents']
+function tabId(tab: SettingsTab): string {
+  return tab === 'agents' ? 'app-settings-tab-agents' : `settings-tab-${tab}`
+}
+function panelId(tab: SettingsTab): string {
+  return tab === 'agents' ? 'app-settings-panel-agents' : `settings-panel-${tab}`
+}
 
 // One row per app shortcut. Keys render in <kbd>-style cells; keep each
 // description in sync with the behavior actually implemented (App-level chords,
@@ -64,6 +74,8 @@ const SHORTCUT_SECTIONS: Array<{ heading: string; rows: Array<[string, string]> 
 ]
 
 export function AppSettings({
+  app,
+  initialTab = 'general',
   dictationApi,
   desktopDictation,
   theme,
@@ -85,13 +97,17 @@ export function AppSettings({
   onTerminalCtrlVPasteChange,
   onClose,
 }: AppSettingsProps): React.JSX.Element {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab)
   const selectRef = useRef<HTMLSelectElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const previousFocus = document.activeElement
-    selectRef.current?.focus()
+    if (selectRef.current !== null) selectRef.current.focus()
+    else
+      dialogRef.current
+        ?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
+        ?.focus()
     return () => {
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
         previousFocus.focus()
@@ -167,13 +183,13 @@ export function AppSettings({
               aria-orientation="vertical"
               className="flex w-24 shrink-0 flex-col gap-1 border-r border-edge pr-3 sm:w-36"
             >
-              {(['general', 'fonts', 'shortcuts', 'dictation'] as const).map((tab) => (
+              {SETTINGS_TABS.map((tab) => (
                 <button
                   key={tab}
                   type="button"
                   role="tab"
-                  id={`settings-tab-${tab}`}
-                  aria-controls={`settings-panel-${tab}`}
+                  id={tabId(tab)}
+                  aria-controls={panelId(tab)}
                   aria-selected={activeTab === tab}
                   tabIndex={activeTab === tab ? 0 : -1}
                   data-testid={
@@ -186,7 +202,7 @@ export function AppSettings({
                   className={`rounded-md border border-edge px-3 py-2 text-left text-sm focus-visible:outline focus-visible:outline-info ${activeTab === tab ? 'bg-button text-ink' : 'text-ink-secondary'}`}
                   onClick={() => setActiveTab(tab)}
                   onKeyDown={(event) => {
-                    const tabs: SettingsTab[] = ['general', 'fonts', 'shortcuts', 'dictation']
+                    const tabs = SETTINGS_TABS
                     const index = tabs.indexOf(tab)
                     const { key } = event
                     const next =
@@ -202,7 +218,7 @@ export function AppSettings({
                     if (next !== null) {
                       event.preventDefault()
                       setActiveTab(next)
-                      document.getElementById(`settings-tab-${next}`)?.focus()
+                      document.getElementById(tabId(next))?.focus()
                     }
                   }}
                 >
@@ -212,25 +228,25 @@ export function AppSettings({
                       ? 'Fonts'
                       : tab === 'dictation'
                         ? 'Dictation'
-                        : 'Shortcuts'}
+                        : tab === 'agents'
+                          ? 'Agents'
+                          : 'Shortcuts'}
                 </button>
               ))}
             </div>
-            {(['general', 'fonts', 'shortcuts', 'dictation'] as const)
-              .filter((tab) => tab !== activeTab)
-              .map((tab) => (
-                <div
-                  key={tab}
-                  role="tabpanel"
-                  id={`settings-panel-${tab}`}
-                  aria-labelledby={`settings-tab-${tab}`}
-                  hidden
-                />
-              ))}
+            {SETTINGS_TABS.filter((tab) => tab !== activeTab).map((tab) => (
+              <div
+                key={tab}
+                role="tabpanel"
+                id={panelId(tab)}
+                aria-labelledby={tabId(tab)}
+                hidden
+              />
+            ))}
             <div
               role="tabpanel"
-              id={`settings-panel-${activeTab}`}
-              aria-labelledby={`settings-tab-${activeTab}`}
+              id={panelId(activeTab)}
+              aria-labelledby={tabId(activeTab)}
               className="min-w-0 flex-1 overflow-y-auto pr-1"
             >
               {activeTab === 'general' ? (
@@ -370,6 +386,8 @@ export function AppSettings({
                     Play a chime when the active chat needs attention
                   </label>
                 </div>
+              ) : activeTab === 'agents' ? (
+                <GlobalAgentProfilesSettings app={app} />
               ) : activeTab === 'fonts' ? (
                 <FontsSettings
                   families={terminalFontFamilies}

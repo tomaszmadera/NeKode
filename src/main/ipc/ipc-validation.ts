@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path'
+import { parseAgentCommand } from '../../shared/agent-command'
 import { isBottomTabId } from '../../shared/bottom-tab-id'
 import {
   type DesktopDictationSettings,
@@ -12,6 +13,7 @@ import {
 import type {
   ActionInput,
   AgentProfilePut,
+  AgentProjectSelectionInput,
   KanbanCreateInput,
   KanbanHandoffAvailabilityInput,
   KanbanHandoffCandidatesInput,
@@ -176,7 +178,14 @@ function assertOptionalKanbanValues(
   assertKanbanValues(value, label)
 }
 
-const AGENT_PROFILE_PUT_KEYS = ['id', 'name', 'executable', 'args', 'isDefault']
+const AGENT_PROFILE_PUT_KEYS = ['id', 'name', 'command']
+
+function assertAgentId(value: unknown, label: string): asserts value is string {
+  assertString(value, label)
+  const id = value as string
+  if (id.length === 0 || id.includes('\u0000'))
+    fail(label, 'must be non-empty without NUL characters')
+}
 
 function assertAgentProfilePut(value: unknown, label: string): asserts value is AgentProfilePut {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -191,22 +200,42 @@ function assertAgentProfilePut(value: unknown, label: string): asserts value is 
     fail(label, 'has unexpected or missing fields')
   }
   if (input.id !== null) {
-    assertString(input.id, `${label}.id`)
-    if ((input.id as string).length === 0) fail(`${label}.id`, 'must be non-empty')
+    assertAgentId(input.id, `${label}.id`)
   }
   assertString(input.name, `${label}.name`)
-  assertString(input.executable, `${label}.executable`)
-  if (!Array.isArray(input.args)) fail(`${label}.args`, 'must be an array')
-  input.args.forEach((arg, index) => {
-    assertString(arg, `${label}.args[${index}]`)
-  })
-  if (typeof input.isDefault !== 'boolean') fail(`${label}.isDefault`, 'must be a boolean')
-  const message = agentProfileFieldError({
-    name: input.name as string,
-    executable: input.executable as string,
-    args: input.args as string[],
-  })
+  assertString(input.command, `${label}.command`)
+  let parsed: ReturnType<typeof parseAgentCommand>
+  try {
+    parsed = parseAgentCommand(input.command as string)
+  } catch (error) {
+    throw new ValidationError((error as Error).message)
+  }
+  const message = agentProfileFieldError({ name: input.name as string, ...parsed })
   if (message !== null) throw new ValidationError(message)
+}
+
+function assertAgentSelection(
+  value: unknown,
+  label: string,
+): asserts value is AgentProjectSelectionInput {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    fail(label, 'must be an object')
+  const input = value as Record<string, unknown>
+  if (
+    Object.keys(input).length !== 2 ||
+    Object.keys(input).some((key) => key !== 'selectedIds' && key !== 'defaultId')
+  )
+    fail(label, 'has unexpected or missing fields')
+  if (!Array.isArray(input.selectedIds)) fail(`${label}.selectedIds`, 'must be an array')
+  input.selectedIds.forEach((id, index) => {
+    assertAgentId(id, `${label}.selectedIds[${index}]`)
+  })
+  if (new Set(input.selectedIds).size !== input.selectedIds.length)
+    fail(label, 'selected ids must be unique')
+  if (input.defaultId !== null) {
+    assertAgentId(input.defaultId, `${label}.defaultId`)
+    if (!input.selectedIds.includes(input.defaultId)) fail(label, 'default agent must be selected')
+  }
 }
 
 function assertKanbanSetConfig(
@@ -874,28 +903,52 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel(IPC_CHANNEL.agentProfilesGet, ['string'], (args) =>
       services.agentProfiles.get(args[0]),
     ),
+    serviceChannel(IPC_CHANNEL.agentProfilesLibraryGet, [], () =>
+      services.agentProfiles.libraryGet(),
+    ),
+    serviceChannel(IPC_CHANNEL.agentProfilesTemplatesGet, [], () =>
+      services.agentProfiles.templatesGet(),
+    ),
+    {
+      channel: IPC_CHANNEL.agentProfilesSelectionGet,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.agentProfilesSelectionGet)
+        assertAgentId(payload[0], 'projectId')
+        return payload
+      },
+      invoke: (args) => services.agentProfiles.selectionGet(args[0] as string),
+    },
+    {
+      channel: IPC_CHANNEL.agentProfilesSelectionSet,
+      parse: (payload) => {
+        requireArgs(payload, 2, IPC_CHANNEL.agentProfilesSelectionSet)
+        assertAgentId(payload[0], 'projectId')
+        assertAgentSelection(payload[1], 'selection')
+        return payload
+      },
+      invoke: (args) =>
+        services.agentProfiles.selectionSet(
+          args[0] as string,
+          args[1] as AgentProjectSelectionInput,
+        ),
+    },
     {
       channel: IPC_CHANNEL.agentProfilesPut,
       parse: (payload) => {
-        requireArgs(payload, 2, IPC_CHANNEL.agentProfilesPut)
-        assertString(payload[0], `${IPC_CHANNEL.agentProfilesPut} arg[0]`)
-        assertAgentProfilePut(payload[1], `${IPC_CHANNEL.agentProfilesPut} arg[1]`)
+        requireArgs(payload, 1, IPC_CHANNEL.agentProfilesPut)
+        assertAgentProfilePut(payload[0], `${IPC_CHANNEL.agentProfilesPut} arg[0]`)
         return payload
       },
-      invoke: (args) => services.agentProfiles.put(args[0] as string, args[1] as AgentProfilePut),
+      invoke: (args) => services.agentProfiles.put(args[0] as AgentProfilePut),
     },
     {
       channel: IPC_CHANNEL.agentProfilesDelete,
       parse: (payload) => {
-        requireArgs(payload, 2, IPC_CHANNEL.agentProfilesDelete)
-        assertString(payload[0], `${IPC_CHANNEL.agentProfilesDelete} arg[0]`)
-        assertString(payload[1], `${IPC_CHANNEL.agentProfilesDelete} arg[1]`)
-        if ((payload[1] as string).length === 0) {
-          fail(`${IPC_CHANNEL.agentProfilesDelete} arg[1]`, 'must be non-empty')
-        }
+        requireArgs(payload, 1, IPC_CHANNEL.agentProfilesDelete)
+        assertAgentId(payload[0], `${IPC_CHANNEL.agentProfilesDelete} arg[0]`)
         return payload
       },
-      invoke: (args) => services.agentProfiles.delete(args[0] as string, args[1] as string),
+      invoke: (args) => services.agentProfiles.delete(args[0] as string),
     },
     {
       channel: IPC_CHANNEL.dialogsPickDirectory,

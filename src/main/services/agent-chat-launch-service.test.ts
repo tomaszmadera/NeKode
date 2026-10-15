@@ -6,6 +6,8 @@ import { AppError, type AppErrorCode } from '../../shared/ipc-error'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import { AgentChatLaunchService } from './agent-chat-launch-service'
+import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
+import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
 import { ProjectService } from './project-service'
 import type { ShellSpec } from './terminal/terminal-service'
@@ -82,10 +84,36 @@ function createHarness(options: HarnessOptions = {}) {
     terminals,
   })
   const project = projects.add(demoPath)
-  return { service, projects, chats, spawns, terminals, project }
+  return { service, projects, chats, spawns, terminals, project, db }
 }
 
 describe('AgentChatLaunchService', () => {
+  it('rejects a globally existing unselected profile before chat creation and reads the current definition on later launch', () => {
+    const { db, projects, chats, terminals, project, spawns } = createHarness()
+    const profiles = new AgentProfilesService({ projects, state: new AppStateService({ db }) })
+    const agent = profiles.put({ id: null, name: 'Agent', command: 'original "{prompt}"' })
+      .profiles[0]
+    const launch = new AgentChatLaunchService({
+      projects,
+      profiles,
+      terminals,
+      createChat: (id, name) => chats.createNamed(id, name, 'chats:createWithAgent'),
+      removeChat: (id) => chats.remove(id),
+    })
+    expectAppError(() => launch.createWithAgent(project.id, agent.id), 'not_found')
+    expect(chats.list(project.id)).toEqual([])
+    expect(terminals.create).not.toHaveBeenCalled()
+    profiles.selectionSet(project.id, { selectedIds: [agent.id], defaultId: null })
+    profiles.put({ id: agent.id, name: 'Edited', command: 'updated --model "my model" "{prompt}"' })
+    const chat = launch.createWithAgent(project.id, agent.id)
+    expect(chat.name).toBe('[PowerShell] Edited')
+    expect(spawns).toEqual([{ file: 'updated', args: ['--model', 'my model'] }])
+    chats.remove(chat.id)
+    profiles.selectionSet(project.id, { selectedIds: [], defaultId: null })
+    expectAppError(() => launch.createWithAgent(project.id, agent.id), 'not_found')
+    expect(chats.list(project.id)).toEqual([])
+    expect(spawns).toHaveLength(1)
+  })
   it('creates one chat named for the profile and spawns its executable at the project root', () => {
     const { service, chats, spawns, terminals, project } = createHarness()
 

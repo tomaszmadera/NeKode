@@ -15,8 +15,12 @@ import type { AppServices } from './service-registry'
 function fakeAgentProfiles(): AppServices['agentProfiles'] {
   return {
     get: vi.fn(() => ({ defaultId: null, profiles: [] })),
-    put: vi.fn(() => ({ defaultId: null, profiles: [] })),
-    delete: vi.fn(() => ({ defaultId: null, profiles: [] })),
+    libraryGet: vi.fn(() => ({ version: 1 as const, profiles: [] })),
+    templatesGet: vi.fn(() => []),
+    put: vi.fn(() => ({ version: 1 as const, profiles: [] })),
+    delete: vi.fn(() => ({ version: 1 as const, profiles: [] })),
+    selectionGet: vi.fn(() => ({ version: 1 as const, selectedIds: [], defaultId: null })),
+    selectionSet: vi.fn(() => ({ version: 1 as const, selectedIds: [], defaultId: null })),
     cleanupProject: vi.fn(),
   }
 }
@@ -1124,22 +1128,42 @@ describe('kanban:* channels (adapter integration)', () => {
 })
 
 describe('agentProfiles:* channels', () => {
+  it.each([
+    [IPC_CHANNEL.agentProfilesLibraryGet, 'libraryGet', []],
+    [IPC_CHANNEL.agentProfilesTemplatesGet, 'templatesGet', []],
+    [IPC_CHANNEL.agentProfilesSelectionGet, 'selectionGet', ['p1']],
+    [
+      IPC_CHANNEL.agentProfilesSelectionSet,
+      'selectionSet',
+      ['p1', { selectedIds: [], defaultId: null }],
+    ],
+    [
+      IPC_CHANNEL.agentProfilesPut,
+      'put',
+      [{ id: null, name: 'Agent', command: 'agent "{prompt}"' }],
+    ],
+    [IPC_CHANNEL.agentProfilesDelete, 'delete', ['a']],
+  ] as const)('routes and sender-guards %s', (channel, method, args) => {
+    const { services, invoke } = createHarness()
+    expect(() => invoke(channel, [...args], 'https://untrusted.example')).toThrow(/untrusted/)
+    expect(services.agentProfiles[method]).not.toHaveBeenCalled()
+    invoke(channel, [...args])
+    expect(services.agentProfiles[method]).toHaveBeenCalledWith(...args)
+  })
   const input = {
     id: null,
     name: 'Claude',
-    executable: 'claude',
-    args: ['{prompt}'],
-    isDefault: true,
+    command: 'claude "{prompt}"',
   }
 
   it('routes get, put, and delete to the service', () => {
     const { services, invoke } = createHarness()
     invoke(IPC_CHANNEL.agentProfilesGet, ['p1'])
     expect(services.agentProfiles.get).toHaveBeenCalledWith('p1')
-    invoke(IPC_CHANNEL.agentProfilesPut, ['p1', input])
-    expect(services.agentProfiles.put).toHaveBeenCalledWith('p1', input)
-    invoke(IPC_CHANNEL.agentProfilesDelete, ['p1', 'id-1'])
-    expect(services.agentProfiles.delete).toHaveBeenCalledWith('p1', 'id-1')
+    invoke(IPC_CHANNEL.agentProfilesPut, [input])
+    expect(services.agentProfiles.put).toHaveBeenCalledWith(input)
+    invoke(IPC_CHANNEL.agentProfilesDelete, ['id-1'])
+    expect(services.agentProfiles.delete).toHaveBeenCalledWith('id-1')
   })
 
   it('projects:remove deletes that project’s agent profiles after the project row is removed', () => {
@@ -1150,6 +1174,22 @@ describe('agentProfiles:* channels', () => {
     expect(vi.mocked(services.projects.remove).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(services.agentProfiles.cleanupProject).mock.invocationCallOrder[0],
     )
+  })
+
+  it('projects:remove preserves project rows and running sessions when profile migration fails', () => {
+    const { services, invoke } = createHarness()
+    vi.mocked(services.agentProfiles.libraryGet).mockImplementation(() => {
+      throw new AppError('validation', 'Cannot migrate agent profiles: original data preserved.')
+    })
+    expect(() => invoke(IPC_CHANNEL.projectsRemove, ['p1'])).toThrow(/Cannot migrate/)
+    expect(services.projects.remove).not.toHaveBeenCalled()
+    expect(services.chats.remove).not.toHaveBeenCalled()
+    expect(services.state.delete).not.toHaveBeenCalled()
+    expect(services.agentProfiles.cleanupProject).not.toHaveBeenCalled()
+    expect(services.kanban.dropLaunchProject).not.toHaveBeenCalled()
+    expect(services.actions.stopForProject).not.toHaveBeenCalled()
+    expect(services.terminals.terminate).not.toHaveBeenCalled()
+    expect(services.terminals.terminateProjectBottom).not.toHaveBeenCalled()
   })
 
   it('does not delete agent profiles when project removal fails', () => {
@@ -1163,10 +1203,10 @@ describe('agentProfiles:* channels', () => {
 
   it('rejects an invalid profile before the service', () => {
     const { services, invoke } = createHarness()
-    expect(() => invoke(IPC_CHANNEL.agentProfilesPut, ['p1', { ...input, name: '  ' }])).toThrow(
+    expect(() => invoke(IPC_CHANNEL.agentProfilesPut, [{ ...input, name: '  ' }])).toThrow(
       APP_ERROR_MARKER,
     )
-    expect(() => invoke(IPC_CHANNEL.agentProfilesPut, ['p1', { ...input, args: [] }])).toThrow(
+    expect(() => invoke(IPC_CHANNEL.agentProfilesPut, [{ ...input, command: 'claude' }])).toThrow(
       /exactly once/,
     )
     expect(services.agentProfiles.put).not.toHaveBeenCalled()

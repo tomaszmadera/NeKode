@@ -711,6 +711,12 @@ The app should introduce the concept of a **Console Agent** with:
 
 # 23. Default Console Agent
 
+Accepted user decision 2026-10-14: [global-agent-profiles](features/global-agent-profiles/spec.md)
+replaces the global-default proposal below with a global profile library and
+explicit per-project opt-in and default selection. New projects start with no
+selected profiles. The proposal below is historical; this note records the
+contract, not completed implementation.
+
 The user can configure a global default.
 
 Example:

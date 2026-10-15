@@ -28,6 +28,9 @@ interface Props {
   initialTab?: SettingsTabId
   onClose: () => void
   onKanbanInvalidate?: (projectId: string | null) => void
+  onManageAgents?: () => void
+  libraryRefreshKey?: number
+  suspended?: boolean
 }
 
 export type SettingsTabId = 'shell' | 'actions' | 'kanban' | 'agents'
@@ -115,6 +118,9 @@ export function ActionSettings({
   initialTab,
   onClose,
   onKanbanInvalidate,
+  onManageAgents,
+  libraryRefreshKey,
+  suspended = false,
 }: Props): React.JSX.Element {
   // Tab state is renderer-local (spec project-shell-selection Stage 4): the
   // Shell tab is the default, each tab keeps its own unsaved edits, and an
@@ -283,6 +289,7 @@ export function ActionSettings({
   // when the dialog opens, so a dialog-level onKeyDown would never see the
   // key (same window-level idiom as the context menus).
   useEffect(() => {
+    if (suspended) return
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onClose()
     }
@@ -290,12 +297,14 @@ export function ActionSettings({
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [onClose])
+  }, [onClose, suspended])
 
   return (
     <>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the backdrop hosts the dismiss gesture (mouse down outside the dialog); the dialog's controls are real buttons and inputs and it closes on Escape. */}
       <div
+        hidden={suspended}
+        style={suspended ? { display: 'none' } : undefined}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
         role="presentation"
         onMouseDown={(event) => {
@@ -371,7 +380,12 @@ export function ActionSettings({
               ) : activeTab === 'kanban' ? (
                 <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
               ) : activeTab === 'agents' ? (
-                <AgentProfilesSettings app={app} projectId={projectId} />
+                <AgentProfilesSettings
+                  app={app}
+                  projectId={projectId}
+                  onManageAgents={onManageAgents}
+                  libraryRefreshKey={libraryRefreshKey}
+                />
               ) : (
                 <>
                   {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is

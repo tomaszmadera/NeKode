@@ -1,387 +1,229 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { AgentProfile, AgentProfilesDocument, AppApi } from '../../../../shared/ipc-contract'
-import { AGENT_PROMPT_PLACEHOLDER, agentProfileFieldError } from '../../../../shared/ipc-contract'
+import { serializeAgentCommand } from '../../../../shared/agent-command'
+import type {
+  AgentProfilesLibrary,
+  AgentProjectSelectionInput,
+  AppApi,
+} from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { TEST_ID } from '../../lib/test-ids'
 
-// Agents tab of Project Settings (kanban task launch amendment, Profile
-// agentów). Profiles are per project. This tab does not spawn a process and
-// does not create a chat. Empty name, empty executable, or a `{prompt}` count
-// other than one is rejected here and again in main; neither path writes.
-
 interface AgentProfilesSettingsProps {
   app: AppApi
   projectId: string | null
+  onManageAgents?: () => void
+  libraryRefreshKey?: number
 }
 
-interface ArgRow {
-  key: string
-  value: string
-}
-
-interface ProfileForm {
-  id: string | null
-  name: string
-  executable: string
-  args: ArgRow[]
-  isDefault: boolean
-}
-
-const EMPTY_DOCUMENT: AgentProfilesDocument = { defaultId: null, profiles: [] }
-
-function argRows(values: readonly string[], nextKey: () => string): ArgRow[] {
-  return values.map((value) => ({ key: nextKey(), value }))
-}
+const EMPTY_LIBRARY: AgentProfilesLibrary = { version: 1, profiles: [] }
+const EMPTY_SELECTION: AgentProjectSelectionInput = { selectedIds: [], defaultId: null }
 
 export function AgentProfilesSettings({
   app,
   projectId,
+  onManageAgents,
+  libraryRefreshKey = 0,
 }: AgentProfilesSettingsProps): React.JSX.Element {
-  const [document, setDocument] = useState<AgentProfilesDocument>(EMPTY_DOCUMENT)
+  const [library, setLibrary] = useState(EMPTY_LIBRARY)
+  const [selection, setSelection] = useState<AgentProjectSelectionInput>(EMPTY_SELECTION)
+  const [saved, setSaved] = useState<AgentProjectSelectionInput>(EMPTY_SELECTION)
   const [loadedFor, setLoadedFor] = useState<string | null>(null)
-  const [loading, setLoading] = useState(projectId !== null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [form, setForm] = useState<ProfileForm | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const guard = useMutationGuard()
   const projectRef = useRef(projectId)
-  const argKey = useRef(0)
   projectRef.current = projectId
-
-  function nextArgKey(): string {
-    argKey.current += 1
-    return `arg-${argKey.current}`
-  }
 
   useEffect(() => {
     let alive = true
-    // A project switch supersedes any in-flight mutation: drop the guard so
-    // the new project's controls start enabled (the superseded run's own
-    // release is skipped via `isCurrent` below).
     guard.reset()
-    setForm(null)
-    setFormError(null)
-    setLoadError(null)
+    setError(null)
+    setLoading(true)
+    setLoadedFor(null)
     if (projectId === null) {
-      setDocument(EMPTY_DOCUMENT)
-      setLoadedFor(null)
       setLoading(false)
       return
     }
-    setLoading(true)
-    app.agentProfiles
-      .get(projectId)
-      .then((next) => {
+    Promise.all([app.agentProfiles.libraryGet(), app.agentProfiles.selectionGet(projectId)])
+      .then(([nextLibrary, nextSelection]) => {
         if (!alive) return
-        setDocument(next)
+        setLibrary(nextLibrary)
+        const draft = { selectedIds: nextSelection.selectedIds, defaultId: nextSelection.defaultId }
+        setSelection(draft)
+        setSaved(draft)
         setLoadedFor(projectId)
         setLoading(false)
       })
       .catch((cause: unknown) => {
         if (!alive) return
-        setDocument(EMPTY_DOCUMENT)
-        setLoadedFor(projectId)
+        setError(parseAppErrorPayload(cause)?.message ?? 'Failed to load agent profiles.')
         setLoading(false)
-        setLoadError(parseAppErrorPayload(cause)?.message ?? 'Failed to load agent profiles.')
       })
     return () => {
       alive = false
     }
   }, [app, projectId, guard.reset])
 
-  async function save(): Promise<void> {
-    // The in-flight check stays before the field validation: while a save is
-    // in flight a second activation must return silently, not re-report.
-    if (projectId === null || form === null || guard.inFlight()) return
-    const message = agentProfileFieldError({
-      name: form.name,
-      executable: form.executable,
-      args: form.args.map((row) => row.value),
-    })
-    if (message !== null) {
-      setFormError(message)
-      return
+  useEffect(() => {
+    if (libraryRefreshKey === 0) return
+    let alive = true
+    app.agentProfiles
+      .libraryGet()
+      .then((next) => {
+        if (alive) setLibrary(next)
+      })
+      .catch((cause: unknown) => {
+        if (alive)
+          setError(parseAppErrorPayload(cause)?.message ?? 'Failed to refresh the agent library.')
+      })
+    return () => {
+      alive = false
     }
+  }, [app, libraryRefreshKey])
+
+  async function save(): Promise<void> {
+    if (projectId === null || loadedFor !== projectId) return
     const savedFor = projectId
     await guard.run(
       async () => {
-        setFormError(null)
+        setError(null)
         try {
-          const next = await app.agentProfiles.put(projectId, {
-            id: form.id,
-            name: form.name.trim(),
-            executable: form.executable.trim(),
-            args: form.args.map((row) => row.value),
-            isDefault: form.isDefault,
-          })
-          if (savedFor !== projectRef.current) return
-          setDocument(next)
-          setLoadedFor(savedFor)
-          setForm(null)
+          const next = await app.agentProfiles.selectionSet(savedFor, selection)
+          if (projectRef.current !== savedFor) return
+          const draft = { selectedIds: next.selectedIds, defaultId: next.defaultId }
+          setSelection(draft)
+          setSaved(draft)
         } catch (cause) {
-          if (savedFor !== projectRef.current) return
-          setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the agent profile.')
+          if (projectRef.current === savedFor)
+            setError(parseAppErrorPayload(cause)?.message ?? 'Failed to save agent selection.')
         }
       },
-      // A superseded run (project switch) must not unlock its replacement.
-      () => savedFor === projectRef.current,
+      () => projectRef.current === savedFor,
     )
   }
-
-  async function remove(profileId: string): Promise<void> {
-    if (projectId === null) return
-    const savedFor = projectId
-    await guard.run(
-      async () => {
-        setFormError(null)
-        try {
-          const next = await app.agentProfiles.delete(projectId, profileId)
-          if (savedFor !== projectRef.current) return
-          setDocument(next)
-          setLoadedFor(savedFor)
-          if (form?.id === profileId) setForm(null)
-        } catch (cause) {
-          if (savedFor !== projectRef.current) return
-          setFormError(
-            parseAppErrorPayload(cause)?.message ?? 'Failed to delete the agent profile.',
-          )
-        }
-      },
-      // A superseded run (project switch) must not unlock its replacement.
-      () => savedFor === projectRef.current,
-    )
-  }
-
-  function startAdd(): void {
-    setForm({
-      id: null,
-      name: '',
-      executable: '',
-      args: argRows([AGENT_PROMPT_PLACEHOLDER], nextArgKey),
-      isDefault: false,
-    })
-    setFormError(null)
-  }
-
-  function startEdit(profile: AgentProfile): void {
-    setForm({
-      id: profile.id,
-      name: profile.name,
-      executable: profile.executable,
-      args: argRows(profile.args, nextArgKey),
-      isDefault: document.defaultId === profile.id,
-    })
-    setFormError(null)
-  }
-
-  const showDocument = projectId !== null && !loading && loadedFor === projectId
 
   return (
     <div data-testid={TEST_ID.settingsAgentsPanel}>
       <h3 className="border-b border-edge pb-2 text-sm font-semibold">Agents</h3>
-      {projectId === null ? (
-        <p className="mt-3 text-xs text-ink-secondary">
-          Select a project to configure agent profiles.
+      <p className="mt-3 text-xs text-ink-secondary">
+        Choose the global agents available in this project. No agents are selected automatically.
+      </p>
+      <button
+        type="button"
+        className="mt-3 h-control rounded-md bg-button px-4 text-sm hover:bg-button-hover"
+        onClick={onManageAgents}
+      >
+        Manage agents
+      </button>
+      {error !== null ? (
+        <p
+          role="alert"
+          data-testid={TEST_ID.settingsAgentsError}
+          className="mt-3 text-xs text-error"
+        >
+          {error}
         </p>
-      ) : !showDocument ? (
-        <p className="mt-3 text-xs text-ink-secondary">Loading agent profiles…</p>
-      ) : (
+      ) : null}
+      {projectId === null ? (
+        <p className="mt-3 text-xs text-ink-secondary">Select a project to choose agents.</p>
+      ) : loading ? (
+        <p className="mt-3 text-xs text-ink-secondary">Loading agent profiles...</p>
+      ) : loadedFor === projectId ? (
         <>
-          {loadError ? (
-            <p role="alert" className="mt-3 text-xs text-error">
-              {loadError}
-            </p>
-          ) : null}
-          {form === null ? (
-            <button
-              type="button"
-              className="mt-3 h-control rounded-md bg-button px-4 text-sm text-ink hover:bg-button-hover"
-              onClick={startAdd}
+          {library.profiles.length === 0 ? (
+            <p
+              data-testid={TEST_ID.settingsAgentsEmpty}
+              className="mt-3 text-xs text-ink-secondary"
             >
-              Add profile
-            </button>
+              No global agents. Use Manage agents to add one.
+            </p>
           ) : (
-            <div className="mt-3 space-y-2 text-xs">
-              <label className="block">
-                Name
-                <input
-                  className="mt-1 w-full rounded-sm bg-highlight p-1"
-                  value={form.name}
-                  onChange={(event) => {
-                    setForm({ ...form, name: event.target.value })
-                    setFormError(null)
-                  }}
-                />
-              </label>
-              <label className="block">
-                Executable
-                <input
-                  className="mt-1 w-full rounded-sm bg-highlight p-1"
-                  value={form.executable}
-                  onChange={(event) => {
-                    setForm({ ...form, executable: event.target.value })
-                    setFormError(null)
-                  }}
-                />
-              </label>
-              <div>
-                <div className="text-ink-secondary">
-                  Arguments. Exactly one argument must be the literal {AGENT_PROMPT_PLACEHOLDER}.
-                </div>
-                {form.args.map((row, index) => (
-                  <div key={row.key} className="mt-1 flex gap-2">
-                    <label className="min-w-0 flex-1">
-                      {`Argument ${index + 1}`}
-                      <input
-                        className="mt-1 w-full rounded-sm bg-highlight p-1"
-                        value={row.value}
-                        onChange={(event) => {
-                          setForm({
-                            ...form,
-                            args: form.args.map((candidate) =>
-                              candidate.key === row.key
-                                ? { ...candidate, value: event.target.value }
-                                : candidate,
-                            ),
-                          })
-                          setFormError(null)
-                        }}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="mt-4 shrink-0 rounded-md px-2 py-1 text-ink-secondary hover:bg-highlight hover:text-ink"
-                      aria-label={`Remove argument ${index + 1}`}
-                      onClick={() => {
-                        setForm({
-                          ...form,
-                          args: form.args.filter((candidate) => candidate.key !== row.key),
-                        })
-                        setFormError(null)
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  className="mt-2 rounded-md px-2 py-1 text-ink-secondary hover:bg-highlight hover:text-ink"
-                  onClick={() => {
-                    setForm({
-                      ...form,
-                      args: [...form.args, { key: nextArgKey(), value: '' }],
-                    })
-                    setFormError(null)
-                  }}
-                >
-                  Add argument
-                </button>
-              </div>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.isDefault}
-                  data-testid={TEST_ID.settingsAgentsDefault}
-                  onChange={(event) => {
-                    setForm({ ...form, isDefault: event.target.checked })
-                    setFormError(null)
-                  }}
-                />
-                Default profile
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
-                  disabled={guard.busy}
-                  onClick={() => {
-                    void save()
-                  }}
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  className="h-control rounded-md px-3 text-ink-secondary hover:bg-highlight hover:text-ink"
-                  onClick={() => {
-                    setForm(null)
-                    setFormError(null)
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
+            <div className="mt-3 space-y-3">
+              {library.profiles.map((profile) => (
+                <label key={profile.id} className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`Enable ${profile.name}: ${serializeAgentCommand(profile)}`}
+                    checked={selection.selectedIds.includes(profile.id)}
+                    disabled={guard.busy}
+                    onChange={(event) => {
+                      const checked = event.target.checked
+                      setSelection((current) => ({
+                        selectedIds: checked
+                          ? [...current.selectedIds, profile.id]
+                          : current.selectedIds.filter((id) => id !== profile.id),
+                        defaultId:
+                          !checked && current.defaultId === profile.id ? null : current.defaultId,
+                      }))
+                    }}
+                  />
+                  <span className="min-w-0">
+                    <span className="font-semibold">{profile.name}</span>
+                    <code className="mt-1 block break-all text-ink-secondary">
+                      {serializeAgentCommand(profile)}
+                    </code>
+                    {profile.originProjectName ? (
+                      <span className="text-ink-muted">From {profile.originProjectName}</span>
+                    ) : null}
+                  </span>
+                </label>
+              ))}
             </div>
           )}
-          {formError ? (
+          {library.profiles.length > 0 && selection.selectedIds.length === 0 ? (
             <p
-              role="alert"
-              className="mt-2 text-xs text-error"
-              data-testid={TEST_ID.settingsAgentsError}
-            >
-              {formError}
-            </p>
-          ) : null}
-          {!loadError && document.profiles.length === 0 && form === null ? (
-            <p
-              className="mt-3 text-xs text-ink-secondary"
               data-testid={TEST_ID.settingsAgentsEmpty}
+              className="mt-3 text-xs text-ink-secondary"
             >
-              No agent profiles for this project.
+              No agents selected for this project. Select an agent to use it in New Chat or Kanban.
             </p>
           ) : null}
-          <ul className="mt-3 space-y-2">
-            {document.profiles.map((profile) => (
-              <li
-                key={profile.id}
-                className="flex items-center gap-2 rounded border border-edge px-2 py-1 text-xs"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium">
-                    {profile.name}
-                    {document.defaultId === profile.id ? (
-                      <span
-                        className="ml-2 text-ink-secondary"
-                        data-testid={TEST_ID.settingsAgentsDefaultBadge}
-                      >
-                        Default
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="truncate text-ink-secondary" title={profile.executable}>
-                    {profile.executable}
-                  </div>
-                  <div className="truncate text-ink-muted" title={profile.args.join(' ')}>
-                    {profile.args.join(' ')}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-md px-2 py-1 text-ink-secondary hover:bg-highlight hover:text-ink"
-                  aria-label={`Edit ${profile.name}`}
-                  onClick={() => startEdit(profile)}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md px-2 py-1 text-ink-secondary hover:bg-error/10 hover:text-error disabled:opacity-50"
-                  aria-label={`Delete ${profile.name}`}
-                  disabled={guard.busy}
-                  onClick={() => {
-                    void remove(profile.id)
-                  }}
-                >
-                  Delete
-                </button>
-              </li>
-            ))}
-          </ul>
+          <label className="mt-4 block text-xs">
+            Default agent
+            <select
+              data-testid={TEST_ID.settingsAgentsDefault}
+              className="mt-1 block w-full rounded-sm bg-highlight p-2"
+              value={selection.defaultId ?? ''}
+              disabled={guard.busy}
+              onChange={(event) =>
+                setSelection({ ...selection, defaultId: event.target.value || null })
+              }
+            >
+              <option value="">None (choose at launch)</option>
+              {library.profiles
+                .filter((profile) => selection.selectedIds.includes(profile.id))
+                .map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name} - {serializeAgentCommand(profile)}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              disabled={guard.busy}
+              onClick={() => void save()}
+              className="h-control rounded-md bg-button px-4 text-sm hover:bg-button-hover"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              disabled={guard.busy}
+              onClick={() => {
+                setSelection(saved)
+                setError(null)
+              }}
+              className="h-control rounded-md border border-edge px-4 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
         </>
-      )}
+      ) : null}
     </div>
   )
 }

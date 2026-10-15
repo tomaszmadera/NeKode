@@ -1,28 +1,32 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentProfilePut, AgentProfilesDocument } from '../../../shared/ipc-contract'
-import { agentProfileFieldError, projectAgentProfilesKey } from '../../../shared/ipc-contract'
+import { parseAgentCommand } from '../../../shared/agent-command'
+import type {
+  AgentProfile,
+  AgentProfilePut,
+  AgentProfilesDocument,
+  AgentProfilesLibrary,
+  AgentProjectSelection,
+  AgentProjectSelectionInput,
+} from '../../../shared/ipc-contract'
+import {
+  AGENT_PROFILES_LIBRARY_KEY,
+  agentProfileFieldError,
+  projectAgentProfilesKey,
+  projectAgentSelectionKey,
+} from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
-
-// Per-project agent profiles (kanban task launch amendment). One JSON document
-// in the existing app_state store, key `project.agentProfiles:<projectId>`:
-// `{ defaultId, profiles }`. No new table. Field checks run before the write.
-// `projects:remove` deletes the row first, then calls cleanupProject, so
-// cleanup must not require the project row to still exist.
-
-const CHANNEL = {
-  get: 'agentProfiles:get',
-  put: 'agentProfiles:put',
-  delete: 'agentProfiles:delete',
-} as const
+import { agentProfileTemplates } from './agent-profile-templates'
 
 export interface AgentProfilesProjectLookup {
-  get(projectId: string): { path: string } | null
+  get(projectId: string): { path: string; name?: string } | null
 }
 
 export interface AgentProfilesStateStore {
   get(key: string): string | null
   set(key: string, value: string): void
   delete(key: string): void
+  listPrefix(prefix: string): Array<{ key: string; value: string }>
+  transaction<T>(operation: () => T): T
 }
 
 export interface AgentProfilesServiceDeps {
@@ -30,54 +34,59 @@ export interface AgentProfilesServiceDeps {
   state: AgentProfilesStateStore
 }
 
-function emptyDocument(): AgentProfilesDocument {
-  return { defaultId: null, profiles: [] }
+const LEGACY_PREFIX = 'project.agentProfiles:'
+const SELECTION_PREFIX = 'project.agentSelection:'
+const EMPTY_SELECTION: AgentProjectSelection = { version: 1, selectedIds: [], defaultId: null }
+
+function record(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error('Expected an object.')
+  return value as Record<string, unknown>
 }
 
-function parseProfile(value: unknown): AgentProfilesDocument['profiles'][number] | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return null
-  }
-  const record = value as Record<string, unknown>
-  if (typeof record.id !== 'string' || record.id.length === 0) return null
-  if (typeof record.name !== 'string' || typeof record.executable !== 'string') return null
-  if (!Array.isArray(record.args) || record.args.some((arg) => typeof arg !== 'string')) {
-    return null
-  }
-  return {
-    id: record.id,
-    name: record.name,
-    executable: record.executable,
-    args: record.args,
-  }
+function profile(value: unknown): AgentProfile {
+  const input = record(value)
+  if (typeof input.id !== 'string' || input.id.length === 0 || input.id.includes('\u0000'))
+    throw new Error('Invalid profile id.')
+  const error = agentProfileFieldError(input as unknown as AgentProfile)
+  if (error !== null) throw new Error(error)
+  if (input.originProjectName !== undefined && typeof input.originProjectName !== 'string')
+    throw new Error('Invalid profile origin.')
+  // Preserve additional launch fields if a format amendment has introduced them.
+  return { ...input, args: [...(input.args as string[])] } as unknown as AgentProfile
 }
 
-/** A document this service did not write reads as empty. Read does not repair it. */
-function parseDocument(raw: string | null): AgentProfilesDocument {
-  if (raw === null || raw.length === 0) return emptyDocument()
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return emptyDocument()
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return emptyDocument()
-  }
-  const record = parsed as Record<string, unknown>
-  if (!Array.isArray(record.profiles)) return emptyDocument()
-  const profiles = []
-  for (const entry of record.profiles) {
-    const profile = parseProfile(entry)
-    if (profile === null) return emptyDocument()
-    profiles.push(profile)
-  }
-  const defaultId = typeof record.defaultId === 'string' ? record.defaultId : null
-  return {
-    defaultId:
-      defaultId !== null && profiles.some((profile) => profile.id === defaultId) ? defaultId : null,
-    profiles,
-  }
+function profiles(value: unknown): AgentProfile[] {
+  if (!Array.isArray(value)) throw new Error('Expected a profile list.')
+  const result = value.map(profile)
+  if (new Set(result.map((entry) => entry.id)).size !== result.length)
+    throw new Error('Duplicate profile ids.')
+  return result
+}
+
+function selection(
+  value: unknown,
+  library: AgentProfilesLibrary,
+  versioned = true,
+): AgentProjectSelection {
+  const input = record(value)
+  if (versioned && input.version !== 1) throw new Error('Unsupported selection format.')
+  if (
+    !Array.isArray(input.selectedIds) ||
+    input.selectedIds.some((id) => typeof id !== 'string' || id.length === 0)
+  )
+    throw new Error('Selected ids must be non-empty strings.')
+  const selectedIds = input.selectedIds as string[]
+  if (new Set(selectedIds).size !== selectedIds.length)
+    throw new Error('Selected ids must be unique.')
+  if (selectedIds.some((id) => !library.profiles.some((entry) => entry.id === id)))
+    throw new Error('A selected profile no longer exists.')
+  if (
+    input.defaultId !== null &&
+    (typeof input.defaultId !== 'string' || !selectedIds.includes(input.defaultId))
+  )
+    throw new Error('Default agent must be selected for this project.')
+  return { version: 1, selectedIds: [...selectedIds], defaultId: input.defaultId as string | null }
 }
 
 export class AgentProfilesService {
@@ -89,93 +98,233 @@ export class AgentProfilesService {
     this.#state = deps.state
   }
 
-  get(projectId: string): AgentProfilesDocument {
-    this.requireProject(projectId, CHANNEL.get)
-    return parseDocument(this.#state.get(projectAgentProfilesKey(projectId)))
+  templatesGet(): ReturnType<typeof agentProfileTemplates> {
+    return agentProfileTemplates()
   }
 
-  put(projectId: string, input: AgentProfilePut): AgentProfilesDocument {
-    this.requireProject(projectId, CHANNEL.put)
-    this.assertPut(input)
-    const current = parseDocument(this.#state.get(projectAgentProfilesKey(projectId)))
-    const name = input.name.trim()
-    const executable = input.executable.trim()
-    const args = [...input.args]
-    if (input.id === null) {
-      const id = randomUUID()
-      return this.write(projectId, {
-        defaultId: input.isDefault ? id : current.defaultId,
-        profiles: [...current.profiles, { id, name, executable, args }],
-      })
-    }
-    const index = current.profiles.findIndex((profile) => profile.id === input.id)
-    if (index < 0) {
-      throw new AppError('not_found', `Agent profile "${input.id}" not found.`, CHANNEL.put)
-    }
-    const profiles = current.profiles.map((profile) => ({ ...profile, args: [...profile.args] }))
-    profiles[index] = { id: input.id, name, executable, args }
-    const defaultId = input.isDefault
-      ? input.id
-      : current.defaultId === input.id
-        ? null
-        : current.defaultId
-    return this.write(projectId, { defaultId, profiles })
-  }
-
-  delete(projectId: string, profileId: string): AgentProfilesDocument {
-    this.requireProject(projectId, CHANNEL.delete)
-    const current = parseDocument(this.#state.get(projectAgentProfilesKey(projectId)))
-    if (!current.profiles.some((profile) => profile.id === profileId)) {
-      throw new AppError('not_found', `Agent profile "${profileId}" not found.`, CHANNEL.delete)
-    }
-    return this.write(projectId, {
-      defaultId: current.defaultId === profileId ? null : current.defaultId,
-      profiles: current.profiles.filter((profile) => profile.id !== profileId),
+  libraryGet(): AgentProfilesLibrary {
+    return this.persistence('agentProfiles:libraryGet', () => {
+      this.migrate()
+      return this.readLibrary()
     })
   }
 
-  /** Deletes the document key. Safe after the project row is already gone. */
+  get(projectId: string): AgentProfilesDocument {
+    this.requireProject(projectId, 'agentProfiles:get')
+    const library = this.libraryGet()
+    const selected = this.selectionGet(projectId)
+    return {
+      defaultId: selected.defaultId,
+      profiles: library.profiles.filter((entry) => selected.selectedIds.includes(entry.id)),
+    }
+  }
+
+  selectionGet(projectId: string): AgentProjectSelection {
+    this.requireProject(projectId, 'agentProfiles:selectionGet')
+    const library = this.libraryGet()
+    return this.readSelection(projectId, library)
+  }
+
+  selectionSet(projectId: string, input: AgentProjectSelectionInput): AgentProjectSelection {
+    const channel = 'agentProfiles:selectionSet'
+    this.requireProject(projectId, channel)
+    const library = this.libraryGet()
+    let next: AgentProjectSelection
+    try {
+      next = selection(input, library, false)
+    } catch (error) {
+      throw new AppError('validation', (error as Error).message, channel)
+    }
+    return this.persistence(channel, () =>
+      this.#state.transaction(() => {
+        this.#state.set(projectAgentSelectionKey(projectId), JSON.stringify(next))
+        return next
+      }),
+    )
+  }
+
+  put(input: AgentProfilePut): AgentProfilesLibrary {
+    const channel = 'agentProfiles:put'
+    let parsed: ReturnType<typeof parseAgentCommand>
+    try {
+      const fields = record(input)
+      if (fields.id !== null && (typeof fields.id !== 'string' || fields.id.length === 0))
+        throw new Error('Profile id must be a non-empty string or null.')
+      parsed = parseAgentCommand(fields.command as string)
+      const error = agentProfileFieldError({ ...parsed, name: fields.name as string })
+      if (error !== null) throw new Error(error)
+    } catch (error) {
+      throw new AppError('validation', (error as Error).message, channel)
+    }
+    const library = this.libraryGet()
+    const index =
+      input.id === null ? -1 : library.profiles.findIndex((entry) => entry.id === input.id)
+    if (input.id !== null && index < 0)
+      throw new AppError('not_found', 'Agent profile not found.', channel)
+    const nextProfile: AgentProfile = {
+      ...(index < 0 ? {} : library.profiles[index]),
+      id: input.id ?? randomUUID(),
+      name: input.name.trim(),
+      ...parsed,
+    }
+    const next: AgentProfilesLibrary = { version: 1, profiles: [...library.profiles] }
+    if (index < 0) next.profiles.push(nextProfile)
+    else next.profiles[index] = nextProfile
+    return this.writeLibrary(next, channel)
+  }
+
+  delete(profileId: string): AgentProfilesLibrary {
+    const channel = 'agentProfiles:delete'
+    const library = this.libraryGet()
+    if (!library.profiles.some((entry) => entry.id === profileId))
+      throw new AppError('not_found', 'Agent profile not found.', channel)
+    return this.persistence(channel, () =>
+      this.#state.transaction(() => {
+        const users: string[] = []
+        for (const { key } of this.#state.listPrefix(SELECTION_PREFIX)) {
+          const projectId = key.slice(SELECTION_PREFIX.length)
+          const project = this.#projects.get(projectId)
+          if (
+            project !== null &&
+            this.readSelection(projectId, library).selectedIds.includes(profileId)
+          )
+            users.push(project.name ?? projectId)
+        }
+        if (users.length > 0)
+          throw new AppError(
+            'conflict',
+            `Deselect this agent in these projects before deleting it: ${users.join(', ')}.`,
+            channel,
+          )
+        const next: AgentProfilesLibrary = {
+          version: 1,
+          profiles: library.profiles.filter((entry) => entry.id !== profileId),
+        }
+        this.#state.set(AGENT_PROFILES_LIBRARY_KEY, JSON.stringify(next))
+        return next
+      }),
+    )
+  }
+
+  /** Selection cleanup never removes a global definition or requires a project row. */
   cleanupProject(projectId: string): void {
-    this.#state.delete(projectAgentProfilesKey(projectId))
+    this.persistence('projects:remove', () =>
+      this.#state.transaction(() => {
+        this.migrate()
+        this.#state.delete(projectAgentSelectionKey(projectId))
+        this.#state.delete(projectAgentProfilesKey(projectId))
+      }),
+    )
+  }
+
+  private migrate(): void {
+    if (this.#state.get(AGENT_PROFILES_LIBRARY_KEY) !== null) return
+    this.#state.transaction(() => {
+      const library: AgentProfilesLibrary = { version: 1, profiles: [] }
+      const migrated: Array<{ key: string; projectId: string; selection: AgentProjectSelection }> =
+        []
+      const ids = new Set<string>()
+      // Validate every source and construct all mappings before the first write.
+      for (const { key, value } of this.#state.listPrefix(LEGACY_PREFIX)) {
+        const projectId = key.slice(LEGACY_PREFIX.length)
+        try {
+          const source = record(JSON.parse(value))
+          const entries = profiles(source.profiles)
+          if (
+            source.defaultId !== null &&
+            (typeof source.defaultId !== 'string' ||
+              !entries.some((entry) => entry.id === source.defaultId))
+          )
+            throw new Error('Invalid default profile.')
+          const mapping = new Map<string, string>()
+          for (const entry of entries) {
+            let id = entry.id
+            while (ids.has(id)) id = randomUUID()
+            ids.add(id)
+            mapping.set(entry.id, id)
+            const originProjectName = this.#projects.get(projectId)?.name ?? projectId
+            library.profiles.push({ ...entry, id, originProjectName })
+          }
+          migrated.push({
+            key,
+            projectId,
+            selection: {
+              version: 1,
+              selectedIds: entries.map((entry) => mapping.get(entry.id) as string),
+              defaultId:
+                source.defaultId === null
+                  ? null
+                  : (mapping.get(source.defaultId as string) as string),
+            },
+          })
+        } catch {
+          throw new AppError(
+            'validation',
+            `Cannot migrate agent profiles for project "${projectId}": invalid stored configuration. Original data has been preserved.`,
+            'agentProfiles:libraryGet',
+          )
+        }
+      }
+      this.#state.set(AGENT_PROFILES_LIBRARY_KEY, JSON.stringify(library))
+      for (const entry of migrated) {
+        this.#state.set(projectAgentSelectionKey(entry.projectId), JSON.stringify(entry.selection))
+        this.#state.delete(entry.key)
+      }
+    })
+  }
+
+  private readLibrary(): AgentProfilesLibrary {
+    const raw = this.#state.get(AGENT_PROFILES_LIBRARY_KEY)
+    try {
+      const input = record(JSON.parse(raw as string))
+      if (input.version !== 1) throw new Error('Unsupported format.')
+      return { version: 1, profiles: profiles(input.profiles) }
+    } catch {
+      throw new AppError(
+        'validation',
+        'The stored agent library is invalid. Original data has been preserved.',
+        'agentProfiles:libraryGet',
+      )
+    }
+  }
+
+  private readSelection(projectId: string, library: AgentProfilesLibrary): AgentProjectSelection {
+    return this.persistence('agentProfiles:selectionGet', () => {
+      const raw = this.#state.get(projectAgentSelectionKey(projectId))
+      if (raw === null) return { ...EMPTY_SELECTION, selectedIds: [] }
+      try {
+        return selection(JSON.parse(raw), library)
+      } catch {
+        throw new AppError(
+          'validation',
+          `The stored agent selection for project "${projectId}" is invalid.`,
+          'agentProfiles:selectionGet',
+        )
+      }
+    })
+  }
+
+  private writeLibrary(library: AgentProfilesLibrary, channel: string): AgentProfilesLibrary {
+    return this.persistence(channel, () =>
+      this.#state.transaction(() => {
+        this.#state.set(AGENT_PROFILES_LIBRARY_KEY, JSON.stringify(library))
+        return library
+      }),
+    )
+  }
+
+  private persistence<T>(channel: string, operation: () => T): T {
+    try {
+      return operation()
+    } catch (error) {
+      if (error instanceof AppError) throw error
+      // Do not log stored commands or SQLite values.
+      throw new AppError('sqlite', 'Failed to read or save agent configuration.', channel)
+    }
   }
 
   private requireProject(projectId: string, channel: string): void {
-    if (this.#projects.get(projectId) === null) {
-      throw new AppError('not_found', `Project "${projectId}" not found.`, channel)
-    }
-  }
-
-  private assertPut(input: AgentProfilePut): void {
-    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-      throw new AppError('validation', 'Profile payload must be an object.', CHANNEL.put)
-    }
-    if (input.id !== null && (typeof input.id !== 'string' || input.id.length === 0)) {
-      throw new AppError(
-        'validation',
-        'Profile id must be a non-empty string or null.',
-        CHANNEL.put,
-      )
-    }
-    if (typeof input.isDefault !== 'boolean') {
-      throw new AppError('validation', 'isDefault must be a boolean.', CHANNEL.put)
-    }
-    const message = agentProfileFieldError(input)
-    if (message !== null) {
-      throw new AppError('validation', message, CHANNEL.put)
-    }
-  }
-
-  private write(projectId: string, document: AgentProfilesDocument): AgentProfilesDocument {
-    const stored: AgentProfilesDocument = {
-      defaultId: document.defaultId,
-      profiles: document.profiles.map((profile) => ({
-        id: profile.id,
-        name: profile.name,
-        executable: profile.executable,
-        args: [...profile.args],
-      })),
-    }
-    this.#state.set(projectAgentProfilesKey(projectId), JSON.stringify(stored))
-    return stored
+    if (this.#projects.get(projectId) === null)
+      throw new AppError('not_found', 'Project not found.', channel)
   }
 }

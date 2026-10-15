@@ -10,6 +10,9 @@ import type {
   ActionControl,
   ActionExecution,
   AgentProfilesDocument,
+  AgentProfilesLibrary,
+  AgentProfileTemplate,
+  AgentProjectSelection,
   AppApi,
   ChatInfo,
   FileEntry,
@@ -204,10 +207,15 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
     },
     agentProfiles: {
       get: (projectId) => invoke<AgentProfilesDocument>(IPC_CHANNEL.agentProfilesGet, projectId),
-      put: (projectId, input) =>
-        invoke<AgentProfilesDocument>(IPC_CHANNEL.agentProfilesPut, projectId, input),
-      delete: (projectId, profileId) =>
-        invoke<AgentProfilesDocument>(IPC_CHANNEL.agentProfilesDelete, projectId, profileId),
+      libraryGet: () => invoke<AgentProfilesLibrary>(IPC_CHANNEL.agentProfilesLibraryGet),
+      templatesGet: () => invoke<AgentProfileTemplate[]>(IPC_CHANNEL.agentProfilesTemplatesGet),
+      put: (input) => invoke<AgentProfilesLibrary>(IPC_CHANNEL.agentProfilesPut, input),
+      delete: (profileId) =>
+        invoke<AgentProfilesLibrary>(IPC_CHANNEL.agentProfilesDelete, profileId),
+      selectionGet: (projectId) =>
+        invoke<AgentProjectSelection>(IPC_CHANNEL.agentProfilesSelectionGet, projectId),
+      selectionSet: (projectId, input) =>
+        invoke<AgentProjectSelection>(IPC_CHANNEL.agentProfilesSelectionSet, projectId, input),
     },
     dialogs: {
       pickDirectory: (defaultPath) =>

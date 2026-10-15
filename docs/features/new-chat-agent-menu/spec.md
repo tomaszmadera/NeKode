@@ -11,7 +11,7 @@ Let the user start a chat with a configured agent directly from the left panel: 
 ## Related requirements
 
 - NEKODE-42 (Plane work item `354e0221-94dd-4ff9-a692-4cda6eb3e1dd`): "W lewym panelu dodać menu kontekstowe na prawy klawisz myszy na 'New chat'. Ma być lista profili agentów. Po wybraniu profilu, wystartuje nowy czat z załadowanym agentem."
-- [Kanban task launch amendment, "Profile agentów"](../kanban-adapter-interface/spec.md#kanban-task-launch-amendment-user-decision-2026-10-07): the accepted agent profile contract (per-project, name + executable + args with exactly one `{prompt}` argv element, managed in Project Settings).
+- [Global agent profiles](../global-agent-profiles/spec.md): accepted user decision 2026-10-14, replacing per-project definitions with a global library and explicit project opt-in. It owns configuration and migration; implementation is pending. [Kanban task launch amendment](../kanban-adapter-interface/spec.md#profile-agentów) owns the task prompt contract.
 - [mvp-core-shell](../mvp-core-shell/spec.md) and [project-shell-selection](../project-shell-selection/spec.md): chat naming `[shell] profile name`.
 - `docs/UX-UI.md` §22-25 (console agent model, agent selection; the future selector surface stays out of scope here).
 
@@ -31,7 +31,7 @@ Let the user start a chat with a configured agent directly from the left panel: 
 ## Behaviour
 
 1. The left panel's `New Chat` button keeps its left-click behavior unchanged. Right-clicking it (or pressing ContextMenu / Shift+F10 on the focused button, matching the project-row context-menu convention) opens a context menu and creates no chat. Keyboard invocation positions the menu below the button; the pointer gesture positions it at the pointer.
-2. The menu opens immediately and lists the project's agent profiles by name in stored document order, one menu item per profile. The profile list is per-project: the menu of a `New Chat` button lists only that button's project.
+2. The menu opens immediately and lists only the global profiles explicitly selected for that button's project, in global library order, one menu item per profile. An empty project selection remains empty even when the global library contains profiles.
 3. Choosing a profile creates exactly one chat in that project and adopts it like a Kanban Start chat: it becomes the selected chat, its project node expands, and the terminal-chat tab activates. The chat name is `[shell] <profile name>` with the shell prefix resolved at creation time (existing naming contract).
 4. The profile's agent process starts in the chat's terminal, spawned by main together with the chat, at the project root. The executable and argv are passed as a process argv, never typed through a shell. The single `{prompt}` argv element is removed: the agent starts interactively without an initial prompt. No other argv element changes.
 5. With no profiles configured, the menu shows one item `Configure agents`, which opens Project Settings on the Agents tab and creates no chat (the accepted Start-modal behavior).
@@ -43,7 +43,7 @@ Let the user start a chat with a configured agent directly from the left panel: 
 - One gesture creates at most one chat. Chat-name duplicates within a project stay allowed; identity is the chat id.
 - Chat naming and the compact shell prefix follow the existing `[shell] profile name` contract, resolved at creation time.
 - The application never writes a prompt into the shell; the agent receives its startup only as a process argv.
-- Existing chats, project shell selection, the Kanban Start/Resume launches, and the plain `New Chat` flow stay unchanged.
+- Existing chats, project shell selection, Kanban Start/Resume prompt and launch semantics, and the plain `New Chat` flow stay unchanged. Profile availability follows the project opt-in contract.
 
 ## Authorization
 
@@ -53,8 +53,8 @@ Let the user start a chat with a configured agent directly from the left panel: 
 
 - Input: the gesture target (the per-project `New Chat` button) identifies the project; the profile choice is an `AgentProfile.id`.
 - New typed IPC channel `chats:createWithAgent(projectId, profileId)` returning `ChatInfo`: main validates the project and profile, creates the named chat through the existing chat rules, spawns the profile in the chat's terminal (the same terminal launch path `kanban:launchTask` uses), and returns the created chat.
-- The renderer reads profiles through the existing `agentProfiles:get`.
-- Persistence: no new tables, keys, or migrations; the chat row uses the existing `chats` table.
+- The renderer reads effective project profiles through the typed bridge. The global-agent-profiles contract owns the API changes needed to resolve selected global definitions; main revalidates project selection before launch.
+- Chat persistence uses the existing `chats` table. Profile persistence and migration are owned by global-agent-profiles.
 
 ## Edge cases
 

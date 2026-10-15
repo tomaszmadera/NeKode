@@ -348,6 +348,10 @@ export const IPC_CHANNEL = {
   agentProfilesGet: 'agentProfiles:get',
   agentProfilesPut: 'agentProfiles:put',
   agentProfilesDelete: 'agentProfiles:delete',
+  agentProfilesLibraryGet: 'agentProfiles:libraryGet',
+  agentProfilesSelectionGet: 'agentProfiles:selectionGet',
+  agentProfilesSelectionSet: 'agentProfiles:selectionSet',
+  agentProfilesTemplatesGet: 'agentProfiles:templatesGet',
 } as const
 
 // Keys of the flat app_state key–value store (spec Data/API). Shared so the
@@ -432,31 +436,55 @@ export function projectShellKey(projectId: string): string {
  */
 export const AGENT_PROMPT_PLACEHOLDER = '{prompt}'
 
-/** One per-project agent launch profile. `id` is minted in main. */
+/** One global agent launch definition. `id` is minted in main. */
 export interface AgentProfile {
   id: string
   name: string
   executable: string
   args: string[]
+  originProjectName?: string
 }
 
-/** `project.agentProfiles:<projectId>` JSON document. */
+export interface AgentProfilesLibrary {
+  version: 1
+  profiles: AgentProfile[]
+}
+
+export interface AgentProfileTemplate {
+  id: string
+  name: string
+  command: string
+}
+
+export interface AgentProjectSelectionInput {
+  selectedIds: string[]
+  defaultId: string | null
+}
+
+export interface AgentProjectSelection extends AgentProjectSelectionInput {
+  version: 1
+}
+
+/** Effective project profiles returned for launching, never stored as definitions. */
 export interface AgentProfilesDocument {
   defaultId: string | null
   profiles: AgentProfile[]
 }
 
 /**
- * `agentProfiles:put` body. `id: null` creates a profile (main mints the id).
- * A string updates that profile. `isDefault` selects or, when this profile is
- * the current default, clears the project default.
+ * `agentProfiles:put` body. `id: null` creates a global profile. A string
+ * edits the same definition for future launches in every selected project.
  */
 export interface AgentProfilePut {
   id: string | null
   name: string
-  executable: string
-  args: string[]
-  isDefault: boolean
+  command: string
+}
+
+export const AGENT_PROFILES_LIBRARY_KEY = 'agents.library'
+
+export function projectAgentSelectionKey(projectId: string): string {
+  return `project.agentSelection:${projectId}`
 }
 
 /** Per-project agent profiles document (kanban task launch amendment). */
@@ -611,6 +639,9 @@ export function agentProfileFieldError(input: {
   }
   if (!Array.isArray(input.args) || input.args.some((arg) => typeof arg !== 'string')) {
     return 'Arguments must be a list of strings.'
+  }
+  if ([input.name, input.executable, ...input.args].some((value) => value.includes('\u0000'))) {
+    return 'Profile fields must not contain NUL characters.'
   }
   const placeholders = input.args.filter((arg) => arg === AGENT_PROMPT_PLACEHOLDER).length
   const hasSubstring = input.args.some(
@@ -808,18 +839,19 @@ export interface AppApi {
     ): Promise<KanbanHandoffAvailabilityResult>
   }
   agentProfiles: {
-    /** This project's profiles. Another project's document is never returned. */
+    /** Current global definitions selected by this project, in library order. */
     get(projectId: string): Promise<AgentProfilesDocument>
-    /**
-     * Creates (`id: null`, main mints the id) or updates one profile and
-     * returns the project document. Invalid fields reject and do not write.
-     */
-    put(projectId: string, input: AgentProfilePut): Promise<AgentProfilesDocument>
-    /**
-     * Deletes one profile. Deleting the default profile clears `defaultId`.
-     * Returns the project document.
-     */
-    delete(projectId: string, profileId: string): Promise<AgentProfilesDocument>
+    libraryGet(): Promise<AgentProfilesLibrary>
+    templatesGet(): Promise<AgentProfileTemplate[]>
+    /** Creates or edits a global definition; never selects it for a project. */
+    put(input: AgentProfilePut): Promise<AgentProfilesLibrary>
+    /** Refuses a definition still selected in any project. */
+    delete(profileId: string): Promise<AgentProfilesLibrary>
+    selectionGet(projectId: string): Promise<AgentProjectSelection>
+    selectionSet(
+      projectId: string,
+      input: AgentProjectSelectionInput,
+    ): Promise<AgentProjectSelection>
   }
   dialogs: {
     /**

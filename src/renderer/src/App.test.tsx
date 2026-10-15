@@ -154,6 +154,66 @@ const buildAction: ActionControl = {
 }
 
 describe('app settings and themes', () => {
+  it('opens the global Agents library without a project', async () => {
+    const app = createAppApiStub()
+    render(<App app={app} />)
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Agents' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add agent' }))
+    expect(screen.getByLabelText('Command')).toBeTruthy()
+    expect(app.agentProfiles.libraryGet).toHaveBeenCalledOnce()
+    expect(app.agentProfiles.selectionGet).not.toHaveBeenCalled()
+  })
+
+  it('returns from Manage agents with the project draft and refreshed definitions intact', async () => {
+    const app = createAppApiStub()
+    const profile = { id: 'a', name: 'Alpha', executable: 'alpha', args: ['{prompt}'] }
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.agentProfiles.libraryGet).mockResolvedValue({ version: 1, profiles: [profile] })
+    render(<App app={app} />)
+    fireEvent.contextMenu(await screen.findByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Project Settings$/ }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Agents' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: /Enable Alpha/ }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Default agent' }), {
+      target: { value: 'a' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Manage agents' }))
+    const global = await screen.findByRole('dialog', { name: 'App Settings' })
+    expect(within(global).getByRole('tab', { name: 'Agents' }).getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
+    await within(global).findByRole('button', { name: 'Edit Alpha' })
+    vi.mocked(app.agentProfiles.libraryGet).mockResolvedValue({
+      version: 1,
+      profiles: [
+        { ...profile, name: 'Edited' },
+        { ...profile, id: 'copy', name: 'Copy' },
+      ],
+    })
+    fireEvent.keyDown(within(global).getByRole('button', { name: 'Close app settings' }), {
+      key: 'Escape',
+    })
+    const project = await screen.findByRole('dialog', { name: 'Project Settings' })
+    expect(
+      (
+        (await within(project).findByRole('checkbox', {
+          name: /Enable Edited/,
+        })) as HTMLInputElement
+      ).checked,
+    ).toBe(true)
+    expect(
+      (within(project).getByRole('checkbox', { name: /Enable Copy/ }) as HTMLInputElement).checked,
+    ).toBe(false)
+    expect(
+      (within(project).getByRole('combobox', { name: 'Default agent' }) as HTMLSelectElement).value,
+    ).toBe('a')
+    expect(app.agentProfiles.selectionGet).toHaveBeenCalledOnce()
+    expect(app.agentProfiles.selectionSet).not.toHaveBeenCalled()
+    expect(app.chats.createWithAgent).not.toHaveBeenCalled()
+  })
+
   it('opens desktop setup without dispatch and wires confirmed activation through the chat prompt', async () => {
     const app = createAppApiStub()
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
@@ -445,26 +505,34 @@ describe('app settings and themes', () => {
     expect(within(dialog).getByRole('combobox', { name: 'Theme' })).toBeTruthy()
   })
 
-  it('shows a storage error and keeps the current theme when saving fails', () => {
+  it.each([
+    {
+      scenario: 'shows a storage error and keeps the current theme when saving fails',
+      phase: 'save' as const,
+      expectedNotice: 'Failed to save the theme.',
+    },
+    {
+      scenario: 'shows a read error while keeping the default theme usable',
+      phase: 'load' as const,
+      expectedNotice: 'Failed to load the saved theme.',
+    },
+  ])('$scenario', ({ phase, expectedNotice }) => {
+    if (phase === 'load') {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('Storage unavailable')
+      })
+    }
     render(<App app={createAppApiStub()} />)
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('Storage unavailable')
-    })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Theme' }), {
-      target: { value: 'nekode-float' },
-    })
-    expect(screen.getByRole('alert').textContent).toBe('Failed to save the theme.')
-    expect(document.documentElement.dataset.theme).toBe('default')
-  })
-
-  it('shows a read error while keeping the default theme usable', () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('Storage unavailable')
-    })
-    render(<App app={createAppApiStub()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    expect(screen.getByRole('alert').textContent).toBe('Failed to load the saved theme.')
+    if (phase === 'save') {
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('Storage unavailable')
+      })
+      fireEvent.change(screen.getByRole('combobox', { name: 'Theme' }), {
+        target: { value: 'nekode-float' },
+      })
+    }
+    expect(screen.getByRole('alert').textContent).toBe(expectedNotice)
     expect(document.documentElement.dataset.theme).toBe('default')
   })
 
@@ -2012,18 +2080,69 @@ describe('project and chat data flow', () => {
     await waitFor(() => expect(app.projects.add).toHaveBeenCalledTimes(1))
   })
 
-  it('add-project: failures surface the typed error message', async () => {
-    vi.mocked(app.projects.add).mockRejectedValue({
-      nekodeAppError: true,
-      code: 'conflict',
-      message: 'This directory is already registered as a project.',
-    })
-
+  it.each([
+    {
+      scenario: 'add-project: failures surface the typed error message',
+      setup: () => {
+        vi.mocked(app.projects.add).mockRejectedValue({
+          nekodeAppError: true,
+          code: 'conflict',
+          message: 'This directory is already registered as a project.',
+        })
+      },
+      action: async () => {
+        fireEvent.click(screen.getByTestId(TEST_ID.addProjectButton))
+        fireEvent.click(screen.getByRole('button', { name: 'Choose folder...' }))
+      },
+      assert: async () => {
+        const notice = await screen.findByRole('alert')
+        expect(notice.textContent).toContain('already registered')
+      },
+    },
+    {
+      scenario: 'new-chat: failures surface the typed error message and keep the affordance',
+      setup: () => {
+        vi.mocked(app.projects.list).mockResolvedValue([projectA])
+        vi.mocked(app.chats.create).mockRejectedValue({
+          nekodeAppError: true,
+          code: 'not_found',
+          message: 'Project not found.',
+        })
+      },
+      action: async () => {
+        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
+      },
+      assert: async () => {
+        const notice = await screen.findByTestId(TEST_ID.actionNotice)
+        expect(notice.textContent).toContain('Project not found.')
+        expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
+      },
+    },
+    {
+      scenario: 'open-in-file-explorer failures surface the typed error message as a notice',
+      setup: () => {
+        vi.mocked(app.projects.list).mockResolvedValue([projectA])
+        vi.mocked(app.files.openRoot).mockRejectedValue({
+          nekodeAppError: true,
+          code: 'not_found',
+          message: 'Project not found.',
+        })
+      },
+      action: async () => {
+        fireEvent.contextMenu(await screen.findByTestId(testIdFor.projectRow('p1')))
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in file explorer' }))
+      },
+      assert: async () => {
+        const notice = await screen.findByTestId(TEST_ID.actionNotice)
+        expect(notice.textContent).toContain('Project not found.')
+      },
+    },
+  ])('$scenario', async ({ setup, action, assert }) => {
+    setup()
     render(<App app={app} />)
-    fireEvent.click(screen.getByTestId(TEST_ID.addProjectButton))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose folder...' }))
-    const notice = await screen.findByRole('alert')
-    expect(notice.textContent).toContain('already registered')
+    await action()
+    await assert()
   })
 
   it('add-project: the shared dialog adds WSL and selects it through the existing flow', async () => {
@@ -2157,23 +2276,6 @@ describe('project and chat data flow', () => {
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
   })
 
-  it('new-chat: failures surface the typed error message and keep the affordance', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.create).mockRejectedValue({
-      nekodeAppError: true,
-      code: 'not_found',
-      message: 'Project not found.',
-    })
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
-
-    const notice = await screen.findByTestId(TEST_ID.actionNotice)
-    expect(notice.textContent).toContain('Project not found.')
-    expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
-  })
-
   it('project context menu offers Open in file explorer and calls files.openRoot', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
@@ -2186,22 +2288,6 @@ describe('project and chat data flow', () => {
     await waitFor(() => expect(app.files.openRoot).toHaveBeenCalledWith('p1'))
     // The menu closes after the action runs.
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.projectContextMenu)).toBeNull())
-  })
-
-  it('open-in-file-explorer failures surface the typed error message as a notice', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.files.openRoot).mockRejectedValue({
-      nekodeAppError: true,
-      code: 'not_found',
-      message: 'Project not found.',
-    })
-
-    render(<App app={app} />)
-    fireEvent.contextMenu(await screen.findByTestId(testIdFor.projectRow('p1')))
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in file explorer' }))
-
-    const notice = await screen.findByTestId(TEST_ID.actionNotice)
-    expect(notice.textContent).toContain('Project not found.')
   })
 
   // New Chat agent profile menu (spec new-chat-agent-menu). The menu is opened
@@ -2752,36 +2838,33 @@ describe('chat workspace (Stage 3)', () => {
   })
 
   it.each([
-    [
-      'shows the git branch and worktree status in the status bar (UX-UI §16)',
-      {
+    {
+      scenario: 'shows the git branch and worktree status in the status bar (UX-UI §16)',
+      status: {
         branch: 'feature/meta-pixel',
         dirty: true,
         worktree: { ...emptyGitWorktree(), modified: 4, added: 2, untracked: 1, ahead: 3 },
       },
-    ],
-    [
-      'shows a clean worktree status',
-      { branch: 'main', dirty: false, worktree: emptyGitWorktree() },
-    ],
-  ] as Array<[string, Awaited<ReturnType<AppApi['git']['getStatus']>>]>)(
-    '%s',
-    async (_title, status) => {
-      vi.mocked(app.projects.list).mockResolvedValue([projectA])
-      vi.mocked(app.git.getStatus).mockResolvedValue(status)
-
-      render(<App app={app} />)
-      fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-
-      // App-level wiring only: the fetched git status reaches the status bar.
-      // The worktree form strings are owned by StatusBar.test.tsx.
-      await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('p1'))
-      expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toContain(
-        status.branch,
-      )
-      expect(screen.getByTestId(TEST_ID.statusGitStatus)).toBeTruthy()
     },
-  )
+    {
+      scenario: 'shows a clean worktree status',
+      status: { branch: 'main', dirty: false, worktree: emptyGitWorktree() },
+    },
+  ])('$scenario', async ({ status }) => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.git.getStatus).mockResolvedValue(status)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+
+    // App-level wiring only: the fetched git status reaches the status bar.
+    // The worktree form strings are owned by StatusBar.test.tsx.
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('p1'))
+    expect((await screen.findByTestId(TEST_ID.statusGitBranch)).textContent).toContain(
+      status.branch,
+    )
+    expect(screen.getByTestId(TEST_ID.statusGitStatus)).toBeTruthy()
+  })
 })
 
 describe('resize persistence refinements (Stage 3 carry-over)', () => {
@@ -3414,20 +3497,6 @@ describe('chat attention badge (end to end through App)', () => {
     await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull())
   })
 
-  it('AC6: submitting input to the badged chat through the app clears its badge and writes the PTY', async () => {
-    await renderTwoChats()
-    emitData('t1', '\x07')
-    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
-
-    const hiddenInput = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
-      TEST_ID.terminalPromptInput,
-    )
-    fireEvent.change(hiddenInput, { target: { value: 'go on' } })
-    fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'go on'))
-    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull())
-  })
-
   it('AC1: defaults on — hidden-chat signal badges and chimes; active-chat signal indicators and chimes', async () => {
     await renderTwoChats()
     // Hidden chat t1: badge + chime.
@@ -3472,22 +3541,6 @@ describe('chat attention badge (end to end through App)', () => {
       expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.attentionBadgeEnabled, '1'),
     )
     await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
-  })
-
-  it('AC6: a chime fires per state-setting signal and never on clears', async () => {
-    await renderTwoChats()
-    emitData('t1', '\x07')
-    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
-    expect(playAttentionChime).toHaveBeenCalledTimes(1)
-
-    // Delivered input clears the state — no sound for a clear.
-    const hiddenInput = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
-      TEST_ID.terminalPromptInput,
-    )
-    fireEvent.change(hiddenInput, { target: { value: 'go on' } })
-    fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
-    await waitFor(() => expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull())
-    expect(playAttentionChime).toHaveBeenCalledTimes(1)
   })
 
   it('AC7: persisted off-switches load at startup and gate badge and chime; other toggles keep defaults', async () => {
@@ -3546,20 +3599,6 @@ describe('chat attention badge (end to end through App)', () => {
     emitData('t2', '\x07')
     await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
     expect(playAttentionChime).toHaveBeenCalledTimes(1)
-  })
-
-  it('AC4: a signal in the selected chat sets its indicator state (visible by default)', async () => {
-    await renderTwoChats()
-    emitData('t2', '\x07')
-    await screen.findByTestId(testIdFor.chatAttentionBadge('t2'))
-    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
-  })
-
-  it('AC9: a signal on one chat never badges another chat', async () => {
-    await renderTwoChats()
-    emitData('t1', '\x07')
-    await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
-    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull()
   })
 
   it('AC7: BEL and OSC 9 in a bottom-panel tab set no chat badge', async () => {

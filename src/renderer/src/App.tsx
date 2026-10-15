@@ -224,6 +224,8 @@ function mergeFetchedChats(
 export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
   const desktopDictation = useDesktopDictation(app)
   const [appSettingsOpen, setAppSettingsOpen] = useState(false)
+  const [appSettingsAgents, setAppSettingsAgents] = useState(false)
+  const [agentLibraryRefreshKey, setAgentLibraryRefreshKey] = useState(0)
   const [themeState, setThemeState] = useState<{ theme: ThemeId; error: string | null }>(() => {
     try {
       const saved = localStorage.getItem(THEME_STORAGE_KEY)
@@ -2691,6 +2693,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       ) : null}
       {appSettingsOpen ? (
         <AppSettings
+          app={app}
+          initialTab={appSettingsAgents ? 'agents' : 'general'}
           dictationApi={app.dictation}
           desktopDictation={desktopDictation}
           theme={themeState.theme}
@@ -2716,11 +2720,21 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onTerminalFontSizeChange={handleTerminalFontSizeChange}
           terminalCtrlVPaste={terminalPasteState.enabled}
           onTerminalCtrlVPasteChange={handleTerminalCtrlVPasteChange}
-          onClose={() => setAppSettingsOpen(false)}
+          onClose={() => {
+            setAppSettingsOpen(false)
+            setAppSettingsAgents(false)
+            setAgentLibraryRefreshKey((current) => current + 1)
+          }}
         />
       ) : null}
       {actionSettingsOpen ? (
         <ActionSettings
+          suspended={appSettingsOpen}
+          libraryRefreshKey={agentLibraryRefreshKey}
+          onManageAgents={() => {
+            setAppSettingsAgents(true)
+            setAppSettingsOpen(true)
+          }}
           app={app}
           actions={actions}
           projectId={actionSettingsProjectId}

@@ -186,10 +186,14 @@ describe('Kanban tab shell', () => {
   })
 
   it('adds an Agents tab beside Shell, Actions, and Kanban', async () => {
-    const get = vi.fn().mockResolvedValue({ defaultId: null, profiles: [] })
+    const selectionGet = vi.fn().mockResolvedValue({ version: 1, selectedIds: [], defaultId: null })
     const app = {
       ...kanbanAppMock(),
-      agentProfiles: { get, put: vi.fn(), delete: vi.fn() },
+      agentProfiles: {
+        libraryGet: vi.fn().mockResolvedValue({ version: 1, profiles: [] }),
+        selectionGet,
+        selectionSet: vi.fn(),
+      },
     } as unknown as AppApi
     const props = {
       app,
@@ -211,7 +215,7 @@ describe('Kanban tab shell', () => {
 
     fireEvent.click(agentsTab)
     expect(await screen.findByTestId(TEST_ID.settingsAgentsEmpty)).toBeTruthy()
-    expect(get).toHaveBeenCalledWith('p1')
+    expect(selectionGet).toHaveBeenCalledWith('p1')
     expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
 

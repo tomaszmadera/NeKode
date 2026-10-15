@@ -349,8 +349,12 @@ export function createServices(options: CreateServicesOptions): AppServices {
     },
     agentProfiles: {
       get: (projectId) => agentProfiles.get(projectId),
-      put: (projectId, input) => agentProfiles.put(projectId, input),
-      delete: (projectId, profileId) => agentProfiles.delete(projectId, profileId),
+      libraryGet: () => agentProfiles.libraryGet(),
+      templatesGet: () => agentProfiles.templatesGet(),
+      put: (input) => agentProfiles.put(input),
+      delete: (profileId) => agentProfiles.delete(profileId),
+      selectionGet: (projectId) => agentProfiles.selectionGet(projectId),
+      selectionSet: (projectId, input) => agentProfiles.selectionSet(projectId, input),
       cleanupProject: (projectId) => agentProfiles.cleanupProject(projectId),
     },
     dialogs: {

@@ -8,6 +8,10 @@ import type {
   ActionInput,
   AgentProfilePut,
   AgentProfilesDocument,
+  AgentProfilesLibrary,
+  AgentProfileTemplate,
+  AgentProjectSelection,
+  AgentProjectSelectionInput,
   ChatInfo,
   DictationDictionary,
   DictationResult,
@@ -198,12 +202,14 @@ export interface AppServices {
     blocksProjectShell(chatId: string): boolean
   }
   agentProfiles: {
-    /** This project's document. Missing key reads as an empty document. */
+    /** Selected current global definitions, in library order. */
     get(projectId: string): AgentProfilesDocument
-    /** Creates or updates one profile. Invalid fields do not write. */
-    put(projectId: string, input: AgentProfilePut): AgentProfilesDocument
-    /** Deletes one profile. Deleting the default clears defaultId. */
-    delete(projectId: string, profileId: string): AgentProfilesDocument
+    libraryGet(): AgentProfilesLibrary
+    templatesGet(): AgentProfileTemplate[]
+    put(input: AgentProfilePut): AgentProfilesLibrary
+    delete(profileId: string): AgentProfilesLibrary
+    selectionGet(projectId: string): AgentProjectSelection
+    selectionSet(projectId: string, input: AgentProjectSelectionInput): AgentProjectSelection
     /** Per-project key cleanup on projects:remove; not on the renderer bridge. */
     cleanupProject(projectId: string): void
   }

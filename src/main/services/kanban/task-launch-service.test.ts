@@ -12,6 +12,8 @@ import type {
 import { AppError } from '../../../shared/ipc-error'
 import { openDatabase } from '../../db/connection'
 import { runMigrations } from '../../db/migrations'
+import { AgentProfilesService } from '../agent-profiles/agent-profiles-service'
+import { AppStateService } from '../app-state-service'
 import { ChatService } from '../chat-service'
 import { ProjectService } from '../project-service'
 import {
@@ -122,7 +124,9 @@ function resumeInput(overrides: Partial<KanbanResumeLaunchInput> = {}): KanbanRe
   }
 }
 
-function harness(options: { handoff?: string | null; failSpawn?: boolean } = {}) {
+function harness(
+  options: { handoff?: string | null; failSpawn?: boolean; globalProfiles?: boolean } = {},
+) {
   const db = openDatabase(':memory:')
   openDatabases.push(db)
   runMigrations(db)
@@ -154,11 +158,14 @@ function harness(options: { handoff?: string | null; failSpawn?: boolean } = {})
       return scan(candidatesInput)
     }),
   }
+  const globalProfiles = new AgentProfilesService({ projects, state: new AppStateService({ db }) })
   const service = new TaskLaunchService({
     projects,
-    profiles: {
-      get: () => ({ defaultId: profile.id, profiles: [profile] }),
-    },
+    profiles: options.globalProfiles
+      ? globalProfiles
+      : {
+          get: () => ({ defaultId: profile.id, profiles: [profile] }),
+        },
     kanban: { getItem },
     handoffs,
     handoffDir: (projectId) => {
@@ -176,6 +183,7 @@ function harness(options: { handoff?: string | null; failSpawn?: boolean } = {})
   })
   return {
     service,
+    globalProfiles,
     projects,
     project,
     chats,
@@ -192,6 +200,67 @@ function harness(options: { handoff?: string | null; failSpawn?: boolean } = {})
     },
   }
 }
+
+describe('project opt-in at Kanban launch', () => {
+  it('rejects a globally existing unselected profile with no chat or process', async () => {
+    const h = harness({ globalProfiles: true })
+    const agent = h.globalProfiles.put({ id: null, name: 'Agent', command: 'agent "{prompt}"' })
+      .profiles[0]
+    await expect(
+      h.service.launch(input({ projectId: h.project.id, profileId: agent.id })),
+    ).rejects.toMatchObject({ code: 'not_found' })
+    expect(h.chats.list(h.project.id)).toEqual([])
+    expect(h.spawns).toEqual([])
+    expect(h.getItem).not.toHaveBeenCalled()
+  })
+
+  it('rechecks selection after an awaited adapter read and refuses a removed selection without chat creation', async () => {
+    const h = harness({ globalProfiles: true })
+    const agent = h.globalProfiles.put({ id: null, name: 'Agent', command: 'agent "{prompt}"' })
+      .profiles[0]
+    h.globalProfiles.selectionSet(h.project.id, { selectedIds: [agent.id], defaultId: null })
+    let resolveItem!: (item: WorkItem) => void
+    h.getItem.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveItem = resolve
+        }),
+    )
+    const pending = h.service.launch(input({ projectId: h.project.id, profileId: agent.id }))
+    expect(h.getItem).toHaveBeenCalled()
+    h.globalProfiles.selectionSet(h.project.id, { selectedIds: [], defaultId: null })
+    resolveItem(liveItem())
+    await expect(pending).rejects.toMatchObject({ code: 'not_found' })
+    expect(h.chats.list(h.project.id)).toEqual([])
+    expect(h.spawns).toEqual([])
+  })
+
+  it('uses an edited definition after adapter read and passes the full prompt as one argv element', async () => {
+    const h = harness({ globalProfiles: true })
+    const agent = h.globalProfiles.put({ id: null, name: 'Agent', command: 'old "{prompt}"' })
+      .profiles[0]
+    h.globalProfiles.selectionSet(h.project.id, { selectedIds: [agent.id], defaultId: null })
+    let resolveItem!: (item: WorkItem) => void
+    h.getItem.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveItem = resolve
+        }),
+    )
+    const pending = h.service.launch(input({ projectId: h.project.id, profileId: agent.id }))
+    expect(h.getItem).toHaveBeenCalled()
+    h.globalProfiles.put({
+      id: agent.id,
+      name: 'Edited',
+      command: 'updated --model "my model" "{prompt}"',
+    })
+    resolveItem(liveItem())
+    const result = await pending
+    expect(result.chat.name).toBe('[PowerShell] Edited')
+    expect(h.spawns[0].file).toBe('updated')
+    expect(h.spawns[0].args).toEqual(['--model', 'my model', buildStartPrompt(liveItem(), HANDOFF)])
+  })
+})
 
 describe('buildStartPrompt', () => {
   it('includes the live description, URL, instructions, and handoff directory', () => {

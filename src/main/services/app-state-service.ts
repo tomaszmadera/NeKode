@@ -41,6 +41,16 @@ export class AppStateService {
     this.db.prepare('DELETE FROM app_state WHERE key = ?').run(key)
   }
 
+  listPrefix(prefix: string): Array<{ key: string; value: string }> {
+    return this.db
+      .prepare('SELECT key, value FROM app_state WHERE substr(key, 1, ?) = ? ORDER BY key')
+      .all(prefix.length, prefix) as Array<{ key: string; value: string }>
+  }
+
+  transaction<T>(operation: () => T): T {
+    return this.db.transaction(operation)()
+  }
+
   /**
    * Removes selection keys whose target rows no longer exist. Returns the
    * still-valid selection so callers hydrate it in one round trip.
