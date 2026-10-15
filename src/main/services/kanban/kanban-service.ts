@@ -14,7 +14,7 @@ import {
 } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import { AdapterHost, toAppError } from './adapter-host'
-import { type DiscoveredAdapter, discoverAdapters } from './adapter-manifest'
+import { type DiscoveredAdapter, type DiscoveryResult, discoverAdapters } from './adapter-manifest'
 import { normalizeItem, normalizeItems, normalizeStates } from './adapter-protocol'
 
 // KanbanService (spec kanban-adapter-interface Behaviour 4–11): the single
@@ -61,6 +61,7 @@ export interface KanbanServiceDeps {
   adaptersDir: () => string
   host?: AdapterHost
   safeStorage?: SafeStorageLike
+  discoverAdapters?: (dir: string) => DiscoveryResult
 }
 
 export interface KanbanSetConfigInput {
@@ -68,11 +69,15 @@ export interface KanbanSetConfigInput {
   values: Record<string, string>
 }
 
-interface StoredConfig {
+export interface KanbanStoredConfig {
   values: Record<string, string>
 }
 
-function parseStoredConfig(raw: string | null): StoredConfig {
+export const DEFAULT_KANBAN_STORED_CONFIG: KanbanStoredConfig = {
+  values: {},
+}
+
+export function parseKanbanStoredConfig(raw: string | null): KanbanStoredConfig {
   if (raw === null || raw.trim().length === 0) {
     return { values: {} }
   }
@@ -81,8 +86,14 @@ function parseStoredConfig(raw: string | null): StoredConfig {
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       return { values: {} }
     }
+    const record = parsed as Record<string, unknown>
+    const source =
+      typeof record.values === 'object' && record.values !== null && !Array.isArray(record.values)
+        ? (record.values as Record<string, unknown>)
+        : record
+
     const values: Record<string, string> = {}
-    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    for (const [key, value] of Object.entries(source)) {
       if (typeof value === 'string') {
         values[key] = value
       }
@@ -95,12 +106,17 @@ function parseStoredConfig(raw: string | null): StoredConfig {
   }
 }
 
+export function serializeKanbanStoredConfig(config: KanbanStoredConfig): string {
+  return JSON.stringify(config.values)
+}
+
 export class KanbanService {
   readonly #projects: KanbanProjectLookup
   readonly #state: KanbanStateStore
   readonly #adaptersDir: () => string
   readonly #host: AdapterHost
   readonly #safeStorage: SafeStorageLike | undefined
+  readonly #discoverAdapters: (dir: string) => DiscoveryResult
 
   constructor(deps: KanbanServiceDeps) {
     this.#projects = deps.projects
@@ -108,6 +124,7 @@ export class KanbanService {
     this.#adaptersDir = deps.adaptersDir
     this.#host = deps.host ?? new AdapterHost()
     this.#safeStorage = deps.safeStorage
+    this.#discoverAdapters = deps.discoverAdapters ?? discoverAdapters
   }
 
   private encryptSecret(value: string): string {
@@ -143,9 +160,9 @@ export class KanbanService {
     }
   }
 
-  private readStoredConfig(projectId: string, adapterId?: string | null): StoredConfig {
+  private readStoredConfig(projectId: string, adapterId?: string | null): KanbanStoredConfig {
     const raw = this.#state.get(projectKanbanConfigKey(projectId))
-    const stored = parseStoredConfig(raw)
+    const stored = parseKanbanStoredConfig(raw)
     const resolvedAdapterId =
       adapterId !== undefined ? adapterId : this.#state.get(projectKanbanAdapterKey(projectId))
     const schema = this.schemaFor(resolvedAdapterId)
@@ -163,7 +180,10 @@ export class KanbanService {
         }
       }
       if (migrated) {
-        this.#state.set(projectKanbanConfigKey(projectId), JSON.stringify(updatedValues))
+        this.#state.set(
+          projectKanbanConfigKey(projectId),
+          serializeKanbanStoredConfig({ values: updatedValues }),
+        )
         stored.values = updatedValues
       }
     }
@@ -173,7 +193,7 @@ export class KanbanService {
 
   /** Fresh one-level scan; warnings go to the main log, never to the UI. */
   adaptersList(): KanbanAdapterInfo[] {
-    const { adapters, warnings } = discoverAdapters(this.#adaptersDir())
+    const { adapters, warnings } = this.#discoverAdapters(this.#adaptersDir())
     for (const warning of warnings) {
       console.warn(`[kanban] ${warning}`)
     }
@@ -303,7 +323,7 @@ export class KanbanService {
       }
     }
     this.#state.set(projectKanbanAdapterKey(projectId), adapterId)
-    const nextConfig = JSON.stringify(merged)
+    const nextConfig = serializeKanbanStoredConfig({ values: merged })
     this.#state.set(projectKanbanConfigKey(projectId), nextConfig)
   }
 
@@ -396,7 +416,7 @@ export class KanbanService {
     if (adapterId === null) {
       return []
     }
-    const found = discoverAdapters(this.#adaptersDir()).adapters.find(
+    const found = this.#discoverAdapters(this.#adaptersDir()).adapters.find(
       (candidate) => candidate.info.id === adapterId,
     )
     if (found === undefined) {
@@ -414,7 +434,7 @@ export class KanbanService {
         'kanban',
       )
     }
-    const found = discoverAdapters(this.#adaptersDir()).adapters.find(
+    const found = this.#discoverAdapters(this.#adaptersDir()).adapters.find(
       (candidate) => candidate.info.id === adapterId,
     )
     if (found === undefined) {

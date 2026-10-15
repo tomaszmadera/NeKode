@@ -77,20 +77,36 @@ Public contracts that must not change: the `window.app` preload surface and the 
 
 ## Errors
 
-An audit finding that implies a product behavior change becomes a recommendation in the final report, not an implementation change. A test that cannot stay green for a reason other than the intended change is restored and investigated.
+## NEKODE-75 Amendment: Maintainer decisions and recommendations C.1–C.9
 
-## Acceptance criteria
+Governs the follow-up work on NEKODE-75 resolving open maintainer decisions and executing architectural recommendations C.1 through C.9.
 
-1. The recorded full verification command passes before and after the change (lint, typecheck, full vitest suite).
-2. Every changed or deleted test group appears in the audit classification with a rationale and either a named retained protection or an explicit recorded value judgment.
-3. Trust-boundary test files (IPC validation, sender guard, media permissions, preload API, database) retain independent negative-case coverage at least equal to today's.
-4. The final report answers the required assessment questions and reports before/after metrics that distinguish test definitions from executed cases.
-5. Production-code diffs are limited to listed behavior-preserving refactorings, confirmed by independent review.
+### Resolved decisions
 
-## Required tests
+1. 3 REMOVE deletions confirmed: `src/main/sample.test.ts` (trivial sanity assertion), `src/main/services/kanban/adapter-host.test.ts` (default-timeout constructor non-throw), `src/renderer/src/hooks/useResizableRegion.test.tsx` (unmount smoke test with jsdom limitation). None protected against realistic regressions; confirmation recorded in report.
+2. `submit-gap-double-submit`: cancel semantics preserved. When a second submit occurs within the 150 ms submit gap in the same chat session, the pending CR of the first line is cancelled, and the second line is written immediately with its own scheduled CR. A gap-real race test with real timers (`gap=100`, two parallel chats) pins this contract.
+3. `visual-layout-verification`: deferred with recorded rationale (no Electron E2E harness in repository, no new dependencies allowed). Unit DOM structure tests remain sufficient under jsdom.
 
-The retained suite keeps at least one dedicated test file or group per business-rule constraint listed above, with negative cases for the IPC and permission boundaries, and the cross-component renderer journeys at the level where they are cheapest and most diagnostic.
+### Architectural recommendations C.1–C.9
+
+1. C.1 (Machine-readable error rule codes): Introduce typed error kinds on `nekodeAppError` / IPC error transport and expose machine-readable hooks (e.g. `data-error-kind`) in renderer components so tests assert typed contracts rather than fragile user-facing strings. Map the DictationDictionary 7-code matrix through a concise table.
+2. C.2 (DOM state hooks for slide track): Add declarative `data-*` state hooks to `LeftPanelTrack.tsx` and `StatusBar.tsx` to assert panel animation and visibility states without coupling tests to exact pixel widths and CSS transform strings.
+3. C.3 (Submit-gap call-site race test): Implement a test with real timers (`gap=100`, two concurrent chats) verifying PTY submit-gap interleaving and cancel-on-double-submit semantics.
+4. C.4 (`Ctrl+D` gate state machine): Extract the prompt-state `Ctrl+D` gate logic from `ChatTerminal.tsx` into a pure decision function, tested via a parameterized table covering prompt buffers, cursor positions, and modes.
+5. C.5 (KanbanBoard reconciliation extraction): Extract the pure state reconciliation of concurrent IPC responses out of `KanbanBoard.tsx` into `kanban-board-logic.ts`, testing promise race orderings as pure unit tests.
+6. C.6 (KanbanService schema port): Port KanbanService state and persistence handling to the established schema pattern used across other services.
+7. C.7 (App-suite parameterization and attention matrix split): Collapse repetitive boot suites in `App.test.tsx` into parameterized tables (git status forms, typed-error routing, theme storage errors) and consolidate the attention-settings matrix to a single owner.
+8. C.8 (Pure-lib boundary gaps): Add missing edge-case unit tests for pure libraries: `git-decoration` precedence tail (`added > untracked > ignored`), `markdown-path` Windows backslash handling, `tree-refresh` multi-failure notice priority, `terminal-font` boundary clamping, and `chime` throw / suspended-context resume paths.
+9. C.9 (Minor improvements): Document the latched-release contract in `useMutationGuard.ts` JSDoc, and add a test verifying mutual exclusion across different buttons sharing the same guard instance.
+
+### Acceptance criteria
+
+- Every decision and recommendation C.1–C.9 is completed and its resolution recorded in `docs/features/test-suite-simplification/report.md`.
+- Behavior-preserving: all application user-visible behavior remains unchanged except where explicit contracts were added (error codes, DOM state hooks).
+- Full suite green: `cmd /c pnpm run test`, `cmd /c pnpm run lint`, and `cmd /c pnpm run typecheck` pass cleanly after each stage.
+- Independent review passes for each stage.
 
 ## Relevant SDD / ADR
 
 - `docs/architecture/sdd.md` (service architecture, renderer boundaries, layout).
+

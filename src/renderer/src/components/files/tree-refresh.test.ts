@@ -128,4 +128,47 @@ describe('applyDirectoryRefresh', () => {
     expect(outcome.session.expandedPaths.has('src')).toBe(false)
     expect(outcome.session.childrenByPath.src).toBeUndefined()
   })
+
+  it('prioritizes notice for multi-failure by shallowest depth, then alphabetical tie-break', () => {
+    const rootWithDirs: FileEntry[] = [
+      { name: 'docs', relativePath: 'docs', kind: 'directory' },
+      { name: 'src', relativePath: 'src', kind: 'directory' },
+    ]
+    const srcWithNested: FileEntry[] = [
+      { name: 'nested', relativePath: 'src/nested', kind: 'directory' },
+    ]
+    const current = session({
+      childrenByPath: {
+        '': rootWithDirs,
+        docs: [],
+        src: srcWithNested,
+        'src/nested': [],
+      },
+      expandedPaths: new Set(['src/nested', 'src', 'docs']),
+    })
+
+    // Both 'src/nested' (depth 2) and 'src' (depth 1) fail: 'src' has shallower depth and wins priority
+    const outcomeDepth = applyDirectoryRefresh(
+      current,
+      [
+        { relativePath: '', ok: true, entries: rootWithDirs },
+        { relativePath: 'src', ok: false, message: 'Failed to read src.' },
+        { relativePath: 'src/nested', ok: false, message: 'Failed to read nested.' },
+      ],
+      null,
+    )
+    expect(outcomeDepth.notice).toBe('Failed to read src.')
+
+    // Both 'docs' (depth 1) and 'src' (depth 1) fail: alphabetical tie-break picks 'docs'
+    const outcomeAlpha = applyDirectoryRefresh(
+      current,
+      [
+        { relativePath: '', ok: true, entries: rootWithDirs },
+        { relativePath: 'src', ok: false, message: 'Failed to read src.' },
+        { relativePath: 'docs', ok: false, message: 'Failed to read docs.' },
+      ],
+      null,
+    )
+    expect(outcomeAlpha.notice).toBe('Failed to read docs.')
+  })
 })

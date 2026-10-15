@@ -139,6 +139,8 @@ export function StatusBar({
     <footer
       className="flex h-7 shrink-0 items-center gap-3 border-t border-edge bg-panel px-3 text-xs"
       data-testid={TEST_ID.statusBar}
+      data-slide-state={project !== null ? 'open' : 'closed'}
+      data-panel-visible={project !== null ? 'true' : 'false'}
     >
       {project !== null ? (
         <>

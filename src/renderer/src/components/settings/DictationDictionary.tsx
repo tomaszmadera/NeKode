@@ -5,21 +5,58 @@ import type {
 } from '../../../../shared/dictation-contract'
 import type { AppApi } from '../../../../shared/ipc-contract'
 
-const ERROR_MESSAGES: Record<DictationDictionaryError, string> = {
-  'bridge-missing':
-    'The OpenWhispr local bridge is missing. Start OpenWhispr, then refresh the dictionary.',
-  'bridge-invalid':
-    'The OpenWhispr local bridge configuration is invalid. Restart OpenWhispr, then refresh the dictionary.',
-  unreachable:
-    'The OpenWhispr local bridge is unavailable. Check OpenWhispr, then refresh the dictionary.',
-  'auth-failed':
-    'The OpenWhispr local bridge rejected authentication. Restart OpenWhispr, then refresh the dictionary.',
-  'malformed-response':
-    'The OpenWhispr dictionary response is invalid. No complete dictionary could be displayed.',
-  'unsupported-pagination':
-    'This OpenWhispr bridge requires unsupported dictionary pagination. No complete dictionary could be displayed.',
-  'dictionary-limit':
-    'The OpenWhispr dictionary exceeds the supported limit of 10,000 entries. No complete dictionary could be displayed.',
+export interface DictationDictionaryErrorEntry {
+  readonly kind: DictationDictionaryError
+  readonly code: DictationDictionaryError
+  readonly message: string
+}
+
+export const DICTATION_DICTIONARY_ERROR_TABLE: Record<
+  DictationDictionaryError,
+  DictationDictionaryErrorEntry
+> = {
+  'bridge-missing': {
+    kind: 'bridge-missing',
+    code: 'bridge-missing',
+    message:
+      'The OpenWhispr local bridge is missing. Start OpenWhispr, then refresh the dictionary.',
+  },
+  'bridge-invalid': {
+    kind: 'bridge-invalid',
+    code: 'bridge-invalid',
+    message:
+      'The OpenWhispr local bridge configuration is invalid. Restart OpenWhispr, then refresh the dictionary.',
+  },
+  unreachable: {
+    kind: 'unreachable',
+    code: 'unreachable',
+    message:
+      'The OpenWhispr local bridge is unavailable. Check OpenWhispr, then refresh the dictionary.',
+  },
+  'auth-failed': {
+    kind: 'auth-failed',
+    code: 'auth-failed',
+    message:
+      'The OpenWhispr local bridge rejected authentication. Restart OpenWhispr, then refresh the dictionary.',
+  },
+  'malformed-response': {
+    kind: 'malformed-response',
+    code: 'malformed-response',
+    message:
+      'The OpenWhispr dictionary response is invalid. No complete dictionary could be displayed.',
+  },
+  'unsupported-pagination': {
+    kind: 'unsupported-pagination',
+    code: 'unsupported-pagination',
+    message:
+      'This OpenWhispr bridge requires unsupported dictionary pagination. No complete dictionary could be displayed.',
+  },
+  'dictionary-limit': {
+    kind: 'dictionary-limit',
+    code: 'dictionary-limit',
+    message:
+      'The OpenWhispr dictionary exceeds the supported limit of 10,000 entries. No complete dictionary could be displayed.',
+  },
 }
 
 export function DictationDictionary({ api }: { api: AppApi['dictation'] }) {
@@ -87,13 +124,18 @@ export function DictationDictionary({ api }: { api: AppApi['dictation'] }) {
         {loading ? (
           <p>Loading dictionary...</p>
         ) : failed ? (
-          <p role="alert">
+          <p role="alert" data-error-kind="load-failed" data-error-code="load-failed">
             The dictionary could not load. Refresh to try again. Desktop dictation settings are
             independent.
           </p>
         ) : result?.state === 'unavailable' ? (
-          <p role="alert">
-            {ERROR_MESSAGES[result.error]} Desktop dictation settings are independent.
+          <p
+            role="alert"
+            data-error-kind={DICTATION_DICTIONARY_ERROR_TABLE[result.error].kind}
+            data-error-code={DICTATION_DICTIONARY_ERROR_TABLE[result.error].code}
+          >
+            {DICTATION_DICTIONARY_ERROR_TABLE[result.error].message} Desktop dictation settings are
+            independent.
           </p>
         ) : result?.state === 'ready' ? (
           <>

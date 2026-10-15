@@ -25,7 +25,9 @@ export type AppErrorCode =
   | 'internal'
   | 'unknown'
 
-const APP_ERROR_CODES: readonly AppErrorCode[] = [
+export type AppErrorKind = AppErrorCode
+
+export const APP_ERROR_CODES: readonly AppErrorCode[] = [
   'validation',
   'not_found',
   'conflict',
@@ -44,26 +46,38 @@ const APP_ERROR_CODES: readonly AppErrorCode[] = [
 export interface AppErrorPayload {
   nekodeAppError: true
   code: AppErrorCode
+  kind?: AppErrorKind
   message: string
   channel?: string
 }
+
+export type NekodeAppError = AppErrorPayload
 
 export const APP_ERROR_MARKER = '__nekode_app_error__'
 
 /** Thrown in the main process; transported as a serialized payload string. */
 export class AppError extends Error {
+  readonly nekodeAppError = true as const
   readonly code: AppErrorCode
+  readonly kind: AppErrorKind
   readonly channel: string | undefined
 
-  constructor(code: AppErrorCode, message: string, channel?: string) {
+  constructor(code: AppErrorCode, message: string, channel?: string, kind?: AppErrorKind) {
     super(message)
     this.name = 'AppError'
     this.code = code
+    this.kind = kind ?? code
     this.channel = channel
   }
 
   toPayload(): AppErrorPayload {
-    return { nekodeAppError: true, code: this.code, message: this.message, channel: this.channel }
+    return {
+      nekodeAppError: true,
+      code: this.code,
+      kind: this.kind,
+      message: this.message,
+      channel: this.channel,
+    }
   }
 }
 
@@ -79,15 +93,22 @@ export function serializeAppError(error: AppError): string {
  */
 export function parseAppErrorPayload(source: unknown): AppErrorPayload | null {
   if (typeof source === 'object' && source !== null && 'nekodeAppError' in source) {
-    const candidate = source as Partial<AppErrorPayload>
+    const candidate = source as Partial<AppErrorPayload> & { kind?: unknown }
+    const resolvedCode = isAppErrorCode(candidate.code)
+      ? candidate.code
+      : isAppErrorCode(candidate.kind)
+        ? candidate.kind
+        : null
     if (
       candidate.nekodeAppError === true &&
-      isAppErrorCode(candidate.code) &&
+      resolvedCode !== null &&
       typeof candidate.message === 'string'
     ) {
+      const resolvedKind = isAppErrorCode(candidate.kind) ? candidate.kind : resolvedCode
       return {
         nekodeAppError: true,
-        code: candidate.code,
+        code: resolvedCode,
+        kind: resolvedKind,
         message: candidate.message,
         channel: candidate.channel,
       }
@@ -105,15 +126,24 @@ export function parseAppErrorPayload(source: unknown): AppErrorPayload | null {
     return null
   }
   try {
-    const parsed = JSON.parse(
-      message.slice(markerIndex + APP_ERROR_MARKER.length),
-    ) as Partial<AppErrorPayload> | null
-    if (parsed !== null && isAppErrorCode(parsed.code) && typeof parsed.message === 'string') {
-      return {
-        nekodeAppError: true,
-        code: parsed.code,
-        message: parsed.message,
-        channel: parsed.channel,
+    const parsed = JSON.parse(message.slice(markerIndex + APP_ERROR_MARKER.length)) as
+      | (Partial<AppErrorPayload> & { kind?: unknown })
+      | null
+    if (parsed !== null && typeof parsed.message === 'string') {
+      const resolvedCode = isAppErrorCode(parsed.code)
+        ? parsed.code
+        : isAppErrorCode(parsed.kind)
+          ? parsed.kind
+          : null
+      if (resolvedCode !== null) {
+        const resolvedKind = isAppErrorCode(parsed.kind) ? parsed.kind : resolvedCode
+        return {
+          nekodeAppError: true,
+          code: resolvedCode,
+          kind: resolvedKind,
+          message: parsed.message,
+          channel: parsed.channel,
+        }
       }
     }
   } catch {
@@ -127,6 +157,67 @@ export function isAppErrorPayload(source: unknown): source is AppErrorPayload {
 }
 
 /**
+ * Normalizes any error, rejection, or raw message into a typed NekodeAppError / AppErrorPayload.
+ * Preserves existing codes and kinds, or defaults to 'unknown'.
+ */
+export function toNekodeAppError(
+  source: unknown,
+  fallbackMessage = 'Unexpected error.',
+  channel?: string,
+): NekodeAppError {
+  const parsed = parseAppErrorPayload(source)
+  if (parsed !== null) {
+    return channel && !parsed.channel ? { ...parsed, channel } : parsed
+  }
+  if (source instanceof AppError) {
+    const payload = source.toPayload()
+    return channel && !payload.channel ? { ...payload, channel } : payload
+  }
+  const message =
+    source instanceof Error && source.message
+      ? source.message
+      : typeof source === 'string' && source.length > 0
+        ? source
+        : fallbackMessage
+  return {
+    nekodeAppError: true,
+    code: 'unknown',
+    kind: 'unknown',
+    message,
+    channel,
+  }
+}
+
+export interface FormattedError {
+  message: string
+  code: AppErrorCode
+  kind: AppErrorKind
+  channel?: string
+}
+
+/**
+ * Extracts human-readable message and machine-readable code/kind from any error source.
+ */
+export function formatError(
+  source: unknown,
+  fallback = 'Unexpected error.',
+): FormattedError & { toString(): string } {
+  const appError = toNekodeAppError(source, fallback)
+  const message = appError.message
+  return {
+    message,
+    code: appError.code,
+    kind: appError.kind ?? appError.code,
+    channel: appError.channel,
+    toString: () => message,
+  }
+}
+
+export function formatErrorMessage(source: unknown, fallback = 'Unexpected error.'): string {
+  return toNekodeAppError(source, fallback).message
+}
+
+/**
  * Maps main-process errors to the serialized transport form. Unknown errors
  * are sanitized to a generic message (raw OS/library errors can leak paths or
  * internals); callers log the original error on the main side.
@@ -134,12 +225,16 @@ export function isAppErrorPayload(source: unknown): source is AppErrorPayload {
 export function toTransportError(error: unknown, channel: string): Error {
   if (error instanceof AppError) {
     const withChannel =
-      error.channel === undefined ? new AppError(error.code, error.message, channel) : error
+      error.channel === undefined
+        ? new AppError(error.code, error.message, channel, error.kind)
+        : error
     return new Error(serializeAppError(withChannel))
   }
   return new Error(serializeAppError(new AppError('unknown', 'Unexpected error.', channel)))
 }
 
-function isAppErrorCode(value: unknown): value is AppErrorCode {
+export function isAppErrorCode(value: unknown): value is AppErrorCode {
   return typeof value === 'string' && (APP_ERROR_CODES as readonly string[]).includes(value)
 }
+
+export const isAppErrorKind = isAppErrorCode

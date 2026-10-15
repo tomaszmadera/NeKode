@@ -8,10 +8,11 @@ import {
   waitFor,
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { DictationDictionaryError } from '../../../../shared/dictation-contract'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { useDesktopDictation } from '../../hooks/useDesktopDictation'
 import { createDictationApiStub } from '../../test/dictation-api-stub'
-import { DictationDictionary } from './DictationDictionary'
+import { DICTATION_DICTIONARY_ERROR_TABLE, DictationDictionary } from './DictationDictionary'
 
 afterEach(cleanup)
 describe('read-only OpenWhispr dictionary', () => {
@@ -85,47 +86,47 @@ describe('read-only OpenWhispr dictionary', () => {
     expect(screen.getByText('Loading dictionary...')).toBeTruthy()
     expect(screen.queryByRole('listitem')).toBeNull()
     await act(async () => complete({ state: 'unavailable', error: 'unsupported-pagination' }))
-    expect(screen.getByRole('alert').textContent).toContain('unsupported dictionary pagination')
+    const alert = screen.getByRole('alert')
+    expect(alert.getAttribute('data-error-kind')).toBe('unsupported-pagination')
+    expect(alert.getAttribute('data-error-code')).toBe('unsupported-pagination')
+    expect(alert.textContent).toBeTruthy()
     expect(screen.queryByText('old term')).toBeNull()
     expect(screen.queryByText('1 entry')).toBeNull()
   })
-  // Code-to-message mapping: one named row per dictionary error code. The
-  // full unavailable scenario (alert, desktop readiness, manual retry,
-  // desktopActivate, no-call negatives) runs once below instead of per code.
-  it.each([
-    [
-      'bridge-missing',
-      'The OpenWhispr local bridge is missing. Start OpenWhispr, then refresh the dictionary.',
-    ],
-    [
-      'bridge-invalid',
-      'The OpenWhispr local bridge configuration is invalid. Restart OpenWhispr, then refresh the dictionary.',
-    ],
-    [
-      'unreachable',
-      'The OpenWhispr local bridge is unavailable. Check OpenWhispr, then refresh the dictionary.',
-    ],
-    [
-      'auth-failed',
-      'The OpenWhispr local bridge rejected authentication. Restart OpenWhispr, then refresh the dictionary.',
-    ],
-    [
-      'malformed-response',
-      'The OpenWhispr dictionary response is invalid. No complete dictionary could be displayed.',
-    ],
-    [
-      'unsupported-pagination',
-      'This OpenWhispr bridge requires unsupported dictionary pagination. No complete dictionary could be displayed.',
-    ],
-    [
-      'dictionary-limit',
-      'The OpenWhispr dictionary exceeds the supported limit of 10,000 entries. No complete dictionary could be displayed.',
-    ],
-  ] as const)('shows the %s message in the alert', async (error, message) => {
-    const api = createDictationApiStub()
-    vi.mocked(api.dictionaryList).mockResolvedValue({ state: 'unavailable', error })
-    render(<DictationDictionary api={api} />)
-    expect((await screen.findByRole('alert')).textContent).toContain(message)
+
+  // Machine-readable error kind assertions across all 7 dictionary error codes.
+  // Tests assert the typed error kind/code and smoke-check that a non-empty
+  // message exists, avoiding brittle pinning of user-facing copy strings.
+  const ALL_DICTIONARY_ERRORS: readonly DictationDictionaryError[] = [
+    'bridge-missing',
+    'bridge-invalid',
+    'unreachable',
+    'auth-failed',
+    'malformed-response',
+    'unsupported-pagination',
+    'dictionary-limit',
+  ]
+
+  it.each(ALL_DICTIONARY_ERRORS)(
+    'exposes machine-readable error kind and code for %s in the alert',
+    async (error) => {
+      const api = createDictationApiStub()
+      vi.mocked(api.dictionaryList).mockResolvedValue({ state: 'unavailable', error })
+      render(<DictationDictionary api={api} />)
+      const alert = await screen.findByRole('alert')
+      expect(alert.getAttribute('data-error-kind')).toBe(error)
+      expect(alert.getAttribute('data-error-code')).toBe(error)
+      expect(alert.textContent).toBeTruthy()
+    },
+  )
+
+  it('verifies that the dictionary error mapping table defines all error codes', () => {
+    for (const error of ALL_DICTIONARY_ERRORS) {
+      const entry = DICTATION_DICTIONARY_ERROR_TABLE[error]
+      expect(entry.kind).toBe(error)
+      expect(entry.code).toBe(error)
+      expect(entry.message.length).toBeGreaterThan(0)
+    }
   })
 
   it('shows an unavailable dictionary without disabling desktop readiness and supports manual retry', async () => {
@@ -137,7 +138,9 @@ describe('read-only OpenWhispr dictionary', () => {
     })
     const hook = renderHook(() => useDesktopDictation({ dictation: api } as AppApi))
     render(<DictationDictionary api={api} />)
-    await screen.findByRole('alert')
+    const alert = await screen.findByRole('alert')
+    expect(alert.getAttribute('data-error-kind')).toBe('unreachable')
+    expect(alert.getAttribute('data-error-code')).toBe('unreachable')
     await waitFor(() => expect(hook.result.current.control.disabledReason).toBeNull())
     expect(screen.queryByText(/entries$/)).toBeNull()
     vi.mocked(api.dictionaryList).mockResolvedValue({ state: 'ready', terms: ['fixed'] })
@@ -152,7 +155,9 @@ describe('read-only OpenWhispr dictionary', () => {
     const api = createDictationApiStub()
     vi.mocked(api.dictionaryList).mockRejectedValueOnce(new Error('private transport detail'))
     const view = render(<DictationDictionary api={api} />)
-    await screen.findByRole('alert')
+    const alert = await screen.findByRole('alert')
+    expect(alert.getAttribute('data-error-kind')).toBe('load-failed')
+    expect(alert.getAttribute('data-error-code')).toBe('load-failed')
     expect(screen.queryByText(/private transport/)).toBeNull()
     let complete!: (value: Awaited<ReturnType<typeof api.dictionaryList>>) => void
     vi.mocked(api.dictionaryList).mockImplementation(
