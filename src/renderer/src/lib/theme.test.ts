@@ -1,11 +1,33 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { THEMES } from './theme'
 
 const THEMES_DIR = 'src/renderer/src/themes'
 
 const tokenNames = (source: string): string[] =>
   (source.match(/--[\w-]+:/g) ?? []).map((declaration) => declaration.slice(0, -1))
+
+describe('theme registry', () => {
+  it('matches the theme CSS files and the theme.css imports one to one', () => {
+    // An unregistered file never loads, and a registered id without a file
+    // silently runs on the default palette.
+    const ids = Object.keys(THEMES).sort()
+    const files = readdirSync(THEMES_DIR)
+      .filter((file) => file.endsWith('.css'))
+      .map((file) => file.slice(0, -'.css'.length))
+      .sort()
+    const imports = [
+      ...readFileSync('src/renderer/src/theme.css', 'utf8').matchAll(
+        /@import\s+"\.\/themes\/([\w-]+)\.css";/g,
+      ),
+    ]
+      .map((match) => match[1])
+      .sort()
+    expect(files).toEqual(ids)
+    expect(imports).toEqual(ids)
+  })
+})
 
 describe('theme palettes', () => {
   const defaultNames = tokenNames(readFileSync(join(THEMES_DIR, 'default.css'), 'utf8'))
