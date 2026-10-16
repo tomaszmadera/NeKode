@@ -295,6 +295,7 @@ describe('preload app api', () => {
       id: null,
       name: 'Claude',
       command: 'claude "{prompt}"',
+      interactiveArgs: ['--model', 'my model', ''],
     }
     await api.agentProfiles.get('p1')
     await api.agentProfiles.libraryGet()

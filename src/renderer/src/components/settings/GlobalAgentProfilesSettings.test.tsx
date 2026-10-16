@@ -1,6 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { parseAgentCommand, serializeAgentCommand } from '../../../../shared/agent-command'
+import {
+  parseAgentArguments,
+  parseAgentCommand,
+  serializeAgentCommand,
+} from '../../../../shared/agent-command'
 import type { AgentProfile } from '../../../../shared/ipc-contract'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
@@ -21,13 +25,92 @@ function harness(profiles: AgentProfile[] = []) {
   ])
   vi.mocked(app.agentProfiles.put).mockImplementation(async (input) => ({
     version: 1,
-    profiles: [{ id: input.id ?? 'new-id', name: input.name, ...parseAgentCommand(input.command) }],
+    profiles: [
+      {
+        id: input.id ?? 'new-id',
+        name: input.name,
+        ...parseAgentCommand(input.command),
+        ...(input.interactiveArgs === undefined ? {} : { interactiveArgs: input.interactiveArgs }),
+      },
+    ],
   }))
   render(<GlobalAgentProfilesSettings app={app} />)
   return app
 }
 
 describe('global agent library editor', () => {
+  it('saves an explicit empty override and disabling it removes the override on the next edit', async () => {
+    const app = harness([alpha])
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Alpha' }))
+    expect(screen.queryByLabelText('Interactive arguments')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Override interactive arguments for New Chat'))
+    fireEvent.change(screen.getByLabelText('Interactive arguments'), { target: { value: '  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.agentProfiles.put).toHaveBeenCalledWith({
+        id: alpha.id,
+        name: alpha.name,
+        command: serializeAgentCommand(alpha),
+        interactiveArgs: [],
+      }),
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Alpha' }))
+    expect(
+      (screen.getByLabelText('Override interactive arguments for New Chat') as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+    expect((screen.getByLabelText('Interactive arguments') as HTMLInputElement).value).toBe('')
+    fireEvent.click(screen.getByLabelText('Override interactive arguments for New Chat'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(app.agentProfiles.put).toHaveBeenLastCalledWith({
+        id: alpha.id,
+        name: alpha.name,
+        command: serializeAgentCommand(alpha),
+      }),
+    )
+  })
+
+  it.each(['Edit', 'Copy'])(
+    'preserves exact interactive argv through %s and save',
+    async (action) => {
+      const interactiveArgs = [
+        'C:\\Agent tools\\cli.js',
+        '',
+        '"quoted"',
+        'line\r\nbreak',
+        '`n literal',
+      ]
+      const app = harness([{ ...alpha, interactiveArgs }])
+      fireEvent.click(await screen.findByRole('button', { name: `${action} Alpha` }))
+      const text = (screen.getByLabelText('Interactive arguments') as HTMLInputElement).value
+      expect(parseAgentArguments(text)).toEqual(interactiveArgs)
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() =>
+        expect(app.agentProfiles.put).toHaveBeenCalledWith({
+          id: action === 'Copy' ? null : alpha.id,
+          name: alpha.name,
+          command: serializeAgentCommand(alpha),
+          interactiveArgs,
+        }),
+      )
+    },
+  )
+
+  it.each(['{prompt}', 'prefix{prompt}', '"unclosed', '--flag | echo'])(
+    'keeps the form and refuses invalid interactive text %j',
+    async (value) => {
+      const app = harness([alpha])
+      fireEvent.click(await screen.findByRole('button', { name: 'Edit Alpha' }))
+      fireEvent.click(screen.getByLabelText('Override interactive arguments for New Chat'))
+      fireEvent.change(screen.getByLabelText('Interactive arguments'), { target: { value } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      expect(screen.getByRole('alert').textContent).toBeTruthy()
+      expect((screen.getByLabelText('Interactive arguments') as HTMLInputElement).value).toBe(value)
+      expect(app.agentProfiles.put).not.toHaveBeenCalled()
+    },
+  )
+
   it('adds a custom command without project context or argument rows', async () => {
     const app = harness()
     fireEvent.click(await screen.findByRole('button', { name: 'Add agent' }))

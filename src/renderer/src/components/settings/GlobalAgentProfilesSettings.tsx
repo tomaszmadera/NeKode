@@ -2,7 +2,9 @@ import type React from 'react'
 import { useEffect, useState } from 'react'
 import {
   AGENT_COMMAND_HELP,
+  parseAgentArguments,
   parseAgentCommand,
+  serializeAgentArguments,
   serializeAgentCommand,
 } from '../../../../shared/agent-command'
 import type {
@@ -16,10 +18,12 @@ import { agentProfileFieldError } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 
+type ProfileForm = Omit<AgentProfilePut, 'interactiveArgs'> & { interactiveArguments?: string }
+
 export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX.Element {
   const [library, setLibrary] = useState<AgentProfilesLibrary | null>(null)
   const [templates, setTemplates] = useState<AgentProfileTemplate[]>([])
-  const [form, setForm] = useState<AgentProfilePut | null>(null)
+  const [form, setForm] = useState<ProfileForm | null>(null)
   const [templateId, setTemplateId] = useState('custom')
   const [error, setError] = useState<string | null>(null)
   const guard = useMutationGuard()
@@ -47,15 +51,31 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
       id: copy ? null : profile.id,
       name: profile.name,
       command: serializeAgentCommand(profile),
+      ...(profile.interactiveArgs === undefined
+        ? {}
+        : { interactiveArguments: serializeAgentArguments(profile.interactiveArgs) }),
     })
     setError(null)
   }
 
   async function save(): Promise<void> {
     if (form === null || guard.inFlight()) return
+    let input: AgentProfilePut
     try {
+      input = {
+        id: form.id,
+        name: form.name,
+        command: form.command,
+        ...(form.interactiveArguments === undefined
+          ? {}
+          : { interactiveArgs: parseAgentArguments(form.interactiveArguments) }),
+      }
       const fields = parseAgentCommand(form.command)
-      const message = agentProfileFieldError({ ...fields, name: form.name })
+      const message = agentProfileFieldError({
+        ...fields,
+        name: form.name,
+        interactiveArgs: input.interactiveArgs,
+      })
       if (message !== null) throw new Error(message)
     } catch (cause) {
       setError((cause as Error).message)
@@ -64,7 +84,7 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
     await guard.run(async () => {
       setError(null)
       try {
-        const next = await app.agentProfiles.put(form)
+        const next = await app.agentProfiles.put(input)
         setLibrary(next)
         setForm(null)
       } catch (cause) {
@@ -171,6 +191,41 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
               <p id="agent-command-help" className="text-ink-secondary">
                 {AGENT_COMMAND_HELP}
               </p>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.interactiveArguments !== undefined}
+                  disabled={guard.busy}
+                  onChange={(event) => {
+                    setForm({
+                      ...form,
+                      interactiveArguments: event.target.checked ? '' : undefined,
+                    })
+                    setError(null)
+                  }}
+                />
+                Override interactive arguments for New Chat
+              </label>
+              {form.interactiveArguments !== undefined ? (
+                <label className="block">
+                  Interactive arguments
+                  <input
+                    aria-describedby="agent-interactive-help"
+                    className="mt-1 block w-full rounded-sm bg-highlight p-2 font-mono"
+                    value={form.interactiveArguments}
+                    disabled={guard.busy}
+                    onChange={(event) => {
+                      setForm({ ...form, interactiveArguments: event.target.value })
+                      setError(null)
+                    }}
+                  />
+                </label>
+              ) : null}
+              <p id="agent-interactive-help" className="text-ink-secondary">
+                For New Chat only. Replaces all arguments using the same quoting rules as Command,
+                without {'{prompt}'}. Leave empty to pass no arguments. Uses the executable from
+                Command; include any required CLI script path here. Kanban keeps using Command.
+              </p>
               <p className="text-ink-muted">
                 Use your CLI's parameters or configuration for a provider or model. Keep API keys in
                 your CLI's login or configuration. On Windows, use a native executable or node.exe
@@ -211,6 +266,12 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
                   <code className="mt-1 block break-all text-ink-secondary">
                     {serializeAgentCommand(profile)}
                   </code>
+                  {profile.interactiveArgs !== undefined ? (
+                    <p className="mt-1 break-all text-ink-secondary">
+                      New Chat arguments:{' '}
+                      {serializeAgentArguments(profile.interactiveArgs) || '(none)'}
+                    </p>
+                  ) : null}
                   {profile.originProjectName ? (
                     <p className="mt-1 text-ink-muted">From {profile.originProjectName}</p>
                   ) : null}

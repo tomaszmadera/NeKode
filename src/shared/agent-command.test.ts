@@ -1,5 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { parseAgentCommand, serializeAgentCommand } from './agent-command'
+import {
+  parseAgentArguments,
+  parseAgentCommand,
+  serializeAgentArguments,
+  serializeAgentCommand,
+} from './agent-command'
+
+describe('interactive argv notation', () => {
+  it('distinguishes no arguments from an explicit empty argument and round-trips exact values', () => {
+    expect(parseAgentArguments('  ')).toEqual([])
+    expect(parseAgentArguments('""')).toEqual([''])
+    const args = [
+      'C:\\Agent tools\\cli.js',
+      '--model',
+      'my model',
+      '',
+      '"q"',
+      '\\',
+      'a\r\nb',
+      '`n',
+      '|;&<>',
+    ]
+    const text = serializeAgentArguments(args)
+    expect(text).not.toMatch(/[\r\n]/)
+    expect(parseAgentArguments(text)).toEqual(args)
+  })
+
+  it.each(['--flag | echo', '"unclosed', '--flag\nvalue', '\u0000'])(
+    'rejects unsafe or malformed input %j',
+    (text) => expect(() => parseAgentArguments(text)).toThrow(),
+  )
+})
 
 describe('agent command grammar', () => {
   it('groups quotes, keeps Windows backslashes, and preserves empty arguments', () => {

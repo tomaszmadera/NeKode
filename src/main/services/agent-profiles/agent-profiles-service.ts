@@ -53,7 +53,13 @@ function profile(value: unknown): AgentProfile {
   if (input.originProjectName !== undefined && typeof input.originProjectName !== 'string')
     throw new Error('Invalid profile origin.')
   // Preserve additional launch fields if a format amendment has introduced them.
-  return { ...input, args: [...(input.args as string[])] } as unknown as AgentProfile
+  return {
+    ...input,
+    args: [...(input.args as string[])],
+    ...(input.interactiveArgs === undefined
+      ? {}
+      : { interactiveArgs: [...(input.interactiveArgs as string[])] }),
+  } as unknown as AgentProfile
 }
 
 function profiles(value: unknown): AgentProfile[] {
@@ -151,7 +157,11 @@ export class AgentProfilesService {
       if (fields.id !== null && (typeof fields.id !== 'string' || fields.id.length === 0))
         throw new Error('Profile id must be a non-empty string or null.')
       parsed = parseAgentCommand(fields.command as string)
-      const error = agentProfileFieldError({ ...parsed, name: fields.name as string })
+      const error = agentProfileFieldError({
+        ...parsed,
+        name: fields.name as string,
+        interactiveArgs: fields.interactiveArgs as string[] | undefined,
+      })
       if (error !== null) throw new Error(error)
     } catch (error) {
       throw new AppError('validation', (error as Error).message, channel)
@@ -167,6 +177,8 @@ export class AgentProfilesService {
       name: input.name.trim(),
       ...parsed,
     }
+    if (input.interactiveArgs === undefined) delete nextProfile.interactiveArgs
+    else nextProfile.interactiveArgs = [...input.interactiveArgs]
     const next: AgentProfilesLibrary = { version: 1, profiles: [...library.profiles] }
     if (index < 0) next.profiles.push(nextProfile)
     else next.profiles[index] = nextProfile

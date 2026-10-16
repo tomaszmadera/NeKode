@@ -9,6 +9,15 @@ export const AGENT_COMMAND_HELP =
   'Use single or double quotes to group arguments. Double a matching quote inside quotes to write it literally. Backslashes stay literal. Inside quotes, `n and `r encode line breaks; `` writes a backtick. Include {prompt} as one whole argument exactly once. Shell operators and multiple lines are not supported.'
 
 export function parseAgentCommand(command: string): { executable: string; args: string[] } {
+  const tokens = parseAgentArguments(command)
+  const executable = tokens.shift()
+  if (executable === undefined || executable.trim().length === 0)
+    throw new Error('Command is required.')
+  return { executable, args: tokens }
+}
+
+/** The same argv notation, allowing an empty argument list without an executable. */
+export function parseAgentArguments(command: string): string[] {
   if (typeof command !== 'string' || /[\r\n]/.test(command) || command.includes('\u0000')) {
     throw new Error('Command must be one line without NUL characters.')
   }
@@ -49,17 +58,18 @@ export function parseAgentCommand(command: string): { executable: string; args: 
   }
   if (quote !== null) throw new Error('Command has an unclosed quote.')
   if (started) tokens.push(token)
-  const executable = tokens.shift()
-  if (executable === undefined || executable.trim().length === 0)
-    throw new Error('Command is required.')
-  return { executable, args: tokens }
+  return tokens
 }
 
 export function serializeAgentCommand(input: {
   executable: string
   args: readonly string[]
 }): string {
-  return [input.executable, ...input.args]
+  return serializeAgentArguments([input.executable, ...input.args])
+}
+
+export function serializeAgentArguments(args: readonly string[]): string {
+  return args
     .map(
       (token) =>
         `"${token.replaceAll('`', '``').replaceAll('\r', '`r').replaceAll('\n', '`n').replaceAll('"', '""')}"`,

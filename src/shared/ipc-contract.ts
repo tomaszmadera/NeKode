@@ -442,6 +442,8 @@ export interface AgentProfile {
   name: string
   executable: string
   args: string[]
+  /** Complete argv for New Chat; absent keeps legacy prompt removal, [] means no arguments. */
+  interactiveArgs?: string[]
   originProjectName?: string
 }
 
@@ -479,6 +481,7 @@ export interface AgentProfilePut {
   id: string | null
   name: string
   command: string
+  interactiveArgs?: string[]
 }
 
 export const AGENT_PROFILES_LIBRARY_KEY = 'agents.library'
@@ -621,6 +624,21 @@ export type KanbanHandoffAvailabilityResult =
       rejections: HandoffRejection[]
     }
 
+/** Optional complete interactive argv; null means the value may be saved. */
+export function agentInteractiveArgsError(value: unknown): string | null {
+  if (value === undefined) return null
+  if (!Array.isArray(value) || [...value].some((arg) => typeof arg !== 'string')) {
+    return 'Interactive arguments must be a list of strings.'
+  }
+  if (value.some((arg: string) => arg.includes('\u0000'))) {
+    return 'Interactive arguments must not contain NUL characters.'
+  }
+  if (value.some((arg: string) => arg.includes(AGENT_PROMPT_PLACEHOLDER))) {
+    return 'Interactive arguments must not include {prompt}.'
+  }
+  return null
+}
+
 /**
  * Shared profile field rules. Null means the fields may be saved. Empty name,
  * empty executable, or any `{prompt}` count other than one is a validation
@@ -630,6 +648,7 @@ export function agentProfileFieldError(input: {
   name: string
   executable: string
   args: readonly string[]
+  interactiveArgs?: readonly string[]
 }): string | null {
   if (typeof input.name !== 'string' || input.name.trim().length === 0) {
     return 'Name is required.'
@@ -650,7 +669,7 @@ export function agentProfileFieldError(input: {
   if (placeholders !== 1 || hasSubstring) {
     return 'Arguments must include {prompt} exactly once.'
   }
-  return null
+  return agentInteractiveArgsError(input.interactiveArgs)
 }
 
 export interface AppApi {

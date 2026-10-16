@@ -88,6 +88,52 @@ function createHarness(options: HarnessOptions = {}) {
 }
 
 describe('AgentChatLaunchService', () => {
+  it.each(
+    [null, 'args', [42], new Array<string>(1), ['\u0000'], ['{prompt}'], ['pre{prompt}']].map(
+      (interactiveArgs) => ({ interactiveArgs }),
+    ),
+  )('rejects invalid interactive argv %j before creating a chat', ({ interactiveArgs }) => {
+    const selected = { ...codexProfile, interactiveArgs } as AgentProfile
+    const { service, project, chats, terminals } = createHarness({ profiles: [selected] })
+    expectAppError(() => service.createWithAgent(project.id, selected.id), 'validation')
+    expect(chats.list(project.id)).toEqual([])
+    expect(terminals.create).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { executable: 'hermes', args: ['-q', '{prompt}'], interactiveArgs: [] },
+    {
+      executable: 'agy',
+      args: ['-i', '{prompt}', '--model', 'configured-model'],
+      interactiveArgs: ['--model', 'configured-model'],
+    },
+    {
+      executable: 'node.exe',
+      args: ['C:\\Agent tools\\cli.js', '-q', '{prompt}'],
+      interactiveArgs: ['C:\\Agent tools\\cli.js', '--model', 'my model', ''],
+    },
+  ])('uses the complete interactive override for $executable', (fields) => {
+    const selected = { ...codexProfile, ...fields }
+    const { service, project, spawns, chats } = createHarness({ profiles: [selected] })
+    const chat = service.createWithAgent(project.id, selected.id)
+    expect(chats.list(project.id)).toHaveLength(1)
+    expect(chat.id).toBeTruthy()
+    expect(spawns).toEqual([{ file: fields.executable, args: fields.interactiveArgs }])
+    expect(selected.interactiveArgs).toEqual(fields.interactiveArgs)
+    expect(spawns[0].args).not.toBe(selected.interactiveArgs)
+  })
+
+  it.each(['codex', 'grok'])(
+    'keeps positional-prompt behavior for %s without an override',
+    (executable) => {
+      const { service, project, spawns } = createHarness({
+        profiles: [{ ...codexProfile, executable, args: ['--model', 'my model', '{prompt}'] }],
+      })
+      service.createWithAgent(project.id, codexProfile.id)
+      expect(spawns).toEqual([{ file: executable, args: ['--model', 'my model'] }])
+    },
+  )
+
   it('rejects a globally existing unselected profile before chat creation and reads the current definition on later launch', () => {
     const { db, projects, chats, terminals, project, spawns } = createHarness()
     const profiles = new AgentProfilesService({ projects, state: new AppStateService({ db }) })

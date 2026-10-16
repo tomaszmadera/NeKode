@@ -14,14 +14,14 @@ Konfigurujesz sposób uruchamiania agenta raz, w ustawieniach aplikacji. W proje
 - Decyzja użytkownika z 2026-10-14: globalna biblioteka profili z gotowych szablonów albo własnych konfiguracji; nazwa i jedna linia komendy; w projekcie wybór dostępnych profili i domyślnego spośród nich; nowy projekt bez wyboru, wyłącznie opt-in. Nie ma dziedziczenia globalnego zestawu.
 - [Wymagania produktu](../../product/requirements.md): agenci są procesami CLI, interfejs jest angielski, aplikacja nie wywołuje bezpośrednio API modeli.
 - [Profile agentów i Start/Resume](../kanban-adapter-interface/spec.md#profile-agentów) oraz [menu New Chat](../new-chat-agent-menu/spec.md).
-- NEKODE-78 (work item `f7589e3c-daeb-47a2-af5f-552a78ff4d40`): osobna korekta uruchamiania interaktywnego profili z flagą promptu. Ten kontrakt nie uznaje jej za wykonaną.
+- NEKODE-78 (work item `f7589e3c-daeb-47a2-af5f-552a78ff4d40`): [wybór argumentów interaktywnych w New Chat](../new-chat-agent-menu/spec.md#interactive-profile-arguments-nekode-78). Poniższa sekcja określa ich konfigurację; kontrakt nie jest dowodem wykonania implementacji.
 
 Decyzja z 2026-10-14 zastępuje projektowe przechowywanie definicji profili z 2026-10-07. Ten dokument jest właścicielem biblioteki, szablonów, formularza i przypisań do projektów. Powiązane kontrakty nadal są właścicielami gestów uruchamiania, promptów zadań, nazw czatów i cyklu życia terminala. Opis globalnego domyślnego agenta w `docs/UX-UI.md` §23 nie wprowadza dziedziczenia ani globalnego profilu domyślnego w tej funkcji.
 
 ## Zakres
 
 - Zakładka `Agents` w App Settings: biblioteka profili, dodawanie z szablonu, dodawanie własnego profilu, edycja, kopiowanie i usuwanie.
-- Nazwa oraz jedno pole `Command` zamiast `Executable` i wierszy `Argument N`.
+- Nazwa oraz jedno pole `Command` zamiast `Executable` i wierszy `Argument N`, z opcjonalnym nadpisaniem argumentów interaktywnych dla New Chat.
 - Zakładka `Agents` w Project Settings: zaznaczanie dostępnych profili, wybór domyślnego i odnośnik `Manage agents` do biblioteki.
 - Ograniczenie menu New Chat oraz wyboru agenta w Kanban Start/Resume do profili zaznaczonych dla danego projektu.
 - Walidacja w main, lokalna persystencja i migracja istniejących konfiguracji.
@@ -33,7 +33,7 @@ Decyzja z 2026-10-14 zastępuje projektowe przechowywanie definicji profili z 20
 - Bezpośrednie API modeli, wspólny katalog providerów/modeli i przechowywanie kluczy API w NeKode.
 - Projektowe kopie definicji, nadpisywanie pojedynczych pól profilu oraz dodatkowe poziomy dziedziczenia.
 - Zmiana lewego kliknięcia New Chat, projektu powłoki, Actions, nazw istniejących czatów i działających sesji.
-- Implementacja NEKODE-78. Jej ewentualne pola konfiguracji trzeba zachować, jeśli istnieją w kodzie w chwili realizacji.
+- Automatyczne rozpoznawanie flag promptu i przepisywanie istniejących profili na podstawie nazwy agenta.
 
 ## Zachowanie
 
@@ -77,6 +77,16 @@ Decyzja z 2026-10-14 zastępuje projektowe przechowywanie definicji profili z 20
 5. Przykłady formatu: `claude "{prompt}"` oraz `"C:\Tools\my-agent.exe" --model "my model" "{prompt}"`. Są przykładami składni, nie zapewnieniem, że dowolny CLI obsługuje ten interfejs.
 6. Przejście zapisanych argv do formularza i ponowny zapis bez edycji muszą dać identyczne executable i argumenty, także dla spacji, pustych wartości, cudzysłowów i końcowych ukośników wstecznych.
 7. Własny provider/model jest konfigurowany zgodnie z możliwościami wybranego CLI: przez parametry, jego plik konfiguracji lub własny wrapper. NeKode nie interpretuje nazw modeli ani nie obiecuje kompatybilności dowolnego providera z dowolnym agentem. Wrapper z odpowiednim interfejsem można uruchomić tą samą jedną linią. Kluczy API nie umieszcza się w komendzie; logowanie pozostaje po stronie CLI.
+
+### Argumenty interaktywne (NEKODE-78)
+
+1. Formularz profilu ma opcję `Override interactive arguments for New Chat`, domyślnie wyłączoną dla profilu bez `interactiveArgs`. Po włączeniu pokazuje jedno pole `Interactive arguments`. Pole zawiera wyłącznie argumenty; executable pochodzi z `Command`. Pomoc wyjaśnia, że nadpisanie dotyczy tylko New Chat, zastępuje całą listę argumentów i nie zawiera `{prompt}`.
+2. Wyłączona opcja oznacza brak `interactiveArgs`. Włączona opcja z pustym lub białym tekstem oznacza `interactiveArgs: []`. Wyłączenie i zapis usuwają wcześniejsze nadpisanie. Formularz zachowuje to rozróżnienie podczas edycji i kopiowania.
+3. Pole używa tej samej gramatyki argv co `Command`: cytowanie, literalne ukośniki, puste cytowane argumenty oraz kodowanie CR/LF pozostają odwracalne. Niecytowane operatory, wieloliniowy tekst wejściowy i niedomknięte cytowanie są błędem. Nie ma wykonania przez powłokę ani rozwijania zmiennych.
+4. W danych kanonicznych i wejściu `agentProfiles:put` pole ma typ opcjonalny `string[]`. Brak jest prawidłowy, pusta tablica też. `null`, inny typ pola, element inny niż string, NUL i dowolny argument zawierający `{prompt}` są odrzucane. Walidacja obejmuje IPC, usługę zapisu i odczyt zapisanych profili; błędny odczyt nie staje się pustą biblioteką.
+5. Odczyt po restarcie, edycja, kopiowanie oraz istniejąca migracja profili zachowują dokładną listę argumentów, jeśli jest obecna. Opcjonalne pole mieści się w dotychczasowym dokumencie biblioteki w wersji 1; nie wymaga nowej tabeli ani migracji schematu SQLite.
+6. Zapis `Command` nadal wymaga dokładnie jednego argumentu `{prompt}` dla Kanban Start/Resume. Argumenty interaktywne nie zmieniają tego kontraktu, wyboru profili w projektach ani działających sesji. Regułę wyboru argv przy uruchomieniu określa [New Chat](../new-chat-agent-menu/spec.md#interactive-profile-arguments-nekode-78).
+7. Nie dodaje się szablonów Hermes/AGY ani nie zmienia dotychczasowych szablonów w ramach tej korekty. Istniejący profil z flagą promptu wymaga jawnego ustawienia argumentów interaktywnych. NeKode nie zgaduje, która flaga należy do promptu.
 
 ## Reguły biznesowe
 
