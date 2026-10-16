@@ -59,6 +59,55 @@ function valid(name = 'Agent'): AgentProfilePut {
 }
 
 describe('global agent profiles and project opt-in', () => {
+  it('persists, copies and clears exact interactive arguments, including an empty override', () => {
+    const { service, state, projects } = harness()
+    const interactiveArgs = ['C:\\Agent tools\\cli.js', '', 'my model', 'line\r\nbreak']
+    const agent = service.put({ ...valid(), interactiveArgs }).profiles[0]
+    interactiveArgs.push('must not mutate saved arguments')
+    const restarted = new AgentProfilesService({ state, projects })
+    expect(restarted.libraryGet().profiles[0].interactiveArgs).toEqual(interactiveArgs.slice(0, -1))
+    const copied = restarted.put({ ...valid('Copy'), interactiveArgs: agent.interactiveArgs })
+      .profiles[1]
+    expect(copied.id).not.toBe(agent.id)
+    expect(copied.interactiveArgs).toEqual(agent.interactiveArgs)
+    expect(restarted.selectionGet('p1').selectedIds).toEqual([])
+    const empty = restarted.put({ ...valid(), id: agent.id, interactiveArgs: [] }).profiles[0]
+    expect(empty.interactiveArgs).toEqual([])
+    expect(
+      new AgentProfilesService({ state, projects }).libraryGet().profiles[0].interactiveArgs,
+    ).toEqual([])
+    restarted.put({ ...valid(), id: agent.id })
+    expect(restarted.libraryGet().profiles[0]).not.toHaveProperty('interactiveArgs')
+  })
+
+  it.each(
+    [
+      null,
+      'args',
+      {},
+      [42],
+      new Array<string>(1),
+      ['\u0000'],
+      ['{prompt}'],
+      ['prefix{prompt}suffix'],
+    ].map((interactiveArgs) => ({ interactiveArgs })),
+  )(
+    'rejects an invalid interactive override %j at write and stored-document boundaries',
+    ({ interactiveArgs }) => {
+      const { service, state } = harness()
+      const agent = service.put(valid()).profiles[0]
+      const before = state.get(AGENT_PROFILES_LIBRARY_KEY)
+      expect(() => service.put({ ...valid(), interactiveArgs } as AgentProfilePut)).toThrow(
+        AppError,
+      )
+      expect(state.get(AGENT_PROFILES_LIBRARY_KEY)).toBe(before)
+      const corrupted = JSON.stringify({ version: 1, profiles: [{ ...agent, interactiveArgs }] })
+      state.set(AGENT_PROFILES_LIBRARY_KEY, corrupted)
+      expect(() => service.libraryGet()).toThrow(AppError)
+      expect(state.get(AGENT_PROFILES_LIBRARY_KEY)).toBe(corrupted)
+    },
+  )
+
   it('starts empty, creates exact argv globally and persists choices across restart', () => {
     const { service, state, projects } = harness()
     expect(service.libraryGet()).toEqual({ version: 1, profiles: [] })
@@ -164,6 +213,30 @@ describe('global agent profiles and project opt-in', () => {
 })
 
 describe('strict transactional legacy migration', () => {
+  it('preserves interactive argv through migration and rejects invalid legacy overrides without writes', () => {
+    const { service, state } = harness()
+    const legacy = {
+      id: 'legacy',
+      name: 'Legacy',
+      ...exact,
+      interactiveArgs: ['--model', 'my model', ''],
+    }
+    state.set(
+      projectAgentProfilesKey('p1'),
+      JSON.stringify({ defaultId: legacy.id, profiles: [legacy] }),
+    )
+    expect(service.libraryGet().profiles[0].interactiveArgs).toEqual(legacy.interactiveArgs)
+    const bad = harness()
+    const source = JSON.stringify({
+      defaultId: null,
+      profiles: [{ ...legacy, interactiveArgs: ['{prompt}'] }],
+    })
+    bad.state.set(projectAgentProfilesKey('p1'), source)
+    expect(() => bad.service.libraryGet()).toThrow(/Original data has been preserved/)
+    expect(bad.state.get(projectAgentProfilesKey('p1'))).toBe(source)
+    expect(bad.state.get(AGENT_PROFILES_LIBRARY_KEY)).toBeNull()
+  })
+
   it('preserves legacy definitions when a project is removed before the first library read', () => {
     const { service, state, db } = harness()
     const legacy = { id: 'legacy', name: 'Legacy', ...exact }

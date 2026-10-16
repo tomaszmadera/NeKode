@@ -194,8 +194,8 @@ function assertAgentProfilePut(value: unknown, label: string): asserts value is 
   const input = value as Record<string, unknown>
   const keys = Object.keys(input)
   if (
-    keys.length !== AGENT_PROFILE_PUT_KEYS.length ||
-    keys.some((key) => !AGENT_PROFILE_PUT_KEYS.includes(key))
+    AGENT_PROFILE_PUT_KEYS.some((key) => !keys.includes(key)) ||
+    keys.some((key) => !AGENT_PROFILE_PUT_KEYS.includes(key) && key !== 'interactiveArgs')
   ) {
     fail(label, 'has unexpected or missing fields')
   }
@@ -210,7 +210,11 @@ function assertAgentProfilePut(value: unknown, label: string): asserts value is 
   } catch (error) {
     throw new ValidationError((error as Error).message)
   }
-  const message = agentProfileFieldError({ name: input.name as string, ...parsed })
+  const message = agentProfileFieldError({
+    name: input.name as string,
+    ...parsed,
+    interactiveArgs: input.interactiveArgs as string[] | undefined,
+  })
   if (message !== null) throw new ValidationError(message)
 }
 

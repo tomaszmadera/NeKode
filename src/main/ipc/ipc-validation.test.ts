@@ -596,6 +596,11 @@ describe('ipc payload validation', () => {
     put?.invoke(put.parse([input]))
     expect(services.agentProfiles.put).toHaveBeenCalledWith(input)
 
+    for (const interactiveArgs of [[], ['--model', 'my model', '']]) {
+      const interactive = { ...input, interactiveArgs }
+      expect(put?.parse([interactive])).toEqual([interactive])
+    }
+
     const remove = channels.get('agentProfiles:delete')
     remove?.invoke(remove.parse(['id-1']))
     expect(services.agentProfiles.delete).toHaveBeenCalledWith('id-1')
@@ -621,6 +626,16 @@ describe('ipc payload validation', () => {
       [{ ...input, id: '' }],
       [{ ...input, id: 'a\u0000' }],
       [{ ...input, extra: true }],
+      ...[
+        null,
+        'args',
+        {},
+        [42],
+        new Array<string>(1),
+        ['\u0000'],
+        ['{prompt}'],
+        ['pre{prompt}'],
+      ].map((interactiveArgs) => [{ ...input, interactiveArgs }]),
       [{ name: 'Claude' }],
     ]
     for (const payload of invalid) {

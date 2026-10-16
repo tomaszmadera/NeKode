@@ -1,5 +1,9 @@
 import type { AgentProfilesDocument, ChatInfo } from '../../shared/ipc-contract'
-import { AGENT_PROMPT_PLACEHOLDER, IPC_CHANNEL } from '../../shared/ipc-contract'
+import {
+  AGENT_PROMPT_PLACEHOLDER,
+  agentInteractiveArgsError,
+  IPC_CHANNEL,
+} from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import type { ShellSpec } from './terminal/terminal-service'
 
@@ -7,8 +11,8 @@ import type { ShellSpec } from './terminal/terminal-service'
 // panel's New Chat button creates one chat named for the profile and starts
 // that profile in the chat's terminal -- the same launch path
 // `kanban:launchTask` uses (argv, never a shell, at the project root). A task
-// launch carries a prompt; this launch does not, so the single `{prompt}` argv
-// element is removed and the agent starts interactively. A failed spawn rolls
+// launch carries a prompt; this launch uses interactiveArgs when defined,
+// otherwise removes the single `{prompt}` argv element. A failed spawn rolls
 // the just-created chat back in this same flow, so the renderer never adopts a
 // chat without its agent.
 
@@ -36,17 +40,16 @@ export interface AgentChatLaunchDeps {
 }
 
 /**
- * The profile argv without its prompt slot (spec Behaviour 4: the `{prompt}`
- * element is removed, no other element changes). The profile contract
- * guarantees exactly one element; a document that violates it would silently
- * drop a real argument, so it is refused instead.
+ * Explicit interactive argv, or the profile argv without its prompt slot.
+ * The profile contract guarantees exactly one prompt element; a document
+ * that violates it would silently drop a real argument, so it is refused.
  */
-function agentArgs(args: readonly string[]): string[] {
+function agentArgs(args: readonly string[], interactiveArgs?: readonly string[]): string[] {
   const next = args.filter((arg) => arg !== AGENT_PROMPT_PLACEHOLDER)
-  if (args.length - next.length !== 1) {
+  if (args.length - next.length !== 1 || agentInteractiveArgsError(interactiveArgs) !== null) {
     throw new AppError('validation', 'The selected agent profile is invalid.', CHANNEL)
   }
-  return next
+  return interactiveArgs === undefined ? next : [...interactiveArgs]
 }
 
 /**
@@ -95,7 +98,10 @@ export class AgentChatLaunchService {
     if (profile === undefined) {
       throw new AppError('not_found', 'The selected agent profile is no longer available.', CHANNEL)
     }
-    const shell: ShellSpec = { file: profile.executable, args: agentArgs(profile.args) }
+    const shell: ShellSpec = {
+      file: profile.executable,
+      args: agentArgs(profile.args, profile.interactiveArgs),
+    }
     const chat = this.#createChat(projectId, profile.name)
     try {
       this.#terminals.create(chat.id, project.path, shell)

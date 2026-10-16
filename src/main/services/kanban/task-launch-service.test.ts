@@ -202,6 +202,43 @@ function harness(
 }
 
 describe('project opt-in at Kanban launch', () => {
+  it.each([
+    { executable: 'hermes', flag: '-q', mode: 'start' },
+    { executable: 'hermes', flag: '-q', mode: 'resume' },
+    { executable: 'agy', flag: '-i', mode: 'start' },
+    { executable: 'agy', flag: '-i', mode: 'resume' },
+  ])(
+    'keeps the task prompt flag for $executable $mode despite interactiveArgs',
+    async ({ executable, flag, mode }) => {
+      const h = harness({ globalProfiles: true })
+      const agent = h.globalProfiles.put({
+        id: null,
+        name: executable,
+        command: `${executable} ${flag} "{prompt}" --model "my model"`,
+        interactiveArgs: [],
+      }).profiles[0]
+      h.globalProfiles.selectionSet(h.project.id, { selectedIds: [agent.id], defaultId: null })
+      const notesFile = {
+        name: 'nekode-28-notes.md',
+        path: 'handoffs/nekode-28-notes.md',
+        modifiedAt: STAMP,
+        matchKind: 'filename' as const,
+      }
+      h.setScan(() => readyScan([notesFile]))
+      const overrides = { projectId: h.project.id, profileId: agent.id }
+      const result = await h.service.launch(
+        mode === 'start' ? input(overrides) : resumeInput(overrides),
+      )
+      expect(result.delivered).toBe(true)
+      expect(h.chats.list(h.project.id)).toHaveLength(1)
+      expect(h.spawns).toHaveLength(1)
+      const prompt =
+        mode === 'start' ? buildStartPrompt(liveItem(), HANDOFF) : buildResumePrompt(notesFile.path)
+      expect(h.spawns[0].file).toBe(executable)
+      expect(h.spawns[0].args).toEqual([flag, prompt, '--model', 'my model'])
+    },
+  )
+
   it('rejects a globally existing unselected profile with no chat or process', async () => {
     const h = harness({ globalProfiles: true })
     const agent = h.globalProfiles.put({ id: null, name: 'Agent', command: 'agent "{prompt}"' })
