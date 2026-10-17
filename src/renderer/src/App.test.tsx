@@ -1106,6 +1106,140 @@ describe('action row and settings', () => {
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
   })
 
+  it.each([false, true])('delivers a custom Resume prompt (auto-send: %s)', async (autoSend) => {
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
+      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
+      if (key === APP_STATE_KEY.autoSendHandoffResume) return autoSend ? '1' : '0'
+      return null
+    })
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.handoffs.list).mockResolvedValue([
+      {
+        name: 'a.md',
+        path: 'D:/code/demo/.agents/handoffs/a.md',
+        modifiedAt: '2026-10-17T10:00:00Z',
+      },
+    ])
+    vi.mocked(app.handoffs.resumePrompt).mockResolvedValue(
+      'Read .agents/handoffs/a.md\nUse instructions.',
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    fireEvent.click(await screen.findByTestId(TEST_ID.handoffPickerEntry))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull())
+    if (autoSend) {
+      expect(app.terminals.write).toHaveBeenCalledWith(
+        't1',
+        'Read .agents/handoffs/a.md\nUse instructions.',
+      )
+      await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r'))
+    } else {
+      await waitFor(() =>
+        expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLTextAreaElement).value).toBe(
+          'Read .agents/handoffs/a.md\nUse instructions.',
+        ),
+      )
+      expect(app.terminals.write).not.toHaveBeenCalled()
+    }
+  })
+
+  it('does not deliver a pending Resume prompt to another chat', async () => {
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
+      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
+      return null
+    })
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
+    vi.mocked(app.handoffs.list).mockResolvedValue([
+      {
+        name: 'a.md',
+        path: 'D:/code/demo/.agents/handoffs/a.md',
+        modifiedAt: '2026-10-17T10:00:00Z',
+      },
+    ])
+    let resolve!: (text: string) => void
+    vi.mocked(app.handoffs.resumePrompt).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    fireEvent.click(await screen.findByTestId(TEST_ID.handoffPickerEntry))
+    expect(app.handoffs.resumePrompt).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
+    await act(async () => resolve('Stale Resume prompt'))
+    for (const input of screen.getAllByTestId(TEST_ID.terminalPromptInput)) {
+      expect((input as HTMLTextAreaElement).value).toBe('')
+    }
+    expect(app.terminals.write).not.toHaveBeenCalled()
+  })
+
+  it('does not send a pending Resume prompt after terminal exit while chat removal is pending', async () => {
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
+      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
+      if (key === APP_STATE_KEY.autoSendHandoffResume) return '1'
+      return null
+    })
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.handoffs.list).mockResolvedValue([
+      {
+        name: 'a.md',
+        path: 'D:/code/demo/.agents/handoffs/a.md',
+        modifiedAt: '2026-10-17T10:00:00Z',
+      },
+    ])
+    let resolve!: (text: string) => void
+    vi.mocked(app.handoffs.resumePrompt).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+    let exit!: (code: number) => void
+    vi.mocked(app.terminals.onExit).mockImplementation((_id, listener) => {
+      exit = listener
+      return () => undefined
+    })
+    vi.mocked(app.chats.remove).mockImplementation(() => new Promise<void>(() => undefined))
+    render(<App app={app} />)
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    fireEvent.click(await screen.findByTestId(TEST_ID.handoffPickerEntry))
+    expect(app.handoffs.resumePrompt).toHaveBeenCalledOnce()
+    act(() => exit(0))
+    expect(app.chats.remove).toHaveBeenCalledWith('t1')
+    expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    await act(async () => resolve('Stale Resume prompt'))
+    expect(app.terminals.write).not.toHaveBeenCalled()
+  })
+
   it('resume picker without a configured directory offers configure and plain paste', async () => {
     await renderSelectedChat()
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
@@ -3863,5 +3997,33 @@ describe('kanban task resume — removing the project', () => {
 
     // The active tab should STILL be kanban, not fallen back to terminal
     expect(screen.queryByTestId(TEST_ID.kanbanBoard)).not.toBeNull()
+  })
+
+  it('suppresses fixed action bar buttons and preserves settings when viewing the kanban tab', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.kanban.listBoard).mockResolvedValue(board)
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === projectKanbanAdapterKey('p1') ? 'demo' : null,
+    )
+
+    render(<App app={app} />)
+    await screen.findByTestId(testIdFor.projectSelect('p1'))
+
+    // On terminal tab, fixed buttons exist
+    expect(screen.getByRole('button', { name: 'Handoff' })).toBeTruthy()
+
+    // Switch to kanban tab
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.projectKanban('p1')))
+    await screen.findByTestId(TEST_ID.kanbanBoard)
+
+    // In action bar on kanban tab, fixed action buttons are suppressed
+    const actionBar = screen.getByTestId(TEST_ID.actionRowSlot)
+    expect(within(actionBar).queryByRole('button', { name: 'Handoff' })).toBeNull()
+    expect(within(actionBar).queryByRole('button', { name: 'Resume' })).toBeNull()
+    expect(within(actionBar).queryByRole('button', { name: 'Stop' })).toBeNull()
+    expect(within(actionBar).queryByRole('button', { name: 'Continue' })).toBeNull()
+    expect(within(actionBar).getByRole('button', { name: 'Actions' })).toBeTruthy()
   })
 })

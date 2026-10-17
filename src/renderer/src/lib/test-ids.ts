@@ -212,6 +212,9 @@ export const TEST_ID = {
   kanbanReviewPriority: 'kanban-review-priority',
   kanbanReviewError: 'kanban-review-error',
   kanbanReviewPriorityError: 'kanban-review-priority-error',
+  kanbanReviewCommentsEmpty: 'kanban-review-comments-empty',
+  kanbanReviewCommentsList: 'kanban-review-comments-list',
+  kanbanReviewCommentsError: 'kanban-review-comments-error',
   /** Start confirmation. Rendered by the app shell, not inside the board. */
   kanbanStartDialog: 'kanban-start-dialog',
   kanbanStartTask: 'kanban-start-task',
@@ -316,4 +319,6 @@ export const testIdFor = {
   kanbanListGroup: (stateId: string): string => `kanban-list-group-${stateId}`,
   /** Toggle button for collapsing or expanding a state group in the list view. */
   kanbanGroupToggle: (stateId: string): string => `kanban-group-toggle-${stateId}`,
+  /** Single comment container in the task review. */
+  kanbanReviewComment: (commentId: string): string => `kanban-review-comment-${commentId}`,
 }

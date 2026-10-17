@@ -26,6 +26,7 @@ import type {
   HandoffEntry,
   KanbanAdapterInfo,
   KanbanBoard,
+  KanbanComment,
   KanbanCreateInput,
   KanbanHandoffAvailabilityInput,
   KanbanHandoffAvailabilityResult,
@@ -161,6 +162,7 @@ export interface AppServices {
   handoffs: {
     /** Regular files of the project's configured handoff directory, newest first. */
     list(projectId: string): Promise<HandoffEntry[]>
+    resumePrompt(projectId: string, handoffPath: string): Promise<string>
   }
   kanban: {
     /** Adapters discovered in the configured adapters directory (fresh scan). */
@@ -180,6 +182,8 @@ export interface AppServices {
     updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem>
     /** Adapter `getItem` `{ ref }`. Not the cached board. */
     getItem(projectId: string, ref: string): Promise<WorkItem>
+    /** Comments for one work item via the adapter `listComments` action (`{ ref }`). */
+    getComments(projectId: string, ref: string): Promise<KanbanComment[]>
     /** Start one task chat. Same attempt id returns the same chat. */
     launchTask(input: KanbanLaunchTaskInput): Promise<KanbanLaunchResult>
     /** One handoff scan for an item. Read-only; failures are distinct states. */

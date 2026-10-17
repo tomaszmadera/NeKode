@@ -55,6 +55,7 @@ export interface TaskLaunchDeps {
   handoffs: TaskLaunchHandoffs
   /** Stored handoff directory, or null when unset. Does not read the directory. */
   handoffDir: (projectId: string) => string | null
+  resumePrompt: (handoffPath: string) => Promise<string>
   createChat: (projectId: string, name: string) => ChatInfo
   terminals: {
     create(chatId: string, cwd: string, shell?: ShellSpec): string
@@ -109,7 +110,7 @@ export function buildStartPrompt(item: WorkItem, handoffDir: string | null): str
 }
 
 /**
- * Resume prompt (spec Resume.4). The only line names the handoff path: the
+ * Default Resume prompt (spec Resume.4). The only line names the handoff path: the
  * project-relative form when the file is inside the project, the absolute form
  * otherwise. The agent's resume workflow owns the instructions.
  * The path is prompt data, never shell code.
@@ -153,6 +154,7 @@ export class TaskLaunchService {
   readonly #kanban: TaskLaunchKanban
   readonly #handoffs: TaskLaunchHandoffs
   readonly #handoffDir: (projectId: string) => string | null
+  readonly #formatResumePrompt: TaskLaunchDeps['resumePrompt']
   readonly #createChat: (projectId: string, name: string) => ChatInfo
   readonly #terminals: TaskLaunchDeps['terminals']
   readonly #attempts = new Map<string, Attempt>()
@@ -164,6 +166,7 @@ export class TaskLaunchService {
     this.#kanban = deps.kanban
     this.#handoffs = deps.handoffs
     this.#handoffDir = deps.handoffDir
+    this.#formatResumePrompt = deps.resumePrompt
     this.#createChat = deps.createChat
     this.#terminals = deps.terminals
   }
@@ -359,7 +362,7 @@ export class TaskLaunchService {
     if (candidate === undefined || candidate.modifiedAt !== input.stamp) {
       throw new AppError('conflict', RESUME_REFRESH, CHANNEL)
     }
-    return buildResumePrompt(candidate.path)
+    return this.#formatResumePrompt(candidate.path)
   }
 
   #spawn(attempt: Attempt, cwd: string, prepared: PreparedLaunch): KanbanLaunchResult {

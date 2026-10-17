@@ -201,6 +201,17 @@ export interface WorkItem {
   updatedAt: string | null
 }
 
+export interface KanbanComment {
+  /** Backend-native comment id. */
+  id: string
+  /** Author display name or identifier, or null when unknown. */
+  author: string | null
+  /** Plain text content of the comment. */
+  text: string
+  /** ISO 8601 UTC timestamp or null. */
+  createdAt: string | null
+}
+
 export interface KanbanBoard {
   states: KanbanState[]
   items: WorkItem[]
@@ -333,6 +344,7 @@ export const IPC_CHANNEL = {
   actionsExecute: 'actions:execute',
   actionsStatus: 'actions:status',
   handoffsList: 'handoffs:list',
+  handoffsResumePrompt: 'handoffs:resumePrompt',
   dialogsPickDirectory: 'dialogs:pickDirectory',
   kanbanAdaptersList: 'kanban:adaptersList',
   kanbanGetConfig: 'kanban:getConfig',
@@ -342,6 +354,7 @@ export const IPC_CHANNEL = {
   kanbanCreateItem: 'kanban:createItem',
   kanbanUpdateItem: 'kanban:updateItem',
   kanbanGetItem: 'kanban:getItem',
+  kanbanGetComments: 'kanban:getComments',
   kanbanLaunchTask: 'kanban:launchTask',
   kanbanHandoffCandidates: 'kanban:handoffCandidates',
   kanbanHandoffAvailability: 'kanban:handoffAvailability',
@@ -814,6 +827,8 @@ export interface AppApi {
      * validation error; missing directory: not_found naming the path.
      */
     list(projectId: string): Promise<HandoffEntry[]>
+    /** Compose a file-based Resume using current local settings; no handoff read. */
+    resumePrompt(projectId: string, handoffPath: string): Promise<string>
   }
   kanban: {
     /** Adapters discovered in the configured adapters directory (fresh scan). */
@@ -836,6 +851,8 @@ export interface AppApi {
     updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem>
     /** Live item via the adapter `getItem` action (`{ ref }`). */
     getItem(projectId: string, ref: string): Promise<WorkItem>
+    /** Comments for one work item via the adapter `listComments` action (`{ ref }`). */
+    getComments(projectId: string, ref: string): Promise<KanbanComment[]>
     /**
      * Starts one task chat. Main owns the profile, the prompt, and the
      * process. The same `attemptId` returns the same chat.

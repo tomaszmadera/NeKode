@@ -802,6 +802,9 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     // outside the project root by explicit user configuration, so unlike
     // files:* there is no containment rule here.
     serviceChannel(IPC_CHANNEL.handoffsList, ['string'], (args) => services.handoffs.list(args[0])),
+    serviceChannel(IPC_CHANNEL.handoffsResumePrompt, ['string', 'path'], (args) =>
+      services.handoffs.resumePrompt(args[0], args[1]),
+    ),
     // Kanban adapter channels (spec kanban-adapter-interface Data/API).
     // adaptersList/getConfig/setConfig are synchronous app-side operations;
     // test/listBoard/create/update invoke adapter processes (async).
@@ -875,6 +878,19 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         return payload
       },
       invoke: (args) => services.kanban.getItem(args[0] as string, args[1] as string),
+    },
+    {
+      channel: IPC_CHANNEL.kanbanGetComments,
+      parse: (payload) => {
+        requireArgs(payload, 2, IPC_CHANNEL.kanbanGetComments)
+        assertString(payload[0], `${IPC_CHANNEL.kanbanGetComments} arg[0]`)
+        assertString(payload[1], `${IPC_CHANNEL.kanbanGetComments} arg[1]`)
+        if ((payload[0] as string).length === 0 || (payload[1] as string).length === 0) {
+          fail(IPC_CHANNEL.kanbanGetComments, 'requires non-empty projectId and ref')
+        }
+        return payload
+      },
+      invoke: (args) => services.kanban.getComments(args[0] as string, args[1] as string),
     },
     {
       channel: IPC_CHANNEL.kanbanLaunchTask,

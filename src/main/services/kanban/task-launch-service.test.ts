@@ -159,6 +159,7 @@ function harness(
     }),
   }
   const globalProfiles = new AgentProfilesService({ projects, state: new AppStateService({ db }) })
+  const resumePrompt = vi.fn(async (path: string) => buildResumePrompt(path))
   const service = new TaskLaunchService({
     projects,
     profiles: options.globalProfiles
@@ -168,6 +169,7 @@ function harness(
         },
     kanban: { getItem },
     handoffs,
+    resumePrompt,
     handoffDir: (projectId) => {
       reads.push(projectId)
       if (reads.some((key) => key.includes('autoSend') || key.includes('handoffResume'))) {
@@ -192,6 +194,7 @@ function harness(
     reads,
     handoffs,
     handoffScans,
+    resumePrompt,
     setScan: (next: (input: KanbanHandoffCandidatesInput) => HandoffCandidatesResult) => {
       scan = next
     },
@@ -499,6 +502,59 @@ describe('TaskLaunchService resume', () => {
     modifiedAt: STAMP,
     matchKind: 'filename' as const,
   }
+
+  it('uses the configured prompt only after candidate validation and keeps Start unchanged', async () => {
+    const bundle = harness()
+    bundle.resumePrompt.mockImplementation(
+      async (path) => `Read ${path}\nUse project instructions.`,
+    )
+    await bundle.service.launch(input({ projectId: bundle.project.id }))
+    expect(bundle.resumePrompt).not.toHaveBeenCalled()
+    await expect(
+      bundle.service.launch(resumeInput({ projectId: bundle.project.id })),
+    ).rejects.toMatchObject({ code: 'conflict' })
+    expect(bundle.resumePrompt).not.toHaveBeenCalled()
+    bundle.setScan(() => readyScan([notesFile]))
+    await bundle.service.launch(resumeInput({ projectId: bundle.project.id }))
+    expect(bundle.resumePrompt).toHaveBeenCalledExactlyOnceWith(notesFile.path)
+    expect(bundle.spawns[1]?.args[2]).toBe(`Read ${notesFile.path}\nUse project instructions.`)
+  })
+
+  it('creates no chat on a settings error and allows the same attempt after fixing settings', async () => {
+    const bundle = harness()
+    bundle.setScan(() => readyScan([notesFile]))
+    bundle.resumePrompt.mockRejectedValueOnce(new AppError('config', 'Fix settings.json'))
+    const launch = resumeInput({ projectId: bundle.project.id })
+    await expect(bundle.service.launch(launch)).rejects.toMatchObject({ code: 'config' })
+    expect(bundle.resumePrompt).toHaveBeenCalledTimes(1)
+    expect(bundle.chats.list(bundle.project.id)).toHaveLength(0)
+    expect(bundle.spawns).toHaveLength(0)
+    await bundle.service.launch(launch)
+    expect(bundle.spawns).toHaveLength(1)
+  })
+
+  it('re-reads settings on an undelivered retry and never re-reads a delivered attempt', async () => {
+    const options = { failSpawn: true }
+    const bundle = harness(options)
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      bundle.setScan(() => readyScan([notesFile]))
+      bundle.resumePrompt.mockResolvedValueOnce('First prompt').mockResolvedValue('Edited prompt')
+      const launch = resumeInput({ projectId: bundle.project.id })
+      const failed = await bundle.service.launch(launch)
+      expect(failed.delivered).toBe(false)
+      options.failSpawn = false
+      const delivered = await bundle.service.launch(launch)
+      expect(delivered.delivered).toBe(true)
+      expect(delivered.chat.id).toBe(failed.chat.id)
+      expect(bundle.spawns.map((spawn) => spawn.args[2])).toEqual(['First prompt', 'Edited prompt'])
+      await bundle.service.launch(launch)
+      expect(bundle.resumePrompt).toHaveBeenCalledTimes(2)
+      expect(bundle.spawns).toHaveLength(2)
+    } finally {
+      log.mockRestore()
+    }
+  })
 
   it('rechecks the file and stamp, then passes the Resume prompt as one argv element', async () => {
     const bundle = harness()

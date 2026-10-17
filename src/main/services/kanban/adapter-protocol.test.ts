@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { KANBAN_PRIORITIES, KANBAN_STATE_GROUPS } from '../../../shared/ipc-contract'
 import { AdapterHostError } from './adapter-host'
-import { ADAPTER_ACTIONS, normalizeItem, normalizeItems, normalizeStates } from './adapter-protocol'
+import {
+  ADAPTER_ACTIONS,
+  normalizeComments,
+  normalizeItem,
+  normalizeItems,
+  normalizeStates,
+} from './adapter-protocol'
 
 describe('adapter-protocol', () => {
   describe('normalizeStates', () => {
@@ -276,6 +282,55 @@ describe('adapter-protocol', () => {
     })
   })
 
+  describe('normalizeComments', () => {
+    it('rejects non-array payloads with typed protocol error', () => {
+      expect(() => normalizeComments(null, 'listComments')).toThrowError(
+        new AdapterHostError('protocol', 'listComments must be an array'),
+      )
+      expect(() => normalizeComments({}, 'listComments')).toThrowError(
+        new AdapterHostError('protocol', 'listComments must be an array'),
+      )
+    })
+
+    it('rejects non-object entries in listComments', () => {
+      expect(() => normalizeComments([null], 'listComments')).toThrowError(
+        new AdapterHostError('protocol', 'listComments[0] must be an object'),
+      )
+      expect(() => normalizeComments(['string-entry'], 'listComments')).toThrowError(
+        new AdapterHostError('protocol', 'listComments[0] must be an object'),
+      )
+    })
+
+    it('rejects missing or empty id', () => {
+      expect(() => normalizeComments([{}], 'listComments')).toThrowError(
+        new AdapterHostError('protocol', 'listComments[0]: "id" must be a string'),
+      )
+      expect(() => normalizeComments([{ id: '' }], 'listComments')).toThrowError(
+        new AdapterHostError('protocol', 'listComments[0]: "id" must be non-empty'),
+      )
+    })
+
+    it('rejects invalid author or createdAt types', () => {
+      expect(() => normalizeComments([{ id: 'c1', author: 123 }], 'listComments')).toThrowError(
+        new AdapterHostError('protocol', 'listComments[0]: "author" must be a string or null'),
+      )
+      expect(() => normalizeComments([{ id: 'c1', createdAt: 456 }], 'listComments')).toThrowError(
+        new AdapterHostError('protocol', 'listComments[0]: "createdAt" must be a string or null'),
+      )
+    })
+
+    it('normalizes valid comments and preserves optional fields', () => {
+      const input = [
+        { id: 'c1', text: 'First comment', author: 'Alice', createdAt: '2026-10-17T12:00:00Z' },
+        { id: 'c2', text: 'Second comment', author: null, createdAt: null },
+      ]
+      expect(normalizeComments(input, 'listComments')).toEqual([
+        { id: 'c1', text: 'First comment', author: 'Alice', createdAt: '2026-10-17T12:00:00Z' },
+        { id: 'c2', text: 'Second comment', author: null, createdAt: null },
+      ])
+    })
+  })
+
   describe('ADAPTER_ACTIONS', () => {
     it('exposes the expected protocol action list', () => {
       expect(ADAPTER_ACTIONS).toEqual([
@@ -285,6 +340,7 @@ describe('adapter-protocol', () => {
         'getItem',
         'createItem',
         'updateItem',
+        'listComments',
       ])
     })
   })

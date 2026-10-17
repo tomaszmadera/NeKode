@@ -104,6 +104,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
+      resumePrompt: vi.fn().mockResolvedValue('Resume prompt'),
     },
     kanban: {
       adaptersList: vi.fn().mockResolvedValue([]),
@@ -114,6 +115,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       createItem: vi.fn(),
       updateItem: vi.fn(),
       getItem: vi.fn(),
+      getComments: vi.fn().mockResolvedValue([]),
       launchTask: vi.fn(),
       handoffCandidates: vi.fn(),
       handoffAvailability: vi.fn(async () => ({

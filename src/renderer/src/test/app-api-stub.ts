@@ -3,7 +3,7 @@
 // after the factory call in each test file (Stage 2 W16). One definition so
 // the copies that used to live in eight test files cannot drift.
 import { vi } from 'vitest'
-import { type AppApi, emptyGitWorktree } from '../../../shared/ipc-contract'
+import { type AppApi, emptyGitWorktree, relativeToProject } from '../../../shared/ipc-contract'
 import { createDictationApiStub } from './dictation-api-stub'
 
 export function createAppApiStub(): AppApi {
@@ -65,6 +65,10 @@ export function createAppApiStub(): AppApi {
     },
     handoffs: {
       list: vi.fn().mockResolvedValue([]),
+      resumePrompt: vi.fn(
+        async (_projectId: string, path: string) =>
+          `Resume from handoff ${relativeToProject('D:/code/demo', path) ?? path}`,
+      ),
     },
     kanban: {
       adaptersList: vi.fn().mockResolvedValue([]),
@@ -75,6 +79,7 @@ export function createAppApiStub(): AppApi {
       createItem: vi.fn(),
       updateItem: vi.fn(),
       getItem: vi.fn(),
+      getComments: vi.fn().mockResolvedValue([]),
       launchTask: vi.fn(),
       handoffCandidates: vi.fn(),
       handoffAvailability: vi.fn(async () => ({

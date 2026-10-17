@@ -429,20 +429,37 @@ class _DescriptionParser(HTMLParser):
                 self.item_start = False
 
 
+def html_to_plain_text(markup: str) -> str:
+    if not isinstance(markup, str) or not markup.strip():
+        return ""
+    parser = _DescriptionParser()
+    parser.feed(markup)
+    parser.close()
+    return "".join(parser.parts).strip("\n").rstrip()
+
+
 def description_of(issue: dict[str, Any]) -> str | None:
     """Prefer rich text so paragraphs and link destinations survive conversion."""
     markup = issue.get("description_html")
     if isinstance(markup, str) and markup.strip():
-        parser = _DescriptionParser()
-        parser.feed(markup)
-        parser.close()
-        text = "".join(parser.parts).strip("\n").rstrip()
+        text = html_to_plain_text(markup)
         return text if text.strip() else None
     for key in ("description_stripped", "description"):
         value = issue.get(key)
         if isinstance(value, str) and value.strip():
             return value
     return None
+
+
+def comment_text_of(comment: dict[str, Any]) -> str:
+    markup = comment.get("comment_html")
+    if isinstance(markup, str) and markup.strip():
+        return html_to_plain_text(markup)
+    for key in ("comment_stripped", "comment_json", "comment"):
+        value = comment.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
 
 
 def _looks_like_uuid(value: str) -> bool:
@@ -758,6 +775,35 @@ def action_update_item(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str,
     return map_single_issue(cfg, data, project_id)
 
 
+def action_list_comments(cfg: dict[str, Any], params: dict[str, Any]) -> list[dict[str, Any]]:
+    ref = str(params.get("ref") or "").strip()
+    if not ref:
+        raise AdapterError("config", "listComments requires a ref")
+    uuid, project_id, _ = resolve_issue_identity(cfg, ref)
+    path = f"/workspaces/{cfg['workspace']}/projects/{project_id}/work-items/{uuid}/comments/"
+    _, data = api_request(cfg, "GET", path)
+    results = _results(data)
+    members = member_map(cfg)
+    comments = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        cid = str(item.get("id") or "")
+        if not cid:
+            continue
+        actor_id = str(item.get("actor") or item.get("created_by") or "")
+        author = members.get(actor_id) if actor_id else None
+        text = comment_text_of(item)
+        created_at = normalize_updated_at(item.get("created_at"))
+        comments.append({
+            "id": cid,
+            "author": author,
+            "text": text,
+            "createdAt": created_at,
+        })
+    return comments
+
+
 ACTIONS = {
     "test": action_test,
     "listStates": action_list_states,
@@ -765,6 +811,7 @@ ACTIONS = {
     "getItem": action_get_item,
     "createItem": action_create_item,
     "updateItem": action_update_item,
+    "listComments": action_list_comments,
 }
 
 

@@ -651,6 +651,30 @@ describe('KanbanService getItem', () => {
   })
 })
 
+describe('KanbanService getComments', () => {
+  it('rejects an empty ref before the adapter host', async () => {
+    const { service, invoke } = makeService()
+    await expect(service.getComments('p1', '  ')).rejects.toMatchObject({ code: 'validation' })
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('calls adapter listComments with { ref } and returns the normalized comments', async () => {
+    const { service, invoke } = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: { 'project.kanbanAdapter:p1': 'demo' },
+    })
+    const comments = [
+      { id: 'c1', text: 'Hello', author: 'Alice', createdAt: '2026-10-17T12:00:00Z' },
+    ]
+    invoke.mockResolvedValue(comments)
+    await expect(service.getComments('p1', 'DEMO-1')).resolves.toEqual(comments)
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.protocolVersion).toBe(1)
+    expect(request.action).toBe('listComments')
+    expect(request.params).toEqual({ ref: 'DEMO-1' })
+  })
+})
+
 describe('KanbanService cleanup', () => {
   it('cleanupProject removes both keys', () => {
     const stored = {

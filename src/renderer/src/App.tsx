@@ -2508,6 +2508,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               projectId={tabProjectId}
               activeChatId={activeChat?.id ?? null}
               chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
+              isKanban={activeTab.kind === 'kanban'}
               onNewTerminal={handleNewTerminalAction}
               onBottomTerminal={handleBottomTerminalAction}
               onPromptCommand={handlePromptCommand}
@@ -2753,6 +2754,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       ) : null}
       {handoffPickerOpen && tabProjectId !== null ? (
         <HandoffPicker
+          key={`${tabProjectId}:${selectedChatId}`}
           app={app}
           projectId={tabProjectId}
           projectPath={projects.find((project) => project.id === tabProjectId)?.path ?? null}

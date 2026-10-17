@@ -38,6 +38,24 @@ The attention badge only works if the agent CLI actually emits a signal. This is
 
 Detection is passive (xterm parser callbacks: `onBell`, OSC 9); unconfigured agents simply never light the badge. See `docs/features/chat-attention-badge/spec.md` for the full contract.
 
+## Resume prompt template
+
+To customize Resume with a selected handoff file, create `settings.json` in NeKode's Electron `userData` directory, beside `nekode.db`:
+
+```json
+{
+  "resume": {
+    "template": "Resume from {handoffPath}\nFollow the project's instructions."
+  }
+}
+```
+
+This is a local, application-wide setting for both Kanban Resume and the action-bar handoff picker. NeKode reads it on every selection, so saving an edit takes effect without restarting, even with the picker already open. The actual `userData` directory is used, including any explicit test override; the project directory and the `APPDATA` environment variable do not choose this file.
+
+Every `{handoffPath}` is replaced literally with the selected path: relative to the project when inside it, absolute otherwise. The template can contain multiple lines and use your preferred language. Use UTF-8 JSON (up to 64 KiB) and a nonblank template containing `{handoffPath}`; NUL characters are invalid.
+
+If the file, `resume`, or `resume.template` is absent, Kanban keeps `Resume from <path>` and the action bar keeps `Resume from handoff <path>`. "Paste without path" always keeps `Resume from handoff`. Invalid or unreadable settings show an error with the settings path and stop that Resume attempt. Fix the file and select again, or remove the override to restore defaults. NeKode does not create or overwrite the file. Existing settings remain in SQLite.
+
 ## Requirements
 
 - Windows 11.

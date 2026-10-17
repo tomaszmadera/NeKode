@@ -327,10 +327,13 @@ Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
 3. Tuż przed utworzeniem czatu main ponownie sprawdza plik, jego powiązanie
    i aktualną konfigurację. Usunięty, nieczytelny, podmieniony lub zmieniony
    po wyświetleniu plik wymaga odświeżenia wyboru. Nie powstaje wtedy czat.
-4. Dalej obowiązuje przepływ Start, ale cały prompt ma postać
-   `Resume from <handoff file path>`.
+4. Dalej obowiązuje przepływ Start, ale domyślny prompt ma postać
+   `Resume from <handoff file path>`. Zatwierdzona zmiana NEKODE-83
+   pozwala zastąpić go lokalnym szablonem JSON zgodnie z
+   [kontraktem szablonu Resume](../handoff-resume-flow/spec.md#resume-template-amendment-nekode-83),
+   zatwierdzonym 2026-10-17.
    Decyzja użytkownika 2026-10-11: instrukcje wznowienia należą do skilla
-   handoff/resume. Resume przekazuje tylko polecenie i ścieżkę pliku.
+   handoff/resume. Bez override'u Resume przekazuje tylko polecenie i ścieżkę pliku.
    Prompt Start zachowuje opis i kontekst.
    Ścieżka jest względna względem projektu, jeśli plik leży wewnątrz niego;
    w przeciwnym razie absolutna. Jest danymi promptu, nie kodem shell.
@@ -837,3 +840,49 @@ Kolejna decyzja tego samego dnia usuwa widok Board i przełącznik List | Board.
 2. Priorytet zmienia się tylko w podglądzie. Lista nie ma tej kontrolki. Priority i Status są w prawej kolumnie podglądu. Ta kolumna ma jedną czwartą szerokości. Back ma obramowanie, tło panelu i ikonę, jak Back to Projects, i jest w nagłówku zaraz po napisie Kanban.
 3. None wysyła `priority: null`. Nazwany priorytet wysyła tę nazwę i nic więcej.
 4. Zaznaczony tekst podglądu da się skopiować. Puste zaznaczenie nie jest kopiowane jako sukces.
+
+## Kanban review Start and Resume buttons amendment (NEKODE-84)
+
+Wprowadzone w ramach zadania NEKODE-84 rozszerzenie podglądu zadania (`ItemReview`) o przyciski uruchomienia i wznowienia:
+
+1. Podgląd zadania (`ItemReview`) w prawej kolumnie, powyżej pól Priority i Status, zawiera kontrolki Start oraz Resume (`ItemLaunchButtons`).
+2. Start jest stale widoczny, wyłączony gdy Resume jest aktywny dla danego zadania (spójnie z wierszem listy).
+3. Resume renderuje się tylko dla zadania, dla którego zbiorcze sprawdzenie handoffów potwierdziło dostępność powiązanego pliku.
+4. Kliknięcie Start otwiera potwierdzenie uruchomienia (`onStart(item)`), kliknięcie Resume otwiera potwierdzenie wznowienia (`onResume(item)`).
+5. Styl wizualny kontrolek jest spójny z wierszem listy (`text-ink` z `hover:underline` dla aktywnych akcji).
+6. Menu kontekstowe kopiowania tekstu podglądu nie otwiera się przy kliknięciu prawym przyciskiem myszy na przyciski Start i Resume.
+7. Identyfikatory testowe kontrolek to `kanban-item-start-<ref>` i `kanban-item-resume-<ref>`.
+
+## Kanban task comments and completion amendment (NEKODE-85)
+
+Wprowadzone w ramach zadania NEKODE-85 rozszerzenie podglądu zadania (`ItemReview`) o sekcję komentarzy oraz dodanie obsługi komentarzy przy zamykaniu zadania:
+
+### Cel i zakres
+
+1. Podgląd zadania (`ItemReview` w `KanbanBoard.tsx`) w lewej kolumnie pod opisem (`Description`) wyświetla sekcję `Comments`.
+2. Przy braku komentarzy sekcja pokazuje tekst `No comments.` (analogicznie do `No description.`).
+3. Przy obecności komentarzy wyświetlana jest lista, gdzie każdy komentarz zawiera:
+   - autora (display name, email lub identyfikator użytkownika z mapy członków projektu),
+   - znacznik czasu utworzenia (czytelnie sformatowany),
+   - treść komentarza (bezpieczny tekst przekonwertowany z HTML przez parser adaptera).
+4. Pobieranie komentarzy:
+   - Komentarze są pobierane leniwie (na żądanie) po otwarciu podglądu zadania (`ItemReview`) przez nową akcję adaptera `listComments` z parametrem `{ ref }` i kanał IPC `kanban:getComments(projectId, ref)` zwracający `KanbanComment[]`.
+   - Zapobiega to lawinowym zapytaniom HTTP (N+1) podczas ładowania całej tablicy (`listBoard`).
+5. Typy kontraktu IPC (`src/shared/ipc-contract.ts`):
+   - `KanbanComment`: `{ id: string; author: string | null; text: string; createdAt: string | null }`.
+   - Nowy kanał w `IPC_CHANNEL`: `kanbanGetComments: 'kanban:getComments'`.
+   - Metoda w `AppApi`: `kanbanGetComments(projectId: string, ref: string): Promise<KanbanComment[]>`.
+6. Adapter Plane (`adapters/plane/plane_adapter.py`):
+   - Nowa akcja `listComments(cfg, params)`: odpytuje endpoint Plane `/workspaces/{ws}/projects/{project_id}/work-items/{uuid}/comments/`, mapuje autora przez `member_map(cfg)`, konwertuje `comment_html` na czytelny tekst przez `_DescriptionParser`, i zwraca tablicę obiektów `{ id, author, text, createdAt }`.
+7. Narzędzia Harnessu (`.agents/skills/kanban/` oraz `.agents/skills/task-close/`):
+   - W `kanban_cli.py`: nowa podkomenda `comment <ref> <text>` (dodaje komentarz przez POST `/workspaces/{ws}/projects/{pid}/work-items/{uuid}/comments/` z `comment_html`).
+   - W `kanban` skill (`.agents/skills/kanban/SKILL.md`): udokumentowanie użycia `comment <ref> <text>`.
+   - W procedurze zamykania zadania (`task-close` skill w `.agents/skills/task-close/SKILL.md`): dodanie kroku, w którym dla zadań powiązanych z Kanbanem (zidentyfikowanych przez ref w nazwie zadania) agent przed zamknięciem publikuje komentarz podsumowujący najważniejsze zrealizowane zmiany (np. dodane/zmodyfikowane pliki, kluczowe punkty realizacji).
+
+### Kryteria akceptacji
+
+1. `kanban:getComments` weryfikuje poprawność `projectId` i `ref`.
+2. Akcja `listComments` adaptera Plane poprawnie odczytuje komentarze danego zadania i zwraca znormalizowane obiekty `KanbanComment`.
+3. `ItemReview` w NeKode pobiera i wyświetla komentarze zadania; stan pusty pokazuje `No comments.`.
+4. `kanban_cli.py comment <ref> <text>` dodaje komentarz do zadania w Plane i potwierdza utworzenie.
+5. `task-close` skill instruuje agenta o dodaniu komentarza podsumowującego do zadania Kanban po przejściu weryfikacji.

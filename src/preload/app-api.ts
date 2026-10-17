@@ -23,6 +23,7 @@ import type {
   HandoffEntry,
   KanbanAdapterInfo,
   KanbanBoard,
+  KanbanComment,
   KanbanHandoffAvailabilityResult,
   KanbanLaunchResult,
   KanbanProjectConfig,
@@ -186,6 +187,8 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
     },
     handoffs: {
       list: (projectId) => invoke<HandoffEntry[]>(IPC_CHANNEL.handoffsList, projectId),
+      resumePrompt: (projectId, handoffPath) =>
+        invoke<string>(IPC_CHANNEL.handoffsResumePrompt, projectId, handoffPath),
     },
     kanban: {
       adaptersList: () => invoke<KanbanAdapterInfo[]>(IPC_CHANNEL.kanbanAdaptersList),
@@ -199,6 +202,8 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
       updateItem: (projectId, ref, patch) =>
         invoke<WorkItem>(IPC_CHANNEL.kanbanUpdateItem, projectId, ref, patch),
       getItem: (projectId, ref) => invoke<WorkItem>(IPC_CHANNEL.kanbanGetItem, projectId, ref),
+      getComments: (projectId, ref) =>
+        invoke<KanbanComment[]>(IPC_CHANNEL.kanbanGetComments, projectId, ref),
       launchTask: (input) => invoke<KanbanLaunchResult>(IPC_CHANNEL.kanbanLaunchTask, input),
       handoffCandidates: (input) =>
         invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanHandoffCandidates, input),
