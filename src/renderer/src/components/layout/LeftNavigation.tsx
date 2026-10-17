@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type {
   AgentProfile,
   AgentProfilesDocument,
@@ -8,6 +8,7 @@ import type {
 } from '../../../../shared/ipc-contract'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
+import { clampMenuPosition } from '../../lib/menu-position'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { NoticeBanner } from './NoticeBanner'
 
@@ -84,11 +85,10 @@ interface LeftNavigationProps {
   children?: React.ReactNode
 }
 
-interface ContextMenuState {
-  projectId: string
+type ContextMenuState = {
   x: number
   y: number
-}
+} & ({ projectId: string } | { projectId: null })
 
 /** Open position of the New Chat button's agent profile menu. */
 interface NewChatMenuState {
@@ -152,7 +152,7 @@ export function LeftNavigation({
     }
   }, [contextMenu, newChatMenu])
 
-  function openContextMenu(projectId: string, x: number, y: number): void {
+  function openContextMenu(projectId: string | null, x: number, y: number): void {
     // One menu at a time (spec Behaviour 7: a gesture while a menu is open
     // closes the old menu first). Only pointer gestures are swallowed by the
     // open overlay; a keyboard gesture reaches the other opener directly.
@@ -192,7 +192,28 @@ export function LeftNavigation({
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <section
+        aria-label="Projects"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling and ContextMenu / Shift+F10 in this region.
+        tabIndex={0}
+        data-testid={TEST_ID.projectListArea}
+        className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+        onContextMenu={(event) => {
+          // Project subtrees keep their own gestures, including chat controls.
+          if (event.target instanceof Element && event.target.closest('li')) return
+          event.preventDefault()
+          event.currentTarget.focus()
+          openContextMenu(null, event.clientX, event.clientY)
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return
+          if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+            event.preventDefault()
+            const rect = event.currentTarget.getBoundingClientRect()
+            openContextMenu(null, rect.left, rect.top)
+          }
+        }}
+      >
         {projects.length === 0 ? (
           <p
             className="px-2 py-3 text-xs leading-relaxed text-ink-muted"
@@ -474,12 +495,22 @@ export function LeftNavigation({
             })}
           </ul>
         )}
-      </div>
+      </section>
       {/* Bottom-of-panel strip (user decision 2026-10-02, after Zed): the
           App Settings opener lives at the very bottom of the left panel,
           not in the window title bar. */}
       {children}
-      {contextMenu !== null ? (
+      {contextMenu?.projectId === null ? (
+        <ProjectsContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onAddProject={() => {
+            setContextMenu(null)
+            onAddProject()
+          }}
+        />
+      ) : contextMenu !== null ? (
         <ContextMenuOverlay
           state={contextMenu}
           projectName={projects.find((project) => project.id === contextMenu.projectId)?.name ?? ''}
@@ -511,6 +542,76 @@ export function LeftNavigation({
   )
 }
 
+function ProjectsContextMenu({
+  x,
+  y,
+  onClose,
+  onAddProject,
+}: {
+  x: number
+  y: number
+  onClose: () => void
+  onAddProject: () => void
+}): React.JSX.Element {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const actionRef = useRef<HTMLButtonElement>(null)
+  const position = clampMenuPosition(x, y, { menuWidth: 160, menuHeight: 40 })
+
+  useLayoutEffect(() => {
+    const opener = document.activeElement
+    actionRef.current?.focus()
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const rect = menu.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const refined = clampMenuPosition(x, y, { menuWidth: rect.width, menuHeight: rect.height })
+      menu.style.left = `${refined.left}px`
+      menu.style.top = `${refined.top}px`
+    }
+  }, [x, y])
+
+  return (
+    <div
+      role="menu"
+      aria-label="Projects"
+      className="fixed inset-0 z-40"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Tab') onClose()
+        if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) event.preventDefault()
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+    >
+      <div
+        ref={menuRef}
+        className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
+        style={position}
+      >
+        <button
+          ref={actionRef}
+          type="button"
+          role="menuitem"
+          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          onClick={onAddProject}
+        >
+          Add Project
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Project row context menu (spec Behaviour 3): the only place the Remove
  * Project action lives now. Rendered as a fixed overlay so the menu closes on
@@ -524,7 +625,7 @@ function ContextMenuOverlay({
   onOpenInFileExplorer,
   onOpenProjectSettings,
 }: {
-  state: ContextMenuState
+  state: ContextMenuState & { projectId: string }
   projectName: string
   onClose: () => void
   onRemoveProject: (projectId: string) => void
