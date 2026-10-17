@@ -41,7 +41,7 @@ const projectB: ProjectInfo = {
   runtimeLabel: null,
 }
 const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
-const chatTwo: ChatInfo = { id: 't2', projectId: 'p1', name: 'Second chat' }
+const _chatTwo: ChatInfo = { id: 't2', projectId: 'p1', name: 'Second chat' }
 const chatOther: ChatInfo = { id: 't8', projectId: 'p2', name: 'Other chat' }
 
 const rootEntries: FileEntry[] = [
@@ -135,8 +135,8 @@ describe('tab strip — order and labels (spec Behaviour 1–3, AC1)', () => {
     // The terminal-chat tab is never closable; file tabs carry a close control.
     expect(within(terminalTab).queryByRole('button', { name: /Close/ })).toBeNull()
     expect(screen.getByTestId(testIdFor.tabFileClose('README.md'))).toBeTruthy()
-    // `+ New chat` sits at the right end of the strip (Behaviour 8).
-    expect(strip.lastElementChild?.getAttribute('data-testid')).toBe(TEST_ID.tabNewChat)
+    // Project Settings sits at the right end of the strip.
+    expect(strip.lastElementChild?.getAttribute('data-testid')).toBe(TEST_ID.tabProjectSettings)
     // No breadcrumb and no "Files" view label are rendered (tab model).
     expect(screen.queryByText('Select a file to preview')).toBeNull()
     expect(screen.queryByTestId(TEST_ID.actionRowSlot)).toBeTruthy()
@@ -432,35 +432,16 @@ describe('tab strip — terminal tab, + New chat and session survival (spec Beha
     cleanup()
   })
 
-  it('`+ New chat` runs the existing new-chat flow and shows the new chat terminal', async () => {
+  it('Project Settings button in the tab strip opens the settings dialog', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    vi.mocked(app.chats.create).mockResolvedValue(chatTwo)
     mockListings(app)
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
-    fireEvent.click(screen.getByTestId(TEST_ID.tabNewChat))
-    await waitFor(() => expect(app.chats.create).toHaveBeenCalledWith('p1'))
-    // The created chat is selected and its terminal shows in the terminal tab.
-    await waitFor(() =>
-      expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('Second chat'),
-    )
-    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', 'D:/code/demo'))
-  })
-
-  it('`+ New chat` with no active project is noticed instead of a silent no-op (Behaviour 8)', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    render(<App app={app} />)
-    await screen.findByTestId(testIdFor.projectRow('p1'))
-    // The control is always present, but the new-chat flow cannot run without
-    // an active project: the dead click surfaces a notice, never nothing.
-    fireEvent.click(screen.getByTestId(TEST_ID.tabNewChat))
-    const notice = await screen.findByTestId(TEST_ID.actionNotice)
-    expect(notice.textContent).toContain('Select or add a project')
-    expect(app.chats.create).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId(TEST_ID.tabProjectSettings))
+    expect(await screen.findByRole('dialog', { name: 'Project Settings' })).toBeTruthy()
   })
 
   it('terminal sessions survive file-tab round-trips (hidden views, no respawn)', async () => {

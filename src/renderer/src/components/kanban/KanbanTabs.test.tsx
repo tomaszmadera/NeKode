@@ -352,7 +352,9 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanTab))
     expect(board.parentElement?.style.display).toBe('flex')
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
-    expect(screen.getByRole('status').textContent).toBe('Refreshing board...')
+    const refreshBtn = screen.getByTestId(TEST_ID.kanbanBoardRefresh) as HTMLButtonElement
+    expect(refreshBtn.disabled).toBe(true)
+    expect(refreshBtn.firstElementChild?.classList.contains('animate-spin')).toBe(true)
     expect(board.scrollTop).toBe(80)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))

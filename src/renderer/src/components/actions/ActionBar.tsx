@@ -7,6 +7,7 @@ import { actionIconGlyph, Icon, type LucideIcon } from '../../lib/icons'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import { TEST_ID } from '../../lib/test-ids'
 import type { MarkdownViewMode } from '../files/markdown-path'
+import type { KanbanSortBy, KanbanToolbarControls } from '../kanban/KanbanBoard'
 
 interface ActionBarProps {
   app: AppApi
@@ -26,7 +27,6 @@ interface ActionBarProps {
   /** Resume opens the handoff picker (lazy list, spec Behaviour 4). */
   onResume: () => void
   onError: (message: string) => void
-  onSettings: () => void
   /**
    * Code / Preview for the active markdown file tab. Null when the active
    * tab is not a markdown file (user decision 2026-10-06).
@@ -37,9 +37,11 @@ interface ActionBarProps {
   } | null
   /**
    * Kanban view: suppresses fixed actions (handoff, resume, stop, continue)
-   * and aligns custom actions to the right, immediately before settings.
+   * and renders Kanban controls on the left.
    */
   isKanban?: boolean
+  /** Active board's toolbar controls when isKanban is true. */
+  kanbanControls?: KanbanToolbarControls | null
 }
 
 /** Fixed Handoff command (English, spec Behaviour 2). */
@@ -86,9 +88,9 @@ export function ActionBar({
   onPromptCommand,
   onResume,
   onError,
-  onSettings,
   markdownView,
   isKanban = false,
+  kanbanControls = null,
 }: ActionBarProps): React.JSX.Element {
   const [states, setStates] = useState<Record<string, ActionExecution>>({})
   // A status read is stamped with the run epoch. execute() bumps it first, so
@@ -303,51 +305,151 @@ export function ActionBar({
       className="flex shrink-0 items-center gap-2 overflow-x-auto bg-panel border-b border-edge px-3 py-2"
       data-testid={TEST_ID.actionRowSlot}
     >
-      {!isKanban ? (
+      {isKanban ? (
         <>
-          {[
-            { name: 'Handoff and Resume', items: fixed.slice(0, 2) },
-            { name: 'Stop and Continue', items: fixed.slice(2) },
-          ].map((group) => (
-            <fieldset key={group.name} className="nk-btn-group shrink-0">
-              <legend className="sr-only">{group.name}</legend>
-              {group.items.map((item, index) => {
-                const FixedIcon = item.icon
-                const isDisabled = !chatIsLive || !activeChatId
-                return (
-                  <div key={item.label} className="flex items-center">
-                    {index > 0 ? (
-                      // Toolbar separator from design reference (1px x 16px hairline)
-                      <span aria-hidden="true" className="h-4 w-px bg-edge" />
-                    ) : null}
-                    <button
-                      type="button"
-                      disabled={isDisabled}
-                      className="nk-tb"
-                      onClick={() => {
-                        runFixed(item.action)
-                      }}
-                    >
-                      <FixedIcon
-                        size={15}
-                        aria-hidden
-                        className={isDisabled ? 'text-ink-disabled' : 'text-ink-secondary'}
-                      />
-                      {item.label}
-                    </button>
-                  </div>
-                )
-              })}
-            </fieldset>
-          ))}
-          {visible.map(renderAction)}
+          <div className="nk-btn-group shrink-0">
+            <button
+              type="button"
+              className="nk-tb !px-2"
+              aria-label="Refresh"
+              title="Refresh"
+              data-testid={TEST_ID.kanbanBoardRefresh}
+              disabled={!kanbanControls || kanbanControls.refreshing}
+              onClick={kanbanControls?.onRefresh}
+            >
+              <Icon.retry
+                size={15}
+                aria-hidden
+                className={cn('text-ink-secondary', kanbanControls?.refreshing && 'animate-spin')}
+              />
+            </button>
+          </div>
+          {kanbanControls?.isReviewing ? (
+            <div className="nk-btn-group shrink-0">
+              <button
+                type="button"
+                className="nk-tb"
+                data-testid={TEST_ID.kanbanReviewBack}
+                aria-label="Back"
+                title="Back"
+                onClick={kanbanControls.onCloseReview}
+              >
+                <Icon.back size={15} aria-hidden className="text-ink-secondary" />
+                Back
+              </button>
+            </div>
+          ) : null}
+          {kanbanControls && !kanbanControls.isReviewing && kanbanControls.phase === 'ready' ? (
+            <div className="nk-btn-group shrink-0">
+              <button
+                type="button"
+                className="nk-tb"
+                data-testid={TEST_ID.kanbanNewTask}
+                disabled={kanbanControls.creatingBusy}
+                onClick={kanbanControls.onNewTask}
+              >
+                <Icon.plus size={15} aria-hidden className="text-ink-secondary" />
+                New task
+              </button>
+            </div>
+          ) : null}
+          <fieldset className="nk-btn-group shrink-0">
+            <legend className="sr-only">Kanban sort</legend>
+            <label htmlFor="kanban-sort-by" className="sr-only">
+              Sort by
+            </label>
+            <select
+              id="kanban-sort-by"
+              className="h-[30px] rounded-[var(--radius-md)] border-none bg-transparent px-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:text-ink-disabled disabled:cursor-not-allowed cursor-pointer"
+              value={kanbanControls?.sortState.sortBy ?? 'slug'}
+              onChange={(event) => {
+                kanbanControls?.onSortByChange(event.target.value as KanbanSortBy)
+              }}
+              disabled={kanbanControls?.phase !== 'ready' || kanbanControls?.isReviewing}
+              data-testid={TEST_ID.kanbanSortBy}
+            >
+              <option value="slug">Slug</option>
+              <option value="priority">Priority</option>
+            </select>
+            <span aria-hidden="true" className="h-4 w-px bg-edge" />
+            <button
+              type="button"
+              className="nk-tb !px-2"
+              aria-label={
+                (kanbanControls?.sortState.direction ?? 'asc') === 'asc'
+                  ? 'Sort ascending'
+                  : 'Sort descending'
+              }
+              title={
+                (kanbanControls?.sortState.direction ?? 'asc') === 'asc'
+                  ? 'Ascending'
+                  : 'Descending'
+              }
+              disabled={kanbanControls?.phase !== 'ready' || kanbanControls?.isReviewing}
+              data-testid={TEST_ID.kanbanSortDirection}
+              onClick={kanbanControls?.onToggleSortDirection}
+            >
+              {(kanbanControls?.sortState.direction ?? 'asc') === 'asc' ? (
+                <Icon.sortAsc size={15} aria-hidden className="text-ink-secondary" />
+              ) : (
+                <Icon.sortDesc size={15} aria-hidden className="text-ink-secondary" />
+              )}
+            </button>
+          </fieldset>
+          <div className="nk-btn-group shrink-0">
+            <div className="flex h-[30px] items-center gap-2 px-2.5">
+              <Icon.search size={14} aria-hidden className="text-ink-disabled shrink-0" />
+              <input
+                type="text"
+                placeholder="Search... (not working yet)"
+                disabled
+                data-testid={TEST_ID.kanbanSearchInput}
+                className="w-48 bg-transparent text-sm text-ink placeholder:text-ink-disabled opacity-70 cursor-not-allowed outline-none"
+              />
+            </div>
+          </div>
         </>
-      ) : null}
-      {/* Settings stays at the right end. A markdown file tab adds
-          Code | Preview just before it (user decision 2026-10-06). On Kanban
-          views, custom actions are positioned here, immediately before settings. */}
+      ) : (
+        [
+          { name: 'Handoff and Resume', items: fixed.slice(0, 2) },
+          { name: 'Stop and Continue', items: fixed.slice(2) },
+        ].map((group) => (
+          <fieldset key={group.name} className="nk-btn-group shrink-0">
+            <legend className="sr-only">{group.name}</legend>
+            {group.items.map((item, index) => {
+              const FixedIcon = item.icon
+              const isDisabled = !chatIsLive || !activeChatId
+              return (
+                <div key={item.label} className="flex items-center">
+                  {index > 0 ? (
+                    // Toolbar separator from design reference (1px x 16px hairline)
+                    <span aria-hidden="true" className="h-4 w-px bg-edge" />
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={isDisabled}
+                    className="nk-tb"
+                    onClick={() => {
+                      runFixed(item.action)
+                    }}
+                  >
+                    <FixedIcon
+                      size={15}
+                      aria-hidden
+                      className={isDisabled ? 'text-ink-disabled' : 'text-ink-secondary'}
+                    />
+                    {item.label}
+                  </button>
+                </div>
+              )
+            })}
+          </fieldset>
+        ))
+      )}
+      {/* Right side: custom actions are always right-aligned across all tabs,
+          followed by Markdown Code | Preview if active. */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        {isKanban ? visible.map(renderAction) : null}
+        {visible.map(renderAction)}
         {markdownView !== null ? (
           <fieldset className="nk-btn-group shrink-0">
             <legend className="sr-only">Markdown view</legend>
@@ -386,16 +488,6 @@ export function ActionBar({
             </button>
           </fieldset>
         ) : null}
-        {/* Icon-only ghost control matching design reference (32x32) */}
-        <button
-          type="button"
-          className="nk-tb !h-8 !w-8 justify-center !p-0 text-ink-secondary hover:text-ink"
-          aria-label="Actions"
-          title="Actions"
-          onClick={onSettings}
-        >
-          <Icon.settings size={16} aria-hidden />
-        </button>
       </div>
     </div>
   )

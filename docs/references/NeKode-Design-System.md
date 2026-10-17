@@ -140,8 +140,10 @@ theme-aware.
 | `--color-panel` | `rgb(26 29 44)` | Left and right panels, tab strip, status bar, dialogs |
 | `--color-highlight` | `rgb(31 44 63)` | Highlight and selection inside panels |
 | `--color-row-hover` | `rgb(28 35 52)` | Left-nav row hover (project, chat, New Chat; dimmer than selection) |
-| `--color-button` | `rgb(30 42 66)` | Command buttons and the active tab |
-| `--color-button-hover` | `rgb(38 52 80)` | Button hover (derived) |
+| `--color-button` | `rgb(35 44 65)` | Command buttons and action groups (matches active chat, #232c41) |
+| `--color-button-hover` | `rgb(45 56 82)` | Button hover (derived, brighter than active) |
+| `--color-button-active` | `rgb(35 44 65)` | Active buttons (matches active chat, #232c41) |
+| `--color-button-active-hover` | `rgb(45 56 82)` | Active button hover (derived, slightly brighter than active) |
 | `--color-tab-inactive` | `rgb(25 29 41)` | Inactive tab background |
 | `--color-terminal` | `rgb(13 18 34)` | Every agent console and terminal in both themes (user decision 2026-10-06) |
 
@@ -184,9 +186,9 @@ Semantic colors are text and indicator colors: icons, labels, dots, thin indicat
 Use borders mainly for structure, not decoration.
 
 ```css
---color-edge: rgb(33 37 49);    /* panel borders, hairlines, button and tab outlines */
---color-control-edge: rgb(48 58 78); /* prompt and field frames */
---color-divider: rgb(56 70 96); /* inset separator between connected buttons */
+--color-edge: rgb(46 54 77);    /* panel borders, hairlines, button and tab outlines, #2e364d */
+--color-control-edge: rgb(46 54 77); /* prompt and field frames */
+--color-divider: rgb(46 54 77); /* inset separator between connected buttons */
 ```
 
 The double-button divider is the toolbar-standard single hairline
@@ -433,6 +435,18 @@ Hover:
 
 ```css
 background: var(--color-button-hover);
+```
+
+Active (user decision 2026-10-17, matches active chat #232c41):
+
+```css
+background: var(--color-button-active);
+```
+
+Active hover:
+
+```css
+background: var(--color-button-active-hover);
 ```
 
 ### 11.2 Primary action

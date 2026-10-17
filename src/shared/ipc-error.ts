@@ -23,6 +23,7 @@ export type AppErrorCode =
   | 'notFound'
   | 'config'
   | 'internal'
+  | 'git_error'
   | 'unknown'
 
 export type AppErrorKind = AppErrorCode
@@ -40,6 +41,7 @@ export const APP_ERROR_CODES: readonly AppErrorCode[] = [
   'notFound',
   'config',
   'internal',
+  'git_error',
   'unknown',
 ]
 

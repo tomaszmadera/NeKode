@@ -772,6 +772,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel(IPC_CHANNEL.gitFileStatuses, ['string'], (args) =>
       services.git.fileStatuses(args[0]),
     ),
+    serviceChannel(IPC_CHANNEL.gitSync, ['string'], (args) => services.git.sync(args[0])),
     // Project files (spec Data/API): read-only tree listing, preview
     // classification and the single OS action (openExternal). Relative-path
     // shape is validated here; containment (`..`, absolute, symlinks leaving

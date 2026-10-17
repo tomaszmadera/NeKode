@@ -14,8 +14,8 @@ import { NoticeBanner } from './NoticeBanner'
 
 // Left navigation (UX-UI §9-10): a "Projects" section header carries the
 // icon-only Add Project button (user decision 2026-10-01); project rows
-// expand to their chat lists with a New Chat button under each expanded
-// project. New Chat creates the chat immediately (no naming form: the name
+// expand to show project action pills (Kanban, New Chat) and their chat lists.
+// New Chat creates the chat immediately (no naming form: the name
 // is the shell's display label, spec Behaviour 3).
 //
 // Project Files entry (spec Behaviour 1): the row shows a "Files" action on
@@ -234,10 +234,8 @@ export function LeftNavigation({
                       narrow left accent stripe when selected; overflow-hidden
                       clips the stripe to the radius. Stripe is decorative;
                       selection stays announced by data-selected. */}
-                  {/* Hover-at-rest (user decision 2026-10-02): an unselected
-                      project row already shows a slightly dimmer highlight in
-                      the same footprint as selection, so hover cannot resize
-                      the tile. Selection keeps the brighter --color-highlight. */}
+                  {/* Active project row has no resting background fill (user decision 2026-10-17);
+                      selection is marked by the accent stripe and data-selected. */}
                   {/* Right axis (user request 2026-10-04): the row's content
                       edge sits 8px from the panel edge (pr-2 after the 4px
                       list inset), level with the header's Add Project button
@@ -245,8 +243,7 @@ export function LeftNavigation({
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'relative flex h-control items-center overflow-hidden rounded-md pl-1 pr-2 py-1.5 transition-colors duration-fast ease-standard',
-                      isSelected ? 'bg-highlight' : 'hover:bg-row-hover',
+                      'relative flex h-control items-center overflow-hidden rounded-md pl-1 pr-2 py-1.5 transition-colors duration-fast ease-standard hover:bg-row-hover',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
@@ -313,24 +310,53 @@ export function LeftNavigation({
                   </div>
                   {isExpanded ? (
                     <>
-                      {/* Kanban project view (spec kanban-adapter-interface
-                          Behaviour 14): the first element of the expanded
-                          content, directly under the project name row and
-                          above the chat list, for bound projects only. Same
-                          tile idiom/indent as the chat and New Chat rows. */}
-                      {kanbanProjectIds.has(project.id) ? (
-                        <div className="mt-1 pl-6">
+                      {/* Project action pills (user decision 2026-10-17): Kanban and New Chat
+                          rendered as pill buttons under the project title, above the chat list. */}
+                      <div className="my-1.5 flex flex-wrap items-center gap-1.5 pl-6">
+                        {kanbanProjectIds.has(project.id) ? (
                           <button
                             type="button"
-                            className="flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-ink-secondary hover:bg-row-hover transition-colors duration-fast ease-standard"
+                            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-edge bg-panel px-2.5 text-xs text-ink-secondary transition-colors duration-fast ease-standard hover:border-control-edge hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                             data-testid={testIdFor.projectKanban(project.id)}
                             onClick={() => onOpenProjectKanban(project.id)}
                           >
                             <Icon.kanban size={12} aria-hidden className="shrink-0" />
-                            Kanban
+                            <span>Kanban</span>
                           </button>
-                        </div>
-                      ) : null}
+                        ) : null}
+                        <button
+                          type="button"
+                          className="inline-flex h-6 items-center gap-1 rounded-full border border-edge bg-panel px-2.5 text-xs text-ink-secondary transition-colors duration-fast ease-standard hover:border-control-edge hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                          data-testid={TEST_ID.newChatButton}
+                          title="New chat"
+                          aria-label="New chat"
+                          onClick={() => {
+                            void onCreateChat(project.id)
+                          }}
+                          onContextMenu={(event) => {
+                            // The gesture itself creates no chat (spec
+                            // Behaviour 1) and opens at the pointer.
+                            event.preventDefault()
+                            openNewChatMenu(project.id, event.clientX, event.clientY)
+                          }}
+                          onKeyDown={(event) => {
+                            // Keyboard context-menu invocation (spec
+                            // Behaviour 1): the ContextMenu key or Shift+F10
+                            // opens the menu below the button.
+                            if (
+                              event.key === 'ContextMenu' ||
+                              (event.key === 'F10' && event.shiftKey)
+                            ) {
+                              event.preventDefault()
+                              const rect = event.currentTarget.getBoundingClientRect()
+                              openNewChatMenu(project.id, rect.left, rect.bottom)
+                            }
+                          }}
+                        >
+                          <Icon.plus size={12} aria-hidden className="shrink-0" />
+                          <span>Chat</span>
+                        </button>
+                      </div>
                       {/* Full-width rows, no vertical guide line: the chat
                          highlight reads across the whole list width. */}
                       {/* Constant hairline gap under the project tile (user
@@ -454,39 +480,6 @@ export function LeftNavigation({
                             })}
                           </ul>
                         )}
-                        {/* Same indent axis and shared control height as the chat tiles. */}
-                        <div className="mt-1 pl-6">
-                          <button
-                            type="button"
-                            className="flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-ink-secondary hover:bg-row-hover"
-                            data-testid={TEST_ID.newChatButton}
-                            onClick={() => {
-                              void onCreateChat(project.id)
-                            }}
-                            onContextMenu={(event) => {
-                              // The gesture itself creates no chat (spec
-                              // Behaviour 1) and opens at the pointer.
-                              event.preventDefault()
-                              openNewChatMenu(project.id, event.clientX, event.clientY)
-                            }}
-                            onKeyDown={(event) => {
-                              // Keyboard context-menu invocation (spec
-                              // Behaviour 1): the ContextMenu key or Shift+F10
-                              // opens the menu below the button.
-                              if (
-                                event.key === 'ContextMenu' ||
-                                (event.key === 'F10' && event.shiftKey)
-                              ) {
-                                event.preventDefault()
-                                const rect = event.currentTarget.getBoundingClientRect()
-                                openNewChatMenu(project.id, rect.left, rect.bottom)
-                              }
-                            }}
-                          >
-                            <Icon.plus size={12} aria-hidden className="shrink-0" />
-                            New Chat
-                          </button>
-                        </div>
                       </div>
                     </>
                   ) : null}

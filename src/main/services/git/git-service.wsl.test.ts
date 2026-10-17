@@ -36,6 +36,27 @@ describe('WSL Git status', () => {
       expect.any(Function),
     )
   })
+
+  it('runs GitService.sync through wsl.exe for WSL project paths', async () => {
+    vi.mocked(execFile).mockImplementation((...args: unknown[]) => {
+      const done = args[args.length - 1] as (error: null, stdout: string, stderr: string) => void
+      done(null, '', '')
+      return {} as ReturnType<typeof execFile>
+    })
+    const service = new GitService()
+    await service.sync('\\\\wsl$\\Ubuntu\\home\\user\\My $ Project')
+    expect(execFile).toHaveBeenCalledWith(
+      'wsl.exe',
+      ['--distribution', 'Ubuntu', '--cd', '/home/user/My $ Project', '--exec', 'git', 'pull'],
+      expect.objectContaining({
+        cwd: process.cwd(),
+        windowsHide: true,
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: GIT_MAX_BUFFER_BYTES,
+      }),
+      expect.any(Function),
+    )
+  })
 })
 
 describe('execFileRunner diagnostics and configuration', () => {

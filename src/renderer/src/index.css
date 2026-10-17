@@ -182,6 +182,13 @@ button {
     border: 1px solid var(--color-edge);
   }
 
+  button.bg-button:disabled,
+  button.bg-button[disabled] {
+    background-color: var(--color-panel);
+    opacity: 0.5;
+    cursor: default;
+  }
+
   .nk-btn-group,
   fieldset.nk-btn-group {
     display: inline-flex;
@@ -191,6 +198,12 @@ button {
     border-radius: var(--radius-lg);
     background-color: var(--color-button);
     border: 1px solid var(--color-edge);
+  }
+
+  .nk-btn-group:has(.nk-tb:disabled:only-child),
+  fieldset.nk-btn-group:has(.nk-tb:disabled):not(:has(.nk-tb:not(:disabled))) {
+    background-color: var(--color-panel);
+    opacity: 0.5;
   }
 
   .nk-tb {
@@ -220,8 +233,16 @@ button {
   }
 
   .nk-tb.active,
-  .nk-tb[data-active="true"] {
-    background-color: var(--color-button-hover);
+  .nk-tb[data-active="true"],
+  .nk-tb[aria-pressed="true"] {
+    background-color: var(--color-button-active);
+    color: var(--color-ink);
+  }
+
+  .nk-tb.active:not(:disabled):hover,
+  .nk-tb[data-active="true"]:not(:disabled):hover,
+  .nk-tb[aria-pressed="true"]:not(:disabled):hover {
+    background-color: var(--color-button-active-hover);
     color: var(--color-ink);
   }
 

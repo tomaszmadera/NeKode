@@ -325,6 +325,30 @@ export class GitService {
       return {}
     }
   }
+
+  /**
+   * Synchronizes the project repository with its remote: git pull, git push,
+   * git push --tags. Halts immediately on the first non-zero exit code.
+   */
+  async sync(projectId: string): Promise<void> {
+    const projectPath = this.#resolveProjectPath(projectId, 'git:sync')
+    const steps: Array<{ name: string; args: string[] }> = [
+      { name: 'git pull', args: ['pull'] },
+      { name: 'git push', args: ['push'] },
+      { name: 'git push --tags', args: ['push', '--tags'] },
+    ]
+
+    for (const step of steps) {
+      const result = await this.#run(step.args, projectPath)
+      if (result.exitCode !== 0) {
+        const detail = result.stderr.trim() || result.stdout.trim() || 'command failed'
+        console.warn(
+          `[git] ${step.name} exited with code ${result.exitCode} for "${projectPath}": ${detail}`,
+        )
+        throw new AppError('git_error', `${step.name} failed: ${detail}`, 'git:sync')
+      }
+    }
+  }
 }
 
 export function execFileRunner(args: string[], cwd: string): Promise<GitStatusRunResult> {

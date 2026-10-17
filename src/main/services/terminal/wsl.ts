@@ -97,7 +97,7 @@ export function validatedWslProjectPath(distribution: string, linuxPath: string)
   return path
 }
 
-/** Bare names resolve through Linux PATH; Windows executables are rejected. */
+/** Bare names resolve through the login-shell Linux PATH; Windows executables are rejected. */
 export function prepareWslTerminal(
   path: string,
   shell?: ShellSpec,
@@ -118,7 +118,9 @@ export function prepareWslTerminal(
         'A WSL project requires a Linux executable, not a Windows executable.',
       )
     }
-    args.push('--exec', shell.file, ...shell.args)
+    // A bash login shell loads ~/.profile, so user-installed CLIs (~/.local/bin)
+    // resolve. The command and its args stay separate argv: bash never parses them.
+    args.push('--exec', 'bash', '-lc', 'exec "$@"', 'bash', shell.file, ...shell.args)
   }
   return { file: 'wsl.exe', args, cwd: process.cwd() }
 }

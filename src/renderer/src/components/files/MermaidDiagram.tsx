@@ -312,7 +312,10 @@ export function MermaidDiagram({
             <span aria-hidden="true" className="mx-0.5 h-3.5 w-px bg-edge" />
             <button
               type="button"
-              className={cn(CONTROL_CLASS, mode === 'pan' && 'bg-highlight text-ink')}
+              className={cn(
+                CONTROL_CLASS,
+                mode === 'pan' && 'bg-button-active text-ink hover:bg-button-active-hover',
+              )}
               aria-label="Pan the diagram"
               aria-pressed={mode === 'pan'}
               title={
