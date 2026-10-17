@@ -436,21 +436,17 @@ określa poniższe uzupełnienie NEKODE-30.
 
 ### Źródła i zaakceptowane decyzje
 
-- Bieżący wiersz i karta są jednym przyciskiem: `WorkItemButton` w
-  `src/renderer/src/components/kanban/KanbanBoard.tsx:181`; wspólny hover
-  pochodzi z `ITEM_BUTTON_CLASS` w tym pliku, linia 157.
+- Wiersz listy nie jest przyciskiem `WorkItemButton`. Na HEAD `7e40e49` powierzchnia to `WorkItemSurface` (`src/renderer/src/components/kanban/KanbanBoard.tsx:500`). Klasy `ITEM_BUTTON_CLASS` nie ma. Styl kontrolki to `ITEM_CONTROL_CLASS` (`:157`), a podkreślenie hover to `ACTION_HOVER_CLASS` (`:161`). Sekcja edycji pozycji z 2026-10-11 zastępuje model jednego przycisku.
 - Istniejący katalog i listowanie bez treści: `HandoffsService.list` w
-  `src/main/services/handoffs/handoffs-service.ts:84` oraz kontrakt
+  `src/main/services/handoffs/handoffs-service.ts:85` oraz kontrakt
   [handoff-resume-flow](../handoff-resume-flow/spec.md).
 - Nowy czat i aktywacja powierzchni: `handleCreateChat` w
-  `src/renderer/src/App.tsx:1204`; uruchomienie istniejącej akcji w nowym
-  terminalu: `src/main/services/action-service.ts:278`.
+  `src/renderer/src/App.tsx:1692`; uruchomienie akcji w trybie `new-terminal`:
+  `src/main/services/action-service.ts:306`.
 - Powiązanie opiera się na zgodności pełnego refu z nazwą pliku handoffu:
   nazwa pliku pochodzi od identyfikatora zadania i nie zawiera referencji
   elementu pracy backendu. To uzasadnia oddzielne dopasowanie.
-- [Product requirements](../../product/requirements.md), sekcja 3, traktują
-  Kanban i handoffy powiązane z zadaniami jako post-MVP bez obowiązkowego
-  Harness. Ten kontrakt realizuje taki kierunek bez lokalnej encji Task.
+- [Product requirements](../../product/requirements.md), sekcja 3: lokalna encja Task i handoffy powiązane z zadaniami pozostają post-MVP (`docs/product/requirements.md:67`, `:68`). Tablica adaptera jest dostarczona i nie jest tą encją (`docs/product/requirements.md:70`). Ten kontrakt nie wprowadza lokalnej encji Task.
 - Użytkownik zaakceptował 2026-10-07 całą specyfikację, w tym zasady
   dopasowania handoffów, ręczne przypisania, argv `{prompt}` oraz użycie
   istniejącej powierzchni czatu. Osobne profile w Project Settings były
@@ -661,15 +657,9 @@ wymaga kontaktu z modelem ani zapisu do produkcyjnego Kanbana.
 
 ### Podstawa rekomendacji
 
-- `src/main/services/handoffs/handoff-matcher-service.ts:96` ma dokładne
-  dopasowanie pełnego ref. Kontrakt konsumenta dopuszcza wyłącznie tę ścieżkę;
-  analiza metadanych tożsamości nie należy do dopasowania.
-- `src/shared/ipc-contract.ts:568` opisywał dawny lokalny rejestr ręcznych
-  przypisań per projekt, adapter i backend-native id. Zatwierdzona zmiana
-  konsumenta usuwa ten rejestr razem z kanałem `kanban:linkHandoff`; jedynym
-  powiązaniem pozostaje zgodność pełnego ref z nazwą pliku.
-- `src/renderer/src/components/kanban/KanbanBoard.tsx:834` uzależnia Resume
-  od udanego skanu i dostępności handoffu danego zadania.
+- `src/main/services/handoffs/handoff-matcher-service.ts:96` (`filenameMatchesRef`) dopasowuje pełny ref albo prefiks `ref-` i odrzuca dłuższy ref taki jak NEKODE-20. Kontrakt konsumenta dopuszcza wyłącznie tę ścieżkę; analiza metadanych tożsamości nie należy do dopasowania.
+- Kanał `kanban:linkHandoff` nie występuje w `src/shared/ipc-contract.ts`. `src/main/ipc/ipc-validation.test.ts:512` sprawdza jego brak. Jedynym powiązaniem pozostaje zgodność pełnego ref z nazwą pliku.
+- `src/renderer/src/components/kanban/KanbanBoard.tsx:920` uzależnia Resume od udanego skanu i dostępności handoffu danego zadania.
 - Katalog handoffów jest konfigurowany per projekt, a nazwa pliku pochodzi od
   identyfikatora zadania; zgodność nazwy z pełnym refem jest wymaganiem
   kontraktu konsumenta.

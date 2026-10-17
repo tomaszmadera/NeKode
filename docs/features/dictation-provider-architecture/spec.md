@@ -12,7 +12,7 @@ A developer working in NeKode chat terminals dictates text instead of typing: th
 ## Related requirements
 
 - No item in `docs/product/requirements.md`. User request 2026-10-04 (task brief): extensible Dictation Provider Architecture with initial providers ElevenLabs Scribe v2 and OpenRouter STT (both full implementations) and OpenWhispr (adapt the existing integration if present); working integrations, not a UI mockup.
-- Repository reality verified 2026-10-04: Dictation exists only as a disabled placeholder button (`src/renderer/src/components/terminal/PromptInput.tsx`, `TEST_ID.terminalPromptDictation`, asserted disabled in `ChatTerminal.test.tsx`). There is no existing OpenWhispr integration, no recording path, no transcription code, and no secure credential store in `src`. This feature is greenfield on the provider side and replaces the placeholder button behavior.
+- Repository baseline 2026-10-04 recorded dictation as a disabled placeholder only. That baseline is historical. Desktop OpenWhispr V1 has since shipped (`docs/features/openwhispr-dictation/spec.md`): dictation IPC starts at `src/shared/ipc-contract.ts:285`. That specialization stores its settings in `app_state` and reads the bridge token from `~/.openwhispr/cli-bridge.json` (`src/main/services/dictation/openwhispr-client.ts:106`). It does not use `safeStorage`. ElevenLabs, OpenRouter, and the generic provider registry in this contract are still absent from `src`.
 - Builds on: `mvp-core-shell` (chat terminal / prompt input lifecycle), typed IPC + sender-guard conventions, `app_state` + SQLite persistence conventions, NeKode Design System.
 
 ## Scope

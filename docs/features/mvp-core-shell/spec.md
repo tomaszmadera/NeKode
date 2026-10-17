@@ -32,11 +32,14 @@ Target user: a developer on Windows 11 running coding-agent CLIs (Codex, Claude 
 
 ## Non-goals
 
-- File tree, file preview (Monaco), configurable Action Bar, bottom auxiliary terminal panel (multiple terminals/tabs, `Ctrl + `` shortcut), Kanban — later tasks.
-- Task entity and work-progress tracking (task attached to a chat, harness-agnostic progress records) — post-MVP.
-- Git operations UI, worktree mutation, handoff snapshots, agent selection/protocol work (ACP/MCP), LLM APIs.
+- File tree and read-only preview are outside this slice. They are delivered by `docs/features/project-files-view/spec.md`.
+- The configurable action row is outside this slice. It is delivered by `docs/features/center-layout-tabs-actions/spec.md`.
+- The bottom auxiliary terminal panel is outside this slice. It is delivered by `docs/features/bottom-auxiliary-terminal/spec.md`.
+- The adapter-backed Kanban surface is outside this slice. It is delivered by `docs/features/kanban-adapter-interface/spec.md`. The local Task entity stays post-MVP (`docs/product/requirements.md`).
+- Task entity and work-progress tracking (task attached to a chat, harness-agnostic progress records) stay post-MVP.
+- Git operations UI, worktree mutation, ACP/MCP, and LLM APIs stay outside this slice. Handoff and Resume are delivered by `docs/features/handoff-resume-flow/spec.md`. Agent profile selection is delivered by `docs/features/global-agent-profiles/spec.md` and `docs/features/new-chat-agent-menu/spec.md`.
 - Multi-window support, terminal split panes, multiple terminals per chat (exactly one primary terminal per chat in this slice).
-- Project settings, runtime auto-detection beyond a static label, remote/cloud anything.
+- Project settings are outside this slice and are delivered by the later settings contracts, including `docs/features/project-shell-selection/spec.md`. Runtime auto-detection beyond a static label, and remote/cloud anything, stay outside this slice.
 - Chat rename (manual) — post-MVP; the `name` column stays in the schema for it.
 
 ## Behaviour
@@ -81,7 +84,7 @@ Preload bridge (typed, the full public contract of this slice):
 - `window.app.chats.list(projectId) / create(projectId) / remove(id)` (`create` derives the chat name from the platform shell in the main process)
 - `window.app.state.get(key) / set(key, value)`
 - `window.app.terminals.create(chatId, cwd) / write(chatId, data) / resize(chatId, cols, rows) / onData(chatId, cb) / onExit(chatId, cb)`
-- `window.app.git.getStatus(projectPath)` → `{ branch, dirty }` (read-only)
+- `window.app.git.getStatus(projectId)` → `GitStatus` with `branch`, `dirty`, and `worktree` (`src/shared/ipc-contract.ts:93`, `:766`) (read-only)
 
 IDs are generated in the main process (UUID v4). All IPC channels are validated (type + existence) in the main process before touching services.
 

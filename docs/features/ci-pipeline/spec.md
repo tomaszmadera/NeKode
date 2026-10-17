@@ -1,6 +1,6 @@
 # CI: automatyczna weryfikacja na GitHub Actions
 
-Status: Wdrożone (GitHub Actions uruchamia `pnpm run verify` przy każdej zmianie).
+Status: Delivered (GitHub Actions uruchamia `pnpm run verify` przy każdej zmianie).
 Path: `docs/features/ci-pipeline/spec.md`.
 
 Kontrakt behawioralny zadania NEKODE-12. Implementacja korzysta z tego pliku; postęp prac trzyma rekord zadania, nie specyfikacja.
@@ -39,7 +39,7 @@ Każda zmiana w repozytorium jest automatycznie sprawdzana na GitHub Actions tym
 - Współbieżność: nowy push do tego samego refa anuluje nadal biegnący run (`concurrency` z `cancel-in-progress`).
 - Kroki w kolejności: checkout; instalacja pnpm z pola `packageManager` (`pnpm@12.5.1`); instalacja Node 24 z cache magazynu pnpm; `pnpm install --frozen-lockfile`; `pnpm run verify`.
 - Job nie instaluje VS C++ Build Tools ani żadnego kompilatora; nie używa sekretów; nie ustawia `continue-on-error` na żadnym kroku.
-- Wymagany Node to 24 (spełnia `engines` `^24.15.0`, zgodny ze zweryfikowanym hostem 24.18.0 z `docs/development/setup.md`).
+- Job CI ustawia Node 24 (`node-version: 24` w `.github/workflows/ci.yml`). Pole `engines` w `package.json` to `^22.22.2 || ^24.15.0 || >=26.0.0` (`package.json:10`, to samo w `docs/development/setup.md:13`). Zweryfikowany host 24.18.0 jest w `docs/development/setup.md:14`.
 - Kompilacja natywnych modułów nie może zachodzić: polityka `allowBuilds` w `pnpm-workspace.yaml` (śledzona przez gita) wymusza prebuildy N-API (`better-sqlite3: false`, `node-pty` staging prebuildów), a Electron 44.x nie ma skryptów install.
 
 ### Dokument (`docs/development/ci.md`)

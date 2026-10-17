@@ -29,7 +29,7 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 ## Non-goals
 
 - Bottom auxiliary terminal and the `bottom-terminal` run mode (separate task, requirement 3); the action form offers only `background` and `new-terminal` in this feature. Once the bottom auxiliary terminal panel ships, the mode is offered and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
-- The rich Handoff feature from `docs/UX-UI.md` §33–§41 (handoff form, structured handoff records, automatic resume flow, agent resolution). The `Handoff` / `Resume` buttons here are terminal-input shortcuts only.
+- The rich Handoff feature from `docs/UX-UI.md` §33-§41 (handoff form, structured handoff records, automatic resume flow, agent resolution). The `Handoff` / `Resume` buttons here are the action-row shortcuts. Their command text and paste-or-send delivery are owned by `docs/features/handoff-resume-flow/spec.md`.
 - Repository-based action configuration (`.agentcode/actions.yaml`, SDD §26) — post-MVP.
 - File editing, dirty state, or tab drag-and-drop reordering.
 - Persisting open tabs or action execution logs across application restarts (tabs are per-session UI state).
@@ -46,9 +46,9 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 5. Within one app session, each project retains its open file tabs, their order, and the active tab: switching projects shows that project's own tab set. Tabs are not persisted across application restarts.
 6. The active tab selects the main surface: the terminal surface (chat sessions stay alive in hidden views across tab switches and mode round-trips) or the file preview. The file preview is read-only Monaco with line numbers and syntax highlighting by extension; a markdown file adds `Code` and `Preview` per `docs/features/project-files-view/spec.md` Behaviour 7. The large-file (`> 2 MB`) and binary fallbacks with `Open externally` from that spec apply per tab. The breadcrumb and the `Files` view label are superseded by the tab model and are not rendered.
 7. A file deleted or renamed while its tab is open shows an error state inside that tab; other tabs and the terminal are unaffected.
-8. The `+ New chat` control sits at the right end of the tab strip and is always present. It runs the existing new-chat flow unchanged (immediate creation in the active project, shell display name, chat selected and its terminal shown).
+8. The `+ New chat` control sits at the right end of the tab strip and is always present. It runs the existing new-chat flow unchanged (immediate creation in the active project, compact shell code in the chat name, chat selected and its terminal shown).
 9. The action row sits directly below the tab strip, full width of the center column. Order: the group `Handoff | Resume`, the group `Stop | Continue`, then configurable actions. When the active tab is a markdown file, `Code` and `Preview` sit at the right, before the settings control (`docs/features/project-files-view/spec.md` Behaviour 7). Buttons are compact per `docs/UX-UI.md` §8.
-10. `Handoff` writes the exact text `Napisz handoff` followed by one CR (0x0D) to the active chat's terminal. `Resume` writes `Wznów z handoffu` + CR. `Continue` writes `Continue` + CR. These are literal data strings; they are never localized or altered.
+10. `Handoff` and `Resume` follow `docs/features/handoff-resume-flow/spec.md`. The command strings are English literals and are never localized: Handoff uses `Write a handoff`; Resume uses `Resume from handoff`, or `Resume from handoff <path>` when a file is selected. Auto-send off (the default) pastes that text into the active chat prompt and sends nothing. Auto-send on writes that text plus one CR (0x0D) to the active chat PTY. Resume opens the handoff picker instead of sending a fixed line on click. `Continue` writes `Continue` followed by one CR (0x0D).
 11. `Stop` writes one Ctrl+C (0x03) to the active chat's terminal. It never sends 0x04 (Ctrl+D closes chats under the existing terminal contract).
 12. The four fixed buttons are enabled only when the active chat has a live (running) terminal session; otherwise they are disabled.
 13. Configurable actions come from the action store: global actions plus the active project's actions, ordered by sort order. The set changes when the active project changes. Clicking an action executes it; an action with the confirmation flag shows a confirmation dialog first.
@@ -63,11 +63,11 @@ Restructure the center column and the window bottom of NeKode per the user's lay
 
 ## Business rules
 
-- All terminal input from buttons goes through the existing typed IPC (`terminals:write`) — the renderer never touches the OS (SDD §6). Exact bytes: CR is 0x0D; `Stop` is 0x03.
+- Terminal bytes from these buttons go through the existing typed IPC (`terminals:write`). The renderer never touches the OS (SDD §6). Exact bytes: CR is 0x0D; `Stop` is 0x03. Handoff and Resume paste into the prompt when auto-send is off, so that click itself writes no PTY bytes.
 - Action execution is explicit user-triggered trusted local automation (SDD §52): no auto-run on open, no scheduled runs, no repository-supplied configuration in this version.
 - Actions persist in the SQLite `actions` table (SDD §35 shape: id, project_id nullable for global scope, scope, title, icon, command, cwd, run_mode, confirm, sort_order) added via the existing migration mechanism.
 - `run_mode` accepted `background` and `new-terminal` in this version; with the bottom auxiliary terminal panel shipped, `bottom-terminal` is accepted as well and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
-- The fixed button prompt strings (`Napisz handoff`, `Wznów z handoffu`, `Continue`) and `Stop` semantics (0x03) are contractual literals, independent of UI language (UI stays English per requirements §2.7).
+- The fixed command strings (`Write a handoff`, `Resume from handoff`, `Continue`) and `Stop` semantics (0x03) are contractual literals, independent of UI language (UI stays English per requirements §2.7). Handoff and Resume delivery is owned by `docs/features/handoff-resume-flow/spec.md`.
 - Action command output is never rendered as markup; background failures report actionable state (command + exit code) per SDD §50.
 
 ## Authorization
@@ -80,8 +80,8 @@ Typed IPC channels follow the existing `IPC_CHANNEL` / `AppApi` pattern (`src/sh
 
 - `actions:list() -> ActionControl[]` — global actions plus the active project's actions (or all with scope metadata; the renderer filters per active project).
 - `actions:create(input) -> ActionControl`, `actions:update(id, input) -> ActionControl`, `actions:delete(id) -> void`.
-- `actions:execute(id) -> void` — runs per the action's run mode; execution state (running / success / failed / exitCode) is exposed to the renderer via a typed state event or query.
-- Existing `terminals:write` carries the fixed-button input (text + CR, or 0x03).
+- `actions:execute(id, projectId, confirmed) -> ActionExecution` (`src/shared/ipc-contract.ts:807`). The returned `ActionExecution` carries the execution state (running / success / failed / exitCode).
+- Existing `terminals:write` carries `Stop` (0x03), `Continue` (text + CR), and Handoff/Resume when auto-send is on. Paste delivery writes nothing until the user submits.
 
 `ActionControl` follows SDD §22: `{ id, scope: 'global' | 'project', projectId?, title, icon?, command, cwd?, runMode: 'background' | 'new-terminal' | 'bottom-terminal', confirm?, sortOrder }`. Inputs are validated with the existing IPC validation pattern; invalid input returns a typed `ipc-error`, never raw stack traces. No new OS-facing channels beyond the existing terminal and file channels.
 
@@ -110,7 +110,7 @@ Typed IPC channels follow the existing `IPC_CHANNEL` / `AppApi` pattern (`src/sh
 3. Clicking a file in the tree opens (or focuses) its tab with a read-only Monaco preview: line numbers, syntax highlighting for a known extension, tooltip with the relative path; large and binary fallbacks with `Open externally` work per tab; no editing affordances exist.
 4. File tabs close via their close control; closing the active tab selects the previously active tab (terminal tab as fallback); each project's open tabs, order, and active tab survive project switching within the app session and are gone after restart.
 5. The action row shows `Handoff | Resume`, then `Stop | Continue`, then configurable actions in configured order.
-6. `Handoff`, `Resume`, `Continue` write exactly `Napisz handoff`, `Wznów z handoffu`, `Continue` each followed by one CR (0x0D) to the active chat's terminal; `Stop` writes exactly one 0x03 and never 0x04; with no live session the four buttons are disabled.
+6. `Handoff` pastes `Write a handoff`, or writes it plus one CR (0x0D) when auto-send is on. `Resume` opens the handoff picker; the plain fallback is `Resume from handoff`, and a selected file uses `Resume from handoff <path>`, pasted or sent with one CR under the same auto-send rule. `Continue` writes `Continue` followed by one CR (0x0D). `Stop` writes exactly one 0x03 and never 0x04. With no live session the four buttons are disabled. `docs/features/handoff-resume-flow/spec.md` owns the picker and the auto-send setting.
 7. Project Settings → Actions lists actions and adds/edits/removes them (Title, Icon, Command, Working Directory, Run In = Background | New terminal, confirmation flag); saved actions survive restart and appear in the action row immediately; project-scoped actions switch with the active project.
 8. Clicking a configurable action executes exactly its configured command with no prior auto-run: `background` runs headless with idle/running/success/failed button state and hover details including exit code; `new-terminal` creates and selects a new chat whose terminal receives the command + CR; a confirmation-flagged action asks first.
 9. The status bar at the very bottom shows the active project's name, truncated path (full on hover), runtime badges with `+N` collapse, and Git branch + worktree status in the §16 forms with hover details; with no project the project section is empty.

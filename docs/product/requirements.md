@@ -41,7 +41,7 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
 
 5. **Pasek akcji projektu (Action Bar):**
    - Pasek akcji w kolumnie środkowej, bezpośrednio pod paskiem zakładek (decyzja użytkownika 2026-09-26): stałe grupy `Handoff | Resume` i `Stop | Continue`, a następnie konfigurowalne przyciski do uruchamiania zdefiniowanych poleceń projektu (np. dev server, testy, build, weryfikacja).
-   - Stałe przyciski wysyłają do terminala aktywnego czatu dokładne dane wejściowe (tekst + CR; `Stop` = Ctrl+C) przez istniejące IPC `terminals:write`.
+   - `Stop` wysyła Ctrl+C, a `Continue` tekst i CR, przez `terminals:write`. `Handoff` i `Resume` domyślnie wklejają swój ciąg do promptu; przy włączonym auto-send wysyłają ten ciąg i jedno CR. Właścicielem przepływu jest [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
    - Wykonywanie poleceń w trybie `background` albo `new-terminal` (nowy czat z poleceniem); tryb `bottom-terminal` (nowa zakładka dolnego panelu z poleceniem) realizuje kontrakt `docs/features/bottom-auxiliary-terminal/spec.md` po dostarczeniu dolnego panelu terminali (wymaganie 3).
 
 6. **Persystencja danych:**
@@ -52,7 +52,7 @@ Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do 
    - Skalowalne i resizowalne panele robocze.
    - Kolumna środkowa: pasek zakładek u góry (zakładka aktywnego czatu — niezamykalna; zakładki otwartych plików; `+ New chat`), pod nim pasek akcji (zob. 5), poniżej powierzchnia główna.
    - Pasek statusu na samym dole okna (cała szerokość) z kontekstem projektu: nazwa, ścieżka, wykryte runtimy oraz gałąź i status Git.
-   - Interfejs w całości w języku angielskim; stałe ciągi wysyłane do terminala przez przyciski paska akcji (np. `Napisz handoff`) są danymi literałowymi i nie podlegają tłumaczeniu.
+   - Interfejs w całości w języku angielskim; stałe ciągi przycisków paska akcji (np. `Write a handoff`) są danymi literałowymi i nie podlegają tłumaczeniu. Handoff i Resume wklejają swój ciąg do promptu albo, przy włączonym auto-send, wysyłają go do terminala. Właścicielem tego przepływu jest [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
 
 ---
 
