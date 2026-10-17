@@ -1,8 +1,9 @@
 # New chat agent profile menu
 
-This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
-
+Status: Delivered (New Chat context menu, `chats:createWithAgent`, and interactive arguments).
 Path: `docs/features/new-chat-agent-menu/spec.md`.
+
+This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal
 
@@ -12,7 +13,7 @@ Let the user start a chat with a configured agent directly from the left panel: 
 
 - NEKODE-42 (Plane work item `354e0221-94dd-4ff9-a692-4cda6eb3e1dd`): "W lewym panelu dodać menu kontekstowe na prawy klawisz myszy na 'New chat'. Ma być lista profili agentów. Po wybraniu profilu, wystartuje nowy czat z załadowanym agentem."
 - NEKODE-78 (Plane work item `f7589e3c-daeb-47a2-af5f-552a78ff4d40`): explicit interactive arguments for profiles whose task prompt is an option value, including Hermes and AntiGravity (AGY).
-- [Global agent profiles](../global-agent-profiles/spec.md): accepted user decision 2026-10-14, replacing per-project definitions with a global library and explicit project opt-in. It owns configuration and migration; implementation is pending. [Kanban task launch amendment](../kanban-adapter-interface/spec.md#profile-agentów) owns the task prompt contract.
+- [Global agent profiles](../global-agent-profiles/spec.md): accepted user decision 2026-10-14, replacing per-project definitions with a global library and explicit project opt-in. It owns configuration and migration, and that library is in the application. [Kanban task launch amendment](../kanban-adapter-interface/spec.md#profile-agentów) owns the task prompt contract.
 - [mvp-core-shell](../mvp-core-shell/spec.md) and [project-shell-selection](../project-shell-selection/spec.md): chat naming `[shell] profile name`.
 - `docs/UX-UI.md` §22-25 (console agent model, agent selection; the future selector surface stays out of scope here).
 

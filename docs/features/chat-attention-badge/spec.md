@@ -76,7 +76,7 @@ Detection is passive observation. A failed or unsupported detection hook (for ex
 - AC1: A standalone BEL written to a chat's PTY sets that chat's attention state and shows the badge (assert no badge before, badge after).
 - AC2: A window-title OSC sequence terminated by BEL written to a chat's PTY does not set the state (discriminating test against the false-positive source).
 - AC3: OSC 9 with message text sets the state and the tooltip carries the truncated message; OSC 9 with an empty message sets the badge without a tooltip; unterminated OSC 9 sets nothing.
-- AC4: While the chat is selected, a signal does not set the attention state.
+- AC4: While the chat is selected, a signal sets the attention state only when the active-indicator toggle is on. With that toggle off the signal sets no state. Behaviour 4 and `docs/features/attention-alert-settings/spec.md` own this rule.
 - AC5: Selecting a badged chat clears its badge.
 - AC6: Delivering input to a badged chat's PTY clears its badge.
 - AC7: A BEL or OSC 9 in a bottom-panel tab sets no chat badge.

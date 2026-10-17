@@ -1,8 +1,9 @@
 # Globalne profile agentów i opt-in w projektach
 
-Ten dokument jest kontraktem zachowania funkcji. Nie opisuje postępu implementacji.
-
+Status: Delivered (global profile library, project opt-in, one-line command, and the interactive-argument override).
 Path: `docs/features/global-agent-profiles/spec.md`.
+
+Ten dokument jest kontraktem zachowania funkcji. Nie opisuje postępu implementacji.
 
 ## Cel
 

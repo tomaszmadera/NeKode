@@ -234,11 +234,11 @@ Buttons should be compact:
 
 Do not require icons.
 
-The fixed buttons write terminal input to the active chat terminal (through `terminals:write`):
+The fixed buttons act on the active chat. `Stop` and `Continue` write terminal input through `terminals:write`. `Handoff` and `Resume` paste into the prompt input unless auto-send is on, in which case they write the same text plus CR. `docs/features/handoff-resume-flow/spec.md` owns that flow.
 
 ```text
-Handoff     Napisz handoff        + CR (0x0D)
-Resume      Wznów z handoffu  + CR (0x0D)
+Handoff     Write a handoff
+Resume      Resume from handoff    (picker; a selected file appends the path)
 Continue    Continue             + CR (0x0D)
 Stop        Ctrl+C (0x03)
 ```
