@@ -204,6 +204,7 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
       trash: vi.fn(() => Promise.resolve()),
     },
     handoffs: {
+      resumePrompt: vi.fn(async () => 'Resume prompt'),
       list: vi.fn(() => Promise.resolve([])),
     },
     kanban: {
@@ -220,6 +221,7 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
       createItem: vi.fn(() => Promise.resolve({} as never)),
       updateItem: vi.fn(() => Promise.resolve({} as never)),
       getItem: vi.fn(() => Promise.resolve({} as never)),
+      getComments: vi.fn(() => Promise.resolve([])),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
       handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
       handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
@@ -431,6 +433,14 @@ describe('registered ipc handlers', () => {
       invoke(IPC_CHANNEL.dialogsPickDirectory, [null], 'file:///untrusted/index.html'),
     ).toThrow(/untrusted/)
     expect(services.handoffs.list).not.toHaveBeenCalled()
+    expect(() =>
+      invoke(
+        IPC_CHANNEL.handoffsResumePrompt,
+        ['p1', 'D:/handoffs/a.md'],
+        'file:///untrusted/index.html',
+      ),
+    ).toThrow(/untrusted/)
+    expect(services.handoffs.resumePrompt).not.toHaveBeenCalled()
     expect(services.dialogs.pickDirectory).not.toHaveBeenCalled()
   })
 
@@ -580,6 +590,7 @@ describe('registered ipc handlers', () => {
         trash: vi.fn(() => Promise.resolve()),
       },
       handoffs: {
+        resumePrompt: vi.fn(async () => 'Resume prompt'),
         list: vi.fn(() => Promise.resolve([])),
       },
       kanban: {
@@ -591,6 +602,7 @@ describe('registered ipc handlers', () => {
         createItem: vi.fn(() => Promise.resolve({} as never)),
         updateItem: vi.fn(() => Promise.resolve({} as never)),
         getItem: vi.fn(() => Promise.resolve({} as never)),
+        getComments: vi.fn(() => Promise.resolve([])),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
@@ -687,6 +699,7 @@ describe('registered ipc handlers', () => {
         trash: vi.fn(() => Promise.resolve()),
       },
       handoffs: {
+        resumePrompt: vi.fn(async () => 'Resume prompt'),
         list: vi.fn(() => Promise.resolve([])),
       },
       kanban: {
@@ -698,6 +711,7 @@ describe('registered ipc handlers', () => {
         createItem: vi.fn(() => Promise.resolve({} as never)),
         updateItem: vi.fn(() => Promise.resolve({} as never)),
         getItem: vi.fn(() => Promise.resolve({} as never)),
+        getComments: vi.fn(() => Promise.resolve([])),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
@@ -802,6 +816,7 @@ describe('registered ipc handlers', () => {
         trash: vi.fn(() => Promise.resolve()),
       },
       handoffs: {
+        resumePrompt: vi.fn(async () => 'Resume prompt'),
         list: vi.fn(() => Promise.resolve([])),
       },
       kanban: {
@@ -813,6 +828,7 @@ describe('registered ipc handlers', () => {
         createItem: vi.fn(() => Promise.resolve({} as never)),
         updateItem: vi.fn(() => Promise.resolve({} as never)),
         getItem: vi.fn(() => Promise.resolve({} as never)),
+        getComments: vi.fn(() => Promise.resolve([])),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),

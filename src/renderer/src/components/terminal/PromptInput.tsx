@@ -38,7 +38,7 @@ export function PromptInput({
 }: PromptInputProps): React.JSX.Element {
   const [value, setValue] = useState('')
   const [focusError, setFocusError] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const onInjectedRef = useRef(onInjected)
   onInjectedRef.current = onInjected
   const lastAppliedNonceRef = useRef<number | null>(null)
@@ -90,23 +90,30 @@ export function PromptInput({
     >
       {/* overflow-hidden clips the segment group's right corners to the frame
           radius, so the group reads as the input's right segment. */}
-      <div className="flex h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-control-edge bg-panel pl-3 focus-within:border-info">
+      <div className="flex min-h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-control-edge bg-panel pl-3 focus-within:border-info">
         <span aria-hidden="true" className="select-none font-mono text-ink-muted">
           &gt;
         </span>
-        <input
+        <textarea
           ref={inputRef}
-          className="terminal-prompt-input min-w-0 flex-1 bg-transparent font-mono text-[13px] text-ink outline-none placeholder:text-ink-muted"
+          rows={Math.min(5, value.split('\n').length)}
+          className="terminal-prompt-input min-w-0 flex-1 resize-none bg-transparent py-1 font-mono text-[13px] text-ink outline-none placeholder:text-ink-muted"
           data-testid={TEST_ID.terminalPromptInput}
           aria-label="Terminal input"
           placeholder={placeholder}
           value={value}
           onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              submit()
+            }
+          }}
         />
         {/* The frame's right end is one segment group (design doc 5): Send and
             Dictation glued over a single bg-button surface with the centered
             hairline between them, and no divider on the input side. */}
-        <div className="flex h-full shrink-0 items-stretch bg-button">
+        <div className="flex shrink-0 items-stretch self-stretch bg-button">
           {/* Send submits by click (form submit path, same as Enter). Disabled
               while the input is empty, mirroring the Enter no-op. */}
           <button

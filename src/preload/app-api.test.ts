@@ -279,10 +279,12 @@ describe('preload app api', () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
     await api.handoffs.list('p1')
+    await api.handoffs.resumePrompt('p1', 'D:/handoffs/a.md')
     await api.dialogs.pickDirectory('D:/code')
     await api.dialogs.pickDirectory(null)
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.handoffsList, args: ['p1'] },
+      { channel: IPC_CHANNEL.handoffsResumePrompt, args: ['p1', 'D:/handoffs/a.md'] },
       { channel: IPC_CHANNEL.dialogsPickDirectory, args: ['D:/code'] },
       { channel: IPC_CHANNEL.dialogsPickDirectory, args: [null] },
     ])
@@ -316,7 +318,7 @@ describe('preload app api', () => {
     ])
   })
 
-  it('routes kanban getItem and launchTask through typed channels', async () => {
+  it('routes kanban getItem, getComments, and launchTask through typed channels', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
     const launchInput = {
@@ -328,9 +330,11 @@ describe('preload app api', () => {
       mode: 'start' as const,
     }
     await api.kanban.getItem('p1', 'DEMO-1')
+    await api.kanban.getComments('p1', 'DEMO-1')
     await api.kanban.launchTask(launchInput)
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.kanbanGetItem, args: ['p1', 'DEMO-1'] },
+      { channel: IPC_CHANNEL.kanbanGetComments, args: ['p1', 'DEMO-1'] },
       { channel: IPC_CHANNEL.kanbanLaunchTask, args: [launchInput] },
     ])
   })

@@ -92,6 +92,7 @@ function fakeServices(): AppServices {
     },
     handoffs: {
       list: vi.fn(() => Promise.resolve([])),
+      resumePrompt: vi.fn(async () => 'Resume prompt'),
     },
     kanban: {
       adaptersList: vi.fn(() => []),
@@ -102,6 +103,7 @@ function fakeServices(): AppServices {
       createItem: vi.fn(() => Promise.resolve({} as never)),
       updateItem: vi.fn(() => Promise.resolve({} as never)),
       getItem: vi.fn(() => Promise.resolve({} as never)),
+      getComments: vi.fn(() => Promise.resolve([])),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
       handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
       handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
@@ -576,6 +578,33 @@ describe('ipc payload validation', () => {
     expect(services.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code')
   })
 
+  it('validates Resume formatting before service calls', async () => {
+    const services = fakeServices()
+    const channel = buildValidatedChannels(services).find(
+      (entry) => entry.channel === IPC_CHANNEL.handoffsResumePrompt,
+    )
+    if (!channel) throw new Error('Resume prompt channel is missing')
+    for (const payload of [
+      [],
+      ['p1'],
+      ['p1', 'D:/a.md', 'extra'],
+      [42, 'D:/a.md'],
+      ['p1', null],
+      ['p1', 42],
+      ['p1', ''],
+      ['p1', 'relative.md'],
+      ['p1', 'D:/a\u0000.md'],
+      ['p1', 'D:/../a.md'],
+    ]) {
+      expect(() => channel.parse(payload)).toThrow(ValidationError)
+    }
+    expect(services.handoffs.resumePrompt).not.toHaveBeenCalled()
+    await expect(channel.invoke(channel.parse(['p1', 'D:/handoffs/a.md']))).resolves.toBe(
+      'Resume prompt',
+    )
+    expect(services.handoffs.resumePrompt).toHaveBeenCalledWith('p1', 'D:/handoffs/a.md')
+  })
+
   it('validates agentProfiles payloads before the service', () => {
     const services = fakeServices()
     const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
@@ -742,6 +771,13 @@ describe('ipc payload validation', () => {
     expect(() => getItem?.parse(['p1'])).toThrow(ValidationError)
     expect(() => getItem?.parse(['', 'DEMO-1'])).toThrow(ValidationError)
     expect(() => getItem?.parse(['p1', ''])).toThrow(ValidationError)
+
+    const getComments = channels.get('kanban:getComments')
+    getComments?.invoke(getComments.parse(['p1', 'DEMO-1']))
+    expect(services.kanban.getComments).toHaveBeenCalledWith('p1', 'DEMO-1')
+    expect(() => getComments?.parse(['p1'])).toThrow(ValidationError)
+    expect(() => getComments?.parse(['', 'DEMO-1'])).toThrow(ValidationError)
+    expect(() => getComments?.parse(['p1', ''])).toThrow(ValidationError)
 
     const launchInput = {
       projectId: 'p1',

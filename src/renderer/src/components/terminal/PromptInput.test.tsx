@@ -100,6 +100,30 @@ describe('desktop dictation prompt', () => {
 })
 
 describe('prompt draft injection nonce tracking', () => {
+  it.each(['enter', 'button'])(
+    'preserves multiline injected text when submitted by %s',
+    (method) => {
+      const onSubmit = vi.fn()
+      const text = 'Resume from handoffs/a.md\nFollow the instructions.'
+      render(<PromptInput onSubmit={onSubmit} injected={{ text, nonce: 1 }} />)
+      const input = screen.getByRole('textbox') as HTMLTextAreaElement
+      expect(input.value).toBe(text)
+      if (method === 'enter') fireEvent.keyDown(input, { key: 'Enter' })
+      else fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+      expect(onSubmit).toHaveBeenCalledExactlyOnceWith(text)
+      expect(input.value).toBe('')
+    },
+  )
+
+  it('does not submit on Shift+Enter or Enter during composition', () => {
+    const onSubmit = vi.fn()
+    render(<PromptInput onSubmit={onSubmit} injected={{ text: 'Draft', nonce: 1 }} />)
+    const input = screen.getByRole('textbox')
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
   it('applies injection once and ignores re-renders with the same nonce', () => {
     const onInjected = vi.fn()
     const view = render(

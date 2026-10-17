@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AppApi, HandoffEntry } from '../../../../shared/ipc-contract'
 import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
@@ -7,11 +7,9 @@ import { TEST_ID } from '../../lib/test-ids'
 
 // Resume handoff picker (spec handoff-resume-flow Behaviour 4-5): the list
 // loads lazily at open - one state read for the configured directory plus one
-// handoffs:list call. Selecting an entry hands the English command (naming
-// the file relative to the project root; absolute when it lies outside it)
-// to the host, which pastes it into the prompt input or sends it straight
-// when auto-send is on. The picker never reads file content and never
-// persists anything.
+// handoffs:list call. Selecting an entry asks main to compose the prompt
+// using the latest optional Resume template, then delivers it through the
+// existing paste/auto-send path. The picker reads no files and persists nothing.
 
 interface HandoffPickerProps {
   app: AppApi
@@ -37,10 +35,6 @@ function displayPath(entry: HandoffEntry, projectPath: string | null): string {
   return relativeToProject(projectPath, entry.path) ?? entry.path
 }
 
-function resumeCommand(entry: HandoffEntry, projectPath: string | null): string {
-  return `Resume from handoff ${displayPath(entry, projectPath)}`
-}
-
 function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
 }
@@ -56,9 +50,19 @@ export function HandoffPicker({
   const [phase, setPhase] = useState<'loading' | 'unconfigured' | 'ready' | 'error'>('loading')
   const [entries, setEntries] = useState<HandoffEntry[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  const requestRef = useRef<object | null>(null)
+  const onPickRef = useRef(onPick)
+  // An in-flight reply must use the current chat's live-session delivery guard.
+  onPickRef.current = onPick
 
   useEffect(() => {
     let alive = true
+    requestRef.current = null
+    setPending(false)
+    setError(null)
+    setPhase('loading')
+    setEntries([])
     async function load(): Promise<void> {
       try {
         const configured = await app.state.get(projectHandoffDirKey(projectId))
@@ -80,6 +84,7 @@ export function HandoffPicker({
     void load()
     return () => {
       alive = false
+      requestRef.current = null
     }
   }, [app, projectId])
 
@@ -88,7 +93,10 @@ export function HandoffPicker({
   // key (same window-level idiom as the context menus).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        requestRef.current = null
+        onClose()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => {
@@ -97,8 +105,35 @@ export function HandoffPicker({
   }, [onClose])
 
   function pick(text: string): void {
-    onPick(text)
+    onPickRef.current(text)
     onClose()
+  }
+
+  function close(): void {
+    requestRef.current = null
+    onClose()
+  }
+
+  async function pickEntry(entry: HandoffEntry): Promise<void> {
+    if (requestRef.current !== null) return
+    const request = {}
+    requestRef.current = request
+    setPending(true)
+    setError(null)
+    try {
+      const text = await app.handoffs.resumePrompt(projectId, entry.path)
+      if (requestRef.current !== request) return
+      pick(text)
+    } catch (cause) {
+      if (requestRef.current === request) {
+        setError(errorMessage(cause, 'Failed to compose the Resume prompt.'))
+      }
+    } finally {
+      if (requestRef.current === request) {
+        requestRef.current = null
+        setPending(false)
+      }
+    }
   }
 
   return (
@@ -113,7 +148,7 @@ export function HandoffPicker({
           // releases outside the dialog; the target check keeps pointer-downs
           // inside the dialog from closing it.
           if (event.target === event.currentTarget) {
-            onClose()
+            close()
           }
         }}
       >
@@ -130,7 +165,7 @@ export function HandoffPicker({
               type="button"
               aria-label="Close handoff picker"
               className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
-              onClick={onClose}
+              onClick={close}
             >
               Close
             </button>
@@ -171,7 +206,7 @@ export function HandoffPicker({
               </div>
             </div>
           ) : null}
-          {phase === 'error' ? (
+          {error !== null ? (
             <p
               className="mt-4 text-xs text-error"
               role="alert"
@@ -197,8 +232,9 @@ export function HandoffPicker({
                       className="flex w-full items-center gap-2 rounded border border-edge px-2 py-1.5 text-left text-xs hover:bg-highlight"
                       title={entry.path}
                       data-testid={TEST_ID.handoffPickerEntry}
+                      disabled={pending}
                       onClick={() => {
-                        pick(resumeCommand(entry, projectPath))
+                        void pickEntry(entry)
                       }}
                     >
                       <span className="min-w-0 flex-1 truncate font-medium">{entry.name}</span>

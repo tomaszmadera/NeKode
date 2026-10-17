@@ -35,6 +35,11 @@ interface ActionBarProps {
     mode: MarkdownViewMode
     onChange: (mode: MarkdownViewMode) => void
   } | null
+  /**
+   * Kanban view: suppresses fixed actions (handoff, resume, stop, continue)
+   * and aligns custom actions to the right, immediately before settings.
+   */
+  isKanban?: boolean
 }
 
 /** Fixed Handoff command (English, spec Behaviour 2). */
@@ -83,6 +88,7 @@ export function ActionBar({
   onError,
   onSettings,
   markdownView,
+  isKanban = false,
 }: ActionBarProps): React.JSX.Element {
   const [states, setStates] = useState<Record<string, ActionExecution>>({})
   // A status read is stamped with the run epoch. execute() bumps it first, so
@@ -235,6 +241,61 @@ export function ActionBar({
     }
   }
 
+  const renderAction = (action: ActionControl): React.JSX.Element => {
+    const state = states[action.id]
+    const status = state?.status ?? 'idle'
+    const isRunning = status === 'running'
+    // A preset icon name renders as its Lucide glyph; any other stored
+    // value (custom emoji) stays literal text before the title. The
+    // capitalized alias keeps JSX from reading the variable as a DOM tag.
+    // The action's own icon (preset glyph or emoji) IS the run-state
+    // glyph: it carries the state color and the running spin. The
+    // generic status glyph (idle/run, failed) renders only when no
+    // custom icon is set — never both (double-icon fix).
+    const StateIcon = actionIconGlyph(action.icon) ?? statusIcons[status]
+    const details = [
+      action.command,
+      state?.exitCode !== null && state?.exitCode !== undefined
+        ? `Exit code: ${state.exitCode}`
+        : null,
+      state?.error,
+      state?.completedAt ? `Completed: ${state.completedAt}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n')
+    return (
+      <div key={action.id} className="nk-btn-group shrink-0">
+        <button
+          type="button"
+          disabled={isRunning}
+          title={details}
+          data-status={status}
+          data-active={isRunning ? 'true' : 'false'}
+          className={cn(
+            'nk-tb',
+            isRunning && 'active text-info',
+            status === 'failed' && 'text-error',
+          )}
+          onClick={() => {
+            void execute(action)
+          }}
+        >
+          <StateIcon
+            size={15}
+            aria-hidden
+            className={cn(isRunning && 'animate-spin', status === 'idle' && 'text-ink-secondary')}
+          />
+          {!actionIconGlyph(action.icon) && action.icon ? (
+            <span aria-hidden="true" className={cn(isRunning && 'animate-spin')}>
+              {action.icon}
+            </span>
+          ) : null}
+          {action.title}
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div
       role="toolbar"
@@ -242,101 +303,51 @@ export function ActionBar({
       className="flex shrink-0 items-center gap-2 overflow-x-auto bg-panel border-b border-edge px-3 py-2"
       data-testid={TEST_ID.actionRowSlot}
     >
-      {[
-        { name: 'Handoff and Resume', items: fixed.slice(0, 2) },
-        { name: 'Stop and Continue', items: fixed.slice(2) },
-      ].map((group) => (
-        <fieldset key={group.name} className="nk-btn-group shrink-0">
-          <legend className="sr-only">{group.name}</legend>
-          {group.items.map((item, index) => {
-            const FixedIcon = item.icon
-            const isDisabled = !chatIsLive || !activeChatId
-            return (
-              <div key={item.label} className="flex items-center">
-                {index > 0 ? (
-                  // Toolbar separator from design reference (1px x 16px hairline)
-                  <span aria-hidden="true" className="h-4 w-px bg-edge" />
-                ) : null}
-                <button
-                  type="button"
-                  disabled={isDisabled}
-                  className="nk-tb"
-                  onClick={() => {
-                    runFixed(item.action)
-                  }}
-                >
-                  <FixedIcon
-                    size={15}
-                    aria-hidden
-                    className={isDisabled ? 'text-ink-disabled' : 'text-ink-secondary'}
-                  />
-                  {item.label}
-                </button>
-              </div>
-            )
-          })}
-        </fieldset>
-      ))}
-      {visible.map((action) => {
-        const state = states[action.id]
-        const status = state?.status ?? 'idle'
-        const isRunning = status === 'running'
-        // A preset icon name renders as its Lucide glyph; any other stored
-        // value (custom emoji) stays literal text before the title. The
-        // capitalized alias keeps JSX from reading the variable as a DOM tag.
-        // The action's own icon (preset glyph or emoji) IS the run-state
-        // glyph: it carries the state color and the running spin. The
-        // generic status glyph (idle/run, failed) renders only when no
-        // custom icon is set — never both (double-icon fix).
-        const StateIcon = actionIconGlyph(action.icon) ?? statusIcons[status]
-        const details = [
-          action.command,
-          state?.exitCode !== null && state?.exitCode !== undefined
-            ? `Exit code: ${state.exitCode}`
-            : null,
-          state?.error,
-          state?.completedAt ? `Completed: ${state.completedAt}` : null,
-        ]
-          .filter(Boolean)
-          .join('\n')
-        return (
-          <div key={action.id} className="nk-btn-group shrink-0">
-            <button
-              type="button"
-              disabled={isRunning}
-              title={details}
-              data-status={status}
-              data-active={isRunning ? 'true' : 'false'}
-              className={cn(
-                'nk-tb',
-                isRunning && 'active text-info',
-                status === 'failed' && 'text-error',
-              )}
-              onClick={() => {
-                void execute(action)
-              }}
-            >
-              <StateIcon
-                size={15}
-                aria-hidden
-                className={cn(
-                  isRunning && 'animate-spin',
-                  status === 'idle' && 'text-ink-secondary',
-                )}
-              />
-              {!actionIconGlyph(action.icon) && action.icon ? (
-                <span aria-hidden="true" className={cn(isRunning && 'animate-spin')}>
-                  {action.icon}
-                </span>
-              ) : null}
-              {action.title}
-            </button>
-          </div>
-        )
-      })}
+      {!isKanban ? (
+        <>
+          {[
+            { name: 'Handoff and Resume', items: fixed.slice(0, 2) },
+            { name: 'Stop and Continue', items: fixed.slice(2) },
+          ].map((group) => (
+            <fieldset key={group.name} className="nk-btn-group shrink-0">
+              <legend className="sr-only">{group.name}</legend>
+              {group.items.map((item, index) => {
+                const FixedIcon = item.icon
+                const isDisabled = !chatIsLive || !activeChatId
+                return (
+                  <div key={item.label} className="flex items-center">
+                    {index > 0 ? (
+                      // Toolbar separator from design reference (1px x 16px hairline)
+                      <span aria-hidden="true" className="h-4 w-px bg-edge" />
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={isDisabled}
+                      className="nk-tb"
+                      onClick={() => {
+                        runFixed(item.action)
+                      }}
+                    >
+                      <FixedIcon
+                        size={15}
+                        aria-hidden
+                        className={isDisabled ? 'text-ink-disabled' : 'text-ink-secondary'}
+                      />
+                      {item.label}
+                    </button>
+                  </div>
+                )
+              })}
+            </fieldset>
+          ))}
+          {visible.map(renderAction)}
+        </>
+      ) : null}
       {/* Settings stays at the right end. A markdown file tab adds
-          Code | Preview just before it (user decision 2026-10-06). */}
+          Code | Preview just before it (user decision 2026-10-06). On Kanban
+          views, custom actions are positioned here, immediately before settings. */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
+        {isKanban ? visible.map(renderAction) : null}
         {markdownView !== null ? (
           <fieldset className="nk-btn-group shrink-0">
             <legend className="sr-only">Markdown view</legend>

@@ -1,21 +1,25 @@
-import type {
-  KanbanAdapterInfo,
-  KanbanBoard,
-  KanbanCreateInput,
-  KanbanPriority,
-  KanbanProjectConfig,
-  KanbanUpdatePatch,
-  WorkItem,
-} from '../../../shared/ipc-contract'
 import {
   KANBAN_PRIORITIES,
+  type KanbanAdapterInfo,
+  type KanbanBoard,
+  type KanbanComment,
+  type KanbanCreateInput,
+  type KanbanPriority,
+  type KanbanProjectConfig,
+  type KanbanUpdatePatch,
   projectKanbanAdapterKey,
   projectKanbanConfigKey,
+  type WorkItem,
 } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import { AdapterHost, toAppError } from './adapter-host'
 import { type DiscoveredAdapter, type DiscoveryResult, discoverAdapters } from './adapter-manifest'
-import { normalizeItem, normalizeItems, normalizeStates } from './adapter-protocol'
+import {
+  normalizeComments,
+  normalizeItem,
+  normalizeItems,
+  normalizeStates,
+} from './adapter-protocol'
 
 // KanbanService (spec kanban-adapter-interface Behaviour 4–11): the single
 // main-process facade behind the kanban:* channels. Binding and config live
@@ -33,6 +37,7 @@ const CHANNEL = {
   createItem: 'kanban:createItem',
   updateItem: 'kanban:updateItem',
   getItem: 'kanban:getItem',
+  getComments: 'kanban:getComments',
 } as const
 
 /** Minimal project lookup (the ProjectService surface this service needs). */
@@ -397,6 +402,19 @@ export class KanbanService {
     return normalizeItem(data, 'getItem data')
   }
 
+  /** Comments for one work item. Adapter action `listComments` with `{ ref }`. */
+  async getComments(projectId: string, ref: string): Promise<KanbanComment[]> {
+    if (typeof ref !== 'string' || ref.trim().length === 0) {
+      throw new AppError(
+        'validation',
+        'kanban:getComments ref must be a non-empty string',
+        CHANNEL.getComments,
+      )
+    }
+    const data = await this.invoke<unknown>(projectId, 'listComments', undefined, { ref })
+    return normalizeComments(data, 'listComments data')
+  }
+
   /** Cascade cleanup on projects:remove (spec Behaviour 11). */
   cleanupProject(projectId: string): void {
     this.#state.delete(projectKanbanAdapterKey(projectId))
@@ -466,7 +484,14 @@ export class KanbanService {
 
   private async invoke<T>(
     projectId: string,
-    action: 'test' | 'listStates' | 'listItems' | 'createItem' | 'updateItem' | 'getItem',
+    action:
+      | 'test'
+      | 'listStates'
+      | 'listItems'
+      | 'createItem'
+      | 'updateItem'
+      | 'getItem'
+      | 'listComments',
     valuesOverride: Record<string, string> | undefined,
     params: Record<string, unknown>,
   ): Promise<T> {

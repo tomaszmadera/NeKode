@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
   KanbanBoard as KanbanBoardData,
+  KanbanComment,
   KanbanHandoffAvailabilityResult,
   WorkItem,
 } from '../../../../shared/ipc-contract'
@@ -213,6 +214,7 @@ function appWith(listBoard: AppApi['kanban']['listBoard']): AppApi {
   return {
     kanban: {
       listBoard,
+      getComments: vi.fn().mockResolvedValue([]),
       // Available by default so the Resume control renders where the existing
       // tests expect it; availability-specific tests override this mock.
       handoffAvailability: vi.fn(
@@ -896,6 +898,94 @@ describe('kanban work item controls (task launch navigation)', () => {
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
+
+  it('renders Start and Resume on item review, matching availability rules and triggering launch handlers', async () => {
+    const onStart = vi.fn()
+    const onResume = vi.fn()
+    const app = {
+      kanban: {
+        listBoard: vi.fn().mockResolvedValue(richBoard()),
+        getComments: vi.fn().mockResolvedValue([]),
+        handoffAvailability: vi.fn().mockResolvedValue({
+          state: 'ready',
+          items: [
+            { itemId: 'id-NK-1', ref: 'NK-1', available: true },
+            { itemId: 'id-NK-2', ref: 'NK-2', available: false },
+          ],
+          rejections: [],
+        }),
+      },
+    } as unknown as AppApi
+
+    render(
+      <KanbanBoard
+        app={app}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={onStart}
+        onResume={onResume}
+      />,
+    )
+    // Open review for NK-1 (which has an available handoff)
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    const reviewStart = within(review).getByTestId(testIdFor.kanbanItemStart('NK-1'))
+    const reviewResume = await within(review).findByTestId(testIdFor.kanbanItemResume('NK-1'))
+
+    // In review, Start is disabled because Resume is available
+    expect(reviewStart.hasAttribute('disabled')).toBe(true)
+    expect(reviewStart.textContent).toBe('Start')
+    expect(reviewResume.textContent).toBe('Resume')
+
+    // Control column separation: launch buttons are in the right controls column
+    const title = within(review).getByTestId(TEST_ID.kanbanReviewTitle)
+    const columns = title.parentElement?.parentElement
+    expect(columns?.children[1]?.contains(reviewStart)).toBe(true)
+    expect(columns?.children[1]?.contains(reviewResume)).toBe(true)
+    expect(columns?.children[0]?.contains(reviewStart)).toBe(false)
+
+    // Clicking Start while disabled does not trigger onStart
+    fireEvent.click(reviewStart)
+    expect(onStart).not.toHaveBeenCalled()
+
+    // Clicking Resume in review triggers onResume with the item
+    fireEvent.click(reviewResume)
+    expect(onResume).toHaveBeenCalledTimes(1)
+    expect(onResume.mock.calls[0]?.[0].ref).toBe('NK-1')
+
+    // Context menu on Start/Resume does not open review text menu
+    fireEvent.contextMenu(reviewStart)
+    fireEvent.contextMenu(reviewResume)
+    expect(screen.queryByRole('menu', { name: 'Copy selection' })).toBeNull()
+
+    // Return to list and open review for NK-2 (which has no handoff, so Resume is not available)
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-2')))
+    const review2 = await screen.findByTestId(TEST_ID.kanbanReview)
+    const review2Start = within(review2).getByTestId(testIdFor.kanbanItemStart('NK-2'))
+    expect(within(review2).queryByTestId(testIdFor.kanbanItemResume('NK-2'))).toBeNull()
+    expect(review2Start.hasAttribute('disabled')).toBe(false)
+
+    // Clicking Start in review triggers onStart with the item
+    fireEvent.click(review2Start)
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(onStart.mock.calls[0]?.[0].ref).toBe('NK-2')
+  })
+
+  it('leaves review Start and Resume inert when the host wires no handler', async () => {
+    render(
+      <KanbanBoard
+        app={appWith(vi.fn().mockResolvedValue(richBoard()))}
+        projectId="p1"
+        onConfigure={vi.fn()}
+      />,
+    )
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    const resume = await within(review).findByTestId(testIdFor.kanbanItemResume('NK-1'))
+    fireEvent.click(resume)
+    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
+  })
 })
 
 describe('kanban item copy menu', () => {
@@ -1043,7 +1133,9 @@ describe('kanban handoff availability', () => {
     listBoard: AppApi['kanban']['listBoard'],
     handoffAvailability: AppApi['kanban']['handoffAvailability'],
   ): AppApi {
-    return { kanban: { listBoard, handoffAvailability } } as unknown as AppApi
+    return {
+      kanban: { listBoard, handoffAvailability, getComments: vi.fn().mockResolvedValue([]) },
+    } as unknown as AppApi
   }
 
   it('disables Start only for items with Resume and re-enables it after handoff removal', async () => {
@@ -2224,10 +2316,98 @@ describe('kanban review text selection', () => {
     expect(writeText).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('menu', { name: 'Copy selection' })).toBeTruthy()
 
-    // Escape dismisses the menu; non-text surfaces never open it.
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
     expect(fireEvent.contextMenu(screen.getByTestId(TEST_ID.kanbanReviewBack))).toBe(true)
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
+describe('kanban review comments', () => {
+  function commentsBoard(): KanbanBoardData {
+    return {
+      states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
+      items: [
+        {
+          ...item('NK-1', 'Task with comments', 's1'),
+          description: 'Task description',
+          stateName: 'Backlog',
+        },
+      ],
+    }
+  }
+
+  it('renders loading state then comments list with author, timestamp and text', async () => {
+    const pendingComments = deferred<KanbanComment[]>()
+    const getComments = vi.fn().mockReturnValue(pendingComments.promise)
+    const app = appWith(vi.fn().mockResolvedValue(commentsBoard()))
+    app.kanban.getComments = getComments
+
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+
+    expect(await screen.findByTestId(TEST_ID.kanbanReview)).toBeTruthy()
+    expect(screen.getByText('Loading comments...')).toBeTruthy()
+    expect(getComments).toHaveBeenCalledWith('p1', 'NK-1')
+
+    const sampleComments: KanbanComment[] = [
+      {
+        id: 'comm-1',
+        author: 'Alice',
+        text: 'First comment body',
+        createdAt: '2026-10-17 12:00',
+      },
+      {
+        id: 'comm-2',
+        author: null,
+        text: 'Second comment by unknown',
+        createdAt: null,
+      },
+    ]
+
+    await act(async () => {
+      pendingComments.resolve(sampleComments)
+    })
+
+    expect(screen.queryByText('Loading comments...')).toBeNull()
+    const list = screen.getByTestId(TEST_ID.kanbanReviewCommentsList)
+    expect(list).toBeTruthy()
+
+    const item1 = screen.getByTestId(testIdFor.kanbanReviewComment('comm-1'))
+    expect(item1.textContent).toContain('Alice')
+    expect(item1.textContent).toContain('First comment body')
+    expect(item1.textContent).toContain('2026-10-17 12:00')
+
+    const item2 = screen.getByTestId(testIdFor.kanbanReviewComment('comm-2'))
+    expect(item2.textContent).toContain('Unknown')
+    expect(item2.textContent).toContain('Second comment by unknown')
+  })
+
+  it('renders empty comments notice when the list is empty', async () => {
+    const getComments = vi.fn().mockResolvedValue([])
+    const app = appWith(vi.fn().mockResolvedValue(commentsBoard()))
+    app.kanban.getComments = getComments
+
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+
+    expect(await screen.findByTestId(TEST_ID.kanbanReviewCommentsEmpty)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.kanbanReviewCommentsEmpty).textContent).toBe('No comments.')
+  })
+
+  it('renders error notice when getComments rejects', async () => {
+    const getComments = vi.fn().mockRejectedValue({
+      nekodeAppError: true,
+      code: 'network',
+      message: 'Failed to fetch comments',
+    })
+    const app = appWith(vi.fn().mockResolvedValue(commentsBoard()))
+    app.kanban.getComments = getComments
+
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+
+    const errorAlert = await screen.findByTestId(TEST_ID.kanbanReviewCommentsError)
+    expect(errorAlert.textContent).toBe('Failed to fetch comments')
   })
 })

@@ -1,6 +1,7 @@
 import {
   KANBAN_PRIORITIES,
   KANBAN_STATE_GROUPS,
+  type KanbanComment,
   type KanbanState,
   type KanbanStateGroup,
   type WorkItem,
@@ -122,13 +123,45 @@ export function normalizeItems(data: unknown): WorkItem[] {
   return data.map((entry, index) => normalizeItem(entry, `listItems[${index}]`))
 }
 
+/** Parses and validates the listComments payload (an array of KanbanComment objects). */
+export function normalizeComments(data: unknown, what: string): KanbanComment[] {
+  if (!Array.isArray(data)) {
+    throw new AdapterHostError('protocol', `${what} must be an array`)
+  }
+  return data.map((entry, index) => {
+    const itemWhat = `${what}[${index}]`
+    if (!isRecord(entry)) {
+      throw new AdapterHostError('protocol', `${itemWhat} must be an object`)
+    }
+    const id = requireString(entry, 'id', itemWhat)
+    const text = typeof entry.text === 'string' ? entry.text : ''
+    const optional = (key: 'author' | 'createdAt'): string | null => {
+      const value = entry[key]
+      if (value === null || value === undefined) {
+        return null
+      }
+      if (typeof value !== 'string') {
+        throw new AdapterHostError('protocol', `${itemWhat}: "${key}" must be a string or null`)
+      }
+      return value
+    }
+    return {
+      id,
+      author: optional('author'),
+      text,
+      createdAt: optional('createdAt'),
+    }
+  })
+}
+
 /**
  * Valid action names of protocol v1 (the service is the only caller).
  *
- * `getItem` stays in this allowlist. `KanbanService.getItem` invokes it with
- * `{ ref }` for the `kanban:getItem` channel and for task launch, which
- * refetches the live item instead of reusing the cached board. Protocol
- * version stays 1. This is app IPC, not a protocol change.
+ * `getItem` and `listComments` stay in this allowlist. `KanbanService.getItem`
+ * invokes it with `{ ref }` for the `kanban:getItem` channel and for task launch,
+ * and `KanbanService.getComments` invokes `listComments` with `{ ref }` for the
+ * `kanban:getComments` channel. Protocol version stays 1. This is app IPC,
+ * not a protocol change.
  */
 export const ADAPTER_ACTIONS = [
   'test',
@@ -137,6 +170,7 @@ export const ADAPTER_ACTIONS = [
   'getItem',
   'createItem',
   'updateItem',
+  'listComments',
 ] as const
 
 export type AdapterAction = (typeof ADAPTER_ACTIONS)[number]

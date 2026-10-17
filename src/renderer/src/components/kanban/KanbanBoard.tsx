@@ -4,6 +4,7 @@ import type {
   AppApi,
   HandoffRejection,
   KanbanBoard as KanbanBoardData,
+  KanbanComment,
   KanbanCreateInput,
   KanbanPriority,
   KanbanState,
@@ -553,9 +554,15 @@ function ItemReview({
   priorityValue,
   priorityError,
   fieldsDisabled,
+  resumeEnabled,
+  onStart,
+  onResume,
   onStatusChange,
   onPriorityChange,
   onCopyText,
+  comments,
+  commentsLoading,
+  commentsError,
 }: {
   item: WorkItem
   states: readonly KanbanState[]
@@ -564,6 +571,12 @@ function ItemReview({
   priorityValue: KanbanPriority | null
   priorityError: string | null
   fieldsDisabled: boolean
+  resumeEnabled: boolean
+  comments: readonly KanbanComment[] | null
+  commentsLoading: boolean
+  commentsError: string | null
+  onStart?: (item: WorkItem) => void
+  onResume?: (item: WorkItem) => void
   onStatusChange: (stateName: string) => void
   onPriorityChange: (priority: KanbanPriority | null) => void
   onCopyText: (text: string, x: number, y: number) => void
@@ -600,8 +613,54 @@ function ItemReview({
           >
             {descriptionText(item.description)}
           </p>
+          <h4 className="mt-4 cursor-text font-semibold text-ink">Comments</h4>
+          {commentsLoading ? (
+            <p className="mt-1 cursor-text text-[12.6px] text-ink-secondary">Loading comments...</p>
+          ) : commentsError !== null ? (
+            <p
+              role="alert"
+              className="mt-1 text-[12.6px] text-error"
+              data-testid={TEST_ID.kanbanReviewCommentsError}
+            >
+              {commentsError}
+            </p>
+          ) : comments === null || comments.length === 0 ? (
+            <p
+              className="mt-1 cursor-text text-ink-secondary"
+              data-testid={TEST_ID.kanbanReviewCommentsEmpty}
+            >
+              No comments.
+            </p>
+          ) : (
+            <div
+              className="mt-2 flex flex-col gap-2"
+              data-testid={TEST_ID.kanbanReviewCommentsList}
+            >
+              {comments.map((comment) => (
+                <div
+                  key={comment.id}
+                  className="rounded-md border border-edge bg-app/50 p-2.5 text-[12.6px]"
+                  data-testid={testIdFor.kanbanReviewComment(comment.id)}
+                >
+                  <div className="flex items-center justify-between text-[11px] text-ink-secondary">
+                    <span className="font-medium text-ink">{comment.author ?? 'Unknown'}</span>
+                    {comment.createdAt ? <span>{comment.createdAt}</span> : null}
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-ink select-text">
+                    {comment.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex min-w-0 flex-col gap-3">
+          <ItemLaunchButtons
+            item={item}
+            resumeEnabled={resumeEnabled}
+            onStart={onStart}
+            onResume={onResume}
+          />
           <div className="flex flex-col gap-1">
             <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanReviewPriority}>
               Priority
@@ -936,6 +995,9 @@ export function KanbanBoard({
   const [priorityError, setPriorityError] = useState<string | null>(null)
   const [reviewCopy, setReviewCopy] = useState<{ text: string; x: number; y: number } | null>(null)
   const [updatingReview, setUpdatingReview] = useState(false)
+  const [reviewComments, setReviewComments] = useState<readonly KanbanComment[] | null>(null)
+  const [reviewCommentsLoading, setReviewCommentsLoading] = useState(false)
+  const [reviewCommentsError, setReviewCommentsError] = useState<string | null>(null)
   const pending = useRef(false)
   const generation = useRef(0)
   const hasSnapshot = useRef(false)
@@ -987,6 +1049,9 @@ export function KanbanBoard({
     setPriorityChoice(undefined)
     setPriorityError(null)
     setReviewCopy(null)
+    setReviewComments(null)
+    setReviewCommentsLoading(false)
+    setReviewCommentsError(null)
     // The previous project's review write must not keep these selects locked.
     reviewBusy.current = false
     setUpdatingReview(false)
@@ -1004,6 +1069,34 @@ export function KanbanBoard({
   useEffect(() => {
     if (phase !== 'ready') closeNewTask()
   }, [phase, closeNewTask])
+
+  useEffect(() => {
+    if (reviewRef === null) {
+      setReviewComments(null)
+      setReviewCommentsLoading(false)
+      setReviewCommentsError(null)
+      return
+    }
+    let cancelled = false
+    setReviewComments(null)
+    setReviewCommentsLoading(true)
+    setReviewCommentsError(null)
+    app.kanban
+      .getComments(projectId, reviewRef)
+      .then((comments) => {
+        if (cancelled) return
+        setReviewComments(comments)
+        setReviewCommentsLoading(false)
+      })
+      .catch((cause) => {
+        if (cancelled) return
+        setReviewCommentsError(parseAppErrorPayload(cause)?.message ?? 'Failed to load comments.')
+        setReviewCommentsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [app, projectId, reviewRef])
 
   const handleSortByChange = useCallback(
     (nextSortBy: KanbanSortBy) => {
@@ -1493,6 +1586,12 @@ export function KanbanBoard({
           priorityValue={priorityChoice !== undefined ? priorityChoice : reviewItem.priority}
           priorityError={priorityError}
           fieldsDisabled={updatingReview}
+          resumeEnabled={itemResumable(reviewItem)}
+          comments={reviewComments}
+          commentsLoading={reviewCommentsLoading}
+          commentsError={reviewCommentsError}
+          onStart={onStart}
+          onResume={onResume}
           onStatusChange={(nextName) => {
             void submitReviewWrite({ field: 'status', stateRef: nextName })
           }}

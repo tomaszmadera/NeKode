@@ -25,8 +25,9 @@ import { FilesService } from './files/files-service'
 import { GitService } from './git/git-service'
 import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
 import { HandoffsService } from './handoffs/handoffs-service'
+import { ResumeTemplateService } from './handoffs/resume-template-service'
 import { KanbanService, type SafeStorageLike } from './kanban/kanban-service'
-import { TaskLaunchService } from './kanban/task-launch-service'
+import { buildResumePrompt, TaskLaunchService } from './kanban/task-launch-service'
 import { ProjectService } from './project-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { ShellService } from './terminal/shell-service'
@@ -124,6 +125,10 @@ export function createServices(options: CreateServicesOptions): AppServices {
     trashItem: options.trashItem,
   })
   const handoffs = new HandoffsService({ projects, state, handoffDirKey: projectHandoffDirKey })
+  const resumeTemplates = new ResumeTemplateService({
+    projects,
+    userDataPath: options.userDataPath,
+  })
   // Handoff match (stage 4): a shallow, read-only scan beside HandoffsService.
   // HandoffsService.list keeps its own contract; this service only reads the
   // configured directory and returns file metadata.
@@ -158,6 +163,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
     // Resume rechecks its chosen file through the stage 4 matcher before the
     // chat is created (spec Resume.3).
     handoffs: handoffMatcher,
+    resumePrompt: (path) => resumeTemplates.format(path, buildResumePrompt(path)),
     handoffDir: (projectId) => {
       const value = state.get(projectHandoffDirKey(projectId))
       if (value === null || value.trim().length === 0) {
@@ -330,6 +336,8 @@ export function createServices(options: CreateServicesOptions): AppServices {
     },
     handoffs: {
       list: (projectId) => handoffs.list(projectId),
+      resumePrompt: (projectId, handoffPath) =>
+        resumeTemplates.resumePrompt(projectId, handoffPath),
     },
     kanban: {
       adaptersList: () => kanban.adaptersList(),
@@ -340,6 +348,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       createItem: (projectId, input) => kanban.createItem(projectId, input),
       updateItem: (projectId, ref, patch) => kanban.updateItem(projectId, ref, patch),
       getItem: (projectId, ref) => kanban.getItem(projectId, ref),
+      getComments: (projectId, ref) => kanban.getComments(projectId, ref),
       launchTask: (input) => taskLaunch.launch(input),
       handoffCandidates: (input) => handoffMatcher.candidates(input),
       handoffAvailability: (input) => handoffMatcher.availability(input),
