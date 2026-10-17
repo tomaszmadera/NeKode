@@ -36,6 +36,7 @@ export const TEST_ID = {
   leftResizeHandle: 'resize-handle-left',
   bottomResizeHandle: 'resize-handle-bottom',
   projectList: 'project-list',
+  projectListArea: 'project-list-area',
   projectsHeader: 'projects-header',
   emptyProjectList: 'project-list-empty',
   addProjectButton: 'add-project-button',

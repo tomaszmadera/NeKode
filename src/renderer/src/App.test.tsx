@@ -2276,6 +2276,85 @@ describe('project and chat data flow', () => {
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
   })
 
+  it.each([false, true])(
+    'blank Projects space opens Add Project through the existing dialog (has projects: %s)',
+    async (hasProjects) => {
+      vi.mocked(app.projects.list).mockResolvedValue(hasProjects ? [projectA] : [])
+      render(<App app={app} />)
+      if (hasProjects) await screen.findByTestId(testIdFor.projectRow('p1'))
+      else await screen.findByTestId(TEST_ID.emptyProjectList)
+      const area = screen.getByTestId(TEST_ID.projectListArea)
+
+      fireEvent.click(area)
+      expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+      fireEvent.contextMenu(hasProjects ? area : screen.getByTestId(TEST_ID.emptyProjectList), {
+        clientX: 40,
+        clientY: 60,
+      })
+      const menu = screen.getByRole('menu', { name: 'Projects' })
+      const action = within(menu).getByRole('menuitem', { name: 'Add Project' })
+      expect(document.activeElement).toBe(action)
+      expect(action.parentElement?.style.left).toBe('40px')
+      expect(action.parentElement?.style.top).toBe('60px')
+      expect(app.projects.add).not.toHaveBeenCalled()
+      expect(within(menu).getAllByRole('menuitem')).toHaveLength(1)
+
+      fireEvent.click(action)
+      expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+      const dialog = await screen.findByRole('dialog', { name: 'Add Project' })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Choose folder...' }))
+      await waitFor(() => expect(app.projects.add).toHaveBeenCalledTimes(1))
+    },
+  )
+
+  it('blank Projects menu supports keyboard opening, dismissal, focus return, and edge positioning', async () => {
+    render(<App app={app} />)
+    await screen.findByTestId(TEST_ID.emptyProjectList)
+    const area = screen.getByTestId(TEST_ID.projectListArea)
+    area.focus()
+    fireEvent.keyDown(area, { key: 'ContextMenu' })
+    expect(screen.getByRole('menu', { name: 'Projects' })).toBeTruthy()
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' })
+    expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+    expect(document.activeElement).toBe(area)
+
+    fireEvent.keyDown(area, { key: 'F10', shiftKey: true })
+    fireEvent.click(screen.getByRole('menu', { name: 'Projects' }))
+    expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+    fireEvent.contextMenu(area, { clientX: window.innerWidth, clientY: window.innerHeight })
+    const action = screen.getByRole('menuitem', { name: 'Add Project' })
+    expect(Number.parseFloat(action.parentElement?.style.left ?? '')).toBeLessThan(
+      window.innerWidth - 160,
+    )
+    expect(Number.parseFloat(action.parentElement?.style.top ?? '')).toBeLessThan(
+      window.innerHeight - 40,
+    )
+    fireEvent.contextMenu(screen.getByRole('menu', { name: 'Projects' }))
+    expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+    expect(app.projects.add).not.toHaveBeenCalled()
+  })
+
+  it('blank Projects gestures preserve row and New Chat menus and ignore chat rows', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    render(<App app={app} />)
+    const row = await screen.findByTestId(testIdFor.projectRow('p1'))
+    fireEvent.contextMenu(row)
+    expect(screen.getByRole('menuitem', { name: 'Project Settings' })).toBeTruthy()
+    expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.contextMenu(await screen.findByTestId(testIdFor.chatRow('t1')))
+    expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+    fireEvent.contextMenu(screen.getByTestId(TEST_ID.newChatButton))
+    expect(screen.getByRole('menu', { name: 'New chat with agent' })).toBeTruthy()
+    expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+    fireEvent.keyDown(screen.getByTestId(TEST_ID.projectListArea), { key: 'ContextMenu' })
+    expect(screen.getByRole('menu', { name: 'Projects' })).toBeTruthy()
+    expect(screen.queryByRole('menu', { name: 'New chat with agent' })).toBeNull()
+    expect(app.chats.create).not.toHaveBeenCalled()
+  })
+
   it('project context menu offers Open in file explorer and calls files.openRoot', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
