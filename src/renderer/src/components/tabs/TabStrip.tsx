@@ -11,8 +11,8 @@ import { KANBAN_TAB, type TabId, TERMINAL_TAB } from './tabs-session'
 // active chat's shell display name), then the Kanban project-view tab when the
 // tab-strip project is bound (non-closable, kanban-adapter-interface spec
 // Behaviour 14), then one tab per open file in open order (label = file name,
-// tooltip = the path relative to the project root), and the `+ New chat`
-// control at the right end (the existing new-chat flow). File tabs close on
+// tooltip = the path relative to the project root), and the Project Settings
+// control at the right end. File tabs close on
 // middle click and carry a context menu (right click / ContextMenu key /
 // Shift+F10) copying the file's relative and absolute path.
 
@@ -37,7 +37,7 @@ interface TabStripProps {
   active: TabId
   onSelectTab: (tab: TabId) => void
   onCloseFile: (relativePath: string) => void
-  onNewChat: () => void
+  onSettings: () => void
 }
 
 /** File name = the last path segment (spec Behaviour 3). */
@@ -72,7 +72,7 @@ export function TabStrip({
   active,
   onSelectTab,
   onCloseFile,
-  onNewChat,
+  onSettings,
 }: TabStripProps): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null)
 
@@ -226,13 +226,13 @@ export function TabStrip({
       <div className="flex-1" />
       <button
         type="button"
-        // The strip's add control also keeps its appearance on hover.
-        className="no-drag flex shrink-0 items-center gap-1.5 rounded-t-md px-3 text-sm text-ink-secondary hover:text-ink transition-colors duration-fast ease-standard"
-        data-testid={TEST_ID.tabNewChat}
-        onClick={onNewChat}
+        className="no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-t-md text-ink-secondary hover:text-ink transition-colors duration-fast ease-standard"
+        aria-label="Project Settings"
+        title="Project Settings"
+        data-testid={TEST_ID.tabProjectSettings}
+        onClick={onSettings}
       >
-        <Icon.plus size={14} aria-hidden />
-        New chat
+        <Icon.settings size={16} aria-hidden />
       </button>
       {contextMenu !== null ? (
         <TabContextMenuOverlay

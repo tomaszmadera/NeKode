@@ -199,7 +199,7 @@ export function AppSettings({
                         ? TEST_ID.settingsShortcutsTab
                         : undefined
                   }
-                  className={`rounded-md border border-edge px-3 py-2 text-left text-sm focus-visible:outline focus-visible:outline-info ${activeTab === tab ? 'bg-button text-ink' : 'text-ink-secondary'}`}
+                  className={`rounded-md border border-edge px-3 py-2 text-left text-sm focus-visible:outline focus-visible:outline-info ${activeTab === tab ? 'bg-highlight text-ink' : 'text-ink-secondary'}`}
                   onClick={() => setActiveTab(tab)}
                   onKeyDown={(event) => {
                     const tabs = SETTINGS_TABS

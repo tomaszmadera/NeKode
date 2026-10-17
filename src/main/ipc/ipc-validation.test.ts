@@ -81,6 +81,7 @@ function fakeServices(): AppServices {
         Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
       ),
       fileStatuses: vi.fn(() => Promise.resolve({ 'src/app.ts': 'modified' as const })),
+      sync: vi.fn(() => Promise.resolve()),
     },
     files: {
       list: vi.fn(() => Promise.resolve([])),
@@ -401,6 +402,24 @@ describe('ipc payload validation', () => {
       return
     }
     expect(entry.parse(['proj-1'])).toEqual(['proj-1'])
+    expect(() => entry.parse([123])).toThrow(ValidationError)
+    expect(() => entry.parse([])).toThrow(/expected 1 argument/)
+    expect(() => entry.parse(['proj-1', 'extra'])).toThrow(/expected 1 argument/)
+  })
+
+  it('validates git:sync projectId argument and delegates to service', () => {
+    const services = fakeServices()
+    const channels = new Map(
+      buildValidatedChannels(services).map((entry) => [entry.channel, entry]),
+    )
+    const entry = channels.get('git:sync')
+    expect(entry).toBeDefined()
+    if (!entry) {
+      return
+    }
+    expect(entry.parse(['proj-1'])).toEqual(['proj-1'])
+    entry.invoke(entry.parse(['proj-1']))
+    expect(services.git.sync).toHaveBeenCalledWith('proj-1')
     expect(() => entry.parse([123])).toThrow(ValidationError)
     expect(() => entry.parse([])).toThrow(/expected 1 argument/)
     expect(() => entry.parse(['proj-1', 'extra'])).toThrow(/expected 1 argument/)

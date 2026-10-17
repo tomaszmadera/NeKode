@@ -1277,7 +1277,7 @@ describe('action row and settings', () => {
 
   it('keeps project settings open for inside clicks and closes on backdrop or Escape', async () => {
     await renderSelectedChat()
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     const dialog = await screen.findByRole('dialog', { name: 'Project Settings' })
     // An unsaved edit plus a mouse down inside the dialog: it stays open.
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
@@ -1292,7 +1292,7 @@ describe('action row and settings', () => {
     // The dimmed backdrop closes it, and so does Escape anywhere on the page.
     fireEvent.mouseDown(dialog.parentElement as HTMLElement)
     expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByRole('dialog', { name: 'Project Settings' })
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
@@ -1300,7 +1300,7 @@ describe('action row and settings', () => {
 
   it('project settings edits auto-send and the per-project handoff directory', async () => {
     await renderSelectedChat()
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
     // The modal opens on the Shell tab; the Configuration section lives on
     // Actions & Configuration.
@@ -1325,7 +1325,7 @@ describe('action row and settings', () => {
   it('project settings browse fills the handoff directory from the native picker', async () => {
     await renderSelectedChat()
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/.agents/handoffs')
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
@@ -1341,7 +1341,7 @@ describe('action row and settings', () => {
   it('browse stores the absolute path when the picked directory lies outside the project root', async () => {
     await renderSelectedChat()
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/elsewhere/handoffs')
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
@@ -1355,7 +1355,7 @@ describe('action row and settings', () => {
   it('browse falls back to the project root while the current value is relative', async () => {
     await renderSelectedChat()
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/handoffs')
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.change(screen.getByTestId(TEST_ID.settingsHandoffDir), {
@@ -1489,13 +1489,11 @@ describe('action row and settings', () => {
       await Promise.resolve()
     })
     const row = screen.getByTestId(TEST_ID.actionRowSlot)
-    // The right-end Actions control is icon-only, so its name comes from
-    // aria-label; the mapper prefers it over text content.
     expect(
       [...row.querySelectorAll('button')].map(
         (button) => button.getAttribute('aria-label') ?? button.textContent,
       ),
-    ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Build', 'Actions'])
+    ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Build'])
     expect(app.actions.execute).not.toHaveBeenCalled()
     const statusReadsAtIdle = vi.mocked(app.actions.status).mock.calls.length
     fireEvent.click(screen.getByRole('button', { name: 'Build' }))
@@ -1859,7 +1857,7 @@ describe('action row and settings', () => {
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
           (button) => button.getAttribute('aria-label') ?? button.textContent,
         ),
-      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Build', 'Actions']),
+      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Build']),
     )
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
     await waitFor(() =>
@@ -1867,7 +1865,7 @@ describe('action row and settings', () => {
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
           (button) => button.getAttribute('aria-label') ?? button.textContent,
         ),
-      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Test', 'Actions']),
+      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Test']),
     )
   })
 
@@ -1875,7 +1873,7 @@ describe('action row and settings', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
     const select = screen.getByTestId(TEST_ID.settingsActionIconSelect)
@@ -1904,7 +1902,7 @@ describe('action row and settings', () => {
     vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, icon: '🚀' }])
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     // The emoji renders literally on the action row, aria-hidden (excluded
     // from the accessible name); the only svg is the status glyph. The
@@ -1918,7 +1916,7 @@ describe('action row and settings', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -1940,7 +1938,7 @@ describe('action row and settings', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
     const runIn = screen.getByLabelText('Run In') as HTMLSelectElement
@@ -1976,7 +1974,7 @@ describe('action row and settings', () => {
     vi.mocked(app.actions.list).mockResolvedValue([buildAction])
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } })
@@ -1997,7 +1995,7 @@ describe('action row and settings', () => {
     vi.mocked(app.actions.list).mockResolvedValueOnce([gone, keep]).mockResolvedValue([keep])
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     // 'Gone' also names the action-bar button; the row lives in the dialog.
     const goneRow = within(screen.getByRole('dialog')).getByText('Gone').closest('li')
@@ -4016,7 +4014,7 @@ describe('kanban task resume — removing the project', () => {
     // Switch to kanban tab
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.projectKanban('p1')))
-    await screen.findByTestId(TEST_ID.kanbanBoard)
+    const kanbanBoard = await screen.findByTestId(TEST_ID.kanbanBoard)
 
     // In action bar on kanban tab, fixed action buttons are suppressed
     const actionBar = screen.getByTestId(TEST_ID.actionRowSlot)
@@ -4024,6 +4022,19 @@ describe('kanban task resume — removing the project', () => {
     expect(within(actionBar).queryByRole('button', { name: 'Resume' })).toBeNull()
     expect(within(actionBar).queryByRole('button', { name: 'Stop' })).toBeNull()
     expect(within(actionBar).queryByRole('button', { name: 'Continue' })).toBeNull()
-    expect(within(actionBar).getByRole('button', { name: 'Actions' })).toBeTruthy()
+
+    // Kanban toolbar controls are rendered on the left of action bar
+    await waitFor(() => {
+      expect(within(actionBar).getByTestId(TEST_ID.kanbanSortBy)).toBeTruthy()
+      expect(within(actionBar).getByTestId(TEST_ID.kanbanSortDirection)).toBeTruthy()
+      expect(within(actionBar).getByTestId(TEST_ID.kanbanBoardRefresh)).toBeTruthy()
+      expect(within(actionBar).getByTestId(TEST_ID.kanbanSearchInput)).toBeTruthy()
+      expect(within(actionBar).getByTestId(TEST_ID.kanbanNewTask)).toBeTruthy()
+    })
+
+    // Internal kanban header below is omitted
+    expect(within(kanbanBoard).queryByRole('heading', { name: 'Kanban' })).toBeNull()
+
+    expect(screen.getByRole('button', { name: 'Project Settings' })).toBeTruthy()
   })
 })

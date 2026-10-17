@@ -3,16 +3,18 @@
    Every color utility (bg-panel, text-ink, border-edge, ...) derives from these names. */
 @theme {
   /* Surfaces */
-  --color-app: rgb(15 18 32);
-  --color-panel: rgb(21 25 41);
-  --color-highlight: rgb(31 44 63);
+  --color-app: rgb(16 18 32);
+  --color-panel: rgb(23 25 43);
+  --color-highlight: rgb(35 44 65);
   /* Row hover: the left-nav project row carries its hover fill at rest, one
      step dimmer than selection (design doc 14, 2026-10-02). */
   --color-row-hover: rgb(28 33 53);
-  --color-button: rgb(29 35 56);
-  --color-button-hover: rgb(37 44 71);
-  --color-tab-inactive: rgb(21 25 41);
-  --color-terminal: rgb(15 18 32);
+  --color-button: rgb(35 44 65);
+  --color-button-hover: rgb(45 56 82);
+  --color-button-active: rgb(35 44 65);
+  --color-button-active-hover: rgb(45 56 82);
+  --color-tab-inactive: rgb(23 25 43);
+  --color-terminal: rgb(16 18 32);
 
   /* Text */
   --color-ink: rgb(230 232 242);
@@ -36,9 +38,9 @@
 
   /* Structure: panel borders, control outlines and hairline separators. The divider is the
      inset separator between connected buttons (design doc 5, 11.4). */
-  --color-edge: rgb(38 44 66);
-  --color-control-edge: rgb(38 44 66);
-  --color-divider: rgb(38 44 66);
+  --color-edge: rgb(46 54 77);
+  --color-control-edge: rgb(46 54 77);
+  --color-divider: rgb(46 54 77);
 
   /* Scrollbars (terminal viewport and app scroll areas). Derived values,
      design doc 4; scrollbars render only when content overflows (index.css). */

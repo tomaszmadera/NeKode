@@ -64,6 +64,19 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 /** Inline render phase of the board. */
 export type KanbanBoardPhase = 'loading' | 'ready' | 'error' | 'not-configured' | 'empty'
 
+export interface KanbanToolbarControls {
+  phase: KanbanBoardPhase
+  refreshing: boolean
+  isReviewing: boolean
+  creatingBusy: boolean
+  sortState: KanbanSortState
+  onSortByChange: (sortBy: KanbanSortBy) => void
+  onToggleSortDirection: () => void
+  onRefresh: () => void
+  onNewTask: () => void
+  onCloseReview: () => void
+}
+
 interface KanbanBoardProps {
   app: AppApi
   /** Active project; the board never renders without one. */
@@ -85,9 +98,14 @@ interface KanbanBoardProps {
   onResume?: (item: WorkItem) => void
   /** Hidden retained sessions never initiate requests. */
   active?: boolean
+  /**
+   * External toolbar control bridge (e.g. ActionBar host). When supplied,
+   * KanbanBoard omits its internal header.
+   */
+  onToolbarControls?: (controls: KanbanToolbarControls | null) => void
 }
 
-export {
+import {
   boardColumns,
   compareRefs,
   compareWorkItems,
@@ -114,18 +132,39 @@ export {
   workItemsMatch,
 } from './kanban-board-logic'
 
-import {
+export {
   boardColumns,
+  compareRefs,
+  compareWorkItems,
+  DEFAULT_KANBAN_SORT,
+  type KanbanColumn,
   type KanbanSortBy,
+  type KanbanSortDirection,
   type KanbanSortState,
+  kanbanCollapsedStorageKey,
+  kanbanSortStorageKey,
   loadCollapsedStateIds,
   loadKanbanSort,
+  PRIORITY_NONE_RANK,
+  PRIORITY_RANK,
+  parseCollapsedStateIds,
+  parseKanbanSort,
+  reconcileBoard,
   reconcileBoardResponse,
+  reconcileKeepingCreates,
   saveCollapsedStateIds,
   saveKanbanSort,
   sortWorkItems,
   upsertWorkItem,
-} from './kanban-board-logic'
+  workItemsMatch,
+}
+
+export const PRIORITY_COLOR: Record<KanbanPriority, string> = {
+  urgent: 'rgb(99, 40, 36)',
+  high: 'rgb(107, 62, 20)',
+  medium: '#f5d125',
+  low: '#63acff',
+}
 
 const PRIORITY_LABEL: Record<KanbanPriority, string> = {
   urgent: 'Urgent',
@@ -197,7 +236,10 @@ const ICON_BUTTON_CLASS =
 
 function PriorityText({ priority }: { priority: KanbanPriority | null }): React.JSX.Element {
   return (
-    <span className="inline-flex w-24 shrink-0 justify-end text-ink-secondary">
+    <span
+      className="inline-flex w-24 shrink-0 justify-end text-ink-secondary"
+      style={priority !== null ? { color: PRIORITY_COLOR[priority] } : undefined}
+    >
       <span className="sr-only">Priority </span>
       <span>{priorityLabel(priority)}</span>
     </span>
@@ -670,13 +712,20 @@ function ItemReview({
               className={`h-control ${NEW_TASK_FIELD_CLASS} disabled:opacity-50`}
               data-testid={TEST_ID.kanbanReviewPriority}
               value={prioritySelectValue(priorityValue)}
+              style={priorityValue ? { color: PRIORITY_COLOR[priorityValue] } : undefined}
               disabled={fieldsDisabled}
               onChange={(event) => {
                 onPriorityChange(priorityFromSelect(event.target.value))
               }}
             >
               {PRIORITY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
+                <option
+                  key={option.value}
+                  value={option.value}
+                  style={
+                    option.value !== 'none' ? { color: PRIORITY_COLOR[option.value] } : undefined
+                  }
+                >
                   {option.label}
                 </option>
               ))}
@@ -742,14 +791,12 @@ function HandoffNotices({
   phase,
   error,
   warnings,
-  showEmpty,
   onConfigureHandoffs,
   onRetry,
 }: {
   phase: 'not-configured' | 'error' | 'ready'
   error: string | null
   warnings: HandoffRejection[]
-  showEmpty: boolean
   onConfigureHandoffs?: () => void
   onRetry: () => void
 }): React.JSX.Element | null {
@@ -783,36 +830,28 @@ function HandoffNotices({
       </div>
     )
   }
-  return (
-    <>
-      {warnings.length > 0 ? (
-        <ul
-          className="mb-3 list-none space-y-1 text-[12.6px] text-warning"
-          data-testid={TEST_ID.kanbanHandoffWarnings}
-        >
-          {warnings.map((warning) => (
-            <li key={warning.name}>
-              {warning.name}: {warning.reason}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {showEmpty ? (
-        <p
-          className="mb-3 text-[12.6px] text-ink-secondary"
-          data-testid={TEST_ID.kanbanHandoffEmpty}
-        >
-          No handoffs match the loaded items.
-        </p>
-      ) : null}
-    </>
-  )
+  if (warnings.length > 0) {
+    return (
+      <ul
+        className="mb-3 list-none space-y-1 text-[12.6px] text-warning"
+        data-testid={TEST_ID.kanbanHandoffWarnings}
+      >
+        {warnings.map((warning) => (
+          <li key={warning.name}>
+            {warning.name}: {warning.reason}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  return null
 }
 
 interface NewTaskDraft {
   stateRef: string
   title: string
   description: string
+  priority: KanbanPriority | null
 }
 
 /** Board states in adapter `order`, matching the columns. */
@@ -897,6 +936,31 @@ function NewTaskForm({
         </select>
       </div>
       <div className="flex flex-col gap-1">
+        <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanNewTaskPriority}>
+          Priority
+        </label>
+        <select
+          id={TEST_ID.kanbanNewTaskPriority}
+          className={`h-control ${NEW_TASK_FIELD_CLASS}`}
+          data-testid={TEST_ID.kanbanNewTaskPriority}
+          value={prioritySelectValue(draft.priority)}
+          style={draft.priority ? { color: PRIORITY_COLOR[draft.priority] } : undefined}
+          onChange={(event) => {
+            onChange({ ...draft, priority: priorityFromSelect(event.target.value) })
+          }}
+        >
+          {PRIORITY_OPTIONS.map((option) => (
+            <option
+              key={option.value}
+              value={option.value}
+              style={option.value !== 'none' ? { color: PRIORITY_COLOR[option.value] } : undefined}
+            >
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
         <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanNewTaskTitle}>
           Title
         </label>
@@ -965,6 +1029,7 @@ export function KanbanBoard({
   onStart,
   onResume,
   active = true,
+  onToolbarControls,
 }: KanbanBoardProps): React.JSX.Element {
   const [phase, setPhase] = useState<KanbanBoardPhase>('loading')
   const [board, setBoard] = useState<KanbanBoardData>({ states: [], items: [] })
@@ -985,7 +1050,6 @@ export function KanbanBoard({
   const [availableIds, setAvailableIds] = useState<ReadonlySet<string>>(new Set())
   const [handoffError, setHandoffError] = useState<string | null>(null)
   const [handoffWarnings, setHandoffWarnings] = useState<HandoffRejection[]>([])
-  const [handoffEmpty, setHandoffEmpty] = useState(false)
   const [draft, setDraft] = useState<NewTaskDraft | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
   const [creatingBusy, setCreatingBusy] = useState(false)
@@ -1063,7 +1127,6 @@ export function KanbanBoard({
     setAvailableIds(new Set())
     setHandoffError(null)
     setHandoffWarnings([])
-    setHandoffEmpty(false)
   }, [projectId, closeNewTask])
 
   useEffect(() => {
@@ -1168,7 +1231,6 @@ export function KanbanBoard({
       setAvailableIds(new Set())
       setHandoffError(null)
       setHandoffWarnings([])
-      setHandoffEmpty(false)
       try {
         const result = await app.kanban.handoffAvailability({ projectId, items })
         if (requestGeneration !== handoffGeneration.current) return
@@ -1185,11 +1247,6 @@ export function KanbanBoard({
           new Set(result.items.filter((entry) => entry.available).map((entry) => entry.itemId)),
         )
         setHandoffWarnings(result.rejections)
-        setHandoffEmpty(
-          result.items.length > 0 &&
-            result.items.every((entry) => !entry.available) &&
-            result.rejections.length === 0,
-        )
         setHandoffPhase('ready')
       } catch (cause) {
         if (requestGeneration !== handoffGeneration.current) return
@@ -1283,24 +1340,27 @@ export function KanbanBoard({
   const itemResumable = (item: WorkItem): boolean =>
     handoffPhase === 'ready' && availableIds.has(item.id)
 
-  const openNewTask = (): void => {
+  const openNewTask = useCallback((): void => {
     if (draft !== null || createBusy.current) return
     setCreateError(null)
     setDraft({
       stateRef: defaultNewTaskStateRef(board.states),
       title: '',
       description: '',
+      priority: null,
     })
-  }
+  }, [draft, board.states])
 
   async function submitNewTask(): Promise<void> {
     if (draft === null || createBusy.current) return
     const title = draft.title
     const stateRef = draft.stateRef
     const description = draft.description
+    const priority = draft.priority
     if (title.trim() === '' || stateRef.trim() === '') return
     const input: KanbanCreateInput = { title, stateRef }
     if (description.trim() !== '') input.description = description
+    if (priority !== null) input.priority = priority
     const request = ++createGeneration.current
     const sourceProject = projectId
     createBusy.current = true
@@ -1406,14 +1466,14 @@ export function KanbanBoard({
     }
   }
 
-  const closeReview = (): void => {
+  const closeReview = useCallback((): void => {
     setReviewRef(null)
     setStatusChoice(null)
     setStatusError(null)
     setPriorityChoice(undefined)
     setPriorityError(null)
     setReviewCopy(null)
-  }
+  }, [])
 
   const openReview = (ref: string): void => {
     setCopyMenu(null)
@@ -1430,93 +1490,175 @@ export function KanbanBoard({
     setCopyMenu({ item, x, y })
   }
 
+  const onToolbarControlsRef = useRef(onToolbarControls)
+  onToolbarControlsRef.current = onToolbarControls
+  const lastReportedRef = useRef<{
+    active: boolean
+    phase: KanbanBoardPhase
+    refreshing: boolean
+    isReviewing: boolean
+    creatingBusy: boolean
+    sortBy: KanbanSortBy
+    direction: KanbanSortDirection
+  } | null>(null)
+
+  useEffect(() => {
+    if (!onToolbarControlsRef.current) return
+    const isReviewing = reviewItem !== null
+    if (!active) {
+      if (lastReportedRef.current !== null) {
+        lastReportedRef.current = null
+        onToolbarControlsRef.current(null)
+      }
+      return
+    }
+    const prev = lastReportedRef.current
+    if (
+      prev !== null &&
+      prev.active === active &&
+      prev.phase === phase &&
+      prev.refreshing === refreshing &&
+      prev.isReviewing === isReviewing &&
+      prev.creatingBusy === creatingBusy &&
+      prev.sortBy === sortState.sortBy &&
+      prev.direction === sortState.direction
+    ) {
+      return
+    }
+    lastReportedRef.current = {
+      active,
+      phase,
+      refreshing,
+      isReviewing,
+      creatingBusy,
+      sortBy: sortState.sortBy,
+      direction: sortState.direction,
+    }
+    onToolbarControlsRef.current({
+      phase,
+      refreshing,
+      isReviewing,
+      creatingBusy,
+      sortState,
+      onSortByChange: handleSortByChange,
+      onToggleSortDirection: toggleSortDirection,
+      onRefresh: () => {
+        void load()
+      },
+      onNewTask: openNewTask,
+      onCloseReview: closeReview,
+    })
+  }, [
+    active,
+    phase,
+    refreshing,
+    reviewItem,
+    creatingBusy,
+    sortState,
+    handleSortByChange,
+    toggleSortDirection,
+    load,
+    openNewTask,
+    closeReview,
+  ])
+
+  useEffect(() => {
+    return () => {
+      if (lastReportedRef.current !== null) {
+        lastReportedRef.current = null
+        onToolbarControlsRef.current?.(null)
+      }
+    }
+  }, [])
+
   return (
     <div
       className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 text-[12.6px]"
       data-testid={TEST_ID.kanbanBoard}
     >
-      <div className="sticky top-0 z-10 -mx-3 mb-3 flex shrink-0 items-center gap-2 bg-app px-3 py-2">
-        <h2 className="text-[14.7px] font-semibold text-ink">Kanban</h2>
-        {reviewItem !== null ? (
-          <button
-            type="button"
-            className="no-drag flex shrink-0 items-center gap-1.5 rounded-md border border-edge bg-panel px-2 py-1.5 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            data-testid={TEST_ID.kanbanReviewBack}
-            aria-label="Back"
-            title="Back"
-            onClick={closeReview}
-          >
-            <Icon.back size={12} aria-hidden />
-            Back
-          </button>
-        ) : null}
-        {refreshing && phase !== 'loading' ? (
-          <p role="status" className="min-w-0 truncate text-[12.6px] text-ink-secondary">
-            Refreshing board...
-          </p>
-        ) : null}
-        {phase === 'ready' && reviewItem === null ? (
-          <button
-            type="button"
-            className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-edge bg-panel px-2 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
-            data-testid={TEST_ID.kanbanNewTask}
-            disabled={creatingBusy}
-            onClick={openNewTask}
-          >
-            <Icon.plus size={14} aria-hidden />
-            New task
-          </button>
-        ) : null}
-        {/* Refresh sits on the right (UX-UI §63). */}
-        <div className="ml-auto flex items-center gap-1">
-          {phase === 'ready' && reviewItem === null ? (
-            <div className="mr-1 flex items-center gap-1">
-              <label htmlFor="kanban-sort-by" className="sr-only">
-                Sort by
-              </label>
-              <select
-                id="kanban-sort-by"
-                className="h-6 rounded border border-edge bg-app px-1.5 text-[12px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-                value={sortState.sortBy}
-                onChange={(event) => {
-                  handleSortByChange(event.target.value as KanbanSortBy)
-                }}
-                data-testid={TEST_ID.kanbanSortBy}
-              >
-                <option value="slug">Slug</option>
-                <option value="priority">Priority</option>
-              </select>
-              <button
-                type="button"
-                className={ICON_BUTTON_CLASS}
-                aria-label={sortState.direction === 'asc' ? 'Sort ascending' : 'Sort descending'}
-                title={sortState.direction === 'asc' ? 'Ascending' : 'Descending'}
-                data-testid={TEST_ID.kanbanSortDirection}
-                onClick={toggleSortDirection}
-              >
-                {sortState.direction === 'asc' ? (
-                  <Icon.sortAsc size={14} aria-hidden />
-                ) : (
-                  <Icon.sortDesc size={14} aria-hidden />
-                )}
-              </button>
-            </div>
+      {onToolbarControls ? null : (
+        <div className="sticky top-0 z-10 -mx-3 mb-3 flex shrink-0 items-center gap-2 bg-app px-3 py-2">
+          <h2 className="text-[14.7px] font-semibold text-ink">Kanban</h2>
+          {reviewItem !== null ? (
+            <button
+              type="button"
+              className="no-drag flex shrink-0 items-center gap-1.5 rounded-md border border-edge bg-panel px-2 py-1.5 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              data-testid={TEST_ID.kanbanReviewBack}
+              aria-label="Back"
+              title="Back"
+              onClick={closeReview}
+            >
+              <Icon.back size={12} aria-hidden />
+              Back
+            </button>
           ) : null}
-          <button
-            type="button"
-            className={ICON_BUTTON_CLASS}
-            aria-label="Refresh"
-            title="Refresh"
-            data-testid={TEST_ID.kanbanBoardRefresh}
-            disabled={refreshing}
-            onClick={() => {
-              void load()
-            }}
-          >
-            <Icon.retry size={14} aria-hidden />
-          </button>
+          {phase === 'ready' && reviewItem === null ? (
+            <button
+              type="button"
+              className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-edge bg-panel px-2 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+              data-testid={TEST_ID.kanbanNewTask}
+              disabled={creatingBusy}
+              onClick={openNewTask}
+            >
+              <Icon.plus size={14} aria-hidden />
+              New task
+            </button>
+          ) : null}
+          {/* Refresh sits on the right (UX-UI §63). */}
+          <div className="ml-auto flex items-center gap-1">
+            {phase === 'ready' && reviewItem === null ? (
+              <div className="mr-1 flex items-center gap-1">
+                <label htmlFor="kanban-sort-by" className="sr-only">
+                  Sort by
+                </label>
+                <select
+                  id="kanban-sort-by"
+                  className="h-6 rounded border border-edge bg-app px-1.5 text-[12px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                  value={sortState.sortBy}
+                  onChange={(event) => {
+                    handleSortByChange(event.target.value as KanbanSortBy)
+                  }}
+                  data-testid={TEST_ID.kanbanSortBy}
+                >
+                  <option value="slug">Slug</option>
+                  <option value="priority">Priority</option>
+                </select>
+                <button
+                  type="button"
+                  className={ICON_BUTTON_CLASS}
+                  aria-label={sortState.direction === 'asc' ? 'Sort ascending' : 'Sort descending'}
+                  title={sortState.direction === 'asc' ? 'Ascending' : 'Descending'}
+                  data-testid={TEST_ID.kanbanSortDirection}
+                  onClick={toggleSortDirection}
+                >
+                  {sortState.direction === 'asc' ? (
+                    <Icon.sortAsc size={14} aria-hidden />
+                  ) : (
+                    <Icon.sortDesc size={14} aria-hidden />
+                  )}
+                </button>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className={ICON_BUTTON_CLASS}
+              aria-label="Refresh"
+              title="Refresh"
+              data-testid={TEST_ID.kanbanBoardRefresh}
+              disabled={refreshing}
+              onClick={() => {
+                void load()
+              }}
+            >
+              <Icon.retry
+                size={14}
+                aria-hidden
+                className={refreshing ? 'animate-spin' : undefined}
+              />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
       {phase === 'ready' && reviewItem === null && draft !== null ? (
         <NewTaskForm
           states={board.states}
@@ -1537,7 +1679,6 @@ export function KanbanBoard({
           phase={handoffPhase}
           error={handoffError}
           warnings={handoffWarnings}
-          showEmpty={handoffEmpty}
           onConfigureHandoffs={onConfigureHandoffs}
           onRetry={recheckHandoff}
         />

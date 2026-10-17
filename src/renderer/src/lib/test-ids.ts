@@ -11,6 +11,8 @@ export const TEST_ID = {
   /** Non-closable Kanban project-view tab (spec kanban-adapter-interface). */
   kanbanTab: 'tab-kanban',
   tabNewChat: 'tab-new-chat',
+  /** Project Settings gear button in the tab strip. */
+  tabProjectSettings: 'tab-project-settings',
   /** Context menu of a file tab (right click / ContextMenu key / Shift+F10). */
   tabContextMenu: 'tab-context-menu',
   tabContextCopyRelative: 'tab-context-copy-relative',
@@ -24,6 +26,8 @@ export const TEST_ID = {
   statusGitBranch: 'status-git-branch',
   statusGitStatus: 'status-git-status',
   statusGitNone: 'status-git-none',
+  /** Git sync button in the status bar (NEKODE-1). */
+  statusGitSync: 'status-git-sync',
   /** Quick theme switcher in the status bar. */
   statusThemeSwitcher: 'status-theme-switcher',
   centerSurface: 'region-center-surface',
@@ -193,11 +197,14 @@ export const TEST_ID = {
   /** Sort select and direction toggle for Kanban list. */
   kanbanSortBy: 'kanban-sort-by',
   kanbanSortDirection: 'kanban-sort-direction',
+  /** Search input for Kanban tasks in toolbar. */
+  kanbanSearchInput: 'kanban-search-input',
   /** Header control that opens the New task form. */
   kanbanNewTask: 'kanban-new-task',
   /** New task form under the board header. */
   kanbanNewTaskForm: 'kanban-new-task-form',
   kanbanNewTaskStatus: 'kanban-new-task-status',
+  kanbanNewTaskPriority: 'kanban-new-task-priority',
   kanbanNewTaskTitle: 'kanban-new-task-title',
   kanbanNewTaskDescription: 'kanban-new-task-description',
   kanbanNewTaskCreate: 'kanban-new-task-create',

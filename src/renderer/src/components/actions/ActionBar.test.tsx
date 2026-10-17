@@ -31,9 +31,8 @@ const customAction: ActionControl = {
 }
 
 describe('ActionBar', () => {
-  it('renders fixed buttons and custom actions on the left by default (non-kanban)', async () => {
+  it('renders fixed buttons on the left and custom actions on the right in non-kanban mode', async () => {
     const app = makeAppMock()
-    const onSettings = vi.fn()
     render(
       <ActionBar
         app={app}
@@ -46,7 +45,6 @@ describe('ActionBar', () => {
         onPromptCommand={vi.fn()}
         onResume={vi.fn()}
         onError={vi.fn()}
-        onSettings={onSettings}
         markdownView={null}
         isKanban={false}
       />,
@@ -58,18 +56,20 @@ describe('ActionBar', () => {
     expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy()
     const customBtn = screen.getByRole('button', { name: 'Start' })
     expect(customBtn).toBeTruthy()
-    const settingsBtn = screen.getByRole('button', { name: 'Actions' })
-    expect(settingsBtn).toBeTruthy()
 
-    // In default layout, custom button is NOT inside the right ml-auto container
-    const rightContainer = settingsBtn.closest('div.ml-auto')
+    // Custom button is inside the right ml-auto container across all tabs
+    const rightContainer = customBtn.closest('div.ml-auto')
     expect(rightContainer).not.toBeNull()
-    expect(rightContainer?.contains(customBtn)).toBe(false)
   })
 
-  it('in kanban mode, hides fixed buttons and places custom actions on the right before settings', async () => {
+  it('in kanban mode, hides fixed buttons, renders kanban controls on the left, and custom actions on the right', async () => {
     const app = makeAppMock()
-    const onSettings = vi.fn()
+    const onSortByChange = vi.fn()
+    const onToggleSortDirection = vi.fn()
+    const onRefresh = vi.fn()
+    const onNewTask = vi.fn()
+    const onCloseReview = vi.fn()
+
     render(
       <ActionBar
         app={app}
@@ -82,9 +82,20 @@ describe('ActionBar', () => {
         onPromptCommand={vi.fn()}
         onResume={vi.fn()}
         onError={vi.fn()}
-        onSettings={onSettings}
         markdownView={null}
         isKanban={true}
+        kanbanControls={{
+          phase: 'ready',
+          refreshing: false,
+          isReviewing: false,
+          creatingBusy: false,
+          sortState: { sortBy: 'slug', direction: 'asc' },
+          onSortByChange,
+          onToggleSortDirection,
+          onRefresh,
+          onNewTask,
+          onCloseReview,
+        }}
       />,
     )
 
@@ -94,25 +105,46 @@ describe('ActionBar', () => {
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
 
+    // Kanban controls exist on the left
+    expect(screen.getByTestId('kanban-sort-by')).toBeTruthy()
+    expect(screen.getByTestId('kanban-sort-direction')).toBeTruthy()
+    expect(screen.getByTestId('kanban-board-refresh')).toBeTruthy()
+    expect(screen.getByTestId('kanban-search-input')).toBeTruthy()
+    expect(screen.getByTestId('kanban-new-task')).toBeTruthy()
+
+    // Search input has the expected placeholder and is disabled
+    const searchInput = screen.getByTestId('kanban-search-input') as HTMLInputElement
+    expect(searchInput.placeholder).toBe('Search... (not working yet)')
+    expect(searchInput.disabled).toBe(true)
+
+    // Interacting with controls invokes callbacks
+    fireEvent.change(screen.getByTestId('kanban-sort-by'), { target: { value: 'priority' } })
+    expect(onSortByChange).toHaveBeenCalledWith('priority')
+
+    fireEvent.click(screen.getByTestId('kanban-sort-direction'))
+    expect(onToggleSortDirection).toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('kanban-board-refresh'))
+    expect(onRefresh).toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('kanban-new-task'))
+    expect(onNewTask).toHaveBeenCalled()
+
+    // Custom button is on the right
     const customBtn = screen.getByRole('button', { name: 'Start' })
     expect(customBtn).toBeTruthy()
-    const settingsBtn = screen.getByRole('button', { name: 'Actions' })
-    expect(settingsBtn).toBeTruthy()
+    expect(customBtn.closest('div.ml-auto')).not.toBeNull()
 
-    // In kanban layout, custom button IS inside the right ml-auto container before settings
-    const rightContainer = settingsBtn.closest('div.ml-auto')
-    expect(rightContainer).not.toBeNull()
-    expect(rightContainer?.contains(customBtn)).toBe(true)
-
-    // Clicking custom button triggers execution
     fireEvent.click(customBtn)
     await waitFor(() => {
       expect(app.actions.execute).toHaveBeenCalledWith('action-1', 'p1', false)
     })
   })
 
-  it('in kanban mode with no custom actions, hides fixed buttons and renders only settings on the right', () => {
+  it('in kanban mode reviewing an item, renders the Back button', () => {
     const app = makeAppMock()
+    const onCloseReview = vi.fn()
+
     render(
       <ActionBar
         app={app}
@@ -125,16 +157,29 @@ describe('ActionBar', () => {
         onPromptCommand={vi.fn()}
         onResume={vi.fn()}
         onError={vi.fn()}
-        onSettings={vi.fn()}
         markdownView={null}
         isKanban={true}
+        kanbanControls={{
+          phase: 'ready',
+          refreshing: false,
+          isReviewing: true,
+          creatingBusy: false,
+          sortState: { sortBy: 'slug', direction: 'asc' },
+          onSortByChange: vi.fn(),
+          onToggleSortDirection: vi.fn(),
+          onRefresh: vi.fn(),
+          onNewTask: vi.fn(),
+          onCloseReview,
+        }}
       />,
     )
 
-    expect(screen.queryByRole('button', { name: 'Handoff' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Actions' })).toBeTruthy()
+    const backButton = screen.getByTestId('kanban-review-back')
+    expect(backButton).toBeTruthy()
+    fireEvent.click(backButton)
+    expect(onCloseReview).toHaveBeenCalled()
+
+    // New task button is not rendered during review
+    expect(screen.queryByTestId('kanban-new-task')).toBeNull()
   })
 })

@@ -54,6 +54,7 @@ export function createAppApiStub(): AppApi {
         .fn()
         .mockResolvedValue({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
       fileStatuses: vi.fn().mockResolvedValue({}),
+      sync: vi.fn().mockResolvedValue(undefined),
     },
     files: {
       list: vi.fn().mockResolvedValue([]),

@@ -89,6 +89,19 @@ describe('motion and interaction tokens (NEKODE-9)', () => {
     )
   })
 
+  it('defines active button background matching active chat (232c41) and brighter on hover', () => {
+    expect(defaultSource).toContain('--color-button: rgb(35 44 65);')
+    expect(defaultSource).toContain('--color-button-hover: rgb(45 56 82);')
+    expect(defaultSource).toContain('--color-button-active: rgb(35 44 65);')
+    expect(defaultSource).toContain('--color-button-active-hover: rgb(45 56 82);')
+    expect(indexSource).toMatch(
+      /\.nk-tb\.active,\s*\.nk-tb\[data-active="true"\][\s\S]*background-color:\s*var\(--color-button-active\);/,
+    )
+    expect(indexSource).toMatch(
+      /\.nk-tb\.active:not\(:disabled\):hover[\s\S]*background-color:\s*var\(--color-button-active-hover\);/,
+    )
+  })
+
   it('sets NeKode Float app color to rgb(16 18 32) and tab strip background to var(--color-app)', () => {
     const floatSource = readFileSync(join(THEMES_DIR, 'nekode-float.css'), 'utf8')
     expect(floatSource).toContain('--color-app: rgb(16 18 32);')

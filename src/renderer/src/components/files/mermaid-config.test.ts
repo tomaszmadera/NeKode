@@ -5,10 +5,10 @@ import { buildMermaidConfig } from './mermaid-config'
 // here instead of loaded from a stylesheet (spec Behaviour 4 and the
 // Business rule that the palette comes from existing semantic tokens).
 const TOKENS: Record<string, string> = {
-  '--color-panel': 'rgb(21 25 41)',
-  '--color-highlight': 'rgb(31 44 63)',
+  '--color-panel': 'rgb(23 25 43)',
+  '--color-highlight': 'rgb(35 44 65)',
   '--color-accent': 'rgb(139 147 248)',
-  '--color-edge': 'rgb(38 44 66)',
+  '--color-edge': 'rgb(46 54 77)',
   '--color-ink': 'rgb(230 232 242)',
   '--color-ink-secondary': 'rgb(163 169 194)',
 }
@@ -41,12 +41,12 @@ describe('buildMermaidConfig', () => {
       theme: 'base',
       darkMode: true,
     })
-    expect(variables.background).toBe('rgb(21 25 41)')
-    expect(variables.primaryColor).toBe('rgb(31 44 63)')
+    expect(variables.background).toBe('rgb(23 25 43)')
+    expect(variables.primaryColor).toBe('rgb(35 44 65)')
     expect(variables.primaryBorderColor).toBe('rgb(139 147 248)')
     expect(variables.textColor).toBe('rgb(230 232 242)')
     expect(variables.lineColor).toBe('rgb(163 169 194)')
-    expect(variables.clusterBorder).toBe('rgb(38 44 66)')
+    expect(variables.clusterBorder).toBe('rgb(46 54 77)')
     expect(variables.fontFamily).toBe('"Recursive Sans Casual", Inter, sans-serif')
   })
 

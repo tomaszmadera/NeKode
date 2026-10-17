@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import type React from 'react'
+import { useCallback, useState } from 'react'
 import type { AppApi, WorkItem } from '../../../../shared/ipc-contract'
-import { KanbanBoard } from './KanbanBoard'
+import { KanbanBoard, type KanbanToolbarControls } from './KanbanBoard'
 
 interface Props {
   app: AppApi
@@ -14,6 +15,74 @@ interface Props {
   onStart?: (projectId: string, item: WorkItem) => void
   /** Resume on a work item. The shell owns the handoff confirmation dialog. */
   onResume?: (projectId: string, item: WorkItem) => void
+  /** Reports toolbar controls of the active board. */
+  onToolbarControls?: (projectId: string, controls: KanbanToolbarControls | null) => void
+}
+
+function KanbanSessionItem({
+  app,
+  id,
+  version,
+  active,
+  onConfigure,
+  onConfigureHandoffs,
+  onStart,
+  onResume,
+  onToolbarControls,
+}: {
+  app: AppApi
+  id: string
+  version: number
+  active: boolean
+  onConfigure: () => void
+  onConfigureHandoffs?: (projectId: string) => void
+  onStart?: (projectId: string, item: WorkItem) => void
+  onResume?: (projectId: string, item: WorkItem) => void
+  onToolbarControls?: (projectId: string, controls: KanbanToolbarControls | null) => void
+}): React.JSX.Element {
+  const handleControls = useCallback(
+    (controls: KanbanToolbarControls | null) => {
+      onToolbarControls?.(id, controls)
+    },
+    [id, onToolbarControls],
+  )
+  const handleConfigureHandoffs = useCallback(() => {
+    onConfigureHandoffs?.(id)
+  }, [id, onConfigureHandoffs])
+  const handleStart = useCallback(
+    (item: WorkItem) => {
+      onStart?.(id, item)
+    },
+    [id, onStart],
+  )
+  const handleResume = useCallback(
+    (item: WorkItem) => {
+      onResume?.(id, item)
+    },
+    [id, onResume],
+  )
+
+  return (
+    <div
+      key={`${id}:${version}`}
+      className="flex min-h-0 flex-1 flex-col"
+      style={{ display: active ? 'flex' : 'none' }}
+    >
+      <KanbanBoard
+        key={`${id}:${version}`}
+        app={app}
+        projectId={id}
+        active={active}
+        onConfigure={onConfigure}
+        onConfigureHandoffs={
+          onConfigureHandoffs === undefined ? undefined : handleConfigureHandoffs
+        }
+        onStart={onStart === undefined ? undefined : handleStart}
+        onResume={onResume === undefined ? undefined : handleResume}
+        onToolbarControls={onToolbarControls === undefined ? undefined : handleControls}
+      />
+    </div>
+  )
 }
 
 /** Lazily visited project boards retain DOM and UI state for this App session. */
@@ -26,6 +95,7 @@ export function KanbanSessions({
   onConfigureHandoffs,
   onStart,
   onResume,
+  onToolbarControls,
 }: Props): React.JSX.Element {
   const [sessions, setSessions] = useState<Readonly<Record<string, number>>>({})
   const retained = Object.fromEntries(
@@ -46,36 +116,18 @@ export function KanbanSessions({
   return (
     <>
       {Object.entries(retained).map(([id, version]) => (
-        <div
+        <KanbanSessionItem
           key={`${id}:${version}`}
-          className="flex min-h-0 flex-1 flex-col"
-          style={{ display: activeProjectId === id ? 'flex' : 'none' }}
-        >
-          <KanbanBoard
-            key={`${id}:${version}`}
-            app={app}
-            projectId={id}
-            active={activeProjectId === id}
-            onConfigure={onConfigure}
-            onConfigureHandoffs={
-              onConfigureHandoffs === undefined ? undefined : () => onConfigureHandoffs(id)
-            }
-            onStart={
-              onStart === undefined
-                ? undefined
-                : (item) => {
-                    onStart(id, item)
-                  }
-            }
-            onResume={
-              onResume === undefined
-                ? undefined
-                : (item) => {
-                    onResume(id, item)
-                  }
-            }
-          />
-        </div>
+          app={app}
+          id={id}
+          version={version}
+          active={activeProjectId === id}
+          onConfigure={onConfigure}
+          onConfigureHandoffs={onConfigureHandoffs}
+          onStart={onStart}
+          onResume={onResume}
+          onToolbarControls={onToolbarControls}
+        />
       ))}
     </>
   )

@@ -110,7 +110,7 @@ describe('bottom auxiliary terminal panel', () => {
     pressChord({ altKey: true })
     expect(bottomRegion().style.display).toBe('none')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     expect(screen.getByRole('dialog')).toBeTruthy()
     pressChord()
     expect(bottomRegion().style.display).toBe('none')

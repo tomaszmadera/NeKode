@@ -143,6 +143,7 @@ export interface AppServices {
      * One read-only call; any failure degrades to the empty map.
      */
     fileStatuses(projectId: string): Promise<GitFileStatuses>
+    sync(projectId: string): Promise<void>
   }
   files: {
     /** One directory level of the project tree (null = project root). */

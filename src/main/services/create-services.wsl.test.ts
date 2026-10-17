@@ -72,7 +72,18 @@ describe('WSL service wiring', () => {
         expect(createNodePty).toHaveBeenCalledExactlyOnceWith(
           expect.objectContaining({
             file: 'wsl.exe',
-            args: ['--distribution', 'Ubuntu', '--cd', '/home/user/Project', '--exec', '/bin/fish'],
+            args: [
+              '--distribution',
+              'Ubuntu',
+              '--cd',
+              '/home/user/Project',
+              '--exec',
+              'bash',
+              '-lc',
+              'exec "$@"',
+              'bash',
+              '/bin/fish',
+            ],
           }),
         )
         expect(runWsl).toHaveBeenCalledWith('Ubuntu', expect.arrayContaining(['/bin/fish']))

@@ -29,6 +29,7 @@ import {
 import { ProjectFilesPanel } from './components/files/ProjectFilesPanel'
 import { applyDirectoryRefresh } from './components/files/tree-refresh'
 import type { HeldLaunch } from './components/kanban/held-launch'
+import type { KanbanToolbarControls } from './components/kanban/KanbanBoard'
 import { KanbanSessions } from './components/kanban/KanbanSessions'
 import { TaskResumeModal } from './components/kanban/TaskResumeModal'
 import { TaskStartModal } from './components/kanban/TaskStartModal'
@@ -452,6 +453,33 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       return next
     })
   }, [])
+  const [kanbanToolbarByProject, setKanbanToolbarByProject] = useState<
+    Record<string, KanbanToolbarControls | null>
+  >({})
+  const handleKanbanToolbarControls = useCallback(
+    (projectId: string, controls: KanbanToolbarControls | null) => {
+      setKanbanToolbarByProject((previous) => {
+        if (controls === null) {
+          if (previous[projectId] === null || !(projectId in previous)) return previous
+          return { ...previous, [projectId]: null }
+        }
+        const existing = previous[projectId]
+        if (
+          existing &&
+          existing.phase === controls.phase &&
+          existing.refreshing === controls.refreshing &&
+          existing.isReviewing === controls.isReviewing &&
+          existing.creatingBusy === controls.creatingBusy &&
+          existing.sortState.sortBy === controls.sortState.sortBy &&
+          existing.sortState.direction === controls.sortState.direction
+        ) {
+          return previous
+        }
+        return { ...previous, [projectId]: controls }
+      })
+    },
+    [],
+  )
   // Projects removed in this session: pending chat loads for them are stale.
   const removedProjectIdsRef = useRef<Set<string>>(new Set())
   // Chats closed by explicit close flows in this session: fetched lists can
@@ -1856,19 +1884,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [adoptLaunchedChat, app],
   )
 
-  // `+ New chat` (spec Behaviour 8): the existing new-chat flow unchanged —
-  // immediate creation in the active project, shell display name, chat
-  // selected and its terminal shown.
-  const handleTabNewChat = useCallback((): void => {
-    if (tabProjectId === null) {
-      // The control is always present (Behaviour 8); with no active project
-      // the flow cannot run, so the dead click is noticed, not swallowed.
-      setNotice('Select or add a project before starting a new chat.')
-      return
-    }
-    void handleCreateChat(tabProjectId)
-  }, [handleCreateChat, tabProjectId])
-
   // Terminal-exit close flow (spec Behaviour 11): remove the chat from the
   // tree and the database, then continue on the next chat of the same project
   // in tree order (the previous one when the closed chat was last). A project
@@ -2486,7 +2501,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             active={activeTab}
             onSelectTab={handleSelectTab}
             onCloseFile={handleCloseFileTab}
-            onNewChat={handleTabNewChat}
+            onSettings={() => {
+              setActionSettingsProjectId(tabProjectId)
+              setActionSettingsTab('shell')
+              setActionSettingsOpen(true)
+            }}
           />
           {/* Floating theme: the content below the tab strip sits in a
               rounded frame (user decision 2026-10-04) that keeps the tabs
@@ -2509,6 +2528,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               activeChatId={activeChat?.id ?? null}
               chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
               isKanban={activeTab.kind === 'kanban'}
+              kanbanControls={
+                tabProjectId !== null && activeTab.kind === 'kanban'
+                  ? (kanbanToolbarByProject[tabProjectId] ?? null)
+                  : null
+              }
               onNewTerminal={handleNewTerminalAction}
               onBottomTerminal={handleBottomTerminalAction}
               onPromptCommand={handlePromptCommand}
@@ -2518,11 +2542,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 }
               }}
               onError={setNotice}
-              onSettings={() => {
-                setActionSettingsProjectId(tabProjectId)
-                setActionSettingsTab('shell')
-                setActionSettingsOpen(true)
-              }}
               markdownView={
                 activeMarkdownFile === null
                   ? null
@@ -2637,6 +2656,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 onConfigureHandoffs={handleConfigureProjectHandoffs}
                 onStart={handleStartTask}
                 onResume={handleResumeTask}
+                onToolbarControls={handleKanbanToolbarControls}
               />
             </main>
           </div>
@@ -2813,6 +2833,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         theme={themeState.theme}
         quickThemeSwitch={quickThemeSwitchState.enabled}
         onThemeChange={handleThemeChange}
+        onError={setNotice}
       />
     </div>
   )

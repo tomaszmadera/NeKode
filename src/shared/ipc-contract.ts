@@ -331,6 +331,7 @@ export const IPC_CHANNEL = {
   terminalsExit: 'terminals:exit',
   gitStatus: 'git:status',
   gitFileStatuses: 'git:fileStatuses',
+  gitSync: 'git:sync',
   filesList: 'files:list',
   filesRead: 'files:read',
   filesOpenExternal: 'files:openExternal',
@@ -783,6 +784,7 @@ export interface AppApi {
      * degrades to the empty map; the caller never sees an error state.
      */
     fileStatuses(projectId: string): Promise<GitFileStatuses>
+    sync(projectId: string): Promise<void>
   }
   files: {
     /**

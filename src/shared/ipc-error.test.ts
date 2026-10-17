@@ -64,6 +64,18 @@ describe('typed error transport', () => {
     }
   })
 
+  it('transports git_error typed code through the IPC bridge', () => {
+    const transport = toTransportError(
+      new AppError('git_error', 'git pull failed: merge conflict'),
+      'git:sync',
+    )
+    const parsed = parseAppErrorPayload(transport)
+    expect(parsed?.code).toBe('git_error')
+    expect(parsed?.kind).toBe('git_error')
+    expect(parsed?.message).toBe('git pull failed: merge conflict')
+    expect(parsed?.channel).toBe('git:sync')
+  })
+
   it('parses backwards-compatible payloads with only code or only kind', () => {
     const codeOnly = parseAppErrorPayload({
       nekodeAppError: true,

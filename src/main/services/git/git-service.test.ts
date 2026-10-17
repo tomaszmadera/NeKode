@@ -380,3 +380,109 @@ describe('GitService project boundary (projectId resolution)', () => {
     warnSpy.mockRestore()
   })
 })
+
+describe('GitService.sync (NEKODE-1)', () => {
+  const projects = {
+    get: (id: string) => (id === 'p1' ? { path: 'D:/projects/repo' } : null),
+  }
+
+  it('runs git pull, git push, and git push --tags in sequence on success', async () => {
+    const executed: Array<{ args: string[]; cwd: string }> = []
+    const runner: GitStatusRunner = vi.fn().mockImplementation((args, cwd) => {
+      executed.push({ args, cwd })
+      return Promise.resolve({ stdout: 'ok', stderr: '', exitCode: 0 })
+    })
+
+    const service = new GitService({ run: runner, projects })
+    await service.sync('p1')
+
+    expect(executed).toEqual([
+      { args: ['pull'], cwd: 'D:/projects/repo' },
+      { args: ['push'], cwd: 'D:/projects/repo' },
+      { args: ['push', '--tags'], cwd: 'D:/projects/repo' },
+    ])
+  })
+
+  it('stops immediately when git pull fails and does not execute push or push --tags', async () => {
+    const executed: string[][] = []
+    const runner: GitStatusRunner = vi.fn().mockImplementation((args) => {
+      executed.push(args)
+      if (args[0] === 'pull') {
+        return Promise.resolve({
+          stdout: '',
+          stderr: 'fatal: could not read Username',
+          exitCode: 1,
+        })
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 })
+    })
+
+    const service = new GitService({ run: runner, projects })
+    await expect(service.sync('p1')).rejects.toThrow(
+      /git pull failed: fatal: could not read Username/,
+    )
+    expect(executed).toEqual([['pull']])
+  })
+
+  it('stops immediately when git push fails and does not execute push --tags', async () => {
+    const executed: string[][] = []
+    const runner: GitStatusRunner = vi.fn().mockImplementation((args) => {
+      executed.push(args)
+      if (args[0] === 'push' && args.length === 1) {
+        return Promise.resolve({
+          stdout: '',
+          stderr: 'error: failed to push some refs',
+          exitCode: 1,
+        })
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 })
+    })
+
+    const service = new GitService({ run: runner, projects })
+    await expect(service.sync('p1')).rejects.toThrow(
+      /git push failed: error: failed to push some refs/,
+    )
+    expect(executed).toEqual([['pull'], ['push']])
+  })
+
+  it('throws AppError with code git_error when git push --tags fails', async () => {
+    const runner: GitStatusRunner = vi.fn().mockImplementation((args) => {
+      if (args[0] === 'push' && args[1] === '--tags') {
+        return Promise.resolve({ stdout: '', stderr: 'error: tag push rejected', exitCode: 1 })
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 })
+    })
+
+    const service = new GitService({ run: runner, projects })
+    await expect(service.sync('p1')).rejects.toMatchObject({
+      code: 'git_error',
+      channel: 'git:sync',
+      message: expect.stringContaining('git push --tags failed: error: tag push rejected'),
+    })
+  })
+
+  it('dispatches sync to runner with WSL UNC path when project is in WSL', async () => {
+    const executed: Array<{ args: string[]; cwd: string }> = []
+    const runner: GitStatusRunner = vi.fn().mockImplementation((args, cwd) => {
+      executed.push({ args, cwd })
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 })
+    })
+    const wslProjects = {
+      get: (id: string) => (id === 'p-wsl' ? { path: '\\\\wsl$\\Ubuntu\\home\\user\\repo' } : null),
+    }
+    const service = new GitService({ run: runner, projects: wslProjects })
+    await service.sync('p-wsl')
+    expect(executed).toEqual([
+      { args: ['pull'], cwd: '\\\\wsl$\\Ubuntu\\home\\user\\repo' },
+      { args: ['push'], cwd: '\\\\wsl$\\Ubuntu\\home\\user\\repo' },
+      { args: ['push', '--tags'], cwd: '\\\\wsl$\\Ubuntu\\home\\user\\repo' },
+    ])
+  })
+
+  it('rejects unknown projectId with not_found and does not run any commands', async () => {
+    const runner = vi.fn()
+    const service = new GitService({ run: runner, projects })
+    await expect(service.sync('unknown')).rejects.toThrow(/Project not found/)
+    expect(runner).not.toHaveBeenCalled()
+  })
+})

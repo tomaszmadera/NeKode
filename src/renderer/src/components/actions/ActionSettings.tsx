@@ -353,7 +353,7 @@ export function ActionSettings({
                   aria-controls={`settings-panel-${tab}`}
                   aria-selected={activeTab === tab}
                   data-testid={TAB_TEST_ID[tab]}
-                  className={`rounded-md border border-edge px-3 py-2 text-left text-sm ${activeTab === tab ? 'bg-button text-ink' : 'text-ink-secondary'}`}
+                  className={`rounded-md border border-edge px-3 py-2 text-left text-sm ${activeTab === tab ? 'bg-highlight text-ink' : 'text-ink-secondary'}`}
                   onClick={() => setActiveTab(tab)}
                 >
                   {TAB_LABEL[tab]}

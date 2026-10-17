@@ -10,7 +10,12 @@ import type {
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
 import { kanbanBoardFixture as fixture, kanbanWorkItem as item } from '../../test/kanban-fixtures'
-import { KanbanBoard, kanbanCollapsedStorageKey, kanbanSortStorageKey } from './KanbanBoard'
+import {
+  KanbanBoard,
+  kanbanCollapsedStorageKey,
+  kanbanSortStorageKey,
+  PRIORITY_COLOR,
+} from './KanbanBoard'
 import { KanbanSessions } from './KanbanSessions'
 
 // Read-only board surface (spec kanban-adapter-interface Behaviour 14, AC14):
@@ -133,7 +138,10 @@ describe('cached background refresh', () => {
     ui.rerender(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active={false} />)
     ui.rerender(<KanbanBoard app={app} projectId="p1" onConfigure={onConfigure} active />)
     expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBe(unchanged)
-    expect(screen.getByRole('status').textContent).toBe('Refreshing board...')
+    const refreshBtn = screen.getByTestId(TEST_ID.kanbanBoardRefresh) as HTMLButtonElement
+    expect(refreshBtn.disabled).toBe(true)
+    expect(refreshBtn.firstElementChild?.classList.contains('animate-spin')).toBe(true)
+    expect(screen.queryByRole('status')).toBeNull()
     expect(root.scrollTop).toBe(180)
     expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
@@ -523,6 +531,40 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     expect(within(blank).getByTestId(testIdFor.kanbanItemTitle('NK-2')).textContent).toBe(
       'Second task',
     )
+  })
+
+  it('applies priority-specific font colors on the board item rows', async () => {
+    const boardWithPriorities: KanbanBoardData = {
+      states: [{ id: 's1', name: 'Todo', group: 'unstarted', order: 1 }],
+      items: [
+        { ...item('NK-1', 'Low item', 's1'), priority: 'low' },
+        { ...item('NK-2', 'Medium item', 's1'), priority: 'medium' },
+        { ...item('NK-3', 'High item', 's1'), priority: 'high' },
+        { ...item('NK-4', 'Urgent item', 's1'), priority: 'urgent' },
+        { ...item('NK-5', 'None item', 's1'), priority: null },
+      ],
+    }
+    const listBoard = vi.fn().mockResolvedValue(boardWithPriorities)
+    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+    await screen.findByTestId(TEST_ID.kanbanList)
+
+    const lowRow = screen.getByTestId(testIdFor.kanbanItem('NK-1'))
+    const medRow = screen.getByTestId(testIdFor.kanbanItem('NK-2'))
+    const highRow = screen.getByTestId(testIdFor.kanbanItem('NK-3'))
+    const urgentRow = screen.getByTestId(testIdFor.kanbanItem('NK-4'))
+    const noneRow = screen.getByTestId(testIdFor.kanbanItem('NK-5'))
+
+    expect(within(lowRow).getByText('Low').parentElement?.style.color).toBe('rgb(99, 172, 255)')
+    expect(within(medRow).getByText('Medium').parentElement?.style.color).toBe('rgb(245, 209, 37)')
+    expect(within(highRow).getByText('High').parentElement?.style.color).toBe(PRIORITY_COLOR.high)
+    expect(within(urgentRow).getByText('Urgent').parentElement?.style.color).toBe(
+      PRIORITY_COLOR.urgent,
+    )
+    expect(within(noneRow).getByText('None').parentElement?.style.color).toBe('')
+    expect(PRIORITY_COLOR.low).toBe('#63acff')
+    expect(PRIORITY_COLOR.medium).toBe('#f5d125')
+    expect(PRIORITY_COLOR.high).toBe('rgb(107, 62, 20)')
+    expect(PRIORITY_COLOR.urgent).toBe('rgb(99, 40, 36)')
   })
 
   it('opens a review with the full title and the description, then Back returns to the list', async () => {
@@ -1184,8 +1226,8 @@ describe('kanban handoff availability', () => {
     fireEvent.click(screen.getByTestId(testIdFor.kanbanItemResume('NK-1')))
     expect(onResume).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
-    await screen.findByTestId(TEST_ID.kanbanHandoffEmpty)
-    expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull())
+    expect(screen.queryByTestId(TEST_ID.kanbanHandoffEmpty)).toBeNull()
     expect(start.disabled).toBe(false)
     expect(start.className).toContain('hover:underline')
     fireEvent.click(start)
@@ -1269,7 +1311,8 @@ describe('kanban handoff availability', () => {
       }),
     )
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
-    await screen.findByTestId(TEST_ID.kanbanHandoffEmpty)
+    await screen.findByTestId(TEST_ID.kanbanList)
+    expect(screen.queryByTestId(TEST_ID.kanbanHandoffEmpty)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanHandoffError)).toBeNull()
     expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull()
     expect(screen.getByTestId(testIdFor.kanbanItemStart('NK-1'))).toBeTruthy()
@@ -1377,7 +1420,10 @@ describe('kanban new task form', () => {
     return screen.getByRole('form', { name: 'New task' })
   }
 
-  function field(form: HTMLElement, name: 'Status' | 'Title' | 'Description'): HTMLElement {
+  function field(
+    form: HTMLElement,
+    name: 'Status' | 'Priority' | 'Title' | 'Description',
+  ): HTMLElement {
     return within(form).getByLabelText(name)
   }
 
@@ -1429,12 +1475,22 @@ describe('kanban new task form', () => {
       (headerBar?.compareDocumentPosition(form) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(field(form, 'Status')).toBeTruthy()
+    expect(field(form, 'Priority')).toBeTruthy()
     expect(field(form, 'Title')).toBeTruthy()
     expect(field(form, 'Description')).toBeTruthy()
     expect(within(form).getByRole('button', { name: /^Create$/ })).toBeTruthy()
     expect(within(form).getByRole('button', { name: /^Cancel$/ })).toBeTruthy()
     expect(within(form).queryByLabelText('Column')).toBeNull()
-    expect(within(form).queryByLabelText('Priority')).toBeNull()
+
+    const priority = field(form, 'Priority') as HTMLSelectElement
+    expect(priority.value).toBe('none')
+    expect(Array.from(priority.options).map((option) => option.value)).toEqual([
+      'urgent',
+      'high',
+      'medium',
+      'low',
+      'none',
+    ])
 
     const status = field(form, 'Status') as HTMLSelectElement
     expect(Array.from(status.options).map((option) => option.value)).toEqual([
@@ -1532,13 +1588,15 @@ describe('kanban new task form', () => {
     const again = await openForm()
     expect((field(again, 'Title') as HTMLInputElement).value).toBe('')
     expect((field(again, 'Description') as HTMLTextAreaElement).value).toBe('')
+    expect((field(again, 'Priority') as HTMLSelectElement).value).toBe('none')
     fireEvent.change(field(again, 'Title'), { target: { value: 'Another' } })
     fireEvent.change(field(again, 'Description'), { target: { value: ' Notes ' } })
+    fireEvent.change(field(again, 'Priority'), { target: { value: 'high' } })
     fireEvent.click(within(again).getByRole('button', { name: /^Create$/ }))
     await waitFor(() => expect(screen.getByTestId(testIdFor.kanbanItem('NK-41'))).toBeTruthy())
     expect(createItem.mock.calls[1]).toEqual([
       'p1',
-      { title: 'Another', stateRef: 'todo', description: ' Notes ' },
+      { title: 'Another', stateRef: 'todo', description: ' Notes ', priority: 'high' },
     ])
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
     expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
@@ -1579,6 +1637,7 @@ describe('kanban new task form', () => {
     fireEvent.change(field(form, 'Title'), { target: { value: 'Draft title' } })
     fireEvent.change(field(form, 'Description'), { target: { value: 'Draft body' } })
     fireEvent.change(field(form, 'Status'), { target: { value: 'Done' } })
+    fireEvent.change(field(form, 'Priority'), { target: { value: 'urgent' } })
     fireEvent.click(within(form).getByRole('button', { name: /^Cancel$/ }))
     expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
 
@@ -1586,6 +1645,7 @@ describe('kanban new task form', () => {
     expect((field(reopened, 'Title') as HTMLInputElement).value).toBe('')
     expect((field(reopened, 'Description') as HTMLTextAreaElement).value).toBe('')
     expect((field(reopened, 'Status') as HTMLSelectElement).value).toBe('todo')
+    expect((field(reopened, 'Priority') as HTMLSelectElement).value).toBe('none')
 
     fireEvent.change(field(reopened, 'Title'), { target: { value: 'Draft title' } })
     fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
