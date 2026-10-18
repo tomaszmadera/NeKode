@@ -7,6 +7,7 @@
 import {
   ArrowDown,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   Bot,
   Bug,
@@ -37,6 +38,7 @@ import {
   LoaderCircle,
   type LucideIcon,
   MessageSquare,
+  MessageSquarePlus,
   Mic,
   Minus,
   Package,
@@ -61,10 +63,12 @@ import {
 
 export const Icon = {
   agent: Bot,
+  arrowRight: ArrowRight,
   back: ArrowLeft,
   board: LayoutGrid,
   build: Hammer,
   chat: MessageSquare,
+  newChat: MessageSquarePlus,
   check: CircleCheck,
   checkSmall: Check,
   chevronDown: ChevronDown,

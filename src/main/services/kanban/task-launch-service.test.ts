@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,6 +23,8 @@ import {
   TerminalService,
 } from '../terminal/terminal-service'
 import { buildResumePrompt, buildStartPrompt, TaskLaunchService } from './task-launch-service'
+
+vi.mock('node:child_process', () => ({ execFileSync: vi.fn(() => 'usable') }))
 
 const openDatabases: Array<{ close(): void }> = []
 const projectPath = join(tmpdir(), 'nekode-task-launch', 'demo-project')
@@ -125,7 +128,12 @@ function resumeInput(overrides: Partial<KanbanResumeLaunchInput> = {}): KanbanRe
 }
 
 function harness(
-  options: { handoff?: string | null; failSpawn?: boolean; globalProfiles?: boolean } = {},
+  options: {
+    handoff?: string | null
+    failSpawn?: boolean
+    globalProfiles?: boolean
+    path?: string
+  } = {},
 ) {
   const db = openDatabase(':memory:')
   openDatabases.push(db)
@@ -134,7 +142,7 @@ function harness(
     db,
     fs: { stat: () => ({ isDirectory: () => true }) },
   })
-  const project = projects.add(projectPath)
+  const project = projects.add(options.path ?? projectPath)
   const chats = new ChatService({ db, chatName: () => 'PowerShell' })
   const spawns: PtySpawnOptions[] = []
   const terminals = new TerminalService({
@@ -205,6 +213,39 @@ function harness(
 }
 
 describe('project opt-in at Kanban launch', () => {
+  it.each(['start', 'resume'] as const)(
+    'reports a missing WSL CLI before creating a %s chat',
+    async (mode) => {
+      const h = harness({ globalProfiles: true, path: '\\\\wsl$\\Ubuntu\\tmp' })
+      const selected = h.globalProfiles.put({
+        id: null,
+        name: 'Missing',
+        command: 'missing-cli "{prompt}"',
+      }).profiles[0]
+      h.globalProfiles.selectionSet(h.project.id, { selectedIds: [selected.id], defaultId: null })
+      h.setScan(() =>
+        readyScan([
+          {
+            name: 'nekode-28-notes.md',
+            path: 'handoffs/nekode-28-notes.md',
+            modifiedAt: STAMP,
+            matchKind: 'filename',
+          },
+        ]),
+      )
+      vi.mocked(execFileSync).mockReturnValueOnce('')
+      const fields = { projectId: h.project.id, profileId: selected.id }
+      await expect(
+        h.service.launch(mode === 'start' ? input(fields) : resumeInput(fields)),
+      ).rejects.toMatchObject({
+        code: 'not_found',
+        message: expect.stringMatching(/missing-cli.*Ubuntu/),
+      })
+      expect(h.chats.list(h.project.id)).toEqual([])
+      expect(h.spawns).toEqual([])
+    },
+  )
+
   it.each([
     { executable: 'hermes', flag: '-q', mode: 'start' },
     { executable: 'hermes', flag: '-q', mode: 'resume' },

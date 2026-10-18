@@ -955,19 +955,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [],
   )
 
-  // The tab strip and the main surface belong to one project at a time: the
-  // Files-mode project while its tree is on screen, else the selected one.
-  // The active project is this tab-strip project, end to end: the terminal
-  // tab, the terminal surface and the status bar follow it. The chat
-  // selection points elsewhere only in the reachable Files-mode divergence —
-  // a split between two projects (Files action on an unselected project row
-  // while a chat selection is active; Behaviour 19 unchanged). There the
-  // surface shows the Behaviour 2 empty state whose `Start new chat` creates
-  // in the tab-strip project (see handleStartNewChat). With no selection at
-  // all there is no split: the neutral surfaces stay as today.
-  const tabProjectId = filesProjectId ?? selectedProjectId
+  // The tab strip and the main surface belong to the selected project.
+  // Entering Project Files in the left panel is an independent sidebar
+  // navigation that does not steal or diverge the center surface from the
+  // active project. Opening a file from the tree activates that project.
+  const tabProjectId = selectedProjectId
   tabProjectIdRef.current = tabProjectId
-  const chatSurfaceDiverged = selectedProjectId !== null && selectedProjectId !== tabProjectId
 
   const handleSelectTab = useCallback(
     (tab: TabId): void => {
@@ -1590,7 +1583,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   }, [app, filesProjectId, filesSessions, projects, updateFilesSession])
 
   // Clicking a file in the tree opens its tab, or focuses it when already
-  // open — a file never has two tabs (spec Behaviour 3).
+  // open — a file never has two tabs (spec Behaviour 3). Opening a file from
+  // an unselected project selects that project.
   const handleFilesSelectFile = useCallback(
     (relativePath: string): void => {
       if (filesProjectId === null) {
@@ -1599,8 +1593,24 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       const projectId = filesProjectId
       updateFilesSession(projectId, (session) => ({ ...session, selectedPath: relativePath }))
       updateTabsSession(projectId, (session) => openFileTab(session, relativePath))
+      if (selectedProjectId !== projectId) {
+        setSelectedProjectId(projectId)
+        setSelectedChatId(null)
+        setExpandedProjectIds((previous) => new Set(previous).add(projectId))
+        persistSelection(projectId, null)
+        void loadChats(projectId).catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to load chats.'))
+        })
+      }
     },
-    [filesProjectId, updateFilesSession, updateTabsSession],
+    [
+      filesProjectId,
+      loadChats,
+      persistSelection,
+      selectedProjectId,
+      updateFilesSession,
+      updateTabsSession,
+    ],
   )
 
   const handleFilesShowInFolder = useCallback(
@@ -2326,16 +2336,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   ) {
     updateTabsSession(tabProjectId, (session) => activateTab(session, TERMINAL_TAB))
   }
-  // The terminal-chat tab shows the active chat's name only while the active
-  // chat belongs to the tab-strip project (Behaviour 2); in the Files-mode
-  // divergence the strip never labels itself with another project's chat.
+  // The terminal-chat tab shows the active chat's name when the active project
+  // has a chat selected.
   const activeChat =
-    selectedProject !== null && selectedProjectId === tabProjectId
+    selectedProject !== null
       ? (chatsByProject[selectedProject.id]?.find((chat) => chat.id === selectedChatId) ?? null)
       : null
-  // The status bar context is the tab-strip project (AC9). The former
-  // `?? selectedProject` fallback is dead: tabProjectId always covers
-  // selectedProjectId (filesProjectId ?? selectedProjectId).
   const statusProject = tabProject
 
   // Floating shell theme (NeKode Float): the title bar strip stays (without
@@ -2617,12 +2623,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                     selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
                   }
                   selectedProjectId={selectedProjectId}
-                  selectedChatId={chatSurfaceDiverged ? null : selectedChatId}
+                  selectedChatId={selectedChatId}
                   selectionNonce={selectionNonce}
                   attention={chatAttention}
                   onAttentionChange={setChatAttention}
                   attentionSettings={attentionSettings}
-                  forceStartNewChat={chatSurfaceDiverged}
                   terminalCwds={terminalCwds}
                   terminalFontSize={terminalFontSize}
                   terminalFontFamilies={terminalFontState.families}

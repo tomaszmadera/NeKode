@@ -35,9 +35,11 @@
   --color-error: rgb(151 65 80);
   --color-info: rgb(139 147 248);
   /* Left-navigation accents (design doc 14): Projects section header light
-     blue, project titles almost white, chat names pastel blue (2026-10-01). */
-  --color-project-title: rgb(230 232 242);
-  --color-projects-header: rgb(123 130 160);
+     blue, project titles #F2F3F8 (active/expanded) and dimmed gray-blue #C3C7D4
+     (collapsed), chat names pastel blue. */
+  --color-project-title: rgb(242 243 248);
+  --color-project-title-collapsed: rgb(195 199 212);
+  --color-projects-header: rgb(139 144 167);
   --color-chat-title: rgb(163 169 194);
   /* Selection accent: narrow left stripe on the selected project's container
      (NEKODE-3, design doc 14). */

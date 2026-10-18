@@ -12,6 +12,7 @@ import type {
 import { AGENT_PROMPT_PLACEHOLDER } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import type { ShellSpec } from '../terminal/terminal-service'
+import { validateWslExecutable } from '../terminal/wsl'
 
 // Task launch (kanban task launch amendment). Main rechecks the project, the
 // adapter binding (via getItem), the profile, and the live item, then inserts
@@ -329,13 +330,17 @@ export class TaskLaunchService {
     if (profile === undefined) {
       throw new AppError('not_found', 'The selected agent profile is no longer available.', CHANNEL)
     }
+    const shell = {
+      file: profile.executable,
+      args: substitutePrompt(profile.args, prompt),
+    }
+    // A missing Linux CLI must reject before a persisted chat exists. The
+    // terminal checks again at spawn; PTY creation alone only proves wsl.exe ran.
+    validateWslExecutable(current.path, shell)
     return {
       projectPath: current.path,
       profile,
-      shell: {
-        file: profile.executable,
-        args: substitutePrompt(profile.args, prompt),
-      },
+      shell,
     }
   }
 

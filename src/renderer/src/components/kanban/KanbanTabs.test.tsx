@@ -100,43 +100,15 @@ describe('kanban nav tile (spec Behaviour 14, AC14)', () => {
     cleanup()
   })
 
-  it('renders only for a bound project, as the first element under the project name row', async () => {
+  it('does not render the retired nav tile under the project name row', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     mockBindings(app, ['p1'])
 
     render(<App app={app} />)
-    // Expand the bound project; the tile proves the binding set has loaded.
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const tile = await screen.findByTestId(testIdFor.projectKanban('p1'))
-
-    // …and expand the unbound project (both stay open).
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
-
-    // Bound project: tile present. Unbound project: none.
-    expect(screen.getByTestId(testIdFor.projectKanban('p1'))).toBeTruthy()
-    expect(screen.queryByTestId(testIdFor.projectKanban('p2'))).toBeNull()
-
-    // Position discriminator: the tile is the project row's immediate next
-    // sibling (the first element of the expanded content), above the chat list.
-    const row = screen.getByTestId(testIdFor.projectRow('p1'))
-    expect(row.nextElementSibling?.contains(tile)).toBe(true)
-    const chats = screen.getByTestId(testIdFor.projectChats('p1'))
-    expect(tile.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const chatRow = screen.getByTestId(testIdFor.chatRow('t1'))
-    expect(tile.compareDocumentPosition(chatRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it('hides the tile for a collapsed bound project (expanded content only)', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockBindings(app, ['p1'])
-
-    render(<App app={app} />)
-    const row = await screen.findByTestId(testIdFor.projectSelect('p1'))
-    // Collapsed: no expanded content at all.
     expect(screen.queryByTestId(testIdFor.projectKanban('p1'))).toBeNull()
-    fireEvent.click(row)
-    expect(await screen.findByTestId(testIdFor.projectKanban('p1'))).toBeTruthy()
+    expect(screen.queryByTestId(testIdFor.projectKanban('p2'))).toBeNull()
   })
 })
 
@@ -204,7 +176,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     cleanup()
   })
 
-  it('selecting the nav tile activates the Kanban tab and loads the board once (lazy)', async () => {
+  it('selecting the Kanban tab loads the board once (lazy)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
@@ -212,12 +184,12 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const tile = await screen.findByTestId(testIdFor.projectKanban('p1'))
-    // Lazy: nothing loaded before the tile is selected.
+    const tab = await screen.findByTestId(TEST_ID.kanbanTab)
+    // Lazy: nothing loaded before the tab is selected.
     expect(app.kanban.listBoard).not.toHaveBeenCalled()
     expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
 
-    fireEvent.click(tile)
+    fireEvent.click(tab)
     // The default view is the list; the load fires once either way.
     await screen.findByTestId(TEST_ID.kanbanList)
     expect(app.kanban.listBoard).toHaveBeenCalledTimes(1)
@@ -271,7 +243,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     expect(await screen.findByTestId(TEST_ID.settingsKanbanPanel)).toBeTruthy()
   })
 
-  it('keeps a chat selected in the tile project, so the chat tab still shows it', async () => {
+  it('keeps a chat selected in the active project, so the chat tab still shows it', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
@@ -287,9 +259,8 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     )
     expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
 
-    // The nav tile is an equivalent entry point (Behaviour 14): opening the
-    // board of the already-selected project must NOT discard its chat selection.
-    fireEvent.click(await screen.findByTestId(testIdFor.projectKanban('p1')))
+    // Opening the board of the already-selected project must NOT discard its chat selection.
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     await screen.findByTestId(TEST_ID.kanbanBoard)
     expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
 

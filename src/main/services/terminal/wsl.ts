@@ -97,6 +97,50 @@ export function validatedWslProjectPath(distribution: string, linuxPath: string)
   return path
 }
 
+/** Check the project's Linux PATH before a launch is reported as delivered. */
+export function validateWslExecutable(path: string, shell: ShellSpec): void {
+  const location = parseWslPath(path)
+  if (location === null || (shell.file === 'wsl.exe' && shell.args.length === 0)) return
+  assertLinuxExecutable(shell.file)
+  let result: string
+  try {
+    result = runWsl(location.distribution, [
+      'bash',
+      '-lc',
+      'cd -- "$1" && if executable=$(type -P -- "$2") && test -f "$executable" && test -x "$executable"; then printf usable; fi',
+      'nekode-executable',
+      location.linuxPath,
+      shell.file,
+    ])
+  } catch {
+    throw new AppError(
+      'unknown',
+      `Unable to check Linux executable "${shell.file}" in WSL distribution "${location.distribution}".`,
+    )
+  }
+  if (result !== 'usable') {
+    throw new AppError(
+      'not_found',
+      `Linux executable "${shell.file}" is unavailable or not executable in WSL distribution "${location.distribution}".`,
+    )
+  }
+}
+
+function assertLinuxExecutable(file: string): void {
+  if (
+    !file ||
+    file.includes('\u0000') ||
+    /[\\:]/.test(file) ||
+    /\.(exe|com|cmd|bat)$/i.test(file) ||
+    file.startsWith('-')
+  ) {
+    throw new AppError(
+      'validation',
+      'A WSL project requires a Linux executable, not a Windows executable.',
+    )
+  }
+}
+
 /** Bare names resolve through the login-shell Linux PATH; Windows executables are rejected. */
 export function prepareWslTerminal(
   path: string,
@@ -106,18 +150,7 @@ export function prepareWslTerminal(
   if (location === null) return null
   const args = ['--distribution', location.distribution, '--cd', location.linuxPath]
   if (shell !== undefined && !(shell.file === 'wsl.exe' && shell.args.length === 0)) {
-    if (
-      !shell.file ||
-      shell.file.includes('\u0000') ||
-      /[\\:]/.test(shell.file) ||
-      /\.(exe|com|cmd|bat)$/i.test(shell.file) ||
-      shell.file.startsWith('-')
-    ) {
-      throw new AppError(
-        'validation',
-        'A WSL project requires a Linux executable, not a Windows executable.',
-      )
-    }
+    assertLinuxExecutable(shell.file)
     // A bash login shell loads ~/.profile, so user-installed CLIs (~/.local/bin)
     // resolve. The command and its args stay separate argv: bash never parses them.
     args.push('--exec', 'bash', '-lc', 'exec "$@"', 'bash', shell.file, ...shell.args)

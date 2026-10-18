@@ -57,7 +57,10 @@ const srcEntries: FileEntry[] = [
   { name: 'nested', relativePath: 'src/nested', kind: 'directory' },
   { name: 'app.ts', relativePath: 'src/app.ts', kind: 'file' },
 ]
-const otherRootEntries: FileEntry[] = [{ name: 'docs', relativePath: 'docs', kind: 'directory' }]
+const otherRootEntries: FileEntry[] = [
+  { name: 'docs', relativePath: 'docs', kind: 'directory' },
+  { name: 'guide.md', relativePath: 'guide.md', kind: 'file' },
+]
 
 /** One level per call, per project (the real service contract). */
 function mockListings(app: AppApi): void {
@@ -108,7 +111,8 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
     render(<App app={app} />)
     await screen.findByTestId(testIdFor.projectRow('p1'))
     const filesButton = getByTestIdString(testIdFor.projectFiles('p1'))
-    expect(filesButton.getAttribute('title')).toBe('Show project files')
+    expect(filesButton.getAttribute('title')).toBe('File tree')
+    expect(filesButton.getAttribute('aria-label')).toBe('Open file tree of Demo')
 
     // Row click keeps its meaning: select + expand the chat list (Behaviour 2).
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
@@ -498,14 +502,20 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     await waitFor(() => expect(pane('src/app.ts').style.display).toBe('flex'))
     expect(app.files.list).toHaveBeenCalledTimes(2)
 
-    // Another project shows its own tree and its own tab set (Behaviour 15).
+    // Another project shows its own tree in the sidebar while the center stays on p1 until a file is opened.
     fireEvent.click(getByTestIdString(TEST_ID.filesBackButton))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
     fireEvent.click(await screen.findByTestId(testIdFor.projectFiles('p2')))
     await screen.findByTestId(testIdFor.fileEntry('docs'))
     expect(screen.queryByTestId(testIdFor.fileEntry('src'))).toBeNull()
+    // Center surface still shows p1's open tab until a file from p2 is selected.
+    expect(screen.getByTestId(testIdFor.tabFile('src/app.ts'))).toBeTruthy()
+
+    // Selecting a file from p2 activates p2 and displays its tab set.
+    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('guide.md')))
+    await screen.findByTestId(testIdFor.filePreviewPane('guide.md'))
     expect(screen.queryByTestId(testIdFor.tabFile('src/app.ts'))).toBeNull()
-    expect(screen.queryAllByTestId(/^tab-file-/)).toEqual([])
+    expect(screen.getByTestId(testIdFor.tabFile('guide.md'))).toBeTruthy()
   })
 })
 

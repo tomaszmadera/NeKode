@@ -5,6 +5,7 @@ import {
   listWslDistributions,
   prepareWslTerminal,
   validatedWslProjectPath,
+  validateWslExecutable,
 } from './wsl'
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }))
@@ -113,6 +114,47 @@ describe('WSL directory suggestions', () => {
 })
 
 describe('WSL invocation boundary', () => {
+  it('rejects a missing Linux CLI with its executable and distribution, without forwarding prompts', () => {
+    vi.mocked(execFileSync).mockReturnValue('')
+    expect(() =>
+      validateWslExecutable('\\\\wsl$\\Ubuntu\\tmp\\My Project', {
+        file: 'missing-cli',
+        args: ['PRIVATE_PROMPT'],
+      }),
+    ).toThrow(
+      'Linux executable "missing-cli" is unavailable or not executable in WSL distribution "Ubuntu".',
+    )
+    expect(execFileSync).toHaveBeenCalledWith(
+      'wsl.exe',
+      expect.arrayContaining(['Ubuntu', '/tmp/My Project', 'missing-cli']),
+      expect.objectContaining({ timeout: 5000, windowsHide: true }),
+    )
+    expect(JSON.stringify(vi.mocked(execFileSync).mock.calls)).not.toContain('PRIVATE_PROMPT')
+  })
+
+  it('accepts an executable found in the login PATH and does not execute profile arguments', () => {
+    vi.mocked(execFileSync).mockReturnValue('usable')
+    expect(() =>
+      validateWslExecutable('\\\\wsl$\\Ubuntu\\tmp', {
+        file: 'hermes',
+        args: ['PRIVATE_PROMPT'],
+      }),
+    ).not.toThrow()
+    expect(execFileSync).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the target on a failed availability check without exposing subprocess output', () => {
+    vi.mocked(execFileSync).mockImplementationOnce(() => {
+      throw new Error('PRIVATE_PROMPT')
+    })
+    expect(() =>
+      validateWslExecutable('\\\\wsl$\\Ubuntu\\tmp', {
+        file: 'hermes',
+        args: [],
+      }),
+    ).toThrow('Unable to check Linux executable "hermes" in WSL distribution "Ubuntu".')
+  })
+
   it('decodes installed distributions with BOM and CRLF', () => {
     vi.mocked(execFileSync).mockReturnValue(
       Buffer.from('\uFEFFUbuntu-24.04\r\nDebian\r\n', 'utf16le'),

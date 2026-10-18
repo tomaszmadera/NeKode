@@ -30,13 +30,21 @@ export interface ProjectInfo {
   runtimeLabel: string | null
 }
 
-// A chat is a terminal session listed under a project (spec Data/API). The
-// work-item "task" entity is post-MVP and deliberately has no representation
-// in this slice: no status column, no progress fields.
+export type SessionStatus = 'running' | 'waiting' | 'idle'
+
+export interface SessionTaskProgress {
+  taskId: string
+  step: number
+  totalSteps: number
+}
+
+// A chat is a terminal session listed under a project (spec Data/API).
 export interface ChatInfo {
   id: string
   projectId: string
   name: string
+  status?: SessionStatus
+  task?: SessionTaskProgress
 }
 
 export interface ActionInput {

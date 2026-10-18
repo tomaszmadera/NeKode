@@ -260,14 +260,14 @@ describe('app settings and themes', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     const view = render(<App app={app} />)
     const row = await screen.findByTestId(testIdFor.projectSelect('p1'))
-    expect(row.textContent).toBe('DEMO')
+    expect(row.querySelector('span.truncate')?.textContent).toBe('DEMO')
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const toggle = screen.getByRole('checkbox', {
       name: 'Uppercase project names in the tree',
     }) as HTMLInputElement
     expect(toggle.checked).toBe(true)
     fireEvent.click(toggle)
-    expect(row.textContent).toBe('Demo')
+    expect(row.querySelector('span.truncate')?.textContent).toBe('Demo')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.projectNamesUppercase, '0')
     view.unmount()
     vi.mocked(app.state.get).mockImplementation(async (key) =>
@@ -275,11 +275,16 @@ describe('app settings and themes', () => {
     )
     render(<App app={app} />)
     await waitFor(() =>
-      expect(screen.getByTestId(testIdFor.projectSelect('p1')).textContent).toBe('Demo'),
+      expect(
+        screen.getByTestId(testIdFor.projectSelect('p1')).querySelector('span.truncate')
+          ?.textContent,
+      ).toBe('Demo'),
     )
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Uppercase project names in the tree' }))
-    expect(screen.getByTestId(testIdFor.projectSelect('p1')).textContent).toBe('DEMO')
+    expect(
+      screen.getByTestId(testIdFor.projectSelect('p1')).querySelector('span.truncate')?.textContent,
+    ).toBe('DEMO')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.projectNamesUppercase, '1')
   })
 
@@ -2145,7 +2150,7 @@ describe('project and chat data flow', () => {
 
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const chatRow = await screen.findByTestId(testIdFor.chatRow('t1'))
-    expect(chatRow.textContent).toBe('First chat')
+    expect(chatRow.querySelector('span.truncate')?.textContent).toBe('First chat')
     expect(app.chats.list).toHaveBeenCalledWith('p1')
     // The active project gets the New Chat button (UX-UI §10): no naming form.
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
@@ -2369,13 +2374,21 @@ describe('project and chat data flow', () => {
 
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    const chats = await screen.findByTestId(testIdFor.projectChats('p1'))
+    expect(chats.textContent).toBe('No chats')
+    expect(within(chats).queryByRole('list')).toBeNull()
     fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
     await screen.findByTestId(testIdFor.chatRow('t1'))
+    expect(within(chats).queryByText('No chats')).toBeNull()
     fireEvent.click(screen.getByTestId(TEST_ID.newChatButton))
     await screen.findByTestId(testIdFor.chatRow('t2'))
 
-    expect(screen.getByTestId(testIdFor.chatRow('t1')).textContent).toBe('PowerShell')
-    expect(screen.getByTestId(testIdFor.chatRow('t2')).textContent).toBe('PowerShell')
+    expect(
+      screen.getByTestId(testIdFor.chatRow('t1')).querySelector('span.truncate')?.textContent,
+    ).toBe('PowerShell')
+    expect(
+      screen.getByTestId(testIdFor.chatRow('t2')).querySelector('span.truncate')?.textContent,
+    ).toBe('PowerShell')
     expect(getByTestIdString(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe('true')
   })
 
@@ -2505,11 +2518,6 @@ describe('project and chat data flow', () => {
   // on the left panel's per-project New Chat button; a plain left click keeps
   // the existing chat flow (covered by the new-chat tests above).
   async function openAgentMenu(): Promise<HTMLElement> {
-    // The project selector toggles, so only select the project when its
-    // expanded New Chat button is not on screen yet.
-    if (screen.queryByTestId(TEST_ID.newChatButton) === null) {
-      fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    }
     fireEvent.contextMenu(await screen.findByTestId(TEST_ID.newChatButton))
     return screen.findByTestId(TEST_ID.newChatAgentMenu)
   }
@@ -2933,7 +2941,10 @@ describe('project and chat data flow', () => {
       'false',
     )
     expect(screen.queryByTestId(TEST_ID.statusProjectName)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.newChatButton)).toBeNull()
+    const row = screen.getByTestId(testIdFor.projectRow('p1'))
+    const newChat = within(row).getByRole('button', { name: 'New chat' })
+    expect(newChat.textContent).toBe('')
+    expect(newChat.nextElementSibling).toBe(screen.getByTestId(testIdFor.projectFiles('p1')))
     expect(app.chats.list).not.toHaveBeenCalled()
   })
 
@@ -3913,7 +3924,7 @@ describe('kanban task resume — removing the project', () => {
     render(<App app={app} />)
     // Select the project (its subtree expands), then open its Kanban board.
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.projectKanban('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
 
     // Open the Resume modal for the project's item.
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemResume('NEKODE-28')))
@@ -3983,8 +3994,8 @@ describe('kanban task resume — removing the project', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: /^Project Settings$/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Close settings' }))
 
-    // Second call returned 'demo', so project is bound and Kanban tile is available
-    fireEvent.click(await screen.findByTestId(testIdFor.projectKanban('p1')))
+    // Second call returned 'demo', so project is bound and Kanban tab is available
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     await screen.findByTestId(TEST_ID.kanbanBoard)
 
     // Now resolve the first (stale, older) call with null (unbound)
@@ -4013,7 +4024,7 @@ describe('kanban task resume — removing the project', () => {
 
     // Switch to kanban tab
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.projectKanban('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     const kanbanBoard = await screen.findByTestId(TEST_ID.kanbanBoard)
 
     // In action bar on kanban tab, fixed action buttons are suppressed

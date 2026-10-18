@@ -5,16 +5,19 @@ import type {
   AgentProfilesDocument,
   ChatInfo,
   ProjectInfo,
+  SessionStatus,
+  SessionTaskProgress,
 } from '../../../../shared/ipc-contract'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'
+import { getProjectColor, getProjectInitials } from '../../lib/project-avatar'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { NoticeBanner } from './NoticeBanner'
 
 // Left navigation (UX-UI §9-10): a "Projects" section header carries the
 // icon-only Add Project button (user decision 2026-10-01); project rows
-// expand to show project action pills (Kanban, New Chat) and their chat lists.
+// carry Files and New Chat actions and expand to show Kanban and their chat lists.
 // New Chat creates the chat immediately (no naming form: the name
 // is the shell's display label, spec Behaviour 3).
 //
@@ -28,12 +31,17 @@ import { NoticeBanner } from './NoticeBanner'
 interface LeftNavigationProps {
   projects: ProjectInfo[]
   projectNamesUppercase?: boolean
+  showProjectIcons?: boolean
+  projectColors?: Record<string, string>
   chatsByProject: Record<string, ChatInfo[]>
   expandedProjectIds: ReadonlySet<string>
   selectedProjectId: string | null
   selectedChatId: string | null
   /** Chats currently showing the attention badge (chat id → tooltip data). */
   attention: Record<string, { message: string | null }>
+  activity?: ReadonlySet<string>
+  sessionStatuses?: Record<string, SessionStatus>
+  sessionTasks?: Record<string, SessionTaskProgress>
   /**
    * Attention surfacing gates (attention-alert-settings spec): the badge
    * toggle hides unselected chats' dots while the state itself survives
@@ -97,14 +105,193 @@ interface NewChatMenuState {
   y: number
 }
 
+export const SESSION_STATUS_CONFIG: Record<SessionStatus, { label: string; color: string }> = {
+  running: { label: 'running', color: '#4ADE80' },
+  waiting: { label: 'waiting for input', color: '#F59E0B' },
+  idle: { label: 'idle', color: '#8A90A6' },
+}
+
+export function formatTimeSince(seconds: number): string {
+  if (seconds < 60) return 'now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} h`
+  const days = Math.floor(hours / 24)
+  return `${days} d`
+}
+
+interface SessionRowItemProps {
+  chat: ChatInfo
+  projectId: string
+  isChatSelected: boolean
+  status: SessionStatus
+  task?: SessionTaskProgress
+  revealedChatId: string | null
+  setRevealedChatId: (chatId: string | null) => void
+  onSelectChat: (projectId: string, chatId: string) => void
+  onRequestCloseChat: (chatId: string) => void
+  legacyAttention?: {
+    badgeVisible: boolean
+    badgeTitle?: string
+  }
+  legacyActivity?: boolean
+}
+
+export function SessionRowItem({
+  chat,
+  projectId,
+  isChatSelected,
+  status,
+  task,
+  revealedChatId,
+  setRevealedChatId,
+  onSelectChat,
+  onRequestCloseChat,
+  legacyAttention,
+  legacyActivity,
+}: SessionRowItemProps): React.JSX.Element {
+  const [prevStatus, setPrevStatus] = useState(status)
+  const [statusTimestamp, setStatusTimestamp] = useState(() => Date.now())
+  const [now, setNow] = useState(() => Date.now())
+
+  if (prevStatus !== status) {
+    setPrevStatus(status)
+    setStatusTimestamp(Date.now())
+  }
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now())
+    }, 10_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const elapsedSeconds = Math.max(0, Math.floor((now - statusTimestamp) / 1000))
+  const timeFormatted = formatTimeSince(elapsedSeconds)
+  const config = SESSION_STATUS_CONFIG[status]
+  const isRevealed = revealedChatId === chat.id
+
+  return (
+    <li
+      className="group relative"
+      onFocus={() => setRevealedChatId(chat.id)}
+      onMouseEnter={() => setRevealedChatId(chat.id)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+          if (revealedChatId === chat.id) {
+            setRevealedChatId(null)
+          }
+        }
+      }}
+      onMouseLeave={(event) => {
+        if (event.currentTarget.contains(document.activeElement)) {
+          return
+        }
+        if (revealedChatId === chat.id) {
+          setRevealedChatId(null)
+        }
+      }}
+    >
+      <button
+        type="button"
+        className={cn(
+          'flex h-control w-full items-center gap-2 rounded-md pl-5 pr-5 text-left text-sm transition-colors duration-fast ease-standard border-0',
+          isChatSelected
+            ? 'bg-[#262B3F] text-white'
+            : cn(
+                'bg-transparent text-chat-title hover:bg-row-hover group-hover:bg-row-hover',
+                isRevealed && 'bg-row-hover',
+              ),
+        )}
+        data-testid={testIdFor.chatRow(chat.id)}
+        data-selected={isChatSelected ? 'true' : 'false'}
+        title={config.label}
+        aria-label={`${chat.name}, ${config.label}, ${timeFormatted}`}
+        onMouseEnter={() => setRevealedChatId(chat.id)}
+        onClick={() => onSelectChat(projectId, chat.id)}
+      >
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: config.color }}
+          data-testid={testIdFor.chatStatusDot(chat.id)}
+          data-status={status}
+        />
+        <span className="min-w-0 truncate font-mono">{chat.name}</span>
+        {task !== undefined ? (
+          <span
+            className="rounded-[3px] px-1.5 py-0.5 text-[11px] font-mono shrink-0 leading-none"
+            style={{
+              color: '#5AA9FF',
+              backgroundColor: 'rgba(90, 169, 255, 0.12)',
+            }}
+            title={`Task ${task.taskId}: step ${task.step} of ${task.totalSteps}`}
+            data-testid={testIdFor.chatTaskProgress(chat.id)}
+          >
+            {task.step}/{task.totalSteps}
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            'ml-auto shrink-0 text-xs font-mono text-[#6c7288]',
+            isRevealed && 'invisible',
+          )}
+          data-testid={testIdFor.chatTime(chat.id)}
+        >
+          {timeFormatted}
+        </span>
+        {legacyAttention?.badgeVisible && !isRevealed ? (
+          <span
+            role="img"
+            className="sr-only"
+            data-testid={testIdFor.chatAttentionBadge(chat.id)}
+            title={legacyAttention.badgeTitle}
+            aria-label={`${chat.name} needs attention`}
+          />
+        ) : legacyActivity && !isRevealed ? (
+          <span
+            className="sr-only"
+            data-testid={testIdFor.chatActivity(chat.id)}
+            role="img"
+            aria-label={`${chat.name}: recent terminal output`}
+            title="Recent terminal output. This is not agent status; silence does not mean completion."
+          />
+        ) : null}
+      </button>
+      <button
+        type="button"
+        className={cn(
+          'absolute right-5 top-1/2 z-10 h-6 w-6 -translate-y-1/2 items-center justify-center rounded bg-transparent text-[#8A90A6] transition-colors duration-fast ease-standard hover:text-white',
+          isRevealed ? 'flex' : 'hidden',
+        )}
+        data-testid={testIdFor.chatClose(chat.id)}
+        aria-label={`Close chat ${chat.name}`}
+        title="Close chat"
+        onClick={(event) => {
+          event.stopPropagation()
+          onRequestCloseChat(chat.id)
+        }}
+      >
+        <Icon.close size={14} aria-hidden />
+      </button>
+    </li>
+  )
+}
+
 export function LeftNavigation({
   projects,
   projectNamesUppercase = true,
+  showProjectIcons = true,
+  projectColors,
   chatsByProject,
   expandedProjectIds,
   selectedProjectId,
   selectedChatId,
   attention,
+  activity,
+  sessionStatuses,
+  sessionTasks,
   attentionBadgeEnabled,
   attentionActiveIndicatorEnabled,
   onSelectProject,
@@ -175,8 +362,11 @@ export function LeftNavigation({
           project rows (text-sm). Its height aligns the first project tile
           with the action buttons: header + 8px margin + 4px list inset =
           tab strip + 1px action-row border + 8px action-row padding. */}
-      <div className="mt-2 flex h-[calc(var(--spacing-control)+0.3125rem)] shrink-0 items-center justify-between px-4">
-        <span className="text-sm text-projects-header" data-testid={TEST_ID.projectsHeader}>
+      <div className="mt-2 flex h-[calc(var(--spacing-control)+0.3125rem)] shrink-0 items-center justify-between px-5">
+        <span
+          className="text-sm uppercase text-projects-header"
+          data-testid={TEST_ID.projectsHeader}
+        >
           Projects
         </span>
         <div className="flex items-center gap-2">
@@ -197,7 +387,7 @@ export function LeftNavigation({
         // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling and ContextMenu / Shift+F10 in this region.
         tabIndex={0}
         data-testid={TEST_ID.projectListArea}
-        className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+        className="min-h-0 flex-1 overflow-y-auto px-5 pb-2"
         onContextMenu={(event) => {
           // Project subtrees keep their own gestures, including chat controls.
           if (event.target instanceof Element && event.target.closest('li')) return
@@ -227,6 +417,8 @@ export function LeftNavigation({
               const isExpanded = expandedProjectIds.has(project.id)
               const isSelected = project.id === selectedProjectId
               const chats = chatsByProject[project.id] ?? []
+              const projectColor = getProjectColor(project, projectColors?.[project.id])
+              const initials = getProjectInitials(project.name)
               return (
                 <li key={project.id} className="py-1">
                   {/* Selection container (NEKODE-3, brief r3.2): the whole
@@ -236,14 +428,15 @@ export function LeftNavigation({
                       selection stays announced by data-selected. */}
                   {/* Active project row has no resting background fill (user decision 2026-10-17);
                       selection is marked by the accent stripe and data-selected. */}
-                  {/* Right axis (user request 2026-10-04): the row's content
-                      edge sits 8px from the panel edge (pr-2 after the 4px
-                      list inset), level with the header's Add Project button
-                      and the chat rows' right padding. */}
+                  {/* Flush left alignment and isolated icon hover (user decision 2026-10-18):
+                      the project row has no hover background fill, allowing row content
+                      to start flush at the left boundary (pl-0), aligning with the Projects
+                      header. Action buttons on the right are enlarged to 28x28 (h-7 w-7, 14px icons)
+                      with their own prominent hover highlight. */}
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'relative flex h-control items-center overflow-hidden rounded-md pl-1 pr-2 py-1.5 transition-colors duration-fast ease-standard hover:bg-row-hover',
+                      'relative flex h-control items-center py-1.5 pl-0 pr-0 transition-colors duration-fast ease-standard',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
@@ -261,14 +454,6 @@ export function LeftNavigation({
                       }
                     }}
                   >
-                    {isSelected ? (
-                      /* Narrow left accent stripe (NEKODE-3): blue, from
-                         --color-accent. */
-                      <span
-                        aria-hidden
-                        className="absolute inset-y-0 left-0 w-[3px] rounded-full bg-accent"
-                      />
-                    ) : null}
                     {/* One toggle surface (user request 2026-10-02): the
                         title itself expands/collapses the chat list. An
                         unselected project is selected on first click (its
@@ -276,7 +461,12 @@ export function LeftNavigation({
                         unfolds in place, keeping the active chat intact. */}
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center self-stretch rounded px-1 py-1 text-left text-sm text-project-title"
+                      className={cn(
+                        'flex min-w-0 flex-1 items-center self-stretch rounded pl-0 pr-1 py-1 text-left text-sm',
+                        isExpanded || isSelected
+                          ? 'text-project-title'
+                          : 'text-project-title-collapsed',
+                      )}
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
                       aria-expanded={isExpanded}
@@ -289,74 +479,76 @@ export function LeftNavigation({
                       }}
                     >
                       {isExpanded ? (
-                        <Icon.chevronDown size={12} aria-hidden className="mr-1 shrink-0" />
+                        <Icon.chevronDown size={12} aria-hidden className="mr-2 shrink-0" />
                       ) : (
-                        <Icon.chevronRight size={12} aria-hidden className="mr-1 shrink-0" />
+                        <Icon.chevronRight size={12} aria-hidden className="mr-2 shrink-0" />
                       )}
-                      <span className="min-w-0 truncate">
+                      {showProjectIcons ? (
+                        <span
+                          aria-hidden="true"
+                          data-testid={testIdFor.projectAvatar(project.id)}
+                          className="mr-2 flex h-5 w-5 shrink-0 select-none items-center justify-center rounded font-mono text-[10px] font-bold leading-none"
+                          style={{
+                            color: projectColor,
+                            backgroundColor: `${projectColor}2e`,
+                          }}
+                        >
+                          {initials}
+                        </span>
+                      ) : null}
+                      <span
+                        className={cn(
+                          'min-w-0 truncate',
+                          isExpanded || isSelected ? 'font-semibold' : 'font-normal',
+                        )}
+                      >
                         {projectNamesUppercase ? project.name.toUpperCase() : project.name}
                       </span>
                     </button>
                     <button
                       type="button"
-                      className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink"
-                      data-testid={testIdFor.projectFiles(project.id)}
-                      title="Show project files"
-                      aria-label={`Show project files for ${project.name}`}
-                      onClick={() => onOpenProjectFiles(project.id)}
+                      className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors duration-fast ease-standard hover:bg-highlight hover:text-ink"
+                      data-testid={TEST_ID.newChatButton}
+                      title="New chat"
+                      aria-label="New chat"
+                      onClick={() => {
+                        void onCreateChat(project.id)
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        openNewChatMenu(project.id, event.clientX, event.clientY)
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === 'ContextMenu' ||
+                          (event.key === 'F10' && event.shiftKey)
+                        ) {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          const rect = event.currentTarget.getBoundingClientRect()
+                          openNewChatMenu(project.id, rect.left, rect.bottom)
+                        }
+                      }}
                     >
-                      <Icon.directory size={12} aria-hidden />
+                      <Icon.newChat size={14} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-transparent text-ink-muted transition-colors duration-fast ease-standard hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      data-testid={testIdFor.projectFiles(project.id)}
+                      title="File tree"
+                      aria-label={`Open file tree of ${project.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onOpenProjectFiles(project.id)
+                      }}
+                    >
+                      <Icon.arrowRight size={14} aria-hidden />
                     </button>
                   </div>
                   {isExpanded ? (
                     <>
-                      {/* Project action pills (user decision 2026-10-17): Kanban and New Chat
-                          rendered as pill buttons under the project title, above the chat list. */}
-                      <div className="my-1.5 flex flex-wrap items-center gap-1.5 pl-6">
-                        {kanbanProjectIds.has(project.id) ? (
-                          <button
-                            type="button"
-                            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-edge bg-panel px-2.5 text-xs text-ink-secondary transition-colors duration-fast ease-standard hover:border-control-edge hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                            data-testid={testIdFor.projectKanban(project.id)}
-                            onClick={() => onOpenProjectKanban(project.id)}
-                          >
-                            <Icon.kanban size={12} aria-hidden className="shrink-0" />
-                            <span>Kanban</span>
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="inline-flex h-6 items-center gap-1 rounded-full border border-edge bg-panel px-2.5 text-xs text-ink-secondary transition-colors duration-fast ease-standard hover:border-control-edge hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                          data-testid={TEST_ID.newChatButton}
-                          title="New chat"
-                          aria-label="New chat"
-                          onClick={() => {
-                            void onCreateChat(project.id)
-                          }}
-                          onContextMenu={(event) => {
-                            // The gesture itself creates no chat (spec
-                            // Behaviour 1) and opens at the pointer.
-                            event.preventDefault()
-                            openNewChatMenu(project.id, event.clientX, event.clientY)
-                          }}
-                          onKeyDown={(event) => {
-                            // Keyboard context-menu invocation (spec
-                            // Behaviour 1): the ContextMenu key or Shift+F10
-                            // opens the menu below the button.
-                            if (
-                              event.key === 'ContextMenu' ||
-                              (event.key === 'F10' && event.shiftKey)
-                            ) {
-                              event.preventDefault()
-                              const rect = event.currentTarget.getBoundingClientRect()
-                              openNewChatMenu(project.id, rect.left, rect.bottom)
-                            }
-                          }}
-                        >
-                          <Icon.plus size={12} aria-hidden className="shrink-0" />
-                          <span>Chat</span>
-                        </button>
-                      </div>
                       {/* Full-width rows, no vertical guide line: the chat
                          highlight reads across the whole list width. */}
                       {/* Constant hairline gap under the project tile (user
@@ -365,19 +557,10 @@ export function LeftNavigation({
                          selected first chat included — always, not only when
                          the first chat is selected. */}
                       <div className="mt-1" data-testid={testIdFor.projectChats(project.id)}>
-                        {chats.length > 0 && (
+                        {chats.length > 0 ? (
                           <ul className="flex flex-col gap-1">
                             {chats.map((chat) => {
                               const isChatSelected = chat.id === selectedChatId && isSelected
-                              // Attention badge (chat attention badge spec
-                              // Behaviour 5, gated by attention-alert-settings):
-                              // an amber dot next to the chat name, with the
-                              // OSC 9 message as its tooltip. Unselected chats
-                              // show it when the badge toggle is on; the
-                              // SELECTED chat shows it only when the
-                              // active-indicator toggle is on. A collapsed
-                              // project hides the badge with the whole list
-                              // (no promotion to the project row).
                               const attentionState = attention[chat.id]
                               const badgeVisible =
                                 attentionState !== undefined &&
@@ -388,97 +571,44 @@ export function LeftNavigation({
                                 attentionState === undefined
                                   ? undefined
                                   : (attentionState.message ?? 'Needs attention')
-                              // While the close X occupies the row's right edge,
-                              // the badge yields the same corner (they overlap).
+
+                              let resolvedStatus: SessionStatus = 'idle'
+                              if (sessionStatuses?.[chat.id]) {
+                                resolvedStatus = sessionStatuses[chat.id]
+                              } else if (chat.status) {
+                                resolvedStatus = chat.status
+                              } else if (badgeVisible) {
+                                resolvedStatus = 'waiting'
+                              } else if (activity?.has(chat.id)) {
+                                resolvedStatus = 'running'
+                              }
+
+                              const resolvedTask = sessionTasks?.[chat.id] ?? chat.task
+
                               return (
-                                /* The tile is the hover boundary: its leave hides
-                                 the X. The X is a sibling overlay of the row
-                                 button, so a row-level leave would fire the
-                                 moment the pointer reaches the control and
-                                 flicker hide/show (fixed 2026-10-04). */
-                                <li
+                                <SessionRowItem
                                   key={chat.id}
-                                  className="relative pl-6"
-                                  onFocus={() => setRevealedChatId(chat.id)}
-                                  onBlur={(event) => {
-                                    if (
-                                      !event.currentTarget.contains(event.relatedTarget as Node)
-                                    ) {
-                                      if (revealedChatId === chat.id) {
-                                        setRevealedChatId(null)
-                                      }
-                                    }
-                                  }}
-                                  onMouseLeave={(event) => {
-                                    // If keyboard focus is anywhere inside the row, keep the close
-                                    // control revealed so the user does not lose focus (NEKODE-60 / review 7.4).
-                                    if (event.currentTarget.contains(document.activeElement)) {
-                                      return
-                                    }
-                                    if (revealedChatId === chat.id) {
-                                      setRevealedChatId(null)
-                                    }
-                                  }}
-                                >
-                                  <button
-                                    type="button"
-                                    className={cn(
-                                      'flex h-control w-full items-center gap-1.5 rounded-md pl-3 pr-2 text-left text-sm text-chat-title transition-colors duration-fast ease-standard',
-                                      isChatSelected
-                                        ? 'bg-highlight text-ink'
-                                        : 'hover:bg-row-hover',
-                                    )}
-                                    data-testid={testIdFor.chatRow(chat.id)}
-                                    data-selected={isChatSelected ? 'true' : 'false'}
-                                    onMouseEnter={() => setRevealedChatId(chat.id)}
-                                    onClick={() => onSelectChat(project.id, chat.id)}
-                                  >
-                                    <Icon.chat size={12} aria-hidden className="shrink-0" />
-                                    <span className="min-w-0 truncate">{chat.name}</span>
-                                    {badgeVisible && revealedChatId !== chat.id ? (
-                                      <span
-                                        role="img"
-                                        className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning"
-                                        data-testid={testIdFor.chatAttentionBadge(chat.id)}
-                                        title={badgeTitle}
-                                        aria-label={`${chat.name} needs attention`}
-                                      />
-                                    ) : null}
-                                  </button>
-                                  {/* Close control (user request 2026-10-04, review 7.4): an
-                                    X on the shared 24px right-edge axis with
-                                    Add Project and Show project files, centered
-                                    in the row and shown on hover or focus.
-                                    Ordered after the row button in the DOM so
-                                    keyboard users can tab from the row to the X
-                                    without losing focus or hiding the button.
-                                    Absolute positioning keeps the tile size
-                                    stable. Clicking stages a confirmation
-                                    dialog — closing removes the chat with its
-                                    terminal (spec Behaviour 11). The badge
-                                    yields while the X is shown (same corner). */}
-                                  <button
-                                    type="button"
-                                    className={cn(
-                                      'absolute right-2 top-1/2 z-10 h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink',
-                                      revealedChatId === chat.id ? 'flex' : 'hidden',
-                                    )}
-                                    data-testid={testIdFor.chatClose(chat.id)}
-                                    aria-label={`Close chat ${chat.name}`}
-                                    title="Close chat"
-                                    onClick={(event) => {
-                                      // The row's own activation must not fire
-                                      // behind this control.
-                                      event.stopPropagation()
-                                      onRequestCloseChat(chat.id)
-                                    }}
-                                  >
-                                    <Icon.close size={12} aria-hidden />
-                                  </button>
-                                </li>
+                                  chat={chat}
+                                  projectId={project.id}
+                                  isChatSelected={isChatSelected}
+                                  status={resolvedStatus}
+                                  task={resolvedTask}
+                                  revealedChatId={revealedChatId}
+                                  setRevealedChatId={setRevealedChatId}
+                                  onSelectChat={onSelectChat}
+                                  onRequestCloseChat={onRequestCloseChat}
+                                  legacyAttention={
+                                    attentionState !== undefined
+                                      ? { badgeVisible, badgeTitle }
+                                      : undefined
+                                  }
+                                  legacyActivity={activity?.has(chat.id)}
+                                />
                               )
                             })}
                           </ul>
+                        ) : (
+                          <p className="py-1.5 pl-9 pr-5 text-xs text-ink-muted">No chats</p>
                         )}
                       </div>
                     </>

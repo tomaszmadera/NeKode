@@ -107,6 +107,10 @@ export const TEST_ID = {
   editorContextSelectAll: 'editor-context-select-all',
   /** Chat row attention badge (chat attention badge spec Behaviour 5). */
   chatAttentionBadge: 'chat-attention-badge',
+  chatActivity: 'chat-activity',
+  chatStatusDot: 'chat-status-dot',
+  chatTaskProgress: 'chat-task-progress',
+  chatTime: 'chat-time',
   /** Modal confirmation dialog for destructive actions (e.g. close chat). */
   confirmDialog: 'confirm-dialog',
   confirmDialogCancel: 'confirm-dialog-cancel',
@@ -277,6 +281,7 @@ export const TEST_ID = {
 export const testIdFor = {
   projectRow: (projectId: string): string => `project-row-${projectId}`,
   projectSelect: (projectId: string): string => `project-select-${projectId}`,
+  projectAvatar: (projectId: string): string => `project-avatar-${projectId}`,
   projectToggle: (projectId: string): string => `project-toggle-${projectId}`,
   projectChats: (projectId: string): string => `project-chats-${projectId}`,
   /** Left-navigation Kanban tile of a bound project (first expanded element). */
@@ -288,6 +293,10 @@ export const testIdFor = {
   chatClose: (chatId: string): string => `chat-close-${chatId}`,
   /** Attention badge dot on a chat row (chat attention badge spec). */
   chatAttentionBadge: (chatId: string): string => `chat-attention-badge-${chatId}`,
+  chatActivity: (chatId: string): string => `chat-activity-${chatId}`,
+  chatStatusDot: (chatId: string): string => `chat-status-dot-${chatId}`,
+  chatTaskProgress: (chatId: string): string => `chat-task-progress-${chatId}`,
+  chatTime: (chatId: string): string => `chat-time-${chatId}`,
   terminalView: (chatId: string): string => `terminal-view-${chatId}`,
   bottomTab: (tabId: string): string => `bottom-tab-${tabId}`,
   bottomTabClose: (tabId: string): string => `bottom-tab-close-${tabId}`,
