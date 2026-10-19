@@ -33,6 +33,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [bottom-auxiliary-terminal](bottom-auxiliary-terminal/spec.md) | Bottom auxiliary terminal | Delivered |
 | [center-layout-tabs-actions](center-layout-tabs-actions/spec.md) | Center Layout: Tab Strip, Action Row, and Status Bar | Delivered |
 | [chat-attention-badge](chat-attention-badge/spec.md) | Chat attention badge | Delivered |
+| [chat-terminal-activity](chat-terminal-activity/spec.md) | Chat terminal activity | Delivered |
 | [ci-pipeline](ci-pipeline/spec.md) | CI: automatyczna weryfikacja na GitHub Actions | Delivered |
 | [dictation-provider-architecture](dictation-provider-architecture/spec.md) | Dictation provider architecture | Not delivered (parent contract); the OpenWhispr specialization ships desktop V1 |
 | [global-agent-profiles](global-agent-profiles/spec.md) | Globalne profile agentów i opt-in w projektach | Delivered |
@@ -46,5 +47,6 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [project-files-view](project-files-view/spec.md) | Project Files: File Tree and Read-Only Preview | Delivered |
 | [project-shell-selection](project-shell-selection/spec.md) | Per-project terminal shell selection with system shell detection | Delivered |
 | [public-documentation-contract](public-documentation-contract/spec.md) | Public documentation contract independent of the local harness | Delivered |
+| [session-labels](session-labels/spec.md) | Session labels and agent badges | Delivered |
 | [terminal-font-settings](terminal-font-settings/spec.md) | Terminal font settings | Delivered |
 | [test-suite-simplification](test-suite-simplification/spec.md) | Test suite audit and simplification | Delivered |

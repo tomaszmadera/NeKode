@@ -1,6 +1,7 @@
 # Session labels and agent badges
 
-Status: Approved by the user on 2026-10-18.
+Status: Delivered (Kanban and session-name labels, agent badges and WSL project badges in left navigation; approved by the user on 2026-10-18).
+Path: `docs/features/session-labels/spec.md`.
 
 ## Goal
 

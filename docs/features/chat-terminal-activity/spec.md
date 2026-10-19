@@ -1,5 +1,8 @@
 # Chat terminal activity
 
+Status: Delivered (recent terminal output dot on chat navigation rows, NEKODE-89).
+Path: `docs/features/chat-terminal-activity/spec.md`.
+
 ## Goal
 
 Show recent terminal output beside each chat name so the user can notice data arriving in hidden sessions without switching chats. The indicator describes terminal traffic only: it does not establish agent work, progress, completion, or requests for permission.
