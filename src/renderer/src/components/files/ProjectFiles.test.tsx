@@ -123,19 +123,12 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
     // The Files action enters the mode (Behaviour 1 / AC1). The back
     // button names the destination visibly and remains keyboard-focusable.
     await enterFilesMode()
-    const backButton = screen.getByRole('button', { name: 'Back to Projects' })
+    const backButton = screen.getByRole('button', { name: 'Back to projects' })
     expect(backButton.textContent).toBe('Back to Projects')
     backButton.focus()
     expect(document.activeElement).toBe(backButton)
-    const escapeEvent = new KeyboardEvent('keydown', {
-      key: 'Escape',
-      bubbles: true,
-      cancelable: true,
-    })
-    backButton.dispatchEvent(escapeEvent)
-    expect(escapeEvent.defaultPrevented).toBe(false)
     expect(screen.getByTestId(TEST_ID.fileTree)).toBeTruthy()
-    expect(getByTestIdString(TEST_ID.filesProjectName).textContent).toBe('Demo')
+    expect(getByTestIdString(TEST_ID.filesProjectName).textContent).toBe('DEMO')
     // The center keeps the tab strip (tab model): no "Files" view label and no
     // preview empty state — clicking a file opens its tab.
     const strip = getByTestIdString(TEST_ID.tabStrip)
@@ -146,6 +139,16 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
     // The project context lives in the status bar (Behaviour 4).
     expect(getByTestIdString(TEST_ID.statusProjectName).textContent).toBe('Demo')
     expect(app.files.list).toHaveBeenCalledWith('p1', null)
+
+    // Escape in the tree panel acts as back button
+    const escapeEvent = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    })
+    backButton.dispatchEvent(escapeEvent)
+    expect(escapeEvent.defaultPrevented).toBe(false)
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
   })
 
   it('the project row has no remove button; the context menu holds Remove Project', async () => {

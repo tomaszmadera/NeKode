@@ -2,6 +2,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import type { AttentionSettings } from '../../lib/attention-settings'
+import { createChatActivity } from '../../lib/chat-activity'
 import {
   type ChatAttention,
   clearAttention,
@@ -104,6 +105,7 @@ interface ChatWorkspaceProps {
   attention: Record<string, ChatAttention>
   /** Reports attention-state changes so the host can render the badges. */
   onAttentionChange: (attention: Record<string, ChatAttention>) => void
+  onActivityChange?: (active: ReadonlySet<string>) => void
   /**
    * Attention alert settings (attention-alert-settings spec): the chime
    * toggles gate the sound at this signal entry point; the active-indicator
@@ -152,12 +154,24 @@ export function ChatWorkspace({
   onPromptInjected,
   attention,
   onAttentionChange,
+  onActivityChange,
   attentionSettings,
   heldLaunches = EMPTY_HELD_LAUNCHES,
   onRetryHeldLaunch,
   retryingLaunchChatId = null,
 }: ChatWorkspaceProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Record<string, SessionRecord>>({})
+  const onActivityChangeRef = useRef(onActivityChange)
+  onActivityChangeRef.current = onActivityChange
+  const [activity] = useState(() =>
+    createChatActivity((active) => onActivityChangeRef.current?.(active)),
+  )
+  useEffect(() => () => activity.dispose(), [activity])
+  useEffect(() => {
+    for (const [chatId, session] of Object.entries(sessions)) {
+      if (session.status === 'error') activity.remove(chatId)
+    }
+  }, [activity, sessions])
   // Chats whose exit already started the close flow (guards duplicate exits).
   const closingChatIdsRef = useRef<Set<string>>(new Set())
 
@@ -485,6 +499,7 @@ export function ChatWorkspace({
                 terminalFontFamilies={terminalFontFamilies}
                 terminalCtrlVPaste={terminalCtrlVPaste}
                 suppressSpawn={heldLaunches[chatId] !== undefined}
+                registerActivity={activity.register}
                 onExit={() => handleExit(chatId)}
                 onClose={() => handleExit(chatId)}
                 onSpawnError={(message) => handleSpawnError(chatId, message)}

@@ -308,6 +308,14 @@ Projects                        +
 
 The hierarchy should remain intentionally shallow.
 
+Left-navigation session labels use the Kanban task's full ref when available;
+otherwise they show the saved session name without its generated shell prefix
+(the profile name for agent sessions, `Terminal` for shell-only names). A separate
+badge identifies the agent chosen at launch. WSL project names carry a `WSL`
+badge with the distribution in its tooltip; local projects have none. The
+[session label contract](features/session-labels/spec.md) owns persistence,
+legacy compatibility, and accessibility (user decision 2026-10-18).
+
 Do not reproduce a VS Code-style permanent Activity Bar.
 
 ---
@@ -1446,6 +1454,10 @@ New Chat
 ```
 
 The chat is created immediately, without a naming form. New names use `[shell] profile name`, or just `[shell]` without an agent profile. The shell prefix is the compact shell code (`[PS5]`, `[PS7]`, `[cmd]`, `[bash]`, `[WSL]`; the file's base name for a custom shell), taken from the project's configuration at creation time. The verbose label stays in Project Settings and on the bottom-tab text. Duplicates are allowed. Existing chats keep their saved names.
+
+These are stored names. Left-navigation presentation follows the
+[session label contract](features/session-labels/spec.md): hide the shell prefix,
+prefer the Kanban ref, and show the launch-time agent identity as a separate badge.
 
 Future from Kanban (post-MVP Task entity):
 

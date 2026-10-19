@@ -108,6 +108,36 @@ describe('ChatService', () => {
     ).toEqual(['[PowerShell]', '[PowerShell] Codex'])
   })
 
+  it('round-trips launch identity independently of the profile display name', () => {
+    const { db, projects, chats } = createServices({ chatName: () => 'PS7' })
+    const project = projects.add(demoPath)
+    const chat = chats.createNamed(project.id, 'Code analysis', NAMED_CHANNEL, {
+      taskRef: 'NEKODE-42',
+      agentName: 'Claude',
+    })
+    expect(chat).toMatchObject({
+      name: '[PS7] Code analysis',
+      taskRef: 'NEKODE-42',
+      agentName: 'Claude',
+    })
+    const reopened = new ChatService({ db, chatName: () => 'bash' })
+    expect(reopened.get(chat.id)).toEqual(chat)
+    expect(reopened.list(project.id)).toEqual([chat])
+  })
+
+  it.each([{ agentName: ' ' }, { taskRef: '' }])(
+    'rejects blank launch identity before inserting a chat: %j',
+    (identity) => {
+      const { projects, chats } = createServices()
+      const project = projects.add(demoPath)
+      expectAppError(
+        () => chats.createNamed(project.id, 'Analysis', NAMED_CHANNEL, identity),
+        'validation',
+      )
+      expect(chats.list(project.id)).toEqual([])
+    },
+  )
+
   it('uses each project shell and preserves the name after the shell setting changes', () => {
     const { db, projects } = createServices()
     const project = projects.add(demoPath)

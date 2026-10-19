@@ -2,6 +2,7 @@ import type {
   AgentProfile,
   AgentProfilesDocument,
   ChatInfo,
+  ChatLaunchIdentity,
   HandoffCandidatesResult,
   KanbanHandoffCandidatesInput,
   KanbanLaunchResult,
@@ -11,6 +12,7 @@ import type {
 } from '../../../shared/ipc-contract'
 import { AGENT_PROMPT_PLACEHOLDER } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
+import { agentDisplayName } from '../agent-identity'
 import type { ShellSpec } from '../terminal/terminal-service'
 import { validateWslExecutable } from '../terminal/wsl'
 
@@ -57,7 +59,7 @@ export interface TaskLaunchDeps {
   /** Stored handoff directory, or null when unset. Does not read the directory. */
   handoffDir: (projectId: string) => string | null
   resumePrompt: (handoffPath: string) => Promise<string>
-  createChat: (projectId: string, name: string) => ChatInfo
+  createChat: (projectId: string, name: string, identity: ChatLaunchIdentity) => ChatInfo
   terminals: {
     create(chatId: string, cwd: string, shell?: ShellSpec): string
   }
@@ -78,6 +80,7 @@ interface Attempt {
 }
 
 interface PreparedLaunch {
+  taskRef: string
   projectPath: string
   profile: AgentProfile
   shell: ShellSpec
@@ -156,7 +159,7 @@ export class TaskLaunchService {
   readonly #handoffs: TaskLaunchHandoffs
   readonly #handoffDir: (projectId: string) => string | null
   readonly #formatResumePrompt: TaskLaunchDeps['resumePrompt']
-  readonly #createChat: (projectId: string, name: string) => ChatInfo
+  readonly #createChat: TaskLaunchDeps['createChat']
   readonly #terminals: TaskLaunchDeps['terminals']
   readonly #attempts = new Map<string, Attempt>()
   readonly #droppedProjects = new Set<string>()
@@ -247,7 +250,10 @@ export class TaskLaunchService {
       if (project === null) {
         throw new AppError('not_found', 'Project not found.', CHANNEL)
       }
-      attempt.chat = this.#createChat(input.projectId, prepared.profile.name)
+      attempt.chat = this.#createChat(input.projectId, prepared.profile.name, {
+        taskRef: prepared.taskRef,
+        agentName: agentDisplayName(prepared.shell.file, prepared.shell.args),
+      })
       return this.#spawn(attempt, project.path, prepared)
     } finally {
       attempt.inflight = null
@@ -338,6 +344,7 @@ export class TaskLaunchService {
     // terminal checks again at spawn; PTY creation alone only proves wsl.exe ran.
     validateWslExecutable(current.path, shell)
     return {
+      taskRef: item.ref,
       projectPath: current.path,
       profile,
       shell,

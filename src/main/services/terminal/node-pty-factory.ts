@@ -1,3 +1,4 @@
+import { win32 } from 'node:path'
 import { spawn } from 'node-pty'
 import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-service'
 
@@ -6,7 +7,12 @@ import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-ser
 // tests can inject a fake PTY instead.
 
 export const createNodePty: PtyFactory = (options: PtySpawnOptions): PtyProcessLike => {
-  const pty = spawn(options.file, options.args, {
+  // ConPTY's PATH lookup does not reliably add the native executable suffix.
+  const file =
+    process.platform === 'win32' && win32.extname(options.file) === ''
+      ? `${options.file}.exe`
+      : options.file
+  const pty = spawn(file, options.args, {
     name: 'xterm-256color',
     cols: options.cols,
     rows: options.rows,

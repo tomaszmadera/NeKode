@@ -3,7 +3,7 @@ import { basename } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '../../../shared/bottom-tab-id'
 import type { Unsubscribe } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
-import { prepareWslTerminal } from './wsl'
+import { prepareWslTerminal, validateWslExecutable } from './wsl'
 
 // Chat terminal sessions (spec Data/API, SDD §17): one PTY process per chat,
 // spawned lazily on the first terminal attach. The renderer never touches
@@ -153,6 +153,7 @@ export class TerminalService {
 
     const resolvedShell = typeof shell === 'function' ? shell() : shell
     const wsl = prepareWslTerminal(cwd, resolvedShell)
+    if (resolvedShell !== undefined) validateWslExecutable(cwd, resolvedShell)
     const shellSpec = wsl ?? resolvedShell ?? this.#shell
     let pty: PtyProcessLike
     try {

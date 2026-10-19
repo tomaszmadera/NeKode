@@ -345,4 +345,35 @@ describe('ShellTab', () => {
       expect(retryButton.disabled).toBe(false)
     },
   )
+
+  it('allows picking a project color from palette and resetting with Auto', async () => {
+    const set = vi.fn().mockResolvedValue(undefined)
+    const onProjectColorChange = vi.fn()
+    render(
+      <ShellTab
+        app={appMock({ set, get: vi.fn().mockResolvedValue(null) })}
+        projectId="p1"
+        onProjectColorChange={onProjectColorChange}
+      />,
+    )
+    await screen.findByTestId(TEST_ID.settingsProjectColorSection)
+
+    // Click a palette color
+    const colorBtn = screen.getByTestId('project-color-#5AA9FF')
+    fireEvent.click(colorBtn)
+
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith('project.color:p1', '#5AA9FF')
+      expect(onProjectColorChange).toHaveBeenCalledWith('p1', '#5AA9FF')
+    })
+
+    // Click Auto to reset
+    const autoBtn = screen.getByTestId('project-color-auto')
+    fireEvent.click(autoBtn)
+
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith('project.color:p1', '')
+      expect(onProjectColorChange).toHaveBeenCalledWith('p1', null)
+    })
+  })
 })

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it, vi } from 'vitest'
 import { createBottomTabId } from '../../../shared/bottom-tab-id'
 import { AppError } from '../../../shared/ipc-error'
@@ -8,6 +9,8 @@ import {
   shellDisplayName,
   TerminalService,
 } from './terminal-service'
+
+vi.mock('node:child_process', () => ({ execFileSync: vi.fn(() => 'usable') }))
 
 // Terminal service unit tests with a fake PTY injected (plan Stage 3): no
 // real processes are spawned in vitest. Covers lazy spawn keyed by chatId,
@@ -481,6 +484,19 @@ describe('shellDisplayName', () => {
 })
 
 describe('WSL terminal routing', () => {
+  it('rejects an unavailable Linux CLI before spawning or registering a session', () => {
+    const { service, spawn } = createHarness()
+    vi.mocked(execFileSync).mockReturnValueOnce('')
+    expect(() =>
+      service.create('missing', '\\\\wsl$\\Ubuntu\\tmp', {
+        file: 'missing-cli',
+        args: ['PRIVATE_PROMPT'],
+      }),
+    ).toThrow(/missing-cli.*Ubuntu/)
+    expect(spawn).not.toHaveBeenCalled()
+    expect(service.hasRunningSession('missing')).toBe(false)
+  })
+
   it('keeps WSL sessions on repeated attach and disposes only owned sessions on close and quit', () => {
     const { service, ptys, spawn } = createHarness({ killEmitsExit: true })
     const exits = vi.fn()

@@ -1,21 +1,19 @@
 import type React from 'react'
+import { useEffect, useRef } from 'react'
 import type { ProjectInfo } from '../../../../shared/ipc-contract'
 import { Icon } from '../../lib/icons'
-import { TEST_ID } from '../../lib/test-ids'
+import { getProjectColor, getProjectInitials } from '../../lib/project-avatar'
+import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { NoticeBanner } from '../layout/NoticeBanner'
 import { FileTree } from './FileTree'
 import type { ProjectFilesSession } from './files-types'
 
-// Left panel of Project Files mode (spec Behaviour 4): a header with the
-// project name, a labelled "Back to Projects" button, and Refresh on the
-// project-name row, then the project's file tree. The application brand
-// lives in the window title bar. The tree area carries the inline error
-// state (missing or unreadable project directory). The rest of the app keeps
-// working and the back affordance always exits (spec Errors).
-
 interface ProjectFilesPanelProps {
   project: ProjectInfo
   session: ProjectFilesSession
+  projectNamesUppercase?: boolean
+  showProjectIcons?: boolean
+  projectColor?: string
   /** Exits Project Files mode (the back affordance, spec Behaviour 12). */
   onBack: () => void
   /** Re-reads the root and every expanded directory (spec Behaviour 25). */
@@ -35,6 +33,9 @@ interface ProjectFilesPanelProps {
 export function ProjectFilesPanel({
   project,
   session,
+  projectNamesUppercase = true,
+  showProjectIcons = true,
+  projectColor,
   onBack,
   onRefresh,
   onToggleDirectory,
@@ -46,47 +47,89 @@ export function ProjectFilesPanel({
   notice,
   children,
 }: ProjectFilesPanelProps): React.JSX.Element {
+  const backButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    backButtonRef.current?.focus()
+  }, [])
+
+  const color = projectColor ?? getProjectColor(project)
+  const initials = getProjectInitials(project.name)
+
   return (
-    <div className="flex h-full min-h-0 w-full flex-col bg-panel">
-      {/* Separate rows keep the destination readable at the minimum panel
-          width. The back button opts out of window dragging. */}
-      <div className="drag-region flex shrink-0 flex-col gap-2 bg-app px-4 py-2">
+    // biome-ignore lint/a11y/noStaticElementInteractions: the panel catches Escape to act as back button
+    <div
+      className="flex h-full min-h-0 w-full flex-col bg-panel"
+      onKeyDown={(event) => {
+        if (
+          event.key === 'Escape' &&
+          !event.defaultPrevented &&
+          !document.querySelector('[data-testid="file-tree-context-menu"]')
+        ) {
+          onBack()
+        }
+      }}
+    >
+      {/* Header: back button, project avatar and name in active style, refresh button */}
+      <div className="flex h-control shrink-0 items-center px-2 py-1.5">
         <button
           type="button"
-          className="no-drag flex items-center gap-1.5 self-start rounded-md border border-edge bg-panel px-2 py-1.5 text-xs text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          ref={backButtonRef}
+          className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-transparent text-ink-muted hover:bg-[#232C41] hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           data-testid={TEST_ID.filesBackButton}
-          aria-label="Back to Projects"
+          aria-label="Back to projects"
           title="Back to Projects"
           onClick={onBack}
         >
           <Icon.back size={12} aria-hidden />
-          Back to Projects
+          <span className="sr-only">Back to Projects</span>
         </button>
-        <div className="flex min-w-0 items-center gap-2">
+        {showProjectIcons ? (
           <span
-            className="min-w-0 flex-1 truncate text-xs font-medium text-ink"
-            data-testid={TEST_ID.filesProjectName}
-            title={project.path}
+            aria-hidden="true"
+            data-testid={testIdFor.projectAvatar(project.id)}
+            className="mr-2 flex h-5 w-5 shrink-0 select-none items-center justify-center rounded font-mono text-[10px] font-bold leading-none"
+            style={{
+              color: color,
+              backgroundColor: `${color}2e`,
+            }}
           >
-            {project.name}
+            {initials}
           </span>
-          <button
-            type="button"
-            className="no-drag flex size-6 shrink-0 items-center justify-center rounded-md border border-edge bg-panel text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-100"
-            data-testid={TEST_ID.filesRefreshButton}
-            aria-label={session.refreshing ? 'Refreshing' : 'Refresh'}
-            title={session.refreshing ? 'Refreshing' : 'Refresh'}
-            aria-busy={session.refreshing}
-            disabled={session.refreshing}
-            onClick={onRefresh}
-          >
-            <Icon.retry
-              size={14}
-              aria-hidden
-              className={session.refreshing ? 'animate-spin' : undefined}
-            />
-          </button>
-        </div>
+        ) : null}
+        <span
+          className="min-w-0 flex-1 truncate text-sm font-semibold text-project-title"
+          data-testid={TEST_ID.filesProjectName}
+          title={project.path}
+        >
+          {projectNamesUppercase ? project.name.toUpperCase() : project.name}
+        </span>
+        <button
+          type="button"
+          className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-transparent text-ink-muted hover:bg-[#232C41] hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+          data-testid={TEST_ID.filesRefreshButton}
+          aria-label={session.refreshing ? 'Refreshing' : 'Refresh'}
+          title={session.refreshing ? 'Refreshing' : 'Refresh'}
+          aria-busy={session.refreshing}
+          disabled={session.refreshing}
+          onClick={onRefresh}
+        >
+          <Icon.retry
+            size={12}
+            aria-hidden
+            className={session.refreshing ? 'animate-spin' : undefined}
+          />
+        </button>
+      </div>
+      {/* Subheader: Files label in Projects header style + muted monospace project path */}
+      <div className="flex h-[calc(var(--spacing-control)+0.3125rem)] shrink-0 items-center gap-2 px-5">
+        <span className="text-sm uppercase text-projects-header shrink-0">Files</span>
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-xs text-ink-muted"
+          title={project.path}
+        >
+          {project.path}
+        </span>
       </div>
       <NoticeBanner notice={notice} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-testid={TEST_ID.fileTree}>

@@ -200,8 +200,11 @@ describe('ChatTerminal lifecycle', () => {
     Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
     try {
       const { app, emitData } = createAppMock()
+      const activity = { output: vi.fn(), dispose: vi.fn() }
+      const registerActivity = vi.fn(() => activity)
       const props = {
         app,
+        registerActivity,
         chatId: 't1',
         cwd: 'D:/code/demo',
         visible: true,
@@ -213,6 +216,7 @@ describe('ChatTerminal lifecycle', () => {
       const terminal = mockTerminalInstances[0]
       emitData('buffered prompt')
       expect(terminal.written).toEqual([])
+      expect(activity.output).toHaveBeenCalledWith('buffered prompt')
       view.rerender(
         <ChatTerminal
           {...props}
@@ -229,6 +233,8 @@ describe('ChatTerminal lifecycle', () => {
       load.mockReturnValueOnce(disposed)
       view.rerender(<ChatTerminal {...props} terminalFontSize={23} />)
       view.unmount()
+      expect(registerActivity).toHaveBeenCalledTimes(1)
+      expect(activity.dispose).toHaveBeenCalledTimes(1)
       await act(async () => {
         finishDisposed([{} as FontFace])
       })

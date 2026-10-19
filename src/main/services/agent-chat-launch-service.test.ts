@@ -79,7 +79,8 @@ function createHarness(options: HarnessOptions = {}) {
   const service = new AgentChatLaunchService({
     projects,
     profiles: { get: () => ({ defaultId: null, profiles: options.profiles ?? [codexProfile] }) },
-    createChat: (projectId, name) => chats.createNamed(projectId, name, 'chats:createWithAgent'),
+    createChat: (projectId, name, identity) =>
+      chats.createNamed(projectId, name, 'chats:createWithAgent', identity),
     removeChat: (chatId) => chats.remove(chatId),
     terminals,
   })
@@ -88,6 +89,16 @@ function createHarness(options: HarnessOptions = {}) {
 }
 
 describe('AgentChatLaunchService', () => {
+  it('stores the launched CLI name separately from the profile name', () => {
+    const { service, chats, project } = createHarness({
+      profiles: [{ ...codexProfile, name: 'Code analysis', executable: 'claude.cmd' }],
+    })
+    const chat = service.createWithAgent(project.id, codexProfile.id)
+    expect(chat).toMatchObject({ name: '[PowerShell] Code analysis', agentName: 'Claude' })
+    expect(chat.taskRef).toBeUndefined()
+    expect(chats.get(chat.id)).toEqual(chat)
+  })
+
   it.each(
     [null, 'args', [42], new Array<string>(1), ['\u0000'], ['{prompt}'], ['pre{prompt}']].map(
       (interactiveArgs) => ({ interactiveArgs }),
@@ -143,7 +154,8 @@ describe('AgentChatLaunchService', () => {
       projects,
       profiles,
       terminals,
-      createChat: (id, name) => chats.createNamed(id, name, 'chats:createWithAgent'),
+      createChat: (id, name, identity) =>
+        chats.createNamed(id, name, 'chats:createWithAgent', identity),
       removeChat: (id) => chats.remove(id),
     })
     expectAppError(() => launch.createWithAgent(project.id, agent.id), 'not_found')

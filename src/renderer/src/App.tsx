@@ -13,7 +13,7 @@ import type {
   ProjectInfo,
   WorkItem,
 } from '../../shared/ipc-contract'
-import { APP_STATE_KEY, projectKanbanAdapterKey } from '../../shared/ipc-contract'
+import { APP_STATE_KEY, projectColorKey, projectKanbanAdapterKey } from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
 import { ActionBar } from './components/actions/ActionBar'
 import { ActionSettings, type SettingsTabId } from './components/actions/ActionSettings'
@@ -112,6 +112,8 @@ export { TEST_ID, testIdFor } from './lib/test-ids'
 function normalizeStoredId(value: string | null): string | null {
   return value !== null && value.length > 0 ? value : null
 }
+
+const MASCOT_VISIBLE_STORAGE_KEY = 'nekode.mascot-visible.v1'
 
 function parsePersistedSize(value: string | null, limits: RegionSizeLimits): number {
   if (value === null || value.trim().length === 0) {
@@ -226,6 +228,23 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const desktopDictation = useDesktopDictation(app)
   const [appSettingsOpen, setAppSettingsOpen] = useState(false)
   const [appSettingsAgents, setAppSettingsAgents] = useState(false)
+  const [mascotState, setMascotState] = useState<{ visible: boolean; error: string | null }>(() => {
+    try {
+      return { visible: localStorage.getItem(MASCOT_VISIBLE_STORAGE_KEY) !== '0', error: null }
+    } catch {
+      return { visible: true, error: 'Failed to load the mascot setting.' }
+    }
+  })
+
+  function handleToggleMascot(): void {
+    const visible = !mascotState.visible
+    try {
+      localStorage.setItem(MASCOT_VISIBLE_STORAGE_KEY, visible ? '1' : '0')
+      setMascotState({ visible, error: null })
+    } catch {
+      setMascotState({ visible, error: 'Failed to save the mascot setting.' })
+    }
+  }
   const [agentLibraryRefreshKey, setAgentLibraryRefreshKey] = useState(0)
   const [themeState, setThemeState] = useState<{ theme: ThemeId; error: string | null }>(() => {
     try {
@@ -370,6 +389,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [chatSwitchEnabled, setChatSwitchEnabled] = useState(true)
   const [projectNamesUppercase, setProjectNamesUppercase] = useState(true)
   const projectNamesUppercaseTouchedRef = useRef(false)
+  const [showProjectIcons, setShowProjectIcons] = useState(true)
+  const showProjectIconsTouchedRef = useRef(false)
+  const [projectColors, setProjectColors] = useState<Record<string, string>>({})
   // Attention alert settings (attention-alert-settings spec): all four
   // default on; the persisted off-switches load once and apply live.
   const [attentionSettings, setAttentionSettings] = useState<AttentionSettings>(
@@ -394,6 +416,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // Per-chat attention badges (chat attention badge spec): in-memory for one
   // run (AC8), keyed by chat id, rendered by the left navigation.
   const [chatAttention, setChatAttention] = useState<Record<string, ChatAttention>>({})
+  const [chatActivity, setChatActivity] = useState<ReadonlySet<string>>(new Set())
   const pendingTerminalCommandsRef = useRef<Record<string, string>>({})
   // Bottom-terminal action commands waiting for their new tab's terminal to
   // become ready. Keyed by bottom tab id; consumed exactly once (AC10).
@@ -624,6 +647,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       .catch((error: unknown) => {
         if (alive) setNotice(errorMessage(error, 'Failed to load settings.'))
       })
+    void app.state
+      .get(APP_STATE_KEY.showProjectIcons)
+      .then((value) => {
+        if (alive && !showProjectIconsTouchedRef.current) {
+          setShowProjectIcons(value !== '0')
+        }
+      })
+      .catch(() => undefined)
     return () => {
       alive = false
     }
@@ -641,6 +672,52 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     },
     [app],
   )
+
+  const handleShowProjectIconsChange = useCallback(
+    (next: boolean): void => {
+      showProjectIconsTouchedRef.current = true
+      setShowProjectIcons(next)
+      void app.state
+        .set(APP_STATE_KEY.showProjectIcons, next ? '1' : '0')
+        .catch((error: unknown) => {
+          setNotice(errorMessage(error, 'Failed to save show project icons setting.'))
+        })
+    },
+    [app],
+  )
+
+  useEffect(() => {
+    let alive = true
+    if (projects.length === 0) return
+    void Promise.all(
+      projects.map(async (project) => {
+        const color = await app.state.get(projectColorKey(project.id)).catch(() => null)
+        return [project.id, color] as const
+      }),
+    ).then((entries) => {
+      if (!alive) return
+      const map: Record<string, string> = {}
+      for (const [id, color] of entries) {
+        if (color) map[id] = color
+      }
+      setProjectColors(map)
+    })
+    return () => {
+      alive = false
+    }
+  }, [projects, app.state])
+
+  const handleProjectColorChange = useCallback((projectId: string, color: string | null): void => {
+    setProjectColors((previous) => {
+      const next = { ...previous }
+      if (color) {
+        next[projectId] = color
+      } else {
+        delete next[projectId]
+      }
+      return next
+    })
+  }, [])
 
   // Attention alert settings (attention-alert-settings spec): one setter per
   // toggle-key; the settings apply live from the set state and persist
@@ -1452,6 +1529,27 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     },
     [filesSessions, loadFilesDirectory, loadGitStatuses, projects],
   )
+
+  const lastOpenedFilesProjectIdRef = useRef<string | null>(null)
+  const previousFilesProjectIdRef = useRef<string | null>(filesProjectId)
+
+  useEffect(() => {
+    if (filesProjectId !== null) {
+      lastOpenedFilesProjectIdRef.current = filesProjectId
+    } else if (
+      previousFilesProjectIdRef.current !== null &&
+      lastOpenedFilesProjectIdRef.current !== null
+    ) {
+      const targetId = lastOpenedFilesProjectIdRef.current
+      requestAnimationFrame(() => {
+        const trigger = document.querySelector<HTMLElement>(
+          `[data-testid="${testIdFor.projectFiles(targetId)}"]`,
+        )
+        trigger?.focus({ preventScroll: true })
+      })
+    }
+    previousFilesProjectIdRef.current = filesProjectId
+  }, [filesProjectId])
 
   const handleCloseProjectFiles = useCallback((): void => {
     setNotice(null)
@@ -2441,11 +2539,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             <LeftNavigation
               projects={projects}
               projectNamesUppercase={projectNamesUppercase}
+              showProjectIcons={showProjectIcons}
+              projectColors={projectColors}
               chatsByProject={chatsByProject}
               expandedProjectIds={expandedProjectIds}
               selectedProjectId={selectedProjectId}
               selectedChatId={selectedChatId}
               attention={chatAttention}
+              activity={chatActivity}
               attentionBadgeEnabled={attentionSettings.badge}
               attentionActiveIndicatorEnabled={attentionSettings.activeIndicator}
               onSelectProject={handleSelectProject}
@@ -2467,15 +2568,23 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               loadAgentProfiles={loadAgentProfiles}
               onConfigureAgents={openAgentsSettings}
               onRequestCloseChat={handleRequestCloseChat}
-              notice={notice}
+              notice={filesProject !== null ? null : notice}
             >
-              <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
+              <PanelFooter
+                onOpenAppSettings={() => setAppSettingsOpen(true)}
+                mascotVisible={mascotState.visible}
+                mascotError={mascotState.error}
+                onToggleMascot={handleToggleMascot}
+              />
             </LeftNavigation>
           }
           files={
             filesProject !== null ? (
               <ProjectFilesPanel
                 project={filesProject}
+                projectNamesUppercase={projectNamesUppercase}
+                showProjectIcons={showProjectIcons}
+                projectColor={projectColors?.[filesProject.id]}
                 session={filesSession}
                 onBack={handleCloseProjectFiles}
                 onRefresh={handleRefreshProjectFiles}
@@ -2487,7 +2596,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 onTrash={handleFilesTrash}
                 notice={notice}
               >
-                <PanelFooter onOpenAppSettings={() => setAppSettingsOpen(true)} />
+                <PanelFooter
+                  onOpenAppSettings={() => setAppSettingsOpen(true)}
+                  mascotVisible={mascotState.visible}
+                  mascotError={mascotState.error}
+                  onToggleMascot={handleToggleMascot}
+                />
               </ProjectFilesPanel>
             ) : null
           }
@@ -2533,6 +2647,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               projectId={tabProjectId}
               activeChatId={activeChat?.id ?? null}
               chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
+              task={activeChat?.task}
               isKanban={activeTab.kind === 'kanban'}
               kanbanControls={
                 tabProjectId !== null && activeTab.kind === 'kanban'
@@ -2626,6 +2741,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                   selectedChatId={selectedChatId}
                   selectionNonce={selectionNonce}
                   attention={chatAttention}
+                  onActivityChange={setChatActivity}
                   onAttentionChange={setChatAttention}
                   attentionSettings={attentionSettings}
                   terminalCwds={terminalCwds}
@@ -2729,6 +2845,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           chatSwitch={chatSwitchEnabled}
           projectNamesUppercase={projectNamesUppercase}
           onProjectNamesUppercaseChange={handleProjectNamesUppercaseChange}
+          showProjectIcons={showProjectIcons}
+          onShowProjectIconsChange={handleShowProjectIconsChange}
           error={
             themeState.error ??
             quickThemeSwitchState.error ??
@@ -2775,6 +2893,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           initialTab={actionSettingsTab}
           onClose={handleActionSettingsClose}
           onKanbanInvalidate={invalidateKanban}
+          onProjectColorChange={handleProjectColorChange}
         />
       ) : null}
       {handoffPickerOpen && tabProjectId !== null ? (

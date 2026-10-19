@@ -154,6 +154,30 @@ const buildAction: ActionControl = {
 }
 
 describe('app settings and themes', () => {
+  it('toggles the mascot independently of App Settings and restores its saved visibility', () => {
+    const app = createAppApiStub()
+    const view = render(<App app={app} />)
+    const toggle = screen.getByRole('button', { name: 'Show mascot', pressed: true })
+    expect(screen.getByTestId(TEST_ID.panelMascot)).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(screen.queryByTestId(TEST_ID.panelMascot)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Show mascot', pressed: false })).toBe(toggle)
+    expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
+
+    view.unmount()
+    const restored = render(<App app={app} />)
+    expect(screen.queryByTestId(TEST_ID.panelMascot)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show mascot', pressed: false }))
+    expect(screen.getByTestId(TEST_ID.panelMascot)).toBeTruthy()
+    restored.unmount()
+
+    render(<App app={app} />)
+    expect(screen.getByRole('button', { name: 'Show mascot', pressed: true })).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.panelMascot)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    expect(screen.getByRole('dialog', { name: 'App Settings' })).toBeTruthy()
+  })
+
   it('opens the global Agents library without a project', async () => {
     const app = createAppApiStub()
     render(<App app={app} />)
@@ -286,6 +310,31 @@ describe('app settings and themes', () => {
       screen.getByTestId(testIdFor.projectSelect('p1')).querySelector('span.truncate')?.textContent,
     ).toBe('DEMO')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.projectNamesUppercase, '1')
+  })
+
+  it('defaults project avatar icons to visible and persists the preference', async () => {
+    const app = createAppApiStub()
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    const view = render(<App app={app} />)
+    await screen.findByTestId(testIdFor.projectAvatar('p1'))
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const toggle = screen.getByRole('checkbox', {
+      name: 'Show project icons',
+    }) as HTMLInputElement
+    expect(toggle.checked).toBe(true)
+    fireEvent.click(toggle)
+    expect(screen.queryByTestId(testIdFor.projectAvatar('p1'))).toBeNull()
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.showProjectIcons, '0')
+    view.unmount()
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.showProjectIcons ? '0' : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.projectAvatar('p1'))).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show project icons' }))
+    expect(await screen.findByTestId(testIdFor.projectAvatar('p1'))).toBeTruthy()
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.showProjectIcons, '1')
   })
 
   it('closes the app settings dialog on a backdrop mouse down', () => {
@@ -537,7 +586,8 @@ describe('app settings and themes', () => {
         target: { value: 'nekode-float' },
       })
     }
-    expect(screen.getByRole('alert').textContent).toBe(expectedNotice)
+    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
+    expect(within(dialog).getByRole('alert').textContent).toBe(expectedNotice)
     expect(document.documentElement.dataset.theme).toBe('default')
   })
 
@@ -2620,7 +2670,12 @@ describe('project and chat data flow', () => {
   })
 
   it('new-chat agent menu: choosing a profile creates and adopts the agent chat', async () => {
-    const agentChat: ChatInfo = { id: 'a7', projectId: 'p1', name: '[PowerShell] Codex' }
+    const agentChat: ChatInfo = {
+      id: 'a7',
+      projectId: 'p1',
+      name: '[PowerShell] Codex',
+      agentName: 'Codex',
+    }
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([])
     vi.mocked(app.agentProfiles.get).mockResolvedValue({
@@ -2642,10 +2697,31 @@ describe('project and chat data flow', () => {
     // tab active.
     const row = await screen.findByTestId(testIdFor.chatRow('a7'))
     expect(row.getAttribute('data-selected')).toBe('true')
+    expect(row.getAttribute('aria-label')).toContain('Codex, Codex, idle')
+    expect(within(row).getAllByText('Codex')).toHaveLength(2)
     expect(screen.getByTestId(testIdFor.projectChats('p1'))).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('[PowerShell] Codex')
     expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 'a7')
+  })
+
+  it('restores persisted Kanban identity into navigation on startup', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([
+      {
+        id: 'restored',
+        projectId: 'p1',
+        name: '[PS7] Old profile name',
+        taskRef: 'NEKODE-42',
+        agentName: 'Claude',
+      },
+    ])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    const row = await screen.findByTestId(testIdFor.chatRow('restored'))
+    expect(within(row).getByText('NEKODE-42')).toBeTruthy()
+    expect(within(row).getByText('Claude')).toBeTruthy()
+    expect(row.textContent).not.toContain('Old profile name')
   })
 
   it('new-chat agent menu: no profiles offers Configure agents and opens the Agents settings', async () => {
@@ -3696,6 +3772,30 @@ describe('chat attention badge (end to end through App)', () => {
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
   }
 
+  it('shows hidden recent output and retains the deadline when attention clears', async () => {
+    await renderTwoChats()
+    vi.useFakeTimers()
+    try {
+      emitData('t1', 'output')
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.getByTestId(testIdFor.chatActivity('t1'))).toBeTruthy()
+      expect(screen.queryByTestId(testIdFor.chatActivity('t2'))).toBeNull()
+      emitData('t1', '\x07')
+      expect(screen.getByTestId(testIdFor.chatAttentionBadge('t1'))).toBeTruthy()
+      expect(screen.queryByTestId(testIdFor.chatActivity('t1'))).toBeNull()
+      act(() => vi.advanceTimersByTime(2000))
+      fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
+      expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
+      expect(screen.getByTestId(testIdFor.chatActivity('t1'))).toBeTruthy()
+      act(() => vi.advanceTimersByTime(500))
+      expect(screen.queryByTestId(testIdFor.chatActivity('t1'))).toBeNull()
+      const stateKeys = vi.mocked(app.state.set).mock.calls.map(([key]) => key)
+      expect(stateKeys.some((key) => key.startsWith('activity.'))).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('AC10 + badge: a BEL in the hidden chat shows the badge with no tooltip; OSC 9 carries the truncated message', async () => {
     await renderTwoChats()
     expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
@@ -3847,6 +3947,15 @@ describe('chat attention badge (end to end through App)', () => {
     emitData(bottomTabId, '\x07\x1b]9;bottom noise\x07')
     expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
     expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t2'))).toBeNull()
+    vi.useFakeTimers()
+    try {
+      emitData(bottomTabId, 'more bottom output')
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.queryByTestId(testIdFor.chatActivity('t1'))).toBeNull()
+      expect(screen.queryByTestId(testIdFor.chatActivity('t2'))).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
     expect(openBefore).toBe(false)
   })
 

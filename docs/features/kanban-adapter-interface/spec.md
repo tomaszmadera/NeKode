@@ -183,6 +183,11 @@ adding a non-empty title without changing the artwork.
 
 ## Kanban task launch amendment (user decision 2026-10-07)
 
+The [session label contract](../session-labels/spec.md) adds launch-time task ref
+and agent display identity to the persisted chat returned by Start and Resume.
+It owns left-navigation labels; stored names and launch/retry semantics below
+remain unchanged.
+
 Ta sekcja jest kontraktem NEKODE-28 zaakceptowanym przez użytkownika
 2026-10-07. Akceptacja dotyczy specyfikacji. Sekcja zastępuje ograniczenie dotyczące akcji kart
 w Goal i Non-goals oraz sposób

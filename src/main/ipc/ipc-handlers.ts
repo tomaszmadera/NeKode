@@ -3,6 +3,7 @@ import type { DictationResult } from '../../shared/dictation-contract'
 import {
   APP_STATE_KEY,
   IPC_CHANNEL,
+  projectColorKey,
   projectHandoffDirKey,
   projectShellKey,
   projectWslShellsKey,
@@ -145,6 +146,7 @@ export function registerAppIpcHandlers(
     services.state.delete(projectHandoffDirKey(projectId))
     services.state.delete(projectShellKey(projectId))
     services.state.delete(projectWslShellsKey(projectId))
+    services.state.delete(projectColorKey(projectId))
     services.kanban.cleanupProject(projectId)
     services.agentProfiles.cleanupProject(projectId)
     services.actions.stopForProject(projectId)

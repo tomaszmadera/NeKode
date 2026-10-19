@@ -76,6 +76,7 @@ export function FileTree({
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
+        event.preventDefault()
         setMenu(null)
       }
     }
@@ -169,8 +170,8 @@ function FileTreeLevel({
             <li key={entry.relativePath}>
               <button
                 type="button"
-                className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-sm text-ink-secondary hover:bg-highlight hover:text-ink"
-                style={{ paddingLeft: 4 + depth * 12 }}
+                className="flex w-full items-center gap-1.5 truncate rounded px-1.5 py-1 text-left text-xs text-ink-secondary transition-colors duration-fast hover:bg-[#232C41] hover:text-ink"
+                style={{ paddingLeft: 8 + depth * 12 }}
                 data-testid={testIdFor.fileEntry(entry.relativePath)}
                 data-kind="directory"
                 data-git-status={decoration?.word}
@@ -188,10 +189,21 @@ function FileTreeLevel({
                   }
                 }}
               >
-                <span aria-hidden="true" className="flex shrink-0 text-ink-muted">
-                  {isExpanded ? <Icon.chevronDown size={12} /> : <Icon.chevronRight size={12} />}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'flex shrink-0 text-ink-muted transition-transform duration-150',
+                    isExpanded && 'rotate-90',
+                  )}
+                >
+                  <Icon.chevronRight size={12} />
                 </span>
-                <span className={cn('min-w-0 truncate', decoration?.className)}>{entry.name}</span>
+                <span aria-hidden="true" className="flex shrink-0 text-ink-muted">
+                  {isExpanded ? <Icon.directory size={14} /> : <Icon.projects size={14} />}
+                </span>
+                <span className={cn('min-w-0 flex-1 truncate font-mono', decoration?.className)}>
+                  {entry.name}
+                </span>
                 <GitStatusBadge decoration={decoration} />
               </button>
               {isExpanded ? (
@@ -216,10 +228,12 @@ function FileTreeLevel({
             <button
               type="button"
               className={cn(
-                'flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-sm text-ink-secondary hover:bg-highlight hover:text-ink',
-                isSelected && 'bg-highlight text-ink',
+                'flex w-full items-center gap-1.5 truncate rounded px-1.5 py-1 text-left text-xs transition-colors duration-fast',
+                isSelected
+                  ? 'bg-[#262B3F] text-white'
+                  : 'text-ink-secondary hover:bg-[#232C41] hover:text-ink',
               )}
-              style={{ paddingLeft: 18 + depth * 12 }}
+              style={{ paddingLeft: 8 + depth * 12 }}
               data-testid={testIdFor.fileEntry(entry.relativePath)}
               data-kind="file"
               data-selected={isSelected ? 'true' : 'false'}
@@ -237,7 +251,13 @@ function FileTreeLevel({
                 }
               }}
             >
-              <span className={cn('min-w-0 truncate', decoration?.className)}>{entry.name}</span>
+              <span aria-hidden="true" className="w-3 shrink-0" />
+              <span aria-hidden="true" className="flex shrink-0 text-ink-muted">
+                <Icon.file size={14} />
+              </span>
+              <span className={cn('min-w-0 flex-1 truncate font-mono', decoration?.className)}>
+                {entry.name}
+              </span>
               <GitStatusBadge decoration={decoration} />
             </button>
           </li>

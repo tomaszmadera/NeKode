@@ -26,7 +26,7 @@ interface TabStripProps {
   chatName: string | null
   /**
    * True when the tab-strip project has a stored Kanban binding: the
-   * non-closable `Kanban` tab then sits immediately after the chat tab
+   * non-closable icon-only `Kanban` tab then sits as the first tab
    * (kanban-adapter-interface spec Behaviour 14).
    */
   kanbanAvailable: boolean
@@ -118,6 +118,26 @@ export function TabStrip({
       // seamlessly to the panel below with no bottom line (user request 2026-10-13).
       data-testid={TEST_ID.tabStrip}
     >
+      {kanbanAvailable ? (
+        /* Kanban project-view tab (spec kanban-adapter-interface Behaviour
+           14): non-closable (no close control), first tab in the strip when
+           the tab-strip project is bound, icon only without title.
+           Selecting it shows the board in the center surface. */
+        <button
+          type="button"
+          className={cn(
+            'no-drag flex aspect-square items-center justify-center rounded-t-md border-x border-t border-edge px-2.5 text-sm transition-colors duration-fast ease-standard',
+            active.kind === 'kanban' ? 'nk-tab-active' : 'nk-tab-inactive',
+          )}
+          data-testid={TEST_ID.kanbanTab}
+          data-selected={active.kind === 'kanban' ? 'true' : 'false'}
+          onClick={() => onSelectTab(KANBAN_TAB)}
+          aria-label="Kanban"
+          title="Kanban"
+        >
+          <Icon.kanban size={14} aria-hidden className="shrink-0" />
+        </button>
+      ) : null}
       <button
         type="button"
         className={cn(
@@ -134,25 +154,6 @@ export function TabStrip({
         <Icon.chat size={12} aria-hidden className="shrink-0" />
         <span className="truncate">{chatName ?? 'Chat'}</span>
       </button>
-      {kanbanAvailable ? (
-        /* Kanban project-view tab (spec kanban-adapter-interface Behaviour
-           14): non-closable (no close control), immediately after the chat
-           tab, while the tab-strip project is bound. Selecting it shows the
-           board in the center surface. */
-        <button
-          type="button"
-          className={cn(
-            'no-drag flex max-w-48 items-center gap-1 rounded-t-md border-x border-t border-edge px-3 text-sm transition-colors duration-fast ease-standard',
-            active.kind === 'kanban' ? 'nk-tab-active' : 'nk-tab-inactive',
-          )}
-          data-testid={TEST_ID.kanbanTab}
-          data-selected={active.kind === 'kanban' ? 'true' : 'false'}
-          onClick={() => onSelectTab(KANBAN_TAB)}
-        >
-          <Icon.kanban size={12} aria-hidden className="shrink-0" />
-          <span className="truncate">Kanban</span>
-        </button>
-      ) : null}
       {openFiles.map((path) => {
         const isActive = active.kind === 'file' && active.path === path
         return (

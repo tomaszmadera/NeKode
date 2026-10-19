@@ -1,0 +1,20 @@
+.panel-mascot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 28px 8px 2px;
+  background: radial-gradient(
+    ellipse 70% 75% at 50% 78%,
+    rgb(132 92 230 / 20%) 0%,
+    rgb(132 92 230 / 7%) 45%,
+    transparent 75%
+  );
+  pointer-events: none;
+}
+
+.panel-mascot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  mask-image: linear-gradient(to right, transparent 0%, #000 9%, #000 91%, transparent 100%);
+}

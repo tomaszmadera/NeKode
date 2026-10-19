@@ -188,7 +188,8 @@ function harness(
     },
     // The launch flow owns the name and supplies its own channel (spec
     // new-chat-agent-menu Data/API): task launch keeps its kanban channel.
-    createChat: (projectId, name) => chats.createNamed(projectId, name, 'kanban:launchTask'),
+    createChat: (projectId, name, identity) =>
+      chats.createNamed(projectId, name, 'kanban:launchTask', identity),
     terminals,
   })
   return {
@@ -377,6 +378,8 @@ describe('TaskLaunchService start', () => {
     expect(result.delivered).toBe(true)
     expect(result.chat.name).toBe('[PowerShell] Codex')
     expect(result.chat.projectId).toBe(bundle.project.id)
+    expect(result.chat.taskRef).toBe('DEMO-1')
+    expect(result.chat.agentName).toBe('Codex')
     expect(bundle.chats.list(bundle.project.id)).toEqual([result.chat])
     expect(bundle.chats.create(bundle.project.id).name).toBe('[PowerShell]')
     expect(bundle.spawns).toHaveLength(1)
@@ -612,6 +615,8 @@ describe('TaskLaunchService resume', () => {
     expect(result.delivered).toBe(true)
     expect(result.chat.name).toBe('[PowerShell] Codex')
     expect(bundle.chats.list(bundle.project.id)).toEqual([result.chat])
+    expect(result.chat.taskRef).toBe('DEMO-1')
+    expect(result.chat.agentName).toBe('Codex')
     expect(bundle.spawns).toHaveLength(1)
     const spawn = bundle.spawns[0]
     expect(spawn?.cwd).toBe(projectPath)

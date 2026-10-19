@@ -5,6 +5,7 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import type { ActivitySession } from '../../lib/chat-activity'
 import { isNewChatChord } from '../../lib/new-chat-chord'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import {
@@ -100,6 +101,8 @@ interface ChatTerminalProps {
   /** Delivered input to THIS chat's PTY (attention spec Behaviour 6 / AC6). */
   onInputDelivered?: () => void
   onReady?: () => void
+  /** Optional chat-only observer, registered for this exact stream subscription. */
+  registerActivity?: (chatId: string) => ActivitySession
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -145,6 +148,7 @@ export function ChatTerminal({
   onAttention,
   onInputDelivered,
   onReady,
+  registerActivity,
   injected = null,
   onInjected,
   terminalFontSize,
@@ -177,6 +181,7 @@ export function ChatTerminal({
   const onAttentionRef = useRef(onAttention)
   const onInputDeliveredRef = useRef(onInputDelivered)
   const onReadyRef = useRef(onReady)
+  const registerActivityRef = useRef(registerActivity)
   const terminalCtrlVPasteRef = useRef(terminalCtrlVPaste)
   // Read inside the mount effect. A change does not respawn; the host remounts.
   const suppressSpawnRef = useRef(suppressSpawn)
@@ -197,6 +202,7 @@ export function ChatTerminal({
   onAttentionRef.current = onAttention
   onInputDeliveredRef.current = onInputDelivered
   onReadyRef.current = onReady
+  registerActivityRef.current = registerActivity
   terminalCtrlVPasteRef.current = terminalCtrlVPaste
   suppressSpawnRef.current = suppressSpawn
 
@@ -248,7 +254,9 @@ export function ChatTerminal({
       })
     }
 
+    const activitySession = registerActivityRef.current?.(chatId)
     const unsubscribeData = appRef.current.terminals.onData(chatId, (data) => {
+      activitySession?.output(data)
       if (fontReadyRef.current) terminal.write(data)
       else {
         pendingOutputRef.current.push(data)
@@ -265,6 +273,7 @@ export function ChatTerminal({
       }
     })
     const unsubscribeExit = appRef.current.terminals.onExit(chatId, (exitCode) => {
+      activitySession?.dispose()
       onExitRef.current(exitCode)
     })
 
@@ -572,6 +581,7 @@ export function ChatTerminal({
         })
         .catch((error: unknown) => {
           if (disposed) return
+          activitySession?.dispose()
           onSpawnErrorRef.current(
             errorMessage(error, 'Failed to start the terminal for this chat.'),
           )
@@ -602,6 +612,7 @@ export function ChatTerminal({
 
     return () => {
       disposed = true
+      activitySession?.dispose()
       cancelSubmitCr?.()
       cancelSubmitCr = undefined
       terminalRef.current = null

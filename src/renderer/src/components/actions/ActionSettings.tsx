@@ -29,6 +29,7 @@ interface Props {
   onClose: () => void
   onKanbanInvalidate?: (projectId: string | null) => void
   onManageAgents?: () => void
+  onProjectColorChange?: (projectId: string, color: string | null) => void
   libraryRefreshKey?: number
   suspended?: boolean
 }
@@ -119,6 +120,7 @@ export function ActionSettings({
   onClose,
   onKanbanInvalidate,
   onManageAgents,
+  onProjectColorChange,
   libraryRefreshKey,
   suspended = false,
 }: Props): React.JSX.Element {
@@ -376,7 +378,11 @@ export function ActionSettings({
               className="min-w-0 flex-1 overflow-y-auto pr-1"
             >
               {activeTab === 'shell' ? (
-                <ShellTab app={app} projectId={projectId} />
+                <ShellTab
+                  app={app}
+                  projectId={projectId}
+                  onProjectColorChange={onProjectColorChange}
+                />
               ) : activeTab === 'kanban' ? (
                 <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
               ) : activeTab === 'agents' ? (

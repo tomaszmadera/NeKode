@@ -124,7 +124,7 @@ describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
     cleanup()
   })
 
-  it('sits immediately after the chat tab and only for a bound project, non-closable', async () => {
+  it('sits as the first tab when bound, before the chat tab, non-closable and icon-only', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
     mockBindings(app, ['p1'])
 
@@ -134,10 +134,14 @@ describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
     const kanbanTab = await screen.findByTestId(TEST_ID.kanbanTab)
     const strip = screen.getByTestId(TEST_ID.tabStrip)
     const chatTab = screen.getByTestId(TEST_ID.tabTerminal)
-    expect(strip.firstElementChild).toBe(chatTab)
-    expect(chatTab.nextElementSibling).toBe(kanbanTab)
+    expect(strip.firstElementChild).toBe(kanbanTab)
+    expect(kanbanTab.nextElementSibling).toBe(chatTab)
     // Non-closable: no close control inside the tab.
     expect(within(kanbanTab).queryByRole('button', { name: /Close/ })).toBeNull()
+    // Icon-only without title text, square (aspect-square) with centered content (justify-center):
+    expect(kanbanTab.textContent).toBe('')
+    expect(kanbanTab.className).toContain('aspect-square')
+    expect(kanbanTab.className).toContain('justify-center')
 
     // Unbound project: no Kanban tab at all.
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
@@ -373,7 +377,11 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     await screen.findByTestId(testIdFor.kanbanItem(fixture.items[0].ref))
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    // The board commits before its toolbar controls reach the host.
+    const refresh = screen.getByTestId(TEST_ID.kanbanBoardRefresh) as HTMLButtonElement
+    await waitFor(() => expect(refresh.disabled).toBe(false))
+    fireEvent.click(refresh)
+    expect(app.kanban.listBoard).toHaveBeenCalledTimes(2)
     fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Project Settings' }))
     fireEvent.click(await screen.findByTestId(TEST_ID.settingsKanbanTab))

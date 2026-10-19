@@ -7,6 +7,8 @@ This file is the behavioral contract for the feature. Agents implement from it. 
 
 ## Goal
 
+The [session label contract](../session-labels/spec.md) owns left-navigation labels and WSL project badges. This document's compact shell codes remain part of stored chat names and shell selection, while navigation hides those prefixes.
+
 The user chooses the shell new terminals use, per project. Out of the box the app detects the shells actually installed on the machine (Windows PowerShell, PowerShell 7, cmd, WSL distributions, Git Bash) and offers them in a per-project setting; the default stays the platform default shell (unchanged behavior).
 
 ## Related requirements

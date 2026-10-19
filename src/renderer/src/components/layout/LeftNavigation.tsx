@@ -8,6 +8,7 @@ import type {
   SessionStatus,
   SessionTaskProgress,
 } from '../../../../shared/ipc-contract'
+import { parseWslPath } from '../../../../shared/wsl-path'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'
@@ -171,6 +172,9 @@ export function SessionRowItem({
   const timeFormatted = formatTimeSince(elapsedSeconds)
   const config = SESSION_STATUS_CONFIG[status]
   const isRevealed = revealedChatId === chat.id
+  const label =
+    chat.taskRef?.trim() || chat.name.replace(/^\[[^\]]+\](?:\s+|$)/, '').trim() || 'Terminal'
+  const accessibleName = chat.agentName ? `${label}, ${chat.agentName}` : label
 
   return (
     <li
@@ -206,8 +210,8 @@ export function SessionRowItem({
         )}
         data-testid={testIdFor.chatRow(chat.id)}
         data-selected={isChatSelected ? 'true' : 'false'}
-        title={config.label}
-        aria-label={`${chat.name}, ${config.label}, ${timeFormatted}`}
+        title={`${accessibleName}: ${config.label}`}
+        aria-label={`${accessibleName}, ${config.label}, ${timeFormatted}`}
         onMouseEnter={() => setRevealedChatId(chat.id)}
         onClick={() => onSelectChat(projectId, chat.id)}
       >
@@ -218,7 +222,15 @@ export function SessionRowItem({
           data-testid={testIdFor.chatStatusDot(chat.id)}
           data-status={status}
         />
-        <span className="min-w-0 truncate font-mono">{chat.name}</span>
+        <span className="min-w-0 truncate font-mono">{label}</span>
+        {chat.agentName ? (
+          <span
+            className="max-w-24 shrink-0 truncate rounded border border-edge bg-highlight px-1.5 py-0.5 font-mono text-[10px] leading-none text-ink-muted"
+            title={`Agent: ${chat.agentName}`}
+          >
+            {chat.agentName}
+          </span>
+        ) : null}
         {task !== undefined ? (
           <span
             className="rounded-[3px] px-1.5 py-0.5 text-[11px] font-mono shrink-0 leading-none"
@@ -247,14 +259,14 @@ export function SessionRowItem({
             className="sr-only"
             data-testid={testIdFor.chatAttentionBadge(chat.id)}
             title={legacyAttention.badgeTitle}
-            aria-label={`${chat.name} needs attention`}
+            aria-label={`${accessibleName} needs attention`}
           />
         ) : legacyActivity && !isRevealed ? (
           <span
             className="sr-only"
             data-testid={testIdFor.chatActivity(chat.id)}
             role="img"
-            aria-label={`${chat.name}: recent terminal output`}
+            aria-label={`${accessibleName}: recent terminal output`}
             title="Recent terminal output. This is not agent status; silence does not mean completion."
           />
         ) : null}
@@ -266,7 +278,7 @@ export function SessionRowItem({
           isRevealed ? 'flex' : 'hidden',
         )}
         data-testid={testIdFor.chatClose(chat.id)}
-        aria-label={`Close chat ${chat.name}`}
+        aria-label={`Close chat ${accessibleName}`}
         title="Close chat"
         onClick={(event) => {
           event.stopPropagation()
@@ -419,6 +431,7 @@ export function LeftNavigation({
               const chats = chatsByProject[project.id] ?? []
               const projectColor = getProjectColor(project, projectColors?.[project.id])
               const initials = getProjectInitials(project.name)
+              const wslLocation = parseWslPath(project.path)
               return (
                 <li key={project.id} className="py-1">
                   {/* Selection container (NEKODE-3, brief r3.2): the whole
@@ -462,10 +475,10 @@ export function LeftNavigation({
                     <button
                       type="button"
                       className={cn(
-                        'flex min-w-0 flex-1 items-center self-stretch rounded pl-0 pr-1 py-1 text-left text-sm',
+                        'flex min-w-0 flex-1 items-center self-stretch rounded pl-0 pr-1 py-1 text-left text-sm transition-colors duration-fast ease-standard',
                         isExpanded || isSelected
                           ? 'text-project-title'
-                          : 'text-project-title-collapsed',
+                          : 'text-project-title-collapsed hover:text-project-title',
                       )}
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
@@ -504,6 +517,14 @@ export function LeftNavigation({
                       >
                         {projectNamesUppercase ? project.name.toUpperCase() : project.name}
                       </span>
+                      {wslLocation !== null ? (
+                        <span
+                          className="ml-2 shrink-0 rounded border border-edge bg-highlight px-1.5 py-0.5 font-mono text-[10px] leading-none text-ink-muted"
+                          title={`WSL: ${wslLocation.distribution}`}
+                        >
+                          WSL
+                        </span>
+                      ) : null}
                     </button>
                     <button
                       type="button"

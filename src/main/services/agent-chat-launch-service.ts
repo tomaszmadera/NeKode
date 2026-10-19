@@ -1,10 +1,11 @@
-import type { AgentProfilesDocument, ChatInfo } from '../../shared/ipc-contract'
+import type { AgentProfilesDocument, ChatInfo, ChatLaunchIdentity } from '../../shared/ipc-contract'
 import {
   AGENT_PROMPT_PLACEHOLDER,
   agentInteractiveArgsError,
   IPC_CHANNEL,
 } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
+import { agentDisplayName } from './agent-identity'
 import type { ShellSpec } from './terminal/terminal-service'
 
 // Agent chat launch (spec new-chat-agent-menu): the profile menu of the left
@@ -31,7 +32,7 @@ export interface AgentChatLaunchDeps {
   projects: AgentChatProjectLookup
   profiles: AgentChatProfiles
   /** Creates the `[shell] <profile name>` chat row (ChatService.createNamed). */
-  createChat: (projectId: string, name: string) => ChatInfo
+  createChat: (projectId: string, name: string, identity: ChatLaunchIdentity) => ChatInfo
   /** Removes the chat row again when the agent process cannot start. */
   removeChat: (chatId: string) => void
   terminals: {
@@ -102,7 +103,9 @@ export class AgentChatLaunchService {
       file: profile.executable,
       args: agentArgs(profile.args, profile.interactiveArgs),
     }
-    const chat = this.#createChat(projectId, profile.name)
+    const chat = this.#createChat(projectId, profile.name, {
+      agentName: agentDisplayName(shell.file, shell.args),
+    })
     try {
       this.#terminals.create(chat.id, project.path, shell)
     } catch (error) {

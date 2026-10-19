@@ -1,13 +1,20 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ActionControl, ActionExecution, AppApi } from '../../../../shared/ipc-contract'
+import type {
+  ActionControl,
+  ActionExecution,
+  AppApi,
+  SessionTaskProgress,
+} from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { cn } from '../../lib/cn'
 import { actionIconGlyph, Icon, type LucideIcon } from '../../lib/icons'
 import { writeSubmitLine } from '../../lib/pty-submit'
-import { TEST_ID } from '../../lib/test-ids'
+import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import type { MarkdownViewMode } from '../files/markdown-path'
 import type { KanbanSortBy, KanbanToolbarControls } from '../kanban/KanbanBoard'
+import { TaskProgressButton } from '../task-progress/TaskProgressButton'
+import { ActionContextMenu } from './ActionContextMenu'
 
 interface ActionBarProps {
   app: AppApi
@@ -35,6 +42,10 @@ interface ActionBarProps {
     mode: MarkdownViewMode
     onChange: (mode: MarkdownViewMode) => void
   } | null
+  /**
+   * Optional task progress for the active session (agent harness task record).
+   */
+  task?: SessionTaskProgress
   /**
    * Kanban view: suppresses fixed actions (handoff, resume, stop, continue)
    * and renders Kanban controls on the left.
@@ -89,10 +100,16 @@ export function ActionBar({
   onResume,
   onError,
   markdownView,
+  task,
   isKanban = false,
   kanbanControls = null,
 }: ActionBarProps): React.JSX.Element {
   const [states, setStates] = useState<Record<string, ActionExecution>>({})
+  const [contextMenu, setContextMenu] = useState<{
+    action: ActionControl
+    x: number
+    y: number
+  } | null>(null)
   // A status read is stamped with the run epoch. execute() bumps it first, so
   // an earlier read (mount hydration included) cannot overwrite that run.
   const runEpochRef = useRef<Record<string, number>>({})
@@ -120,6 +137,12 @@ export function ActionBar({
       cancelContinueCrRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    if (contextMenu !== null && !actions.some((action) => action.id === contextMenu.action.id)) {
+      setContextMenu(null)
+    }
+  }, [actions, contextMenu])
 
   useEffect(() => {
     let alive = true
@@ -273,6 +296,7 @@ export function ActionBar({
           title={details}
           data-status={status}
           data-active={isRunning ? 'true' : 'false'}
+          data-testid={testIdFor.actionButton(action.id)}
           className={cn(
             'nk-tb',
             isRunning && 'active text-info',
@@ -280,6 +304,18 @@ export function ActionBar({
           )}
           onClick={() => {
             void execute(action)
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            setContextMenu({ action, x: event.clientX, y: event.clientY })
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+              event.preventDefault()
+              const rect = event.currentTarget.getBoundingClientRect()
+              setContextMenu({ action, x: rect.left, y: rect.bottom })
+            }
           }}
         >
           <StateIcon
@@ -449,6 +485,7 @@ export function ActionBar({
       {/* Right side: custom actions are always right-aligned across all tabs,
           followed by Markdown Code | Preview if active. */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
+        {!isKanban && task !== undefined ? <TaskProgressButton task={task} /> : null}
         {visible.map(renderAction)}
         {markdownView !== null ? (
           <fieldset className="nk-btn-group shrink-0">
@@ -489,6 +526,14 @@ export function ActionBar({
           </fieldset>
         ) : null}
       </div>
+      {contextMenu !== null ? (
+        <ActionContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          command={contextMenu.action.command}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
     </div>
   )
 }

@@ -18,6 +18,9 @@ export const TEST_ID = {
   tabContextCopyRelative: 'tab-context-copy-relative',
   tabContextCopyAbsolute: 'tab-context-copy-absolute',
   actionRowSlot: 'action-row-slot',
+  /** Context menu of a custom action button (right click / ContextMenu key / Shift+F10). */
+  actionContextMenu: 'action-context-menu',
+  actionContextCopyCommand: 'action-context-copy-command',
   statusBar: 'status-bar',
   statusProjectName: 'status-project-name',
   statusProjectPath: 'status-project-path',
@@ -110,6 +113,7 @@ export const TEST_ID = {
   chatActivity: 'chat-activity',
   chatStatusDot: 'chat-status-dot',
   chatTaskProgress: 'chat-task-progress',
+  taskProgressButton: 'task-progress-button',
   chatTime: 'chat-time',
   /** Modal confirmation dialog for destructive actions (e.g. close chat). */
   confirmDialog: 'confirm-dialog',
@@ -129,6 +133,8 @@ export const TEST_ID = {
   handoffPickerEntry: 'handoff-picker-entry',
   /** Left-panel footer: the App Settings opener (bottom of the panel). */
   appSettingsButton: 'app-settings-button',
+  panelMascot: 'panel-mascot',
+  mascotToggle: 'mascot-toggle',
   settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
   /** App Settings: quick theme switcher in status bar toggle. */
@@ -270,6 +276,10 @@ export const TEST_ID = {
   settingsActionIconEmoji: 'settings-action-icon-emoji',
   /** App Settings: terminal font size select. */
   settingsTerminalFontSize: 'settings-terminal-font-size',
+  /** App Settings: show project icons toggle. */
+  settingsShowProjectIcons: 'settings-show-project-icons',
+  /** Project Settings: project color section. */
+  settingsProjectColorSection: 'settings-project-color-section',
   terminalContextMenu: 'terminal-context-menu',
   terminalContextCopy: 'terminal-context-copy',
   terminalContextPaste: 'terminal-context-paste',
@@ -337,4 +347,6 @@ export const testIdFor = {
   kanbanGroupToggle: (stateId: string): string => `kanban-group-toggle-${stateId}`,
   /** Single comment container in the task review. */
   kanbanReviewComment: (commentId: string): string => `kanban-review-comment-${commentId}`,
+  /** Custom action button in the action bar. */
+  actionButton: (actionId: string): string => `action-button-${actionId}`,
 }

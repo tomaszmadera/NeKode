@@ -621,16 +621,16 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
         await waitFor(() => expect(paneDisplay('notes.txt')).toBe('flex'))
 
         // Board up: the active file tab's preview is hidden. The Kanban tab sits
-        // immediately after the chat tab, before the file tabs.
+        // first, before the chat and file tabs.
         fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
         await screen.findByTestId(TEST_ID.kanbanBoard)
         expect(paneDisplay('notes.txt')).toBe('none')
         const strip = screen.getByTestId(TEST_ID.tabStrip)
-        expect(strip.firstElementChild).toBe(screen.getByTestId(TEST_ID.tabTerminal))
-        expect(screen.getByTestId(TEST_ID.tabTerminal).nextElementSibling).toBe(
-          screen.getByTestId(TEST_ID.kanbanTab),
-        )
+        expect(strip.firstElementChild).toBe(screen.getByTestId(TEST_ID.kanbanTab))
         expect(screen.getByTestId(TEST_ID.kanbanTab).nextElementSibling).toBe(
+          screen.getByTestId(TEST_ID.tabTerminal),
+        )
+        expect(screen.getByTestId(TEST_ID.tabTerminal).nextElementSibling).toBe(
           screen.getByTestId(testIdFor.tabFile('README.md')),
         )
       },

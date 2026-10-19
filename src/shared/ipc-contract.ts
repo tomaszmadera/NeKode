@@ -36,10 +36,23 @@ export interface SessionTaskProgress {
   taskId: string
   step: number
   totalSteps: number
+  taskTitle?: string
+  stepName?: string
+  fix?: number
+  review?: number
+  stepNames?: readonly string[]
+  ariaLabel?: string
+  label?: string
+}
+
+/** Launch-time display identity, independent of mutable agent profile definitions. */
+export interface ChatLaunchIdentity {
+  taskRef?: string
+  agentName?: string
 }
 
 // A chat is a terminal session listed under a project (spec Data/API).
-export interface ChatInfo {
+export interface ChatInfo extends ChatLaunchIdentity {
   id: string
   projectId: string
   name: string
@@ -400,6 +413,8 @@ export const APP_STATE_KEY = {
   chatSwitchEnabled: 'chatSwitch.enabled',
   /** '0' keeps original project names in the tree; missing or '1' means uppercase. */
   projectNamesUppercase: 'projects.namesUppercase',
+  /** '0' hides project avatar icons in the tree; missing or '1' means shown. */
+  showProjectIcons: 'projects.showIcons',
   /** '0' hides attention badges on unselected chat rows; missing or '1' means shown. */
   attentionBadgeEnabled: 'attention.badgeEnabled',
   /** '0' silences the attention chime for unselected chats; missing or '1' means on. */
@@ -449,6 +464,14 @@ export function isSecretStateKey(key: string): boolean {
  */
 export function projectShellKey(projectId: string): string {
   return `project.shell:${projectId}`
+}
+
+/**
+ * Per-project color key (hex string from PROJECT_COLOR_PALETTE or custom).
+ * Missing or empty value means automatic (deterministic hash).
+ */
+export function projectColorKey(projectId: string): string {
+  return `project.color:${projectId}`
 }
 
 /**

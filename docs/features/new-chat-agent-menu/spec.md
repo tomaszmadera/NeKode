@@ -53,6 +53,8 @@ Let the user start a chat with a configured agent directly from the left panel: 
 
 ## Data / API
 
+- [Session labels](../session-labels/spec.md) adds persisted launch-time agent identity to `ChatInfo` and owns left-navigation presentation. Stored `[shell] <profile name>` names and the launch argv rules below remain unchanged.
+
 - Input: the gesture target (the per-project `New Chat` button) identifies the project; the profile choice is an `AgentProfile.id`.
 - New typed IPC channel `chats:createWithAgent(projectId, profileId)` returning `ChatInfo`: main validates the project and profile, creates the named chat through the existing chat rules, spawns the profile in the chat's terminal (the same terminal launch path `kanban:launchTask` uses), and returns the created chat.
 - The renderer reads effective project profiles through the typed bridge. The global-agent-profiles contract owns the API changes needed to resolve selected global definitions; main revalidates project selection before launch.

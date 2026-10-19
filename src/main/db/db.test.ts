@@ -24,6 +24,58 @@ function tempDbPath(): string {
   return join(dir, 'test.db')
 }
 
+describe('migration 6 (chat launch identity)', () => {
+  it('preserves legacy rows and round-trips identity across a file database reopen', () => {
+    const path = tempDbPath()
+    const db = openDatabase(path)
+    try {
+      runMigrations(
+        db,
+        MIGRATIONS.filter((migration) => migration.version <= 5),
+      )
+      db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)').run(
+        'project',
+        'Demo',
+        'D:/demo',
+        '2026-10-18T00:00:00Z',
+      )
+      db.prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)').run(
+        'legacy',
+        'project',
+        '[PS7] Old profile',
+        '2026-10-18T00:00:00Z',
+      )
+      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(6)
+      expect(db.prepare('SELECT name, task_ref, agent_name FROM chats').get()).toEqual({
+        name: '[PS7] Old profile',
+        task_ref: null,
+        agent_name: null,
+      })
+      db.prepare(
+        'INSERT INTO chats (id, project_id, name, created_at, task_ref, agent_name) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run('agent', 'project', '[PS7] Analysis', '2026-10-18T00:00:01Z', 'NEKODE-42', 'Claude')
+    } finally {
+      db.close()
+    }
+    const reopened = openDatabase(path)
+    try {
+      expect(runMigrations(reopened)).toBe(6)
+      expect(
+        reopened.prepare('SELECT name, task_ref, agent_name FROM chats WHERE id = ?').get('agent'),
+      ).toEqual({
+        name: '[PS7] Analysis',
+        task_ref: 'NEKODE-42',
+        agent_name: 'Claude',
+      })
+      reopened.prepare('DELETE FROM projects WHERE id = ?').run('project')
+      expect(reopened.prepare('SELECT id FROM chats').all()).toEqual([])
+    } finally {
+      reopened.close()
+    }
+  })
+})
+
 describe('openDatabase', () => {
   it('enables WAL, foreign keys and a busy timeout', () => {
     const db = openDatabase(tempDbPath())
@@ -41,8 +93,8 @@ describe('runMigrations', () => {
   it('creates the schema once and is idempotent', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(5)
-      expect(runMigrations(db)).toBe(5)
+      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(6)
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as Array<{ name: string }>
@@ -180,7 +232,7 @@ describe('migration 2 (tasks -> chats)', () => {
   it('carries rows over to chats without status and drops the tasks table', () => {
     const db = createLegacyDb()
     try {
-      expect(runMigrations(db)).toBe(5)
+      expect(runMigrations(db)).toBe(6)
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -199,6 +251,8 @@ describe('migration 2 (tasks -> chats)', () => {
         'project_id',
         'name',
         'created_at',
+        'task_ref',
+        'agent_name',
       ])
 
       const rows = db
@@ -259,7 +313,7 @@ describe('migration 2 (tasks -> chats)', () => {
       const applied = db
         .prepare('SELECT version FROM schema_migrations ORDER BY version')
         .all() as Array<{ version: number }>
-      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5])
+      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6])
     } finally {
       db.close()
     }
@@ -315,7 +369,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
   it('accepts bottom-terminal on an empty database and keeps the schema', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(5)
+      expect(runMigrations(db)).toBe(6)
       db.prepare(
         'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
       ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
@@ -329,7 +383,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
           .run(),
       ).not.toThrow()
       // Idempotent: a second run re-applies nothing.
-      expect(runMigrations(db)).toBe(5)
+      expect(runMigrations(db)).toBe(6)
     } finally {
       db.close()
     }
@@ -338,7 +392,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
   it('lets populated databases accept bottom-terminal and keeps old rows byte-for-byte', () => {
     const db = createLegacyDbAtV4()
     try {
-      expect(runMigrations(db)).toBe(5)
+      expect(runMigrations(db)).toBe(6)
       expect(() =>
         db
           .prepare(
@@ -453,7 +507,7 @@ describe('migration 3 (chat name unique index dropped)', () => {
   it('drops the unique index: duplicate chat names within a project are allowed', () => {
     const db = createLegacyDbAtV2()
     try {
-      expect(runMigrations(db)).toBe(5)
+      expect(runMigrations(db)).toBe(6)
       expect(() =>
         db
           .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
@@ -499,6 +553,8 @@ describe('migration 3 (chat name unique index dropped)', () => {
         'project_id',
         'name',
         'created_at',
+        'task_ref',
+        'agent_name',
       ])
       db.prepare('DELETE FROM projects WHERE id = ?').run('p1')
       expect((db.prepare('SELECT COUNT(*) AS c FROM chats').get() as { c: number }).c).toBe(0)

@@ -5,6 +5,11 @@ import { createServices } from './create-services'
 import { createNodePty } from './terminal/node-pty-factory'
 import { listWslDirectories, listWslDistributions, runWsl } from './terminal/wsl'
 
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  execFileSync: vi.fn(() => 'usable'),
+}))
+
 vi.mock('node:fs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs')>()),
   accessSync: vi.fn(),
@@ -50,6 +55,35 @@ function setup() {
 }
 
 describe('WSL service wiring', () => {
+  it('persists the launched agent identity through profile edits and deletion', () => {
+    const { services, project } = setup()
+    try {
+      const profile = services.agentProfiles.put({
+        id: null,
+        name: 'Code analysis',
+        command: 'claude "{prompt}"',
+      }).profiles[0]
+      services.agentProfiles.selectionSet(project.id, {
+        selectedIds: [profile.id],
+        defaultId: null,
+      })
+      const chat = services.chats.createWithAgent(project.id, profile.id)
+      expect(chat).toMatchObject({ name: '[WSL] Code analysis', agentName: 'Claude' })
+      services.agentProfiles.put({
+        id: profile.id,
+        name: 'New profile name',
+        command: 'codex "{prompt}"',
+      })
+      expect(services.chats.list(project.id)).toEqual([chat])
+      services.agentProfiles.selectionSet(project.id, { selectedIds: [], defaultId: null })
+      services.agentProfiles.delete(profile.id)
+      expect(services.chats.list(project.id)).toEqual([chat])
+    } finally {
+      services.terminals.terminateAll()
+      services.closeDatabase?.()
+    }
+  })
+
   it('lists directories through the existing WSL helper without registering a project', () => {
     const { services, project } = setup()
     const before = services.projects.list()

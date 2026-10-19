@@ -1,5 +1,5 @@
 import { spawn } from 'node-pty'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNodePty } from './node-pty-factory'
 import type { PtySpawnOptions } from './terminal-service'
 
@@ -8,6 +8,7 @@ vi.mock('node-pty', () => ({
 }))
 
 describe('createNodePty', () => {
+  const originalPlatform = process.platform
   const fakePty = {
     pid: 4321,
     write: vi.fn(),
@@ -20,6 +21,42 @@ describe('createNodePty', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(spawn).mockReturnValue(fakePty as unknown as ReturnType<typeof spawn>)
+  })
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform })
+  })
+
+  it.each(['hermes', 'agy', 'grok', 'claude', 'codex', 'C:\\Agent tools\\agent'])(
+    'starts the Windows native executable for extensionless profile %s',
+    (file) => {
+      Object.defineProperty(process, 'platform', { value: 'win32' })
+      const args = ['a b', '& | ;', '"quote"', 'ą', '']
+      createNodePty({ file, args, cwd: 'C:\\project', cols: 80, rows: 24, env: {} })
+      expect(spawn).toHaveBeenCalledWith(`${file}.exe`, args, expect.any(Object))
+    },
+  )
+
+  it.each(['agent.exe', 'agent.com', 'agent.cmd', 'agent.bat', 'wsl.exe'])(
+    'preserves an explicit Windows executable extension in %s',
+    (file) => {
+      Object.defineProperty(process, 'platform', { value: 'win32' })
+      createNodePty({ file, args: [], cwd: 'C:\\project', cols: 80, rows: 24, env: {} })
+      expect(spawn).toHaveBeenCalledWith(file, [], expect.any(Object))
+    },
+  )
+
+  it('preserves extensionless executables on Linux', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    createNodePty({
+      file: '/usr/bin/claude',
+      args: [],
+      cwd: '/home/user',
+      cols: 80,
+      rows: 24,
+      env: {},
+    })
+    expect(spawn).toHaveBeenCalledWith('/usr/bin/claude', [], expect.any(Object))
   })
 
   it('forwards all spawn options to node-pty spawn', () => {

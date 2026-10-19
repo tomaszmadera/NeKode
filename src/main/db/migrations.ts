@@ -151,6 +151,15 @@ export const MIGRATIONS: readonly Migration[] = [
       `)
     },
   },
+  {
+    version: 6,
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE chats ADD COLUMN task_ref TEXT CHECK (length(trim(task_ref)) > 0);
+        ALTER TABLE chats ADD COLUMN agent_name TEXT CHECK (length(trim(agent_name)) > 0);
+      `)
+    },
+  },
 ]
 
 export function assertValidMigrations(migrations: readonly Migration[]): void {

@@ -43,10 +43,9 @@ export function ResizeHandle({
       className={
         axis === 'x'
           ? // Width handles sit on the region's right edge (user request
-            // 2026-10-04): a vertical strip reads as a width change; the
-            // former in-flow bottom bar read as a height change. The host
-            // region is the positioning context (`relative`).
-            'absolute inset-y-0 right-0 w-1 cursor-col-resize touch-none bg-edge hover:bg-highlight'
+            // 2026-10-04, 2026-10-18): a transparent strip with 1px border at
+            // rest avoids a heavy divider bar while keeping an easy drag target.
+            'absolute inset-y-0 right-0 w-1 cursor-col-resize touch-none bg-transparent hover:bg-highlight active:bg-highlight focus-visible:bg-highlight focus-visible:outline-none transition-colors duration-fast'
           : 'h-1 w-full cursor-row-resize touch-none bg-edge hover:bg-highlight'
       }
       onPointerDown={onResizeStart}

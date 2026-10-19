@@ -1,9 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ActionControl, AppApi } from '../../../../shared/ipc-contract'
+import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
 import { ActionBar } from './ActionBar'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  restoreClipboard()
+})
 
 function makeAppMock(): AppApi {
   return {
@@ -181,5 +186,228 @@ describe('ActionBar', () => {
 
     // New task button is not rendered during review
     expect(screen.queryByTestId('kanban-new-task')).toBeNull()
+  })
+
+  it('renders TaskProgressButton with exact aria-label when task is present in session mode', async () => {
+    const app = makeAppMock()
+    render(
+      <ActionBar
+        app={app}
+        actions={[]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+        task={{
+          taskId: 'NEKODE-74',
+          step: 5,
+          totalSteps: 8,
+          stepName: 'Fixes',
+          fix: 3,
+        }}
+      />,
+    )
+
+    const progressBtn = screen.getByRole('button', {
+      name: 'Task progress: step 5 of 8, Fixes, fix 3',
+    })
+    expect(progressBtn).toBeTruthy()
+    expect(progressBtn.getAttribute('aria-label')).toBe('Task progress: step 5 of 8, Fixes, fix 3')
+  })
+
+  it('does not render TaskProgressButton when task is undefined', async () => {
+    const app = makeAppMock()
+    render(
+      <ActionBar
+        app={app}
+        actions={[]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    expect(screen.queryByTestId('task-progress-button')).toBeNull()
+  })
+
+  it('opens context menu on right click of custom action button and copies command to clipboard', async () => {
+    const app = makeAppMock()
+    const clipboard = stubClipboard()
+    render(
+      <ActionBar
+        app={app}
+        actions={[customAction]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    const actionBtn = screen.getByTestId(testIdFor.actionButton('action-1'))
+    fireEvent.contextMenu(actionBtn)
+
+    const menu = screen.getByTestId(TEST_ID.actionContextMenu)
+    expect(menu).toBeTruthy()
+
+    const copyItem = screen.getByTestId(TEST_ID.actionContextCopyCommand)
+    expect(copyItem.textContent).toBe('Copy command')
+
+    fireEvent.click(copyItem)
+
+    await waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith('npm start')
+    })
+    expect(screen.queryByTestId(TEST_ID.actionContextMenu)).toBeNull()
+  })
+
+  it('copies full command including PowerShell prefix when configured on the action', async () => {
+    const app = makeAppMock()
+    const clipboard = stubClipboard()
+    const psAction: ActionControl = {
+      id: 'action-ps',
+      scope: 'global',
+      projectId: null,
+      title: 'Run Script',
+      icon: null,
+      command: 'powershell -NoProfile -ExecutionPolicy Bypass -File .\\script.ps1',
+      cwd: null,
+      runMode: 'background',
+      confirm: false,
+      sortOrder: 0,
+    }
+
+    render(
+      <ActionBar
+        app={app}
+        actions={[psAction]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    const actionBtn = screen.getByTestId(testIdFor.actionButton('action-ps'))
+    fireEvent.contextMenu(actionBtn)
+
+    const copyItem = screen.getByTestId(TEST_ID.actionContextCopyCommand)
+    fireEvent.click(copyItem)
+
+    await waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith(
+        'powershell -NoProfile -ExecutionPolicy Bypass -File .\\script.ps1',
+      )
+    })
+    expect(screen.queryByTestId(TEST_ID.actionContextMenu)).toBeNull()
+  })
+
+  it('opens context menu via ContextMenu and Shift+F10 keyboard shortcuts', () => {
+    const app = makeAppMock()
+    render(
+      <ActionBar
+        app={app}
+        actions={[customAction]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    const actionBtn = screen.getByTestId(testIdFor.actionButton('action-1'))
+
+    // ContextMenu key
+    fireEvent.keyDown(actionBtn, { key: 'ContextMenu' })
+    expect(screen.getByTestId(TEST_ID.actionContextMenu)).toBeTruthy()
+
+    // Escape closes it
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.actionContextMenu)).toBeNull()
+
+    // Shift+F10
+    fireEvent.keyDown(actionBtn, { key: 'F10', shiftKey: true })
+    expect(screen.getByTestId(TEST_ID.actionContextMenu)).toBeTruthy()
+  })
+
+  it('dismisses context menu on backdrop click', () => {
+    const app = makeAppMock()
+    render(
+      <ActionBar
+        app={app}
+        actions={[customAction]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    const actionBtn = screen.getByTestId(testIdFor.actionButton('action-1'))
+    fireEvent.contextMenu(actionBtn)
+
+    const overlay = screen.getByRole('menu', { name: 'Action' })
+    fireEvent.click(overlay)
+    expect(screen.queryByTestId(TEST_ID.actionContextMenu)).toBeNull()
+  })
+
+  it('does not open action context menu when right clicking fixed buttons', () => {
+    const app = makeAppMock()
+    render(
+      <ActionBar
+        app={app}
+        actions={[customAction]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Handoff' }))
+    expect(screen.queryByTestId(TEST_ID.actionContextMenu)).toBeNull()
   })
 })

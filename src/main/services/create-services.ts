@@ -29,6 +29,7 @@ import { ResumeTemplateService } from './handoffs/resume-template-service'
 import { KanbanService, type SafeStorageLike } from './kanban/kanban-service'
 import { buildResumePrompt, TaskLaunchService } from './kanban/task-launch-service'
 import { ProjectService } from './project-service'
+import { TaskRecordService } from './tasks/task-record-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { ShellService } from './terminal/shell-service'
 import { TerminalService } from './terminal/terminal-service'
@@ -108,6 +109,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
   /** The project's stored shell choice, resolved to a spawnable spec. */
   const projectShell = (projectId: string) =>
     shells.resolve(state.get(projectShellKey(projectId)), projects.get(projectId)?.path)
+  const taskRecords = new TaskRecordService()
   const chats = new ChatService({
     db,
     // The chat prefix is the compact shell code (spec project-shell-selection
@@ -115,6 +117,10 @@ export function createServices(options: CreateServicesOptions): AppServices {
     // settings list and the bottom-tab text.
     chatNameForProject: (projectId) =>
       shells.chatLabel(state.get(projectShellKey(projectId)), projects.get(projectId)?.path),
+    taskResolver: (projectId, chatName, taskRef) => {
+      const projectPath = projects.get(projectId)?.path
+      return projectPath ? taskRecords.getTaskForChat(projectPath, chatName, taskRef) : undefined
+    },
   })
   const terminals = new TerminalService({ createPty: createNodePty })
   const git = new GitService({ projects })
@@ -151,8 +157,8 @@ export function createServices(options: CreateServicesOptions): AppServices {
     projects,
     profiles: agentProfiles,
     // The chat name and its errors belong to this flow, not to a task launch.
-    createChat: (projectId, name) =>
-      chats.createNamed(projectId, name, IPC_CHANNEL.chatsCreateWithAgent),
+    createChat: (projectId, name, identity) =>
+      chats.createNamed(projectId, name, IPC_CHANNEL.chatsCreateWithAgent, identity),
     removeChat: (chatId) => chats.remove(chatId),
     terminals,
   })
@@ -171,8 +177,8 @@ export function createServices(options: CreateServicesOptions): AppServices {
       }
       return value
     },
-    createChat: (projectId, name) =>
-      chats.createNamed(projectId, name, IPC_CHANNEL.kanbanLaunchTask),
+    createChat: (projectId, name, identity) =>
+      chats.createNamed(projectId, name, IPC_CHANNEL.kanbanLaunchTask, identity),
     terminals,
   })
   const actions = new ActionService({

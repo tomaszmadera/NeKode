@@ -253,6 +253,7 @@ button {
   }
 
   .nk-tab-active {
+    min-width: var(--spacing-control);
     position: relative;
     z-index: 10;
     margin-bottom: -1px;
@@ -272,6 +273,7 @@ button {
   }
 
   .nk-tab-inactive {
+    min-width: var(--spacing-control);
     background-color: transparent;
     color: var(--color-ink-secondary);
   }
@@ -287,7 +289,7 @@ button {
    and easing from the design doc 24 panel-expansion band. The reduced-motion
    block below collapses this to a snap. */
 .left-panel-track-run {
-  transition: transform 220ms cubic-bezier(0.2, 0, 0, 1);
+  transition: transform 300ms cubic-bezier(0.22, 0.8, 0.24, 1);
 }
 
 /* Global reduced-motion preference (design doc 24, NEKODE-9): suppresses

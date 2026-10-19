@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ProjectInfo } from '../../../../shared/ipc-contract'
+import type { ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { LeftNavigation } from './LeftNavigation'
 
@@ -43,6 +43,66 @@ function defaultProps() {
 }
 
 describe('LeftNavigation session status indicators', () => {
+  it('shows the Kanban ref with an agent badge and uses its identity for selection and closing', () => {
+    const props = defaultProps()
+    const chat: ChatInfo = {
+      id: 'task',
+      projectId: 'p1',
+      name: '[PS7] Analysis',
+      taskRef: 'NEKODE-42',
+      agentName: 'Codex',
+    }
+    render(<LeftNavigation {...props} chatsByProject={{ p1: [chat] }} />)
+    const row = screen.getByTestId(testIdFor.chatRow(chat.id))
+    expect(within(row).getByText('NEKODE-42')).toBeTruthy()
+    expect(within(row).getByText('Codex')).toBeTruthy()
+    expect(row.textContent).not.toContain('[PS7]')
+    expect(row.textContent).not.toContain('Analysis')
+    expect(row.getAttribute('aria-label')).toBe('NEKODE-42, Codex, idle, now')
+    expect(row.getAttribute('title')).toContain('NEKODE-42')
+    fireEvent.click(row)
+    expect(props.onSelectChat).toHaveBeenCalledWith('p1', 'task')
+    fireEvent.mouseEnter(row)
+    fireEvent.click(screen.getByRole('button', { name: 'Close chat NEKODE-42, Codex' }))
+    expect(props.onRequestCloseChat).toHaveBeenCalledWith('task')
+  })
+
+  it('shows a non-Kanban profile name, plain Terminal, and legacy names without guessed agents', () => {
+    const chats: ChatInfo[] = [
+      { id: 'agent', projectId: 'p1', name: '[PS7] Code analysis', agentName: 'Claude' },
+      { id: 'shell', projectId: 'p1', name: '[bash]' },
+      { id: 'legacy', projectId: 'p1', name: '[WSL] Old profile' },
+      { id: 'custom', projectId: 'p1', name: 'Existing name' },
+    ]
+    render(<LeftNavigation {...defaultProps()} chatsByProject={{ p1: chats }} />)
+    const agent = screen.getByTestId(testIdFor.chatRow('agent'))
+    expect(within(agent).getByText('Code analysis')).toBeTruthy()
+    expect(within(agent).getByText('Claude')).toBeTruthy()
+    expect(
+      within(screen.getByTestId(testIdFor.chatRow('shell'))).getByText('Terminal'),
+    ).toBeTruthy()
+    const legacy = screen.getByTestId(testIdFor.chatRow('legacy'))
+    expect(within(legacy).getByText('Old profile')).toBeTruthy()
+    expect(legacy.textContent).not.toContain('WSL')
+    expect(
+      within(screen.getByTestId(testIdFor.chatRow('custom'))).getByText('Existing name'),
+    ).toBeTruthy()
+  })
+
+  it.each([
+    '\\\\wsl.localhost\\Ubuntu\\home\\user\\Project',
+    '\\\\wsl$\\Ubuntu\\home\\user\\Project',
+  ])('marks only WSL project locations and exposes the distribution: %s', (path) => {
+    const props = defaultProps()
+    props.projects[0].path = path
+    props.projects[1].runtimeLabel = 'WSL: misleading legacy label'
+    render(<LeftNavigation {...props} />)
+    const wslProject = screen.getByTestId(testIdFor.projectSelect('p1'))
+    const badge = within(wslProject).getByText('WSL')
+    expect(badge.getAttribute('title')).toBe('WSL: Ubuntu')
+    expect(within(screen.getByTestId(testIdFor.projectSelect('p2'))).queryByText('WSL')).toBeNull()
+  })
+
   it('renders state dot for every session with correct color, label, and accessibility', () => {
     const props = {
       ...defaultProps(),
@@ -65,7 +125,7 @@ describe('LeftNavigation session status indicators', () => {
     const dot1 = screen.getByTestId(testIdFor.chatStatusDot('t1'))
     expect(dot1.getAttribute('aria-hidden')).toBe('true')
     expect(dot1.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80
-    expect(row1.getAttribute('title')).toBe('running')
+    expect(row1.getAttribute('title')).toBe('Chat 1: running')
     expect(row1.getAttribute('aria-label')).toBe('Chat 1, running, now')
     // Active session styling: #262B3F bg and white text
     expect(row1.className).toContain('bg-[#262B3F]')
@@ -76,7 +136,7 @@ describe('LeftNavigation session status indicators', () => {
     const dot2 = screen.getByTestId(testIdFor.chatStatusDot('t2'))
     expect(dot2.getAttribute('aria-hidden')).toBe('true')
     expect(dot2.style.backgroundColor).toBe('rgb(245, 158, 11)') // #F59E0B
-    expect(row2.getAttribute('title')).toBe('waiting for input')
+    expect(row2.getAttribute('title')).toBe('Chat 2: waiting for input')
     expect(row2.getAttribute('aria-label')).toBe('Chat 2, waiting for input, now')
     // Inactive session styling: transparent bg, no border
     expect(row2.className).toContain('bg-transparent')
@@ -87,7 +147,7 @@ describe('LeftNavigation session status indicators', () => {
     const dot3 = screen.getByTestId(testIdFor.chatStatusDot('t3'))
     expect(dot3.getAttribute('aria-hidden')).toBe('true')
     expect(dot3.style.backgroundColor).toBe('rgb(138, 144, 166)') // #8A90A6
-    expect(row3.getAttribute('title')).toBe('idle')
+    expect(row3.getAttribute('title')).toBe('Chat 3: idle')
     expect(row3.getAttribute('aria-label')).toBe('Chat 3, idle, now')
   })
 
@@ -135,13 +195,13 @@ describe('LeftNavigation session status indicators', () => {
 
     // Starts idle
     expect(dot.style.backgroundColor).toBe('rgb(138, 144, 166)')
-    expect(row.getAttribute('title')).toBe('idle')
+    expect(row.getAttribute('title')).toBe('Chat 1: idle')
     expect(screen.getByTestId(testIdFor.chatTime('t1')).textContent).toBe('now')
 
     // Becomes running via activity
     view.rerender(<LeftNavigation {...props} activity={new Set(['t1'])} />)
     expect(dot.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80
-    expect(row.getAttribute('title')).toBe('running')
+    expect(row.getAttribute('title')).toBe('Chat 1: running')
     expect(screen.getByTestId(testIdFor.chatTime('t1')).textContent).toBe('now')
 
     // Becomes waiting via attention
@@ -153,7 +213,7 @@ describe('LeftNavigation session status indicators', () => {
       />,
     )
     expect(dot.style.backgroundColor).toBe('rgb(245, 158, 11)') // #F59E0B
-    expect(row.getAttribute('title')).toBe('waiting for input')
+    expect(row.getAttribute('title')).toBe('Chat 1: waiting for input')
     expect(screen.getByTestId(testIdFor.chatTime('t1')).textContent).toBe('now')
   })
 
@@ -242,6 +302,22 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(nameSpan2?.className).toContain('font-normal')
   })
 
+  it('applies lighter font color on hover to collapsed projects matching active project color', () => {
+    const props = defaultProps()
+    // p1 is expanded and selected; p2 is collapsed and unselected
+    props.expandedProjectIds = new Set(['p1'])
+    props.selectedProjectId = 'p1'
+    render(<LeftNavigation {...props} />)
+
+    const btn1 = screen.getByTestId(testIdFor.projectSelect('p1'))
+    expect(btn1.className).toContain('text-project-title')
+
+    const btn2 = screen.getByTestId(testIdFor.projectSelect('p2'))
+    expect(btn2.className).toContain('text-project-title-collapsed')
+    expect(btn2.className).toContain('hover:text-project-title')
+    expect(btn2.className).toContain('transition-colors')
+  })
+
   it('renders project row flush left with no hover background and enlarged action buttons', () => {
     const props = defaultProps()
     render(<LeftNavigation {...props} />)
@@ -295,5 +371,33 @@ describe('LeftNavigation project avatar and initials', () => {
 
     const closeBtn = screen.getByTestId(testIdFor.chatClose('t1'))
     expect(closeBtn.className).toContain('right-5')
+  })
+
+  it('renders task progress badge 5/8 on the session row button when chat.task is present', () => {
+    const props = {
+      ...defaultProps(),
+      chatsByProject: {
+        p1: [
+          {
+            id: 'n74',
+            projectId: 'p1',
+            name: 'NEKODE-74',
+            task: {
+              taskId: 'NEKODE-74',
+              step: 5,
+              totalSteps: 8,
+              stepName: 'Fixes',
+              fix: 3,
+            },
+          },
+        ],
+      },
+    }
+    render(<LeftNavigation {...props} />)
+
+    const badge = screen.getByTestId(testIdFor.chatTaskProgress('n74'))
+    expect(badge).toBeTruthy()
+    expect(badge.textContent).toBe('5/8')
+    expect(badge.getAttribute('title')).toBe('Task NEKODE-74: step 5 of 8')
   })
 })

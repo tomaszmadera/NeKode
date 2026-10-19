@@ -22,6 +22,8 @@ interface AppSettingsProps {
   chatSwitch: boolean
   projectNamesUppercase: boolean
   onProjectNamesUppercaseChange: (next: boolean) => void
+  showProjectIcons: boolean
+  onShowProjectIconsChange: (next: boolean) => void
   error: string | null
   onThemeChange: (theme: ThemeId) => void
   onChatSwitchChange: (next: boolean) => void
@@ -84,6 +86,8 @@ export function AppSettings({
   chatSwitch,
   projectNamesUppercase,
   onProjectNamesUppercaseChange,
+  showProjectIcons,
+  onShowProjectIconsChange,
   error,
   onThemeChange,
   onChatSwitchChange,
@@ -293,6 +297,19 @@ export function AppSettings({
                       onChange={(event) => onProjectNamesUppercaseChange(event.target.checked)}
                     />
                     Uppercase project names in the tree
+                  </label>
+                  <label
+                    htmlFor="app-show-project-icons"
+                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
+                  >
+                    <input
+                      id="app-show-project-icons"
+                      type="checkbox"
+                      checked={showProjectIcons}
+                      data-testid={TEST_ID.settingsShowProjectIcons}
+                      onChange={(event) => onShowProjectIconsChange(event.target.checked)}
+                    />
+                    Show project icons
                   </label>
                   <label
                     htmlFor="app-chat-switch"

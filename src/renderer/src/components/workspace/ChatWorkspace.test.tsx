@@ -759,3 +759,158 @@ describe('ChatWorkspace held task launch', () => {
     })
   })
 })
+
+describe('ChatWorkspace recent terminal output', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it('discards activity on a held launch and starts its retry inactive', async () => {
+    const bundle = createAppMock()
+    const publish = vi.fn()
+    const props = {
+      ...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 }),
+      onActivityChange: publish,
+    }
+    const view = render(<ChatWorkspace {...props} />)
+    await act(async () => {})
+    const oldOutput = vi.mocked(bundle.app.terminals.onData).mock.calls[0][1]
+    act(() => bundle.emitData('t1', 'before hold'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set(['t1']))
+    view.rerender(
+      <ChatWorkspace
+        {...props}
+        heldLaunches={{
+          t1: {
+            message: 'Launch failed',
+            input: {
+              projectId: 'p1',
+              itemId: 'i1',
+              ref: 'NK-1',
+              profileId: 'prof',
+              attemptId: 'try',
+              mode: 'start',
+            },
+          },
+        }}
+      />,
+    )
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set())
+    act(() => oldOutput('after hold'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish).toHaveBeenCalledTimes(2)
+    view.rerender(<ChatWorkspace {...props} />)
+    await act(async () => {})
+    expect(bundle.app.terminals.create).toHaveBeenCalledTimes(2)
+    act(() => oldOutput('old callback after retry'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish).toHaveBeenCalledTimes(2)
+    act(() => bundle.emitData('t1', 'fresh profile output'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set(['t1']))
+  })
+
+  it('observes hidden output and preserves its deadline across selection and delivered input', async () => {
+    const bundle = createAppMock()
+    const publish = vi.fn()
+    const props = {
+      ...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 }),
+      onActivityChange: publish,
+    }
+    const view = render(<ChatWorkspace {...props} />)
+    await act(async () => {})
+    view.rerender(<ChatWorkspace {...props} selectedChatId="t2" selectionNonce={2} />)
+    await act(async () => {})
+    act(() => bundle.emitData('t1', 'hidden'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set(['t1']))
+    expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('none')
+    act(() => vi.advanceTimersByTime(1750))
+    view.rerender(<ChatWorkspace {...props} selectionNonce={3} />)
+    act(() => mockTerminalInstances[0].emitInput('typed input'))
+    expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', 'typed input')
+    expect(publish).toHaveBeenCalledTimes(1)
+    act(() => vi.advanceTimersByTime(500))
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set())
+  })
+
+  it('clears on exit, restores fresh after failed close, and rejects the old stream', async () => {
+    const bundle = createAppMock()
+    const publish = vi.fn()
+    const props = {
+      ...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 }),
+      onActivityChange: publish,
+      onChatClosed: vi.fn().mockResolvedValue(false),
+    }
+    const view = render(<ChatWorkspace {...props} />)
+    await act(async () => {})
+    const oldOutput = vi.mocked(bundle.app.terminals.onData).mock.calls[0][1]
+    act(() => bundle.emitData('t1', 'output'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set(['t1']))
+    await act(async () => bundle.emitExit('t1', 0))
+    expect(props.onChatClosed).toHaveBeenCalledWith('t1')
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set())
+    expect(bundle.app.terminals.create).toHaveBeenCalledTimes(2)
+    act(() => oldOutput('stale'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish).toHaveBeenCalledTimes(2)
+    act(() => bundle.emitData('t1', 'fresh'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set(['t1']))
+    view.unmount()
+    act(() => oldOutput('after unmount'))
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set())
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('invalidates output after spawn failure and retry, then chat removal and reopen', async () => {
+    const bundle = createAppMock()
+    let rejectSpawn!: (error: Error) => void
+    vi.mocked(bundle.app.terminals.create).mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectSpawn = reject
+        }),
+    )
+    const publish = vi.fn()
+    const props = {
+      ...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 }),
+      onActivityChange: publish,
+    }
+    const view = render(<ChatWorkspace {...props} />)
+    const oldOutput = vi.mocked(bundle.app.terminals.onData).mock.calls[0][1]
+    act(() => bundle.emitData('t1', 'starting'))
+    act(() => vi.advanceTimersByTime(250))
+    await act(async () => rejectSpawn(new Error('failed')))
+    expect(screen.getByTestId(TEST_ID.terminalSpawnError)).toBeTruthy()
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set())
+    act(() => oldOutput('after failure'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByTestId(TEST_ID.terminalRetry))
+    await act(async () => {})
+    act(() => bundle.emitData('t1', 'retried'))
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set(['t1']))
+    const retryOutput = vi.mocked(bundle.app.terminals.onData).mock.calls[1][1]
+    view.rerender(<ChatWorkspace {...props} selectedChatId={null} chatsByProject={{ p1: [] }} />)
+    expect(publish.mock.lastCall?.[0]).toEqual(new Set())
+    view.rerender(<ChatWorkspace {...props} selectionNonce={2} />)
+    await act(async () => {})
+    act(() => {
+      oldOutput('old')
+      retryOutput('old retry')
+    })
+    act(() => vi.advanceTimersByTime(250))
+    expect(publish).toHaveBeenCalledTimes(4)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
