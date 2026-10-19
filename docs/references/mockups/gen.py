@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Generate NeKode desktop UI mockups via OpenRouter Image API (/api/v1/images), po kolei."""
+"""Generate NeKode desktop UI mockups via OpenRouter Image API (/api/v1/images), one model at a time.
+
+Environment:
+  OPENROUTER_API_KEY  OpenRouter API key (required)
+  MOCKUP_OUT_DIR      output/work directory (default: ./out next to this script)
+"""
 import base64, json, os, pathlib, sys, time, urllib.request, urllib.error
 
 BASE = "https://openrouter.ai/api/v1"
-OUT = pathlib.Path("~/nekode-mockup-gen")
+OUT = pathlib.Path(os.environ.get("MOCKUP_OUT_DIR", pathlib.Path(__file__).resolve().parent / "out"))
 LEDGER = OUT / os.environ.get("LEDGER_FILE", "ledger.json")
 PROMPT_FILE = os.environ.get("PROMPT_FILE", "prompt.txt")
 IDX_OFF = int(os.environ.get("IDX_OFF", "0"))
-KEY = [l.split("=", 1)[1].strip()
-       for l in pathlib.Path("<path-to-openrouter-env-file>").read_text().splitlines()
-       if l.startswith("OPENROUTER_IMAGE_GENERATION_API_KEY=")][0]
+KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
+if not KEY:
+    sys.exit("OPENROUTER_API_KEY is not set")
 PROMPT = (OUT / PROMPT_FILE).read_text().strip()
 
 MODELS = [

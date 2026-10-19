@@ -9,7 +9,7 @@ Show recent terminal output beside each chat name so the user can notice data ar
 
 ## Related requirements
 
-- [NEKODE-89](http://<plane-host>:8087/private/projects/604c4810-978a-47b9-ab61-5e20ef360f3b/issues/db110d17-ad2d-48b8-b7c5-1b2460e6a61f/), including the user's requirements supplied on 2026-10-18.
+- NEKODE-89 (internal tracker), including the user's requirements supplied on 2026-10-18.
 - [Chat attention badge](../chat-attention-badge/spec.md) owns BEL / OSC 9 detection and attention clearing.
 - [Attention alert settings](../attention-alert-settings/spec.md) owns the existing attention toggles and chime.
 

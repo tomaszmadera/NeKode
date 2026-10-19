@@ -105,7 +105,7 @@ Renderer invokes stay behind the existing trusted-sender guard. `handoffs:list` 
 
 ### Goal and evidence
 
-Allow the local user to edit the Resume prompt in JSON while preserving existing behavior when no override exists. This section owns the template contract for both the action-bar picker and [Kanban Resume](../kanban-adapter-interface/spec.md). It is proposed under [NEKODE-83](http://<plane-host>:8087/private/projects/604c4810-978a-47b9-ab61-5e20ef360f3b/issues/5cf0b4a1-b849-4ed7-a742-0654f74c42ad/).
+Allow the local user to edit the Resume prompt in JSON while preserving existing behavior when no override exists. This section owns the template contract for both the action-bar picker and [Kanban Resume](../kanban-adapter-interface/spec.md). It is proposed under NEKODE-83 (internal tracker).
 
 Existing storage uses SQLite: `src/main/index.ts` supplies `<userData>/nekode.db`, `AppStateService` reads and writes `app_state`, and `AgentProfilesService` stores JSON values through that service. Before this amendment, `src/main/services/create-services.ts` had no general JSON settings-file reader; Resume defaults were built in `task-launch-service.ts:buildResumePrompt` and `HandoffPicker.tsx:resumeCommand`. The amendment adds `ResumeTemplateService`, which owns the JSON reader and the action-bar default; `buildResumePrompt` retains the Kanban default.
 
