@@ -2,7 +2,11 @@
 
 An agent-first desktop workspace for Windows 11. CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
 
-<!-- Screenshot / GIF: add a real capture of the app here, e.g. ![NeKode](docs/assets/screenshot.png) -->
+![NeKode — agent terminal session](docs/images/nekode-1-terminal.webp)
+
+| Attention badge | Markdown preview | Kanban |
+| --- | --- | --- |
+| ![Attention badge](docs/images/nekode-2-attention.webp) | ![Markdown preview](docs/images/nekode-3-markdown.webp) | ![Kanban board](docs/images/nekode-4-kanban.webp) |
 
 ## Status
 
