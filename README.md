@@ -8,21 +8,14 @@ An agent-first desktop workspace for Windows 11. CLI coding agents run side by s
 
 Early development (beta), version 0.14.11. No prebuilt installers are published yet, so build from source. You can build a Windows NSIS installer locally (see [Building](#building)).
 
-## Features
+## What makes it different
 
-- **Projects**: local and WSL projects in a tree. The status bar shows the current Git branch and worktree status, and a Sync button runs `git pull`, `git push`, and `git push --tags`.
-- **Chats as terminals**: one PTY-backed terminal per chat (node-pty + xterm.js). Sessions are kept when you switch chats.
-- **Agent profiles**: global agent profiles with per-project opt-in, and a "New chat" menu to start a chat with a chosen agent.
-- **Attention badge**: a chat you are not viewing shows a dot when its agent rings the terminal bell or sends an OSC 9 notification.
-- **Project files**: directory tree, a read-only Monaco preview, and a rendered Markdown preview with Mermaid diagrams.
-- **Action bar**: fixed `Handoff | Resume` and `Stop | Continue` actions, plus configurable command buttons.
-- **Handoff/Resume**: handoff prompts with optional auto-send, a per-project handoff directory, and a resume list.
-- **Bottom terminal panel**: extra terminals in tabs below the main surface.
-- **Kanban (optional)**: external work items through adapter plugins, with Start, Resume, New task, and item review. A reference adapter for Plane Community Edition is included.
-- **Dictation (optional)**: dictate into the chat prompt through the OpenWhispr desktop app. Off by default.
-- **Settings**: themes (NeKode Flat, NeKode Float), terminal and icon fonts, attention alerts, per-project shell, agent profiles, dictation, Kanban adapters, and a list of keyboard shortcuts.
+- **Attention badge**: when an agent in a background chat rings the terminal bell or sends an OSC 9 notification, its chat shows a dot, so you know who needs you.
+- **Handoff and Resume**: hand a task over between agents or sessions with one click, with handoff files kept per project.
+- **Kanban (optional)**: start or resume agent work straight from external work items through adapter plugins (Plane adapter included).
+- **Markdown and Mermaid preview**: read specs and diagrams next to the agent without leaving the app.
 
-Each feature's behavior contract and delivery status live in [`docs/features/`](docs/features/README.md).
+The full feature list, with each feature's behavior contract and delivery status, lives in [`docs/features/`](docs/features/README.md).
 
 ## Requirements
 
