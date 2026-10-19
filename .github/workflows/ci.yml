@@ -13,7 +13,9 @@ concurrency:
 
 jobs:
   verify:
-    name: verify (lint, typecheck, tests)
+    # The check name must stay exactly "verify": branch protection on main
+    # requires it. The step below lists what it runs.
+    name: verify
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
