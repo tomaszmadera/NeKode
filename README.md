@@ -8,15 +8,6 @@ An agent-first desktop workspace for Windows 11. CLI coding agents run side by s
 
 Early development (beta), version 0.14.11. No prebuilt installers are published yet, so build from source. You can build a Windows NSIS installer locally (see [Building](#building)).
 
-## What makes it different
-
-- **Attention badge**: when an agent in a background chat rings the terminal bell or sends an OSC 9 notification, its chat shows a dot, so you know who needs you.
-- **Handoff and Resume**: hand a task over between agents or sessions with one click, with handoff files kept per project.
-- **Kanban (optional)**: start or resume agent work straight from external work items through adapter plugins (Plane adapter included).
-- **Markdown and Mermaid preview**: read specs and diagrams next to the agent without leaving the app.
-
-The full feature list, with each feature's behavior contract and delivery status, lives in [`docs/features/`](docs/features/README.md).
-
 ## Requirements
 
 - Windows 11
