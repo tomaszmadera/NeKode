@@ -508,8 +508,7 @@
 }
 
 /* Project chevrons: slightly larger, custom color from prototype #7f86a3 */
-[data-theme="nekode-float-v2"] .project-chevron,
-[data-theme="nekode-float-v2"] button[data-testid^="project-select-"] > svg:first-child {
+[data-theme="nekode-float-v2"] .project-chevron {
   width: 14px !important;
   height: 14px !important;
   color: #7f86a3 !important;

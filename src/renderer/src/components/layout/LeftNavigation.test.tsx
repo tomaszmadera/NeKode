@@ -286,6 +286,36 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(screen.queryByTestId(testIdFor.projectAvatar('p2'))).toBeNull()
   })
 
+  it('folds with the chevron only and opens the project only from its icon and name (NEKODE-96)', () => {
+    const props = defaultProps()
+    render(<LeftNavigation {...props} />)
+
+    // The chevron of an unselected project unfolds it without selecting it.
+    const toggle2 = screen.getByTestId(testIdFor.projectToggle('p2'))
+    expect(toggle2.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle2.getAttribute('aria-label')).toBe('Expand AGENT-HARNESS')
+    fireEvent.click(toggle2)
+    expect(props.onToggleProject).toHaveBeenCalledWith('p2')
+    expect(props.onSelectProject).not.toHaveBeenCalled()
+
+    // The chevron of the selected project folds it, still without selecting.
+    const toggle1 = screen.getByTestId(testIdFor.projectToggle('p1'))
+    expect(toggle1.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(toggle1)
+    expect(props.onToggleProject).toHaveBeenLastCalledWith('p1')
+    expect(props.onSelectProject).not.toHaveBeenCalled()
+
+    // The name of an unselected project opens it and does not toggle.
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    expect(props.onSelectProject).toHaveBeenCalledWith('p2')
+    expect(props.onToggleProject).toHaveBeenCalledTimes(2)
+
+    // The name of the already-open project does nothing.
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    expect(props.onSelectProject).toHaveBeenCalledTimes(1)
+    expect(props.onToggleProject).toHaveBeenCalledTimes(2)
+  })
+
   it('applies bold font to expanded or active projects and regular to collapsed projects', () => {
     const props = defaultProps()
     // p1 is expanded and selected; p2 is neither

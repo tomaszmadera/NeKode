@@ -468,11 +468,42 @@ export function LeftNavigation({
                       }
                     }}
                   >
-                    {/* One toggle surface (user request 2026-10-02): the
-                        title itself expands/collapses the chat list. An
-                        unselected project is selected on first click (its
-                        select path also expands); a selected one folds and
-                        unfolds in place, keeping the active chat intact. */}
+                    {/* Split surfaces (NEKODE-96): the chevron only folds and
+                        unfolds the chat list and never changes the selection;
+                        the icon and name open the project. Clicking the name
+                        of the already-open project does nothing, so the
+                        active chat stays on screen. */}
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex shrink-0 items-center self-stretch rounded pl-0 pr-2 transition-colors duration-fast ease-standard',
+                        isExpanded || isSelected
+                          ? 'text-project-title'
+                          : 'text-project-title-collapsed hover:text-project-title',
+                      )}
+                      data-testid={testIdFor.projectToggle(project.id)}
+                      aria-label={
+                        isExpanded ? `Collapse ${project.name}` : `Expand ${project.name}`
+                      }
+                      aria-expanded={isExpanded}
+                      onClick={() => {
+                        onToggleProject(project.id)
+                      }}
+                    >
+                      {isExpanded ? (
+                        <Icon.chevronDown
+                          size={14}
+                          aria-hidden
+                          className="project-chevron shrink-0"
+                        />
+                      ) : (
+                        <Icon.chevronRight
+                          size={14}
+                          aria-hidden
+                          className="project-chevron shrink-0"
+                        />
+                      )}
+                    </button>
                     <button
                       type="button"
                       className={cn(
@@ -483,28 +514,12 @@ export function LeftNavigation({
                       )}
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
-                      aria-expanded={isExpanded}
                       onClick={() => {
-                        if (isSelected) {
-                          onToggleProject(project.id)
-                        } else {
+                        if (!isSelected) {
                           onSelectProject(project.id)
                         }
                       }}
                     >
-                      {isExpanded ? (
-                        <Icon.chevronDown
-                          size={14}
-                          aria-hidden
-                          className="project-chevron mr-2 shrink-0"
-                        />
-                      ) : (
-                        <Icon.chevronRight
-                          size={14}
-                          aria-hidden
-                          className="project-chevron mr-2 shrink-0"
-                        />
-                      )}
                       {showProjectIcons ? (
                         <span
                           aria-hidden="true"

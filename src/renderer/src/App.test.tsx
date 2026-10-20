@@ -845,7 +845,7 @@ describe('app settings and themes', () => {
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p2')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 'u1')
     expect(screen.getByTestId(testIdFor.chatRow('u1')).getAttribute('data-selected')).toBe('true')
-    expect(screen.getByTestId(testIdFor.projectSelect('p2')).getAttribute('aria-expanded')).toBe(
+    expect(screen.getByTestId(testIdFor.projectToggle('p2')).getAttribute('aria-expanded')).toBe(
       'true',
     )
     expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Plain')
@@ -2462,9 +2462,9 @@ describe('project and chat data flow', () => {
     // An empty selected project shows the "Start new chat" empty state
     // (spec Behaviour 11)…
     await screen.findByTestId(TEST_ID.startNewChatState)
-    // …and the user collapses the project node by clicking its title (the
-    // selected project's title toggles the subtree): it unmounts.
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    // …and the user collapses the project node with its chevron (the
+    // chevron only toggles the subtree, NEKODE-96): it unmounts.
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
     expect(screen.queryByTestId(testIdFor.projectChats('p1'))).toBeNull()
 
     fireEvent.click(screen.getByTestId(TEST_ID.startNewChatButton))
@@ -3708,10 +3708,10 @@ describe('stale chat list responses', () => {
     render(<App app={app} />)
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
     // A second load starts before the close lands: collapse, then re-expand
-    // the selected project by clicking its title (the selection, and with it
+    // the selected project with its chevron (the selection, and with it
     // the exit listener, stays on t1).
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
     await waitFor(() => expect(app.chats.list).toHaveBeenCalledTimes(2))
 
     emitExit('t1', 0)
