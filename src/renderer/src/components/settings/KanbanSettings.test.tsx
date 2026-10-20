@@ -139,6 +139,29 @@ describe('KanbanSettings', () => {
     )
   })
 
+  it('warns that secrets are session-only when no keyring is available', async () => {
+    const getConfig = vi.fn().mockResolvedValue({
+      adapterId: 'plane',
+      values: { workspace: 'acme', region: 'eu', group: 'todo', tls: 'false' },
+      secretKeys: [],
+      sessionOnlySecrets: true,
+    } satisfies KanbanProjectConfig)
+    await renderLoaded(appMock({ adaptersList: vi.fn().mockResolvedValue([PLANE]), getConfig }))
+    expect(screen.getByTestId(TEST_ID.settingsKanbanSecretSessionOnly).textContent).toContain(
+      'never saved in plain text',
+    )
+  })
+
+  it('shows no keyring warning when secrets are encrypted at rest', async () => {
+    const getConfig = vi.fn().mockResolvedValue({
+      adapterId: 'plane',
+      values: { workspace: 'acme', region: 'eu', group: 'todo', tls: 'false' },
+      secretKeys: ['api_key'],
+    } satisfies KanbanProjectConfig)
+    await renderLoaded(appMock({ adaptersList: vi.fn().mockResolvedValue([PLANE]), getConfig }))
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanSecretSessionOnly)).toBeNull()
+  })
+
   it('keeps an empty secret, clears an empty non-secret, and never re-renders the stored secret', async () => {
     const setConfig = vi.fn().mockResolvedValue(undefined)
     const getConfig = vi.fn().mockResolvedValue({

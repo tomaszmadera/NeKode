@@ -5,8 +5,10 @@ import {
   listWslDistributions,
   prepareWslAgent,
   prepareWslTerminal,
+  requireWslSupport,
   validatedWslProjectPath,
   validateWslExecutable,
+  wslSupported,
 } from './wsl'
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }))
@@ -303,5 +305,15 @@ describe('WSL invocation boundary', () => {
     expect(() =>
       prepareWslTerminal('\\\\wsl$\\Ubuntu\\home\\user', { file: 'powershell.exe', args: [] }),
     ).toThrow(/Linux executable/)
+  })
+})
+
+describe('WSL host support gate', () => {
+  it('supports WSL only when NeKode runs on Windows', () => {
+    expect(wslSupported('win32')).toBe(true)
+    expect(wslSupported('linux')).toBe(false)
+    expect(wslSupported('darwin')).toBe(false)
+    expect(() => requireWslSupport('win32')).not.toThrow()
+    expect(() => requireWslSupport('linux')).toThrow(/only when NeKode runs on Windows/)
   })
 })

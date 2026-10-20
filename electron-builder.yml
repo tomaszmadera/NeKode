@@ -20,3 +20,10 @@ extraResources:
 # same file is the dev window icon (BrowserWindow icon in src/main/index.ts).
 win:
   icon: resources/icon.ico
+
+# Linux application icon (added 2026-10-20, NEKODE-13 Phase 1): 512x512 PNG
+# rasterized from the same cat-icon-tile.svg as icon.ico (cairosvg
+# svg2png, output 512x512). Only the icon is configured for Linux; targets
+# and packaging workflows stay at electron-builder defaults for now.
+linux:
+  icon: resources/icon.png

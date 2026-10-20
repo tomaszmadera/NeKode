@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { accessSync, constants, statSync } from 'node:fs'
+import { accessSync, constants, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, isAbsolute, posix } from 'node:path'
 import type { ShellChoice, ShellInfo } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
@@ -106,6 +106,18 @@ export interface ShellServiceOptions {
   listWslDistributions?: () => string[]
   /** Process environment (SystemRoot / ProgramFiles / LOCALAPPDATA). */
   env?: NodeJS.ProcessEnv
+  /**
+   * Host platform; injectable for tests. Windows probes the fixed candidates
+   * and WSL distributions; other hosts list /etc/shells and never use WSL
+   * (inside WSL, wsl.exe interop must not leak the Windows integration in).
+   */
+  platform?: NodeJS.Platform
+  /** Contents of /etc/shells ('' when unreadable); injectable for tests. */
+  readEtcShells?: () => string
+  /** Existing regular file with the execute bit (non-Windows probing). */
+  isExecutable?: (path: string) => boolean
+  /** Canonical path for de-duplicating /etc/shells aliases (/bin vs /usr/bin). */
+  realpath?: (path: string) => string
 }
 
 /** Decodes `wsl.exe --list --quiet` output: UTF-16LE, optional BOM, CRLF. */
@@ -125,6 +137,40 @@ function realWslDistributions(): string[] {
     // contributes no entries and detection is not an error (spec Behaviour 2).
     return []
   }
+}
+
+function realReadEtcShells(): string {
+  try {
+    return readFileSync('/etc/shells', 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function realIsExecutable(path: string): boolean {
+  try {
+    if (!statSync(path).isFile()) return false
+    accessSync(path, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function realRealpath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+/** Absolute shell paths from /etc/shells: comments and blank lines dropped. */
+export function parseEtcShells(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('/'))
 }
 
 function realIsFile(path: string): boolean {
@@ -155,6 +201,10 @@ export class ShellService {
   readonly #listWslDistributions: () => string[]
   readonly #env: NodeJS.ProcessEnv
   readonly #runWsl: WslRun
+  readonly #platform: NodeJS.Platform
+  readonly #readEtcShells: () => string
+  readonly #isExecutable: (path: string) => boolean
+  readonly #realpath: (path: string) => string
   readonly #wslLists = new Map<string, ShellInfo[]>()
   /** Run-scoped cache; null until the first detection of this app run. */
   #detected: ShellInfo[] | null = null
@@ -169,6 +219,10 @@ export class ShellService {
     this.#listWslDistributions = options.listWslDistributions ?? realWslDistributions
     this.#env = options.env ?? process.env
     this.#runWsl = options.runWsl ?? runWsl
+    this.#platform = options.platform ?? process.platform
+    this.#readEtcShells = options.readEtcShells ?? realReadEtcShells
+    this.#isExecutable = options.isExecutable ?? realIsExecutable
+    this.#realpath = options.realpath ?? realRealpath
   }
 
   /**
@@ -205,16 +259,18 @@ export class ShellService {
       return this.#pending
     }
     const shells: ShellInfo[] = [{ id: 'default', label: this.defaultLabel() }]
-    if (process.platform === 'win32') {
+    if (this.#platform === 'win32') {
       for (const candidate of WINDOWS_CANDIDATES) {
         const path = candidate.paths(this.#env).find((item) => this.#exists(item))
         if (path !== undefined) {
           shells.push({ id: candidate.id, label: candidate.label })
         }
       }
-    }
-    for (const distro of this.#listWslDistributions()) {
-      shells.push({ id: `wsl:${distro}`, label: `WSL: ${distro}` })
+      for (const distro of this.#listWslDistributions()) {
+        shells.push({ id: `wsl:${distro}`, label: `WSL: ${distro}` })
+      }
+    } else {
+      shells.push(...this.#hostEtcShells(customPaths))
     }
     const prunedCustomPaths: string[] = []
     const customEntries: ShellInfo[] = []
@@ -311,7 +367,7 @@ export class ShellService {
     }
     if (choice.startsWith('wsl:')) {
       const distro = choice.slice('wsl:'.length)
-      if (distro.length === 0) {
+      if (distro.length === 0 || this.#platform !== 'win32') {
         return this.defaultShellSpec()
       }
       return { file: 'wsl.exe', args: ['-d', distro] }
@@ -343,7 +399,9 @@ export class ShellService {
     }
     if (choice.startsWith('wsl:')) {
       const distro = choice.slice('wsl:'.length)
-      return distro.length > 0 ? `WSL: ${distro}` : this.defaultLabel()
+      return distro.length > 0 && this.#platform === 'win32'
+        ? `WSL: ${distro}`
+        : this.defaultLabel()
     }
     const detected = this.#detected?.find((entry) => entry.id === choice)
     if (detected !== undefined) {
@@ -377,7 +435,9 @@ export class ShellService {
     }
     if (choice.startsWith('wsl:')) {
       const distro = choice.slice('wsl:'.length)
-      return distro.length > 0 ? WSL_SHORT_LABEL : this.defaultShortLabel()
+      return distro.length > 0 && this.#platform === 'win32'
+        ? WSL_SHORT_LABEL
+        : this.defaultShortLabel()
     }
     const candidate = WINDOWS_CANDIDATES.find((item) => item.id === choice)
     if (candidate === undefined) {
@@ -385,6 +445,27 @@ export class ShellService {
     }
     const path = candidate.paths(this.#env).find((item) => this.#exists(item))
     return path !== undefined ? candidate.shortLabel : this.defaultShortLabel()
+  }
+
+  /**
+   * Installed shells from /etc/shells on a non-Windows host: existing
+   * executables only, de-duplicated by canonical path (usrmerge aliases such
+   * as /bin/bash and /usr/bin/bash), without the $SHELL default (already the
+   * `default` entry) and without persisted custom paths (merged separately).
+   * Entries reuse the `custom:<path>` id so resolve/label need no new rules.
+   */
+  #hostEtcShells(customPaths: readonly string[]): ShellInfo[] {
+    const seen = new Set<string>([this.#realpath(this.defaultShellSpec().file)])
+    for (const path of customPaths) seen.add(this.#realpath(path))
+    const entries: ShellInfo[] = []
+    for (const path of parseEtcShells(this.#readEtcShells())) {
+      if (!this.#isExecutable(path)) continue
+      const canonical = this.#realpath(path)
+      if (seen.has(canonical)) continue
+      seen.add(canonical)
+      entries.push({ id: customChoice(path), label: basename(path) })
+    }
+    return entries
   }
 
   #validateLinuxShell(path: string, distribution: string): void {

@@ -263,6 +263,12 @@ export interface KanbanProjectConfig {
   values: Record<string, string | null>
   /** Secret keys that hold a stored value (the UI shows "stored", never the value). */
   secretKeys: string[]
+  /**
+   * True when the OS keyring (Electron safeStorage) is unavailable, e.g. Linux
+   * without libsecret/gnome-keyring: secrets are then kept in memory for this
+   * session only and are never written to disk in plain text.
+   */
+  sessionOnlySecrets?: boolean
 }
 
 export interface KanbanCreateInput {
@@ -718,6 +724,11 @@ export function agentProfileFieldError(input: {
 }
 
 export interface AppApi {
+  /**
+   * Host platform (process.platform), set by the preload. Absent (older test
+   * doubles) means Windows behaviour, the app's primary platform.
+   */
+  platform?: string
   dictation: {
     desktopSetup(): Promise<DesktopDictationSetup>
     desktopConfigure(settings: DesktopDictationSettings): Promise<DesktopDictationSetup>

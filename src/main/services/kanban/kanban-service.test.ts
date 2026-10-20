@@ -465,9 +465,9 @@ describe('KanbanService secret protection and safeStorage', () => {
     expect(config.secretKeys).toEqual([])
   })
 
-  it('gracefully stores values when safeStorage is unavailable', () => {
+  it('without a keyring keeps a new secret in memory only: never written to disk in plain text', async () => {
     const safeStorage = fakeSafeStorage(false)
-    const { service, state } = makeService({
+    const { service, state, invoke } = makeService({
       adapters: [DEMO_SECRET_ONLY_ADAPTER],
       safeStorage,
     })
@@ -477,12 +477,65 @@ describe('KanbanService secret protection and safeStorage', () => {
       values: { api_key: 'fallback-secret' },
     })
 
+    expect(JSON.stringify(state.dump())).not.toContain('fallback-secret')
     const parsed = JSON.parse(state.dump()['project.kanbanConfig:p1'] as string)
-    expect(parsed.api_key).toBe('fallback-secret')
+    expect(parsed.api_key).toBeUndefined()
 
+    // Still usable for this session, and the UI is told why it will not stick.
     const config = service.getConfig('p1')
     expect(config.values.api_key).toBeNull()
     expect(config.secretKeys).toEqual(['api_key'])
+    expect(config.sessionOnlySecrets).toBe(true)
+    await service.test('p1')
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.config.api_key).toBe('fallback-secret')
+
+    // A later save that omits the secret keeps the session value (required field passes).
+    expect(() => service.setConfig('p1', { adapterId: 'demo', values: {} })).not.toThrow()
+  })
+
+  it('without a keyring a fresh session (restart) has no secret: nothing was persisted', () => {
+    const store: Record<string, string> = {}
+    const first = makeService({
+      adapters: [DEMO_SECRET_ONLY_ADAPTER],
+      safeStorage: fakeSafeStorage(false),
+    })
+    first.service.setConfig('p1', { adapterId: 'demo', values: { api_key: 'fallback-secret' } })
+    Object.assign(store, first.state.dump())
+
+    const restarted = makeService({
+      adapters: [DEMO_SECRET_ONLY_ADAPTER],
+      store,
+      safeStorage: fakeSafeStorage(false),
+    })
+    const config = restarted.service.getConfig('p1')
+    expect(config.adapterId).toBe('demo')
+    expect(config.secretKeys).toEqual([])
+    expect(config.sessionOnlySecrets).toBe(true)
+  })
+
+  it('without a keyring a re-entered secret drops the older plain-text copy from disk', () => {
+    const { service, state } = makeService({
+      adapters: [DEMO_SECRET_ONLY_ADAPTER],
+      store: {
+        'project.kanbanAdapter:p1': 'demo',
+        'project.kanbanConfig:p1': JSON.stringify({ api_key: 'legacy-plain' }),
+      },
+      safeStorage: fakeSafeStorage(false),
+    })
+    service.setConfig('p1', { adapterId: 'demo', values: { api_key: 'new-secret' } })
+    const dump = JSON.stringify(state.dump())
+    expect(dump).not.toContain('legacy-plain')
+    expect(dump).not.toContain('new-secret')
+  })
+
+  it('reports no session-only warning when the keyring encrypts', () => {
+    const { service } = makeService({
+      adapters: [DEMO_SECRET_ONLY_ADAPTER],
+      safeStorage: fakeSafeStorage(true),
+    })
+    service.setConfig('p1', { adapterId: 'demo', values: { api_key: 'k' } })
+    expect(service.getConfig('p1').sessionOnlySecrets).toBeUndefined()
   })
 })
 

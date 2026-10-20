@@ -25,6 +25,13 @@ function createIpcMock() {
 }
 
 describe('preload app api', () => {
+  it('exposes the host platform the preload passes in (no IPC round trip)', () => {
+    const ipc = createIpcMock()
+    expect(createAppApi(ipc, 'linux').platform).toBe('linux')
+    expect(createAppApi(ipc, 'win32').platform).toBe('win32')
+    expect(ipc.invocations).toEqual([])
+  })
+
   it('requests a read-only dictionary without transport or paging arguments', async () => {
     const ipc = createIpcMock()
     await createAppApi(ipc).dictation.dictionaryList()

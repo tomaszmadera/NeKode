@@ -164,6 +164,7 @@ export const TEST_ID = {
   settingsKanbanTab: 'settings-kanban-tab',
   settingsKanbanPanel: 'settings-kanban-panel',
   settingsKanbanLoading: 'settings-kanban-loading',
+  settingsKanbanSecretSessionOnly: 'settings-kanban-secret-session-only',
   settingsKanbanEmpty: 'settings-kanban-empty',
   settingsKanbanAdapterSelect: 'settings-kanban-adapter-select',
   settingsKanbanAdapterMissing: 'settings-kanban-adapter-missing',

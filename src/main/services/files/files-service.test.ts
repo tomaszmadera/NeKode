@@ -137,6 +137,7 @@ function createService(
   shell?: {
     showInFolder?: (path: string) => void
     trashItem?: (path: string) => Promise<void>
+    platform?: NodeJS.Platform
   },
 ) {
   return new FilesService({
@@ -145,6 +146,7 @@ function createService(
     openExternal: openExternal ?? (async () => ''),
     showInFolder: shell?.showInFolder ?? (() => undefined),
     trashItem: shell?.trashItem ?? (async () => undefined),
+    platform: shell?.platform,
   })
 }
 
@@ -730,7 +732,13 @@ describe('files:showInFolder and files:trash', () => {
     })
     const showInFolder = vi.fn()
     const trashItem = vi.fn(async () => undefined)
-    const service = createService(fs, async () => '', projects, { showInFolder, trashItem })
+    // These cases pin the Windows shell contract (backslash paths for the COM
+    // APIs), so the platform is fixed to win32 regardless of the test host.
+    const service = createService(fs, async () => '', projects, {
+      showInFolder,
+      trashItem,
+      platform: 'win32',
+    })
     return { fs, showInFolder, trashItem, service }
   }
 
@@ -757,13 +765,36 @@ describe('files:showInFolder and files:trash', () => {
       fs,
       async () => '',
       { get: () => ({ path: root.replace(/\//g, '\\') }) },
-      { showInFolder, trashItem },
+      { showInFolder, trashItem, platform: 'win32' },
     )
     await service.showInFolder('wsl', 'nested/file.txt')
     await service.trash('wsl', 'nested/file.txt')
     const windowsPath = '\\\\wsl.localhost\\Ubuntu\\home\\user\\My Project\\nested\\file.txt'
     expect(showInFolder).toHaveBeenCalledWith(windowsPath)
     expect(trashItem).toHaveBeenCalledWith(windowsPath)
+  })
+
+  it('passes the lexical POSIX path unchanged on Linux (no backslash conversion)', async () => {
+    const root = '/home/u/proj'
+    const fs = createFakeFs({
+      nodes: {
+        [root]: { type: 'dir' },
+        [`${root}/src`]: { type: 'dir' },
+        [`${root}/src/app.ts`]: { type: 'file', content: encode('app') },
+      },
+    })
+    const showInFolder = vi.fn()
+    const trashItem = vi.fn(async () => undefined)
+    const service = createService(
+      fs,
+      async () => '',
+      { get: () => ({ path: root }) },
+      { showInFolder, trashItem, platform: 'linux' },
+    )
+    await service.showInFolder('p1', 'src/app.ts')
+    await service.trash('p1', 'src')
+    expect(showInFolder).toHaveBeenCalledWith('/home/u/proj/src/app.ts')
+    expect(trashItem).toHaveBeenCalledWith('/home/u/proj/src')
   })
 
   it('passes a symlink link path and rejects a link that leaves the root', async () => {

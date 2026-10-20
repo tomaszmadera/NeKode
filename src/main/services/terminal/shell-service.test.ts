@@ -20,7 +20,17 @@ interface FsShape {
   files: string[]
 }
 
-function makeService(fs: FsShape, wsl: string[] = [], env: NodeJS.ProcessEnv = WIN_ENV) {
+function makeService(
+  fs: FsShape,
+  wsl: string[] = [],
+  env: NodeJS.ProcessEnv = WIN_ENV,
+  host: {
+    platform?: NodeJS.Platform
+    etcShells?: string
+    executables?: string[]
+    realpaths?: Record<string, string>
+  } = {},
+) {
   const existsCalls: string[] = []
   const service = new ShellService({
     exists: (path) => {
@@ -30,6 +40,11 @@ function makeService(fs: FsShape, wsl: string[] = [], env: NodeJS.ProcessEnv = W
     isFile: (path) => fs.files.includes(path),
     listWslDistributions: () => wsl,
     env,
+    platform: host.platform,
+    // Never read the test host's real /etc/shells.
+    readEtcShells: () => host.etcShells ?? '',
+    isExecutable: (path) => (host.executables ?? []).includes(path),
+    realpath: (path) => host.realpaths?.[path] ?? path,
   })
   return { service, existsCalls }
 }
@@ -78,7 +93,9 @@ describe('detect', () => {
   )
 
   it('adds one WSL entry per distribution with a display label', () => {
-    const { service } = makeService({ exists: [], files: [] }, ['Ubuntu-24.04'])
+    const { service } = makeService({ exists: [], files: [] }, ['Ubuntu-24.04'], WIN_ENV, {
+      platform: 'win32',
+    })
     const { shells } = service.detect([])
     expect(shells).toContainEqual({ id: 'wsl:Ubuntu-24.04', label: 'WSL: Ubuntu-24.04' })
   })
@@ -231,7 +248,9 @@ describe('resolve (fallback rules)', () => {
   })
 
   it('resolves a WSL choice to wsl.exe -d <distro> without probing', () => {
-    const { service, existsCalls } = makeService({ exists: [], files: [] })
+    const { service, existsCalls } = makeService({ exists: [], files: [] }, [], WIN_ENV, {
+      platform: 'win32',
+    })
     expect(service.resolve('wsl:Ubuntu-24.04')).toEqual({
       file: 'wsl.exe',
       args: ['-d', 'Ubuntu-24.04'],
@@ -439,5 +458,70 @@ describe.skipIf(isWindowsHost)('non-Windows host defaults ($SHELL)', () => {
     })
     expect(service.label(customChoice('/usr/bin/fish'))).toBe('fish')
     expect(service.chatLabel(customChoice('/usr/bin/fish'))).toBe('fish')
+  })
+
+  it('never lists or resolves WSL on Linux, even when wsl.exe interop answers (inside WSL)', () => {
+    vi.stubEnv('SHELL', '/bin/bash')
+    const listWsl = vi.fn(() => ['Ubuntu-24.04'])
+    const service = new ShellService({
+      platform: 'linux',
+      listWslDistributions: listWsl,
+      readEtcShells: () => '',
+      isFile: () => false,
+    })
+    expect(service.detect([]).shells.map((shell) => shell.id)).toEqual(['default'])
+    expect(listWsl).not.toHaveBeenCalled()
+    expect(service.resolve('wsl:Ubuntu-24.04')).toEqual({ file: '/bin/bash', args: [] })
+    expect(service.label('wsl:Ubuntu-24.04')).toBe('bash')
+    expect(service.chatLabel('wsl:Ubuntu-24.04')).toBe('bash')
+  })
+
+  it('offers installed shells from /etc/shells: executables only, aliases and $SHELL de-duplicated', () => {
+    vi.stubEnv('SHELL', '/bin/bash')
+    const etcShells = [
+      '# /etc/shells: valid login shells',
+      '/bin/sh',
+      '/usr/bin/sh',
+      '/bin/bash',
+      '/usr/bin/bash',
+      '/usr/bin/zsh',
+      '/usr/local/bin/fish',
+      '/usr/bin/missing',
+      '',
+    ].join('\n')
+    const { service } = makeService({ exists: [], files: ['/usr/bin/zsh'] }, [], WIN_ENV, {
+      platform: 'linux',
+      etcShells,
+      executables: ['/bin/sh', '/usr/bin/sh', '/bin/bash', '/usr/bin/bash', '/usr/bin/zsh'],
+      realpaths: {
+        '/bin/sh': '/usr/bin/dash',
+        '/usr/bin/sh': '/usr/bin/dash',
+        '/bin/bash': '/usr/bin/bash',
+      },
+    })
+    const { shells, prunedCustomPaths } = service.detect([])
+    expect(shells).toEqual([
+      { id: 'default', label: 'bash' },
+      { id: customChoice('/bin/sh'), label: 'sh' },
+      { id: customChoice('/usr/bin/zsh'), label: 'zsh' },
+    ])
+    expect(prunedCustomPaths).toEqual([])
+    // Detected entries resolve and label like custom paths (no new id scheme).
+    expect(service.resolve(customChoice('/usr/bin/zsh'))).toEqual({
+      file: '/usr/bin/zsh',
+      args: [],
+    })
+    expect(service.chatLabel(customChoice('/usr/bin/zsh'))).toBe('zsh')
+  })
+
+  it('does not duplicate a persisted custom path that /etc/shells also lists', () => {
+    vi.stubEnv('SHELL', '/bin/bash')
+    const { service } = makeService({ exists: [], files: ['/usr/bin/zsh'] }, [], WIN_ENV, {
+      platform: 'linux',
+      etcShells: '/usr/bin/zsh\n',
+      executables: ['/usr/bin/zsh'],
+    })
+    const ids = service.detect(['/usr/bin/zsh']).shells.map((shell) => shell.id)
+    expect(ids).toEqual(['default', customChoice('/usr/bin/zsh')])
   })
 })
