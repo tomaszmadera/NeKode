@@ -152,7 +152,9 @@ describe('AdapterHost', () => {
     const size = MAX_STDOUT_BYTES + 64 * 1024
     const adapter = fixture(
       'huge.cjs',
-      `process.stdout.write(Buffer.alloc(${size}, 0x61)); process.exit(0)`,
+      // Exit only once the write is flushed: POSIX pipes are asynchronous, so
+      // an immediate process.exit would truncate the output below the cap.
+      `process.stdout.write(Buffer.alloc(${size}, 0x61), () => process.exit(0))`,
     )
     const host = new AdapterHost()
     await expect(host.invoke(adapter, request)).rejects.toMatchObject({
@@ -261,6 +263,52 @@ describe('AdapterHost', () => {
     // The killed pid must disappear from the process table.
     expect(await waitForProcessExit(adapterPid as unknown as number)).toBe(true)
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'kills the whole adapter process group on POSIX timeout (grandchild pid probe)',
+    async () => {
+      // The adapter starts a sleeping grandchild, reports its pid, then hangs.
+      // SIGKILL on the direct child alone would leave the grandchild running.
+      const tree = [
+        `const { spawn } = require('node:child_process')`,
+        `const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })`,
+        `console.error('GRANDCHILD:' + g.pid)`,
+        `setInterval(() => {}, 1000)`,
+      ].join('\n')
+      const adapter = fixture('tree.cjs', tree)
+      let grandchildPid: number | null = null
+      const wrappedSpawn = ((
+        command: string,
+        args: string[],
+        options: Parameters<typeof spawn>[2],
+      ) => {
+        const child = spawn(command, args, options)
+        child.stderr?.on('data', (chunk: Buffer) => {
+          const match = /GRANDCHILD:(\d+)/.exec(chunk.toString('utf8'))
+          if (match) {
+            grandchildPid = Number(match[1])
+          }
+        })
+        return child
+      }) as typeof spawn
+      const host = new AdapterHost({ timeoutMs: 500, spawnProcess: wrappedSpawn })
+      try {
+        await expect(host.invoke(adapter, request)).rejects.toMatchObject({ kind: 'timeout' })
+        expect(grandchildPid).not.toBeNull()
+        expect(await waitForProcessExit(grandchildPid as unknown as number)).toBe(true)
+      } finally {
+        // A failing run must not leak the sleeping grandchild.
+        const leaked = grandchildPid as number | null
+        if (leaked !== null) {
+          try {
+            process.kill(leaked, 'SIGKILL')
+          } catch {
+            // Already gone: the expected outcome.
+          }
+        }
+      }
+    },
+  )
 
   it('reports the typed timeout for a large request to a hanging adapter (stdin EPIPE must not mask it)', async () => {
     // Regression (finding 1): a request larger than the OS pipe buffer leaves

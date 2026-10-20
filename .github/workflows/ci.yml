@@ -36,3 +36,37 @@ jobs:
 
       - name: Verify (biome lint + tsc typecheck + vitest)
         run: pnpm run verify
+
+  verify-linux:
+    # Advisory Linux job (Phase 0 of the Linux plan): same verify command on
+    # Ubuntu 22.04, the glibc baseline for Linux builds. Not a required check;
+    # the required "verify" job above stays the Windows gate.
+    name: verify-linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install native build tools (node-pty has no Linux prebuild)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential python3
+
+      - name: Install pnpm (version from packageManager field)
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 24 (with pnpm store cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build node-pty from source
+        run: pnpm rebuild node-pty
+
+      - name: Verify (biome lint + tsc typecheck + vitest)
+        run: pnpm run verify

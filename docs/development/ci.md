@@ -67,9 +67,12 @@ Nowy push do tego samego PR-a lub gałęzi anuluje jeszcze biegnący run (sekcja
 
 ## Na jakim systemie biega
 
-`windows-latest`: wirtualna maszyna z Windows hostowana przez GitHub, z preinstalowanym Node i Visual Studio Build Tools (Build Tools są dostępne, ale ten projekt ich nie potrzebuje, patrz niżej).
+Dwa joby biegną równolegle przy każdym triggerze:
 
-Dlaczego Windows, skoro większość projektów wybiera Linuksa? NeKode jest projektem Windows-first: celowa platforma to Windows 11, moduły natywne mają zweryfikowane prebuildy `win32-x64`, a testy sprawdzają zachowanie specyficzne dla tego środowiska (ConPTY, ścieżki). CI ma odwzorowywać środowisko, w którym aplikacja realnie działa. Gdyby przyszło wsparcie dla Linuksa, pipeline rozszerza się o drugi job z `runs-on: ubuntu-latest`; dziś to by było fałszywe poczucie bezpieczeństwa, bo zielony Linux nie dowodzi niczego o Windows.
+- `verify` na `windows-latest`: wirtualna maszyna z Windows hostowana przez GitHub, z preinstalowanym Node i Visual Studio Build Tools (Build Tools są dostępne, ale ten projekt ich nie potrzebuje, patrz niżej). To jest **wymagany** check: ochrona gałęzi `main` żąda dokładnie tej nazwy, więc job i jego nazwa się nie zmieniają.
+- `verify-linux` na `ubuntu-22.04`: to samo `pnpm run verify` na Linuksie (Ubuntu 22.04 to bazowa wersja glibc dla przyszłych paczek linuksowych). Na razie check **doradczy**: nie jest wymagany przez ochronę gałęzi, ale czerwony wynik i tak trzeba wyjaśnić przed merge'em.
+
+Dlaczego Windows, skoro większość projektów wybiera Linuksa? NeKode jest projektem Windows-first: celowa platforma to Windows 11, moduły natywne mają zweryfikowane prebuildy `win32-x64`, a testy sprawdzają zachowanie specyficzne dla tego środowiska (ConPTY, ścieżki). CI ma odwzorowywać środowisko, w którym aplikacja realnie działa. Job linuksowy (faza 0 planu wersji na Linuksa) pilnuje, żeby kod i testy nie dryfowały w stronę Windows-only; nie zastępuje joba Windows, bo zielony Linux nie dowodzi niczego o Windows. Testy specyficzne dla Windows (WSL, kandydaci PowerShell/cmd) są na Linuksie pomijane (`skipIf`), a ścieżki w fixture'ach przechodzą przez `hostPath` (`src/main/test-support/host-path.ts`), który na Windows zwraca literał bez zmian.
 
 ## Dlaczego bez VS C++ Build Tools
 
@@ -79,7 +82,9 @@ Moduły natywne (`better-sqlite3`, `node-pty`) korzystają z gotowych binariów 
 - `node-pty: true`: skrypt instalacyjny tylko przenosi prebuildy w miejsce oczekiwane przez runtime.
 - `electron`: nie ma skryptów instalacyjnych; binaria pobierają się dopiero przy pierwszym uruchomieniu aplikacji, którego CI nie robi.
 
-Praktyczny wniosek: `pnpm install` na CI nie kompiluje niczego, więc pipeline nie zależy od kompilatora. Jeśli kiedyś pojawi się błąd typu "Could not find any Visual Studio installation" albo "NODE_MODULE_VERSION" na CI, to znak, że ktoś dodał zależność bez prebuildów: to blokada do analizy zgodnie z [setup.md](setup.md) (sekcja "Moduły natywne"), a nie powód, by dokładać Build Tools do pipeline'u.
+Praktyczny wniosek: `pnpm install` w jobie Windows nie kompiluje niczego, więc ten job nie zależy od kompilatora.
+
+Wyjątek: job `verify-linux`. `node-pty` 1.1.0 nie ma prebuildów dla Linuksa, więc job instaluje `build-essential` i `python3`, a potem kompiluje moduł ze źródeł (`pnpm rebuild node-pty`, kilka sekund; moduł jest N-API, więc ta sama binarka działa w Node i w Electronie). To świadoma decyzja dla Linuksa, opisana w [setup.md](setup.md) (sekcja "Moduły natywne"). Jeśli kiedyś pojawi się błąd typu "Could not find any Visual Studio installation" albo "NODE_MODULE_VERSION" na CI, to znak, że ktoś dodał zależność bez prebuildów: to blokada do analizy zgodnie z [setup.md](setup.md) (sekcja "Moduły natywne"), a nie powód, by dokładać Build Tools do pipeline'u.
 
 ## Cache pnpm
 
@@ -99,12 +104,12 @@ Oba systemy robią to samo (ciągła weryfikacja), różni się integracja z hos
 | Runnery Windows | `windows-latest` dostępny od razu, dla publicznego repo bezpłatnie | dostępność współdzielonych runnerów Windows na GitLab.com jest ograniczona (beta, ograniczona dostępność); w praktyce podpina się własną maszynę (self-hosted) |
 | Konfiguracja startowa | zero: workflow w repo działa po pushu | konto na GitLab, mirror, ewentualnie własny runner |
 
-Rekomendacja pozostaje GitHub Actions, dopóki repo mieszka na GitHub: pipeline żyje obok kodu, biega bez żadnej dodatkowej konfiguracji i darmowo dla repo publicznego. Koszt ewentualnej zmiany na GitLab jest mały: `ci.yml` to ok. 40 linii, a `pnpm run verify` przenosi się 1:1; realną pracą jest dopiero mirror i runner Windows.
+Rekomendacja pozostaje GitHub Actions, dopóki repo mieszka na GitHub: pipeline żyje obok kodu, biega bez żadnej dodatkowej konfiguracji i darmowo dla repo publicznego. Koszt ewentualnej zmiany na GitLab jest mały: `ci.yml` to ok. 75 linii, a `pnpm run verify` przenosi się 1:1; realną pracą jest dopiero mirror i runner Windows.
 
 ## Jak czytać wynik
 
 - Karta **Actions** na GitHub: lista runów, każdy z nazwą commita i statusem (zielony ptak = ok, czerwony krzyżyk = błąd).
-- Przy PR: sekcja **Checks** pokazuje job `verify`; klik w job pokazuje log krok po kroku.
+- Przy PR: sekcja **Checks** pokazuje joby `verify` (wymagany, Windows) i `verify-linux` (doradczy); klik w job pokazuje log krok po kroku.
 - Znaczniki przy commitach w historii: ptak/krzyżyk obok hashu.
 
 Przy czerwonym runie: otwórz log, znajdź pierwszy krok z błędem (kolejność kroków odpowiada kolejności diagnozy: checkout, pnpm, Node, instalacja, verify), a potem odtwórz lokalnie to samo polecenie (`pnpm run verify`). CI używa czystej maszyny, więc czerwony wynik bez lokalnej reprodukcji zwykle oznacza rozjazd lockfile (`--frozen-lockfile`), brakujący prebuild albo różnicę systemową.
@@ -113,6 +118,6 @@ Przy czerwonym runie: otwórz log, znajdź pierwszy krok z błędem (kolejność
 
 - Nie buduje instalatora (`build:win`) ani paczki (`build:unpack`): build Windows sprawdza się lokalnie, a pipeline ma być szybki.
 - Nie robi release'ów ani nie publikuje artefaktów: wydania to osobny proces.
-- Nie biega na Linuksie ani macOS: brak wsparcia docelowego (patrz wyżej).
+- Nie biega na macOS: brak wsparcia docelowego. Linux ma doradczy job `verify-linux` (patrz wyżej), ale nie buduje paczek linuksowych.
 - Nie uruchamia skryptów harnessu (`.agents/` nie jest częścią publikowanego repo).
 - Nie ma badge w README: może być dodany, kiedy ktoś zapragnie, jedną linią.

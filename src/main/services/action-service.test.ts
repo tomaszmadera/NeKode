@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
+import { hostPath } from '../test-support/host-path'
 import { ActionService } from './action-service'
 
 function setup() {
@@ -45,7 +46,7 @@ describe('ActionService', () => {
         '\\\\wsl.localhost\\Ubuntu\\home\\user',
         'p1',
       )
-      for (const cwd of [null, 'D:/code/demo']) {
+      for (const cwd of [null, hostPath('D:/code/demo')]) {
         const action = service.create({
           scope: 'project',
           projectId: 'p1',
@@ -218,18 +219,18 @@ describe('ActionService', () => {
       })
       service.execute(action.id, 'p1', false)
       expect(service.status(action.id)).toMatchObject({ status: 'failed', exitCode: 7 })
-      service.update(action.id, { ...action, cwd: 'D:/code/missing' })
+      service.update(action.id, { ...action, cwd: hostPath('D:/code/missing') })
       const missing = new ActionService({
         db,
         startBackground,
         createChat: vi.fn(),
         createTerminal: vi.fn(),
-        isDirectory: (path) => path !== 'D:/code/missing',
+        isDirectory: (path) => path !== hostPath('D:/code/missing'),
       })
       expect(missing.execute(action.id, 'p1', false)).toMatchObject({
         status: 'failed',
         exitCode: null,
-        error: expect.stringContaining('D:/code/missing'),
+        error: expect.stringContaining(hostPath('D:/code/missing')),
       })
     } finally {
       db.close()
@@ -280,7 +281,7 @@ describe('ActionService', () => {
         title: 'Watch',
         icon: null,
         command: 'pnpm test',
-        cwd: 'D:/code/demo/app',
+        cwd: hostPath('D:/code/demo/app'),
         runMode: 'bottom-terminal',
         confirm: false,
         sortOrder: 0,
@@ -295,7 +296,7 @@ describe('ActionService', () => {
         error: null,
         bottomTabId: 'bottom:p1:test-tab',
         terminalCommand: 'pnpm test',
-        terminalCwd: 'D:/code/demo/app',
+        terminalCwd: hostPath('D:/code/demo/app'),
       })
       expect(createBottomTabId).toHaveBeenCalledWith('p1')
       expect(createChat).not.toHaveBeenCalled()
@@ -333,7 +334,7 @@ describe('ActionService', () => {
         title: 'Global watch',
         icon: null,
         command: 'pnpm test',
-        cwd: 'D:/code/anywhere',
+        cwd: hostPath('D:/code/anywhere'),
         runMode: 'bottom-terminal',
         confirm: false,
         sortOrder: 0,
@@ -352,7 +353,7 @@ describe('ActionService', () => {
         title: 'Watch',
         icon: null,
         command: 'pnpm test',
-        cwd: 'D:/code/missing',
+        cwd: hostPath('D:/code/missing'),
         runMode: 'bottom-terminal',
         confirm: false,
         sortOrder: 1,
@@ -362,11 +363,11 @@ describe('ActionService', () => {
         startBackground: vi.fn(),
         createChat,
         createTerminal: vi.fn(),
-        isDirectory: (path) => path !== 'D:/code/missing',
+        isDirectory: (path) => path !== hostPath('D:/code/missing'),
       })
       const result = missing.execute(action.id, 'p1', false)
       expect(result.status).toBe('failed')
-      expect(result.error).toContain('D:/code/missing')
+      expect(result.error).toContain(hostPath('D:/code/missing'))
       expect(result.bottomTabId).toBeUndefined()
       expect(createChat).not.toHaveBeenCalled()
     } finally {
@@ -383,7 +384,7 @@ describe('ActionService', () => {
         title: 'Watch',
         icon: null,
         command: 'pnpm dev',
-        cwd: 'D:/code/demo/app',
+        cwd: hostPath('D:/code/demo/app'),
         runMode: 'new-terminal',
         confirm: false,
         sortOrder: 0,
@@ -394,7 +395,10 @@ describe('ActionService', () => {
       // Spawning inside execute drops shell startup output: the view subscribes
       // to terminals:data only after this call returns.
       expect(createTerminal).not.toHaveBeenCalled()
-      expect(result).toMatchObject({ terminalCommand: 'pnpm dev', terminalCwd: 'D:/code/demo/app' })
+      expect(result).toMatchObject({
+        terminalCommand: 'pnpm dev',
+        terminalCwd: hostPath('D:/code/demo/app'),
+      })
       const rooted = service.create({
         scope: 'project',
         projectId: 'p1',

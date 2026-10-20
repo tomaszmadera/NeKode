@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { emptyGitWorktree, IPC_CHANNEL } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
+import { hostPath } from '../test-support/host-path'
 import { buildValidatedChannels, ValidationError } from './ipc-validation'
 import type { AppServices } from './service-registry'
 
@@ -428,7 +429,7 @@ describe('ipc payload validation', () => {
   it('validates the terminal cwd as a safe path', () => {
     const entry = channelMap().get('terminals:create')
     expect(() => entry?.parse(['t1', 'relative/cwd'])).toThrow(ValidationError)
-    expect(entry?.parse(['t1', 'D:/code/demo'])).toEqual(['t1', 'D:/code/demo'])
+    expect(entry?.parse(['t1', hostPath('D:/code/demo')])).toEqual(['t1', hostPath('D:/code/demo')])
   })
 
   it('validates files relative paths by shape only (containment is the service’s job)', () => {
@@ -565,8 +566,8 @@ describe('ipc payload validation', () => {
     expect(shellDetect?.parse([])).toEqual([])
     expect(shellDetect?.invoke([])).toEqual([{ id: 'default', label: 'PowerShell' }])
     const shellAddCustom = channels.get('terminals:shellAddCustom')
-    expect(shellAddCustom?.parse(['D:\\sh.exe'])).toEqual(['D:\\sh.exe'])
-    expect(shellAddCustom?.invoke(['D:\\sh.exe'])).toEqual({
+    expect(shellAddCustom?.parse([hostPath('D:\\sh.exe')])).toEqual([hostPath('D:\\sh.exe')])
+    expect(shellAddCustom?.invoke([hostPath('D:\\sh.exe')])).toEqual({
       id: 'custom:D:\\sh.exe',
       label: 'sh.exe',
     })
@@ -590,11 +591,11 @@ describe('ipc payload validation', () => {
     const pick = channels.get('dialogs:pickDirectory')
     // Null (no default) and absolute defaults pass; relative/NUL shapes fail.
     expect(pick?.parse([null])).toEqual([null])
-    expect(pick?.parse(['D:/code'])).toEqual(['D:/code'])
+    expect(pick?.parse([hostPath('D:/code')])).toEqual([hostPath('D:/code')])
     expect(() => pick?.parse(['relative/dir'])).toThrow(/absolute path/)
-    expect(() => pick?.parse(['D:/code\u0000x'])).toThrow(/NUL/)
-    pick?.invoke(pick.parse(['D:/code']))
-    expect(services.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code')
+    expect(() => pick?.parse([hostPath('D:/code\u0000x')])).toThrow(/NUL/)
+    pick?.invoke(pick.parse([hostPath('D:/code')]))
+    expect(services.dialogs.pickDirectory).toHaveBeenCalledWith(hostPath('D:/code'))
   })
 
   it('validates Resume formatting before service calls', async () => {
@@ -606,22 +607,22 @@ describe('ipc payload validation', () => {
     for (const payload of [
       [],
       ['p1'],
-      ['p1', 'D:/a.md', 'extra'],
-      [42, 'D:/a.md'],
+      ['p1', hostPath('D:/a.md'), 'extra'],
+      [42, hostPath('D:/a.md')],
       ['p1', null],
       ['p1', 42],
       ['p1', ''],
       ['p1', 'relative.md'],
-      ['p1', 'D:/a\u0000.md'],
-      ['p1', 'D:/../a.md'],
+      ['p1', hostPath('D:/a\u0000.md')],
+      ['p1', hostPath('D:/../a.md')],
     ]) {
       expect(() => channel.parse(payload)).toThrow(ValidationError)
     }
     expect(services.handoffs.resumePrompt).not.toHaveBeenCalled()
-    await expect(channel.invoke(channel.parse(['p1', 'D:/handoffs/a.md']))).resolves.toBe(
+    await expect(channel.invoke(channel.parse(['p1', hostPath('D:/handoffs/a.md')]))).resolves.toBe(
       'Resume prompt',
     )
-    expect(services.handoffs.resumePrompt).toHaveBeenCalledWith('p1', 'D:/handoffs/a.md')
+    expect(services.handoffs.resumePrompt).toHaveBeenCalledWith('p1', hostPath('D:/handoffs/a.md'))
   })
 
   it('validates agentProfiles payloads before the service', () => {
@@ -890,7 +891,7 @@ describe('ipc payload validation', () => {
       channels.set(entry.channel, entry)
     }
     const create = channels.get('terminals:create')
-    expect(() => create?.invoke(create.parse(['t1', 'D:/code/demo']))).toThrow(
+    expect(() => create?.invoke(create.parse(['t1', hostPath('D:/code/demo')]))).toThrow(
       /Failed to start the terminal process/,
     )
     expect(services.terminals.create).not.toHaveBeenCalled()

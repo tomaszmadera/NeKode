@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AppError } from '../../../shared/ipc-error'
+import { hostPath } from '../../test-support/host-path'
 import { type HandoffsFsAdapter, HandoffsService } from './handoffs-service'
 
 function fakeFs(
@@ -80,7 +81,7 @@ describe('handoffs service', () => {
   })
 
   it('uses an absolute configured directory as-is', async () => {
-    const dir = 'D:/handoffs-elsewhere'
+    const dir = hostPath('D:/handoffs-elsewhere')
     const handoffs = service({
       configured: dir,
       entries: { [dir]: [{ name: 'a.md', kind: 'file' }] },

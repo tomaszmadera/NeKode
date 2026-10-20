@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { projectHandoffDirKey, projectKanbanAdapterKey } from '../../../shared/ipc-contract'
+import { hostPath } from '../../test-support/host-path'
 import {
   filenameMatchesRef,
   type HandoffMatcherFsAdapter,
@@ -342,7 +343,7 @@ describe('HandoffMatcherService.candidates', () => {
   })
 
   it('uses an absolute display path when the directory is outside the project', async () => {
-    const absolute = 'D:/elsewhere/handoffs'
+    const absolute = hostPath('D:/elsewhere/handoffs')
     const { service } = makeService({
       state: stateStore({
         [projectHandoffDirKey('p1')]: absolute,

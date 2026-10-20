@@ -105,7 +105,7 @@ przyszłego harnessu, nie warunkiem uruchomienia aplikacji.
 - `pnpm lint` / `pnpm format` — Biome 2: statyczna analiza i formatowanie.
 - `pnpm run typecheck` — `tsc --noEmit` dla tsconfig.node.json i tsconfig.web.json.
 - `pnpm run build:unpack` / `pnpm run build:win` — paczka / instalator Windows.
-- CI: GitHub Actions biega automatycznie na każdym pull requestcie i pushu na `main` (`pnpm install --frozen-lockfile` + `pnpm run verify` na `windows-latest`); jak to działa i jak czytać wynik: [ci.md](ci.md).
+- CI: GitHub Actions biega automatycznie na każdym pull requestcie i pushu na `main` (`pnpm install --frozen-lockfile` + `pnpm run verify` na `windows-latest` jako wymagany check oraz doradczo na `ubuntu-22.04`); jak to działa i jak czytać wynik: [ci.md](ci.md).
 
 ## 5. Moduły natywne i diagnostyka
 
@@ -116,6 +116,13 @@ prebuild dla konkretnej pary wersja/platforma. Dla integracji WSL sprawdź takż
 binaria jej narzędzi, jeśli zmiana ich dotyczy. Brak prebuilda blokuje zmianę:
 nie dodawaj kompilatora, forka ani obcych binariów bez jawnej decyzji użytkownika.
 Przejrzyj każdy nowy skrypt instalacyjny przed dopuszczeniem go w `allowBuilds`.
+
+Wyjątek dla Linuksa (decyzja użytkownika z 2026-10-20): `node-pty` 1.1.0 nie ma
+prebuildów linuksowych, więc na Linuksie jest kompilowany ze źródeł. Wymaga to
+`build-essential` i `python3` (Debian/Ubuntu: `sudo apt-get install build-essential python3`),
+a po `pnpm install` polecenia `pnpm rebuild node-pty`. Moduł jest N-API, więc jedna
+binarka działa w Node (Vitest) i w Electronie; `npmRebuild: false` zostaje. Job CI
+`verify-linux` robi to samo na `ubuntu-22.04`. Windows nadal używa wyłącznie prebuildów.
 `npmRebuild: false` pozostaje właściwe dopóki wszystkie moduły natywne mają
 odpowiednie binaria N-API; przejście na moduł zależny od ABI wymaga ponownej oceny.
 
@@ -128,7 +135,7 @@ osobny smoke. Zanotuj nieuruchomiony test z powodem zamiast wyniku pass.
 | Moduł | Skąd binaria | Polityka build |
 |---|---|---|
 | `better-sqlite3` 13.x | wbudowane `prebuilds/*.node` (N-API) | `better-sqlite3: false` (bez node-gyp) |
-| `node-pty` 1.1.0 | `prebuilds/win32-x64/` staging do `build/Release` przez `install` | `node-pty: true` (skrypt staging wymagany) |
+| `node-pty` 1.1.0 | Windows: `prebuilds/win32-x64/` staging do `build/Release` przez `install`; Linux: kompilacja ze źródeł (`node-gyp`, `pnpm rebuild node-pty`) | `node-pty: true` (skrypt staging/kompilacji wymagany) |
 | `@biomejs/biome` | optionalDependencies per-platforma | `@biomejs/biome: true` (postinstall) |
 | `esbuild` | postinstall per-platforma | `esbuild: true` |
 | `electron` 44.x | lazy download przy pierwszym uruchomieniu | brak skryptów — poza `allowBuilds` |

@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { accessSync, statSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { APP_STATE_KEY, projectShellKey, projectWslShellsKey } from '../../shared/ipc-contract'
+import { isWindowsHost } from '../test-support/host-path'
 import { createServices } from './create-services'
 import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
 import { ResumeTemplateService } from './handoffs/resume-template-service'
@@ -58,7 +59,9 @@ function setup(path = '\\\\wsl.localhost\\Ubuntu\\home\\user\\Project') {
   return { services, project }
 }
 
-describe('WSL service wiring', () => {
+// WSL integration is Windows-only: projects live on \\wsl.localhost UNC paths
+// and wsl.exe is the launcher, so this suite runs only on a Windows host.
+describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
   it('rolls back a Local agent chat when its selected WSL cannot resolve the project path', () => {
     const { services, project } = setup('D:/Project')
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined)

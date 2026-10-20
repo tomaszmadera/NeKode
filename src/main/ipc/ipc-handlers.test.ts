@@ -9,6 +9,7 @@ import {
   type PtySpawnOptions,
   TerminalService,
 } from '../services/terminal/terminal-service'
+import { hostPath } from '../test-support/host-path'
 import { registerAppIpcHandlers } from './ipc-handlers'
 import type { AppServices } from './service-registry'
 
@@ -387,8 +388,8 @@ describe('registered ipc handlers', () => {
   })
   it('invokes services through validation and slices payloads', async () => {
     const { services, invoke } = createHarness()
-    await invoke(IPC_CHANNEL.terminalsCreate, ['t1', 'D:/code/demo'])
-    expect(services.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo')
+    await invoke(IPC_CHANNEL.terminalsCreate, ['t1', hostPath('D:/code/demo')])
+    expect(services.terminals.create).toHaveBeenCalledWith('t1', hostPath('D:/code/demo'))
 
     await invoke(IPC_CHANNEL.terminalsWrite, ['t1', 'ls\r'])
     expect(services.terminals.write).toHaveBeenCalledWith('t1', 'ls\r')
@@ -527,11 +528,11 @@ describe('registered ipc handlers', () => {
 
   it('dialogs:pickDirectory routes through the injected picker; cancel resolves null', async () => {
     const harness = createHarness()
-    vi.mocked(harness.services.dialogs.pickDirectory).mockResolvedValue('D:/picked')
-    await expect(harness.invoke(IPC_CHANNEL.dialogsPickDirectory, ['D:/start'])).resolves.toBe(
-      'D:/picked',
-    )
-    expect(harness.services.dialogs.pickDirectory).toHaveBeenCalledWith('D:/start')
+    vi.mocked(harness.services.dialogs.pickDirectory).mockResolvedValue(hostPath('D:/picked'))
+    await expect(
+      harness.invoke(IPC_CHANNEL.dialogsPickDirectory, [hostPath('D:/start')]),
+    ).resolves.toBe(hostPath('D:/picked'))
+    expect(harness.services.dialogs.pickDirectory).toHaveBeenCalledWith(hostPath('D:/start'))
     vi.mocked(harness.services.dialogs.pickDirectory).mockResolvedValue(null)
     await expect(harness.invoke(IPC_CHANNEL.dialogsPickDirectory, [null])).resolves.toBeNull()
   })
