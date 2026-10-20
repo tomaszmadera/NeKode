@@ -17,6 +17,22 @@ import { buildMermaidConfig } from './mermaid-config'
 // moved on neither inserts markup nor updates this component.
 
 let diagramCounter = 0
+let mermaidPromise: Promise<typeof import('mermaid')> | null = null
+let panzoomPromise: Promise<typeof import('@panzoom/panzoom')> | null = null
+
+function loadMermaid(): Promise<typeof import('mermaid')> {
+  if (mermaidPromise === null) {
+    mermaidPromise = import('mermaid')
+  }
+  return mermaidPromise
+}
+
+function loadPanzoom(): Promise<typeof import('@panzoom/panzoom')> {
+  if (panzoomPromise === null) {
+    panzoomPromise = import('@panzoom/panzoom')
+  }
+  return panzoomPromise
+}
 
 // Zoom and pan of one rendered diagram (spec Behaviour 13 and 14). The
 // gestures and the control bar are bound by this component on the diagram's
@@ -129,7 +145,7 @@ export function MermaidDiagram({
     let cancelled = false
     setState({ status: 'pending' })
     const id = nextDiagramId()
-    void import('mermaid')
+    void loadMermaid()
       .then(async ({ default: mermaid }) => {
         mermaid.initialize(buildMermaidConfig(containerRef.current))
         const { svg } = await mermaid.render(id, source)
@@ -201,7 +217,7 @@ export function MermaidDiagram({
     svg.addEventListener('dblclick', handleDoubleClick)
     svg.addEventListener('panzoomchange', handleChange)
 
-    void import('@panzoom/panzoom')
+    void loadPanzoom()
       .then(({ default: Panzoom }) => {
         if (disposed) {
           return

@@ -155,7 +155,7 @@
 [data-theme="nekode-float-v2"] [data-testid="action-row-slot"] {
   background-color: transparent !important;
   border-bottom: none !important;
-  padding: 14px 16px 0 16px !important;
+  padding: 14px 16px !important;
 }
 
 [data-theme="nekode-float-v2"] .nk-btn-group,
@@ -288,7 +288,7 @@
 
 /* Terminal layout in float v2: outer padding, styled fit host and comfortable text inset */
 [data-theme="nekode-float-v2"] [data-testid^="terminal-canvas-"] > div {
-  padding: 14px 16px 16px !important;
+  padding: 0 16px 16px !important;
 }
 
 [data-theme="nekode-float-v2"] .terminal-fit-host {

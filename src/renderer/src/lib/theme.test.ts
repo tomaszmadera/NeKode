@@ -119,4 +119,11 @@ describe('motion and interaction tokens (NEKODE-9)', () => {
       /\[data-theme="nekode-float-v2"\]\s*\[data-testid="tab-strip"\]\s*\{\s*background-color:\s*transparent;\s*\}/,
     )
   })
+
+  it('sets NeKode Float v2 action row slot to symmetric 14px 16px padding', () => {
+    const floatV2Source = readFileSync(join(THEMES_DIR, 'nekode-float-v2.css'), 'utf8')
+    expect(floatV2Source).toMatch(
+      /\[data-theme="nekode-float-v2"\]\s*\[data-testid="action-row-slot"\]\s*\{[\s\S]*?padding:\s*14px\s+16px\s*!important;/,
+    )
+  })
 })
