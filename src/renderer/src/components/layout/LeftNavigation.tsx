@@ -215,6 +215,7 @@ export function SessionRowItem({
         onMouseEnter={() => setRevealedChatId(chat.id)}
         onClick={() => onSelectChat(projectId, chat.id)}
       >
+        <Icon.terminal size={16} aria-hidden className="session-icon neon-term shrink-0" />
         <span
           aria-hidden="true"
           className="h-2 w-2 shrink-0 rounded-full"
@@ -492,9 +493,17 @@ export function LeftNavigation({
                       }}
                     >
                       {isExpanded ? (
-                        <Icon.chevronDown size={12} aria-hidden className="mr-2 shrink-0" />
+                        <Icon.chevronDown
+                          size={14}
+                          aria-hidden
+                          className="project-chevron mr-2 shrink-0"
+                        />
                       ) : (
-                        <Icon.chevronRight size={12} aria-hidden className="mr-2 shrink-0" />
+                        <Icon.chevronRight
+                          size={14}
+                          aria-hidden
+                          className="project-chevron mr-2 shrink-0"
+                        />
                       )}
                       {showProjectIcons ? (
                         <span

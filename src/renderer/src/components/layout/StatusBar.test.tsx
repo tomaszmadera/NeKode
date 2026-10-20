@@ -316,6 +316,19 @@ describe('status bar — quick theme switcher', () => {
     )
     expect(screen.getByTestId(TEST_ID.statusThemeSwitcher).textContent).toContain('NeKode Float')
     fireEvent.click(screen.getByTestId(TEST_ID.statusThemeSwitcher))
+    expect(onThemeChange).toHaveBeenCalledWith('nekode-float-v2')
+
+    rerender(
+      <StatusBar
+        app={app}
+        project={projectA}
+        theme="nekode-float-v2"
+        quickThemeSwitch={true}
+        onThemeChange={onThemeChange}
+      />,
+    )
+    expect(screen.getByTestId(TEST_ID.statusThemeSwitcher).textContent).toContain('NeKode Float v2')
+    fireEvent.click(screen.getByTestId(TEST_ID.statusThemeSwitcher))
     expect(onThemeChange).toHaveBeenCalledWith('default')
   })
 

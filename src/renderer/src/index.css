@@ -428,3 +428,8 @@ button {
   border-radius: 4px;
   background: rgba(15, 18, 32, 0.14);
 }
+
+/* Session row terminal icon: hidden by default, enabled by supporting themes (e.g. nekode-float-v2) */
+.session-icon {
+  display: none;
+}

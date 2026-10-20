@@ -150,8 +150,10 @@ export function TabStrip({
       >
         {/* Same chat mark as the chat rows in the left navigation, so the
             terminal-chat tab reads as the chat surface (user request
-            2026-10-01). */}
-        <Icon.chat size={12} aria-hidden className="shrink-0" />
+            2026-10-01). Themes that use the neon terminal icon (such as
+            NeKode Float v2) show .session-icon instead. */}
+        <Icon.chat size={12} aria-hidden className="shrink-0 tab-chat-icon" />
+        <Icon.terminal size={14} aria-hidden className="session-icon neon-term shrink-0" />
         <span className="truncate">{chatName ?? 'Chat'}</span>
       </button>
       {openFiles.map((path) => {

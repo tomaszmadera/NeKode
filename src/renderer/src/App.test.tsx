@@ -373,7 +373,7 @@ describe('app settings and themes', () => {
       within(select)
         .getAllByRole('option')
         .map((option) => option.textContent),
-    ).toEqual(['NeKode Flat', 'NeKode Float'])
+    ).toEqual(['NeKode Flat', 'NeKode Float', 'NeKode Float v2'])
     expect(document.documentElement.dataset.theme).toBe('default')
     fireEvent.change(select, { target: { value: 'nekode-float' } })
     expect(document.documentElement.dataset.theme).toBe('nekode-float')
@@ -500,6 +500,12 @@ describe('app settings and themes', () => {
     expect(switcher.textContent).toContain('NeKode Float')
     expect(document.documentElement.dataset.theme).toBe('nekode-float')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
+
+    // Click again to toggle to "NeKode Float v2"
+    fireEvent.click(switcher)
+    expect(switcher.textContent).toContain('NeKode Float v2')
+    expect(document.documentElement.dataset.theme).toBe('nekode-float-v2')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float-v2')
 
     // Click again to toggle back to "NeKode Flat"
     fireEvent.click(switcher)

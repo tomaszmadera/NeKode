@@ -52,7 +52,7 @@ function createWindow(): void {
     // the first renderer paint.
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#0d1222',
+      color: '#00000000',
       symbolColor: '#cacbd1',
       height: 36,
     },

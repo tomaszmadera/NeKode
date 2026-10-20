@@ -110,4 +110,13 @@ describe('motion and interaction tokens (NEKODE-9)', () => {
       /\[data-theme="nekode-float"\]\s*\[data-testid="tab-strip"\]\s*\{\s*background-color:\s*var\(--color-app\);\s*\}/,
     )
   })
+
+  it('sets NeKode Float v2 app color to rgb(11 14 26) and tab strip background to transparent', () => {
+    const floatV2Source = readFileSync(join(THEMES_DIR, 'nekode-float-v2.css'), 'utf8')
+    expect(floatV2Source).toContain('--color-app: rgb(11 14 26);')
+    expect(floatV2Source).toContain('--color-terminal: rgb(17 19 23);')
+    expect(floatV2Source).toMatch(
+      /\[data-theme="nekode-float-v2"\]\s*\[data-testid="tab-strip"\]\s*\{\s*background-color:\s*transparent;\s*\}/,
+    )
+  })
 })

@@ -30,20 +30,16 @@ export function PanelFooter({
           {mascotError}
         </p>
       ) : null}
-      <div className="flex items-center justify-between border-t border-edge px-3 py-1.5">
+      <div className="flex items-center gap-1 border-t border-edge px-3 py-1.5">
         <button
           type="button"
-          // No hover fill (user request 2026-10-04): the label brightens only.
-          // w-fit keeps the hover target on the control itself (user report
-          // 2026-10-04): it must not span the whole footer strip.
-          className="flex w-fit items-center gap-2 rounded-md px-2 py-1.5 text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
           data-testid={TEST_ID.appSettingsButton}
           aria-label="App Settings"
           title="App Settings"
           onClick={onOpenAppSettings}
         >
           <Icon.settings size={16} aria-hidden />
-          <span className="text-sm">App Settings</span>
         </button>
         <button
           type="button"

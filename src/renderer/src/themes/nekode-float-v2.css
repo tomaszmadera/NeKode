@@ -1,0 +1,516 @@
+/* nekode-float-v2: NeKode Float v2. Styled from design reference
+   prototype (tmp/nekode-float-v2/Main.dc.html). Floating layout variant,
+   refined rich dark indigo palette with glowing accents, customized surfaces
+   and rounded cards.
+   Token source of truth: docs/references/NeKode-Design-System.md.
+   Every color utility (bg-panel, text-ink, border-edge, ...) derives from
+   these names — override values only, never token names. */
+[data-theme="nekode-float-v2"] {
+  /* Surfaces */
+  --color-app: rgb(11 14 26);
+  --color-panel: rgb(24 29 52);
+  --color-highlight: rgb(38 45 74);
+  /* Row hover: subtle white tint over dark indigo surface */
+  --color-row-hover: rgb(33 38 60);
+  --color-button: rgb(30 35 58);
+  --color-button-hover: rgb(40 47 76);
+  --color-button-active: rgb(48 44 86);
+  --color-button-active-hover: rgb(58 53 102);
+  --color-tab-inactive: rgb(24 29 52);
+  --color-terminal: rgb(17 19 23);
+
+  /* Text */
+  --color-ink: rgb(231 233 244);
+  --color-ink-secondary: rgb(167 173 198);
+  --color-ink-muted: rgb(127 134 163);
+  --color-ink-disabled: rgb(93 99 128);
+
+  /* Semantic text and indicators */
+  --color-success: rgb(62 207 142);
+  --color-warning: rgb(232 163 61);
+  --color-error: rgb(255 122 184);
+  --color-info: rgb(94 231 255);
+  /* Left-navigation accents: Projects header #C8CCDF, project titles #D9DCEA */
+  --color-project-title: rgb(217 220 234);
+  --color-project-title-collapsed: rgb(167 173 198);
+  --color-projects-header: rgb(200 204 223);
+  --color-chat-title: rgb(167 173 198);
+  /* Selection accent: vibrant pastel violet #B9A6FF */
+  --color-accent: rgb(185 166 255);
+
+  /* Structure: panel borders, control outlines and hairline separators */
+  --color-edge: rgb(42 47 74);
+  --color-control-edge: rgb(46 52 82);
+  --color-divider: rgb(38 43 69);
+
+  /* Scrollbars */
+  --color-scrollbar: rgb(46 52 82);
+  --color-scrollbar-active: rgb(68 76 116);
+
+  /* Radius scale: 6px rows, 8px buttons/tabs, 16px cards/panels */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-pill: 999px;
+
+  /* Control scale: 42px visible height */
+  --spacing-control: 2.625rem;
+
+  /* Terminal-facing mono stack: preserve standard app mono fonts */
+  --font-mono:
+    "Recursive Mono Casual", "Symbols Nerd Font Mono", Consolas, "Courier New", monospace;
+
+  /* Transitions and motion */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* App shell: rich radial gradient from prototype plus fine grain overlay */
+[data-theme="nekode-float-v2"] [data-testid="app-shell"] {
+  background:
+    radial-gradient(900px 420px at 60% -10%, rgba(124, 92, 255, 0.16), transparent 70%),
+    linear-gradient(180deg, #11152a 0%, #0c0f1d 100%);
+  position: relative;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="app-shell"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  background-image: url("../assets/theme-grain.png");
+  background-size: 256px 256px;
+  mix-blend-mode: overlay;
+  opacity: 0.06;
+}
+
+/* Window title bar & tab strip backgrounds stay transparent to let the gradient through */
+[data-theme="nekode-float-v2"] [data-testid="title-bar"] {
+  background-color: transparent !important;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="tab-strip"] {
+  background-color: transparent;
+}
+
+/* Tab strip: offset first tab so active state never overlaps the card's top-left rounded corner */
+[data-theme="nekode-float-v2"] [data-testid="tab-strip"] {
+  padding-left: 24px !important;
+}
+
+[data-theme="nekode-float-v2"] div.bg-app {
+  background-color: transparent !important;
+}
+
+/* Left panel: translucent gradient with subtle border and inset highlight */
+[data-theme="nekode-float-v2"] aside.bg-panel {
+  border-radius: var(--radius-lg);
+  border-color: rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, rgba(30, 36, 62, 0.85) 0%, rgba(20, 24, 42, 0.85) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Center main card: floating rounded frame with vignette glow (all corners rounded) */
+[data-theme="nekode-float-v2"] .rounded-lg.rounded-tl-none.border-edge {
+  border-radius: var(--radius-lg) !important;
+  border-color: #2a2f4a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(ellipse 110% 95% at 50% 40%, transparent 55%, rgba(4, 6, 14, 0.38) 100%),
+    radial-gradient(700px 360px at 50% 42%, rgba(110, 80, 240, 0.12), transparent 70%),
+    linear-gradient(180deg, #181d34 0%, #13172b 100%);
+}
+
+/* Tab styling from prototype */
+[data-theme="nekode-float-v2"] .tab-chat-icon {
+  display: none !important;
+}
+
+[data-theme="nekode-float-v2"] .nk-tab-active {
+  background: linear-gradient(180deg, #1d2240 0%, #181d34 100%) !important;
+  border-color: #2a2f4a !important;
+  border-bottom: none !important;
+  color: #f1f2f8 !important;
+  border-radius: 8px 8px 0 0 !important;
+}
+
+[data-theme="nekode-float-v2"] .nk-tab-active::after {
+  background-color: #181d34 !important;
+}
+
+[data-theme="nekode-float-v2"] .nk-tab-inactive {
+  border-color: transparent !important;
+  color: #8a91ae !important;
+  border-radius: 8px 8px 0 0 !important;
+}
+
+[data-theme="nekode-float-v2"] .nk-tab-inactive:hover {
+  background-color: rgba(255, 255, 255, 0.035) !important;
+  color: #d9dcea !important;
+}
+
+/* Action toolbar & segmented button groups */
+[data-theme="nekode-float-v2"] [data-testid="action-row-slot"] {
+  background-color: transparent !important;
+  border-bottom: none !important;
+  padding: 14px 16px 0 16px !important;
+}
+
+[data-theme="nekode-float-v2"] .nk-btn-group,
+[data-theme="nekode-float-v2"] fieldset.nk-btn-group {
+  border-radius: var(--radius-md);
+  background-color: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Neon glow on terminal and kanban tab icons */
+[data-theme="nekode-float-v2"] [data-testid="tab-terminal"] svg {
+  color: #5ee7ff;
+  filter: drop-shadow(0 0 3px rgba(94, 231, 255, 0.65));
+}
+
+[data-theme="nekode-float-v2"] [data-testid="kanban-tab"] svg {
+  color: #ff7ad9;
+  filter: drop-shadow(0 0 3px rgba(255, 122, 217, 0.6));
+}
+
+/* Segmented action buttons with prototype glowing accents */
+[data-theme="nekode-float-v2"]
+  fieldset.nk-btn-group:nth-of-type(1)
+  div:first-of-type
+  button:not(:disabled)
+  svg {
+  color: #b9a6ff;
+  filter: drop-shadow(0 0 3px rgba(185, 166, 255, 0.45));
+}
+[data-theme="nekode-float-v2"]
+  fieldset.nk-btn-group:nth-of-type(1)
+  div:first-of-type
+  button:hover:not(:disabled) {
+  background: rgba(185, 166, 255, 0.1);
+  color: #fff;
+}
+[data-theme="nekode-float-v2"]
+  fieldset.nk-btn-group:nth-of-type(1)
+  div:last-of-type
+  button:not(:disabled)
+  svg {
+  color: #5ee7ff;
+  filter: drop-shadow(0 0 3px rgba(94, 231, 255, 0.45));
+}
+[data-theme="nekode-float-v2"]
+  fieldset.nk-btn-group:nth-of-type(1)
+  div:last-of-type
+  button:hover:not(:disabled) {
+  background: rgba(94, 231, 255, 0.09);
+  color: #fff;
+}
+[data-theme="nekode-float-v2"]
+  fieldset.nk-btn-group:nth-of-type(2)
+  div:first-of-type
+  button:not(:disabled)
+  svg {
+  color: #ff7ab8;
+  filter: drop-shadow(0 0 3px rgba(255, 122, 184, 0.45));
+}
+[data-theme="nekode-float-v2"]
+  fieldset.nk-btn-group:nth-of-type(2)
+  div:first-of-type
+  button:hover:not(:disabled) {
+  background: rgba(255, 122, 184, 0.1);
+  color: #fff;
+}
+[data-theme="nekode-float-v2"]
+  fieldset.nk-btn-group:nth-of-type(2)
+  div:last-of-type
+  button:not(:disabled)
+  svg {
+  color: #4fe0a0;
+  filter: drop-shadow(0 0 3px rgba(79, 224, 160, 0.45));
+}
+[data-theme="nekode-float-v2"]
+  fieldset.nk-btn-group:nth-of-type(2)
+  div:last-of-type
+  button:hover:not(:disabled) {
+  background: rgba(79, 224, 160, 0.09);
+  color: #fff;
+}
+
+/* Prompt input: styled frame with glow and purple submit button, clear gap from terminal */
+[data-theme="nekode-float-v2"] form.bg-terminal {
+  margin-top: 14px !important;
+  padding: 0 !important;
+  background-color: transparent !important;
+  width: 100% !important;
+}
+
+[data-theme="nekode-float-v2"] form.bg-terminal > div:first-child {
+  border-radius: 14px;
+  border-color: #2e3452;
+  background: linear-gradient(180deg, #1c2140 0%, #161a31 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+[data-theme="nekode-float-v2"] form.bg-terminal > div:first-child:focus-within {
+  border-color: #5b4fb0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 30px rgba(0, 0, 0, 0.35),
+    0 0 0 3px rgba(139, 108, 255, 0.14);
+}
+
+[data-theme="nekode-float-v2"] form.bg-terminal span[aria-hidden="true"] {
+  color: #9b82ff;
+}
+
+[data-theme="nekode-float-v2"] form.bg-terminal button[type="submit"] {
+  border-radius: 10px;
+  background: linear-gradient(135deg, #8a6cf6, #a78bfa);
+  box-shadow: 0 4px 14px rgba(139, 108, 255, 0.3);
+  color: #fff;
+}
+
+[data-theme="nekode-float-v2"] form.bg-terminal button[type="submit"]:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+/* Terminal canvas wrapper stays transparent so main card gradient shows */
+[data-theme="nekode-float-v2"] div.bg-terminal {
+  background-color: transparent !important;
+}
+
+/* Terminal layout in float v2: outer padding, styled fit host and comfortable text inset */
+[data-theme="nekode-float-v2"] [data-testid^="terminal-canvas-"] > div {
+  padding: 14px 16px 16px !important;
+}
+
+[data-theme="nekode-float-v2"] .terminal-fit-host {
+  border-radius: 12px;
+  border: 1px solid #25272f;
+  background: linear-gradient(180deg, #141519 0%, #0d0e11 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="nekode-float-v2"] .terminal-fit-host > .xterm {
+  box-sizing: border-box !important;
+  padding: 12px 16px !important;
+}
+
+/* Status bar: rich glass gradient, purple-tinted hairline, adjusted sizing */
+[data-theme="nekode-float-v2"] [data-testid="status-bar"] {
+  height: 34px !important;
+  padding: 0 16px !important;
+  border-top: 1px solid rgba(155, 130, 255, 0.22) !important;
+  background: linear-gradient(90deg, rgba(28, 32, 56, 0.95), rgba(22, 26, 46, 0.95)) !important;
+  color: #a3a9c2 !important;
+  font-size: 13px !important;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="status-project-name"] {
+  color: #eef0f8 !important;
+  font-weight: 600 !important;
+}
+
+[data-theme="nekode-float-v2"] .status-bar-section {
+  border-left-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="nekode-float-v2"] .status-bar-git-sync {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #c8ccdf !important;
+  border-radius: 6px !important;
+}
+
+[data-theme="nekode-float-v2"] .status-bar-git-sync:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="nekode-float-v2"] .status-bar-theme-switcher {
+  border-color: rgba(155, 130, 255, 0.3) !important;
+  background: rgba(139, 108, 255, 0.12) !important;
+  color: #d6caff !important;
+  border-radius: 6px !important;
+}
+
+/* Primary actions: gradient pill with purple glow */
+[data-theme="nekode-float-v2"] .artwork-primary-btn,
+[data-theme="nekode-float-v2"] .artwork-welcome button {
+  background: linear-gradient(135deg, #8a6cf6, #a78bfa);
+  box-shadow: 0 8px 28px rgba(139, 108, 255, 0.35);
+  color: #fff;
+}
+
+/* Session row styling from prototype */
+[data-theme="nekode-float-v2"] .session-icon {
+  display: inline-flex;
+  color: #5ee7ff;
+  filter: drop-shadow(0 0 3px rgba(94, 231, 255, 0.65));
+}
+
+[data-theme="nekode-float-v2"] button[data-testid^="chat-row-"] {
+  height: 38px !important;
+  padding-left: 22px !important;
+  padding-right: 10px !important;
+  border-radius: 9px !important;
+  gap: 10px !important;
+  color: #a7adc6 !important;
+  font-size: 13.5px !important;
+}
+
+[data-theme="nekode-float-v2"] button[data-testid^="chat-row-"]:hover {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  color: #e2e5f1 !important;
+}
+
+[data-theme="nekode-float-v2"] button[data-testid^="chat-row-"][data-selected="true"] {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #f1f2f8 !important;
+}
+
+[data-theme="nekode-float-v2"] span[data-testid^="chat-status-dot-"] {
+  width: 7px !important;
+  height: 7px !important;
+  flex: none !important;
+}
+
+[data-theme="nekode-float-v2"] span[data-testid^="chat-status-dot-"][data-status="running"] {
+  background-color: #3ecf8e !important;
+  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.15);
+  animation: livepulse-v2 2.4s ease-in-out infinite;
+}
+
+[data-theme="nekode-float-v2"] span[data-testid^="chat-status-dot-"][data-status="idle"] {
+  background-color: #8f87d9 !important;
+}
+
+[data-theme="nekode-float-v2"] span[data-testid^="chat-status-dot-"][data-status="waiting"],
+[data-theme="nekode-float-v2"] span[data-testid^="chat-status-dot-"][data-status="stopped"] {
+  background-color: #e8a33d !important;
+}
+
+@keyframes livepulse-v2 {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(62, 207, 142, 0.18),
+      0 0 4px rgba(62, 207, 142, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(62, 207, 142, 0.06),
+      0 0 10px rgba(62, 207, 142, 0.55);
+  }
+}
+
+/* Add project button (.ibtn style) */
+[data-theme="nekode-float-v2"] [data-testid="add-project-button"] {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #9aa1bd !important;
+  background: transparent !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="add-project-button"]:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #e7e9f4 !important;
+}
+
+/* Project Settings button in tabstrip (.ibtn style) */
+[data-theme="nekode-float-v2"] [data-testid="tab-project-settings"] {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #9aa1bd !important;
+  background: transparent !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="tab-project-settings"]:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #e7e9f4 !important;
+}
+
+/* App Settings button in panel footer (.proj style with icon tile) */
+[data-theme="nekode-float-v2"] [data-testid="app-settings-button"] {
+  height: 40px !important;
+  padding: 0 10px !important;
+  border-radius: 10px !important;
+  color: #c8ccdf !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="app-settings-button"]:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #f1f2f8 !important;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="app-settings-button"] svg {
+  box-sizing: border-box;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 5px !important;
+  border-radius: 8px !important;
+  border: 1px solid #2a2f4a !important;
+  background: linear-gradient(180deg, #1f2442, #181d34) !important;
+  color: #b9a6ff !important;
+  flex: none !important;
+}
+
+/* Footer action buttons: App Settings & Mascot toggle (.ibtn style) */
+[data-theme="nekode-float-v2"] [data-testid="app-settings-button"],
+[data-theme="nekode-float-v2"] [data-testid="mascot-toggle"] {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #9aa1bd !important;
+  background: transparent !important;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="app-settings-button"]:hover,
+[data-theme="nekode-float-v2"] [data-testid="mascot-toggle"]:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #e7e9f4 !important;
+}
+
+/* Project row action buttons */
+[data-theme="nekode-float-v2"] [data-testid="new-chat-button"],
+[data-theme="nekode-float-v2"] button[data-testid^="project-files-"] {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 6px !important;
+  color: #9aa1bd !important;
+}
+
+[data-theme="nekode-float-v2"] [data-testid="new-chat-button"]:hover,
+[data-theme="nekode-float-v2"] button[data-testid^="project-files-"]:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #e7e9f4 !important;
+}
+
+/* Project chevrons: slightly larger, custom color from prototype #7f86a3 */
+[data-theme="nekode-float-v2"] .project-chevron,
+[data-theme="nekode-float-v2"] button[data-testid^="project-select-"] > svg:first-child {
+  width: 14px !important;
+  height: 14px !important;
+  color: #7f86a3 !important;
+}

@@ -10,6 +10,7 @@
 export const THEMES = {
   default: { label: 'NeKode Flat', layout: 'attached' },
   'nekode-float': { label: 'NeKode Float', layout: 'floating' },
+  'nekode-float-v2': { label: 'NeKode Float v2', layout: 'floating' },
 } as const
 
 export type ThemeId = keyof typeof THEMES
