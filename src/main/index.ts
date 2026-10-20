@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import nekodeIcon from '../../resources/icon.ico?asset'
+import nekodePngIcon from '../../resources/icon.png?asset'
 import { IPC_CHANNEL } from '../shared/ipc-contract'
 import { isSafeExternalUrl } from '../shared/safe-url'
 import { bootstrap } from './bootstrap'
@@ -43,7 +44,8 @@ function createWindow(): void {
     // Window and taskbar icon (2026-10-01): the branded cat tile, so dev
     // runs carry the app identity like the packaged exe (electron-builder
     // win.icon below). ?asset resolves to a real file path in dev and build.
-    icon: nekodeIcon,
+    // Windows uses the multi-size .ico; Linux window managers need a PNG.
+    icon: process.platform === 'win32' ? nekodeIcon : nekodePngIcon,
     // Custom title bar (design doc 26.2): the renderer's full-width title
     // bar strip (brand on the left) is the drag surface (.drag-region in
     // index.css) and paints the base app background; Windows draws the

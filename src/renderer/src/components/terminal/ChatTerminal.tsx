@@ -135,6 +135,12 @@ function errorMessage(error: unknown, fallback: string): string {
  * re-collected). The cursor row alone is compared, so multi-line prompts
  * (oh-my-posh) work: their last line is the row the cursor sits on.
  */
+
+/** Windows (or an API double without a platform) keeps the line-key emulation. */
+function isWindowsHost(app: AppApi): boolean {
+  return app.platform === undefined || app.platform === 'win32'
+}
+
 export function ChatTerminal({
   app,
   dictation,
@@ -537,6 +543,14 @@ export function ChatTerminal({
       const isCtrlD = (event.code === 'KeyD' || event.key === 'd' || event.key === 'D') && ctrlOnly
       const isCtrlU = (event.code === 'KeyU' || event.key === 'u' || event.key === 'U') && ctrlOnly
       if (!isCtrlD && !isCtrlU) {
+        return true
+      }
+      // Off Windows the shells (bash, zsh, fish) own these keys natively:
+      // Ctrl+D is EOF/delete-char and Ctrl+U kills the line. The emulation
+      // below targets PSReadLine/Windows edit mode and would break them (its
+      // Ctrl+A + Backspace only moves to the line start in readline), so the
+      // raw key goes to the shell. Its exit then closes the chat as usual.
+      if (!isWindowsHost(appRef.current)) {
         return true
       }
       if (isCtrlD) {

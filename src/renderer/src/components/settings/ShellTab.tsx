@@ -276,7 +276,13 @@ export function ShellTab({
               <input
                 id="settings-shell-custom"
                 value={customPath}
-                placeholder={shells[0]?.label.includes('WSL:') ? '/bin/bash' : 'C:\\tools\\nu.exe'}
+                placeholder={
+                  shells[0]?.label.includes('WSL:')
+                    ? '/bin/bash'
+                    : app.platform === undefined || app.platform === 'win32'
+                      ? 'C:\\tools\\nu.exe'
+                      : '/usr/bin/fish'
+                }
                 data-testid={TEST_ID.settingsShellCustomInput}
                 onChange={(event) => {
                   setCustomPath(event.target.value)

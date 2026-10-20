@@ -23,13 +23,16 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function setup() {
+function setup(platform?: string) {
   const project = { id: 'project', name: 'My Project', path: 'D:/project', runtimeLabel: null }
   const add = vi.fn().mockResolvedValue(project)
   const addWsl = vi.fn().mockResolvedValue(project)
   const wslDistributions = vi.fn().mockResolvedValue(['Ubuntu', 'Debian'])
   const wslDirectories = vi.fn().mockResolvedValue([])
-  const app = { projects: { add, addWsl, wslDistributions, wslDirectories } } as unknown as AppApi
+  const app = {
+    platform,
+    projects: { add, addWsl, wslDistributions, wslDirectories },
+  } as unknown as AppApi
   const onAdded = vi.fn()
   const onClose = vi.fn()
   const view = render(<AddProject app={app} onAdded={onAdded} onClose={onClose} />)
@@ -64,6 +67,20 @@ describe('Add Project', () => {
     expect(screen.getByRole('button', { name: 'Choose folder...' })).toBeTruthy()
     expect(add).not.toHaveBeenCalled()
     expect(wslDistributions).not.toHaveBeenCalled()
+  })
+
+  it('offers only Local when NeKode runs on Linux (no WSL choice, no discovery)', () => {
+    const { wslDistributions } = setup('linux')
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Local'])
+    expect(wslDistributions).not.toHaveBeenCalled()
+  })
+
+  it('keeps the WSL choice on Windows', () => {
+    setup('win32')
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Local',
+      'WSL',
+    ])
   })
 
   it('uses the Local picker only on submission and closes after project selection', async () => {

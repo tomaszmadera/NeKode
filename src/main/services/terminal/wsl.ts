@@ -17,6 +17,22 @@ export const runWsl: WslRun = (distribution, args) => {
   }
 }
 
+/**
+ * WSL integration exists only when NeKode itself runs on Windows. On Linux,
+ * including inside a WSL distribution where wsl.exe is reachable through
+ * interop, WSL projects, discovery and shells stay hidden.
+ */
+export function wslSupported(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'win32'
+}
+
+/** Rejects WSL project operations when NeKode does not run on Windows. */
+export function requireWslSupport(platform: NodeJS.Platform = process.platform): void {
+  if (!wslSupported(platform)) {
+    throw new AppError('validation', 'WSL projects are available only when NeKode runs on Windows.')
+  }
+}
+
 export function listWslDistributions(): string[] {
   try {
     return execFileSync('wsl.exe', ['--list', '--quiet'], { timeout: 5000, windowsHide: true })

@@ -776,11 +776,13 @@ describe('ChatTerminal lifecycle', () => {
   function renderTerminal(
     onClose: () => void,
     terminalCtrlVPaste?: boolean,
+    platform?: string,
   ): {
     terminal: (typeof mockTerminalInstances)[number]
     bundle: AppMockBundle
   } {
     const bundle = createAppMock()
+    if (platform !== undefined) bundle.app.platform = platform
     render(
       <ChatTerminal
         app={bundle.app}
@@ -956,6 +958,40 @@ describe('ChatTerminal lifecycle', () => {
     expect(terminal.buffer.active.rows[0]).toBe(PROMPT)
     expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(false)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('on Linux Ctrl+U reaches the shell raw: no PSReadLine emulation bytes are written', async () => {
+    const onClose = vi.fn()
+    const { terminal, bundle } = renderTerminal(onClose, undefined, 'linux')
+    showPrompt(terminal, bundle)
+    typeText(terminal, 'abc')
+    // true = xterm sends its own \x15 (readline unix-line-discard).
+    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x01\x7f')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('on Linux Ctrl+D reaches the shell raw: an empty line does not close the chat in the app', async () => {
+    const onClose = vi.fn()
+    const { terminal, bundle } = renderTerminal(onClose, undefined, 'linux')
+    showPrompt(terminal, bundle)
+    // Empty line: Windows closes the chat here; on Linux the shell gets EOF
+    // (\x04 from xterm) and its exit closes the chat through onExit.
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
+    typeText(terminal, 'abc')
+    expect(pressKey(terminal, { key: 'd', ctrlKey: true })).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(bundle.app.terminals.write).not.toHaveBeenCalledWith('t1', '\x1b[3~')
+  })
+
+  it('an explicit win32 platform keeps the Ctrl+U emulation', async () => {
+    const { terminal, bundle } = renderTerminal(vi.fn(), undefined, 'win32')
+    showPrompt(terminal, bundle)
+    typeText(terminal, 'abc')
+    expect(pressKey(terminal, { key: 'u', ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\x01\x7f'))
   })
 
   it('Ctrl+U clears the input: the erased line reads as the prompt and Ctrl+D closes', async () => {

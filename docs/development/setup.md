@@ -1,6 +1,7 @@
 # Instrukcja Konfiguracji Środowiska Deweloperskiego (Setup)
 
-**Platforma aplikacji:** Windows 11. WSL2 jest opcjonalną integracją powłoki, a nie deklaracją wsparcia aplikacji desktopowej na Linuksie.
+**Platforma aplikacji:** Windows 11 (wspierana). WSL2 jest opcjonalną integracją powłoki dostępną tylko, gdy NeKode działa na Windows.
+**Linux (eksperymentalnie):** NeKode buduje się i uruchamia ze źródeł na Linuksie x64; zakres to Ubuntu 22.04 i 24.04 (szczegóły w [sekcji 1a](#1a-linux-eksperymentalnie)). Nie ma jeszcze linuksowych wydań ani instalatorów.
 **Główny stos technologiczny:** Electron, React, TypeScript, Vite, Tailwind CSS, SQLite (`better-sqlite3`), `node-pty`
 
 Bieżące wersje i polecenia odczytuj z [package.json](../../package.json), [pnpm-lock.yaml](../../pnpm-lock.yaml), [polityki instalacji](../../pnpm-workspace.yaml) i [konfiguracji pakowania](../../electron-builder.yml). [Kontrakt projektu](project-contract.md) określa zasady zmian i źródła wymagań.
@@ -19,6 +20,34 @@ zainstalowane i przetestowane wraz z buildem instalatora i uruchomieniem aplikac
    świadomie (`better-sqlite3: false` w `pnpm-workspace.yaml`, `npmRebuild: false`
    w `electron-builder.yml`).
 4. **Git:** >= 2.40 (zweryfikowany: 2.55).
+
+## 1a. Linux (eksperymentalnie)
+
+Zakres: Ubuntu 22.04 i 24.04, x64 (NEKODE-13). Inne dystrybucje i ARM nie są testowane.
+Uruchomienie ze źródeł (`pnpm run dev`) i lokalna paczka działają; oficjalne wydania
+linuksowe (AppImage, deb) to osobny, późniejszy etap.
+
+Wymagania dodatkowe względem sekcji 1:
+
+- `build-essential` i `python3` — kompilacja `node-pty` ze źródeł (sekcja 5);
+- `libsecret-1-0` plus działający keyring (np. `gnome-keyring`) — szyfrowanie sekretów
+  (token Plane) przez Electron `safeStorage`. Bez keyringa NeKode trzyma sekret tylko
+  w pamięci do zamknięcia aplikacji, nigdy nie zapisuje go na dysk jawnym tekstem
+  i pokazuje o tym ostrzeżenie w ustawieniach Kanban.
+
+```
+sudo apt-get install build-essential python3 libsecret-1-0
+pnpm install
+pnpm rebuild node-pty
+pnpm run dev
+```
+
+Różnice zachowania na Linuksie:
+
+- powłoki: domyślna to `$SHELL`; lista w ustawieniach dodaje zainstalowane powłoki
+  z `/etc/shells` (istniejące i wykonywalne);
+- WSL jest ukryty (brak projektów WSL i powłok WSL), także gdy NeKode działa wewnątrz WSL;
+- Ctrl+U i Ctrl+D trafiają prosto do powłoki (emulacja PSReadLine dotyczy tylko Windows).
 
 ### Zweryfikowane wersje składowe
 

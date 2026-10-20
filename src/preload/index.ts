@@ -3,11 +3,11 @@ import { createAppApi } from './app-api'
 
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('app', createAppApi(ipcRenderer))
+    contextBridge.exposeInMainWorld('app', createAppApi(ipcRenderer, process.platform))
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-expect-error (fallback when context isolation is disabled)
-  window.app = createAppApi(ipcRenderer)
+  window.app = createAppApi(ipcRenderer, process.platform)
 }

@@ -127,6 +127,7 @@ export function KanbanSettings({
   const [persistedAdapterId, setPersistedAdapterId] = useState<string | null>(null)
   const [storedValues, setStoredValues] = useState<StoredValues>({})
   const [secretKeys, setSecretKeys] = useState<ReadonlySet<string>>(new Set())
+  const [sessionOnlySecrets, setSessionOnlySecrets] = useState(false)
   const [values, setValues] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [savedState, setSavedState] = useState<'idle' | 'saved'>('idle')
@@ -164,6 +165,7 @@ export function KanbanSettings({
       setStoredValues(state.config?.values ?? {})
       const keys = new Set(state.config?.secretKeys ?? [])
       setSecretKeys(keys)
+      setSessionOnlySecrets(state.config?.sessionOnlySecrets === true)
       setValues(state.config === null ? {} : initialValues(state.config.values, schema))
       setSavedState('idle')
       setFormError(null)
@@ -440,6 +442,17 @@ export function KanbanSettings({
               ) : null}
               {schema.length > 0 ? (
                 <div className="mt-3 grid gap-2">{schema.map((field) => renderField(field))}</div>
+              ) : null}
+              {sessionOnlySecrets && schema.some((field) => field.type === 'secret') ? (
+                <p
+                  role="status"
+                  className="mt-2 text-warning"
+                  data-testid={TEST_ID.settingsKanbanSecretSessionOnly}
+                >
+                  No system keyring is available, so secrets are kept only until NeKode closes and
+                  are never saved in plain text. Install and unlock a keyring (for example
+                  gnome-keyring with libsecret) to keep them across restarts.
+                </p>
               ) : null}
               {formError ? (
                 <p role="alert" className="mt-2 text-error">

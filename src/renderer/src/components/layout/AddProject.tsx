@@ -233,7 +233,10 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
           }}
         >
           <option value="local">Local</option>
-          <option value="wsl">WSL</option>
+          {/* WSL projects exist only when NeKode runs on Windows (not on Linux, not inside WSL). */}
+          {app.platform === undefined || app.platform === 'win32' ? (
+            <option value="wsl">WSL</option>
+          ) : null}
         </select>
         {wsl ? (
           <>

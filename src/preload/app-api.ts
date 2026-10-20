@@ -39,7 +39,7 @@ import type { IpcRendererLike } from './bridge-types'
 // Structural subset of Electron's IpcRenderer so the bridge can be unit-tested
 // without importing electron (SDD §6: the bridge is the only renderer access path).
 
-export function createAppApi(ipc: IpcRendererLike): AppApi {
+export function createAppApi(ipc: IpcRendererLike, platform?: string): AppApi {
   // The main process serializes typed AppError rejections into the error
   // message; decode them so the renderer always sees structured payloads.
   async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -73,6 +73,7 @@ export function createAppApi(ipc: IpcRendererLike): AppApi {
   }
 
   return {
+    platform,
     dictation: {
       desktopSetup: () => invoke<DesktopDictationSetup>(IPC_CHANNEL.dictationDesktopSetup),
       desktopConfigure: (settings) =>

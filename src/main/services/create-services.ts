@@ -37,7 +37,9 @@ import {
   listWslDirectories,
   listWslDistributions,
   prepareWslAgent,
+  requireWslSupport,
   validatedWslProjectPath,
+  wslSupported,
 } from './terminal/wsl'
 
 // Wires the persistence, terminal and git stacks to the typed service registry
@@ -251,10 +253,17 @@ export function createServices(options: CreateServicesOptions): AppServices {
         return projects.list()
       },
       add: (path) => projects.add(path),
-      wslDistributions: listWslDistributions,
-      wslDirectories: listWslDirectories,
-      addWsl: (distribution, linuxPath) =>
-        projects.add(validatedWslProjectPath(distribution, linuxPath)),
+      // WSL is a Windows-host integration; on Linux (also inside WSL) it is
+      // hidden: no distributions, and directory listing/registration refuse.
+      wslDistributions: () => (wslSupported() ? listWslDistributions() : []),
+      wslDirectories: (distribution, linuxPath) => {
+        requireWslSupport()
+        return listWslDirectories(distribution, linuxPath)
+      },
+      addWsl: (distribution, linuxPath) => {
+        requireWslSupport()
+        return projects.add(validatedWslProjectPath(distribution, linuxPath))
+      },
       remove: (projectId) => projects.remove(projectId),
     },
     chats: {

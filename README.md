@@ -1,6 +1,6 @@
 # NeKode
 
-An agent-first desktop workspace for Windows 11. CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
+An agent-first desktop workspace for Windows 11 (Linux: experimental, from source). CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
 
 ![NeKode — agent terminal session](docs/images/nekode-1-terminal.webp)
 
@@ -12,6 +12,8 @@ An agent-first desktop workspace for Windows 11. CLI coding agents run side by s
 
 Early development (beta), version 0.14.11. No prebuilt installers are published yet, so build from source. You can build a Windows NSIS installer locally (see [Building](#building)).
 
+Linux (experimental): NeKode builds and runs from source on Linux x64. The tested scope is Ubuntu 22.04 and 24.04; see [Linux (experimental)](#linux-experimental). There are no Linux releases yet.
+
 ## Requirements
 
 - Windows 11
@@ -21,6 +23,22 @@ Early development (beta), version 0.14.11. No prebuilt installers are published 
 - Optional: Python 3.11+ for the [Plane adapter](adapters/plane/README.md); the [OpenWhispr](https://docs.openwhispr.com/) desktop app for dictation
 
 Visual Studio C++ Build Tools are not required: the native modules (better-sqlite3, node-pty) use N-API prebuilds.
+
+### Linux (experimental)
+
+Supported scope: Ubuntu 22.04 and 24.04, x64. In addition to Node.js, pnpm and Git:
+
+- `build-essential` and `python3`: node-pty has no Linux prebuild and is compiled from source
+- `libsecret-1-0` and a running keyring (for example gnome-keyring): encrypts the Plane token. Without a keyring the token is kept in memory for the session only, is never written to disk in plain text, and Kanban settings show a warning
+
+```
+sudo apt-get install build-essential python3 libsecret-1-0
+pnpm install
+pnpm rebuild node-pty
+pnpm run dev
+```
+
+On Linux the default shell is `$SHELL`, installed shells from `/etc/shells` are offered in settings, WSL integration is hidden (also when NeKode runs inside WSL), and Ctrl+U / Ctrl+D go straight to the shell.
 
 ## Getting started
 

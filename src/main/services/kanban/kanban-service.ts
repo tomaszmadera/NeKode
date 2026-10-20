@@ -122,6 +122,12 @@ export class KanbanService {
   readonly #host: AdapterHost
   readonly #safeStorage: SafeStorageLike | undefined
   readonly #discoverAdapters: (dir: string) => DiscoveryResult
+  /**
+   * Secrets entered while safeStorage cannot encrypt (Linux without a
+   * keyring). They live only for this app session, keyed by project + field,
+   * and are never persisted in plain text.
+   */
+  readonly #sessionSecrets = new Map<string, string>()
 
   constructor(deps: KanbanServiceDeps) {
     this.#projects = deps.projects
@@ -130,6 +136,23 @@ export class KanbanService {
     this.#host = deps.host ?? new AdapterHost()
     this.#safeStorage = deps.safeStorage
     this.#discoverAdapters = deps.discoverAdapters ?? discoverAdapters
+  }
+
+  /**
+   * A provided safeStorage that cannot encrypt means secrets must not reach
+   * disk. Without any safeStorage (unit harnesses) the legacy storage applies.
+   */
+  private sessionOnlySecrets(): boolean {
+    return this.#safeStorage !== undefined && !this.#safeStorage.isEncryptionAvailable()
+  }
+
+  private sessionSecretsFor(projectId: string): Record<string, string> {
+    const prefix = `${projectId}\u0000`
+    const values: Record<string, string> = {}
+    for (const [key, value] of this.#sessionSecrets) {
+      if (key.startsWith(prefix)) values[key.slice(prefix.length)] = value
+    }
+    return values
   }
 
   private encryptSecret(value: string): string {
@@ -228,6 +251,12 @@ export class KanbanService {
       }
       values[field.key] = rawValue
     }
+    for (const field of schema) {
+      if (field.type === 'secret' && this.#sessionSecrets.has(`${projectId}\u0000${field.key}`)) {
+        if (!secretKeys.includes(field.key)) secretKeys.push(field.key)
+        values[field.key] = null
+      }
+    }
     // Keys without a schema entry (adapter replaced/removed) still surface as
     // null values so the renderer form stays exhaustive.
     for (const key of Object.keys(stored.values)) {
@@ -239,6 +268,7 @@ export class KanbanService {
       adapterId: adapterId === null || adapterId.trim().length === 0 ? null : adapterId,
       values,
       secretKeys,
+      ...(this.sessionOnlySecrets() ? { sessionOnlySecrets: true } : {}),
     }
   }
 
@@ -291,6 +321,7 @@ export class KanbanService {
     for (const [key, val] of Object.entries(merged)) {
       effective[key] = this.decryptSecret(val)
     }
+    Object.assign(effective, this.sessionSecretsFor(projectId))
     for (const [key, value] of Object.entries(input.values)) {
       const isSecret = schema.find((field) => field.key === key)?.type === 'secret'
       if (value === '' && !isSecret) {
@@ -310,9 +341,15 @@ export class KanbanService {
       }
     }
     // Apply (same rules as the effective view).
+    const sessionOnly = this.sessionOnlySecrets()
     for (const [key, value] of Object.entries(input.values)) {
       const isSecret = schema.find((field) => field.key === key)?.type === 'secret'
       if (value === '' && !isSecret) {
+        delete merged[key]
+      } else if (value !== '' && isSecret && sessionOnly) {
+        // No keyring: keep the secret in memory for this session only and
+        // drop any older on-disk copy instead of writing plain text.
+        this.#sessionSecrets.set(`${projectId}\u0000${key}`, value)
         delete merged[key]
       } else if (value !== '') {
         merged[key] = isSecret ? this.encryptSecret(value) : value
@@ -474,6 +511,7 @@ export class KanbanService {
     for (const [key, val] of Object.entries(stored.values)) {
       decryptedStored[key] = this.decryptSecret(val)
     }
+    Object.assign(decryptedStored, this.sessionSecretsFor(projectId))
     if (override !== undefined) {
       // Test-with-unsaved-edits (spec Behaviour 8): explicit values win,
       // absent keys fall back to stored ones.

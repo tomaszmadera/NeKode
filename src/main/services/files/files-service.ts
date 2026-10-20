@@ -154,6 +154,12 @@ export interface FilesServiceDeps {
   showInFolder: (absolutePath: string) => void
   /** Moves the lexical path to the Windows Recycle Bin (shell.trashItem). */
   trashItem: (absolutePath: string) => Promise<void>
+  /**
+   * Host platform; injectable for tests. Only win32 converts paths for the
+   * Windows shell COM APIs below; elsewhere the lexical POSIX path is passed
+   * through unchanged (a backslash form is not a valid Linux path).
+   */
+  platform?: NodeJS.Platform
 }
 
 /**
@@ -164,6 +170,11 @@ export interface FilesServiceDeps {
  */
 function toWindowsPath(lexicalPath: string): string {
   return win32.normalize(lexicalPath)
+}
+
+/** The path form the OS shell expects: Windows form on win32, lexical elsewhere. */
+function toShellPath(lexicalPath: string, platform: NodeJS.Platform): string {
+  return platform === 'win32' ? toWindowsPath(lexicalPath) : lexicalPath
 }
 
 /** Containment failures are indistinguishable from missing paths (spec Errors). */
@@ -238,6 +249,7 @@ export class FilesService {
   readonly #openExternal: (absolutePath: string) => Promise<string>
   readonly #showInFolder: (absolutePath: string) => void
   readonly #trashItem: (absolutePath: string) => Promise<void>
+  readonly #platform: NodeJS.Platform
 
   constructor(deps: FilesServiceDeps) {
     this.#projects = deps.projects
@@ -245,6 +257,7 @@ export class FilesService {
     this.#openExternal = deps.openExternal
     this.#showInFolder = deps.showInFolder
     this.#trashItem = deps.trashItem
+    this.#platform = deps.platform ?? process.platform
   }
 
   /** One directory level of the project tree (null = project root). */
@@ -368,7 +381,7 @@ export class FilesService {
     const channel = 'files:showInFolder'
     const { lexicalTarget } = await this.#locate(projectId, relativePath, channel)
     try {
-      this.#showInFolder(toWindowsPath(lexicalTarget))
+      this.#showInFolder(toShellPath(lexicalTarget, this.#platform))
     } catch {
       throw new AppError('unknown', 'Failed to show the item in the file explorer.', channel)
     }
@@ -382,7 +395,7 @@ export class FilesService {
     const channel = 'files:trash'
     const { lexicalTarget } = await this.#locate(projectId, relativePath, channel)
     try {
-      await this.#trashItem(toWindowsPath(lexicalTarget))
+      await this.#trashItem(toShellPath(lexicalTarget, this.#platform))
     } catch {
       throw new AppError('unknown', 'Failed to move the item to the Recycle Bin.', channel)
     }
