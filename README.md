@@ -51,7 +51,7 @@ Electron downloads its binaries on first install, so network access is needed th
 
 ### Building
 
-- `pnpm run build:unpack`: unpacked app in `dist/win-unpacked/` (fastest smoke test)
+- `pnpm run build:unpack`: unpacked app for the current platform (fastest smoke test): `dist/win-unpacked/` on Windows, `dist/linux-unpacked/` on Linux
 - `pnpm run build:win`: NSIS installer in `dist/`
 
 ### Checks

@@ -529,6 +529,31 @@ describe('KanbanService secret protection and safeStorage', () => {
     expect(dump).not.toContain('new-secret')
   })
 
+  it('keeps a secret session-only when encryptString throws although the keyring reports available', async () => {
+    const safeStorage = fakeSafeStorage(true)
+    vi.mocked(safeStorage.encryptString).mockImplementation(() => {
+      throw new Error('keyring locked')
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const { service, state, invoke } = makeService({
+        adapters: [DEMO_SECRET_ONLY_ADAPTER],
+        safeStorage,
+      })
+      service.setConfig('p1', { adapterId: 'demo', values: { api_key: 'throwing-secret' } })
+
+      expect(JSON.stringify(state.dump())).not.toContain('throwing-secret')
+      const config = service.getConfig('p1')
+      expect(config.secretKeys).toEqual(['api_key'])
+      expect(config.sessionOnlySecrets).toBe(true)
+      await service.test('p1')
+      const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+      expect(request.config.api_key).toBe('throwing-secret')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('reports no session-only warning when the keyring encrypts', () => {
     const { service } = makeService({
       adapters: [DEMO_SECRET_ONLY_ADAPTER],

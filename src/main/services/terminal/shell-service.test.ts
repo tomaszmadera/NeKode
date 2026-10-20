@@ -514,6 +514,19 @@ describe.skipIf(isWindowsHost)('non-Windows host defaults ($SHELL)', () => {
     expect(service.chatLabel(customChoice('/usr/bin/zsh'))).toBe('zsh')
   })
 
+  it('leaves terminal multiplexers (tmux, screen) out of the /etc/shells list', () => {
+    vi.stubEnv('SHELL', '/bin/bash')
+    const { service } = makeService({ exists: [], files: [] }, [], WIN_ENV, {
+      platform: 'linux',
+      etcShells: '/bin/bash\n/usr/bin/tmux\n/usr/bin/screen\n/bin/zsh\n',
+      executables: ['/bin/bash', '/usr/bin/tmux', '/usr/bin/screen', '/bin/zsh'],
+    })
+    expect(service.detect([]).shells).toEqual([
+      { id: 'default', label: 'bash' },
+      { id: customChoice('/bin/zsh'), label: 'zsh' },
+    ])
+  })
+
   it('does not duplicate a persisted custom path that /etc/shells also lists', () => {
     vi.stubEnv('SHELL', '/bin/bash')
     const { service } = makeService({ exists: [], files: ['/usr/bin/zsh'] }, [], WIN_ENV, {
