@@ -104,7 +104,7 @@ Oba systemy robią to samo (ciągła weryfikacja), różni się integracja z hos
 | Runnery Windows | `windows-latest` dostępny od razu, dla publicznego repo bezpłatnie | dostępność współdzielonych runnerów Windows na GitLab.com jest ograniczona (beta, ograniczona dostępność); w praktyce podpina się własną maszynę (self-hosted) |
 | Konfiguracja startowa | zero: workflow w repo działa po pushu | konto na GitLab, mirror, ewentualnie własny runner |
 
-Rekomendacja pozostaje GitHub Actions, dopóki repo mieszka na GitHub: pipeline żyje obok kodu, biega bez żadnej dodatkowej konfiguracji i darmowo dla repo publicznego. Koszt ewentualnej zmiany na GitLab jest mały: `ci.yml` to ok. 75 linii, a `pnpm run verify` przenosi się 1:1; realną pracą jest dopiero mirror i runner Windows.
+Rekomendacja pozostaje GitHub Actions, dopóki repo mieszka na GitHub: pipeline żyje obok kodu, biega bez żadnej dodatkowej konfiguracji i darmowo dla repo publicznego. Koszt ewentualnej zmiany na GitLab jest mały: `ci.yml` to ok. 70 linii, a `pnpm run verify` przenosi się 1:1; realną pracą jest dopiero mirror i runner Windows.
 
 ## Jak czytać wynik
 

@@ -623,6 +623,50 @@ describe('ActionService', () => {
       if (!retainedAlive) await removeDirectoryWhenReleased(directory)
     }
   }, 20000)
+
+  it.skipIf(process.platform === 'win32')(
+    'stops the whole POSIX process group: a child forked by sh -c dies on stopAll',
+    async () => {
+      // `sleep` runs as a forked child of /bin/sh (backgrounded, then waited
+      // on), so it is never the direct spawn child. Signalling only the shell
+      // pid would leave it running; the process-group kill must take it too.
+      const directory = mkdtempSync(join(tmpdir(), 'nekode-action-group-'))
+      const pidFile = join(directory, 'sleep.pid')
+      const db = openDatabase(':memory:')
+      runMigrations(db)
+      db.prepare(
+        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('p1', 'Demo', directory, null, '2026-01-01T00:00:00Z')
+      const service = new ActionService({ db, createChat: vi.fn(), createTerminal: vi.fn() })
+      const action = service.create({
+        scope: 'project',
+        projectId: 'p1',
+        title: 'Sleep',
+        icon: null,
+        command: `sleep 60 & echo $! > '${pidFile}'; wait`,
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 0,
+      })
+      let childPid = 0
+      try {
+        expect(service.execute(action.id, 'p1', false).status).toBe('running')
+        await waitUntil(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== '')
+        childPid = Number(readFileSync(pidFile, 'utf8').trim())
+        expect(childPid).toBeGreaterThan(0)
+        expect(isPidAlive(childPid)).toBe(true)
+        service.stopAll()
+        await waitUntil(() => !isPidAlive(childPid))
+        expect(isPidAlive(childPid)).toBe(false)
+      } finally {
+        if (childPid > 0 && isPidAlive(childPid)) forceKill(childPid)
+        db.close()
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+    20000,
+  )
 })
 
 function isPidAlive(pid: number): boolean {
