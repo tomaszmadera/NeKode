@@ -32,8 +32,13 @@ import { ProjectService } from './project-service'
 import { TaskRecordService } from './tasks/task-record-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { ShellService } from './terminal/shell-service'
-import { TerminalService } from './terminal/terminal-service'
-import { listWslDirectories, listWslDistributions, validatedWslProjectPath } from './terminal/wsl'
+import { type ShellSpec, TerminalService } from './terminal/terminal-service'
+import {
+  listWslDirectories,
+  listWslDistributions,
+  prepareWslAgent,
+  validatedWslProjectPath,
+} from './terminal/wsl'
 
 // Wires the persistence, terminal and git stacks to the typed service registry
 // consumed by the IPC handlers. DB path is injected so tests use :memory: or a
@@ -153,6 +158,21 @@ export function createServices(options: CreateServicesOptions): AppServices {
     safeStorage: options.safeStorage,
   })
   const agentProfiles = new AgentProfilesService({ projects, state })
+  // Both profile launch flows resolve the current execution environment only for a new PTY.
+  const agentTerminals = {
+    create: (chatId: string, cwd: string, command?: ShellSpec) =>
+      terminals.create(
+        chatId,
+        cwd,
+        command === undefined
+          ? undefined
+          : () => {
+              const projectId = chats.get(chatId)?.projectId
+              const choice = projectId ? state.get(projectShellKey(projectId)) : null
+              return prepareWslAgent(cwd, command, choice)
+            },
+      ),
+  }
   const agentChats = new AgentChatLaunchService({
     projects,
     profiles: agentProfiles,
@@ -160,7 +180,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
     createChat: (projectId, name, identity) =>
       chats.createNamed(projectId, name, IPC_CHANNEL.chatsCreateWithAgent, identity),
     removeChat: (chatId) => chats.remove(chatId),
-    terminals,
+    terminals: agentTerminals,
   })
   const taskLaunch = new TaskLaunchService({
     projects,
@@ -179,7 +199,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
     },
     createChat: (projectId, name, identity) =>
       chats.createNamed(projectId, name, IPC_CHANNEL.kanbanLaunchTask, identity),
-    terminals,
+    terminals: agentTerminals,
   })
   const actions = new ActionService({
     db,

@@ -1,7 +1,11 @@
+import { execFileSync } from 'node:child_process'
 import { accessSync, statSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { APP_STATE_KEY, projectShellKey, projectWslShellsKey } from '../../shared/ipc-contract'
 import { createServices } from './create-services'
+import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
+import { ResumeTemplateService } from './handoffs/resume-template-service'
+import { KanbanService } from './kanban/kanban-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { listWslDirectories, listWslDistributions, runWsl } from './terminal/wsl'
 
@@ -41,7 +45,7 @@ beforeEach(() => {
   )
 })
 
-function setup() {
+function setup(path = '\\\\wsl.localhost\\Ubuntu\\home\\user\\Project') {
   const services = createServices({
     dbPath: ':memory:',
     userDataPath: 'D:/scratch',
@@ -50,11 +54,138 @@ function setup() {
     trashItem: async () => undefined,
     pickDirectory: async () => null,
   })
-  const project = services.projects.add('\\\\wsl.localhost\\Ubuntu\\home\\user\\Project')
+  const project = services.projects.add(path)
   return { services, project }
 }
 
 describe('WSL service wiring', () => {
+  it('rolls back a Local agent chat when its selected WSL cannot resolve the project path', () => {
+    const { services, project } = setup('D:/Project')
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      services.state.set(projectShellKey(project.id), 'wsl:Removed')
+      const profile = services.agentProfiles.put({
+        id: null,
+        name: 'Codex',
+        command: 'codex "{prompt}"',
+      }).profiles[0]
+      services.agentProfiles.selectionSet(project.id, {
+        selectedIds: [profile.id],
+        defaultId: null,
+      })
+      vi.mocked(execFileSync).mockImplementationOnce(() => {
+        throw new Error('unavailable')
+      })
+      expect(() => services.chats.createWithAgent(project.id, profile.id)).toThrow(
+        'Unable to resolve the project directory in WSL distribution "Removed".',
+      )
+      expect(services.chats.list(project.id)).toEqual([])
+      expect(createNodePty).not.toHaveBeenCalled()
+    } finally {
+      errorLog.mockRestore()
+      services.terminals.terminateAll()
+      services.closeDatabase?.()
+    }
+  })
+
+  it.each(['new-chat', 'start', 'resume'] as const)(
+    'runs a Local project profile in its selected WSL distribution for %s',
+    async (mode) => {
+      const { services, project } = setup('D:/My Project')
+      const item = vi.spyOn(KanbanService.prototype, 'getItem').mockResolvedValue({
+        id: 'item-1',
+        ref: 'DEMO-1',
+        title: 'Keep argv literal',
+        description: 'Line one\n$(literal) & | ; "quotes"',
+        stateId: 'started',
+        stateName: 'Started',
+        stateGroup: 'started',
+        priority: 'high',
+        assignee: null,
+        url: 'https://example.test/DEMO-1',
+        updatedAt: null,
+      })
+      const handoff = vi.spyOn(HandoffMatcherService.prototype, 'candidates').mockResolvedValue({
+        state: 'ready',
+        files: [
+          {
+            name: 'demo-1.md',
+            path: 'D:/My Project/demo-1.md',
+            modifiedAt: 'stamp',
+            matchKind: 'filename',
+          },
+        ],
+        rejections: [],
+      })
+      const resume = vi
+        .spyOn(ResumeTemplateService.prototype, 'format')
+        .mockResolvedValue('Resume from demo-1.md\n$(literal)')
+      vi.mocked(execFileSync).mockImplementation((_file, args) =>
+        args?.includes('wslpath') ? '/mnt/d/My Project\n' : 'usable',
+      )
+      try {
+        services.state.set(projectShellKey(project.id), 'wsl:Ubuntu')
+        const profile = services.agentProfiles.put({
+          id: null,
+          name: 'Codex',
+          command: 'codex --flag "{prompt}"',
+        }).profiles[0]
+        services.agentProfiles.selectionSet(project.id, {
+          selectedIds: [profile.id],
+          defaultId: null,
+        })
+        const input = {
+          projectId: project.id,
+          itemId: 'item-1',
+          ref: 'DEMO-1',
+          profileId: profile.id,
+          attemptId: 'attempt-1',
+        }
+        const chat =
+          mode === 'new-chat'
+            ? services.chats.createWithAgent(project.id, profile.id)
+            : (
+                await services.kanban.launchTask(
+                  mode === 'start'
+                    ? { ...input, mode }
+                    : { ...input, mode, fileName: 'demo-1.md', stamp: 'stamp' },
+                )
+              ).chat
+        expect(chat).toMatchObject({ name: '[WSL] Codex', agentName: 'Codex' })
+        expect(createNodePty).toHaveBeenCalledTimes(1)
+        const { file, args, cwd } = vi.mocked(createNodePty).mock.calls[0][0]
+        expect({ file, args, cwd }).toEqual({
+          file: 'wsl.exe',
+          cwd: project.path,
+          args: [
+            '--distribution',
+            'Ubuntu',
+            '--cd',
+            '/mnt/d/My Project',
+            '--exec',
+            'bash',
+            '-lc',
+            'exec "$@"',
+            'bash',
+            'codex',
+            '--flag',
+            ...(mode === 'new-chat' ? [] : [expect.stringContaining('$(literal)')]),
+          ],
+        })
+        // Reattaching after a settings change keeps the original agent process.
+        services.state.set(projectShellKey(project.id), 'powershell')
+        services.terminals.create(chat.id, project.path)
+        expect(createNodePty).toHaveBeenCalledTimes(1)
+      } finally {
+        item.mockRestore()
+        handoff.mockRestore()
+        resume.mockRestore()
+        services.terminals.terminateAll()
+        services.closeDatabase?.()
+      }
+    },
+  )
+
   it('persists the launched agent identity through profile edits and deletion', () => {
     const { services, project } = setup()
     try {

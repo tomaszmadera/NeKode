@@ -11,6 +11,23 @@ The [session label contract](../session-labels/spec.md) owns left-navigation lab
 
 The user chooses the shell new terminals use, per project. Out of the box the app detects the shells actually installed on the machine (Windows PowerShell, PowerShell 7, cmd, WSL distributions, Git Bash) and offers them in a per-project setting; the default stays the platform default shell (unchanged behavior).
 
+### Agent profiles with a Local project's WSL shell (NEKODE-95)
+
+A Local project whose selected shell is `WSL: <distribution>` also launches
+agent profiles from New Chat and Kanban Start/Resume inside that distribution.
+The Windows project path remains the filesystem path. Resolve its Linux working
+directory through `wslpath` in the selected distribution, without assuming a
+mount root or requiring Windows UNC access to mounted drives. Pass the Linux
+executable and profile arguments as argv, preserving interactive arguments and
+the single task prompt argument.
+
+Unavailable distributions, path mappings or Linux executables fail through the
+existing launch-error flow; do not launch a Windows agent instead. A profile
+must name a Linux executable for this environment. Existing live terminals keep
+their process after a shell-setting change. Host shell selections retain direct
+host profile execution, and WSL UNC projects retain their persisted distribution.
+This does not change Git routing or introduce a separate environment selector.
+
 ## Related requirements
 
 User decisions 2026-10-03 (Plane card NEKODE-20, chat):

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { AppError } from '../../../shared/ipc-error'
-import { parseWslPath, wslProjectPath } from '../../../shared/wsl-path'
+import { parseWslPath, type WslLocation, wslProjectPath } from '../../../shared/wsl-path'
 import type { ShellSpec } from './shell-service'
 
 export type WslRun = (distribution: string, args: string[]) => string
@@ -98,8 +98,8 @@ export function validatedWslProjectPath(distribution: string, linuxPath: string)
 }
 
 /** Check the project's Linux PATH before a launch is reported as delivered. */
-export function validateWslExecutable(path: string, shell: ShellSpec): void {
-  const location = parseWslPath(path)
+export function validateWslExecutable(path: string | WslLocation, shell: ShellSpec): void {
+  const location = typeof path === 'string' ? parseWslPath(path) : path
   if (location === null || (shell.file === 'wsl.exe' && shell.args.length === 0)) return
   assertLinuxExecutable(shell.file)
   let result: string
@@ -143,11 +143,15 @@ function assertLinuxExecutable(file: string): void {
 
 /** Bare names resolve through the login-shell Linux PATH; Windows executables are rejected. */
 export function prepareWslTerminal(
-  path: string,
+  path: string | WslLocation,
   shell?: ShellSpec,
 ): { file: string; args: string[]; cwd: string } | null {
-  const location = parseWslPath(path)
+  const location = typeof path === 'string' ? parseWslPath(path) : path
   if (location === null) return null
+  return wslTerminalSpec(location, shell)
+}
+
+function wslTerminalSpec(location: WslLocation, shell?: ShellSpec) {
   const args = ['--distribution', location.distribution, '--cd', location.linuxPath]
   if (shell !== undefined && !(shell.file === 'wsl.exe' && shell.args.length === 0)) {
     assertLinuxExecutable(shell.file)
@@ -156,4 +160,33 @@ export function prepareWslTerminal(
     args.push('--exec', 'bash', '-lc', 'exec "$@"', 'bash', shell.file, ...shell.args)
   }
   return { file: 'wsl.exe', args, cwd: process.cwd() }
+}
+
+/** Agent profiles use the project's WSL choice without changing its host filesystem path. */
+export function prepareWslAgent(
+  path: string,
+  command: ShellSpec,
+  shellChoice: string | null,
+): ShellSpec {
+  // UNC projects already route through TerminalService using their persisted distribution.
+  if (parseWslPath(path) !== null || !shellChoice?.startsWith('wsl:')) return command
+  const distribution = shellChoice.slice('wsl:'.length)
+  if (!distribution) return command // Same unconfigured-choice rule as ShellService.resolve.
+  assertLinuxExecutable(command.file)
+  let location: WslLocation
+  try {
+    wslProjectPath(distribution, '/query')
+    const linuxPath = runWsl(distribution, ['wslpath', '-a', '-u', path]).replace(/\r?\n$/, '')
+    wslProjectPath(distribution, linuxPath)
+    location = { distribution, linuxPath }
+  } catch {
+    throw new AppError(
+      'unknown',
+      `Unable to resolve the project directory in WSL distribution "${distribution}".`,
+    )
+  }
+  validateWslExecutable(location, command)
+  // An explicit location always produces a WSL launch; the host cwd stays the Windows folder.
+  const prepared = wslTerminalSpec(location, command)
+  return { file: prepared.file, args: prepared.args }
 }

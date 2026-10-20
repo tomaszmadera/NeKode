@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   listWslDirectories,
   listWslDistributions,
+  prepareWslAgent,
   prepareWslTerminal,
   validatedWslProjectPath,
   validateWslExecutable,
@@ -114,6 +115,84 @@ describe('WSL directory suggestions', () => {
 })
 
 describe('WSL invocation boundary', () => {
+  it.each([null, 'default', 'powershell', 'pwsh', 'gitbash', 'wsl:'])(
+    'keeps a Local profile on the host for shell choice %j',
+    (choice) => {
+      const command = { file: 'codex', args: ['one prompt'] }
+      expect(prepareWslAgent('D:/Project', command, choice)).toBe(command)
+      expect(execFileSync).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps the persisted UNC distribution authoritative over a saved host shell choice', () => {
+    const command = { file: 'codex', args: [] }
+    expect(prepareWslAgent('\\\\wsl.localhost\\Ubuntu\\home\\user', command, 'wsl:Debian')).toBe(
+      command,
+    )
+    expect(execFileSync).not.toHaveBeenCalled()
+  })
+
+  it('uses wslpath in the selected distribution and preserves profile argv as data', () => {
+    const path = 'F:\\My $ Project\\ą'
+    const args = ['line one\n$(literal) & | ; "quotes"', '', 'ą']
+    vi.mocked(execFileSync)
+      .mockReturnValueOnce('/custom-mount/f/My $ Project/ą\n')
+      .mockReturnValueOnce('usable')
+    expect(prepareWslAgent(path, { file: 'codex', args }, 'wsl:Ubuntu')).toEqual({
+      file: 'wsl.exe',
+      args: [
+        '--distribution',
+        'Ubuntu',
+        '--cd',
+        '/custom-mount/f/My $ Project/ą',
+        '--exec',
+        'bash',
+        '-lc',
+        'exec "$@"',
+        'bash',
+        'codex',
+        ...args,
+      ],
+    })
+    expect(execFileSync).toHaveBeenNthCalledWith(
+      1,
+      'wsl.exe',
+      ['--distribution', 'Ubuntu', '--exec', 'wslpath', '-a', '-u', path],
+      expect.objectContaining({ timeout: 5000, windowsHide: true }),
+    )
+    expect(JSON.stringify(vi.mocked(execFileSync).mock.calls)).not.toContain('literal')
+  })
+
+  it('fails explicitly when the distribution or Windows path mapping is unavailable', () => {
+    vi.mocked(execFileSync).mockImplementationOnce(() => {
+      throw new Error('unavailable')
+    })
+    expect(() => prepareWslAgent('D:/Project', { file: 'codex', args: [] }, 'wsl:Removed')).toThrow(
+      'Unable to resolve the project directory in WSL distribution "Removed".',
+    )
+    vi.mocked(execFileSync).mockReturnValueOnce('not-an-absolute-path\n')
+    expect(() => prepareWslAgent('D:/Project', { file: 'codex', args: [] }, 'wsl:Ubuntu')).toThrow(
+      /Unable to resolve the project directory/,
+    )
+  })
+
+  it('rejects a missing Linux agent or a Windows executable without falling back to the host', () => {
+    vi.mocked(execFileSync).mockReturnValueOnce('/mnt/d/Project\n').mockReturnValueOnce('')
+    expect(() =>
+      prepareWslAgent(
+        'D:/Project',
+        { file: 'missing-cli', args: ['PRIVATE_PROMPT'] },
+        'wsl:Ubuntu',
+      ),
+    ).toThrow(
+      'Linux executable "missing-cli" is unavailable or not executable in WSL distribution "Ubuntu".',
+    )
+    vi.mocked(execFileSync).mockReturnValueOnce('/mnt/d/Project\n')
+    expect(() =>
+      prepareWslAgent('D:/Project', { file: 'codex.exe', args: [] }, 'wsl:Ubuntu'),
+    ).toThrow(/Linux executable/)
+  })
+
   it('rejects a missing Linux CLI with its executable and distribution, without forwarding prompts', () => {
     vi.mocked(execFileSync).mockReturnValue('')
     expect(() =>
