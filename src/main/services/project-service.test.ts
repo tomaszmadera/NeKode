@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AppError, type AppErrorCode } from '../../shared/ipc-error'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
+import { isWindowsHost } from '../test-support/host-path'
 import { type FileSystemAdapter, ProjectService } from './project-service'
 
 // ProjectService unit tests on an :memory: database (pattern: db.test.ts).
@@ -53,21 +54,25 @@ const demoPath = join(tmpdir(), 'nekode-project-service-tests', 'demo-project')
 const otherPath = join(tmpdir(), 'nekode-project-service-tests', 'other-project')
 
 describe('ProjectService', () => {
-  it('canonicalizes existing WSL UNC aliases and keeps distributions distinct', () => {
-    const alias = '\\\\wsl$\\Ubuntu\\home\\user\\My Project'
-    const canonical = '\\\\wsl.localhost\\Ubuntu\\home\\user\\My Project'
-    const other = '\\\\wsl.localhost\\Debian\\home\\user\\My Project'
-    const service = createService(
-      fakeFileSystem({ [alias]: 'dir', [canonical]: 'dir', [other]: 'dir' }),
-    )
-    const created = service.add(alias)
-    expect(created.path).toBe(canonical)
-    expect(created.name).toBe('My Project')
-    expect(service.get(created.id)).toEqual(created)
-    expectAppError(() => service.add(canonical), 'conflict')
-    service.add(other)
-    expect(service.list()).toHaveLength(2)
-  })
+  // WSL UNC project paths are Windows-only (absolute only under win32 path rules).
+  it.skipIf(!isWindowsHost)(
+    'canonicalizes existing WSL UNC aliases and keeps distributions distinct',
+    () => {
+      const alias = '\\\\wsl$\\Ubuntu\\home\\user\\My Project'
+      const canonical = '\\\\wsl.localhost\\Ubuntu\\home\\user\\My Project'
+      const other = '\\\\wsl.localhost\\Debian\\home\\user\\My Project'
+      const service = createService(
+        fakeFileSystem({ [alias]: 'dir', [canonical]: 'dir', [other]: 'dir' }),
+      )
+      const created = service.add(alias)
+      expect(created.path).toBe(canonical)
+      expect(created.name).toBe('My Project')
+      expect(service.get(created.id)).toEqual(created)
+      expectAppError(() => service.add(canonical), 'conflict')
+      service.add(other)
+      expect(service.list()).toHaveLength(2)
+    },
+  )
 
   it('rejects malformed WSL locations without persisting them', () => {
     const paths = ['\\\\wsl$\\Ubuntu', '\\\\wsl$\\Ubuntu\\home\\..\\user']

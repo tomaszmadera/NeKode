@@ -13,6 +13,7 @@ import type {
 import { AppError } from '../../../shared/ipc-error'
 import { openDatabase } from '../../db/connection'
 import { runMigrations } from '../../db/migrations'
+import { isWindowsHost } from '../../test-support/host-path'
 import { AgentProfilesService } from '../agent-profiles/agent-profiles-service'
 import { AppStateService } from '../app-state-service'
 import { ChatService } from '../chat-service'
@@ -214,7 +215,8 @@ function harness(
 }
 
 describe('project opt-in at Kanban launch', () => {
-  it.each(['start', 'resume'] as const)(
+  // WSL UNC project paths are Windows-only (absolute only under win32 path rules).
+  it.skipIf(!isWindowsHost).each(['start', 'resume'] as const)(
     'reports a missing WSL CLI before creating a %s chat',
     async (mode) => {
       const h = harness({ globalProfiles: true, path: '\\\\wsl$\\Ubuntu\\tmp' })

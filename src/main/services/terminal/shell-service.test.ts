@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { hostPath, isWindowsHost } from '../../test-support/host-path'
 import { customChoice, decodeWslList, ShellService } from './shell-service'
 
 // ShellService unit tests (spec project-shell-selection): everything
@@ -45,7 +46,7 @@ describe('decodeWslList', () => {
 })
 
 describe('detect', () => {
-  it('lists default first, then installed candidates in fixed order', () => {
+  it.skipIf(!isWindowsHost)('lists default first, then installed candidates in fixed order', () => {
     const { service } = makeService({
       exists: [
         'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
@@ -59,19 +60,22 @@ describe('detect', () => {
     expect(shells[0]?.label).toBe('PowerShell')
   })
 
-  it('prefers PowerShell 7 under Program Files over the WindowsApps alias', () => {
-    const { service } = makeService({
-      exists: [
-        'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-        'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe',
-      ],
-      files: [],
-    })
-    const { shells } = service.detect([])
-    // One pwsh entry either way: the probe order only decides the spawn path.
-    expect(shells.filter((shell) => shell.id === 'pwsh')).toHaveLength(1)
-    expect(shells.map((shell) => shell.id)).toContain('pwsh')
-  })
+  it.skipIf(!isWindowsHost)(
+    'prefers PowerShell 7 under Program Files over the WindowsApps alias',
+    () => {
+      const { service } = makeService({
+        exists: [
+          'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+          'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe',
+        ],
+        files: [],
+      })
+      const { shells } = service.detect([])
+      // One pwsh entry either way: the probe order only decides the spawn path.
+      expect(shells.filter((shell) => shell.id === 'pwsh')).toHaveLength(1)
+      expect(shells.map((shell) => shell.id)).toContain('pwsh')
+    },
+  )
 
   it('adds one WSL entry per distribution with a display label', () => {
     const { service } = makeService({ exists: [], files: [] }, ['Ubuntu-24.04'])
@@ -79,36 +83,45 @@ describe('detect', () => {
     expect(shells).toContainEqual({ id: 'wsl:Ubuntu-24.04', label: 'WSL: Ubuntu-24.04' })
   })
 
-  it('keeps only default when nothing is installed and WSL fails to answer', () => {
-    const { service } = makeService({ exists: [], files: [] })
-    const { shells, prunedCustomPaths } = service.detect([])
-    expect(shells).toEqual([{ id: 'default', label: 'PowerShell' }])
-    expect(prunedCustomPaths).toEqual([])
-  })
+  it.skipIf(!isWindowsHost)(
+    'keeps only default when nothing is installed and WSL fails to answer',
+    () => {
+      const { service } = makeService({ exists: [], files: [] })
+      const { shells, prunedCustomPaths } = service.detect([])
+      expect(shells).toEqual([{ id: 'default', label: 'PowerShell' }])
+      expect(prunedCustomPaths).toEqual([])
+    },
+  )
 
-  it('detects PowerShell 7 through the MSIX WindowsApps alias (access-based probe)', () => {
-    // existsSync/statSync/openSync all reject the 0-byte reparse point with
-    // EACCES; only accessSync(F_OK) sees it. The service must list pwsh when
-    // its probe (the injected `exists`, standing in for accessSync) succeeds
-    // even though a stricter file check would fail (regression: the Store
-    // PowerShell 7 was invisible to the first existsSync-based detection).
-    const alias = 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe'
-    const { service } = makeService({ exists: [alias], files: [] })
-    const { shells } = service.detect([])
-    expect(shells.map((shell) => shell.id)).toContain('pwsh')
-  })
+  it.skipIf(!isWindowsHost)(
+    'detects PowerShell 7 through the MSIX WindowsApps alias (access-based probe)',
+    () => {
+      // existsSync/statSync/openSync all reject the 0-byte reparse point with
+      // EACCES; only accessSync(F_OK) sees it. The service must list pwsh when
+      // its probe (the injected `exists`, standing in for accessSync) succeeds
+      // even though a stricter file check would fail (regression: the Store
+      // PowerShell 7 was invisible to the first existsSync-based detection).
+      const alias = 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe'
+      const { service } = makeService({ exists: [alias], files: [] })
+      const { shells } = service.detect([])
+      expect(shells.map((shell) => shell.id)).toContain('pwsh')
+    },
+  )
 
   it('merges persisted custom paths and prunes dead ones', () => {
     const { service } = makeService({
       exists: [],
-      files: ['D:\\tools\\nu.exe'],
+      files: [hostPath('D:\\tools\\nu.exe')],
     })
     const { shells, prunedCustomPaths } = service.detect([
-      'D:\\tools\\nu.exe',
-      'D:\\tools\\gone.exe',
+      hostPath('D:\\tools\\nu.exe'),
+      hostPath('D:\\tools\\gone.exe'),
     ])
-    expect(shells).toContainEqual({ id: customChoice('D:\\tools\\nu.exe'), label: 'nu.exe' })
-    expect(prunedCustomPaths).toEqual(['D:\\tools\\gone.exe'])
+    expect(shells).toContainEqual({
+      id: customChoice(hostPath('D:\\tools\\nu.exe')),
+      label: 'nu.exe',
+    })
+    expect(prunedCustomPaths).toEqual([hostPath('D:\\tools\\gone.exe')])
   })
 
   it('coalesces concurrent runs through the pending slot', () => {
@@ -139,27 +152,30 @@ describe('detect', () => {
 })
 
 describe('list (cache read, never probes)', () => {
-  it('before any detection: default only, no exists calls', () => {
+  it.skipIf(!isWindowsHost)('before any detection: default only, no exists calls', () => {
     const { service, existsCalls } = makeService({ exists: [], files: [] })
     expect(service.list()).toEqual([{ id: 'default', label: 'PowerShell' }])
     expect(existsCalls).toEqual([])
   })
 
-  it('after detection: the cached list, unchanged by the environment', () => {
-    const fs: FsShape = { exists: ['C:\\Windows\\System32\\cmd.exe'], files: [] }
-    const { service } = makeService(fs)
-    service.detect([])
-    fs.exists.length = 0 // even "uninstalling" must not change the cache
-    expect(service.list().map((shell) => shell.id)).toEqual(['default', 'cmd'])
-  })
+  it.skipIf(!isWindowsHost)(
+    'after detection: the cached list, unchanged by the environment',
+    () => {
+      const fs: FsShape = { exists: ['C:\\Windows\\System32\\cmd.exe'], files: [] }
+      const { service } = makeService(fs)
+      service.detect([])
+      fs.exists.length = 0 // even "uninstalling" must not change the cache
+      expect(service.list().map((shell) => shell.id)).toEqual(['default', 'cmd'])
+    },
+  )
 
   it('includes custom entries added after detection', () => {
-    const { service } = makeService({ exists: [], files: ['D:\\tools\\nu.exe'] })
+    const { service } = makeService({ exists: [], files: [hostPath('D:\\tools\\nu.exe')] })
     service.detect([])
-    service.addCustomPath('D:\\tools\\nu.exe')
+    service.addCustomPath(hostPath('D:\\tools\\nu.exe'))
     expect(service.list().map((shell) => shell.id)).toEqual([
       'default',
-      customChoice('D:\\tools\\nu.exe'),
+      customChoice(hostPath('D:\\tools\\nu.exe')),
     ])
   })
 })
@@ -172,26 +188,31 @@ describe('addCustomPath', () => {
 
   it('rejects paths that are not executable files', () => {
     const { service } = makeService({ exists: [], files: [] })
-    expect(() => service.addCustomPath('D:\\tools\\nu.exe')).toThrowError(/executable file/)
+    expect(() => service.addCustomPath(hostPath('D:\\tools\\nu.exe'))).toThrowError(
+      /executable file/,
+    )
   })
 
   it('adds a validated path as a custom entry labeled by base name', () => {
-    const { service } = makeService({ exists: [], files: ['D:\\tools\\nu.exe'] })
-    expect(service.addCustomPath('D:\\tools\\nu.exe')).toEqual({
-      id: customChoice('D:\\tools\\nu.exe'),
+    const { service } = makeService({ exists: [], files: [hostPath('D:\\tools\\nu.exe')] })
+    expect(service.addCustomPath(hostPath('D:\\tools\\nu.exe'))).toEqual({
+      id: customChoice(hostPath('D:\\tools\\nu.exe')),
       label: 'nu.exe',
     })
-    expect(service.customPaths()).toEqual(['D:\\tools\\nu.exe'])
+    expect(service.customPaths()).toEqual([hostPath('D:\\tools\\nu.exe')])
   })
 })
 
 describe('resolve (fallback rules)', () => {
-  it('resolves default, empty, and missing to the platform default spec', () => {
-    const { service } = makeService({ exists: [], files: [] })
-    expect(service.resolve(null)).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
-    expect(service.resolve('')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
-    expect(service.resolve('default')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
-  })
+  it.skipIf(!isWindowsHost)(
+    'resolves default, empty, and missing to the platform default spec',
+    () => {
+      const { service } = makeService({ exists: [], files: [] })
+      expect(service.resolve(null)).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
+      expect(service.resolve('')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
+      expect(service.resolve('default')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
+    },
+  )
 
   it('resolves an installed candidate to its path and arguments', () => {
     const { service } = makeService({
@@ -204,7 +225,7 @@ describe('resolve (fallback rules)', () => {
     })
   })
 
-  it('falls back to the default when the candidate binary is gone', () => {
+  it.skipIf(!isWindowsHost)('falls back to the default when the candidate binary is gone', () => {
     const { service } = makeService({ exists: [], files: [] })
     expect(service.resolve('cmd')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
   })
@@ -218,15 +239,18 @@ describe('resolve (fallback rules)', () => {
     expect(existsCalls).toEqual([])
   })
 
-  it('falls back to the default for an unknown id and a dead custom path', () => {
-    const { service } = makeService({ exists: [], files: [] })
-    expect(service.resolve('wsl:')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
-    expect(service.resolve(customChoice('D:\\gone.exe'))).toEqual({
-      file: 'powershell.exe',
-      args: ['-NoLogo'],
-    })
-    expect(service.resolve('nonsense')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
-  })
+  it.skipIf(!isWindowsHost)(
+    'falls back to the default for an unknown id and a dead custom path',
+    () => {
+      const { service } = makeService({ exists: [], files: [] })
+      expect(service.resolve('wsl:')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
+      expect(service.resolve(customChoice('D:\\gone.exe'))).toEqual({
+        file: 'powershell.exe',
+        args: ['-NoLogo'],
+      })
+      expect(service.resolve('nonsense')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
+    },
+  )
 
   it('resolves a live custom path to the executable', () => {
     const { service } = makeService({ exists: [], files: ['D:\\tools\\nu.exe'] })
@@ -238,14 +262,17 @@ describe('resolve (fallback rules)', () => {
 })
 
 describe('label (same fallback rules as resolve)', () => {
-  it('labels the default and unknown choices with the platform default name', () => {
-    const { service } = makeService({ exists: [], files: [] })
-    expect(service.label(null)).toBe('PowerShell')
-    expect(service.label('default')).toBe('PowerShell')
-    expect(service.label('nonsense')).toBe('PowerShell')
-  })
+  it.skipIf(!isWindowsHost)(
+    'labels the default and unknown choices with the platform default name',
+    () => {
+      const { service } = makeService({ exists: [], files: [] })
+      expect(service.label(null)).toBe('PowerShell')
+      expect(service.label('default')).toBe('PowerShell')
+      expect(service.label('nonsense')).toBe('PowerShell')
+    },
+  )
 
-  it('labels detected and custom choices', () => {
+  it.skipIf(!isWindowsHost)('labels detected and custom choices', () => {
     const { service } = makeService({
       exists: ['C:\\Windows\\System32\\cmd.exe'],
       files: ['D:\\tools\\nu.exe'],
@@ -256,7 +283,7 @@ describe('label (same fallback rules as resolve)', () => {
     expect(service.label(customChoice('D:\\tools\\nu.exe'))).toBe('nu.exe')
   })
 
-  it('falls back to the default label when the choice died', () => {
+  it.skipIf(!isWindowsHost)('falls back to the default label when the choice died', () => {
     const { service } = makeService({ exists: [], files: [] })
     expect(service.label('cmd')).toBe('PowerShell')
     expect(service.label(customChoice('D:\\gone.exe'))).toBe('PowerShell')
@@ -279,22 +306,28 @@ describe('chatLabel (compact chat prefix)', () => {
     expect(service.chatLabel('gitbash')).toBe('bash')
   })
 
-  it('collapses every WSL choice to one code without the distribution', () => {
-    const { service } = makeService({ exists: [], files: [] })
-    expect(service.chatLabel('wsl:Ubuntu-24.04')).toBe('WSL')
-    expect(service.chatLabel('wsl:Debian-12')).toBe('WSL')
-    expect(service.chatLabel('wsl:')).toBe('PS5')
-  })
+  it.skipIf(!isWindowsHost)(
+    'collapses every WSL choice to one code without the distribution',
+    () => {
+      const { service } = makeService({ exists: [], files: [] })
+      expect(service.chatLabel('wsl:Ubuntu-24.04')).toBe('WSL')
+      expect(service.chatLabel('wsl:Debian-12')).toBe('WSL')
+      expect(service.chatLabel('wsl:')).toBe('PS5')
+    },
+  )
 
-  it('keeps the default, unknown and custom codes aligned with label()', () => {
-    const { service } = makeService({ exists: [], files: ['D:\\tools\\nu.exe'] })
-    expect(service.chatLabel(null)).toBe('PS5')
-    expect(service.chatLabel('default')).toBe('PS5')
-    expect(service.chatLabel('nonsense')).toBe('PS5')
-    expect(service.chatLabel(customChoice('D:\\tools\\nu.exe'))).toBe('nu.exe')
-  })
+  it.skipIf(!isWindowsHost)(
+    'keeps the default, unknown and custom codes aligned with label()',
+    () => {
+      const { service } = makeService({ exists: [], files: ['D:\\tools\\nu.exe'] })
+      expect(service.chatLabel(null)).toBe('PS5')
+      expect(service.chatLabel('default')).toBe('PS5')
+      expect(service.chatLabel('nonsense')).toBe('PS5')
+      expect(service.chatLabel(customChoice('D:\\tools\\nu.exe'))).toBe('nu.exe')
+    },
+  )
 
-  it('falls back to the default code when the chosen binary died', () => {
+  it.skipIf(!isWindowsHost)('falls back to the default code when the chosen binary died', () => {
     const { service } = makeService({ exists: [], files: [] })
     expect(service.chatLabel('cmd')).toBe('PS5')
     expect(service.chatLabel(customChoice('D:\\gone.exe'))).toBe('PS5')
@@ -344,5 +377,67 @@ describe('project-scoped WSL shells', () => {
       throw new Error('removed')
     })
     expect(() => service.resolve('custom:/bin/fish', project)).toThrow()
+  })
+})
+
+// Non-Windows hosts (Linux): the platform default is the user's $SHELL with a
+// /bin/bash fallback, labelled by its base name. Windows candidates are never
+// probed. Detection of further host shells (e.g. from /etc/shells) does not
+// exist yet; these tests cover today's behaviour only.
+describe.skipIf(isWindowsHost)('non-Windows host defaults ($SHELL)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('detects only the $SHELL default and never probes Windows candidates', () => {
+    vi.stubEnv('SHELL', '/usr/bin/zsh')
+    const { service, existsCalls } = makeService({ exists: [], files: [] })
+    const { shells, prunedCustomPaths } = service.detect([])
+    expect(shells).toEqual([{ id: 'default', label: 'zsh' }])
+    expect(prunedCustomPaths).toEqual([])
+    expect(existsCalls).toEqual([])
+    expect(service.list()).toEqual([{ id: 'default', label: 'zsh' }])
+  })
+
+  it('resolves default, empty, unknown and dead choices to $SHELL', () => {
+    vi.stubEnv('SHELL', '/usr/bin/zsh')
+    const { service } = makeService({ exists: [], files: [] })
+    const zsh = { file: '/usr/bin/zsh', args: [] }
+    for (const choice of [null, '', 'default', 'cmd', 'wsl:', 'nonsense']) {
+      expect(service.resolve(choice)).toEqual(zsh)
+    }
+    expect(service.resolve(customChoice('/opt/gone/fish'))).toEqual(zsh)
+  })
+
+  it('falls back to /bin/bash when $SHELL is unset', () => {
+    vi.stubEnv('SHELL', undefined)
+    const { service } = makeService({ exists: [], files: [] })
+    expect(service.resolve(null)).toEqual({ file: '/bin/bash', args: [] })
+    expect(service.label(null)).toBe('bash')
+    expect(service.chatLabel(null)).toBe('bash')
+  })
+
+  it('labels the default and fallbacks with the $SHELL base name', () => {
+    vi.stubEnv('SHELL', '/usr/bin/zsh')
+    const { service } = makeService({ exists: [], files: [] })
+    for (const choice of [null, 'default', 'nonsense', 'cmd']) {
+      expect(service.label(choice)).toBe('zsh')
+      expect(service.chatLabel(choice)).toBe('zsh')
+    }
+  })
+
+  it('resolves and labels a live POSIX custom shell', () => {
+    vi.stubEnv('SHELL', '/bin/bash')
+    const { service } = makeService({ exists: [], files: ['/usr/bin/fish'] })
+    expect(service.addCustomPath('/usr/bin/fish')).toEqual({
+      id: customChoice('/usr/bin/fish'),
+      label: 'fish',
+    })
+    expect(service.resolve(customChoice('/usr/bin/fish'))).toEqual({
+      file: '/usr/bin/fish',
+      args: [],
+    })
+    expect(service.label(customChoice('/usr/bin/fish'))).toBe('fish')
+    expect(service.chatLabel(customChoice('/usr/bin/fish'))).toBe('fish')
   })
 })

@@ -76,7 +76,8 @@ export function toAppError(error: unknown, channel: string): AppError {
 /**
  * Kills the whole process tree. On Windows child.kill() hits only the direct
  * child (adapters may shell out), so taskkill /T /F takes the tree. Elsewhere
- * SIGKILL on the direct child; adapters are plain scripts without groups.
+ * the adapter leads its own process group (spawned detached), so SIGKILL on
+ * the negative pid takes the tree; the direct child is the fallback.
  */
 export function killTree(child: ChildProcess, spawner: typeof spawn = spawn): void {
   if (child.pid === undefined || child.exitCode !== null) {
@@ -93,6 +94,12 @@ export function killTree(child: ChildProcess, spawner: typeof spawn = spawn): vo
       // Ignore synchronous spawn failure during process tree cleanup.
     }
     return
+  }
+  try {
+    process.kill(-child.pid, 'SIGKILL')
+    return
+  } catch {
+    // No such group (already gone, or not a group leader): fall back below.
   }
   try {
     child.kill('SIGKILL')
@@ -150,6 +157,8 @@ export class AdapterHost {
         cwd: adapter.dir,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
+        // POSIX only: own process group so killTree takes the whole tree.
+        ...(process.platform === 'win32' ? {} : { detached: true }),
       })
     } catch {
       // Synchronous spawn failure; ENOENT normally arrives via 'error'.

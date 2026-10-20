@@ -42,7 +42,7 @@ Electron downloads its binaries on first install, so network access is needed th
 - `pnpm run format`: format with Biome
 - `pnpm run test:adapters`: Plane adapter tests (Python)
 
-CI runs `pnpm run verify` on `windows-latest` for every pull request and every push to `main`.
+CI runs `pnpm run verify` on `windows-latest` (the required check) for every pull request and every push to `main`, plus an advisory `verify-linux` job on `ubuntu-22.04`.
 
 ## Configuration notes
 

@@ -79,6 +79,17 @@ function killSpawnedShell(child: ChildProcess): void {
     })
     return
   }
+  // POSIX: shell: true is /bin/sh -c, which may fork the command instead of
+  // exec'ing it. The child leads its own process group (detached below), so
+  // signalling the negative pid stops the shell and everything it started.
+  if (process.platform !== 'win32' && pid !== undefined) {
+    try {
+      process.kill(-pid, 'SIGTERM')
+      return
+    } catch {
+      // No such group (already gone, or not a group leader): fall back below.
+    }
+  }
   try {
     child.kill()
   } catch {
@@ -91,7 +102,15 @@ function startBackground(
   cwd: string,
   done: (exitCode: number | null, error?: string) => void,
 ): BackgroundChild {
-  const child = spawn(command, { cwd, shell: true, windowsHide: true, stdio: 'ignore' })
+  const child = spawn(command, {
+    cwd,
+    shell: true,
+    windowsHide: true,
+    stdio: 'ignore',
+    // POSIX only: a new process group lets stop() take the whole tree. On
+    // Windows detached would open a new console; taskkill /T covers the tree.
+    ...(process.platform === 'win32' ? {} : { detached: true }),
+  })
   let settled = false
   const finish = (exitCode: number | null, error?: string): void => {
     if (settled) return
