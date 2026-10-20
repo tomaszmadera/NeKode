@@ -4,6 +4,7 @@ import { AppError } from '../../shared/ipc-error'
 import { hostPath } from '../test-support/host-path'
 import { buildValidatedChannels, ValidationError } from './ipc-validation'
 import type { AppServices } from './service-registry'
+import { usageTestStub } from './usage-test-stub'
 
 /** A ready scan with no candidates; the handoff candidates channel returns it by default. */
 const EMPTY_HANDOFF_CANDIDATES = {
@@ -21,6 +22,7 @@ const EMPTY_HANDOFF_AVAILABILITY = {
 
 function fakeServices(): AppServices {
   return {
+    usage: usageTestStub(),
     dictation: {
       desktopSetup: vi.fn(),
       desktopConfigure: vi.fn(),
@@ -138,6 +140,40 @@ function channelMap() {
 }
 
 describe('ipc payload validation', () => {
+  it('validates usage shapes and protects the encrypted settings key', () => {
+    const entries = buildValidatedChannels(fakeServices()),
+      channel = (name: string) => {
+        const entry = entries.find((e) => e.channel === name)
+        if (!entry) throw new Error(`Missing usage test channel: ${name}`)
+        return entry
+      }
+    const valid = {
+      connections: [],
+      pin: null,
+      adaptersDirectory: null,
+      export: { enabled: false, path: null },
+    }
+    expect(channel(IPC_CHANNEL.usageSaveSettings).parse([valid])).toEqual([valid])
+    for (const bad of [
+      [],
+      [null],
+      [{ ...valid, connections: 'wrong' }],
+      [{ ...valid, export: { enabled: 'yes', path: null } }],
+      [valid, 'extra'],
+    ])
+      expect(() => channel(IPC_CHANNEL.usageSaveSettings).parse(bad)).toThrow()
+    for (const bad of [[], ['true'], [true, false]])
+      expect(() => channel(IPC_CHANNEL.usagePickFile).parse(bad)).toThrow()
+    for (const name of [
+      IPC_CHANNEL.usageRead,
+      IPC_CHANNEL.usageRefresh,
+      IPC_CHANNEL.usageGetSettings,
+      IPC_CHANNEL.usageListAdapters,
+    ])
+      expect(() => channel(name).parse(['extra'])).toThrow()
+    expect(() => channel(IPC_CHANNEL.stateGet).parse(['usage.settings'])).toThrow('protected')
+    expect(() => channel(IPC_CHANNEL.stateSet).parse(['usage.settings', '{}'])).toThrow('protected')
+  })
   it('accepts only argument-free desktop activation and strict boolean desktop settings', () => {
     const services = fakeServices()
     const channels = buildValidatedChannels(services)

@@ -1,0 +1,10 @@
+{
+  "id": "normalized-json-process",
+  "name": "Normalized JSON file (process example)",
+  "protocolVersion": 1,
+  "invocation": { "command": "node", "args": ["index.cjs"] },
+  "sourceKind": "file",
+  "capabilities": ["window", "credits", "balance"],
+  "minimumRefreshSeconds": 5,
+  "configSchema": [{ "key": "path", "label": "JSON input file", "type": "file", "required": true }]
+}

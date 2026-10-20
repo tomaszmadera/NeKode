@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "subscriptions": [
+    {
+      "id": "example-account",
+      "providerId": "example",
+      "label": "Example subscription (fixture)",
+      "sourceKind": "file",
+      "status": "available",
+      "collectedAt": "2026-10-20T12:00:00Z",
+      "metrics": [
+        {
+          "id": "weekly",
+          "label": "7d",
+          "kind": "window",
+          "observedAt": null,
+          "state": "available",
+          "usedPercent": 42,
+          "periodStart": "2026-10-18T00:00:00Z",
+          "resetsAt": "2026-10-25T00:00:00Z",
+          "windowDurationSeconds": 604800,
+          "bucketId": "example-weekly"
+        }
+      ]
+    }
+  ]
+}

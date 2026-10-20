@@ -41,6 +41,7 @@ import {
   validatedWslProjectPath,
   wslSupported,
 } from './terminal/wsl'
+import { UsageService } from './usage/usage-service'
 
 // Wires the persistence, terminal and git stacks to the typed service registry
 // consumed by the IPC handlers. DB path is injected so tests use :memory: or a
@@ -70,6 +71,7 @@ export interface CreateServicesOptions {
    * Resolves the chosen absolute path, or null when the user cancels.
    */
   pickDirectory: (defaultPath: string | null) => Promise<string | null>
+  pickUsageFile?: (output: boolean) => Promise<string | null>
   safeStorage?: SafeStorageLike
 }
 
@@ -78,6 +80,11 @@ export function createServices(options: CreateServicesOptions): AppServices {
   runMigrations(db)
   const projects = new ProjectService({ db, fs: { stat: (path) => safeStat(path) } })
   const state = new AppStateService({ db })
+  const usage = new UsageService({
+    state,
+    userDataPath: options.userDataPath,
+    safeStorage: options.safeStorage,
+  })
   const desktopDictation = new DesktopDictation(
     state,
     options.desktopShortcut ??
@@ -214,6 +221,17 @@ export function createServices(options: CreateServicesOptions): AppServices {
     return project.path
   }
   return {
+    usage: {
+      listAdapters: () => usage.listAdapters(),
+      getSettings: () => usage.getSettings(),
+      saveSettings: (settings) => usage.saveSettings(settings),
+      read: () => usage.read(),
+      refresh: () => usage.refresh(),
+      test: (connection) => usage.test(connection),
+      setVisible: (visible) => usage.setVisible(visible),
+      shutdown: () => usage.shutdown(),
+      pickFile: (output) => options.pickUsageFile?.(output) ?? Promise.resolve(null),
+    },
     dictation: {
       desktopSetup: () => desktopDictation.get(),
       desktopConfigure: (settings) => desktopDictation.set(settings),

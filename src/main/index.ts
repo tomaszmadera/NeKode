@@ -146,6 +146,21 @@ app
           desktopHelperPath(app.isPackaged, app.getAppPath(), process.resourcesPath),
         )
         const services = createServices({
+          pickUsageFile: async (output) => {
+            if (output) {
+              const result = await dialog.showSaveDialog({
+                title: 'Export usage JSON',
+                filters: [{ name: 'JSON', extensions: ['json'] }],
+              })
+              return result.canceled ? null : (result.filePath ?? null)
+            }
+            const result = await dialog.showOpenDialog({
+              title: 'Choose usage JSON input',
+              properties: ['openFile'],
+              filters: [{ name: 'JSON', extensions: ['json'] }],
+            })
+            return result.canceled ? null : (result.filePaths[0] ?? null)
+          },
           desktopShortcut: (handle) => desktopSender.send(handle),
           dbPath: join(app.getPath('userData'), 'nekode.db'),
           userDataPath: app.getPath('userData'),
@@ -200,6 +215,21 @@ app
             )
           },
         })
+
+        const updateUsageVisibility = () =>
+          services.usage.setVisible(
+            BrowserWindow.getAllWindows().some(
+              (window) => !window.isDestroyed() && window.isVisible() && !window.isMinimized(),
+            ),
+          )
+        app.on('browser-window-created', (_, window) => {
+          window.on('show', updateUsageVisibility)
+          window.on('hide', updateUsageVisibility)
+          window.on('minimize', updateUsageVisibility)
+          window.on('restore', updateUsageVisibility)
+          window.on('closed', updateUsageVisibility)
+        })
+        app.on('before-quit', () => services.usage.shutdown())
 
         // App-quit PTY teardown (spec Behaviour 8): terminate every chat terminal
         // so no orphaned pwsh/powershell processes outlive the app. Quit is NOT a

@@ -6,6 +6,7 @@ import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { DEFAULT_ATTENTION_SETTINGS } from '../../lib/attention-settings'
 import { playAttentionChime } from '../../lib/chime'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { createAppApiStub } from '../../test/app-api-stub'
 import { createDictationApiStub } from '../../test/dictation-api-stub'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
@@ -45,6 +46,7 @@ function createAppMock(): AppMockBundle {
   const exitListenersByChat = new Map<string, Set<(exitCode: number) => void>>()
   const dataListenersByChat = new Map<string, Set<(data: string) => void>>()
   const app: AppApi = {
+    usage: createAppApiStub().usage,
     dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),

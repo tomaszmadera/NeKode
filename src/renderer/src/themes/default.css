@@ -2,6 +2,13 @@
    Token source of truth: docs/references/NeKode-Design-System.md (sections 4, 5, 8, 26, 30).
    Every color utility (bg-panel, text-ink, border-edge, ...) derives from these names. */
 @theme {
+  /* Compact subscription quota panel, matching the supplied usage reference. */
+  --color-usage-surface: #151823;
+  --color-usage-track: #232838;
+  --color-usage-fill: #8b7cf6;
+  --color-usage-current: #7dd3fc;
+  --color-usage-pin: #262b3f;
+  --color-usage-stale: #ff8b87;
   /* Surfaces */
   --color-app: rgb(16 18 32);
   --color-panel: rgb(23 25 43);

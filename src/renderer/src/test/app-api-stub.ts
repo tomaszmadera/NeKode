@@ -8,6 +8,24 @@ import { createDictationApiStub } from './dictation-api-stub'
 
 export function createAppApiStub(): AppApi {
   return {
+    usage: {
+      listAdapters: vi.fn().mockResolvedValue([]),
+      getSettings: vi.fn().mockResolvedValue({
+        connections: [],
+        pin: null,
+        adaptersDirectory: null,
+        export: { enabled: false, path: null },
+      }),
+      saveSettings: vi.fn(),
+      read: vi
+        .fn()
+        .mockResolvedValue({ connections: [], pin: null, cacheError: null, exportError: null }),
+      refresh: vi
+        .fn()
+        .mockResolvedValue({ connections: [], pin: null, cacheError: null, exportError: null }),
+      test: vi.fn(),
+      pickFile: vi.fn(),
+    },
     dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),

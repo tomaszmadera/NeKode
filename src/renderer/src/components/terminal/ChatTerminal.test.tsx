@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
+import { createAppApiStub } from '../../test/app-api-stub'
 import { createDictationApiStub } from '../../test/dictation-api-stub'
 import { mockFitAddonInstances, resetMockFitAddons } from '../../test/fit-addon-mock'
 import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
@@ -33,6 +34,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
   const exitUnsubscribes: Array<() => void> = []
 
   const app: AppApi = {
+    usage: createAppApiStub().usage,
     dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),

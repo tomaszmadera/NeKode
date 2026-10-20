@@ -74,6 +74,15 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string): AppApi {
 
   return {
     platform,
+    usage: {
+      listAdapters: () => invoke(IPC_CHANNEL.usageListAdapters),
+      getSettings: () => invoke(IPC_CHANNEL.usageGetSettings),
+      saveSettings: (settings) => invoke(IPC_CHANNEL.usageSaveSettings, settings),
+      read: () => invoke(IPC_CHANNEL.usageRead),
+      refresh: () => invoke(IPC_CHANNEL.usageRefresh),
+      test: (connection) => invoke(IPC_CHANNEL.usageTest, connection),
+      pickFile: (output) => invoke(IPC_CHANNEL.usagePickFile, output),
+    },
     dictation: {
       desktopSetup: () => invoke<DesktopDictationSetup>(IPC_CHANNEL.dictationDesktopSetup),
       desktopConfigure: (settings) =>

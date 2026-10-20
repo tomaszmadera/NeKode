@@ -27,6 +27,7 @@ import {
   KANBAN_PRIORITIES,
 } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
+import { parseUsageSettings, type UsageConnection } from '../../shared/usage-contract'
 import { wslProjectPath } from '../../shared/wsl-path'
 import type { AppServices } from './service-registry'
 
@@ -550,6 +551,42 @@ function shellContextChannel(
 
 export function buildValidatedChannels(services: AppServices): ValidatedChannel[] {
   return [
+    serviceChannel(IPC_CHANNEL.usageListAdapters, [], () => services.usage.listAdapters()),
+    serviceChannel(IPC_CHANNEL.usageGetSettings, [], () => services.usage.getSettings()),
+    serviceChannel(IPC_CHANNEL.usageRead, [], () => services.usage.read()),
+    serviceChannel(IPC_CHANNEL.usageRefresh, [], () => services.usage.refresh()),
+    {
+      channel: IPC_CHANNEL.usageSaveSettings,
+      parse(payload) {
+        requireArgs(payload, 1, IPC_CHANNEL.usageSaveSettings)
+        return [parseUsageSettings(payload[0])]
+      },
+      invoke: (args) =>
+        services.usage.saveSettings(args[0] as ReturnType<typeof parseUsageSettings>),
+    },
+    {
+      channel: IPC_CHANNEL.usageTest,
+      parse(payload) {
+        requireArgs(payload, 1, IPC_CHANNEL.usageTest)
+        const s = parseUsageSettings({
+          connections: [payload[0]],
+          pin: null,
+          adaptersDirectory: null,
+          export: { enabled: false, path: null },
+        })
+        return [s.connections[0]]
+      },
+      invoke: (args) => services.usage.test(args[0] as UsageConnection),
+    },
+    {
+      channel: IPC_CHANNEL.usagePickFile,
+      parse(payload) {
+        requireArgs(payload, 1, IPC_CHANNEL.usagePickFile)
+        if (typeof payload[0] !== 'boolean') fail('usage output', 'must be boolean')
+        return payload
+      },
+      invoke: (args) => services.usage.pickFile(args[0] as boolean),
+    },
     serviceChannel(IPC_CHANNEL.dictationStatus, [], () => services.dictation.status()),
     serviceChannel(IPC_CHANNEL.dictationDesktopSetup, [], () => services.dictation.desktopSetup()),
     // The handler derives the window identity after sender and payload validation.

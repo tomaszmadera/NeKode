@@ -67,6 +67,7 @@ import {
   selectBottomTab,
 } from './components/terminal/bottom-tabs'
 import { chatSwitchDirection } from './components/terminal/chat-switch-chord'
+import { UsageToolbar } from './components/usage/UsageToolbar'
 import { ChatWorkspace } from './components/workspace/ChatWorkspace'
 import { useDesktopDictation } from './hooks/useDesktopDictation'
 import {
@@ -227,6 +228,8 @@ function mergeFetchedChats(
 export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
   const desktopDictation = useDesktopDictation(app)
   const [appSettingsOpen, setAppSettingsOpen] = useState(false)
+  const [appSettingsUsage, setAppSettingsUsage] = useState(false)
+  const [usageVersion, setUsageVersion] = useState(0)
   const [appSettingsAgents, setAppSettingsAgents] = useState(false)
   const [mascotState, setMascotState] = useState<{ visible: boolean; error: string | null }>(() => {
     try {
@@ -2520,6 +2523,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         data-testid={TEST_ID.titleBar}
       >
         <AppBrand />
+        <UsageToolbar
+          api={app.usage}
+          version={usageVersion}
+          onConfigure={() => {
+            setAppSettingsUsage(true)
+            setAppSettingsOpen(true)
+          }}
+        />
       </div>
       {/* The hairline under the title bar is owned by the content row
           (border-t, design doc 26.2 convention), not by the strip itself;
@@ -2836,7 +2847,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       {appSettingsOpen ? (
         <AppSettings
           app={app}
-          initialTab={appSettingsAgents ? 'agents' : 'general'}
+          initialTab={appSettingsUsage ? 'usage' : appSettingsAgents ? 'agents' : 'general'}
+          onUsageSaved={() => setUsageVersion((v) => v + 1)}
           dictationApi={app.dictation}
           desktopDictation={desktopDictation}
           theme={themeState.theme}
@@ -2866,6 +2878,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onTerminalCtrlVPasteChange={handleTerminalCtrlVPasteChange}
           onClose={() => {
             setAppSettingsOpen(false)
+            setAppSettingsUsage(false)
             setAppSettingsAgents(false)
             setAgentLibraryRefreshKey((current) => current + 1)
           }}

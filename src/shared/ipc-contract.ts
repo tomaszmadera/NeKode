@@ -320,6 +320,13 @@ export function relativeToProject(projectRoot: string, absolutePath: string): st
 // in the main process: chats:remove, projects:remove, and
 // TerminalService.terminateAll on app quit. Quit never goes through the renderer.
 export const IPC_CHANNEL = {
+  usageListAdapters: 'usage:listAdapters',
+  usageGetSettings: 'usage:getSettings',
+  usageSaveSettings: 'usage:saveSettings',
+  usageRead: 'usage:read',
+  usageRefresh: 'usage:refresh',
+  usageTest: 'usage:test',
+  usagePickFile: 'usage:pickFile',
   dictationStatus: 'dictation:status',
   dictationDesktopSetup: 'dictation:desktopSetup',
   dictationDesktopConfigure: 'dictation:desktopConfigure',
@@ -460,7 +467,11 @@ export function projectKanbanConfigKey(projectId: string): string {
 
 /** Keys that carry secret values and must never be accessed via generic state IPC. */
 export function isSecretStateKey(key: string): boolean {
-  return key === 'project.kanbanConfig' || key.startsWith('project.kanbanConfig:')
+  return (
+    key.startsWith('usage.') ||
+    key === 'project.kanbanConfig' ||
+    key.startsWith('project.kanbanConfig:')
+  )
 }
 
 /**
@@ -729,6 +740,7 @@ export interface AppApi {
    * doubles) means Windows behaviour, the app's primary platform.
    */
   platform?: string
+  usage: import('./usage-contract').UsageApi
   dictation: {
     desktopSetup(): Promise<DesktopDictationSetup>
     desktopConfigure(settings: DesktopDictationSettings): Promise<DesktopDictationSetup>

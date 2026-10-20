@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NeKode usage observations version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "subscriptions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "subscriptions": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/subscription" } }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "time": { "type": ["string", "null"], "format": "date-time", "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,3})?Z$" },
+    "number": { "type": ["number", "null"] },
+    "nonnegative": { "type": ["number", "null"], "minimum": 0 },
+    "optionalText": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+    "subscription": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "providerId", "label", "sourceKind", "status", "metrics"],
+      "properties": {
+        "id": { "$ref": "#/$defs/text" }, "providerId": { "$ref": "#/$defs/text" }, "label": { "$ref": "#/$defs/text" },
+        "sourceKind": { "enum": ["api", "cli", "file"] }, "status": { "enum": ["available", "unavailable", "error"] },
+        "collectedAt": { "$ref": "#/$defs/time" },
+        "metrics": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/metric" } }
+      }
+    },
+    "metric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "label", "kind", "observedAt", "state"],
+      "properties": {
+        "id": { "$ref": "#/$defs/text" }, "label": { "$ref": "#/$defs/text" },
+        "kind": { "enum": ["window", "credits", "balance"] },
+        "state": { "enum": ["available", "unavailable", "expired"] },
+        "observedAt": { "$ref": "#/$defs/time" }, "receivedAt": { "$ref": "#/$defs/time" }, "collectedAt": { "$ref": "#/$defs/time" },
+        "periodStart": { "$ref": "#/$defs/time" }, "resetsAt": { "$ref": "#/$defs/time" },
+        "windowDurationSeconds": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "usedPercent": { "$ref": "#/$defs/nonnegative" }, "used": { "$ref": "#/$defs/nonnegative" },
+        "limit": { "$ref": "#/$defs/number" }, "amount": { "$ref": "#/$defs/number" },
+        "unit": { "$ref": "#/$defs/optionalText" }, "bucketId": { "$ref": "#/$defs/optionalText" },
+        "reason": { "$ref": "#/$defs/optionalText" }, "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "unavailable" } } },
+          "then": { "required": ["reason"], "properties": { "reason": { "$ref": "#/$defs/text" }, "usedPercent": { "type": "null" }, "used": { "type": "null" }, "limit": { "type": "null" }, "amount": { "type": "null" } } },
+          "else": {
+            "allOf": [
+              { "if": { "properties": { "kind": { "const": "window" } } }, "then": { "required": ["usedPercent"], "properties": { "usedPercent": { "type": "number", "minimum": 0 } } } },
+              { "if": { "properties": { "kind": { "const": "credits" } } }, "then": { "required": ["used", "limit", "unit"], "properties": { "used": { "type": "number", "minimum": 0 }, "limit": { "type": "number" }, "unit": { "$ref": "#/$defs/text" } } } },
+              { "if": { "properties": { "kind": { "const": "balance" } } }, "then": { "required": ["amount", "currency"], "properties": { "amount": { "type": "number" }, "currency": { "type": "string", "pattern": "^[A-Z]{3}$" } } } }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

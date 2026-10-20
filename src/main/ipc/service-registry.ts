@@ -47,6 +47,17 @@ import type {
 // handlers invoke.
 
 export interface AppServices {
+  usage: Pick<
+    import('../services/usage/usage-service').UsageService,
+    | 'listAdapters'
+    | 'getSettings'
+    | 'saveSettings'
+    | 'read'
+    | 'refresh'
+    | 'test'
+    | 'setVisible'
+    | 'shutdown'
+  > & { pickFile(output: boolean): Promise<string | null> }
   dictation: {
     desktopSetup(): DesktopDictationSetup
     desktopConfigure(settings: DesktopDictationSettings): DesktopDictationSetup

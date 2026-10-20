@@ -32,6 +32,41 @@ describe('preload app api', () => {
     expect(ipc.invocations).toEqual([])
   })
 
+  it('routes the typed global usage API with no project scope', async () => {
+    const ipc = createIpcMock(),
+      api = createAppApi(ipc).usage
+    const settings = {
+      connections: [],
+      pin: null,
+      adaptersDirectory: null,
+      export: { enabled: false, path: null },
+    }
+    const connection = {
+      id: 'fixture',
+      label: 'Fixture',
+      providerId: 'test',
+      adapterId: 'usage-file',
+      enabled: false,
+      config: {},
+    }
+    await api.listAdapters()
+    await api.getSettings()
+    await api.saveSettings(settings)
+    await api.read()
+    await api.refresh()
+    await api.test(connection)
+    await api.pickFile(false)
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.usageListAdapters, args: [] },
+      { channel: IPC_CHANNEL.usageGetSettings, args: [] },
+      { channel: IPC_CHANNEL.usageSaveSettings, args: [settings] },
+      { channel: IPC_CHANNEL.usageRead, args: [] },
+      { channel: IPC_CHANNEL.usageRefresh, args: [] },
+      { channel: IPC_CHANNEL.usageTest, args: [connection] },
+      { channel: IPC_CHANNEL.usagePickFile, args: [false] },
+    ])
+  })
+
   it('requests a read-only dictionary without transport or paging arguments', async () => {
     const ipc = createIpcMock()
     await createAppApi(ipc).dictation.dictionaryList()

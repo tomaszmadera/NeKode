@@ -12,6 +12,7 @@ import {
 import { hostPath } from '../test-support/host-path'
 import { registerAppIpcHandlers } from './ipc-handlers'
 import type { AppServices } from './service-registry'
+import { usageTestStub } from './usage-test-stub'
 
 function fakeAgentProfiles(): AppServices['agentProfiles'] {
   return {
@@ -147,6 +148,7 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
   } = { data: [], exit: [] }
 
   const services: AppServices = {
+    usage: usageTestStub(),
     dictation: fakeDictation(),
     actions: fakeActions(),
     projects: {
@@ -255,6 +257,53 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
 
   return { services, broadcasts, invoke, showOpenDialog }
 }
+
+describe('usage IPC authorization', () => {
+  it.each([
+    ['read', IPC_CHANNEL.usageRead, []],
+    ['refresh', IPC_CHANNEL.usageRefresh, []],
+    ['getSettings', IPC_CHANNEL.usageGetSettings, []],
+    ['listAdapters', IPC_CHANNEL.usageListAdapters, []],
+    ['pickFile', IPC_CHANNEL.usagePickFile, [false]],
+    [
+      'saveSettings',
+      IPC_CHANNEL.usageSaveSettings,
+      [
+        {
+          connections: [],
+          pin: null,
+          adaptersDirectory: null,
+          export: { enabled: false, path: null },
+        },
+      ],
+    ],
+    [
+      'test',
+      IPC_CHANNEL.usageTest,
+      [
+        {
+          id: 'fixture',
+          label: 'Fixture',
+          providerId: 'test',
+          adapterId: 'usage-file',
+          enabled: false,
+          config: { path: 'C:/fixture.json' },
+        },
+      ],
+    ],
+  ] as const)('routes only trusted usage %s calls', (method, channel, payload) => {
+    const { invoke, services } = createHarness()
+    expect(() => invoke(channel, [...payload], 'https://untrusted.example/')).toThrow(
+      'Rejected untrusted IPC sender.',
+    )
+    expect(() => invoke(channel, [...payload], 'file:///renderer/index.html', false)).toThrow(
+      'Rejected untrusted IPC sender.',
+    )
+    expect(services.usage[method]).not.toHaveBeenCalled()
+    invoke(channel, [...payload])
+    expect(services.usage[method]).toHaveBeenCalledExactlyOnceWith(...payload)
+  })
+})
 
 describe('registered ipc handlers', () => {
   it('rejects desktop activation when the owning window is unavailable or unfocused', () => {
@@ -559,6 +608,7 @@ describe('registered ipc handlers', () => {
       { id: 't3', projectId: 'p2', name: 'c' },
     ]
     const services: AppServices = {
+      usage: usageTestStub(),
       dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {
@@ -669,6 +719,7 @@ describe('registered ipc handlers', () => {
       { id: 't3', projectId: 'p2', name: 'c' },
     ]
     const services: AppServices = {
+      usage: usageTestStub(),
       dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {
@@ -787,6 +838,7 @@ describe('registered ipc handlers', () => {
       shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
     })
     const services: AppServices = {
+      usage: usageTestStub(),
       dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {

@@ -6,12 +6,14 @@ import { Icon } from '../../lib/icons'
 import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID } from '../../lib/test-ids'
 import { isThemeId, THEME_IDS, THEMES, type ThemeId } from '../../lib/theme'
+import { UsageSettings } from '../usage/UsageSettings'
 import { DesktopDictationSettings } from './DesktopDictationSettings'
 import { DictationDictionary } from './DictationDictionary'
 import { FontsSettings } from './FontsSettings'
 import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
 
 interface AppSettingsProps {
+  onUsageSaved?: () => void
   app: AppApi
   initialTab?: SettingsTab
   dictationApi: AppApi['dictation']
@@ -40,8 +42,15 @@ interface AppSettingsProps {
   onClose: () => void
 }
 
-type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation' | 'agents'
-const SETTINGS_TABS: SettingsTab[] = ['general', 'fonts', 'shortcuts', 'dictation', 'agents']
+type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation' | 'agents' | 'usage'
+const SETTINGS_TABS: SettingsTab[] = [
+  'general',
+  'fonts',
+  'shortcuts',
+  'dictation',
+  'agents',
+  'usage',
+]
 function tabId(tab: SettingsTab): string {
   return tab === 'agents' ? 'app-settings-tab-agents' : `settings-tab-${tab}`
 }
@@ -76,6 +85,7 @@ const SHORTCUT_SECTIONS: Array<{ heading: string; rows: Array<[string, string]> 
 ]
 
 export function AppSettings({
+  onUsageSaved,
   app,
   initialTab = 'general',
   dictationApi,
@@ -234,7 +244,9 @@ export function AppSettings({
                         ? 'Dictation'
                         : tab === 'agents'
                           ? 'Agents'
-                          : 'Shortcuts'}
+                          : tab === 'usage'
+                            ? 'Usage'
+                            : 'Shortcuts'}
                 </button>
               ))}
             </div>
@@ -403,6 +415,8 @@ export function AppSettings({
                     Play a chime when the active chat needs attention
                   </label>
                 </div>
+              ) : activeTab === 'usage' ? (
+                <UsageSettings app={app} onSaved={onUsageSaved} />
               ) : activeTab === 'agents' ? (
                 <GlobalAgentProfilesSettings app={app} />
               ) : activeTab === 'fonts' ? (

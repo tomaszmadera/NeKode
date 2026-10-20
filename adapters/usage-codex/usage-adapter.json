@@ -1,0 +1,10 @@
+{
+  "id": "codex-app-server",
+  "name": "Codex CLI app-server (experimental)",
+  "protocolVersion": 1,
+  "invocation": { "command": "node", "args": ["index.cjs"] },
+  "sourceKind": "cli",
+  "capabilities": ["window"],
+  "minimumRefreshSeconds": 120,
+  "configSchema": [{ "key": "codexPath", "label": "Codex executable (codex.exe)", "type": "text" }]
+}

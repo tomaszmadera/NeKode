@@ -8,6 +8,10 @@
 // rejection back into a plain, structured AppErrorPayload object.
 
 export type AppErrorCode =
+  | 'validation_error'
+  | 'rate_limited'
+  | 'unsupported'
+  | 'io'
   | 'validation'
   | 'not_found'
   | 'conflict'
@@ -29,6 +33,10 @@ export type AppErrorCode =
 export type AppErrorKind = AppErrorCode
 
 export const APP_ERROR_CODES: readonly AppErrorCode[] = [
+  'validation_error',
+  'rate_limited',
+  'unsupported',
+  'io',
   'validation',
   'not_found',
   'conflict',
