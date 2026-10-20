@@ -128,6 +128,12 @@ export class KanbanService {
    * and are never persisted in plain text.
    */
   readonly #sessionSecrets = new Map<string, string>()
+  /**
+   * Set when safeStorage reported encryption as available but encryptString
+   * threw (e.g. a locked or broken keyring): the session then behaves as if
+   * no keyring existed instead of writing plain text.
+   */
+  #encryptionFailed = false
 
   constructor(deps: KanbanServiceDeps) {
     this.#projects = deps.projects
@@ -143,7 +149,10 @@ export class KanbanService {
    * disk. Without any safeStorage (unit harnesses) the legacy storage applies.
    */
   private sessionOnlySecrets(): boolean {
-    return this.#safeStorage !== undefined && !this.#safeStorage.isEncryptionAvailable()
+    return (
+      this.#safeStorage !== undefined &&
+      (this.#encryptionFailed || !this.#safeStorage.isEncryptionAvailable())
+    )
   }
 
   private sessionSecretsFor(projectId: string): Record<string, string> {
@@ -155,7 +164,12 @@ export class KanbanService {
     return values
   }
 
-  private encryptSecret(value: string): string {
+  /**
+   * Encrypted form of a secret, the value itself when no safeStorage is wired
+   * (unit harnesses) or it is unavailable, or null when encryptString threw.
+   * Null never falls back to plain text: callers keep the secret in memory.
+   */
+  private encryptSecret(value: string): string | null {
     if (value.startsWith('enc:v1:')) {
       return value
     }
@@ -166,8 +180,9 @@ export class KanbanService {
       const buffer = this.#safeStorage.encryptString(value)
       return `enc:v1:${buffer.toString('base64')}`
     } catch (error) {
-      console.warn('[kanban] Failed to encrypt secret:', error)
-      return value
+      console.warn('[kanban] Failed to encrypt secret; keeping it for this session only:', error)
+      this.#encryptionFailed = true
+      return null
     }
   }
 
@@ -202,7 +217,8 @@ export class KanbanService {
         if (field.type === 'secret') {
           const val = updatedValues[field.key]
           if (typeof val === 'string' && val.length > 0 && !val.startsWith('enc:v1:')) {
-            updatedValues[field.key] = this.encryptSecret(val)
+            // A failed migration leaves the existing legacy value untouched.
+            updatedValues[field.key] = this.encryptSecret(val) ?? val
             migrated = true
           }
         }
@@ -341,18 +357,22 @@ export class KanbanService {
       }
     }
     // Apply (same rules as the effective view).
-    const sessionOnly = this.sessionOnlySecrets()
     for (const [key, value] of Object.entries(input.values)) {
       const isSecret = schema.find((field) => field.key === key)?.type === 'secret'
       if (value === '' && !isSecret) {
         delete merged[key]
-      } else if (value !== '' && isSecret && sessionOnly) {
-        // No keyring: keep the secret in memory for this session only and
-        // drop any older on-disk copy instead of writing plain text.
-        this.#sessionSecrets.set(`${projectId}\u0000${key}`, value)
-        delete merged[key]
+      } else if (value !== '' && !isSecret) {
+        merged[key] = value
       } else if (value !== '') {
-        merged[key] = isSecret ? this.encryptSecret(value) : value
+        const encrypted = this.sessionOnlySecrets() ? null : this.encryptSecret(value)
+        if (encrypted === null) {
+          // No (working) keyring: keep the secret in memory for this session
+          // only and drop any older on-disk copy instead of writing plain text.
+          this.#sessionSecrets.set(`${projectId}\u0000${key}`, value)
+          delete merged[key]
+        } else {
+          merged[key] = encrypted
+        }
       }
     }
     for (const field of schema) {
@@ -361,7 +381,7 @@ export class KanbanService {
         merged[field.key] !== undefined &&
         merged[field.key].length > 0
       ) {
-        merged[field.key] = this.encryptSecret(merged[field.key])
+        merged[field.key] = this.encryptSecret(merged[field.key]) ?? merged[field.key]
       }
     }
     this.#state.set(projectKanbanAdapterKey(projectId), adapterId)

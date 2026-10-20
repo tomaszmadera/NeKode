@@ -165,12 +165,22 @@ function realRealpath(path: string): string {
   }
 }
 
-/** Absolute shell paths from /etc/shells: comments and blank lines dropped. */
+/**
+ * Terminal multiplexers that distributions list in /etc/shells (Ubuntu adds
+ * tmux and screen) but that are not shells to run inside a NeKode terminal.
+ */
+const ETC_SHELLS_EXCLUDED = new Set(['tmux', 'screen'])
+
+/**
+ * Absolute shell paths from /etc/shells: comments, blank lines and terminal
+ * multiplexers dropped.
+ */
 export function parseEtcShells(text: string): string[] {
   return text
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.startsWith('/'))
+    .filter((line) => !ETC_SHELLS_EXCLUDED.has(posix.basename(line)))
 }
 
 function realIsFile(path: string): boolean {

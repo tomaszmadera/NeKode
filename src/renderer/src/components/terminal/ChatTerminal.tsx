@@ -109,6 +109,11 @@ function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
 }
 
+/** Windows (or an API double without a platform) keeps the line-key emulation. */
+function isWindowsHost(app: AppApi): boolean {
+  return app.platform === undefined || app.platform === 'win32'
+}
+
 /**
  * Emptiness of the shell's input line is judged VISUALLY, from the xterm
  * buffer — never by accounting of the byte stream sent to the PTY. The line
@@ -135,11 +140,6 @@ function errorMessage(error: unknown, fallback: string): string {
  * re-collected). The cursor row alone is compared, so multi-line prompts
  * (oh-my-posh) work: their last line is the row the cursor sits on.
  */
-
-/** Windows (or an API double without a platform) keeps the line-key emulation. */
-function isWindowsHost(app: AppApi): boolean {
-  return app.platform === undefined || app.platform === 'win32'
-}
 
 export function ChatTerminal({
   app,
