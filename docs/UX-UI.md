@@ -1037,15 +1037,12 @@ the left panel (user decision 2026-10-02, after Zed), in both modes that host
 the panel: the projects navigation and the project files view. It opens App
 Settings including when no project is selected or the project files view is
 open. The dialog has two tabs: **General** (theme selector: `default` shown
-as "NeKode Flat" and `nekode-float` shown as "NeKode Float", which
+as "NeKode Flat" and `nekode-float-v2` shown as "NeKode Float v2", which
 switches the shell to the floating layout: the title bar strip without its
 separating hairline (the app name stays at the top-left beside the Windows
 caption buttons), a detached rounded left panel with a gap to the center
-column, file tabs attached to the top of the rounded frame around the center
-content (with the tab strip background matching the main app background rgb(16, 18, 32);
-user decision 2026-10-08; the frame's top-left corner stays square where the first tab
-attaches, and the shell panels round at 10px; user decision 2026-10-04),
-and a terminal surface matching the app background color; terminal
+column, and file tabs attached to the top of the rounded frame around the
+center content (user decision 2026-10-04; themes: `docs/features/themes/spec.md`); terminal
 font size; the "Switch chats with Ctrl+Tab" on/off
 switch)
 and **Shortcuts** (read-only documentation of every global and terminal

@@ -389,11 +389,11 @@ describe('app settings and themes', () => {
       within(select)
         .getAllByRole('option')
         .map((option) => option.textContent),
-    ).toEqual(['NeKode Flat', 'NeKode Float', 'NeKode Float v2'])
+    ).toEqual(['NeKode Flat', 'NeKode Float v2'])
     expect(document.documentElement.dataset.theme).toBe('default')
-    fireEvent.change(select, { target: { value: 'nekode-float' } })
-    expect(document.documentElement.dataset.theme).toBe('nekode-float')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
+    fireEvent.change(select, { target: { value: 'nekode-float-v2' } })
+    expect(document.documentElement.dataset.theme).toBe('nekode-float-v2')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float-v2')
     const close = within(dialog).getByRole('button', { name: 'Close app settings' })
     close.focus()
     fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
@@ -416,10 +416,10 @@ describe('app settings and themes', () => {
     expect(document.activeElement).toBe(opener)
     view.unmount()
     render(<App app={app} />)
-    expect(document.documentElement.dataset.theme).toBe('nekode-float')
+    expect(document.documentElement.dataset.theme).toBe('nekode-float-v2')
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const restored = screen.getByRole('combobox', { name: 'Theme' })
-    expect((restored as HTMLSelectElement).value).toBe('nekode-float')
+    expect((restored as HTMLSelectElement).value).toBe('nekode-float-v2')
     fireEvent.change(restored, { target: { value: 'default' } })
     expect(document.documentElement.dataset.theme).toBe('default')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default')
@@ -427,11 +427,15 @@ describe('app settings and themes', () => {
     expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
   })
 
-  it('uses default for an unknown saved theme', () => {
-    localStorage.setItem(THEME_STORAGE_KEY, 'removed-theme')
-    render(<App app={createAppApiStub()} />)
-    expect(document.documentElement.dataset.theme).toBe('default')
-  })
+  it.each(['removed-theme', 'nekode-float'])(
+    'uses default for the unknown saved theme %s',
+    (stored) => {
+      // nekode-float is the removed NeKode Float theme (spec themes Behaviour 4).
+      localStorage.setItem(THEME_STORAGE_KEY, stored)
+      render(<App app={createAppApiStub()} />)
+      expect(document.documentElement.dataset.theme).toBe('default')
+    },
+  )
 
   it('floating theme keeps the title bar, detaches the left panel and keeps the status bar', () => {
     // jsdom computes no Tailwind styles (no layout, paint or cascade), so the
@@ -459,9 +463,9 @@ describe('app settings and themes', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const select = within(dialog).getByRole('combobox', { name: 'Theme' })
-    fireEvent.change(select, { target: { value: 'nekode-float' } })
-    expect(document.documentElement.dataset.theme).toBe('nekode-float')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
+    fireEvent.change(select, { target: { value: 'nekode-float-v2' } })
+    expect(document.documentElement.dataset.theme).toBe('nekode-float-v2')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float-v2')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close app settings' }))
     expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
     // Floating shell (user decision 2026-10-04): the title bar stays (the app
@@ -511,13 +515,7 @@ describe('app settings and themes', () => {
     expect(switcher).toBeTruthy()
     expect(switcher.textContent).toContain('NeKode Flat')
 
-    // Click quick theme switcher to toggle theme to "NeKode Float"
-    fireEvent.click(switcher)
-    expect(switcher.textContent).toContain('NeKode Float')
-    expect(document.documentElement.dataset.theme).toBe('nekode-float')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
-
-    // Click again to toggle to "NeKode Float v2"
+    // Click quick theme switcher to toggle theme to "NeKode Float v2"
     fireEvent.click(switcher)
     expect(switcher.textContent).toContain('NeKode Float v2')
     expect(document.documentElement.dataset.theme).toBe('nekode-float-v2')
@@ -605,7 +603,7 @@ describe('app settings and themes', () => {
         throw new Error('Storage unavailable')
       })
       fireEvent.change(screen.getByRole('combobox', { name: 'Theme' }), {
-        target: { value: 'nekode-float' },
+        target: { value: 'nekode-float-v2' },
       })
     }
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })

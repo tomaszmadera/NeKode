@@ -700,7 +700,7 @@ export function ChatTerminal({
           keyboard focus. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the view hosts the context-menu gesture (right click); the menu items are real buttons and the menu closes on Escape. */}
       <div
-        className="h-full w-full bg-terminal outline-none"
+        className="nk-terminal-canvas h-full w-full bg-terminal outline-none"
         data-testid={`terminal-canvas-${chatId}`}
         tabIndex={-1}
         style={{ display: visible ? 'block' : 'none' }}
@@ -715,7 +715,7 @@ export function ChatTerminal({
             itself must stay paddingless: FitAddon measures only the host box,
             so host padding made the xterm screen overflow it and the last text
             row touched the prompt frame (measured 0.9px gap). */}
-        <div className="flex h-full w-full flex-col p-3">
+        <div className="nk-terminal-inset flex h-full w-full flex-col p-3">
           {/* The fit host is absolute inside a flex slot. In flow, xterm's
               scroll area grows the slot on wheel scroll, FitAddon then
               reports a huge grid, and the layout stays broken until a window

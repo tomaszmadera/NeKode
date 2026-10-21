@@ -102,28 +102,48 @@ describe('motion and interaction tokens (NEKODE-9)', () => {
     )
   })
 
-  it('sets NeKode Float app color to rgb(16 18 32) and tab strip background to var(--color-app)', () => {
-    const floatSource = readFileSync(join(THEMES_DIR, 'nekode-float.css'), 'utf8')
-    expect(floatSource).toContain('--color-app: rgb(16 18 32);')
-    expect(floatSource).toContain('--color-terminal: rgb(16 18 32);')
-    expect(floatSource).toMatch(
-      /\[data-theme="nekode-float"\]\s*\[data-testid="tab-strip"\]\s*\{\s*background-color:\s*var\(--color-app\);\s*\}/,
-    )
-  })
-
   it('sets NeKode Float v2 app color to rgb(11 14 26) and tab strip background to transparent', () => {
     const floatV2Source = readFileSync(join(THEMES_DIR, 'nekode-float-v2.css'), 'utf8')
     expect(floatV2Source).toContain('--color-app: rgb(11 14 26);')
     expect(floatV2Source).toContain('--color-terminal: rgb(17 19 23);')
     expect(floatV2Source).toMatch(
-      /\[data-theme="nekode-float-v2"\]\s*\[data-testid="tab-strip"\]\s*\{\s*background-color:\s*transparent;\s*\}/,
+      /\[data-theme="nekode-float-v2"\]\s*\.nk-tab-strip\s*\{[^}]*background-color:\s*transparent;/,
     )
   })
 
   it('sets NeKode Float v2 action row slot to symmetric 14px 16px padding', () => {
     const floatV2Source = readFileSync(join(THEMES_DIR, 'nekode-float-v2.css'), 'utf8')
     expect(floatV2Source).toMatch(
-      /\[data-theme="nekode-float-v2"\]\s*\[data-testid="action-row-slot"\]\s*\{[\s\S]*?padding:\s*14px\s+16px\s*!important;/,
+      /\[data-theme="nekode-float-v2"\]\s*\.nk-action-row\s*\{[^}]*padding:\s*14px\s+16px;/,
     )
+  })
+})
+
+describe('theme hooks (spec themes Behaviour 6 and 7)', () => {
+  const themeFiles = readdirSync(THEMES_DIR).filter((file) => file.endsWith('.css'))
+  const withoutComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '')
+
+  it.each(themeFiles)('%s targets shell elements only through semantic hooks', (file) => {
+    // Test ids, utility-class combinations and DOM position break silently
+    // when a component changes; theme files use nk- hooks instead.
+    const selectors = withoutComments(readFileSync(join(THEMES_DIR, file), 'utf8'))
+    expect(selectors).not.toMatch(/data-testid/)
+    expect(selectors).not.toMatch(/:nth-of-type|:first-child|:first-of-type|:last-of-type/)
+    expect(selectors).not.toMatch(/\b[a-z][a-z0-9]*\.(?:bg|text|border|rounded)-/)
+    expect(selectors).not.toMatch(/\.rounded-lg\./)
+  })
+
+  it.each(themeFiles)('%s uses !important only to override an inline style', (file) => {
+    // Theme files are unlayered, so they already beat Tailwind utilities and
+    // @layer components rules. Only an inline style attribute needs !important.
+    // Comments are dropped so prose cannot trip the check; a comment naming
+    // the inline style leaves a marker on its declaration line.
+    const lines = readFileSync(join(THEMES_DIR, file), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, (comment) => (/inline/i.test(comment) ? 'INLINE_REASON' : ''))
+      .split('\n')
+    const unexplained = lines.filter(
+      (line) => line.includes('!important') && !line.includes('INLINE_REASON'),
+    )
+    expect(unexplained).toEqual([])
   })
 })

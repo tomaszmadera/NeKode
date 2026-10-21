@@ -82,7 +82,7 @@ export function PromptInput({
 
   return (
     <form
-      className="flex shrink-0 flex-wrap items-center gap-2 bg-terminal pt-2"
+      className="nk-prompt flex shrink-0 flex-wrap items-center gap-2 bg-terminal pt-2"
       onSubmit={(event) => {
         event.preventDefault()
         submit()
@@ -90,8 +90,8 @@ export function PromptInput({
     >
       {/* overflow-hidden clips the segment group's right corners to the frame
           radius, so the group reads as the input's right segment. */}
-      <div className="flex min-h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-control-edge bg-panel pl-3 focus-within:border-info">
-        <span aria-hidden="true" className="select-none font-mono text-ink-muted">
+      <div className="nk-prompt-frame flex min-h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-control-edge bg-panel pl-3 focus-within:border-info">
+        <span aria-hidden="true" className="nk-prompt-marker select-none font-mono text-ink-muted">
           &gt;
         </span>
         <textarea
@@ -118,7 +118,7 @@ export function PromptInput({
               while the input is empty, mirroring the Enter no-op. */}
           <button
             type="submit"
-            className="flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
+            className="nk-prompt-submit flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
             data-testid={TEST_ID.terminalPromptSend}
             disabled={value.length === 0}
           >

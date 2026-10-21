@@ -200,7 +200,7 @@ export function SessionRowItem({
       <button
         type="button"
         className={cn(
-          'flex h-control w-full items-center gap-2 rounded-md pl-5 pr-5 text-left text-sm transition-colors duration-fast ease-standard border-0',
+          'nk-chat-row flex h-control w-full items-center gap-2 rounded-md pl-5 pr-5 text-left text-sm transition-colors duration-fast ease-standard border-0',
           isChatSelected
             ? 'bg-[#262B3F] text-white'
             : cn(
@@ -218,7 +218,7 @@ export function SessionRowItem({
         <Icon.terminal size={16} aria-hidden className="session-icon neon-term shrink-0" />
         <span
           aria-hidden="true"
-          className="h-2 w-2 shrink-0 rounded-full"
+          className="nk-chat-dot h-2 w-2 shrink-0 rounded-full"
           style={{ backgroundColor: config.color }}
           data-testid={testIdFor.chatStatusDot(chat.id)}
           data-status={status}
@@ -385,7 +385,7 @@ export function LeftNavigation({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink"
+            className="nk-add-project flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink"
             data-testid={TEST_ID.addProjectButton}
             aria-label="Add Project"
             title="Add Project"
@@ -552,7 +552,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors duration-fast ease-standard hover:bg-highlight hover:text-ink"
+                      className="nk-project-row-action ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors duration-fast ease-standard hover:bg-highlight hover:text-ink"
                       data-testid={TEST_ID.newChatButton}
                       title="New chat"
                       aria-label="New chat"
@@ -580,7 +580,7 @@ export function LeftNavigation({
                     </button>
                     <button
                       type="button"
-                      className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-transparent text-ink-muted transition-colors duration-fast ease-standard hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      className="nk-project-row-action ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-transparent text-ink-muted transition-colors duration-fast ease-standard hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                       data-testid={testIdFor.projectFiles(project.id)}
                       title="File tree"
                       aria-label={`Open file tree of ${project.name}`}

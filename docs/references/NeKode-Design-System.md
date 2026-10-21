@@ -101,24 +101,26 @@ Example:
 
 This makes later theme variants possible without rewriting components.
 
-Implementation status (2026-10-01, updated 2026-10-04): `src/renderer/src/theme.css` imports the
+Implementation status (2026-10-01, updated 2026-10-21): `src/renderer/src/theme.css` imports the
 `default` tokens from `themes/default.css` (Tailwind v4 `@theme`) and the
-override theme from `themes/nekode-float.css`.
+override theme from `themes/nekode-float-v2.css`.
 Every override theme covers every default token name (theme.test.ts asserts
 name parity against `default.css` for each override file, not value parity),
 so themes may diverge freely. Theme membership, display labels and the shell
 layout variant live in the registry `src/renderer/src/lib/theme.ts`:
-`default` keeps the attached shell, `nekode-float` ("NeKode Float")
-clones the default palette, including the shared terminal background, and
-raises `--radius-lg` one step to 10px (user decision
-2026-10-04: the floating shell panels and the dialogs round at 10px). It
+`default` ("NeKode Flat") keeps the attached shell, and `nekode-float-v2`
+("NeKode Float v2") uses a dark indigo palette with glowing accents. It
 switches the shell to the floating layout: the title bar
 strip without its separating hairline (the app name stays top-left beside
 the Windows caption buttons), a detached rounded left panel with a gap to
 the center column, and file tabs attached to the top of the rounded frame
-around the center content below the tab strip (with the tab strip background on NeKode Float matching the main app background, rgb(16, 18, 32); user decision 2026-10-08); the frame's top-left corner
-stays square where the first tab attaches (App.tsx, user decision
-2026-10-04).
+around the center content below the tab strip (App.tsx, user decision
+2026-10-04). NeKode Float (`nekode-float`) was removed on 2026-10-21; a
+stored `nekode-float` id resolves to `default`. A theme restyles shell
+elements beyond tokens only through `nk-` semantic hooks or existing
+semantic classes and state attributes, never through test
+ids, utility-class combinations or DOM position
+(`docs/features/themes/spec.md`, Behaviour 6 and 7).
 App Settings applies the selected theme
 through `data-theme` on the document root and saves its identifier in
 `localStorage` under `nekode.theme.v1`. Missing or unknown identifiers use

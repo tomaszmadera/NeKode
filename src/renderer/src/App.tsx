@@ -2466,7 +2466,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       : null
   const statusProject = tabProject
 
-  // Floating shell theme (NeKode Float): the title bar strip stays (without
+  // Floating shell theme (NeKode Float v2): the title bar strip stays (without
   // its hairline), the left panel floats detached with rounded corners and
   // the center content below the tab strip sits in a rounded frame with the
   // tabs attached to its top. Attached themes keep the window-edge shell.
@@ -2530,7 +2530,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   return (
     <div
-      className="flex h-screen w-screen flex-col overflow-hidden bg-app text-ink antialiased"
+      className="nk-app-shell flex h-screen w-screen flex-col overflow-hidden bg-app text-ink antialiased"
       data-testid={TEST_ID.appShell}
     >
       {/* Window title bar (user decision 2026-10-01): one continuous
@@ -2540,7 +2540,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           2026-10-04: the app name stays top-left beside the caption
           buttons); the floating theme only drops the hairline under it. */}
       <div
-        className="drag-region flex h-10 shrink-0 items-center bg-app px-4"
+        className="nk-title-bar drag-region flex h-10 shrink-0 items-center bg-app px-4"
         data-testid={TEST_ID.titleBar}
       >
         <AppBrand />
@@ -2640,7 +2640,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             ) : null
           }
         />
-        <div className="relative z-10 flex min-w-0 flex-1 flex-col bg-app">
+        <div className="nk-center-column relative z-10 flex min-w-0 flex-1 flex-col bg-app">
           {/* Center column (spec Behaviour 1): tab strip, reserved action-row
               slot, main surface. No window-top band and no context header.
               Raised above the left-panel slot. The sliding track's transform
@@ -2671,7 +2671,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           <div
             className={
               floatingTheme
-                ? 'mx-2 mb-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg rounded-tl-none border border-edge'
+                ? 'nk-content-frame mx-2 mb-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg rounded-tl-none border border-edge'
                 : 'flex min-h-0 flex-1 flex-col'
             }
           >

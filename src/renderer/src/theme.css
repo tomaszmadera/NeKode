@@ -1,4 +1,3 @@
 /* Runtime theme entry point. Default tokens also provide the startup palette. */
 @import "./themes/default.css";
-@import "./themes/nekode-float.css";
 @import "./themes/nekode-float-v2.css";

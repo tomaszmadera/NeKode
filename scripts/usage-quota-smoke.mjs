@@ -417,7 +417,7 @@ try {
   )
   await shot('toolbar-pinned')
   // Use React's actual settings event, so both layout and theme tokens update.
-  for (const theme of ['nekode-float', 'nekode-float-v2']) {
+  for (const theme of ['nekode-float-v2']) {
     await evaluate('document.querySelector("[data-testid=app-settings-button]").click()')
     await sleep(100)
     await evaluate(

@@ -33,7 +33,7 @@ export function PanelFooter({
       <div className="flex items-center gap-1 border-t border-edge px-3 py-1.5">
         <button
           type="button"
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
+          className="nk-app-settings nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
           data-testid={TEST_ID.appSettingsButton}
           aria-label="App Settings"
           title="App Settings"
@@ -43,7 +43,7 @@ export function PanelFooter({
         </button>
         <button
           type="button"
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info aria-pressed:text-ink"
+          className="nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info aria-pressed:text-ink"
           data-testid={TEST_ID.mascotToggle}
           aria-label="Show mascot"
           aria-pressed={mascotVisible}

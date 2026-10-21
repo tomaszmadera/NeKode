@@ -100,7 +100,7 @@ export function TabStrip({
   return (
     <nav
       className={cn(
-        'drag-region flex h-[calc(var(--spacing-control)+0.5rem)] shrink-0 items-stretch gap-1.5 px-2 pt-2',
+        'nk-tab-strip drag-region flex h-[calc(var(--spacing-control)+0.5rem)] shrink-0 items-stretch gap-1.5 px-2 pt-2',
         floating ? 'bg-app' : 'bg-app border-b border-edge',
       )}
       // The strip shares the action row's metrics (round 4, design doc 26.2):
@@ -126,7 +126,7 @@ export function TabStrip({
         <button
           type="button"
           className={cn(
-            'no-drag flex aspect-square items-center justify-center rounded-t-md border-x border-t border-edge px-2.5 text-sm transition-colors duration-fast ease-standard',
+            'nk-tab-kanban no-drag flex aspect-square items-center justify-center rounded-t-md border-x border-t border-edge px-2.5 text-sm transition-colors duration-fast ease-standard',
             active.kind === 'kanban' ? 'nk-tab-active' : 'nk-tab-inactive',
           )}
           data-testid={TEST_ID.kanbanTab}
@@ -141,7 +141,7 @@ export function TabStrip({
       <button
         type="button"
         className={cn(
-          'no-drag flex max-w-48 items-center gap-1 rounded-t-md border-x border-t border-edge px-3 text-sm transition-colors duration-fast ease-standard',
+          'nk-tab-terminal no-drag flex max-w-48 items-center gap-1 rounded-t-md border-x border-t border-edge px-3 text-sm transition-colors duration-fast ease-standard',
           active.kind === 'terminal' ? 'nk-tab-active' : 'nk-tab-inactive',
         )}
         data-testid={TEST_ID.tabTerminal}
@@ -229,7 +229,7 @@ export function TabStrip({
       <div className="flex-1" />
       <button
         type="button"
-        className="no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-t-md text-ink-secondary hover:text-ink transition-colors duration-fast ease-standard"
+        className="nk-project-settings no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-t-md text-ink-secondary hover:text-ink transition-colors duration-fast ease-standard"
         aria-label="Project Settings"
         title="Project Settings"
         data-testid={TEST_ID.tabProjectSettings}

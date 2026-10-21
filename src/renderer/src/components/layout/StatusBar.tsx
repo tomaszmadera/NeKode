@@ -170,14 +170,17 @@ export function StatusBar({
 
   return (
     <footer
-      className="flex h-7 shrink-0 items-center gap-3 border-t border-edge bg-panel px-3 text-xs"
+      className="nk-status-bar flex h-7 shrink-0 items-center gap-3 border-t border-edge bg-panel px-3 text-xs"
       data-testid={TEST_ID.statusBar}
       data-slide-state={project !== null ? 'open' : 'closed'}
       data-panel-visible={project !== null ? 'true' : 'false'}
     >
       {project !== null ? (
         <>
-          <span className="shrink-0 font-medium text-ink" data-testid={TEST_ID.statusProjectName}>
+          <span
+            className="nk-status-project shrink-0 font-medium text-ink"
+            data-testid={TEST_ID.statusProjectName}
+          >
             {project.name}
           </span>
           <span
