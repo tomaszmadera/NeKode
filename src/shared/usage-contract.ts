@@ -77,6 +77,8 @@ export interface UsageAdapter {
   /** Optional fixed next action per declared failure code, replacing the generic one. */
   errorActions?: Partial<Record<UsageErrorCode, string>>
   directory?: string
+  /** Shipped with NeKode (spec rule 17); absent for user-added adapters. */
+  bundled?: boolean
   error?: string
 }
 export interface UsageConnection {
@@ -95,7 +97,6 @@ export interface UsagePin {
 export interface UsageSettings {
   connections: UsageConnection[]
   pin: UsagePin | null
-  adaptersDirectory: string | null
   export: { enabled: boolean; path: string | null; replaceExisting?: boolean }
 }
 export interface UsageConnectionSnapshot {
@@ -265,7 +266,7 @@ export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocum
 
 export function parseUsageSettings(value: unknown): UsageSettings {
   const s = usageObject(value)
-  only(s, ['connections', 'pin', 'adaptersDirectory', 'export'])
+  only(s, ['connections', 'pin', 'export'])
   if (!Array.isArray(s.connections) || s.connections.length > 100)
     invalid('Invalid usage connections.')
   const ids = new Set<string>()
@@ -317,7 +318,6 @@ export function parseUsageSettings(value: unknown): UsageSettings {
   return {
     connections,
     pin,
-    adaptersDirectory: path(s.adaptersDirectory),
     export: {
       enabled: e.enabled,
       path: path(e.path),

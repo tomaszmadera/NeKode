@@ -38,7 +38,6 @@ describe('preload app api', () => {
     const settings = {
       connections: [],
       pin: null,
-      adaptersDirectory: null,
       export: { enabled: false, path: null },
     }
     const connection = {

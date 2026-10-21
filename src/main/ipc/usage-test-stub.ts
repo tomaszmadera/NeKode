@@ -7,7 +7,6 @@ export function usageTestStub(): AppServices['usage'] {
     getSettings: vi.fn(() => ({
       connections: [],
       pin: null,
-      adaptersDirectory: null,
       export: { enabled: false, path: null },
     })),
     saveSettings: vi.fn(),

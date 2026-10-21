@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { AppError, isAppErrorCode } from '../../../shared/ipc-error'
 import {
   USAGE_MAX_BYTES,
@@ -51,87 +51,48 @@ function errorActions(value: unknown): UsageAdapter['errorActions'] {
   return actions as UsageAdapter['errorActions']
 }
 
-export function discoverUsageAdapters(directory: string): UsageAdapter[] {
-  const result: UsageAdapter[] = [{ ...FILE_ADAPTER }, structuredClone(CLAUDE_SNAPSHOT_ADAPTER)]
-  if (!existsSync(directory)) return result
-  for (const entry of readdirSync(directory, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .slice(0, 100)) {
-    const dir = join(directory, entry.name)
-    try {
-      const file = readFileSync(join(dir, 'usage-adapter.json'))
-      if (file.length > 64 * 1024) throw new Error('manifest size')
-      const m = usageObject(JSON.parse(file.toString('utf8')))
-      const i = usageObject(m.invocation)
-      if (
-        typeof m.id !== 'string' ||
-        !/^[a-z0-9][a-z0-9-]{0,63}$/.test(m.id) ||
-        typeof m.name !== 'string' ||
-        m.name.length > 256 ||
-        m.protocolVersion !== 1 ||
-        typeof i.command !== 'string' ||
-        !i.command ||
-        i.command.length > 4096 ||
-        !Array.isArray(i.args) ||
-        i.args.length > 50 ||
-        i.args.some((a) => typeof a !== 'string' || a.length > 4096 || a.includes('\0')) ||
-        !['file', 'api', 'cli'].includes(m.sourceKind as string) ||
-        !Array.isArray(m.capabilities) ||
-        m.capabilities.length > 3 ||
-        m.capabilities.some((c) => !['window', 'credits', 'balance'].includes(c as string)) ||
-        typeof m.minimumRefreshSeconds !== 'number' ||
-        !Number.isFinite(m.minimumRefreshSeconds) ||
-        m.minimumRefreshSeconds < 1 ||
-        m.minimumRefreshSeconds > 86400 ||
-        !Array.isArray(m.configSchema) ||
-        m.configSchema.length > 50 ||
-        !bounded(m.description, 1024)
-      )
-        throw new Error('manifest contract')
-      const actions = errorActions(m.errorActions)
-      const keys = new Set<string>()
-      for (const raw of m.configSchema) {
-        const f = usageObject(raw)
-        if (
-          typeof f.key !== 'string' ||
-          !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(f.key) ||
-          keys.has(f.key) ||
-          typeof f.label !== 'string' ||
-          f.label.length > 256 ||
-          !['text', 'secret', 'boolean', 'choice', 'file'].includes(f.type as string) ||
-          (f.required !== undefined && typeof f.required !== 'boolean') ||
-          !bounded(f.description, 512) ||
-          (f.type === 'choice' &&
-            (!Array.isArray(f.choices) ||
-              f.choices.length > 100 ||
-              f.choices.some((c) => typeof c !== 'string' || c.length > 256)))
-        )
-          throw new Error('manifest field')
-        keys.add(f.key)
-      }
-      result.push({
-        id: m.id,
-        name: m.name,
-        protocolVersion: 1,
-        invocation: { command: i.command, args: i.args as string[] },
-        sourceKind: m.sourceKind as UsageAdapter['sourceKind'],
-        capabilities: m.capabilities as string[],
-        minimumRefreshSeconds: m.minimumRefreshSeconds,
-        configSchema: m.configSchema as UsageAdapter['configSchema'],
-        ...(m.description === undefined ? {} : { description: m.description as string }),
-        ...(actions ? { errorActions: actions } : {}),
-        directory: dir,
-      })
-    } catch {
-      result.push({
-        ...FILE_ADAPTER,
-        id: `invalid:${entry.name}`,
-        name: entry.name,
-        directory: dir,
-        error: 'Invalid usage-adapter.json. Check protocol version 1 and required manifest fields.',
-      })
-    }
-  }
+/** Usage adapters shipped with NeKode (spec rule 17); `adapters/<name>` in the repository. */
+export const BUNDLED_USAGE_ADAPTERS = ['usage-codex', 'usage-elevenlabs', 'usage-openrouter']
+
+/**
+ * Shipped adapter directories: `<resources>/usage-adapters/<name>` in a packaged app (copied by
+ * electron-builder.yml extraResources), `<appPath>/adapters/<name>` when unpackaged.
+ */
+export function bundledUsageAdapterDirectories(
+  packaged: boolean,
+  appPath: string,
+  resourcesPath: string,
+): string[] {
+  const root = packaged ? join(resourcesPath, 'usage-adapters') : join(appPath, 'adapters')
+  return BUNDLED_USAGE_ADAPTERS.map((name) => join(root, name))
+}
+
+/**
+ * Built-in readers, then bundled adapters (one directory each), then user adapters one level under
+ * `userDirectory` (spec rules 17-18). A valid user adapter replaces a bundled one with the same id.
+ */
+export function discoverUsageAdapters(
+  userDirectory: string,
+  bundledDirectories: readonly string[] = [],
+): UsageAdapter[] {
+  const builtIn: UsageAdapter[] = [{ ...FILE_ADAPTER }, structuredClone(CLAUDE_SNAPSHOT_ADAPTER)]
+  const bundled = bundledDirectories
+    .filter((dir) => existsSync(join(dir, 'usage-adapter.json')))
+    .map((dir) => {
+      const a = readManifest(dir, basename(dir))
+      if (a.error || a.invocation.command !== 'node') return { ...a, bundled: true }
+      // Run with NeKode's own Node runtime (ELECTRON_RUN_AS_NODE, set by the host); this needs
+      // the RunAsNode Electron fuse, which electron-builder.yml leaves enabled.
+      return { ...a, bundled: true, invocation: { ...a.invocation, command: process.execPath } }
+    })
+  const user = existsSync(userDirectory)
+    ? readdirSync(userDirectory, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .slice(0, 100)
+        .map((e) => readManifest(join(userDirectory, e.name), e.name))
+    : []
+  const overridden = new Set(user.filter((a) => !a.error).map((a) => a.id))
+  const result = [...builtIn, ...bundled.filter((a) => !overridden.has(a.id)), ...user]
   const counts = new Map<string, number>()
   for (const a of result) counts.set(a.id, (counts.get(a.id) ?? 0) + 1)
   return result.map((a) =>
@@ -139,6 +100,82 @@ export function discoverUsageAdapters(directory: string): UsageAdapter[] {
       ? { ...a, error: 'Duplicate usage adapter id. Give each adapter a unique id.' }
       : a,
   )
+}
+
+function readManifest(dir: string, name: string): UsageAdapter {
+  try {
+    const file = readFileSync(join(dir, 'usage-adapter.json'))
+    if (file.length > 64 * 1024) throw new Error('manifest size')
+    const m = usageObject(JSON.parse(file.toString('utf8')))
+    const i = usageObject(m.invocation)
+    if (
+      typeof m.id !== 'string' ||
+      !/^[a-z0-9][a-z0-9-]{0,63}$/.test(m.id) ||
+      typeof m.name !== 'string' ||
+      m.name.length > 256 ||
+      m.protocolVersion !== 1 ||
+      typeof i.command !== 'string' ||
+      !i.command ||
+      i.command.length > 4096 ||
+      !Array.isArray(i.args) ||
+      i.args.length > 50 ||
+      i.args.some((a) => typeof a !== 'string' || a.length > 4096 || a.includes('\0')) ||
+      !['file', 'api', 'cli'].includes(m.sourceKind as string) ||
+      !Array.isArray(m.capabilities) ||
+      m.capabilities.length > 3 ||
+      m.capabilities.some((c) => !['window', 'credits', 'balance'].includes(c as string)) ||
+      typeof m.minimumRefreshSeconds !== 'number' ||
+      !Number.isFinite(m.minimumRefreshSeconds) ||
+      m.minimumRefreshSeconds < 1 ||
+      m.minimumRefreshSeconds > 86400 ||
+      !Array.isArray(m.configSchema) ||
+      m.configSchema.length > 50 ||
+      !bounded(m.description, 1024)
+    )
+      throw new Error('manifest contract')
+    const actions = errorActions(m.errorActions)
+    const keys = new Set<string>()
+    for (const raw of m.configSchema) {
+      const f = usageObject(raw)
+      if (
+        typeof f.key !== 'string' ||
+        !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(f.key) ||
+        keys.has(f.key) ||
+        typeof f.label !== 'string' ||
+        f.label.length > 256 ||
+        !['text', 'secret', 'boolean', 'choice', 'file'].includes(f.type as string) ||
+        (f.required !== undefined && typeof f.required !== 'boolean') ||
+        !bounded(f.description, 512) ||
+        (f.type === 'choice' &&
+          (!Array.isArray(f.choices) ||
+            f.choices.length > 100 ||
+            f.choices.some((c) => typeof c !== 'string' || c.length > 256)))
+      )
+        throw new Error('manifest field')
+      keys.add(f.key)
+    }
+    return {
+      id: m.id,
+      name: m.name,
+      protocolVersion: 1,
+      invocation: { command: i.command, args: i.args as string[] },
+      sourceKind: m.sourceKind as UsageAdapter['sourceKind'],
+      capabilities: m.capabilities as string[],
+      minimumRefreshSeconds: m.minimumRefreshSeconds,
+      configSchema: m.configSchema as UsageAdapter['configSchema'],
+      ...(m.description === undefined ? {} : { description: m.description as string }),
+      ...(actions ? { errorActions: actions } : {}),
+      directory: dir,
+    }
+  } catch {
+    return {
+      ...FILE_ADAPTER,
+      id: `invalid:${name}`,
+      name,
+      directory: dir,
+      error: 'Invalid usage-adapter.json. Check protocol version 1 and required manifest fields.',
+    }
+  }
 }
 
 function terminate(child: ChildProcess): void {
@@ -169,10 +206,12 @@ export class UsageAdapterHost {
     private readonly timeoutMs = 30_000,
     private readonly options: { packaged?: boolean } = {},
   ) {}
-  private childEnv(): NodeJS.ProcessEnv {
-    if (!this.options.packaged) return process.env
+  private childEnv(adapter: UsageAdapter): NodeJS.ProcessEnv {
     const env = { ...process.env }
-    delete env[USAGE_TEST_BASE_URL_ENV]
+    if (this.options.packaged) delete env[USAGE_TEST_BASE_URL_ENV]
+    // Bundled adapters run on NeKode's executable in Node mode (spec rule 19).
+    if (adapter.bundled) env.ELECTRON_RUN_AS_NODE = '1'
+    else delete env.ELECTRON_RUN_AS_NODE
     return env
   }
   shutdown(): void {
@@ -187,7 +226,7 @@ export class UsageAdapterHost {
     if (signal.aborted) throw new AppError('config', 'Usage request was cancelled.')
     const child = spawn(adapter.invocation.command, adapter.invocation.args, {
       cwd: adapter.directory,
-      env: this.childEnv(),
+      env: this.childEnv(adapter),
       shell: false,
       windowsHide: true,
       detached: process.platform !== 'win32',

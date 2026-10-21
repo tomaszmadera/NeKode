@@ -274,7 +274,6 @@ describe('usage IPC authorization', () => {
         {
           connections: [],
           pin: null,
-          adaptersDirectory: null,
           export: { enabled: false, path: null },
         },
       ],

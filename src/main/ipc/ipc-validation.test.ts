@@ -150,7 +150,6 @@ describe('ipc payload validation', () => {
     const valid = {
       connections: [],
       pin: null,
-      adaptersDirectory: null,
       export: { enabled: false, path: null },
     }
     expect(channel(IPC_CHANNEL.usageSaveSettings).parse([valid])).toEqual([valid])
@@ -159,6 +158,8 @@ describe('ipc payload validation', () => {
       [null],
       [{ ...valid, connections: 'wrong' }],
       [{ ...valid, export: { enabled: 'yes', path: null } }],
+      // The adapters directory override was removed (usage-quota spec rule 20).
+      [{ ...valid, adaptersDirectory: null }],
       [valid, 'extra'],
     ])
       expect(() => channel(IPC_CHANNEL.usageSaveSettings).parse(bad)).toThrow()

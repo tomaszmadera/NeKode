@@ -113,7 +113,6 @@ describe('Usage panel', () => {
     vi.mocked(api.getSettings).mockResolvedValue({
       connections: [],
       pin: null,
-      adaptersDirectory: null,
       export: { enabled: false, path: null },
     })
     vi.mocked(api.saveSettings).mockImplementation(async (settings) => settings)

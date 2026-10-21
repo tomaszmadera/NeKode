@@ -11,6 +11,19 @@ npmRebuild: false
 extraResources:
   - from: resources/dictation/desktop-shortcut.ps1
     to: dictation/desktop-shortcut.ps1
+  # Shipped usage adapters and the Claude Code snapshot writer (usage-quota
+  # spec rule 17, added 2026-10-21). Keep the adapter list in sync with
+  # BUNDLED_USAGE_ADAPTERS in src/main/services/usage/adapter-host.ts.
+  # Bundled `node` adapters run on the NeKode executable with
+  # ELECTRON_RUN_AS_NODE, so the RunAsNode Electron fuse must stay enabled.
+  - from: adapters/usage-codex
+    to: usage-adapters/usage-codex
+  - from: adapters/usage-elevenlabs
+    to: usage-adapters/usage-elevenlabs
+  - from: adapters/usage-openrouter
+    to: usage-adapters/usage-openrouter
+  - from: adapters/usage-claude-code
+    to: usage-collectors/claude-code
 
 # Windows application icon (added 2026-10-01, user request): the branded cat
 # tile rasterized from src/renderer/src/assets/brand/cat-icon-tile.svg

@@ -12,6 +12,7 @@ const codex = createRequire(__filename)(join(adapterDirectory, 'index.cjs')) as 
   TOTAL_DEADLINE_MS: number
   collect(options: Record<string, unknown>): Promise<{ version: string; document: unknown }>
   executable(config: Record<string, unknown>): string
+  childEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv
 }
 
 // Sanitized fake app-server: argv and every received message go to a transcript file.
@@ -127,6 +128,13 @@ async function eventuallyDead(alive: () => boolean) {
   for (let n = 0; n < 50 && alive(); n++) await new Promise((r) => setTimeout(r, 50))
   expect(alive()).toBe(false)
 }
+
+describe('codex child environment', () => {
+  it('keeps the environment but never passes Node mode to the Codex CLI', () => {
+    const env = codex.childEnv({ PATH: 'C:/bin', ELECTRON_RUN_AS_NODE: '1' })
+    expect(env).toEqual({ PATH: 'C:/bin' })
+  })
+})
 
 describe('experimental Codex app-server usage adapter', () => {
   it('maps every bucket with provider-reported durations and closes app-server', async () => {

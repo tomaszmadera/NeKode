@@ -32,7 +32,7 @@ Credits, plan type, reset credits and upsell data are not mapped.
 
 1. Check compatibility: `codex --version` must print `codex-cli 0.163.0` or later.
 2. Sign in with the Codex CLI itself using ChatGPT. NeKode does not sign you in.
-3. Copy `adapters/usage-codex` into `<userData>/usage-adapters/usage-codex` (or your configured adapters directory). App Settings lists `Codex CLI app-server (experimental)` with its executable; enabling it lets it run with your user permissions.
+3. NeKode ships this adapter ([shipped adapters](usage.md)); nothing to copy. App Settings lists `Codex CLI app-server (experimental)` with its executable; enabling it lets it run with your user permissions.
 4. Add a connection: provider id `codex` (the adapter reports this id), an account label, and this adapter. Leave `Codex executable` empty to use `codex` from `PATH`, or set the absolute path of `codex.exe`. Script shims such as `codex.cmd` cannot run without a shell and are refused.
 
    An npm global install (`npm install -g @openai/codex`) puts only script shims (`codex`, `codex.cmd`, `codex.ps1`) in the npm prefix folder on `PATH`, so set the executable path. The binary is in the platform package under the npm global root: run `npm root -g`, then use `<root>\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe` (layout observed in `@openai/codex` 0.155.1 on Windows x64; on Windows ARM the package is `codex-win32-arm64`). If your version differs, search that package folder for `codex.exe`. For other installs, `(Get-Command codex).Source` in PowerShell shows the executable when it is a real `.exe`.

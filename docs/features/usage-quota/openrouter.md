@@ -49,7 +49,7 @@ The metric id is `balance`, kind `balance`, label `Account balance`, with `amoun
 
 1. Read [Management key privileges](#management-key-privileges).
 2. In OpenRouter, open Management API Keys, choose `Create New Key`, name it (for example `NeKode usage`), set an expiration and copy the key; it is shown only once.
-3. Copy `adapters/usage-openrouter` into `<userData>/usage-adapters/usage-openrouter` (or your configured adapters directory). App Settings lists `OpenRouter account balance` with its executable and the privilege explanation; enabling it lets it run with your user permissions.
+3. NeKode ships this adapter ([shipped adapters](usage.md)); nothing to copy. App Settings lists `OpenRouter account balance` with its executable and the privilege explanation; enabling it lets it run with your user permissions.
 4. In `App Settings > Usage`, turn on `Show usage quota` and add a connection: provider id `openrouter` (the adapter reports this id), an account label, and this source. Enter the key in `OpenRouter Management key`.
 5. Test the connection, then enable and save it.
 

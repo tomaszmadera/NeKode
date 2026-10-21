@@ -571,7 +571,6 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         const s = parseUsageSettings({
           connections: [payload[0]],
           pin: null,
-          adaptersDirectory: null,
           export: { enabled: false, path: null },
         })
         return [s.connections[0]]

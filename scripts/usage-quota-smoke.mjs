@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer as createHttpServer } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -303,13 +303,8 @@ try {
   })
   await new Promise((r) => fakeApi.listen(0, '127.0.0.1', r))
   process.env.NEKODE_USAGE_TEST_BASE_URL = `http://127.0.0.1:${fakeApi.address().port}`
-  for (const name of ['usage-elevenlabs', 'usage-openrouter']) {
-    const target = join(profile, 'usage-adapters', name)
-    cpSync(join(root, 'adapters', name), target, { recursive: true })
-    const providerManifest = JSON.parse(readFileSync(join(target, 'usage-adapter.json'), 'utf8'))
-    providerManifest.invocation.command = process.execPath
-    writeFileSync(join(target, 'usage-adapter.json'), JSON.stringify(providerManifest))
-  }
+  // The ElevenLabs and OpenRouter adapters are the shipped ones (usage-quota spec rule 17): the
+  // unpackaged app reads them from adapters/ and runs them on Electron in Node mode (rule 19).
   await launch()
   await check(
     'Show usage quota is off at fresh install and hides the title-bar button',
@@ -352,7 +347,6 @@ try {
       },
     ],
     pin: null,
-    adaptersDirectory: null,
     export: { enabled: true, path: output },
   }
   await evaluate(`window.app.usage.saveSettings(${JSON.stringify(settings)})`)
@@ -549,6 +543,10 @@ try {
   await check(
     'OpenRouter adapter lists its Management key privilege explanation',
     'window.app.usage.listAdapters().then(a=>a.find(x=>x.id==="openrouter-credits")?.description?.includes("Management key")===true&&!a.find(x=>x.id==="elevenlabs-subscription")?.error)',
+  )
+  await check(
+    'shipped Codex, ElevenLabs and OpenRouter adapters are listed without copying, on the NeKode runtime',
+    'window.app.usage.listAdapters().then(a=>["codex-app-server","elevenlabs-subscription","openrouter-credits"].every(id=>{const x=a.find(y=>y.id===id);return x&&x.bundled===true&&!x.error&&/electron|nekode/i.test(x.invocation.command)}))',
   )
   const providers = await evaluate('window.app.usage.getSettings()')
   providers.connections.push(

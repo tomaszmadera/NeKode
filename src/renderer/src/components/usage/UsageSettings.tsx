@@ -7,6 +7,12 @@ import type {
   UsageConnection,
 } from '../../../../shared/usage-contract'
 
+/** Where a source comes from (spec rule 18); built-in readers have no directory. */
+function origin(adapter: UsageAdapter | undefined): string {
+  if (!adapter?.directory) return 'Built-in reader.'
+  return adapter.bundled ? 'Shipped with NeKode.' : 'Added in your usage-adapters folder.'
+}
+
 export function UsageSettings({
   app,
   onSaved,
@@ -91,31 +97,10 @@ export function UsageSettings({
         Connections belong to a subscription or account across all projects. No source runs until
         you save an enabled connection.
       </p>
-      <label className="block">
-        Adapters directory
-        <input
-          className="mt-1 w-full rounded border border-edge bg-app p-2"
-          aria-label="Usage adapters directory"
-          value={s.adaptersDirectory ?? ''}
-          onChange={(e) => setSettings({ ...s, adaptersDirectory: e.target.value || null })}
-        />
-      </label>
-      <button
-        type="button"
-        className="rounded border border-edge px-3 py-1"
-        disabled={busy}
-        onClick={() =>
-          void action(async () => {
-            const path = await app.dialogs.pickDirectory(s.adaptersDirectory)
-            if (path) setSettings({ ...s, adaptersDirectory: path })
-          })
-        }
-      >
-        Choose adapters directory
-      </button>
       <p className="text-xs text-ink-muted">
-        Default: your NeKode user data directory, usage-adapters. Save to discover a changed
-        directory. Plugins are trusted executables: enabling one lets it run with your permissions.
+        NeKode ships its usage adapters. To add your own, put each in a folder under usage-adapters
+        in your NeKode user data directory; one with a shipped adapter's id replaces it. Adapters
+        are trusted executables: enabling one lets it run with your permissions.
       </p>
       {s.connections.map((c, index) => {
         const adapter = adapters.find((a) => a.id === c.adapterId)
@@ -172,7 +157,7 @@ export function UsageSettings({
             </label>
             <p className="text-xs text-ink-muted">
               {adapter?.sourceKind ?? 'Unavailable'};{' '}
-              {adapter?.capabilities.join(', ') ?? 'No capabilities'}. Executable:{' '}
+              {adapter?.capabilities.join(', ') ?? 'No capabilities'}. {origin(adapter)} Executable:{' '}
               {adapter?.invocation.command ?? 'Unavailable'} {adapter?.invocation.args.join(' ')}
             </p>
             {adapter?.description ? (

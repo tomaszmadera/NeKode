@@ -75,6 +75,8 @@ export interface CreateServicesOptions {
   safeStorage?: SafeStorageLike
   /** `app.isPackaged` (main/index.ts); gates development-only seams such as the usage test URL. */
   packaged?: boolean
+  /** Shipped usage adapter directories (`bundledUsageAdapterDirectories`, main/index.ts). */
+  bundledUsageAdapterDirectories?: readonly string[]
 }
 
 export function createServices(options: CreateServicesOptions): AppServices {
@@ -85,6 +87,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
   const usage = new UsageService({
     state,
     userDataPath: options.userDataPath,
+    bundledAdapterDirectories: options.bundledUsageAdapterDirectories,
     safeStorage: options.safeStorage,
     packaged: options.packaged,
   })

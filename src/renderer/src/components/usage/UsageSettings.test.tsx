@@ -57,6 +57,46 @@ describe('Usage settings', () => {
     })
     expect(app.usage.test).toHaveBeenCalledOnce()
   })
+  it('has no adapters directory field and shows where each source comes from', async () => {
+    const app = createAppApiStub()
+    const base = {
+      protocolVersion: 1 as const,
+      sourceKind: 'api' as const,
+      capabilities: ['balance'],
+      minimumRefreshSeconds: 300,
+      configSchema: [],
+    }
+    vi.mocked(app.usage.listAdapters).mockResolvedValue([
+      {
+        ...base,
+        id: 'shipped',
+        name: 'Shipped source',
+        invocation: { command: 'C:/NeKode/nekode.exe', args: ['index.cjs'] },
+        directory: 'C:/NeKode/resources/usage-adapters/usage-shipped',
+        bundled: true,
+      },
+      {
+        ...base,
+        id: 'mine',
+        name: 'My source',
+        invocation: { command: 'node', args: ['mine.cjs'] },
+        directory: 'C:/profile/usage-adapters/mine',
+      },
+    ])
+    render(<UsageSettings app={app} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Add connection' }))
+    expect(screen.queryByRole('textbox', { name: 'Usage adapters directory' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Choose adapters directory' })).toBeNull()
+    const source = screen.getByRole('combobox', { name: 'Usage source 1' })
+    fireEvent.change(source, { target: { value: 'shipped' } })
+    expect(
+      screen.getByText(/Shipped with NeKode\. Executable: C:\/NeKode\/nekode\.exe index\.cjs/),
+    ).toBeTruthy()
+    fireEvent.change(source, { target: { value: 'mine' } })
+    expect(
+      screen.getByText(/Added in your usage-adapters folder\. Executable: node mine\.cjs/),
+    ).toBeTruthy()
+  })
   it('shows the adapter privilege explanation and field help before the Enabled switch', async () => {
     const app = createAppApiStub()
     vi.mocked(app.usage.listAdapters).mockResolvedValue([

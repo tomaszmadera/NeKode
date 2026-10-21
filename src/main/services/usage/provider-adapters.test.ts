@@ -6,10 +6,16 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseUsageDocument, type UsageAdapter, usagePercent } from '../../../shared/usage-contract'
-import { discoverUsageAdapters, UsageAdapterHost } from './adapter-host'
+import {
+  bundledUsageAdapterDirectories,
+  discoverUsageAdapters,
+  UsageAdapterHost,
+} from './adapter-host'
 import { UsageService } from './usage-service'
 
 const adapters = resolve(__dirname, '../../../../adapters')
+// The shipped adapters as an unpackaged app resolves them (spec rule 17).
+const bundled = bundledUsageAdapterDirectories(false, resolve(__dirname, '../../../..'), '')
 const load = createRequire(__filename)
 interface ProviderModule {
   TOTAL_DEADLINE_MS: number
@@ -338,7 +344,9 @@ describe('provider adapters through the process host', () => {
     return { requests }
   }
   function manifest(name: string): UsageAdapter {
-    const found = discoverUsageAdapters(adapters).find((a) => a.directory?.endsWith(name))
+    const found = discoverUsageAdapters(join(tmpdir(), 'nekode-no-user-adapters'), bundled).find(
+      (a) => a.directory?.endsWith(name),
+    )
     if (!found || found.error) throw new Error(`Invalid manifest ${name}`)
     return { ...found, invocation: { command: process.execPath, args: found.invocation.args } }
   }
@@ -401,6 +409,7 @@ describe('provider adapters through the process host', () => {
     let now = Date.now()
     const service = new UsageService({
       userDataPath: join(dir, 'profile'),
+      bundledAdapterDirectories: bundled,
       state: {
         get: (key) => state.get(key) ?? null,
         set: (key, value) => {
@@ -430,7 +439,6 @@ describe('provider adapters through the process host', () => {
         },
       ],
       pin: null,
-      adaptersDirectory: adapters,
       export: { enabled: true, path: output },
     })
     try {

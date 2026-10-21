@@ -66,6 +66,17 @@ function waitForClose(child, ms) {
   })
 }
 
+/**
+ * Environment for the Codex CLI. NeKode starts this shipped adapter with ELECTRON_RUN_AS_NODE
+ * (usage-quota spec rule 19); it must not reach children, where it would put any Electron-based
+ * executable into Node mode.
+ */
+function childEnv(env = process.env) {
+  const copy = { ...env }
+  delete copy.ELECTRON_RUN_AS_NODE
+  return copy
+}
+
 /** Resolve the configured executable without a shell; script shims cannot run without one. */
 function executable(config) {
   const value = config?.codexPath
@@ -238,7 +249,7 @@ async function collect({
   config = {},
   command = executable(config),
   prefixArgs = [],
-  env = process.env,
+  env = childEnv(),
   timeoutMs = TOTAL_DEADLINE_MS,
   now = () => new Date(),
 }) {
@@ -418,6 +429,7 @@ module.exports = {
   MINIMUM_CODEX_VERSION,
   TOTAL_DEADLINE_MS,
   Failure,
+  childEnv,
   collect,
   executable,
   mapRateLimits,

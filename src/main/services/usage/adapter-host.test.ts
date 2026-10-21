@@ -1,9 +1,14 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { UsageAdapter } from '../../../shared/usage-contract'
-import { discoverUsageAdapters, UsageAdapterHost } from './adapter-host'
+import {
+  BUNDLED_USAGE_ADAPTERS,
+  bundledUsageAdapterDirectories,
+  discoverUsageAdapters,
+  UsageAdapterHost,
+} from './adapter-host'
 
 const roots: string[] = []
 function adapter(script: string): UsageAdapter & { directory: string } {
@@ -187,5 +192,122 @@ describe('usage adapter process boundary', () => {
       true,
     )
     expect(result.find((a) => a.id === 'invalid:invalid')?.error).toContain('Invalid')
+  })
+})
+
+describe('bundled and user usage adapters', () => {
+  function tree() {
+    const root = mkdtempSync(join(tmpdir(), 'nekode-usage-sources-'))
+    roots.push(root)
+    const bundled = join(root, 'bundled'),
+      user = join(root, 'user')
+    mkdirSync(bundled)
+    mkdirSync(user)
+    const manifest = (dir: string, id: string, extra: Record<string, unknown> = {}) => {
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(
+        join(dir, 'usage-adapter.json'),
+        JSON.stringify({
+          id,
+          name: id,
+          protocolVersion: 1,
+          invocation: { command: 'node', args: ['index.cjs'] },
+          sourceKind: 'api',
+          capabilities: ['balance'],
+          minimumRefreshSeconds: 300,
+          configSchema: [],
+          ...extra,
+        }),
+      )
+      return dir
+    }
+    return { bundled, user, manifest }
+  }
+
+  it('lists bundled adapters with the NeKode executable and keeps user commands', () => {
+    const { bundled, user, manifest } = tree()
+    const shipped = manifest(join(bundled, 'usage-openrouter'), 'openrouter-balance')
+    manifest(join(user, 'mine'), 'my-source')
+    const result = discoverUsageAdapters(user, [shipped, join(bundled, 'usage-missing')])
+    expect(result.find((a) => a.id === 'openrouter-balance')).toMatchObject({
+      bundled: true,
+      invocation: { command: process.execPath, args: ['index.cjs'] },
+      directory: shipped,
+    })
+    expect(result.find((a) => a.id === 'my-source')).toMatchObject({
+      invocation: { command: 'node', args: ['index.cjs'] },
+    })
+    expect(result.find((a) => a.id === 'my-source')?.bundled).toBeUndefined()
+    expect(result.some((a) => a.directory?.endsWith('usage-missing'))).toBe(false)
+    expect(result.every((a) => !a.error)).toBe(true)
+  })
+
+  it('lets a valid user adapter replace a bundled id, but not an invalid one', () => {
+    const { bundled, user, manifest } = tree()
+    const shipped = manifest(join(bundled, 'usage-codex'), 'codex')
+    manifest(join(user, 'codex-fork'), 'codex', { name: 'My Codex' })
+    const replaced = discoverUsageAdapters(user, [shipped]).filter((a) => a.id === 'codex')
+    expect(replaced).toEqual([expect.objectContaining({ name: 'My Codex' })])
+    expect(replaced[0].bundled).toBeUndefined()
+    expect(replaced[0].error).toBeUndefined()
+
+    rmSync(join(user, 'codex-fork'), { recursive: true })
+    mkdirSync(join(user, 'codex-broken'))
+    writeFileSync(join(user, 'codex-broken', 'usage-adapter.json'), '{"id":"codex"}')
+    const kept = discoverUsageAdapters(user, [shipped])
+    expect(kept.find((a) => a.id === 'codex')).toMatchObject({ bundled: true })
+    expect(kept.find((a) => a.id === 'codex')?.error).toBeUndefined()
+    expect(kept.find((a) => a.id === 'invalid:codex-broken')?.error).toContain('Invalid')
+  })
+
+  it('keeps user duplicates and built-in id collisions disabled', () => {
+    const { bundled, user, manifest } = tree()
+    const shipped = manifest(join(bundled, 'usage-elevenlabs'), 'elevenlabs')
+    manifest(join(user, 'a'), 'elevenlabs')
+    manifest(join(user, 'b'), 'elevenlabs')
+    manifest(join(user, 'c'), 'usage-file')
+    const result = discoverUsageAdapters(user, [shipped])
+    const ids = result.filter((a) => a.id === 'elevenlabs')
+    expect(ids).toHaveLength(2)
+    expect(ids.every((a) => !a.bundled && a.error?.includes('Duplicate'))).toBe(true)
+    expect(result.filter((a) => a.id === 'usage-file').every((a) => a.error)).toBe(true)
+  })
+
+  it('ships exactly the repository adapters listed in electron-builder.yml', () => {
+    const repo = resolve(__dirname, '../../../..')
+    const listed = discoverUsageAdapters(
+      join(tmpdir(), 'nekode-no-user-adapters'),
+      bundledUsageAdapterDirectories(false, repo, ''),
+    ).filter((a) => a.directory)
+    expect(listed.map((a) => a.id).sort()).toEqual([
+      'codex-app-server',
+      'elevenlabs-subscription',
+      'openrouter-credits',
+    ])
+    expect(listed.every((a) => a.bundled && !a.error)).toBe(true)
+    const packaged = [
+      ...readFileSync(join(repo, 'electron-builder.yml'), 'utf8').matchAll(
+        /to: usage-adapters\/([\w-]+)/g,
+      ),
+    ].map((m) => m[1])
+    expect(packaged.sort()).toEqual([...BUNDLED_USAGE_ADAPTERS].sort())
+  })
+
+  it('starts a bundled adapter in Node mode and a user adapter without it', async () => {
+    const a = adapter(
+      `console.log(JSON.stringify({protocolVersion:1,ok:true,data:{runAsNode:process.env.ELECTRON_RUN_AS_NODE??null}}))`,
+    )
+    const previous = process.env.ELECTRON_RUN_AS_NODE
+    delete process.env.ELECTRON_RUN_AS_NODE
+    try {
+      expect(
+        await new UsageAdapterHost().read({ ...a, bundled: true }, {}, 'account', signal()),
+      ).toEqual({ runAsNode: '1' })
+      expect(await new UsageAdapterHost().read(a, {}, 'account', signal())).toEqual({
+        runAsNode: null,
+      })
+    } finally {
+      if (previous !== undefined) process.env.ELECTRON_RUN_AS_NODE = previous
+    }
   })
 })

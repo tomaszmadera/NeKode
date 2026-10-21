@@ -54,6 +54,8 @@ interface Runtime {
 export interface UsageServiceDeps {
   state: Storage
   userDataPath: string
+  /** Shipped adapter directories, one per adapter (spec rule 17); see `bundledUsageAdapterDirectories`. */
+  bundledAdapterDirectories?: readonly string[]
   safeStorage?: Encryption
   now?: () => number
   host?: UsageAdapterHost
@@ -64,7 +66,6 @@ export interface UsageServiceDeps {
 const empty = (): UsageSettings => ({
   connections: [],
   pin: null,
-  adaptersDirectory: null,
   export: { enabled: false, path: null },
 })
 const CONNECTION_REVISIONS_KEY = 'usage.connection-revisions'
@@ -124,7 +125,9 @@ export class UsageService {
     const saved = deps.state.get(USAGE_STATE_KEY)
     if (saved) {
       try {
-        this.settings = parseUsageSettings(JSON.parse(saved))
+        // Settings saved before spec rule 20 may carry the removed adapters directory override.
+        const { adaptersDirectory: _legacy, ...stored } = JSON.parse(saved)
+        this.settings = parseUsageSettings(stored)
       } catch {
         this.cacheError = 'Cannot load usage settings. Configure usage again.'
       }
@@ -196,12 +199,16 @@ export class UsageService {
   }
   listAdapters(): UsageAdapter[] {
     try {
-      return discoverUsageAdapters(
-        this.settings.adaptersDirectory ?? join(this.deps.userDataPath, 'usage-adapters'),
-      )
+      return this.discover()
     } catch {
       throw new AppError('io', 'Cannot read usage adapters directory. Check its permissions.')
     }
+  }
+  private discover(): UsageAdapter[] {
+    return discoverUsageAdapters(
+      join(this.deps.userDataPath, 'usage-adapters'),
+      this.deps.bundledAdapterDirectories,
+    )
   }
   getSettings(): UsageSettings {
     const settings = structuredClone(this.settings)
@@ -215,10 +222,8 @@ export class UsageService {
     }
     return settings
   }
-  private adapter(c: UsageConnection, settings = this.settings): UsageAdapter {
-    const adapters = discoverUsageAdapters(
-      settings.adaptersDirectory ?? join(this.deps.userDataPath, 'usage-adapters'),
-    )
+  private adapter(c: UsageConnection): UsageAdapter {
+    const adapters = this.discover()
     const matches = adapters.filter((a) => a.id === c.adapterId)
     if (matches.length !== 1 || matches[0].error)
       throw new AppError('config', 'Usage adapter is unavailable. Select a valid adapter.')
@@ -255,11 +260,10 @@ export class UsageService {
     return resolve(path).toLowerCase()
   }
   private validatePaths(settings: UsageSettings): void {
-    if (settings.adaptersDirectory) this.checkedPath(settings.adaptersDirectory, true)
     const inputs: string[] = [],
       directories: string[] = []
     for (const c of settings.connections) {
-      const a = this.adapter(c, settings)
+      const a = this.adapter(c)
       for (const f of a.configSchema) {
         if ((f.type !== 'file' && f.type !== 'directory') || typeof c.config[f.key] !== 'string')
           continue
@@ -316,8 +320,8 @@ export class UsageService {
       )
     }
   }
-  private prepare(c: UsageConnection, settings: UsageSettings): UsageConnection {
-    const a = this.adapter(c, settings),
+  private prepare(c: UsageConnection): UsageConnection {
+    const a = this.adapter(c),
       config = { ...c.config }
     const previous = this.settings.connections.find(
       (p) =>
@@ -361,7 +365,7 @@ export class UsageService {
   }
   saveSettings(raw: UsageSettings): UsageSettings {
     const next = parseUsageSettings(raw)
-    next.connections = next.connections.map((c) => this.prepare(c, next))
+    next.connections = next.connections.map((c) => this.prepare(c))
     this.validatePaths(next)
     const invalidated = new Set<string>()
     for (const c of next.connections) {
@@ -371,8 +375,7 @@ export class UsageService {
         previous.label !== c.label ||
         previous.providerId !== c.providerId ||
         previous.adapterId !== c.adapterId ||
-        JSON.stringify(previous.config) !== JSON.stringify(c.config) ||
-        this.settings.adaptersDirectory !== next.adaptersDirectory
+        JSON.stringify(previous.config) !== JSON.stringify(c.config)
       )
         invalidated.add(c.id)
     }
@@ -553,7 +556,7 @@ export class UsageService {
       pin: null,
       export: { enabled: false, path: null },
     })
-    const c = this.prepare(settings.connections[0], settings)
+    const c = this.prepare(settings.connections[0])
     settings.connections = [c]
     this.validatePaths(settings)
     await this.load(c, new AbortController().signal)

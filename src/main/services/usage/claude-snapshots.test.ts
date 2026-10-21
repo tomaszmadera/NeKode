@@ -249,7 +249,6 @@ describe('Claude snapshot connections in the usage service', () => {
         },
       ],
       pin: null,
-      adaptersDirectory: null,
       export: { enabled: exportPath !== null, path: exportPath },
     })
     return { ...f, service, settings, advance: (ms: number) => (now += ms) }

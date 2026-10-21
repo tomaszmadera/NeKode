@@ -13,7 +13,6 @@ export function createAppApiStub(): AppApi {
       getSettings: vi.fn().mockResolvedValue({
         connections: [],
         pin: null,
-        adaptersDirectory: null,
         export: { enabled: false, path: null },
       }),
       saveSettings: vi.fn(),

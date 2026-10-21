@@ -49,7 +49,7 @@ The reader polls at most every five seconds while `Show usage quota` is on and t
 
 ## Connect without the harness
 
-1. Copy `adapters/usage-claude-code` to a stable folder, for example `%APPDATA%\NeKode\usage-collectors\claude-code`. The writer needs Node.js on the `PATH` of the shell Claude Code uses (or `--node <path>`).
+1. Open the writer's folder in PowerShell. NeKode ships it: in an installed app it is `resources\usage-collectors\claude-code` next to `nekode.exe`; when you run NeKode from source it is `adapters\usage-claude-code` in the repository. Setup records that folder in Claude Code's status line, so moving or uninstalling NeKode breaks the status line until you run setup again from the new folder. Claude Code, not NeKode, starts the writer, so it needs Node.js on the `PATH` of the shell Claude Code uses (or `--node <path>`).
 2. Preview the change. Nothing is written:
 
    ```powershell

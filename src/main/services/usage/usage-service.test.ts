@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppError } from '../../../shared/ipc-error'
-import type { UsageSettings } from '../../../shared/usage-contract'
+import { USAGE_STATE_KEY, type UsageSettings } from '../../../shared/usage-contract'
 import { UsageAdapterHost } from './adapter-host'
 import { UsageService } from './usage-service'
 
@@ -81,7 +81,6 @@ function fixture() {
       },
     ],
     pin: null,
-    adaptersDirectory: null,
     export: { enabled: false, path: null },
   }
   return {
@@ -99,7 +98,7 @@ function fixture() {
   }
 }
 function plugin(f: ReturnType<typeof fixture>, minimumRefreshSeconds = 60) {
-  const directory = join(f.dir, 'adapters', 'fixture')
+  const directory = join(f.deps.userDataPath, 'usage-adapters', 'fixture')
   mkdirSync(directory, { recursive: true })
   writeFileSync(
     join(directory, 'usage-adapter.json'),
@@ -120,7 +119,6 @@ function plugin(f: ReturnType<typeof fixture>, minimumRefreshSeconds = 60) {
   services.push(service)
   service.saveSettings({
     ...f.settings,
-    adaptersDirectory: join(f.dir, 'adapters'),
     connections: [{ ...f.settings.connections[0], adapterId: 'fixture', config: {} }],
   })
   return { service, read }
@@ -131,6 +129,17 @@ afterEach(() => {
   for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 describe('global usage service', () => {
+  it('loads settings saved with the removed adapters directory and saves without it', () => {
+    const f = fixture()
+    f.state.set(USAGE_STATE_KEY, JSON.stringify({ ...f.settings, adaptersDirectory: 'D:/old' }))
+    const service = new UsageService(f.deps)
+    services.push(service)
+    expect(service.read().cacheError).toBeNull()
+    expect(service.getSettings().connections.map((c) => c.id)).toEqual(['account'])
+    f.write()
+    service.saveSettings(service.getSettings())
+    expect(f.state.get(USAGE_STATE_KEY)).not.toContain('adaptersDirectory')
+  })
   it('ignores cache without durable identity and restores restart persistence after a new read', async () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
@@ -674,7 +683,7 @@ describe('global usage service', () => {
   })
   it('keeps sources single-flight and ignores obsolete results', async () => {
     const f = fixture(),
-      dir = join(f.dir, 'adapters', 'fixture')
+      dir = join(f.deps.userDataPath, 'usage-adapters', 'fixture')
     mkdirSync(dir, { recursive: true })
     writeFileSync(
       join(dir, 'usage-adapter.json'),
@@ -701,7 +710,6 @@ describe('global usage service', () => {
     services.push(service)
     service.saveSettings({
       ...f.settings,
-      adaptersDirectory: join(f.dir, 'adapters'),
       connections: [{ ...f.settings.connections[0], adapterId: 'fixture', config: {} }],
     })
     const first = service.refresh(),
@@ -714,7 +722,7 @@ describe('global usage service', () => {
   })
   it('blocks secret saving and use when encryption fails and never exposes stored values', async () => {
     const f = fixture(),
-      dir = join(f.dir, 'adapters', 'secret')
+      dir = join(f.deps.userDataPath, 'usage-adapters', 'secret')
     mkdirSync(dir, { recursive: true })
     writeFileSync(
       join(dir, 'usage-adapter.json'),
@@ -731,7 +739,6 @@ describe('global usage service', () => {
     )
     const s = {
       ...f.settings,
-      adaptersDirectory: join(f.dir, 'adapters'),
       connections: [
         { ...f.settings.connections[0], adapterId: 'secret', config: { key: 'fixture-secret' } },
       ],

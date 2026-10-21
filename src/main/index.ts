@@ -13,6 +13,7 @@ import { allowsMicrophone, allowsRendererClipboard } from './security/media-perm
 import { isTrustedRendererUrl } from './security/sender-guard'
 import { createServices } from './services/create-services'
 import { DesktopShortcutSender, desktopHelperPath } from './services/dictation/desktop-sender'
+import { bundledUsageAdapterDirectories } from './services/usage/adapter-host'
 import { registerShutdown } from './shutdown'
 import { applyUserDataOverride } from './user-data-override'
 
@@ -166,6 +167,11 @@ app
           userDataPath: app.getPath('userData'),
           safeStorage,
           packaged: app.isPackaged,
+          bundledUsageAdapterDirectories: bundledUsageAdapterDirectories(
+            app.isPackaged,
+            app.getAppPath(),
+            process.resourcesPath,
+          ),
           // The single OS-facing action of the project-files feature (spec
           // Behaviour 11): open with the OS default application. '' = success.
           openExternal: (absolutePath) => shell.openPath(absolutePath),
