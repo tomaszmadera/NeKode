@@ -73,6 +73,8 @@ export interface CreateServicesOptions {
   pickDirectory: (defaultPath: string | null) => Promise<string | null>
   pickUsageFile?: (output: boolean) => Promise<string | null>
   safeStorage?: SafeStorageLike
+  /** `app.isPackaged` (main/index.ts); gates development-only seams such as the usage test URL. */
+  packaged?: boolean
 }
 
 export function createServices(options: CreateServicesOptions): AppServices {
@@ -84,6 +86,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
     state,
     userDataPath: options.userDataPath,
     safeStorage: options.safeStorage,
+    packaged: options.packaged,
   })
   const desktopDictation = new DesktopDictation(
     state,
@@ -228,6 +231,8 @@ export function createServices(options: CreateServicesOptions): AppServices {
       read: () => usage.read(),
       refresh: () => usage.refresh(),
       test: (connection) => usage.test(connection),
+      getEnabled: () => usage.getEnabled(),
+      setEnabled: (enabled) => usage.setEnabled(enabled),
       setVisible: (visible) => usage.setVisible(visible),
       shutdown: () => usage.shutdown(),
       pickFile: (output) => options.pickUsageFile?.(output) ?? Promise.resolve(null),

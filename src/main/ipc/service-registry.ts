@@ -55,6 +55,8 @@ export interface AppServices {
     | 'read'
     | 'refresh'
     | 'test'
+    | 'getEnabled'
+    | 'setEnabled'
     | 'setVisible'
     | 'shutdown'
   > & { pickFile(output: boolean): Promise<string | null> }

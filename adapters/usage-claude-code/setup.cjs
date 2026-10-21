@@ -1,49 +1,56 @@
-// Previewed, separately enabled setup for the NeKode Claude Code usage collector.
+// Previewed, separately enabled setup for the NeKode Claude Code snapshot writer.
 //
-//   node setup.cjs --settings <claude settings.json> --output <absolute usage json>
-//                  --connection-id <id> [--provider-id claude] [--node <node executable>]
-//                  [--apply | --remove]
+//   node setup.cjs --settings <claude settings.json> [--dir <absolute snapshot directory>]
+//                  [--node <node executable>] [--apply | --remove]
 //
 // Without --apply or --remove the script only prints the proposed change. --apply writes a
-// backup next to the settings file and replaces `statusLine.command` with the collector, piping
+// backup next to the settings file and replaces `statusLine.command` with the writer, piping
 // the existing status-line command after it so its output is retained. Other statusLine fields
-// (padding, refreshInterval, ...) and every other setting are kept. --remove restores the backed
-// up status line exactly. The settings path is always explicit; nothing is modified by default.
+// (padding, refreshInterval, ...) and every other setting are kept. If writing the settings
+// fails, the backup is removed again so neither changed settings nor a stale backup remain.
+// --remove restores the backed up status line exactly. The settings path is always explicit;
+// nothing is modified by default. The default --dir is the Agent Harness snapshot directory;
+// use one directory per Claude account.
 // Docs: docs/features/usage-quota/claude-code.md
 const { randomUUID } = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 
-const ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/
+const { defaultDirectory } = require('./collector.cjs')
+
 const MARKER = '--nekode-usage'
 const COLLECTOR = path.join(__dirname, 'collector.cjs')
 
 class SetupError extends Error {}
 
 function parseArgs(argv) {
-  const options = { providerId: 'claude', node: 'node', mode: 'preview' }
+  const options = { node: 'node', mode: 'preview' }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--apply' || arg === '--remove') {
       if (options.mode !== 'preview') throw new SetupError('Choose either --apply or --remove.')
       options.mode = arg.slice(2)
-    } else if (
-      ['--settings', '--output', '--connection-id', '--provider-id', '--node'].includes(arg)
-    )
-      options[arg.slice(2).replace(/-(\w)/g, (_, c) => c.toUpperCase())] = argv[++i]
+    } else if (['--settings', '--dir', '--node'].includes(arg)) options[arg.slice(2)] = argv[++i]
     else throw new SetupError(`Unknown argument ${arg}.`)
   }
   if (typeof options.settings !== 'string' || !path.isAbsolute(options.settings))
     throw new SetupError('--settings must be the absolute path of a Claude Code settings.json.')
   if (options.mode === 'remove') return options
-  if (typeof options.output !== 'string' || !path.isAbsolute(options.output))
-    throw new SetupError('--output must be an absolute path for the normalized usage file.')
-  if (!fs.existsSync(path.dirname(options.output)))
-    throw new SetupError('The --output folder does not exist. Create it first.')
-  if (path.resolve(options.output).toLowerCase() === path.resolve(options.settings).toLowerCase())
-    throw new SetupError('--output must differ from the settings file.')
-  if (!ID_PATTERN.test(options.connectionId ?? '') || !ID_PATTERN.test(options.providerId))
-    throw new SetupError('--connection-id and --provider-id use 1-128 letters, digits, . _ -')
+  return checkDirectory(options)
+}
+
+function checkDirectory(options) {
+  options.dir ??= defaultDirectory()
+  if (typeof options.dir !== 'string' || !path.isAbsolute(options.dir))
+    throw new SetupError('--dir must be an absolute path for the snapshot directory.')
+  const dir = path.resolve(options.dir).toLowerCase()
+  const settings = path.resolve(options.settings).toLowerCase()
+  if (
+    settings === dir ||
+    settings.startsWith(`${dir}${path.sep}`) ||
+    settings.startsWith(`${dir}/`)
+  )
+    throw new SetupError('--dir must not contain the settings file. Choose a separate directory.')
   return options
 }
 
@@ -60,12 +67,8 @@ function collectorCommand(options, passThrough) {
   return [
     node,
     shellPath(COLLECTOR),
-    '--output',
-    shellPath(options.output),
-    '--connection-id',
-    options.connectionId,
-    '--provider-id',
-    options.providerId,
+    '--dir',
+    shellPath(options.dir),
     ...(passThrough ? ['--pass-through'] : []),
     MARKER,
   ].join(' ')
@@ -88,6 +91,7 @@ const backupPath = (settingsFile) => `${settingsFile}.nekode-usage-backup.json`
 
 /** Compute the proposed status line without writing anything. */
 function plan(options) {
+  checkDirectory(options)
   const { exists, settings } = readSettings(options.settings)
   const current = settings.statusLine ?? null
   if (current !== null && (typeof current !== 'object' || Array.isArray(current)))
@@ -113,7 +117,7 @@ function plan(options) {
     backupFile: backupPath(options.settings),
     current,
     proposed: { ...(current ?? {}), type: 'command', command },
-    output: options.output,
+    directory: options.dir,
     warnings,
   }
 }
@@ -137,7 +141,13 @@ function apply(options) {
     { version: 1, statusLine: proposal.current, installed: proposal.proposed.command },
     true,
   )
-  writeJson(options.settings, { ...settings, statusLine: proposal.proposed }, false)
+  try {
+    writeJson(options.settings, { ...settings, statusLine: proposal.proposed }, false)
+  } catch (error) {
+    // The settings are unchanged; a leftover backup would block retry and --remove.
+    fs.rmSync(proposal.backupFile, { force: true })
+    throw error
+  }
   return proposal
 }
 

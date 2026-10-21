@@ -230,6 +230,27 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [appSettingsOpen, setAppSettingsOpen] = useState(false)
   const [appSettingsUsage, setAppSettingsUsage] = useState(false)
   const [usageVersion, setUsageVersion] = useState(0)
+  // Global `Show usage quota` switch (spec rule 1), off until main reports it on. A failed read
+  // keeps the button hidden; Usage settings shows the error when it loads the switch.
+  const [usageEnabled, setUsageEnabled] = useState(false)
+  useEffect(() => {
+    let alive = true
+    app.usage.getEnabled().then(
+      (enabled) => {
+        if (alive) setUsageEnabled(enabled)
+      },
+      () => {
+        if (alive) setUsageEnabled(false)
+      },
+    )
+    return () => {
+      alive = false
+    }
+  }, [app])
+  const handleUsageSaved = useCallback(() => {
+    setUsageVersion((v) => v + 1)
+    app.usage.getEnabled().then(setUsageEnabled, () => setUsageEnabled(false))
+  }, [app])
   const [appSettingsAgents, setAppSettingsAgents] = useState(false)
   const [mascotState, setMascotState] = useState<{ visible: boolean; error: string | null }>(() => {
     try {
@@ -2523,14 +2544,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         data-testid={TEST_ID.titleBar}
       >
         <AppBrand />
-        <UsageToolbar
-          api={app.usage}
-          version={usageVersion}
-          onConfigure={() => {
-            setAppSettingsUsage(true)
-            setAppSettingsOpen(true)
-          }}
-        />
+        {usageEnabled ? (
+          <UsageToolbar
+            api={app.usage}
+            version={usageVersion}
+            onConfigure={() => {
+              setAppSettingsUsage(true)
+              setAppSettingsOpen(true)
+            }}
+          />
+        ) : null}
       </div>
       {/* The hairline under the title bar is owned by the content row
           (border-t, design doc 26.2 convention), not by the strip itself;
@@ -2848,7 +2871,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         <AppSettings
           app={app}
           initialTab={appSettingsUsage ? 'usage' : appSettingsAgents ? 'agents' : 'general'}
-          onUsageSaved={() => setUsageVersion((v) => v + 1)}
+          onUsageSaved={handleUsageSaved}
           dictationApi={app.dictation}
           desktopDictation={desktopDictation}
           theme={themeState.theme}

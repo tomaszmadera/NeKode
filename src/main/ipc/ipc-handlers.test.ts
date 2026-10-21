@@ -265,6 +265,8 @@ describe('usage IPC authorization', () => {
     ['getSettings', IPC_CHANNEL.usageGetSettings, []],
     ['listAdapters', IPC_CHANNEL.usageListAdapters, []],
     ['pickFile', IPC_CHANNEL.usagePickFile, [false]],
+    ['getEnabled', IPC_CHANNEL.usageGetEnabled, []],
+    ['setEnabled', IPC_CHANNEL.usageSetEnabled, [true]],
     [
       'saveSettings',
       IPC_CHANNEL.usageSaveSettings,

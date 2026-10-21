@@ -15,6 +15,7 @@ import { AppError } from '../../../shared/ipc-error'
 import {
   parseUsageDocument,
   parseUsageSettings,
+  USAGE_ENABLED_KEY,
   USAGE_MAX_BYTES,
   USAGE_STATE_KEY,
   type UsageAdapter,
@@ -28,6 +29,7 @@ import {
   usageObject,
 } from '../../../shared/usage-contract'
 import { discoverUsageAdapters, UsageAdapterHost } from './adapter-host'
+import { CLAUDE_SNAPSHOT_ADAPTER, newerWindow, readClaudeSnapshots } from './claude-snapshots'
 
 interface Storage {
   get(key: string): string | null
@@ -55,6 +57,8 @@ export interface UsageServiceDeps {
   safeStorage?: Encryption
   now?: () => number
   host?: UsageAdapterHost
+  /** `app.isPackaged`: a packaged app never passes the adapter test seam to adapters. */
+  packaged?: boolean
   startTimer?: boolean
 }
 const empty = (): UsageSettings => ({
@@ -78,6 +82,14 @@ function connectionRevisions(value: unknown): Record<string, string> {
     throw new AppError('validation_error', 'Invalid usage connection revisions.')
   return revisions as Record<string, string>
 }
+/** Rule 16 comparison key of an available age-unknown window metric. */
+function windowKey(metric: UsageSubscription['metrics'][number]) {
+  if (metric.state !== 'available' || typeof metric.usedPercent !== 'number') return null
+  return {
+    usedPercent: metric.usedPercent,
+    resetsAt: metric.resetsAt ? Date.parse(metric.resetsAt) / 1000 : null,
+  }
+}
 const safeFailure = (error: unknown): UsageFailure =>
   error instanceof AppError
     ? {
@@ -98,14 +110,17 @@ export class UsageService {
   private timer?: ReturnType<typeof setInterval>
   private visible = false
   private stopped = false
+  /** Global `Show usage quota` switch (spec rule 1); off schedules nothing. */
+  private enabled: boolean
   private revision = 0
   private cacheError: string | null = null
   private exportError: string | null = null
   constructor(private readonly deps: UsageServiceDeps) {
     this.now = deps.now ?? Date.now
-    this.host = deps.host ?? new UsageAdapterHost()
+    this.host = deps.host ?? new UsageAdapterHost(undefined, { packaged: deps.packaged })
     this.cacheDirectory = join(deps.userDataPath, 'usage')
     this.cachePath = join(this.cacheDirectory, 'observations.json')
+    this.enabled = deps.state.get(USAGE_ENABLED_KEY) === 'true'
     const saved = deps.state.get(USAGE_STATE_KEY)
     if (saved) {
       try {
@@ -161,6 +176,24 @@ export class UsageService {
     if (!runtime) throw new Error('Usage connection runtime is missing.')
     return runtime
   }
+  getEnabled(): boolean {
+    return this.enabled
+  }
+  /** Turning the switch off cancels in-flight reads and keeps connections, pin and cache. */
+  setEnabled(enabled: boolean): boolean {
+    if (typeof enabled !== 'boolean')
+      throw new AppError('validation_error', 'Invalid usage switch.')
+    this.deps.state.transaction(() =>
+      this.deps.state.set(USAGE_ENABLED_KEY, enabled ? 'true' : 'false'),
+    )
+    this.enabled = enabled
+    if (!enabled) for (const r of this.runtime.values()) r.controller?.abort()
+    else {
+      this.exportDocument()
+      this.tick()
+    }
+    return this.enabled
+  }
   listAdapters(): UsageAdapter[] {
     try {
       return discoverUsageAdapters(
@@ -197,8 +230,15 @@ export class UsageService {
     const absolute = resolve(path)
     let current = absolute
     while (current !== parse(current).root) {
-      if (existsSync(current) && lstatSync(current).isSymbolicLink())
-        throw new AppError('config', 'Usage paths cannot use symbolic links or junctions.')
+      // lstat, not exists: a dangling link at a not-yet-existing path is still an alias.
+      let link = false
+      try {
+        link = lstatSync(current).isSymbolicLink()
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+          throw new AppError('config', 'Cannot inspect usage path. Check its permissions.')
+      }
+      if (link) throw new AppError('config', 'Usage paths cannot use symbolic links or junctions.')
       current = dirname(current)
     }
     if (mustExist && !existsSync(absolute))
@@ -216,12 +256,22 @@ export class UsageService {
   }
   private validatePaths(settings: UsageSettings): void {
     if (settings.adaptersDirectory) this.checkedPath(settings.adaptersDirectory, true)
-    const inputs: string[] = []
+    const inputs: string[] = [],
+      directories: string[] = []
     for (const c of settings.connections) {
       const a = this.adapter(c, settings)
-      for (const f of a.configSchema)
-        if (f.type === 'file' && typeof c.config[f.key] === 'string' && c.config[f.key])
-          inputs.push(this.checkedPath(c.config[f.key] as string, false))
+      for (const f of a.configSchema) {
+        if ((f.type !== 'file' && f.type !== 'directory') || typeof c.config[f.key] !== 'string')
+          continue
+        if (!c.config[f.key]) continue
+        const path = this.checkedPath(c.config[f.key] as string, false)
+        if (f.type === 'directory') {
+          if (existsSync(path) && !lstatSync(path).isDirectory())
+            throw new AppError('config', 'Claude snapshot directory must be a folder.')
+          directories.push(path)
+        }
+        inputs.push(path)
+      }
     }
     const cache = this.pathKey(this.cacheDirectory)
     if (
@@ -242,6 +292,10 @@ export class UsageService {
       key === cache ||
       key.startsWith(`${cache}\\`) ||
       key.startsWith(`${cache}/`) ||
+      directories.some((d) => {
+        const dir = this.pathKey(d)
+        return key.startsWith(`${dir}\\`) || key.startsWith(`${dir}/`)
+      }) ||
       inputs.some((p) => {
         if (this.pathKey(p) === key) return true
         if (!existsSync(output) || !existsSync(p)) return false
@@ -390,10 +444,11 @@ export class UsageService {
     if (visible) this.tick()
   }
   private tick(): void {
-    if (this.visible && !this.stopped)
+    if (this.visible && !this.stopped && this.enabled)
       for (const c of this.settings.connections) if (c.enabled) void this.collect(c, false)
   }
   async refresh(): Promise<UsageSnapshot> {
+    if (!this.enabled) return this.read()
     await Promise.all(
       this.settings.connections.filter((c) => c.enabled).map((c) => this.collect(c, true)),
     )
@@ -417,12 +472,23 @@ export class UsageService {
   }
   /** A missing local input is transient (spec rule 13); only rejected paths are configuration errors. */
   private fileInput(path: string): string {
-    if (typeof path === 'string' && isAbsolute(path) && !existsSync(path))
+    const checked = this.checkedPath(path, false)
+    if (!existsSync(checked))
       throw new AppError(
         'io',
         'Cannot read usage file. It does not exist yet; collection retries automatically.',
       )
-    return this.checkedPath(path, true)
+    return checked
+  }
+  /** A missing snapshot directory in an existing folder is transient (spec rule 16). */
+  private snapshotDirectory(path: string): string {
+    const checked = this.checkedPath(path, false)
+    if (!existsSync(checked))
+      throw new AppError(
+        'io',
+        'Cannot read Claude snapshot directory. It does not exist yet; collection retries automatically.',
+      )
+    return checked
   }
   private readDocument(path: string): UsageDocument {
     return parseUsageDocument(this.readJson(path), this.now())
@@ -457,7 +523,16 @@ export class UsageService {
     const document =
       a.id === 'usage-file'
         ? this.readDocument(this.fileInput(config.path as string))
-        : parseUsageDocument(await this.host.read(a, config, c.id, signal), this.now())
+        : a.id === CLAUDE_SNAPSHOT_ADAPTER.id
+          ? parseUsageDocument(
+              readClaudeSnapshots(
+                this.snapshotDirectory(config.directory as string),
+                c,
+                this.now(),
+              ),
+              this.now(),
+            )
+          : parseUsageDocument(await this.host.read(a, config, c.id, signal), this.now())
     if (
       document.subscriptions.length !== 1 ||
       document.subscriptions[0].id !== c.id ||
@@ -470,6 +545,8 @@ export class UsageService {
     return { ...document.subscriptions[0], label: c.label, sourceKind: a.sourceKind }
   }
   async test(raw: UsageConnection): Promise<void> {
+    // Rule 12: while off, even an explicit test reads no file and starts no process.
+    if (!this.enabled) throw new AppError('config', 'Turn on Show usage quota to test connections.')
     const settings = parseUsageSettings({
       ...this.getSettings(),
       connections: [raw],
@@ -510,9 +587,19 @@ export class UsageService {
           this.stopped
         )
           return
-        const receivedAt = new Date(this.now()).toISOString()
+        const now = this.now()
+        const receivedAt = new Date(now).toISOString()
+        const snapshots = c.adapterId === CLAUDE_SNAPSHOT_ADAPTER.id
         sub.metrics = sub.metrics.map((metric) => {
           const previous = r.subscription?.metrics.find((m) => m.id === metric.id)
+          // Rule 16 across polls: a deleted newest session file cannot bring back an older value.
+          // Only a kept window whose numeric reset is still ahead is protected; an expired or
+          // unknown-reset window is replaced by the current read.
+          if (snapshots && previous?.resetsAt && Date.parse(previous.resetsAt) > now) {
+            const kept = windowKey(previous),
+              next = windowKey(metric)
+            if (kept && next && newerWindow(kept, next, now)) return previous
+          }
           const samePeriod =
             previous?.periodStart === metric.periodStart && previous?.resetsAt === metric.resetsAt
           if (
@@ -639,6 +726,8 @@ export class UsageService {
     }
   }
   private exportDocument(): void {
+    // While the switch is off nothing is written; the last export and its error are retained.
+    if (!this.enabled) return
     if (!this.settings.export.enabled) {
       this.exportError = null
       return

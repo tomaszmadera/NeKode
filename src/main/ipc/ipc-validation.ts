@@ -587,6 +587,16 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       },
       invoke: (args) => services.usage.pickFile(args[0] as boolean),
     },
+    serviceChannel(IPC_CHANNEL.usageGetEnabled, [], () => services.usage.getEnabled()),
+    {
+      channel: IPC_CHANNEL.usageSetEnabled,
+      parse(payload) {
+        requireArgs(payload, 1, IPC_CHANNEL.usageSetEnabled)
+        if (typeof payload[0] !== 'boolean') fail('usage switch', 'must be boolean')
+        return payload
+      },
+      invoke: (args) => services.usage.setEnabled(args[0] as boolean),
+    },
     serviceChannel(IPC_CHANNEL.dictationStatus, [], () => services.dictation.status()),
     serviceChannel(IPC_CHANNEL.dictationDesktopSetup, [], () => services.dictation.desktopSetup()),
     // The handler derives the window identity after sender and payload validation.

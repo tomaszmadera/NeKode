@@ -50,4 +50,4 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [session-labels](session-labels/spec.md) | Session labels and agent badges | Delivered |
 | [terminal-font-settings](terminal-font-settings/spec.md) | Terminal font settings | Delivered |
 | [test-suite-simplification](test-suite-simplification/spec.md) | Test suite audit and simplification | Delivered |
-| [usage-quota](usage-quota/spec.md) | Usage quota | Not delivered (approved contract; implementation pending) |
+| [usage-quota](usage-quota/spec.md) | Usage quota | Delivered (Stages 1-3 implemented, reviewed and fully verified; live provider reads not run) |

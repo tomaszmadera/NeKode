@@ -9,6 +9,7 @@ import { UsageAdapterHost } from './adapter-host'
 const adapterDirectory = resolve(__dirname, '../../../../adapters/usage-codex')
 const codex = createRequire(__filename)(join(adapterDirectory, 'index.cjs')) as {
   ALLOWED_METHODS: Set<string>
+  TOTAL_DEADLINE_MS: number
   collect(options: Record<string, unknown>): Promise<{ version: string; document: unknown }>
   executable(config: Record<string, unknown>): string
 }
@@ -17,7 +18,10 @@ const codex = createRequire(__filename)(join(adapterDirectory, 'index.cjs')) as 
 const FAKE_SERVER = `
 const fs = require('node:fs')
 const s = JSON.parse(process.env.FAKE_SCENARIO)
-if (process.argv[2] === '--version') { process.stdout.write(s.version + '\\n'); process.exit(0) }
+if (process.argv[2] === '--version') {
+  setTimeout(() => { process.stdout.write(s.version + '\\n'); process.exit(0) }, s.versionDelayMs || 0)
+  return
+}
 fs.writeFileSync(s.pidFile, String(process.pid))
 fs.appendFileSync(s.transcript, JSON.stringify({ argv: process.argv.slice(2) }) + '\\n')
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n')
@@ -209,6 +213,21 @@ describe('experimental Codex app-server usage adapter', () => {
     const f = scenario('hang')
     await expect(f.run({ timeoutMs: 1500 })).rejects.toMatchObject({ code: 'timeout' })
     await eventuallyDead(f.serverAlive)
+  })
+  it('bounds the whole read, including the version check and cleanup, by one deadline', async () => {
+    expect(codex.TOTAL_DEADLINE_MS).toBeLessThanOrEqual(25_000)
+    const f = scenario('hang', { versionDelayMs: 1000 })
+    const started = Date.now()
+    await expect(f.run({ timeoutMs: 2000 })).rejects.toMatchObject({ code: 'timeout' })
+    expect(Date.now() - started).toBeLessThan(2400)
+    await eventuallyDead(f.serverAlive)
+  })
+  it('times out a hanging version check within the same deadline', async () => {
+    const f = scenario('ok', { versionDelayMs: 10_000 })
+    const started = Date.now()
+    await expect(f.run({ timeoutMs: 1500 })).rejects.toMatchObject({ code: 'timeout' })
+    expect(Date.now() - started).toBeLessThan(1900)
+    expect(f.transcript()).toEqual([])
   })
   it.each(['codex-cli 0.162.9', 'unknown'])(
     'refuses CLI version %s before starting app-server',

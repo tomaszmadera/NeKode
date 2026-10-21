@@ -25,6 +25,8 @@ export function createAppApiStub(): AppApi {
         .mockResolvedValue({ connections: [], pin: null, cacheError: null, exportError: null }),
       test: vi.fn(),
       pickFile: vi.fn(),
+      getEnabled: vi.fn().mockResolvedValue(false),
+      setEnabled: vi.fn((enabled: boolean) => Promise.resolve(enabled)),
     },
     dictation: createDictationApiStub(),
     actions: {

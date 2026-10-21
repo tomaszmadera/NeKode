@@ -2,7 +2,13 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AppError, isAppErrorCode } from '../../../shared/ipc-error'
-import { USAGE_MAX_BYTES, type UsageAdapter, usageObject } from '../../../shared/usage-contract'
+import {
+  USAGE_MAX_BYTES,
+  type UsageAdapter,
+  type UsageErrorCode,
+  usageObject,
+} from '../../../shared/usage-contract'
+import { CLAUDE_SNAPSHOT_ADAPTER } from './claude-snapshots'
 
 export const FILE_ADAPTER: UsageAdapter = {
   id: 'usage-file',
@@ -15,8 +21,38 @@ export const FILE_ADAPTER: UsageAdapter = {
   configSchema: [{ key: 'path', label: 'JSON input file', type: 'file', required: true }],
 }
 
+const ERROR_CODES: UsageErrorCode[] = [
+  'validation_error',
+  'auth',
+  'network',
+  'timeout',
+  'rate_limited',
+  'unsupported',
+  'config',
+  'io',
+  'not_found',
+  'protocol',
+]
+const bounded = (value: unknown, max: number) =>
+  value === undefined ||
+  (typeof value === 'string' && value.trim() !== '' && value.length <= max && !value.includes('\0'))
+
+/** Optional manifest `errorActions`: a fixed next action per known failure code. */
+function errorActions(value: unknown): UsageAdapter['errorActions'] {
+  if (value === undefined) return undefined
+  const actions = usageObject(value)
+  if (
+    Object.entries(actions).some(
+      ([code, text]) =>
+        !ERROR_CODES.includes(code as UsageErrorCode) || text === undefined || !bounded(text, 256),
+    )
+  )
+    throw new Error('manifest error actions')
+  return actions as UsageAdapter['errorActions']
+}
+
 export function discoverUsageAdapters(directory: string): UsageAdapter[] {
-  const result: UsageAdapter[] = [{ ...FILE_ADAPTER }]
+  const result: UsageAdapter[] = [{ ...FILE_ADAPTER }, structuredClone(CLAUDE_SNAPSHOT_ADAPTER)]
   if (!existsSync(directory)) return result
   for (const entry of readdirSync(directory, { withFileTypes: true })
     .filter((e) => e.isDirectory())
@@ -48,9 +84,11 @@ export function discoverUsageAdapters(directory: string): UsageAdapter[] {
         m.minimumRefreshSeconds < 1 ||
         m.minimumRefreshSeconds > 86400 ||
         !Array.isArray(m.configSchema) ||
-        m.configSchema.length > 50
+        m.configSchema.length > 50 ||
+        !bounded(m.description, 1024)
       )
         throw new Error('manifest contract')
+      const actions = errorActions(m.errorActions)
       const keys = new Set<string>()
       for (const raw of m.configSchema) {
         const f = usageObject(raw)
@@ -62,6 +100,7 @@ export function discoverUsageAdapters(directory: string): UsageAdapter[] {
           f.label.length > 256 ||
           !['text', 'secret', 'boolean', 'choice', 'file'].includes(f.type as string) ||
           (f.required !== undefined && typeof f.required !== 'boolean') ||
+          !bounded(f.description, 512) ||
           (f.type === 'choice' &&
             (!Array.isArray(f.choices) ||
               f.choices.length > 100 ||
@@ -79,6 +118,8 @@ export function discoverUsageAdapters(directory: string): UsageAdapter[] {
         capabilities: m.capabilities as string[],
         minimumRefreshSeconds: m.minimumRefreshSeconds,
         configSchema: m.configSchema as UsageAdapter['configSchema'],
+        ...(m.description === undefined ? {} : { description: m.description as string }),
+        ...(actions ? { errorActions: actions } : {}),
         directory: dir,
       })
     } catch {
@@ -118,10 +159,22 @@ function terminate(child: ChildProcess): void {
   }
 }
 
+/** Fixture seam read by the provider adapters; only an unpackaged (development or smoke) app passes it. */
+export const USAGE_TEST_BASE_URL_ENV = 'NEKODE_USAGE_TEST_BASE_URL'
+
 /** One bounded process per read. Never transport adapter diagnostics or arbitrary messages. */
 export class UsageAdapterHost {
   private readonly children = new Set<ChildProcess>()
-  constructor(private readonly timeoutMs = 30_000) {}
+  constructor(
+    private readonly timeoutMs = 30_000,
+    private readonly options: { packaged?: boolean } = {},
+  ) {}
+  private childEnv(): NodeJS.ProcessEnv {
+    if (!this.options.packaged) return process.env
+    const env = { ...process.env }
+    delete env[USAGE_TEST_BASE_URL_ENV]
+    return env
+  }
   shutdown(): void {
     for (const child of this.children) terminate(child)
   }
@@ -134,6 +187,7 @@ export class UsageAdapterHost {
     if (signal.aborted) throw new AppError('config', 'Usage request was cancelled.')
     const child = spawn(adapter.invocation.command, adapter.invocation.args, {
       cwd: adapter.directory,
+      env: this.childEnv(),
       shell: false,
       windowsHide: true,
       detached: process.platform !== 'win32',
@@ -190,20 +244,8 @@ export class UsageAdapterHost {
       if (response.ok === true && code === 0) return response.data
       if (response.ok === false && code === 1) {
         const error = usageObject(response.error)
-        const known = [
-          'validation_error',
-          'auth',
-          'network',
-          'timeout',
-          'rate_limited',
-          'unsupported',
-          'config',
-          'io',
-          'not_found',
-          'protocol',
-        ]
         if (
-          !known.includes(error.code as string) ||
+          !ERROR_CODES.includes(error.code as UsageErrorCode) ||
           !isAppErrorCode(error.code) ||
           (error.retryAfterSeconds !== undefined &&
             (typeof error.retryAfterSeconds !== 'number' ||
@@ -212,13 +254,15 @@ export class UsageAdapterHost {
               error.retryAfterSeconds > 86400))
         )
           throw new AppError('protocol', 'Invalid usage adapter failure response.')
-        // Fixed per-code next actions; adapter-supplied text is never transported.
+        // Fixed per-code next actions (from the trusted manifest or built in); text the adapter
+        // process writes is never transported.
         const action =
-          error.code === 'auth'
+          adapter.errorActions?.[error.code as UsageErrorCode] ??
+          (error.code === 'auth'
             ? 'Sign in with the CLI or account this adapter uses, then retry.'
             : error.code === 'unsupported'
               ? 'Update the CLI or adapter to a supported version, then retry.'
-              : 'Check the connection and retry.'
+              : 'Check the connection and retry.')
         const typed = new AppError(error.code, `Usage source ${error.code}. ${action}`)
         Object.assign(typed, { retryAfterSeconds: error.retryAfterSeconds })
         throw typed

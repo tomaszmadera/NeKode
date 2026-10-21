@@ -1,0 +1,23 @@
+{
+  "id": "openrouter-credits",
+  "name": "OpenRouter account balance",
+  "protocolVersion": 1,
+  "invocation": { "command": "node", "args": ["index.cjs"] },
+  "sourceKind": "api",
+  "capabilities": ["balance"],
+  "minimumRefreshSeconds": 300,
+  "description": "Needs an OpenRouter Management key. A Management key cannot call models, but it is account-wide and unscoped: it can create, change and delete API keys and manage account administration across all workspaces. NeKode only sends one documented GET /api/v1/credits request per poll and stores the key encrypted. Create a dedicated key with an expiration date. This adapter is optional; an ordinary API key cannot read the account balance.",
+  "errorActions": {
+    "auth": "The OpenRouter Management key was rejected (it may be expired or revoked). Create a new one, enter it and save.",
+    "config": "Enter an OpenRouter Management key, not an ordinary API key, then save. See the OpenRouter usage guide."
+  },
+  "configSchema": [
+    {
+      "key": "apiKey",
+      "label": "OpenRouter Management key",
+      "type": "secret",
+      "required": true,
+      "description": "Write-only. Create it under Management API Keys in OpenRouter; an ordinary API key is refused."
+    }
+  ]
+}

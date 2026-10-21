@@ -2,7 +2,8 @@
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createServer as createHttpServer } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -83,7 +84,9 @@ function cdp(ws) {
       ws.send(JSON.stringify({ id: current, method, params }))
     })
 }
-let child, browserSocket, pageSocket, inspectorSocket, call, mainCall, browserCall
+let child, browserSocket, pageSocket, inspectorSocket, call, mainCall, browserCall, fakeApi
+const PROVIDER_KEY = 'fixture-provider-key-not-a-real-secret'
+const providerRequests = []
 const electronPids = new Set()
 async function launch() {
   const port = await freePort(),
@@ -126,7 +129,8 @@ async function launch() {
   for (let n = 0; n < 80; n++) {
     if (
       await evaluate(
-        'typeof window.app?.usage?.read === "function" && Boolean(document.querySelector(".usage-trigger"))',
+        // The title-bar button exists only while Show usage quota is on (spec rule 1).
+        'typeof window.app?.usage?.read === "function" && Boolean(document.querySelector("[data-testid=title-bar]"))',
       )
     ) {
       for (const pid of await evaluate(
@@ -273,7 +277,57 @@ try {
   )
   manifest.invocation.command = process.execPath
   writeFileSync(join(adapterDir, 'usage-adapter.json'), JSON.stringify(manifest))
+  // Stage 3 provider adapters run unchanged against a local fake API (fixture data only). Only a
+  // loopback origin is accepted by their NEKODE_USAGE_TEST_BASE_URL seam.
+  fakeApi = createHttpServer((request, response) => {
+    providerRequests.push({
+      method: request.method,
+      path: request.url,
+      elevenlabsKey: request.headers['xi-api-key'] === PROVIDER_KEY,
+      bearerKey: request.headers.authorization === `Bearer ${PROVIDER_KEY}`,
+    })
+    const body =
+      request.url === '/v1/user/subscription'
+        ? {
+            tier: 'fixture',
+            character_count: 25000,
+            character_limit: 100000,
+            next_character_count_reset_unix: Math.floor(now / 1000) + 10 * 86400,
+            billing_period: 'monthly_period',
+          }
+        : request.url === '/api/v1/credits'
+          ? { data: { total_credits: 10, total_usage: 12.5 } }
+          : null
+    response.writeHead(body ? 200 : 404, { 'content-type': 'application/json' })
+    response.end(JSON.stringify(body ?? {}))
+  })
+  await new Promise((r) => fakeApi.listen(0, '127.0.0.1', r))
+  process.env.NEKODE_USAGE_TEST_BASE_URL = `http://127.0.0.1:${fakeApi.address().port}`
+  for (const name of ['usage-elevenlabs', 'usage-openrouter']) {
+    const target = join(profile, 'usage-adapters', name)
+    cpSync(join(root, 'adapters', name), target, { recursive: true })
+    const providerManifest = JSON.parse(readFileSync(join(target, 'usage-adapter.json'), 'utf8'))
+    providerManifest.invocation.command = process.execPath
+    writeFileSync(join(target, 'usage-adapter.json'), JSON.stringify(providerManifest))
+  }
   await launch()
+  await check(
+    'Show usage quota is off at fresh install and hides the title-bar button',
+    'window.app.usage.getEnabled().then(e=>e===false&&!document.querySelector(".usage-trigger"))',
+  )
+  await evaluate('window.app.usage.setEnabled(true)')
+  await call('Page.reload')
+  await sleep(1000)
+  for (
+    let n = 0;
+    n < 50 && !(await evaluate('Boolean(document.querySelector(".usage-trigger"))'));
+    n++
+  )
+    await sleep(100)
+  await check(
+    'turning the switch on shows the title-bar button',
+    'window.app.usage.getEnabled().then(e=>e===true&&Boolean(document.querySelector(".usage-trigger")))',
+  )
   await check(
     'empty usage is neutral and collects nothing',
     'window.app.usage.read().then(s=>s.connections.length===0)',
@@ -492,7 +546,80 @@ try {
     'repaired partial JSON recovers automatically at the 5-second file cadence without Refresh',
     'window.app.usage.read().then(s=>s.connections[0].error===null&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===48)',
   )
+  await check(
+    'OpenRouter adapter lists its Management key privilege explanation',
+    'window.app.usage.listAdapters().then(a=>a.find(x=>x.id==="openrouter-credits")?.description?.includes("Management key")===true&&!a.find(x=>x.id==="elevenlabs-subscription")?.error)',
+  )
+  const providers = await evaluate('window.app.usage.getSettings()')
+  providers.connections.push(
+    {
+      id: 'elevenlabs-fixture',
+      label: 'ElevenLabs (test data)',
+      providerId: 'elevenlabs',
+      adapterId: 'elevenlabs-subscription',
+      enabled: true,
+      config: { apiKey: PROVIDER_KEY },
+    },
+    {
+      id: 'openrouter-fixture',
+      label: 'OpenRouter (test data)',
+      providerId: 'openrouter',
+      adapterId: 'openrouter-credits',
+      enabled: true,
+      config: { apiKey: PROVIDER_KEY },
+    },
+  )
+  await evaluate(`window.app.usage.saveSettings(${JSON.stringify(providers)})`)
+  await evaluate('window.app.usage.refresh()')
+  const providerValues =
+    'window.app.usage.read().then(s=>{const e=s.connections.find(c=>c.connection.id==="elevenlabs-fixture"),o=s.connections.find(c=>c.connection.id==="openrouter-fixture");const m=e?.subscription?.metrics[0],b=o?.subscription?.metrics[0];return e?.error===null&&o?.error===null&&m?.kind==="credits"&&m.used===25000&&m.limit===100000&&m.unit==="characters"&&b?.kind==="balance"&&b.amount===-2.5&&b.currency==="USD"})'
+  await waitFor(providerValues, 25000)
+  await check(
+    'ElevenLabs credits and negative OpenRouter USD balance load through the real adapters',
+    providerValues,
+  )
+  assert.ok(
+    providerRequests.some((r) => r.path === '/v1/user/subscription' && r.elevenlabsKey) &&
+      providerRequests.some((r) => r.path === '/api/v1/credits' && r.bearerKey) &&
+      providerRequests.every(
+        (r) => r.method === 'GET' && ['/v1/user/subscription', '/api/v1/credits'].includes(r.path),
+      ),
+    'provider adapters send only the documented GETs with the key in the header',
+  )
+  report.assertions.push(
+    'provider adapters send only the documented metadata GETs with the key in the header',
+  )
+  report.providerRequests = providerRequests.map(({ method, path }) => ({ method, path }))
+  // Open the panel only when closed, then allow one renderer read interval (5 seconds).
+  await evaluate(
+    '(()=>{if(!document.querySelector(".usage-panel"))document.querySelector(".usage-trigger").click()})()',
+  )
+  const providerRows =
+    '(()=>{const t=document.querySelector(".usage-panel")?.textContent??"";return t.includes("25%")&&t.includes("USD -2.50")})()'
+  await waitFor(providerRows, 10000)
+  report.providerPanelText = await evaluate(
+    'document.querySelector(".usage-panel")?.textContent?.slice(0,2000) ?? null',
+  )
+  await check('panel shows the provider rows', providerRows)
+  await shot('panel-providers')
+  await evaluate(`document.querySelector('[aria-label="Close usage panel"]').click()`)
+  await check(
+    'settings expose only secret presence for provider keys',
+    `window.app.usage.getSettings().then(s=>{const t=JSON.stringify(s);return !t.includes(${JSON.stringify(PROVIDER_KEY)})&&s.connections.filter(c=>c.secretKeys?.includes("apiKey")).length===2})`,
+  )
   await close()
+  // Acceptance 13: the key is stored encrypted and absent from export, cache and the database.
+  const plaintext = Buffer.from(PROVIDER_KEY)
+  const leaked = [output, join(profile, 'usage', 'observations.json')]
+  for (const name of readdirSync(profile)) {
+    const path = join(profile, name)
+    if (/\.(db|sqlite|sqlite3)(-wal|-shm)?$/i.test(name)) leaked.push(path)
+  }
+  const found = leaked.filter((path) => readFileSync(path).includes(plaintext))
+  assert.deepEqual(found, [], 'no plaintext provider key in export, cache or database files')
+  report.assertions.push(
+    `no plaintext provider key in export, cache or database files (${leaked.length} files checked)`,
+  )
   const pids = readFileSync(pidFile, 'utf8').trim().split(/\s+/).map(Number)
   for (const pid of pids) {
     let alive = true
@@ -536,6 +663,7 @@ try {
   inspectorSocket?.close()
   pageSocket?.close()
   browserSocket?.close()
+  fakeApi?.close()
   writeFileSync(join(evidence, 'result.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify(report, null, 2))
 }

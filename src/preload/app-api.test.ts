@@ -56,6 +56,8 @@ describe('preload app api', () => {
     await api.refresh()
     await api.test(connection)
     await api.pickFile(false)
+    await api.getEnabled()
+    await api.setEnabled(true)
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.usageListAdapters, args: [] },
       { channel: IPC_CHANNEL.usageGetSettings, args: [] },
@@ -64,6 +66,8 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.usageRefresh, args: [] },
       { channel: IPC_CHANNEL.usageTest, args: [connection] },
       { channel: IPC_CHANNEL.usagePickFile, args: [false] },
+      { channel: IPC_CHANNEL.usageGetEnabled, args: [] },
+      { channel: IPC_CHANNEL.usageSetEnabled, args: [true] },
     ])
   })
 

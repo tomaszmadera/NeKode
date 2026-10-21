@@ -1,4 +1,5 @@
 import {
+  existsSync,
   linkSync,
   mkdirSync,
   mkdtempSync,
@@ -22,7 +23,7 @@ const roots: string[] = [],
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'nekode-usage-test-'))
   roots.push(dir)
-  const state = new Map<string, string>()
+  const state = new Map<string, string>([['usage.enabled', 'true']])
   let now = NOW
   const deps = {
     userDataPath: join(dir, 'profile'),
@@ -491,6 +492,94 @@ describe('global usage service', () => {
     expect(f.service.read().pin).toBeNull()
     expect(f.service.getSettings().pin).toBeNull()
   })
+  it('stays off by default and does no reads, scheduling or export writes while off', async () => {
+    const f = fixture()
+    f.state.delete('usage.enabled')
+    vi.useFakeTimers()
+    const service = new UsageService({ ...f.deps, startTimer: true })
+    services.push(service)
+    expect(service.getEnabled()).toBe(false)
+    const reads = vi.spyOn(service as unknown as { readDocument: () => unknown }, 'readDocument')
+    service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } })
+    service.setVisible(true)
+    f.advance(30_000)
+    await vi.advanceTimersByTimeAsync(30_000)
+    await service.refresh()
+    expect(reads).not.toHaveBeenCalled()
+    expect(existsSync(f.output)).toBe(false)
+    expect(service.read().connections[0].subscription).toBeNull()
+    expect(service.setEnabled(true)).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reads).toHaveBeenCalledTimes(1)
+    expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
+    expect(f.state.get('usage.enabled')).toBe('true')
+    const restarted = new UsageService(f.deps)
+    services.push(restarted)
+    expect(restarted.getEnabled()).toBe(true)
+    service.setEnabled(false)
+    expect(f.state.get('usage.enabled')).toBe('false')
+    const exported = readFileSync(f.output, 'utf8')
+    f.write(75, '2026-10-20T12:00:05Z')
+    f.advance(30_000)
+    await vi.advanceTimersByTimeAsync(30_000)
+    await service.refresh()
+    expect(reads).toHaveBeenCalledTimes(1)
+    expect(readFileSync(f.output, 'utf8')).toBe(exported)
+    expect(service.getSettings().connections).toHaveLength(1)
+    expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
+  })
+  it('refuses a connection test while the switch is off without reading files or processes', async () => {
+    const f = fixture()
+    f.state.set('usage.enabled', 'false')
+    const host = new UsageAdapterHost()
+    const hostRead = vi.spyOn(host, 'read')
+    const service = new UsageService({ ...f.deps, host })
+    services.push(service)
+    const reads = vi.spyOn(service as unknown as { readDocument: () => unknown }, 'readDocument')
+    await expect(service.test(f.settings.connections[0])).rejects.toMatchObject({
+      code: 'config',
+      message: 'Turn on Show usage quota to test connections.',
+    })
+    expect(reads).not.toHaveBeenCalled()
+    expect(hostRead).not.toHaveBeenCalled()
+    service.setEnabled(true)
+    await expect(service.test(f.settings.connections[0])).resolves.toBeUndefined()
+    expect(reads).toHaveBeenCalledTimes(1)
+  })
+  it('aborts an in-flight adapter process read when the switch turns off and drops its late result', async () => {
+    const f = fixture()
+    const { service, read } = plugin(f)
+    let finish: (v: unknown) => void = () => {}
+    let signal: AbortSignal | undefined
+    read.mockImplementation(
+      (_adapter, _config, _id, s) =>
+        new Promise((resolve) => {
+          signal = s
+          finish = resolve
+        }),
+    )
+    const pending = service.refresh()
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(signal?.aborted).toBe(false)
+    service.setEnabled(false)
+    expect(signal?.aborted).toBe(true)
+    finish(JSON.parse(readFileSync(f.input, 'utf8')))
+    await pending
+    const c = service.read().connections[0]
+    expect(c.subscription).toBeNull()
+    expect(c.error).toBeNull()
+  })
+  it('rejects a dangling symbolic link at a not-yet-existing input path', async () => {
+    const f = fixture()
+    const dangling = join(f.dir, 'dangling-input')
+    symlinkSync(join(f.dir, 'missing-target'), dangling, 'junction')
+    const settings = {
+      ...f.settings,
+      connections: [{ ...f.settings.connections[0], config: { path: dangling } }],
+    }
+    expect(() => f.service.saveSettings(settings)).toThrow('symbolic links')
+    await expect(f.service.test(settings.connections[0])).rejects.toMatchObject({ code: 'config' })
+  })
   it('does no collection without enabled connections', async () => {
     const f = fixture()
     f.service.setVisible(true)
@@ -648,7 +737,7 @@ describe('global usage service', () => {
       ],
     }
     expect(() => f.service.saveSettings(s)).toThrow('encryption')
-    expect(f.state.size).toBe(0)
+    expect([...f.state.keys()]).toEqual(['usage.enabled'])
     const service = new UsageService({
       ...f.deps,
       safeStorage: {

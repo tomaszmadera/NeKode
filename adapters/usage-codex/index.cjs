@@ -22,6 +22,13 @@ const ALLOWED_METHODS = new Set([
 const PROVIDER_ID = 'codex'
 const MAX_LINE_BYTES = 1024 * 1024
 const MAX_BUCKETS = 25
+/**
+ * One deadline for the whole read: version check, app-server session and cleanup. It ends well
+ * before NeKode's 30-second plugin limit so this adapter reports its own typed timeout.
+ */
+const TOTAL_DEADLINE_MS = 25_000
+/** Part of the deadline kept for terminating app-server after the session. */
+const CLEANUP_RESERVE_MS = 3_000
 
 class Failure extends Error {
   constructor(code, message, retryAfterSeconds) {
@@ -232,11 +239,14 @@ async function collect({
   command = executable(config),
   prefixArgs = [],
   env = process.env,
-  timeoutMs = 20_000,
+  timeoutMs = TOTAL_DEADLINE_MS,
   now = () => new Date(),
 }) {
   if (!text(connectionId, 256)) throw new Failure('protocol', 'Missing usage connection id.')
-  const version = await checkVersion(command, prefixArgs, env, Math.min(timeoutMs, 10_000))
+  const deadlineAt = Date.now() + timeoutMs
+  const reserve = Math.min(CLEANUP_RESERVE_MS, Math.floor(timeoutMs / 5))
+  const remaining = () => Math.max(0, deadlineAt - reserve - Date.now())
+  const version = await checkVersion(command, prefixArgs, env, remaining())
   let child
   try {
     child = spawn(command, [...prefixArgs, 'app-server'], {
@@ -307,7 +317,7 @@ async function collect({
   const deadline = new Promise((_, reject) => {
     timer = setTimeout(
       () => reject(new Failure('timeout', 'Codex app-server timed out. Retry later.')),
-      timeoutMs,
+      remaining(),
     )
   })
   try {
@@ -350,7 +360,7 @@ async function collect({
     failAll(new Failure('protocol', 'Codex session closed.'))
     child.stdin.end()
     terminate(child)
-    await waitForClose(child, 3000)
+    await waitForClose(child, Math.max(0, deadlineAt - Date.now()))
   }
 }
 
@@ -406,6 +416,7 @@ if (require.main === module) main()
 module.exports = {
   ALLOWED_METHODS,
   MINIMUM_CODEX_VERSION,
+  TOTAL_DEADLINE_MS,
   Failure,
   collect,
   executable,

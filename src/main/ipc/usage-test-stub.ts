@@ -15,6 +15,8 @@ export function usageTestStub(): AppServices['usage'] {
     refresh: vi.fn(),
     test: vi.fn(),
     pickFile: vi.fn(),
+    getEnabled: vi.fn(() => false),
+    setEnabled: vi.fn((enabled: boolean) => enabled),
     setVisible: vi.fn(),
     shutdown: vi.fn(),
   }

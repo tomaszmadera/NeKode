@@ -327,6 +327,8 @@ export const IPC_CHANNEL = {
   usageRefresh: 'usage:refresh',
   usageTest: 'usage:test',
   usagePickFile: 'usage:pickFile',
+  usageGetEnabled: 'usage:getEnabled',
+  usageSetEnabled: 'usage:setEnabled',
   dictationStatus: 'dictation:status',
   dictationDesktopSetup: 'dictation:desktopSetup',
   dictationDesktopConfigure: 'dictation:desktopConfigure',

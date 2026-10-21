@@ -164,13 +164,20 @@ describe('ipc payload validation', () => {
       expect(() => channel(IPC_CHANNEL.usageSaveSettings).parse(bad)).toThrow()
     for (const bad of [[], ['true'], [true, false]])
       expect(() => channel(IPC_CHANNEL.usagePickFile).parse(bad)).toThrow()
+    expect(channel(IPC_CHANNEL.usageSetEnabled).parse([false])).toEqual([false])
+    for (const bad of [[], ['true'], [1], [null], [true, false]])
+      expect(() => channel(IPC_CHANNEL.usageSetEnabled).parse(bad)).toThrow()
     for (const name of [
       IPC_CHANNEL.usageRead,
       IPC_CHANNEL.usageRefresh,
       IPC_CHANNEL.usageGetSettings,
       IPC_CHANNEL.usageListAdapters,
+      IPC_CHANNEL.usageGetEnabled,
     ])
       expect(() => channel(name).parse(['extra'])).toThrow()
+    expect(() => channel(IPC_CHANNEL.stateSet).parse(['usage.enabled', 'true'])).toThrow(
+      'protected',
+    )
     expect(() => channel(IPC_CHANNEL.stateGet).parse(['usage.settings'])).toThrow('protected')
     expect(() => channel(IPC_CHANNEL.stateSet).parse(['usage.settings', '{}'])).toThrow('protected')
   })

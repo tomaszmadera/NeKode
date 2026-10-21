@@ -2,6 +2,8 @@ import { AppError } from './ipc-error'
 
 export const USAGE_MAX_BYTES = 1024 * 1024
 export const USAGE_STATE_KEY = 'usage.settings'
+/** Global `Show usage quota` switch (spec rule 1); a missing value means off. */
+export const USAGE_ENABLED_KEY = 'usage.enabled'
 export type UsageErrorCode =
   | 'validation_error'
   | 'not_found'
@@ -54,9 +56,12 @@ export interface UsageDocument {
 export interface UsageConfigField {
   key: string
   label: string
-  type: 'text' | 'secret' | 'boolean' | 'choice' | 'file'
+  /** `directory` is used only by the built-in Claude snapshot reader. */
+  type: 'text' | 'secret' | 'boolean' | 'choice' | 'file' | 'directory'
   required?: boolean
   choices?: string[]
+  /** Optional help shown with the field (at most 512 characters). */
+  description?: string
 }
 export interface UsageAdapter {
   id: string
@@ -67,6 +72,10 @@ export interface UsageAdapter {
   capabilities: string[]
   minimumRefreshSeconds: number
   configSchema: UsageConfigField[]
+  /** Optional explanation shown in settings before enabling, such as required privileges. */
+  description?: string
+  /** Optional fixed next action per declared failure code, replacing the generic one. */
+  errorActions?: Partial<Record<UsageErrorCode, string>>
   directory?: string
   error?: string
 }
@@ -109,6 +118,10 @@ export interface UsageApi {
   refresh(): Promise<UsageSnapshot>
   test(connection: UsageConnection): Promise<void>
   pickFile(output: boolean): Promise<string | null>
+  /** Read the global `Show usage quota` switch. */
+  getEnabled(): Promise<boolean>
+  /** Persist the switch; off stops all usage activity and keeps settings. Returns the new value. */
+  setEnabled(enabled: boolean): Promise<boolean>
 }
 
 function invalid(message: string): never {

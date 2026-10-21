@@ -369,17 +369,19 @@ export function UsageToolbar({
                 {snapshot.exportError}
               </p>
             ) : null}
-            <footer>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false)
-                  onConfigure()
-                }}
-              >
-                Configure usage
-              </button>
-            </footer>
+            {snapshot.connections.length > 0 ? (
+              <footer>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false)
+                    onConfigure()
+                  }}
+                >
+                  Configure usage
+                </button>
+              </footer>
+            ) : null}
           </section>
         </>
       ) : null}

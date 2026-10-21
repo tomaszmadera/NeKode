@@ -165,6 +165,7 @@ app
           dbPath: join(app.getPath('userData'), 'nekode.db'),
           userDataPath: app.getPath('userData'),
           safeStorage,
+          packaged: app.isPackaged,
           // The single OS-facing action of the project-files feature (spec
           // Behaviour 11): open with the OS default application. '' = success.
           openExternal: (absolutePath) => shell.openPath(absolutePath),

@@ -178,6 +178,22 @@ describe('app settings and themes', () => {
     expect(screen.getByRole('dialog', { name: 'App Settings' })).toBeTruthy()
   })
 
+  it('hides the usage quota button until the global switch is on, then shows it after toggling', async () => {
+    const app = createAppApiStub()
+    render(<App app={app} />)
+    await waitFor(() => expect(app.usage.getEnabled).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: /^Usage quota/ })).toBeNull()
+    expect(app.usage.read).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Usage' }))
+    const toggle = await screen.findByRole('switch', { name: 'Show usage quota' })
+    expect((toggle as HTMLInputElement).checked).toBe(false)
+    vi.mocked(app.usage.getEnabled).mockResolvedValue(true)
+    fireEvent.click(toggle)
+    await waitFor(() => expect(app.usage.setEnabled).toHaveBeenCalledWith(true))
+    expect(await screen.findByRole('button', { name: /^Usage quota/ })).toBeTruthy()
+  })
+
   it('opens the global Agents library without a project', async () => {
     const app = createAppApiStub()
     render(<App app={app} />)

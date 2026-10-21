@@ -108,6 +108,70 @@ describe('usage adapter process boundary', () => {
     await expect(pending).rejects.toMatchObject({ code: 'protocol' })
     expect(() => process.kill(pid, 0)).toThrow()
   })
+  it('passes the test base URL seam only to adapters of an unpackaged app', async () => {
+    const a = adapter(
+      `console.log(JSON.stringify({protocolVersion:1,ok:true,data:{seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,path:Boolean(process.env.PATH??process.env.Path)}}))`,
+    )
+    const previous = process.env.NEKODE_USAGE_TEST_BASE_URL
+    process.env.NEKODE_USAGE_TEST_BASE_URL = 'http://127.0.0.1:9'
+    try {
+      expect(await new UsageAdapterHost().read(a, {}, 'account', signal())).toEqual({
+        seam: 'http://127.0.0.1:9',
+        path: true,
+      })
+      expect(
+        await new UsageAdapterHost(30_000, { packaged: true }).read(a, {}, 'account', signal()),
+      ).toEqual({ seam: null, path: true })
+    } finally {
+      if (previous === undefined) delete process.env.NEKODE_USAGE_TEST_BASE_URL
+      else process.env.NEKODE_USAGE_TEST_BASE_URL = previous
+    }
+  })
+  it('uses a manifest next action for a declared failure instead of adapter text', async () => {
+    const a = {
+      ...adapter(
+        `console.log(JSON.stringify({protocolVersion:1,ok:false,error:{code:'config',message:'fixture-secret'}}));process.exitCode=1`,
+      ),
+      errorActions: { config: 'Use a fixture management key.' },
+    }
+    await expect(new UsageAdapterHost().read(a, {}, 'account', signal())).rejects.toMatchObject({
+      code: 'config',
+      message: 'Usage source config. Use a fixture management key.',
+    })
+  })
+  it('accepts bounded descriptions and next actions and rejects invalid ones', () => {
+    const a = adapter(''),
+      root = a.directory
+    const write = (name: string, extra: Record<string, unknown>) => {
+      mkdirSync(join(root, name))
+      writeFileSync(
+        join(root, name, 'usage-adapter.json'),
+        JSON.stringify({ ...a, id: name, directory: undefined, ...extra }),
+      )
+    }
+    write('described', {
+      description: 'Explains privileges before enabling.',
+      errorActions: { auth: 'Check the key.', config: 'Use a management key.' },
+      configSchema: [
+        { key: 'apiKey', label: 'Key', type: 'secret', required: true, description: 'Write-only.' },
+      ],
+    })
+    write('bad-code', { errorActions: { teapot: 'No.' } })
+    write('long-action', { errorActions: { auth: 'x'.repeat(257) } })
+    write('long-description', { description: 'x'.repeat(1025) })
+    write('bad-field', {
+      configSchema: [{ key: 'k', label: 'K', type: 'text', description: 'x'.repeat(513) }],
+    })
+    const result = discoverUsageAdapters(root)
+    expect(result.find((r) => r.id === 'described')).toMatchObject({
+      description: 'Explains privileges before enabling.',
+      errorActions: { auth: 'Check the key.', config: 'Use a management key.' },
+      configSchema: [{ key: 'apiKey', description: 'Write-only.' }],
+    })
+    expect(result.find((r) => r.id === 'described')?.error).toBeUndefined()
+    for (const name of ['bad-code', 'long-action', 'long-description', 'bad-field'])
+      expect(result.find((r) => r.id === `invalid:${name}`)?.error).toContain('Invalid')
+  })
   it('lists invalid manifests disabled and disables every duplicate', () => {
     const a = adapter(''),
       root = a.directory

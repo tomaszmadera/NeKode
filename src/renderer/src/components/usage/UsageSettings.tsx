@@ -16,16 +16,18 @@ export function UsageSettings({
 }): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null),
     [adapters, setAdapters] = useState<UsageAdapter[]>([]),
-    [savedIds, setSavedIds] = useState<string[]>([])
+    [savedIds, setSavedIds] = useState<string[]>([]),
+    [enabled, setEnabled] = useState(false)
   const [rowKeys, setRowKeys] = useState<string[]>([])
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
-    void Promise.all([app.usage.getSettings(), app.usage.listAdapters()])
-      .then(([s, a]) => {
+    void Promise.all([app.usage.getSettings(), app.usage.listAdapters(), app.usage.getEnabled()])
+      .then(([s, a, on]) => {
         if (alive) {
+          setEnabled(on)
           setSettings(s)
           setRowKeys(s.connections.map(() => crypto.randomUUID()))
           setSavedIds(s.connections.map((c) => c.id))
@@ -64,6 +66,27 @@ export function UsageSettings({
   const s = settings
   return (
     <div className="space-y-4 text-sm">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          role="switch"
+          aria-checked={enabled}
+          checked={enabled}
+          disabled={busy}
+          onChange={(e) => {
+            const next = e.target.checked
+            void action(async () => {
+              setEnabled(await app.usage.setEnabled(next))
+              onSaved?.()
+            })
+          }}
+        />
+        Show usage quota
+      </label>
+      <p className="text-xs text-ink-muted">
+        Off hides the title-bar button and stops every usage read, adapter process and export.
+        Connections, the pin and cached values are kept.
+      </p>
       <p className="text-ink-secondary">
         Connections belong to a subscription or account across all projects. No source runs until
         you save an enabled connection.
@@ -152,6 +175,9 @@ export function UsageSettings({
               {adapter?.capabilities.join(', ') ?? 'No capabilities'}. Executable:{' '}
               {adapter?.invocation.command ?? 'Unavailable'} {adapter?.invocation.args.join(' ')}
             </p>
+            {adapter?.description ? (
+              <p className="text-xs text-ink-secondary">{adapter.description}</p>
+            ) : null}
             {adapter?.configSchema.map((f) => (
               <div key={f.key}>
                 <label className="block" htmlFor={`usage-${c.id}-${f.key}`}>
@@ -161,6 +187,7 @@ export function UsageSettings({
                       id={`usage-${c.id}-${f.key}`}
                       aria-label={`${f.label} ${index + 1}`}
                       type="checkbox"
+                      aria-describedby={f.description ? `usage-${c.id}-${f.key}-help` : undefined}
                       checked={c.config[f.key] === true}
                       onChange={(e) =>
                         update(index, { config: { ...c.config, [f.key]: e.target.checked } })
@@ -170,6 +197,7 @@ export function UsageSettings({
                     <select
                       id={`usage-${c.id}-${f.key}`}
                       aria-label={`${f.label} ${index + 1}`}
+                      aria-describedby={f.description ? `usage-${c.id}-${f.key}-help` : undefined}
                       value={String(c.config[f.key] ?? '')}
                       onChange={(e) =>
                         update(index, { config: { ...c.config, [f.key]: e.target.value } })
@@ -185,6 +213,7 @@ export function UsageSettings({
                       id={`usage-${c.id}-${f.key}`}
                       aria-label={`${f.label} ${index + 1}`}
                       type={f.type === 'secret' ? 'password' : 'text'}
+                      aria-describedby={f.description ? `usage-${c.id}-${f.key}-help` : undefined}
                       autoComplete="off"
                       className="mt-1 w-full rounded border border-edge bg-app p-2"
                       placeholder={
@@ -200,6 +229,34 @@ export function UsageSettings({
                     />
                   )}
                 </label>
+                {f.description ? (
+                  <p id={`usage-${c.id}-${f.key}-help`} className="text-xs text-ink-muted">
+                    {f.description}
+                  </p>
+                ) : null}
+                {f.type === 'directory' ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void action(async () => {
+                        const current = c.config[f.key]
+                        const path = await app.dialogs.pickDirectory(
+                          typeof current === 'string' && current ? current : null,
+                        )
+                        if (path) update(index, { config: { ...c.config, [f.key]: path } })
+                      })
+                    }
+                  >
+                    Choose directory
+                  </button>
+                ) : null}
+                {adapter.id === 'claude-code-snapshots' ? (
+                  <p className="text-xs text-ink-muted">
+                    One directory per Claude account. With the Agent Harness, select its snapshot
+                    directory; otherwise install the NeKode snapshot writer (see the Claude Code
+                    usage guide).
+                  </p>
+                ) : null}
                 {f.type === 'file' ? (
                   <button
                     type="button"
@@ -231,9 +288,11 @@ export function UsageSettings({
               />
               Enabled
             </label>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
+                disabled={!enabled}
+                aria-describedby={enabled ? undefined : `usage-test-off-${index}`}
                 onClick={() =>
                   void action(async () => {
                     await app.usage.test(c)
@@ -243,6 +302,11 @@ export function UsageSettings({
               >
                 Test connection
               </button>
+              {enabled ? null : (
+                <span id={`usage-test-off-${index}`} className="text-xs text-ink-muted">
+                  Turn on Show usage quota to test connections.
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => {

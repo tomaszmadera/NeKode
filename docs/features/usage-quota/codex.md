@@ -11,7 +11,7 @@ Tested CLI version: `codex-cli 0.163.0` (protocol mapping checked against `codex
 1. Runs `codex --version` and refuses a version older than 0.163.0 or one it cannot parse (`unsupported`).
 2. Starts `codex app-server` (stdio JSONL, no shell, no extra arguments).
 3. Sends exactly `initialize`, `initialized`, `account/read` with `refreshToken: false`, and `account/rateLimits/read`. Server notifications and server requests are ignored.
-4. Terminates the app-server process tree and returns one normalized document. The whole read is bounded to 20 seconds, inside NeKode's 30-second plugin limit.
+4. Terminates the app-server process tree and returns one normalized document. One 25-second deadline covers the whole read: the version check, the app-server session and cleanup. It ends before NeKode's 30-second plugin limit, so a slow Codex reports the adapter's own `timeout`.
 
 It never starts a thread or turn, never calls login, logout, credit, reset-credit or configuration methods, and never reads or copies Codex tokens: Codex uses its own stored auth. The account email, plan, account id and Codex home path are discarded. NeKode polls this adapter at most every 120 seconds while visible.
 
@@ -34,6 +34,8 @@ Credits, plan type, reset credits and upsell data are not mapped.
 2. Sign in with the Codex CLI itself using ChatGPT. NeKode does not sign you in.
 3. Copy `adapters/usage-codex` into `<userData>/usage-adapters/usage-codex` (or your configured adapters directory). App Settings lists `Codex CLI app-server (experimental)` with its executable; enabling it lets it run with your user permissions.
 4. Add a connection: provider id `codex` (the adapter reports this id), an account label, and this adapter. Leave `Codex executable` empty to use `codex` from `PATH`, or set the absolute path of `codex.exe`. Script shims such as `codex.cmd` cannot run without a shell and are refused.
+
+   An npm global install (`npm install -g @openai/codex`) puts only script shims (`codex`, `codex.cmd`, `codex.ps1`) in the npm prefix folder on `PATH`, so set the executable path. The binary is in the platform package under the npm global root: run `npm root -g`, then use `<root>\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe` (layout observed in `@openai/codex` 0.155.1 on Windows x64; on Windows ARM the package is `codex-win32-arm64`). If your version differs, search that package folder for `codex.exe`. For other installs, `(Get-Command codex).Source` in PowerShell shows the executable when it is a real `.exe`.
 5. Test the connection, then enable and save it.
 
 ## Troubleshooting
@@ -43,7 +45,7 @@ Credits, plan type, reset credits and upsell data are not mapped.
 | `Usage source config` | Codex was not found, or the executable path is relative or a script shim. Set the absolute `codex.exe` path. |
 | `Usage source unsupported` | Codex is older than 0.163.0, its version cannot be read, or the app-server lacks a method. Update Codex. Automatic retries stop until you retry or change the connection. |
 | `Usage source auth` | Codex is not signed in, uses an API key or another provider, or the backend denied the read. Sign in with the configured Codex CLI using ChatGPT, then retry. |
-| `Usage source timeout` | app-server did not answer within 20 seconds. Retries back off at 60, 120, 240 and 300 seconds. |
+| `Usage source timeout` | The version check and app-server read did not finish within the 25-second deadline. Retries back off at 60, 120, 240 and 300 seconds. |
 | `Usage source rate_limited` | app-server reported overload; NeKode waits at least 60 seconds. |
 | `Usage source protocol` | app-server exited early or sent an unexpected message, likely a protocol change. Update Codex, or disable the adapter. |
 | `Usage source network` | The rate-limit read failed for another reason. It retries with backoff. |

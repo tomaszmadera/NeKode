@@ -102,7 +102,7 @@ describe('Usage panel', () => {
     expect(document.activeElement).toBe(trigger)
     fireEvent.click(trigger)
     fireEvent.click(
-      within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Configure usage' })[0],
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Configure usage' }),
     )
     expect(configure).toHaveBeenCalledOnce()
   })
