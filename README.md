@@ -1,6 +1,6 @@
 # NeKode
 
-An agent-first desktop workspace for Windows 11 (Linux: experimental, from source). CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
+An agent-first desktop workspace for Windows 11 (Linux: experimental). CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
 
 ![NeKode — agent terminal session](docs/images/nekode-1-terminal.webp)
 
@@ -10,9 +10,9 @@ An agent-first desktop workspace for Windows 11 (Linux: experimental, from sourc
 
 ## Status
 
-Early development (beta), version 0.14.11. No prebuilt installers are published yet, so build from source. You can build a Windows NSIS installer locally (see [Building](#building)).
+Early development (beta). Prebuilt Windows and Linux files are published on [GitHub Releases](https://github.com/tomaszmadera/NeKode/releases/latest); see [Download and install](#download-and-install). You can also build from source (see [Building](#building)).
 
-Linux (experimental): NeKode builds and runs from source on Linux x64. The tested scope is Ubuntu 22.04 and 24.04; see [Linux (experimental)](#linux-experimental). There are no Linux releases yet.
+Linux (experimental): the release AppImage needs Ubuntu 24.04 or a distribution with the same or a newer glibc. Building from source is tested on Ubuntu 22.04 and 24.04; see [Linux (experimental)](#linux-experimental).
 
 ## Download and install
 
