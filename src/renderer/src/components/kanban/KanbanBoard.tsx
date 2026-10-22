@@ -206,6 +206,17 @@ const MENU_ITEM_CLASS =
   'w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink disabled:cursor-not-allowed disabled:text-ink-disabled disabled:hover:bg-transparent'
 
 /** Renderer clipboard (typed locally so tests can stub navigator.clipboard). */
+/**
+ * Comment timestamp for reading (spec kanban-adapter-interface, comments:
+ * "the creation timestamp (formatted for reading)"). Adapters return ISO
+ * strings in UTC; show them in local time with the same `toLocaleString()`
+ * form as other app dates. A value that does not parse stays unchanged.
+ */
+export function commentTimestamp(createdAt: string): string {
+  const time = Date.parse(createdAt)
+  return Number.isNaN(time) ? createdAt : new Date(time).toLocaleString()
+}
+
 function navigatorClipboard(): { writeText(text: string): Promise<void> } | null {
   return typeof navigator !== 'undefined' && navigator.clipboard !== null
     ? navigator.clipboard
@@ -686,7 +697,9 @@ function ItemReview({
                 >
                   <div className="flex items-center justify-between text-[11px] text-ink-secondary">
                     <span className="font-medium text-ink">{comment.author ?? 'Unknown'}</span>
-                    {comment.createdAt ? <span>{comment.createdAt}</span> : null}
+                    {comment.createdAt ? (
+                      <span title={comment.createdAt}>{commentTimestamp(comment.createdAt)}</span>
+                    ) : null}
                   </div>
                   <p className="mt-1 whitespace-pre-wrap break-words text-ink select-text">
                     {comment.text}
