@@ -745,6 +745,12 @@ export interface AppApi {
    * doubles) means Windows behaviour, the app's primary platform.
    */
   platform?: string
+  /**
+   * The user's home directory (USERPROFILE on Windows, HOME elsewhere), set by
+   * the preload. Display only: paths under it show as `~`. Absent means no
+   * shortening.
+   */
+  homeDir?: string
   usage: import('./usage-contract').UsageApi
   dictation: {
     desktopSetup(): Promise<DesktopDictationSetup>

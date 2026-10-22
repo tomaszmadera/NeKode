@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useEffect, useRef } from 'react'
+import { shortenHomePath } from '../../../../shared/home-path'
 import type { ProjectInfo } from '../../../../shared/ipc-contract'
 import { Icon } from '../../lib/icons'
 import { getProjectColor, getProjectInitials } from '../../lib/project-avatar'
@@ -14,6 +15,9 @@ interface ProjectFilesPanelProps {
   projectNamesUppercase?: boolean
   showProjectIcons?: boolean
   projectColor?: string
+  /** Home directory and host platform (AppApi); the subheader shows home as `~`. */
+  homeDir?: string
+  platform?: string
   /** Exits Project Files mode (the back affordance, spec Behaviour 12). */
   onBack: () => void
   /** Re-reads the root and every expanded directory (spec Behaviour 25). */
@@ -36,6 +40,8 @@ export function ProjectFilesPanel({
   projectNamesUppercase = true,
   showProjectIcons = true,
   projectColor,
+  homeDir,
+  platform,
   onBack,
   onRefresh,
   onToggleDirectory,
@@ -126,9 +132,10 @@ export function ProjectFilesPanel({
         <span className="text-sm uppercase text-projects-header shrink-0">Files</span>
         <span
           className="min-w-0 flex-1 truncate font-mono text-xs text-ink-muted"
+          data-testid={TEST_ID.filesProjectPath}
           title={project.path}
         >
-          {project.path}
+          {shortenHomePath(project.path, homeDir, platform)}
         </span>
       </div>
       <NoticeBanner notice={notice} />
