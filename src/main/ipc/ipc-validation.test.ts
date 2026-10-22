@@ -168,19 +168,24 @@ describe('ipc payload validation', () => {
     expect(channel(IPC_CHANNEL.usageSetEnabled).parse([false])).toEqual([false])
     for (const bad of [[], ['true'], [1], [null], [true, false]])
       expect(() => channel(IPC_CHANNEL.usageSetEnabled).parse(bad)).toThrow()
-    expect(channel(IPC_CHANNEL.usageInspectFile).parse(['C:/data/usage.json'])).toEqual([
-      'C:/data/usage.json',
+    expect(channel(IPC_CHANNEL.usageInspectFile).parse([hostPath('C:/data/usage.json')])).toEqual([
+      hostPath('C:/data/usage.json'),
     ])
-    for (const bad of [[], [null], ['relative.json'], ['C:/a/../b.json'], ['C:/a.json', 'x']])
+    for (const bad of [
+      [],
+      [null],
+      ['relative.json'],
+      [hostPath('C:/a/../b.json')],
+      ['C:/a.json', 'x'],
+    ])
       expect(() => channel(IPC_CHANNEL.usageInspectFile).parse(bad)).toThrow()
     expect(channel(IPC_CHANNEL.usageClaudeSetup).parse(['account-1', null])).toEqual([
       'account-1',
       null,
     ])
-    expect(channel(IPC_CHANNEL.usageClaudeSetup).parse(['account-1', 'C:/claude'])).toEqual([
-      'account-1',
-      'C:/claude',
-    ])
+    expect(
+      channel(IPC_CHANNEL.usageClaudeSetup).parse(['account-1', hostPath('C:/claude')]),
+    ).toEqual(['account-1', hostPath('C:/claude')])
     for (const bad of [[], ['account-1'], [1, null], ['account-1', 'relative'], ['a', null, 'x']])
       expect(() => channel(IPC_CHANNEL.usageClaudeSetup).parse(bad)).toThrow()
     for (const name of [

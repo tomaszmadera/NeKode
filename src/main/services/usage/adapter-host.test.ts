@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -27,10 +28,37 @@ function adapter(script: string): UsageAdapter & { directory: string } {
     directory: dir,
   }
 }
-afterEach(() => {
-  for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
+afterEach(async () => {
+  // Windows can briefly hold a just-killed adapter's cwd (EPERM) under a loaded full run.
+  // Only the async rm retries EPERM; rmSync in Node 24 throws it at once.
+  for (const dir of roots.splice(0))
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
 })
 const signal = () => new AbortController().signal
+/** A Linux zombie still answers kill(pid, 0) but has already exited. */
+function isZombie(pid: number): boolean {
+  if (process.platform !== 'linux') return false
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    return stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z')
+  } catch {
+    return false
+  }
+}
+/** Polls until a killed pid is gone; a process the test does not parent can outlive the rejection briefly. */
+async function waitForProcessExit(pid: number, timeoutMs = 2000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return true
+    }
+    if (isZombie(pid)) return true
+    if (Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
 describe('usage adapter process boundary', () => {
   it('preserves a declared validation error with sanitized text', async () => {
     const a = adapter(
@@ -86,7 +114,7 @@ describe('usage adapter process boundary', () => {
     })
     expect(existsSync(join(a.directory, 'child.pid'))).toBe(true)
     const pid = Number(readFileSync(join(a.directory, 'child.pid'), 'utf8'))
-    expect(() => process.kill(pid, 0)).toThrow()
+    expect(await waitForProcessExit(pid)).toBe(true)
   })
   it('cancels an obsolete process', async () => {
     const controller = new AbortController()

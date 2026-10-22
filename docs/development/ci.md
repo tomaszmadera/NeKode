@@ -42,7 +42,7 @@ wymaganego smoke, zapisz cel i powód, a wynik pozostaw jako nieuruchomiony.
 
 CI (Continuous Integration) to automat, który po każdym zgłoszeniu zmiany sam pobiera repozytorium na czystej maszynie i uruchamia sprawdzenia. Dzięki temu nikt nie musi pamiętać o ręcznym odpalaniu testów, a błąd wykryty na czystej maszynie wykrywa się w minutę, nie u kogoś, kto świeżo sklonował projekt.
 
-Ten projekt ma jeden pipeline zdefiniowany w [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). Biega na GitHub Actions (system CI wbudowany w GitHub) i uruchamia dokładnie to samo polecenie, które używasz lokalnie: `pnpm run verify`.
+Ten projekt ma jeden pipeline weryfikacji zdefiniowany w [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). Biega na GitHub Actions (system CI wbudowany w GitHub) i uruchamia dokładnie to samo polecenie, które używasz lokalnie: `pnpm run verify`. Osobny workflow wydania [`.github/workflows/release.yml`](../../.github/workflows/release.yml) opisuje sekcja [Workflow wydania](#workflow-wydania).
 
 ## Co sprawdzamy i dlaczego
 
@@ -70,7 +70,7 @@ Nowy push do tego samego PR-a lub gałęzi anuluje jeszcze biegnący run (sekcja
 Dwa joby biegną równolegle przy każdym triggerze:
 
 - `verify` na `windows-latest`: wirtualna maszyna z Windows hostowana przez GitHub, z preinstalowanym Node i Visual Studio Build Tools (Build Tools są dostępne, ale ten projekt ich nie potrzebuje, patrz niżej). To jest **wymagany** check: ochrona gałęzi `main` żąda dokładnie tej nazwy, więc job i jego nazwa się nie zmieniają.
-- `verify-linux` na `ubuntu-22.04`: to samo `pnpm run verify` na Linuksie (Ubuntu 22.04 to bazowa wersja glibc dla przyszłych paczek linuksowych). Na razie check **doradczy**: nie jest wymagany przez ochronę gałęzi, ale czerwony wynik i tak trzeba wyjaśnić przed merge'em.
+- `verify-linux` na `ubuntu-24.04`: to samo `pnpm run verify` na Linuksie, na tej samej wersji Ubuntu co build AppImage w [workflow wydania](#workflow-wydania). Na razie check **doradczy**: nie jest wymagany przez ochronę gałęzi, ale czerwony wynik i tak trzeba wyjaśnić przed merge'em.
 
 Dlaczego Windows, skoro większość projektów wybiera Linuksa? NeKode jest projektem Windows-first: celowa platforma to Windows 11, moduły natywne mają zweryfikowane prebuildy `win32-x64`, a testy sprawdzają zachowanie specyficzne dla tego środowiska (ConPTY, ścieżki). CI ma odwzorowywać środowisko, w którym aplikacja realnie działa. Job linuksowy (faza 0 planu wersji na Linuksa) pilnuje, żeby kod i testy nie dryfowały w stronę Windows-only; nie zastępuje joba Windows, bo zielony Linux nie dowodzi niczego o Windows. Testy specyficzne dla Windows (WSL, kandydaci PowerShell/cmd) są na Linuksie pomijane (`skipIf`), a ścieżki w fixture'ach przechodzą przez `hostPath` (`src/main/test-support/host-path.ts`), który na Windows zwraca literał bez zmian.
 
@@ -114,10 +114,21 @@ Rekomendacja pozostaje GitHub Actions, dopóki repo mieszka na GitHub: pipeline 
 
 Przy czerwonym runie: otwórz log, znajdź pierwszy krok z błędem (kolejność kroków odpowiada kolejności diagnozy: checkout, pnpm, Node, instalacja, verify), a potem odtwórz lokalnie to samo polecenie (`pnpm run verify`). CI używa czystej maszyny, więc czerwony wynik bez lokalnej reprodukcji zwykle oznacza rozjazd lockfile (`--frozen-lockfile`), brakujący prebuild albo różnicę systemową.
 
+## Workflow wydania
+
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) buduje pliki wydania i jest niezależny od `ci.yml`; wymagany check `verify` na `main` się nie zmienia. Zasady wydań i procedurę opisuje [releases.md](../operations/releases.md).
+
+- Wyzwalacz: push tagu z numerycznym semver bez prefiksu `v` (np. `0.15.0` albo `0.15.0-rc.1`). Tag, który nie zaczyna się od liczbowego `X.Y.Z` (np. `test`), nie uruchamia workflow; inne niepoprawne tagi (np. `1.2.3foo`) zatrzymuje bramka.
+- Bramki przed budowaniem: tag równa się `version` w `package.json` otagowanego commita, otagowany commit jest osiągalny z `main` (oba sprawdza `node scripts/release.mjs gate`), a `pnpm run verify` przechodzi na Windows i na Linuksie.
+- Build Windows (`pnpm run build:win`) i Linux (`pnpm run build:linux`, Ubuntu 24.04) biegnie równolegle; electron-builder działa z `--publish never`.
+- Job `Create draft release` działa tylko dla pushu tagu i tylko gdy oba buildy się udały. Tworzy szkic `NeKode <version>` z `NeKode-Setup-<version>.exe`, `NeKode-<version>-x86_64.AppImage` i `SHA256SUMS.txt` oraz notatkami z commitów od poprzedniego tagu. Nie nadpisuje istniejącego wydania. Szkic publikuje ręcznie utrzymujący.
+- Uprawnienia: tylko `GITHUB_TOKEN`; `contents: write` ma wyłącznie job tworzący szkic, pozostałe joby `contents: read`.
+- Ręczne uruchomienie (`workflow_dispatch`, np. `gh workflow run release.yml --ref main`) buduje oba pliki jako artefakty runu (`windows-installer`, `linux-appimage`) i nie tworzy wydania.
+
 ## Czego CI świadomie nie robi
 
-- Nie buduje instalatora (`build:win`) ani paczki (`build:unpack`): build Windows sprawdza się lokalnie, a pipeline ma być szybki.
-- Nie robi release'ów ani nie publikuje artefaktów: wydania to osobny proces.
-- Nie biega na macOS: brak wsparcia docelowego. Linux ma doradczy job `verify-linux` (patrz wyżej), ale nie buduje paczek linuksowych.
+- Workflow `ci.yml` nie buduje instalatora (`build:win`), AppImage (`build:linux`) ani paczki (`build:unpack`): pipeline weryfikacji ma być szybki, a pliki wydania buduje [workflow wydania](#workflow-wydania).
+- `ci.yml` nie robi release'ów ani nie publikuje artefaktów: wydania tworzy wyłącznie workflow wydania z tagu.
+- Nie biega na macOS: brak wsparcia docelowego. Linux ma doradczy job `verify-linux` (patrz wyżej).
 - Nie uruchamia skryptów harnessu (`.agents/` nie jest częścią publikowanego repo).
 - Nie ma badge w README: może być dodany, kiedy ktoś zapragnie, jedną linią.

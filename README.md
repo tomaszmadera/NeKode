@@ -1,6 +1,6 @@
 # NeKode
 
-An agent-first desktop workspace for Windows 11 (Linux: experimental, from source). CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
+An agent-first desktop workspace for Windows 11 (Linux: experimental). CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
 
 ![NeKode — agent terminal session](docs/images/nekode-1-terminal.webp)
 
@@ -10,9 +10,38 @@ An agent-first desktop workspace for Windows 11 (Linux: experimental, from sourc
 
 ## Status
 
-Early development (beta), version 0.14.11. No prebuilt installers are published yet, so build from source. You can build a Windows NSIS installer locally (see [Building](#building)).
+Early development (beta). Prebuilt Windows and Linux files are published on [GitHub Releases](https://github.com/tomaszmadera/NeKode/releases/latest); see [Download and install](#download-and-install). You can also build from source (see [Building](#building)).
 
-Linux (experimental): NeKode builds and runs from source on Linux x64. The tested scope is Ubuntu 22.04 and 24.04; see [Linux (experimental)](#linux-experimental). There are no Linux releases yet.
+Linux (experimental): the release AppImage needs Ubuntu 24.04 or a distribution with the same or a newer glibc. Building from source is tested on Ubuntu 22.04 and 24.04; see [Linux (experimental)](#linux-experimental).
+
+## Download and install
+
+Releases are published on [GitHub Releases](https://github.com/tomaszmadera/NeKode/releases). Download the files from the [latest release](https://github.com/tomaszmadera/NeKode/releases/latest):
+
+- Windows 11 x64: `NeKode-Setup-<version>.exe`
+- Linux x64: `NeKode-<version>-x86_64.AppImage`, built on Ubuntu 24.04. It needs Ubuntu 24.04 or a distribution with the same or a newer glibc.
+- `SHA256SUMS.txt`: checksums of both files
+
+Before installing, verify the checksum of the downloaded file (see [Verify checksums](docs/operations/releases.md#verify-checksums)). Do not install a file whose checksum differs.
+
+### Windows
+
+Run `NeKode-Setup-<version>.exe`. The installer is not code signed, so Windows SmartScreen may show "Windows protected your PC". If the checksum matches, select **More info**, then **Run anyway**.
+
+### Linux
+
+Make the AppImage executable and run it:
+
+```
+chmod +x NeKode-<version>-x86_64.AppImage
+./NeKode-<version>-x86_64.AppImage
+```
+
+The AppImage needs FUSE 2, which Ubuntu 24.04 does not install by default. Install it with `sudo apt-get install libfuse2t64`, or start the AppImage without FUSE with `./NeKode-<version>-x86_64.AppImage --appimage-extract-and-run`. Token encryption needs a keyring, as described in [Linux (experimental)](#linux-experimental).
+
+### Updating
+
+NeKode has no auto-updater. To update, download the new version from the latest release and install it the same way: run the new installer on Windows, or replace the AppImage file on Linux.
 
 ## Requirements
 
@@ -26,7 +55,7 @@ Visual Studio C++ Build Tools are not required: the native modules (better-sqlit
 
 ### Linux (experimental)
 
-Supported scope: Ubuntu 22.04 and 24.04, x64. In addition to Node.js, pnpm and Git:
+Supported scope for building from source: Ubuntu 22.04 and 24.04, x64. CI tests on Ubuntu 24.04, and release AppImages need Ubuntu 24.04 or a distribution with the same or a newer glibc. In addition to Node.js, pnpm and Git:
 
 - `build-essential` and `python3`: node-pty has no Linux prebuild and is compiled from source
 - `libsecret-1-0` and a running keyring (for example gnome-keyring): encrypts the Plane token. Without a keyring the token is kept in memory for the session only, is never written to disk in plain text, and Kanban settings show a warning
@@ -52,7 +81,10 @@ Electron downloads its binaries on first install, so network access is needed th
 ### Building
 
 - `pnpm run build:unpack`: unpacked app for the current platform (fastest smoke test): `dist/win-unpacked/` on Windows, `dist/linux-unpacked/` on Linux
-- `pnpm run build:win`: NSIS installer in `dist/`
+- `pnpm run build:win`: NSIS installer `dist/NeKode-Setup-<version>.exe`
+- `pnpm run build:linux`: AppImage `dist/NeKode-<version>-x86_64.AppImage` (on Linux, after `pnpm rebuild node-pty`)
+
+Release files are built by the release workflow, not locally; see [Releases](docs/operations/releases.md).
 
 ### Checks
 
@@ -60,7 +92,7 @@ Electron downloads its binaries on first install, so network access is needed th
 - `pnpm run format`: format with Biome
 - `pnpm run test:adapters`: Plane adapter tests (Python)
 
-CI runs `pnpm run verify` on `windows-latest` (the required check) for every pull request and every push to `main`, plus an advisory `verify-linux` job on `ubuntu-22.04`.
+CI runs `pnpm run verify` on `windows-latest` (the required check) for every pull request and every push to `main`, plus an advisory `verify-linux` job on `ubuntu-24.04`.
 
 ## Configuration notes
 
