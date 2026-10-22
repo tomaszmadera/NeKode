@@ -1,71 +1,71 @@
-# Wymagania Produktu: NeKode MVP
+# Product requirements: NeKode MVP
 
-**Status:** Zaakceptowane wymagania produktu MVP  
-**Wersja:** 0.2  
-**Rola:** Kanoniczne wymagania produktu; przyjęte decyzje użytkownika i ADR mają pierwszeństwo zgodnie z [hierarchią źródeł](../development/project-contract.md#sources-and-authority).
-**Dokumenty powiązane:** [Architektura](../architecture/sdd.md), [UX/UI](../UX-UI.md), [kontrakty funkcji](../features/). Dokumenty projektowe obejmują także przyszły zakres; jego opis nie potwierdza implementacji.
-
----
-
-## 1. Cel produktu
-
-NeKode to desktopowe środowisko pracy typu **agent-first coding workspace** na platformę Windows 11. Aplikacja służy jako centrum kontroli pracy z autonomicznymi agentami kodującymi uruchamianymi w terminalu (np. Codex CLI, Claude Code, OpenCode, agy, Gemini CLI).
-
-W MVP agenci traktowani są jako standardowe procesy terminalowe (PTY) bez konieczności implementowania dedykowanych protokołów (ACP/MCP).
-
-Centralnym pojęciem MVP jest **Chat (czat)** — sesja terminala przypisana do projektu, widoczna w drzewku po lewej (PROJEKT → CZATY). Z czatem powiązany jest kontekst pracy: katalog roboczy (workspace) oraz stan Git. Odrębną encją (post-MVP) jest **Task (zadanie)** — jednostka pracy z zapisem postępu, przypinana do czatu; jej śledzenie postępu ma być niezależne od konkretnego harnessa.
+**Status:** Accepted MVP product requirements\
+**Version:** 0.2\
+**Role:** Canonical product requirements; accepted user decisions and ADRs take precedence according to the [source hierarchy](../development/project-contract.md#sources-and-authority).
+**Related documents:** [Architecture](../architecture/sdd.md), [UX/UI](../UX-UI.md), [feature contracts](../features/). The design documents also cover future scope; describing it does not confirm an implementation.
 
 ---
 
-## 2. Wymagania funkcjonalne MVP
+## 1. Product goal
 
-1. **Zarządzanie projektami:**
-   - Rejestrowanie lokalnych projektów programistycznych.
-   - Przełączanie aktywnego projektu w pasku bocznym.
-   - Odczyt kontekstu projektu: ścieżka, wykryte runtimy, stan gałęzi Git oraz status worktree.
+NeKode is a desktop **agent-first coding workspace** for Windows 11. The app is a control center for working with autonomous coding agents that run in a terminal (for example Codex CLI, Claude Code, OpenCode, agy, Gemini CLI).
 
-2. **Zarządzanie czatami (Chats):**
-   - Drzewko w lewym panelu: PROJEKT → CZATY (czaty widoczne pod projektami).
-   - Tworzenie nowego czatu bez formularza nazwy (nazwa = nazwa terminala/shella, np. „PowerShell"; nazwy mogą się powtarzać) i przełączanie między czatami z zachowaniem stanu sesji roboczej.
-   - Zamykanie czatu wraz z zamknięciem jego terminala (`exit`, `Ctrl+D`): czat znika z drzewka, aplikacja przechodzi do kolejnego czatu w projekcie (gdy czatów nie zostanie — stan pusty z przyciskiem "Start new chat").
+In the MVP, agents are treated as standard terminal processes (PTY), without implementing dedicated protocols (ACP/MCP).
 
-3. **Sesje terminala (PTY):**
-   - Uruchamianie agentów i narzędzi CLI w natywnych procesach terminalowych (node-pty) w procesie głównym.
-   - Renderowanie terminala w widoku głównym za pomocą xterm.js (jeden terminal główny na czat).
-   - Zachowanie aktywnych sesji terminala w czasie działania aplikacji przy przełączaniu czatów; restarcie aplikacji drzewko czatów wraca do stanu sprzed restartu (jak w Zed), a terminale startują świeżo po otwarciu czatu.
-   - Pomocniczy dolny panel terminali (możliwość otwierania wielu terminali/zakładek) — realizowany jako osobne zadanie.
-
-4. **Przeglądanie plików projektu:**
-   - Drzewo plików projektu w lewym panelu z możliwością zwijania/rozwijania katalogów.
-   - Podgląd zawartości plików w trybie tylko do odczytu (read-only) przy użyciu komponentu Monaco Editor. Plik Markdown (`md`, `markdown`) ma w pasku akcji przełącznik `Code` | `Preview` (decyzja użytkownika 2026-10-06): `Preview` jest domyślny i renderuje ten sam tekst jako Markdown, `Code` pokazuje Monaco. Wybór jest pamiętany per plik w sesji aplikacji i nie jest zapisywany.
-
-5. **Pasek akcji projektu (Action Bar):**
-   - Pasek akcji w kolumnie środkowej, bezpośrednio pod paskiem zakładek (decyzja użytkownika 2026-09-26): stałe grupy `Handoff | Resume` i `Stop | Continue`, a następnie konfigurowalne przyciski do uruchamiania zdefiniowanych poleceń projektu (np. dev server, testy, build, weryfikacja).
-   - `Stop` wysyła Ctrl+C, a `Continue` tekst i CR, przez `terminals:write`. `Handoff` i `Resume` domyślnie wklejają swój ciąg do promptu; przy włączonym auto-send wysyłają ten ciąg i jedno CR. Właścicielem przepływu jest [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
-   - Wykonywanie poleceń w trybie `background` albo `new-terminal` (nowy czat z poleceniem); tryb `bottom-terminal` (nowa zakładka dolnego panelu z poleceniem) realizuje kontrakt `docs/features/bottom-auxiliary-terminal/spec.md` po dostarczeniu dolnego panelu terminali (wymaganie 3).
-
-6. **Persystencja danych:**
-   - Zapisywanie konfiguracji projektów, czatów, historii i stanu layoutu w lokalnej bazie SQLite (`better-sqlite3`).
-
-7. **Interfejs użytkownika:**
-   - Ergonomiczny, ciemny interfejs zgodny ze specyfikacją [`UX-UI.md`](../UX-UI.md).
-   - Skalowalne i resizowalne panele robocze.
-   - Kolumna środkowa: pasek zakładek u góry (zakładka aktywnego czatu — niezamykalna; zakładki otwartych plików; `+ New chat`), pod nim pasek akcji (zob. 5), poniżej powierzchnia główna.
-   - Pasek statusu na samym dole okna (cała szerokość) z kontekstem projektu: nazwa, ścieżka, wykryte runtimy oraz gałąź i status Git.
-   - Interfejs w całości w języku angielskim; stałe ciągi przycisków paska akcji (np. `Write a handoff`) są danymi literałowymi i nie podlegają tłumaczeniu. Handoff i Resume wklejają swój ciąg do promptu albo, przy włączonym auto-send, wysyłają go do terminala. Właścicielem tego przepływu jest [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
+The central concept of the MVP is the **Chat**: a terminal session assigned to a project and shown in the tree on the left (PROJECT → CHATS). The chat carries its work context: the working directory (workspace) and the Git state. A separate entity (post-MVP) is the **Task**: a unit of work with a progress record, pinned to a chat; its progress tracking is meant to be independent of any specific harness.
 
 ---
 
-## 3. Zakres wyłączony z MVP (Explicit Non-Goals)
+## 2. MVP functional requirements
 
-- Brak bezpośredniej edycji kodu źródłowego w aplikacji (kod modyfikują agenci lub zewnętrzny edytor).
-- Brak implementacji protokołu ACP (Agent Client Protocol) oraz MCP (Model Context Protocol).
-- Brak bezpośrednich zapytań do API modeli LLM z poziomu aplikacji.
-- Brak silnika LSP (Language Server Protocol) i mechanizmów IntelliSense.
-- Brak automatycznego tworzenia i zarządzania Git worktrees per task.
-- Brak synchronizacji chmurowej i kont użytkowników (dane przechowywane wyłącznie lokalnie).
-- Post-MVP: encja **Task (zadanie)** — jednostka pracy przypinana do czatu, z panelem zapisu postępu prac (wzorzem mogą być rekordy `.agents/tasks/*/task.md` z project-template, ale bez uzależnienia aplikacji od konkretnego harnessa).
-- Post-MVP: migawki przekazania prac (handoff) powiązane z zadaniami.
-- Post-MVP: ręczna zmiana nazwy czatu (pole `name` w bazie zostaje przygotowane). Nowe czaty mają nazwę `[powłoka] nazwa profilu`, a bez profilu samo `[powłoka]`. Prefiks to skrót powłoki: `PS5`, `PS7`, `cmd`, `bash`, `WSL`, a dla powłoki własnej nazwa pliku. Powłoka pochodzi z konfiguracji projektu w chwili tworzenia czatu; pełna etykieta (`PowerShell 7`, `WSL: Ubuntu-24.04`) zostaje w Ustawieniach projektu i na zakładce dolnego terminala. Istniejące czaty zachowują zapisane nazwy.
-- Dostarczone (decyzje użytkownika 2026-10-11 i 2026-10-12): tablica **Kanban** jako widok zewnętrznych zadań (backend Plane przez adapter pluginów), z akcjami Start, Resume, New task i przeglądem pozycji. Kontrakt: [kanban-adapter-interface](../features/kanban-adapter-interface/spec.md). Realizacja nie obejmuje lokalnej encji Task.
-- Post-MVP: tablica **Kanban** powiązana z lokalną encją **Task** (zadanie przypięte do czatu z panelem postępu), zgodnie z poprzednim punktem o encji Task (wcześniej planowana jako poglądowy podgląd w MVP, przeniesiona poza MVP w celu przemyślenia modelu razem z zadaniami).
+1. **Project management:**
+   - Registering local software projects.
+   - Switching the active project in the sidebar.
+   - Reading the project context: path, detected runtimes, Git branch state and worktree status.
+
+2. **Chat management (Chats):**
+   - A tree in the left panel: PROJECT → CHATS (chats shown under projects).
+   - Creating a new chat without a name form (the name is the terminal or shell name, for example "PowerShell"; names may repeat) and switching between chats while keeping the state of the work session.
+   - Closing a chat together with closing its terminal (`exit`, `Ctrl+D`): the chat disappears from the tree and the app moves to the next chat in the project (when no chats are left, an empty state with a "Start new chat" button).
+
+3. **Terminal sessions (PTY):**
+   - Running agents and CLI tools in native terminal processes (node-pty) in the main process.
+   - Rendering the terminal in the main view with xterm.js (one main terminal per chat).
+   - Keeping active terminal sessions while the app runs when switching chats; after an app restart the chat tree returns to its state before the restart (as in Zed), and terminals start fresh when a chat is opened.
+   - An auxiliary bottom terminal panel (able to open several terminals/tabs), delivered as a separate task.
+
+4. **Browsing project files:**
+   - A project file tree in the left panel with collapsible and expandable directories.
+   - Read-only file content preview using the Monaco Editor component. A Markdown file (`md`, `markdown`) has a `Code` | `Preview` toggle in the action bar (user decision 2026-10-06): `Preview` is the default and renders the same text as Markdown, `Code` shows Monaco. The choice is remembered per file for the app session and is not saved.
+
+5. **Project action bar (Action Bar):**
+   - The action bar in the center column, directly under the tab bar (user decision 2026-09-26): fixed groups `Handoff | Resume` and `Stop | Continue`, followed by configurable buttons that run defined project commands (for example dev server, tests, build, verification).
+   - `Stop` sends Ctrl+C, and `Continue` sends text and CR, through `terminals:write`. `Handoff` and `Resume` paste their string into the prompt by default; with auto-send on, they send the string and one CR. The flow is owned by [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
+   - Running commands in `background` or `new-terminal` mode (a new chat with the command); the `bottom-terminal` mode (a new bottom panel tab with the command) follows the `docs/features/bottom-auxiliary-terminal/spec.md` contract once the bottom terminal panel is delivered (requirement 3).
+
+6. **Data persistence:**
+   - Saving the configuration of projects, chats, history and layout state in a local SQLite database (`better-sqlite3`).
+
+7. **User interface:**
+   - An ergonomic dark interface that follows the [`UX-UI.md`](../UX-UI.md) specification.
+   - Scalable and resizable work panels.
+   - Center column: a tab bar at the top (the active chat tab, which cannot be closed; tabs of open files; `+ New chat`), the action bar under it (see 5), and the main surface below.
+   - A status bar at the very bottom of the window (full width) with the project context: name, path, detected runtimes, and Git branch and status.
+   - The interface is entirely in English; fixed action bar button strings (for example `Write a handoff`) are literal data and are not translated. Handoff and Resume paste their string into the prompt or, with auto-send on, send it to the terminal. This flow is owned by [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
+
+---
+
+## 3. Out of MVP scope (Explicit Non-Goals)
+
+- No direct editing of source code in the app (code is changed by agents or an external editor).
+- No implementation of ACP (Agent Client Protocol) or MCP (Model Context Protocol).
+- No direct LLM API requests from the app.
+- No LSP (Language Server Protocol) engine and no IntelliSense.
+- No automatic creation or management of Git worktrees per task.
+- No cloud sync and no user accounts (data is stored only locally).
+- Post-MVP: the **Task** entity, a unit of work pinned to a chat, with a panel for recording work progress (the `.agents/tasks/*/task.md` records from project-template can serve as a pattern, but the app must not depend on a specific harness).
+- Post-MVP: work handoff snapshots linked to tasks.
+- Post-MVP: manual chat renaming (the `name` field in the database is prepared). New chats are named `[shell] profile name`, and without a profile just `[shell]`. The prefix is the shell abbreviation: `PS5`, `PS7`, `cmd`, `bash`, `WSL`, and for a custom shell the file name. The shell comes from the project configuration at the moment the chat is created; the full label (`PowerShell 7`, `WSL: Ubuntu-24.04`) stays in Project Settings and on the bottom terminal tab. Existing chats keep their saved names.
+- Delivered (user decisions 2026-10-11 and 2026-10-12): a **Kanban** board as a view of external tasks (Plane backend through a plugin adapter), with the Start, Resume and New task actions and an item overview. Contract: [kanban-adapter-interface](../features/kanban-adapter-interface/spec.md). The delivery does not include a local Task entity.
+- Post-MVP: a **Kanban** board linked to the local **Task** entity (a task pinned to a chat with a progress panel), following the previous point on the Task entity (earlier planned as an illustrative preview in the MVP, moved out of the MVP to rethink the model together with tasks).
