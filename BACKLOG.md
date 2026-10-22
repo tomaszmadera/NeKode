@@ -1,15 +1,15 @@
 # Backlog
 
-Ten plik przechowuje wyłącznie odłożone pomysły dotyczące projektu. Nie jest aktywnym planem realizacji.
+This file holds only deferred ideas for the project. It is not an active delivery plan.
 
-Nowe pozycje dopisuj jako pojedyncze punkty w odpowiedniej kategorii. Gdy pomysł wchodzi do realizacji, usuń go stąd i utwórz właściwą specyfikację lub rekord zadania.
+Add new entries as single bullet points in the matching category. When an idea goes into delivery, remove it from here and create the proper specification or task record.
 
-## Wygoda użytkowania
+## Ease of use
 
-- Ręczna zmiana nazwy czatu: dwuklik na nazwie na zakładce czatu w środkowej kolumnie włącza edycję nazwy (pole `name` w bazie przygotowane; domyślnie nazwa = nazwa terminala/shella). Źródło: decyzja użytkownika 2026-09-25; interakcja dwuklik: decyzja użytkownika 2026-09-28.
+- Manual chat renaming: a double click on the name in the chat tab in the center column turns on name editing (the `name` field in the database is prepared; by default the name is the terminal or shell name). Source: user decision 2026-09-25; double-click interaction: user decision 2026-09-28.
 
-## Pozostałe odłożone pomysły
+## Other deferred ideas
 
-- Post-MVP: encja Task (zadanie) przypinana do czatu + panel zapisu postępu prac, niezależny od harnessa (wzorzec: `.agents/tasks/*/task.md` z project-template). Źródło: decyzja użytkownika 2026-09-25 (requirements.md §3).
+- Post-MVP: a Task entity pinned to a chat, plus a panel for recording work progress, independent of the harness (pattern: `.agents/tasks/*/task.md` from project-template). Source: user decision 2026-09-25 (requirements.md §3).
 
-- Post-MVP: funkcjonalność Kanban (wcześniej poglądowy podgląd w MVP — przeniesiona poza MVP razem z modelem zadań). Źródło: decyzja użytkownika 2026-09-25 (requirements.md §3).
+- Post-MVP: Kanban functionality (earlier an illustrative preview in the MVP, moved out of the MVP together with the task model). Source: user decision 2026-09-25 (requirements.md §3).

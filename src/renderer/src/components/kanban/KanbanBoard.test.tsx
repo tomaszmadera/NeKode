@@ -1168,7 +1168,7 @@ describe('kanban item copy menu', () => {
   })
 })
 
-// Handoff availability (spec Dostępność Resume): Resume renders only for an
+// Handoff availability (spec Resume availability): Resume renders only for an
 // item the batch check proved available; Start and the directory notices stay.
 describe('kanban handoff availability', () => {
   function appWithAvailability(

@@ -1,134 +1,134 @@
-# CI: automatyczna weryfikacja zmian (GitHub Actions)
+# CI: automatic verification of changes (GitHub Actions)
 
-## Dobór weryfikacji
+## Choosing verification
 
-[Kontrakt projektu](project-contract.md) określa obowiązki kontrybutora;
-[package.json](../../package.json) i [vitest.config.ts](../../vitest.config.ts)
-są źródłem bieżących poleceń i zakresu testów. W raporcie podaj polecenie,
-dokładny cel, kod wyjścia i ograniczenia. Błąd dowolnego wymaganego checku blokuje
-akceptację; brak uruchomienia nie jest wynikiem pass.
+The [project contract](project-contract.md) defines the contributor's obligations;
+[package.json](../../package.json) and [vitest.config.ts](../../vitest.config.ts)
+are the source of the current commands and test scope. In the report, give the command,
+the exact target, the exit code and the limitations. A failure of any required check blocks
+acceptance; a check that was not run is not a pass.
 
-| Polecenie lub check | Co potwierdza i kiedy go użyć |
+| Command or check | What it confirms and when to use it |
 |---|---|
-| `pnpm run lint` | Statyczne reguły Biome, także format obsługiwanych plików; nie zachowanie runtime |
-| `pnpm run typecheck` | Typy main/preload/shared i renderera; oba projekty TypeScript |
-| `pnpm run test <potwierdzona-ścieżka-testu>` | Skupiony test Vitest istniejącego zakresu; najpierw sprawdź dokładny plik, a po uruchomieniu liczbę wybranych testów |
-| `pnpm run test` | Cała suite: projekt `node` dla main/preload/shared i `renderer` z jsdom dla renderera |
-| `pnpm run verify` | Lint, oba typechecki i cała suite; lokalny odpowiednik gate CI dla zmian kodu |
-| `pnpm run format` | Zmienia format plików; to edycja, a nie test. Przejrzyj wynik i zachowaj zakres zmiany |
-| Dokumentacja/linki i `git diff --check` | Dla zmian samej prozy: linki względem publicznego inventory Git, dokładna wielkość liter, przenośne ścieżki, zgodność reguł i brak zależności od prywatnych rekordów. Sam diff-check nie ocenia treści ani plików untracked |
-| Dev, packaged lub installer smoke | Prawdziwy Electron, natywne moduły i ConPTY; [setup](setup.md) określa izolację i teardown |
+| `pnpm run lint` | Static Biome rules, including the format of supported files; not runtime behavior |
+| `pnpm run typecheck` | Types of main/preload/shared and of the renderer; both TypeScript projects |
+| `pnpm run test <confirmed-test-path>` | A focused Vitest test of an existing scope; first check the exact file, and after the run the number of selected tests |
+| `pnpm run test` | The whole suite: the `node` project for main/preload/shared and `renderer` with jsdom for the renderer |
+| `pnpm run verify` | Lint, both typechecks and the whole suite; the local equivalent of the CI gate for code changes |
+| `pnpm run format` | Changes file formatting; this is an edit, not a test. Review the result and keep the scope of the change |
+| Documentation/links and `git diff --check` | For prose-only changes: links against the public Git inventory, exact letter case, portable paths, consistent rules and no dependency on private records. The diff check alone does not judge content or untracked files |
+| Dev, packaged or installer smoke | Real Electron, native modules and ConPTY; [setup](setup.md) defines isolation and teardown |
 
-Dobierz skupione testy do zachowania, które zmieniasz; nie wyprowadzaj nazwy
-testu z nazwy modułu bez sprawdzenia inventory. Regresja zgłoszonego defektu musi
-nie przechodzić bez poprawki: zachowaj wynik red albo cofnij i przywróć poprawkę
-przed końcową weryfikacją. Asercja braku zmiany wymaga dowodu, że operacja została
-wykonana. Nie dodawaj testu tylko po to, by powtórzył kod lub słowa dokumentacji.
+Choose focused tests for the behavior you change; do not derive a test name
+from a module name without checking the inventory. A regression test for a reported defect must
+fail without the fix: keep the red result, or revert and restore the fix
+before the final verification. An assertion that nothing changed needs proof that the operation
+ran. Do not add a test only to repeat the code or the words of the documentation.
 
-Dla zmian IPC sprawdź pozytywne routing i odrzucenia payload/sender; dla bazy
-migracje, transakcje i integralność; dla terminala przełączanie sesji, błędy spawn
-i zamknięcie bez osieroconych procesów. Szczegóły mają jednego właściciela:
-[obowiązki architektury](../architecture/sdd.md#current-implementation-obligations).
-Zmiany integracyjne, bezpieczeństwa lub szerokich kontraktów wymagają całej
-suite i odpowiedniego smoke. Zmiany natywne lub pakowania wymagają realnego
-Electrona nawet gdy Vitest przechodzi; jsdom nie jest e2e. Dla samej prozy nie
-traktuj testów aplikacji jako dowodu poprawności tekstu.
+For IPC changes, check positive routing and rejection of payload/sender; for the database,
+migrations, transactions and integrity; for the terminal, session switching, spawn errors
+and closing without orphaned processes. The details have one owner:
+[architecture obligations](../architecture/sdd.md#current-implementation-obligations).
+Integration, security or broad contract changes need the whole
+suite and the matching smoke. Native or packaging changes need real
+Electron even when Vitest passes; jsdom is not e2e. For prose-only changes, do not
+treat the app tests as proof that the text is correct.
 
-Przed akceptacją przejrzyj cały finalny diff i wykonaj wymagany zakres po
-ostatniej zmianie, która mogła unieważnić wynik. Nie maskuj kodu wyjścia
-poleceniem raportującym. Integracje sprawdzaj na sandboxie lub fixture, gdy
-jest dostępny; nie używaj danych produkcyjnych. Gdy środowisko nie może wykonać
-wymaganego smoke, zapisz cel i powód, a wynik pozostaw jako nieuruchomiony.
+Before acceptance, review the whole final diff and run the required scope after
+the last change that could invalidate the result. Do not mask the exit code
+with a reporting command. Check integrations against a sandbox or fixture when
+one is available; do not use production data. When the environment cannot run
+the required smoke, record the target and the reason, and leave the result as not run.
 
-CI (Continuous Integration) to automat, który po każdym zgłoszeniu zmiany sam pobiera repozytorium na czystej maszynie i uruchamia sprawdzenia. Dzięki temu nikt nie musi pamiętać o ręcznym odpalaniu testów, a błąd wykryty na czystej maszynie wykrywa się w minutę, nie u kogoś, kto świeżo sklonował projekt.
+CI (Continuous Integration) is an automated system that, after every submitted change, fetches the repository on a clean machine and runs the checks. Nobody has to remember to run the tests by hand, and an error that shows up on a clean machine is found within a minute, not by someone who has just cloned the project.
 
-Ten projekt ma jeden pipeline weryfikacji zdefiniowany w [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). Biega na GitHub Actions (system CI wbudowany w GitHub) i uruchamia dokładnie to samo polecenie, które używasz lokalnie: `pnpm run verify`. Osobny workflow wydania [`.github/workflows/release.yml`](../../.github/workflows/release.yml) opisuje sekcja [Workflow wydania](#workflow-wydania).
+This project has one verification pipeline, defined in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). It runs on GitHub Actions (the CI system built into GitHub) and runs exactly the same command you use locally: `pnpm run verify`. The separate release workflow [`.github/workflows/release.yml`](../../.github/workflows/release.yml) is described in the [Release workflow](#release-workflow) section.
 
-## Co sprawdzamy i dlaczego
+## What we check and why
 
-`pnpm run verify` to zestaw trzech sprawdzeń z `package.json`:
+`pnpm run verify` is a set of three checks from `package.json`:
 
-| Sprawdzenie | Polecenie | Co łapie |
+| Check | Command | What it catches |
 |---|---|---|
-| Lint | `biome check .` | błędy stylistyczne, nieużywane zmienne, podejrzane wzorce |
-| Typecheck | `tsc --noEmit` (projekty `node` i `web`) | błędy typów TypeScript zanim ktokolwiek uruchomi aplikację |
-| Testy | `vitest run` | regresje w logice (projekty `node` i `renderer`, środowisko `jsdom`, z `vitest.config.ts`) |
+| Lint | `biome check .` | style errors, unused variables, suspicious patterns |
+| Typecheck | `tsc --noEmit` (the `node` and `web` projects) | TypeScript type errors before anyone runs the app |
+| Tests | `vitest run` | logic regressions (the `node` and `renderer` projects, `jsdom` environment, from `vitest.config.ts`) |
 
-Kolejność ma znaczenie: lint i typecheck są szybsze od testów, więc najtańsze błędy padają pierwsze. Wszystkie trzy muszą przejść; jedno czerwone kończy cały pipeline.
+The order matters: lint and typecheck are faster than the tests, so the cheapest errors fail first. All three must pass; one red result ends the whole pipeline.
 
-## Kiedy pipeline się uruchamia
+## When the pipeline runs
 
-Dwa zdarzenia odpalają CI:
+Two events trigger CI:
 
-1. **Pull request**: niezależnie od gałęzi źródłowej. Wynik widać na stronie PR jako check; czerwony check to sygnał "nie mergować".
-2. **Push na `main`**: kontrola, że sama gałąź główna jest zawsze zielona.
+1. **Pull request**: regardless of the source branch. The result shows on the PR page as a check; a red check means "do not merge".
+2. **Push to `main`**: a check that the main branch itself is always green.
 
-Nowy push do tego samego PR-a lub gałęzi anuluje jeszcze biegnący run (sekcja `concurrency` w workflow): nie płacimy czasu na sprawdzanie kodu, który już jest nieaktualny. Pojedynczy run ma limit 20 minut; przekroczenie traktowane jest jak awaria.
+A new push to the same PR or branch cancels a run that is still in progress (the `concurrency` section in the workflow): we do not spend time checking code that is already outdated. A single run has a 20-minute limit; going over it counts as a failure.
 
-## Na jakim systemie biega
+## Which system it runs on
 
-Dwa joby biegną równolegle przy każdym triggerze:
+Two jobs run in parallel on every trigger:
 
-- `verify` na `windows-latest`: wirtualna maszyna z Windows hostowana przez GitHub, z preinstalowanym Node i Visual Studio Build Tools (Build Tools są dostępne, ale ten projekt ich nie potrzebuje, patrz niżej). To jest **wymagany** check: ochrona gałęzi `main` żąda dokładnie tej nazwy, więc job i jego nazwa się nie zmieniają.
-- `verify-linux` na `ubuntu-24.04`: to samo `pnpm run verify` na Linuksie, na tej samej wersji Ubuntu co build AppImage w [workflow wydania](#workflow-wydania). Na razie check **doradczy**: nie jest wymagany przez ochronę gałęzi, ale czerwony wynik i tak trzeba wyjaśnić przed merge'em.
+- `verify` on `windows-latest`: a Windows virtual machine hosted by GitHub, with Node and Visual Studio Build Tools preinstalled (Build Tools are available, but this project does not need them, see below). This is the **required** check: the protection of the `main` branch requires exactly this name, so the job and its name do not change.
+- `verify-linux` on `ubuntu-24.04`: the same `pnpm run verify` on Linux, on the same Ubuntu version as the AppImage build in the [release workflow](#release-workflow). For now this check is **advisory**: branch protection does not require it, but a red result still has to be explained before merging.
 
-Dlaczego Windows, skoro większość projektów wybiera Linuksa? NeKode jest projektem Windows-first: celowa platforma to Windows 11, moduły natywne mają zweryfikowane prebuildy `win32-x64`, a testy sprawdzają zachowanie specyficzne dla tego środowiska (ConPTY, ścieżki). CI ma odwzorowywać środowisko, w którym aplikacja realnie działa. Job linuksowy (faza 0 planu wersji na Linuksa) pilnuje, żeby kod i testy nie dryfowały w stronę Windows-only; nie zastępuje joba Windows, bo zielony Linux nie dowodzi niczego o Windows. Testy specyficzne dla Windows (WSL, kandydaci PowerShell/cmd) są na Linuksie pomijane (`skipIf`), a ścieżki w fixture'ach przechodzą przez `hostPath` (`src/main/test-support/host-path.ts`), który na Windows zwraca literał bez zmian.
+Why Windows, when most projects choose Linux? NeKode is a Windows-first project: the target platform is Windows 11, the native modules have verified `win32-x64` prebuilds, and the tests check behavior specific to this environment (ConPTY, paths). CI should mirror the environment where the app actually runs. The Linux job (phase 0 of the Linux version plan) keeps the code and tests from drifting toward Windows-only; it does not replace the Windows job, because a green Linux run proves nothing about Windows. Windows-specific tests (WSL, PowerShell/cmd candidates) are skipped on Linux (`skipIf`), and paths in fixtures go through `hostPath` (`src/main/test-support/host-path.ts`), which returns the literal unchanged on Windows.
 
-## Dlaczego bez VS C++ Build Tools
+## Why without VS C++ Build Tools
 
-Moduły natywne (`better-sqlite3`, `node-pty`) korzystają z gotowych binariów N-API zamiast kompilacji. Polityka buildów jest zapisana w `pnpm-workspace.yaml` (sekcja `allowBuilds`) i jest śledzona przez gita, więc CI dostaje ją automatycznie:
+The native modules (`better-sqlite3`, `node-pty`) use ready N-API binaries instead of compiling. The build policy is recorded in `pnpm-workspace.yaml` (the `allowBuilds` section) and is tracked by git, so CI gets it automatically:
 
-- `better-sqlite3: false`: paczka ma wbudowane prebuildy (w tym `win32-x64.node`), wymuszony `node-gyp` jest zbędny i bez Build Tools by się wywalił.
-- `node-pty: true`: skrypt instalacyjny tylko przenosi prebuildy w miejsce oczekiwane przez runtime.
-- `electron`: nie ma skryptów instalacyjnych; binaria pobierają się dopiero przy pierwszym uruchomieniu aplikacji, którego CI nie robi.
+- `better-sqlite3: false`: the package has built-in prebuilds (including `win32-x64.node`); a forced `node-gyp` is unnecessary and would fail without Build Tools.
+- `node-pty: true`: the install script only moves the prebuilds to the place the runtime expects.
+- `electron`: has no install scripts; the binaries are downloaded only on the first app start, which CI does not do.
 
-Praktyczny wniosek: `pnpm install` w jobie Windows nie kompiluje niczego, więc ten job nie zależy od kompilatora.
+The practical result: `pnpm install` in the Windows job compiles nothing, so this job does not depend on a compiler.
 
-Wyjątek: job `verify-linux`. `node-pty` 1.1.0 nie ma prebuildów dla Linuksa, więc job instaluje `build-essential` i `python3`, a potem kompiluje moduł ze źródeł (`pnpm rebuild node-pty`, kilka sekund; moduł jest N-API, więc ta sama binarka działa w Node i w Electronie). To świadoma decyzja dla Linuksa, opisana w [setup.md](setup.md) (sekcja "Moduły natywne"). Jeśli kiedyś pojawi się błąd typu "Could not find any Visual Studio installation" albo "NODE_MODULE_VERSION" na CI, to znak, że ktoś dodał zależność bez prebuildów: to blokada do analizy zgodnie z [setup.md](setup.md) (sekcja "Moduły natywne"), a nie powód, by dokładać Build Tools do pipeline'u.
+Exception: the `verify-linux` job. `node-pty` 1.1.0 has no Linux prebuilds, so the job installs `build-essential` and `python3` and then compiles the module from source (`pnpm rebuild node-pty`, a few seconds; the module is N-API, so the same binary works in Node and in Electron). This is a deliberate decision for Linux, described in [setup.md](setup.md) (the "Native modules" section). If an error such as "Could not find any Visual Studio installation" or "NODE_MODULE_VERSION" ever appears on CI, it means someone added a dependency without prebuilds: that is a blocker to analyze according to [setup.md](setup.md) (the "Native modules" section), not a reason to add Build Tools to the pipeline.
 
-## Cache pnpm
+## pnpm cache
 
-Krok `actions/setup-node` z opcją `cache: pnpm` zapisuje magazyn paczek pnpm między runami. Po zmianie `pnpm-lock.yaml` pobierane są tylko nowe paczki. Pierwszy run (i każdy po zmianie klucza cache) jest wolniejszy, bo pobiera wszystko od zera; to normalne. Cache jest optymalizacją: jego brak nigdy nie zmienia wyniku.
+The `actions/setup-node` step with the `cache: pnpm` option keeps the pnpm package store between runs. After a change to `pnpm-lock.yaml`, only new packages are downloaded. The first run (and every run after the cache key changes) is slower, because it downloads everything from scratch; that is normal. The cache is an optimization: its absence never changes the result.
 
-Instalacja biega zawsze z `--frozen-lockfile`: jeśli `pnpm-lock.yaml` nie zgadza się z `package.json`, instalacja natychmiast pada. To celowe: rozjazd zależności ma być naprawiony w commicie, nie zignorowany.
+Installation always runs with `--frozen-lockfile`: if `pnpm-lock.yaml` does not match `package.json`, installation fails immediately. This is intended: a dependency mismatch must be fixed in a commit, not ignored.
 
 ## GitHub Actions vs GitLab CI
 
-Oba systemy robią to samo (ciągła weryfikacja), różni się integracja z hostingiem repo, definicja pipeline'u i dostępność runnerów:
+Both systems do the same thing (continuous verification); they differ in the integration with repository hosting, the pipeline definition and runner availability:
 
-| Cecha | GitHub Actions (obecny wybór) | GitLab CI |
+| Feature | GitHub Actions (current choice) | GitLab CI |
 |---|---|---|
-| Hosting repo | origin tego projektu: `github.com:tomaszmadera/NeKode` | wymaga repo na GitLab (push mirror z GitHub lub przenosiny) |
-| Plik pipeline'u | `.github/workflows/*.yml` | `.gitlab-ci.yml` w katalogu głównym |
-| Definicja | joby z listą `steps` (uses/run) | `stages` i skrypty per job |
-| Runnery Windows | `windows-latest` dostępny od razu, dla publicznego repo bezpłatnie | dostępność współdzielonych runnerów Windows na GitLab.com jest ograniczona (beta, ograniczona dostępność); w praktyce podpina się własną maszynę (self-hosted) |
-| Konfiguracja startowa | zero: workflow w repo działa po pushu | konto na GitLab, mirror, ewentualnie własny runner |
+| Repository hosting | the origin of this project: `github.com:tomaszmadera/NeKode` | needs a repository on GitLab (push mirror from GitHub or a move) |
+| Pipeline file | `.github/workflows/*.yml` | `.gitlab-ci.yml` in the root directory |
+| Definition | jobs with a list of `steps` (uses/run) | `stages` and scripts per job |
+| Windows runners | `windows-latest` available right away, free for a public repository | shared Windows runners on GitLab.com have limited availability (beta, limited availability); in practice you attach your own machine (self-hosted) |
+| Initial setup | none: the workflow in the repository works after a push | a GitLab account, a mirror, possibly your own runner |
 
-Rekomendacja pozostaje GitHub Actions, dopóki repo mieszka na GitHub: pipeline żyje obok kodu, biega bez żadnej dodatkowej konfiguracji i darmowo dla repo publicznego. Koszt ewentualnej zmiany na GitLab jest mały: `ci.yml` to ok. 70 linii, a `pnpm run verify` przenosi się 1:1; realną pracą jest dopiero mirror i runner Windows.
+The recommendation stays GitHub Actions while the repository lives on GitHub: the pipeline lives next to the code, runs without any extra configuration and is free for a public repository. The cost of a possible move to GitLab is small: `ci.yml` is about 70 lines, and `pnpm run verify` carries over 1:1; the real work is the mirror and the Windows runner.
 
-## Jak czytać wynik
+## How to read the result
 
-- Karta **Actions** na GitHub: lista runów, każdy z nazwą commita i statusem (zielony ptak = ok, czerwony krzyżyk = błąd).
-- Przy PR: sekcja **Checks** pokazuje joby `verify` (wymagany, Windows) i `verify-linux` (doradczy); klik w job pokazuje log krok po kroku.
-- Znaczniki przy commitach w historii: ptak/krzyżyk obok hashu.
+- The **Actions** tab on GitHub: a list of runs, each with the commit name and status (green check mark = ok, red cross = error).
+- On a PR: the **Checks** section shows the `verify` (required, Windows) and `verify-linux` (advisory) jobs; clicking a job shows the log step by step.
+- Marks next to commits in the history: a check mark or cross next to the hash.
 
-Przy czerwonym runie: otwórz log, znajdź pierwszy krok z błędem (kolejność kroków odpowiada kolejności diagnozy: checkout, pnpm, Node, instalacja, verify), a potem odtwórz lokalnie to samo polecenie (`pnpm run verify`). CI używa czystej maszyny, więc czerwony wynik bez lokalnej reprodukcji zwykle oznacza rozjazd lockfile (`--frozen-lockfile`), brakujący prebuild albo różnicę systemową.
+On a red run: open the log, find the first step with an error (the step order matches the diagnosis order: checkout, pnpm, Node, install, verify), and then reproduce the same command locally (`pnpm run verify`). CI uses a clean machine, so a red result without a local reproduction usually means a lockfile mismatch (`--frozen-lockfile`), a missing prebuild or a system difference.
 
-## Workflow wydania
+## Release workflow
 
-[`.github/workflows/release.yml`](../../.github/workflows/release.yml) buduje pliki wydania i jest niezależny od `ci.yml`; wymagany check `verify` na `main` się nie zmienia. Zasady wydań i procedurę opisuje [releases.md](../operations/releases.md).
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) builds the release files and is independent of `ci.yml`; the required `verify` check on `main` does not change. The release rules and procedure are described in [releases.md](../operations/releases.md).
 
-- Wyzwalacz: push tagu z numerycznym semver bez prefiksu `v` (np. `0.15.0` albo `0.15.0-rc.1`). Tag, który nie zaczyna się od liczbowego `X.Y.Z` (np. `test`), nie uruchamia workflow; inne niepoprawne tagi (np. `1.2.3foo`) zatrzymuje bramka.
-- Bramki przed budowaniem: tag równa się `version` w `package.json` otagowanego commita, otagowany commit jest osiągalny z `main` (oba sprawdza `node scripts/release.mjs gate`), a `pnpm run verify` przechodzi na Windows i na Linuksie.
-- Build Windows (`pnpm run build:win`) i Linux (`pnpm run build:linux`, Ubuntu 24.04) biegnie równolegle; electron-builder działa z `--publish never`.
-- Job `Create draft release` działa tylko dla pushu tagu i tylko gdy oba buildy się udały. Tworzy szkic `NeKode <version>` z `NeKode-Setup-<version>.exe`, `NeKode-<version>-x86_64.AppImage` i `SHA256SUMS.txt` oraz notatkami z commitów od poprzedniego tagu. Nie nadpisuje istniejącego wydania. Szkic publikuje ręcznie utrzymujący.
-- Uprawnienia: tylko `GITHUB_TOKEN`; `contents: write` ma wyłącznie job tworzący szkic, pozostałe joby `contents: read`.
-- Ręczne uruchomienie (`workflow_dispatch`, np. `gh workflow run release.yml --ref main`) buduje oba pliki jako artefakty runu (`windows-installer`, `linux-appimage`) i nie tworzy wydania.
+- Trigger: a push of a tag with numeric semver without a `v` prefix (for example `0.15.0` or `0.15.0-rc.1`). A tag that does not start with a numeric `X.Y.Z` (for example `test`) does not start the workflow; the gate stops other invalid tags (for example `1.2.3foo`).
+- Gates before the build: the tag equals `version` in `package.json` of the tagged commit, the tagged commit is reachable from `main` (both are checked by `node scripts/release.mjs gate`), and `pnpm run verify` passes on Windows and on Linux.
+- The Windows build (`pnpm run build:win`) and the Linux build (`pnpm run build:linux`, Ubuntu 24.04) run in parallel; electron-builder runs with `--publish never`.
+- The `Create draft release` job runs only for a tag push and only when both builds succeeded. It creates a draft `NeKode <version>` with `NeKode-Setup-<version>.exe`, `NeKode-<version>-x86_64.AppImage` and `SHA256SUMS.txt`, and notes from the commits since the previous tag. It does not overwrite an existing release. The maintainer publishes the draft by hand.
+- Permissions: only `GITHUB_TOKEN`; only the draft job has `contents: write`, the other jobs have `contents: read`.
+- A manual run (`workflow_dispatch`, for example `gh workflow run release.yml --ref main`) builds both files as run artifacts (`windows-installer`, `linux-appimage`) and does not create a release.
 
-## Czego CI świadomie nie robi
+## What CI deliberately does not do
 
-- Workflow `ci.yml` nie buduje instalatora (`build:win`), AppImage (`build:linux`) ani paczki (`build:unpack`): pipeline weryfikacji ma być szybki, a pliki wydania buduje [workflow wydania](#workflow-wydania).
-- `ci.yml` nie robi release'ów ani nie publikuje artefaktów: wydania tworzy wyłącznie workflow wydania z tagu.
-- Nie biega na macOS: brak wsparcia docelowego. Linux ma doradczy job `verify-linux` (patrz wyżej).
-- Nie uruchamia skryptów harnessu (`.agents/` nie jest częścią publikowanego repo).
-- README ma badge najnowszego wydania (latest release), ale nie ma badge statusu CI: można go dodać jedną linią.
+- The `ci.yml` workflow does not build the installer (`build:win`), the AppImage (`build:linux`) or the package (`build:unpack`): the verification pipeline should be fast, and the release files are built by the [release workflow](#release-workflow).
+- `ci.yml` does not make releases or publish artifacts: releases are created only by the release workflow from a tag.
+- It does not run on macOS: there is no target support. Linux has the advisory `verify-linux` job (see above).
+- It does not run harness scripts (`.agents/` is not part of the published repository).
+- The README has a latest-release badge, but no CI status badge: one can be added with one line.

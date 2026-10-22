@@ -51,7 +51,7 @@ Domain changes follow the architecture's IPC, database, and terminal obligations
 
 ## Evidence and verification
 
-Select checks by what the change can affect, using [CI and verification](ci.md#dobór-weryfikacji). A bug regression must fail without the fix: record a red run or temporarily revert and restore the fix before final verification. Test behavior at the lowest useful level; avoid tests that merely repeat implementation or documentation wording. Before asserting unchanged state, prove the operation under test actually ran.
+Select checks by what the change can affect, using [CI and verification](ci.md#choosing-verification). A bug regression must fail without the fix: record a red run or temporarily revert and restore the fix before final verification. Test behavior at the lowest useful level; avoid tests that merely repeat implementation or documentation wording. Before asserting unchanged state, prove the operation under test actually ran.
 
 Review the whole final diff for scope, error paths, regressions, generated noise, and documentation impact. Run affected checks after changes that can invalidate their result. Do not override a failed gate or describe an unrun check as passed. Report the exact target, command, exit, and limitation. Unit or jsdom tests cannot prove native Electron or ConPTY behavior.
 

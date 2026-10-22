@@ -782,8 +782,8 @@ function ItemReview({
 }
 
 /**
- * Inline handoff-directory notices beneath the board header (spec Dostępność
- * Resume pkt 3-4): an unconfigured directory offers Configure handoffs, a read
+ * Inline handoff-directory notices beneath the board header (spec Resume
+ * availability items 3-4): an unconfigured directory offers Configure handoffs, a read
  * failure is its own state with Retry, and rejected files are named warnings.
  * A read failure never removes the loaded board; the notices render above it.
  */
@@ -1041,7 +1041,7 @@ export function KanbanBoard({
     loadCollapsedStateIds(projectId),
   )
   const [sortState, setSortState] = useState<KanbanSortState>(() => loadKanbanSort(projectId))
-  // Handoff availability (spec Dostępność Resume): Resume is hidden until a
+  // Handoff availability (spec Resume availability): Resume is hidden until a
   // batch check succeeds and the item has a readable accepted candidate. The
   // check runs beside the board load and never delays rendering the board.
   const [handoffPhase, setHandoffPhase] = useState<
@@ -1217,7 +1217,7 @@ export function KanbanBoard({
   // One batch handoff check for the loaded items: one directory read, then the
   // same snapshot matched against every item. Identical concurrent triggers
   // are coalesced; a different item set is its own generation, so an older
-  // result never marks a new item available (spec Dostępność Resume pkt 6-9).
+  // result never marks a new item available (spec Resume availability items 6-9).
   const loadHandoff = useCallback(
     async (items: Array<{ itemId: string; ref: string }>): Promise<void> => {
       const signature = items.map((entry) => `${entry.itemId}:${entry.ref}`).join('|')
@@ -1298,7 +1298,7 @@ export function KanbanBoard({
       setReviewRef(result.reviewRef)
       setPhase(result.phase)
       // Availability is checked on activation, tab return and Refresh; the
-      // board render never waits for it (spec Dostępność Resume pkt 7).
+      // board render never waits for it (spec Resume availability item 7).
       void loadHandoff(next.items.map((entry) => ({ itemId: entry.id, ref: entry.ref })))
     } catch (cause) {
       if (requestGeneration !== generation.current) return
@@ -1336,7 +1336,7 @@ export function KanbanBoard({
 
   // Resume is shown only for an item the batch check proved available. The
   // backend status and the mere presence of files never decide (spec
-  // Dostępność Resume pkt 2).
+  // Resume availability item 2).
   const itemResumable = (item: WorkItem): boolean =>
     handoffPhase === 'ready' && availableIds.has(item.id)
 

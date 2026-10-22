@@ -35,7 +35,7 @@ Notes on evidence:
   [the CI workflow](../.github/workflows/ci.yml) is the evidence for test
   rules. A green run on a Linux machine does not prove Windows behavior.
 - R2: this is the regression rule from
-  [CI and verification](../docs/development/ci.md#dobór-weryfikacji). Keep the
+  [CI and verification](../docs/development/ci.md#choosing-verification). Keep the
   red run, or revert and restore the fix before the final check.
 - R5: the Plane adapter tests use the Python standard library only, so the log
   may come from any machine with Python 3.11 or newer. Paste the command, exit

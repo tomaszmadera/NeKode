@@ -1,5 +1,5 @@
-# CI dla NeKode: lint + typecheck + testy, to samo polecenie co lokalnie.
-# Zob. docs/development/ci.md (wyjasnienie co, kiedy i na jakim systemie).
+# CI for NeKode: lint + typecheck + tests, the same command as locally.
+# See docs/development/ci.md (what runs, when, and on which system).
 name: CI
 
 on:

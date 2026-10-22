@@ -189,7 +189,7 @@ Identifiers are stable. "MVP" = mandatory for the first shippable slice; "Option
 
 1. User opens Settings → Dictation, enables dictation. Status shows `operational` (bridge connected, model usable). Language: Polish (`pl`). Model: OpenWhispr default.
 2. User focuses a chat's prompt input and clicks Dictation. Button switches to a recording state; the microphone activates.
-3. User speaks: "Wypuszczaj wersję zero dziewięć zero na mainie". Clicks Dictation again.
+3. User speaks: "Wypuszczaj wersję zero dziewięć zero na mainie" (Polish for "Release version zero nine zero on main"). Clicks Dictation again.
 4. Renderer stops capture, encodes WAV; main writes the temp file; main POSTs `/v1/transcribe` with `{ path, language: "pl" }`.
 5. Bridge returns `{ data: { text: "Wypuszczaj wersję 0.9.0 na mainie", provider, model } }`; main deletes the temp file; the text is injected into the originating prompt input; the button returns to Idle.
 
