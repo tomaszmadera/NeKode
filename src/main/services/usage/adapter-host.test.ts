@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -27,8 +28,11 @@ function adapter(script: string): UsageAdapter & { directory: string } {
     directory: dir,
   }
 }
-afterEach(() => {
-  for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
+afterEach(async () => {
+  // Windows can briefly hold a just-killed adapter's cwd (EPERM) under a loaded full run.
+  // Only the async rm retries EPERM; rmSync in Node 24 throws it at once.
+  for (const dir of roots.splice(0))
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
 })
 const signal = () => new AbortController().signal
 /** A Linux zombie still answers kill(pid, 0) but has already exited. */
