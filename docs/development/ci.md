@@ -131,4 +131,4 @@ On a red run: open the log, find the first step with an error (the step order ma
 - `ci.yml` does not make releases or publish artifacts: releases are created only by the release workflow from a tag.
 - It does not run on macOS: there is no target support. Linux has the advisory `verify-linux` job (see above).
 - It does not run harness scripts (`.agents/` is not part of the published repository).
-- There is no badge in the README: one can be added with one line whenever someone wants it.
+- The README has a latest-release badge, but no CI status badge: one can be added with one line.

@@ -1,5 +1,7 @@
 # NeKode
 
+[![Latest release](https://img.shields.io/github/v/release/tomaszmadera/NeKode?label=latest%20release)](https://github.com/tomaszmadera/NeKode/releases/latest)
+
 An agent-first desktop workspace for Windows 11 (Linux: experimental). CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
 
 ![NeKode — agent terminal session](docs/images/nekode-1-terminal.webp)
