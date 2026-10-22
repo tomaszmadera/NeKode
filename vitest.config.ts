@@ -4,6 +4,10 @@ import { defineConfig } from 'vitest/config'
 // routing uses test.projects instead (node for main/preload/shared, jsdom for
 // renderer components).
 export default defineConfig({
+  // Mirrors the renderer define in electron.vite.config.ts.
+  define: {
+    __APP_VERSION__: JSON.stringify('0.0.0-test'),
+  },
   test: {
     // Renderer tests assert PTY writes synchronously, so the split-write
     // submit gap (lib/pty-submit.ts) must be 0 under jsdom; production never

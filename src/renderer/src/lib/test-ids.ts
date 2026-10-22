@@ -137,6 +137,8 @@ export const TEST_ID = {
   appSettingsButton: 'app-settings-button',
   panelMascot: 'panel-mascot',
   mascotToggle: 'mascot-toggle',
+  /** Left-panel footer: opens a pre-filled GitHub issue (NEKODE-105). */
+  reportIssueLink: 'report-issue-link',
   settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
   /** App Settings: quick theme switcher in status bar toggle. */

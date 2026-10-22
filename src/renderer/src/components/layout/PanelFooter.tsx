@@ -1,8 +1,14 @@
 import type React from 'react'
 import mascot from '../../assets/sleeping-cat.webp'
 import { Icon } from '../../lib/icons'
+import { buildIssueReportUrl, platformFromUserAgent } from '../../lib/issue-report'
 import { TEST_ID } from '../../lib/test-ids'
 import './PanelFooter.css'
+
+const REPORT_ISSUE_URL = buildIssueReportUrl(
+  __APP_VERSION__,
+  platformFromUserAgent(navigator.userAgent),
+)
 
 // Shared by the projects navigation and Project Files panel.
 interface PanelFooterProps {
@@ -52,6 +58,19 @@ export function PanelFooter({
         >
           <Icon.mascot size={16} aria-hidden />
         </button>
+        {/* target=_blank reaches setWindowOpenHandler, which opens allowlisted
+            URLs in the system browser (src/main/index.ts). */}
+        <a
+          className="nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
+          data-testid={TEST_ID.reportIssueLink}
+          href={REPORT_ISSUE_URL}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Report an issue on GitHub"
+          title="Report an issue on GitHub"
+        >
+          <Icon.bug size={16} aria-hidden />
+        </a>
       </div>
     </div>
   )
