@@ -4,11 +4,39 @@
 
 An agent-first desktop workspace for Windows 11 (Linux: experimental). CLI coding agents run side by side in native terminal sessions (PTY), each attached to a chat in a project tree. Profile templates are bundled for Codex CLI, Claude Code, OpenCode, and Gemini CLI, and you can configure any other CLI agent. A local SQLite database stores projects, chats, and layout.
 
-![NeKode — agent terminal session](docs/images/nekode-1-terminal.webp)
+![NeKode main window: a project tree with chats on the left, one chat row marked with an amber dot, and a Claude Code session in the terminal on the right fixing a cart bug and running tests](docs/images/nekode-main-view.png)
 
-| Attention badge | Markdown preview | Kanban |
+| Markdown preview | Kanban | Usage panel |
 | --- | --- | --- |
-| ![Attention badge](docs/images/nekode-2-attention.webp) | ![Markdown preview](docs/images/nekode-3-markdown.webp) | ![Kanban board](docs/images/nekode-4-kanban.webp) |
+| ![A README.md open in a file tab as a rendered Markdown preview with a diagram and a table, with the project file tree in the left panel](docs/images/nekode-file-tree-markdown.png) | ![Kanban list of work items grouped by status: Backlog, Todo, In Progress, In Review, and Done](docs/images/nekode-kanban.png) | ![Usage panel open over the main window, with 5-hour, 7-day, and monthly quota bars for two subscriptions and a balance for a model router](docs/images/nekode-usage-quota-panel.png) |
+| Markdown opens in a file tab; the project file tree replaces the chat list in the left panel. | Needs the [Plane adapter](adapters/plane/README.md), installed separately. | Quota and balance for the configured usage sources. |
+
+<details>
+<summary>More screenshots</summary>
+
+Attention: an amber dot on a chat row marks a session that needs you.
+
+![Close-up of three chat rows in a project; the ORB-15 row has an amber dot, the other two have purple dots](docs/images/nekode-attention-detail.png)
+
+A chat in another project, with its own terminal session: Claude Code works through a to-do list, edits a Go file, and runs the Go tests.
+
+![A Claude Code session in the atlas-api project with a to-do list, a Go diff, and passing go test output](docs/images/nekode-chat-transcript.png)
+
+A planning session: the agent reads the code and proposes a plan before changing anything.
+
+![A Claude Code session at the Plan step that reads a doc, searches the code and lists a four-step plan, ending with a question whether to go ahead](docs/images/nekode-plan-session.png)
+
+The project tree: projects with their chats, the agent profile of each chat, and the task step (such as 4/6) for chats with a task.
+
+![Left panel with four projects expanded; the chats carry a Claude label and some show a task step such as 4/6; two projects have no chats](docs/images/nekode-project-tree.png)
+
+A Kanban work item with its description, comments, priority, and status.
+
+![Kanban work item ORB-12 with a description, acceptance criteria, two comments, and Priority and Status fields](docs/images/nekode-kanban-item.png)
+
+Screenshots use fictional demo projects and data.
+
+</details>
 
 ## Status
 
