@@ -15,7 +15,7 @@
 
 ## Current implementation obligations
 
-These obligations are grounded in the repository as of 2026-10-07. Dependency versions and scripts remain owned by executable configuration; see [setup](../development/setup.md) and [verification](../development/ci.md#dobór-weryfikacji). Preserve these boundaries when extending the app.
+These obligations are grounded in the repository as of 2026-10-07. Dependency versions and scripts remain owned by executable configuration; see [setup](../development/setup.md) and [verification](../development/ci.md#choosing-verification). Preserve these boundaries when extending the app.
 
 ### IPC boundary
 
