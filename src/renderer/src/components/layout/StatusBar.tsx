@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useEffect, useState } from 'react'
+import { shortenHomePath } from '../../../../shared/home-path'
 import type {
   AppApi,
   GitStatus,
@@ -188,7 +189,7 @@ export function StatusBar({
             data-testid={TEST_ID.statusProjectPath}
             title={project.path}
           >
-            {project.path}
+            {shortenHomePath(project.path, app.homeDir, app.platform)}
           </span>
           {visibleLabels.length > 0 ? (
             <span

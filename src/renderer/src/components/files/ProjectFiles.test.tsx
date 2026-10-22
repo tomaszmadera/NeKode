@@ -103,6 +103,20 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
     cleanup()
   })
 
+  it('the Files header shows a path under the home directory as ~, full path on hover', async () => {
+    app = { ...app, platform: 'win32', homeDir: 'D:\\code' }
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    mockListings(app)
+
+    render(<App app={app} />)
+    await screen.findByTestId(testIdFor.projectRow('p1'))
+    await enterFilesMode()
+    const path = getByTestIdString(TEST_ID.filesProjectPath)
+    expect(path.textContent).toBe('~/demo')
+    expect(path.getAttribute('title')).toBe('D:/code/demo')
+  })
+
   it('the Files action enters Project Files mode; a project row click never does', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])

@@ -32,6 +32,13 @@ describe('preload app api', () => {
     expect(ipc.invocations).toEqual([])
   })
 
+  it('exposes the home directory the preload passes in (display-only ~ paths)', () => {
+    const ipc = createIpcMock()
+    expect(createAppApi(ipc, 'linux', '/home/demo').homeDir).toBe('/home/demo')
+    expect(createAppApi(ipc, 'win32').homeDir).toBeUndefined()
+    expect(ipc.invocations).toEqual([])
+  })
+
   it('routes the typed global usage API with no project scope', async () => {
     const ipc = createIpcMock(),
       api = createAppApi(ipc).usage

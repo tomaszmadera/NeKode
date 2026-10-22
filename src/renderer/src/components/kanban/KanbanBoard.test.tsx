@@ -2415,13 +2415,19 @@ describe('kanban review comments', () => {
         id: 'comm-1',
         author: 'Alice',
         text: 'First comment body',
-        createdAt: '2026-10-17 12:00',
+        createdAt: '2026-10-17T12:00:00Z',
       },
       {
         id: 'comm-2',
         author: null,
         text: 'Second comment by unknown',
         createdAt: null,
+      },
+      {
+        id: 'comm-3',
+        author: 'Bob',
+        text: 'Comment with an unparseable timestamp',
+        createdAt: 'yesterday',
       },
     ]
 
@@ -2436,11 +2442,18 @@ describe('kanban review comments', () => {
     const item1 = screen.getByTestId(testIdFor.kanbanReviewComment('comm-1'))
     expect(item1.textContent).toContain('Alice')
     expect(item1.textContent).toContain('First comment body')
-    expect(item1.textContent).toContain('2026-10-17 12:00')
+    // The adapter's ISO UTC timestamp is shown in local time, formatted the
+    // same way as other app dates (toLocaleString), never as the raw string.
+    expect(item1.textContent).toContain(new Date('2026-10-17T12:00:00Z').toLocaleString())
+    expect(item1.textContent).not.toContain('2026-10-17T12:00:00Z')
 
     const item2 = screen.getByTestId(testIdFor.kanbanReviewComment('comm-2'))
     expect(item2.textContent).toContain('Unknown')
     expect(item2.textContent).toContain('Second comment by unknown')
+
+    // A value that does not parse as a date is shown unchanged.
+    const item3 = screen.getByTestId(testIdFor.kanbanReviewComment('comm-3'))
+    expect(item3.textContent).toContain('yesterday')
   })
 
   it('renders empty comments notice when the list is empty', async () => {

@@ -117,9 +117,12 @@ describe('ActionBar', () => {
     expect(screen.getByTestId('kanban-search-input')).toBeTruthy()
     expect(screen.getByTestId('kanban-new-task')).toBeTruthy()
 
-    // Search input has the expected placeholder and is disabled
+    // Task search is not implemented: the field stays disabled, has a neutral
+    // placeholder, and its tooltip says why it is disabled.
     const searchInput = screen.getByTestId('kanban-search-input') as HTMLInputElement
-    expect(searchInput.placeholder).toBe('Search... (not working yet)')
+    expect(searchInput.placeholder).toBe('Search')
+    expect(searchInput.title).toBe('Search is not available yet')
+    expect(searchInput.getAttribute('aria-label')).toBe('Search is not available yet')
     expect(searchInput.disabled).toBe(true)
 
     // Interacting with controls invokes callbacks

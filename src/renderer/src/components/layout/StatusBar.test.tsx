@@ -77,6 +77,17 @@ describe('status bar — project context (UX-UI §14)', () => {
     await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('p1'))
   })
 
+  it('shows a path under the home directory as ~ and keeps the full path on hover', async () => {
+    app = { ...createAppApiStub(), platform: 'win32', homeDir: 'C:\\Users\\demo' }
+    render(
+      <StatusBar app={app} project={{ ...projectA, path: 'C:\\Users\\demo\\projects\\atlas' }} />,
+    )
+    const path = screen.getByTestId(TEST_ID.statusProjectPath)
+    expect(path.textContent).toBe('~\\projects\\atlas')
+    expect(path.getAttribute('title')).toBe('C:\\Users\\demo\\projects\\atlas')
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledWith('p1'))
+  })
+
   it('renders runtime badges and collapses the overflow to +N (UX-UI §15)', async () => {
     app = createAppApiStub()
     render(

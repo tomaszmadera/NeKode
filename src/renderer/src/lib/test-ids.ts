@@ -72,6 +72,8 @@ export const TEST_ID = {
   projectFilesPanel: 'project-files-panel',
   filesBackButton: 'files-back-button',
   filesProjectName: 'files-project-name',
+  /** Project path in the Files subheader (home shown as `~`). */
+  filesProjectPath: 'files-project-path',
   /** Manual re-read of the open file tree (spec Behaviour 25). */
   filesRefreshButton: 'files-refresh-button',
   fileTree: 'file-tree',
