@@ -131,4 +131,4 @@ Przy czerwonym runie: otwórz log, znajdź pierwszy krok z błędem (kolejność
 - `ci.yml` nie robi release'ów ani nie publikuje artefaktów: wydania tworzy wyłącznie workflow wydania z tagu.
 - Nie biega na macOS: brak wsparcia docelowego. Linux ma doradczy job `verify-linux` (patrz wyżej).
 - Nie uruchamia skryptów harnessu (`.agents/` nie jest częścią publikowanego repo).
-- Nie ma badge w README: może być dodany, kiedy ktoś zapragnie, jedną linią.
+- README ma badge najnowszego wydania (latest release), ale nie ma badge statusu CI: można go dodać jedną linią.
