@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentProfile,
   HandoffCandidatesResult,
+  KanbanDraftLaunchInput,
   KanbanHandoffCandidatesInput,
   KanbanResumeLaunchInput,
   KanbanStartLaunchInput,
@@ -134,6 +135,7 @@ function harness(
     failSpawn?: boolean
     globalProfiles?: boolean
     path?: string
+    profile?: AgentProfile
   } = {},
 ) {
   const db = openDatabase(':memory:')
@@ -174,7 +176,7 @@ function harness(
     profiles: options.globalProfiles
       ? globalProfiles
       : {
-          get: () => ({ defaultId: profile.id, profiles: [profile] }),
+          get: () => ({ defaultId: profile.id, profiles: [options.profile ?? profile] }),
         },
     kanban: { getItem },
     handoffs,
@@ -522,6 +524,82 @@ describe('TaskLaunchService start', () => {
       bundle.service.launch(
         input({ projectId: bundle.project.id, attemptId: 'kept', profileId: 'other' }),
       ),
+    ).toThrow(AppError)
+    expect(bundle.spawns).toHaveLength(1)
+  })
+})
+
+function draftInput(overrides: Partial<KanbanDraftLaunchInput> = {}): KanbanDraftLaunchInput {
+  return {
+    projectId: 'pending',
+    itemId: 'native-1',
+    ref: 'DEMO-1',
+    profileId: profile.id,
+    attemptId: 'draft-1',
+    mode: 'draft',
+    ...overrides,
+  }
+}
+
+describe('TaskLaunchService draft (NEKODE-99)', () => {
+  it('starts the profile without its prompt slot and returns the Start prompt', async () => {
+    const bundle = harness()
+    const result = await bundle.service.launch(draftInput({ projectId: bundle.project.id }))
+    expect(bundle.getItem).toHaveBeenCalledWith(bundle.project.id, 'DEMO-1')
+    expect(result.delivered).toBe(true)
+    expect(result.chat.name).toBe('[PowerShell] Codex')
+    expect(result.chat.taskRef).toBe('DEMO-1')
+    expect(result.draftPrompt).toBe(buildStartPrompt(liveItem(), HANDOFF))
+    expect(bundle.spawns).toHaveLength(1)
+    expect(bundle.spawns[0]?.file).toBe('codex.exe')
+    expect(bundle.spawns[0]?.args).toEqual(['--model', 'gpt', '--yolo'])
+    expect(bundle.spawns[0]?.args.some((arg) => arg.includes(LEAK))).toBe(false)
+  })
+
+  it('uses interactiveArgs when the profile defines them', async () => {
+    const bundle = harness({ profile: { ...profile, interactiveArgs: ['--tui'] } })
+    const result = await bundle.service.launch(draftInput({ projectId: bundle.project.id }))
+    expect(bundle.spawns[0]?.args).toEqual(['--tui'])
+    expect(result.draftPrompt).toBe(buildStartPrompt(liveItem(), HANDOFF))
+  })
+
+  it('keeps the Start result shape without draftPrompt', async () => {
+    const bundle = harness()
+    const result = await bundle.service.launch(input({ projectId: bundle.project.id }))
+    expect('draftPrompt' in result).toBe(false)
+  })
+
+  it('returns the prompt only after a failed spawn is retried, and again on a repeat', async () => {
+    const options = { failSpawn: true }
+    const bundle = harness(options)
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const launch = draftInput({ projectId: bundle.project.id })
+    const failed = await bundle.service.launch(launch)
+    spy.mockRestore()
+    expect(failed.delivered).toBe(false)
+    expect('draftPrompt' in failed).toBe(false)
+    options.failSpawn = false
+    const retried = await bundle.service.launch(launch)
+    expect(retried.delivered).toBe(true)
+    expect(retried.chat.id).toBe(failed.chat.id)
+    expect(retried.draftPrompt).toBe(buildStartPrompt(liveItem(), HANDOFF))
+    const again = await bundle.service.launch(launch)
+    expect(again).toEqual(retried)
+    expect(bundle.spawns).toHaveLength(2)
+    expect(bundle.chats.list(bundle.project.id)).toHaveLength(1)
+  })
+
+  it('rejects a draft with extra fields or a mismatched retry', async () => {
+    const bundle = harness()
+    expect(() =>
+      bundle.service.launch({
+        ...draftInput({ projectId: bundle.project.id }),
+        fileName: 'x.md',
+      } as unknown as KanbanDraftLaunchInput),
+    ).toThrow(/unexpected or missing fields/)
+    await bundle.service.launch(draftInput({ projectId: bundle.project.id, attemptId: 'kept' }))
+    expect(() =>
+      bundle.service.launch(input({ projectId: bundle.project.id, attemptId: 'kept' })),
     ).toThrow(AppError)
     expect(bundle.spawns).toHaveLength(1)
   })

@@ -594,12 +594,26 @@ export interface KanbanResumeLaunchInput extends KanbanLaunchTaskBase {
   stamp: string
 }
 
-export type KanbanLaunchTaskInput = KanbanStartLaunchInput | KanbanResumeLaunchInput
+/**
+ * `kanban:launchTask` body for `mode: 'draft'` (Start without sending,
+ * NEKODE-99). Main starts the profile with its interactive argv and returns the
+ * Start prompt as `draftPrompt` instead of passing it to the process.
+ */
+export interface KanbanDraftLaunchInput extends KanbanLaunchTaskBase {
+  mode: 'draft'
+}
+
+export type KanbanLaunchTaskInput =
+  | KanbanStartLaunchInput
+  | KanbanResumeLaunchInput
+  | KanbanDraftLaunchInput
 
 /** Chat created for one confirmation. `delivered` is false when spawn failed. */
 export interface KanbanLaunchResult {
   chat: ChatInfo
   delivered: boolean
+  /** The Start prompt for the prompt input; only for `mode: 'draft'` when delivered. */
+  draftPrompt?: string
 }
 
 // ---------------------------------------------------------------------------

@@ -102,19 +102,19 @@ describe('motion and interaction tokens (NEKODE-9)', () => {
     )
   })
 
-  it('sets NeKode Float v2 app color to rgb(11 14 26) and tab strip background to transparent', () => {
-    const floatV2Source = readFileSync(join(THEMES_DIR, 'nekode-float-v2.css'), 'utf8')
-    expect(floatV2Source).toContain('--color-app: rgb(11 14 26);')
-    expect(floatV2Source).toContain('--color-terminal: rgb(17 19 23);')
-    expect(floatV2Source).toMatch(
-      /\[data-theme="nekode-float-v2"\]\s*\.nk-tab-strip\s*\{[^}]*background-color:\s*transparent;/,
+  it('sets NeKode Float app color to rgb(11 14 26) and tab strip background to transparent', () => {
+    const floatSource = readFileSync(join(THEMES_DIR, 'nekode-float.css'), 'utf8')
+    expect(floatSource).toContain('--color-app: rgb(11 14 26);')
+    expect(floatSource).toContain('--color-terminal: rgb(17 19 23);')
+    expect(floatSource).toMatch(
+      /\[data-theme="nekode-float"\]\s*\.nk-tab-strip\s*\{[^}]*background-color:\s*transparent;/,
     )
   })
 
-  it('sets NeKode Float v2 action row slot to symmetric 14px 16px padding', () => {
-    const floatV2Source = readFileSync(join(THEMES_DIR, 'nekode-float-v2.css'), 'utf8')
-    expect(floatV2Source).toMatch(
-      /\[data-theme="nekode-float-v2"\]\s*\.nk-action-row\s*\{[^}]*padding:\s*14px\s+16px;/,
+  it('sets NeKode Float action row slot to symmetric 14px 16px padding', () => {
+    const floatSource = readFileSync(join(THEMES_DIR, 'nekode-float.css'), 'utf8')
+    expect(floatSource).toMatch(
+      /\[data-theme="nekode-float"\]\s*\.nk-action-row\s*\{[^}]*padding:\s*14px\s+16px;/,
     )
   })
 })

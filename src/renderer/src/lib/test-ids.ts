@@ -239,6 +239,9 @@ export const TEST_ID = {
   kanbanReviewCommentsError: 'kanban-review-comments-error',
   /** Start confirmation. Rendered by the app shell, not inside the board. */
   kanbanStartDialog: 'kanban-start-dialog',
+  kanbanStartMenu: 'kanban-start-menu',
+  kanbanStartMenuStart: 'kanban-start-menu-start',
+  kanbanStartMenuDraft: 'kanban-start-menu-draft',
   kanbanStartTask: 'kanban-start-task',
   kanbanStartLoading: 'kanban-start-loading',
   kanbanStartEmpty: 'kanban-start-empty',

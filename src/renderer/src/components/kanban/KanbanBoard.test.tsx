@@ -2484,3 +2484,116 @@ describe('kanban review comments', () => {
     expect(errorAlert.textContent).toBe('Failed to fetch comments')
   })
 })
+
+describe('kanban Start context menu (NEKODE-99)', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  function appWithResumeOnNk1(): AppApi {
+    return {
+      kanban: {
+        listBoard: vi.fn().mockResolvedValue(richBoard()),
+        getComments: vi.fn().mockResolvedValue([]),
+        handoffAvailability: vi.fn().mockResolvedValue({
+          state: 'ready',
+          items: [
+            { itemId: 'id-NK-1', ref: 'NK-1', available: true },
+            { itemId: 'id-NK-2', ref: 'NK-2', available: false },
+          ],
+          rejections: [],
+        }),
+      },
+    } as unknown as AppApi
+  }
+
+  it('offers Start and Start without sending by mouse and keyboard on an enabled Start', async () => {
+    const onStart = vi.fn()
+    const onStartDraft = vi.fn()
+    render(
+      <KanbanBoard
+        app={appWithResumeOnNk1()}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={onStart}
+        onStartDraft={onStartDraft}
+      />,
+    )
+    await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))
+    const start = screen.getByTestId(testIdFor.kanbanItemStart('NK-2'))
+
+    fireEvent.contextMenu(start)
+    const menu = screen.getByRole('menu', { name: 'Start NK-2' })
+    expect(within(menu).getByTestId(TEST_ID.kanbanStartMenuStart).textContent).toBe('Start')
+    fireEvent.click(within(menu).getByTestId(TEST_ID.kanbanStartMenuDraft))
+    expect(onStartDraft).toHaveBeenCalledTimes(1)
+    expect(onStartDraft.mock.calls[0]?.[0].ref).toBe('NK-2')
+    expect(onStart).not.toHaveBeenCalled()
+    expect(screen.queryByTestId(TEST_ID.kanbanStartMenu)).toBeNull()
+
+    fireEvent.keyDown(start, { key: 'ContextMenu' })
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanStartMenuStart))
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(onStart.mock.calls[0]?.[0].ref).toBe('NK-2')
+    expect(screen.queryByTestId(TEST_ID.kanbanStartMenu)).toBeNull()
+
+    fireEvent.keyDown(start, { key: 'F10', shiftKey: true })
+    expect(screen.getByTestId(TEST_ID.kanbanStartMenu)).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.kanbanStartMenu)).toBeNull()
+    expect(onStartDraft).toHaveBeenCalledTimes(1)
+    expect(onStart).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens no menu on a disabled Start or without a draft handler', async () => {
+    const onStartDraft = vi.fn()
+    const view = render(
+      <KanbanBoard
+        app={appWithResumeOnNk1()}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={vi.fn()}
+        onStartDraft={onStartDraft}
+      />,
+    )
+    await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))
+    const disabled = screen.getByTestId(testIdFor.kanbanItemStart('NK-1'))
+    fireEvent.contextMenu(disabled)
+    fireEvent.keyDown(disabled, { key: 'ContextMenu' })
+    expect(screen.queryByTestId(TEST_ID.kanbanStartMenu)).toBeNull()
+    view.unmount()
+
+    render(
+      <KanbanBoard
+        app={appWithResumeOnNk1()}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={vi.fn()}
+      />,
+    )
+    await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.kanbanItemStart('NK-2')))
+    expect(screen.queryByTestId(TEST_ID.kanbanStartMenu)).toBeNull()
+    expect(onStartDraft).not.toHaveBeenCalled()
+  })
+
+  it('opens the Start menu from the review without the copy menu', async () => {
+    const onStartDraft = vi.fn()
+    render(
+      <KanbanBoard
+        app={appWithResumeOnNk1()}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={vi.fn()}
+        onStartDraft={onStartDraft}
+      />,
+    )
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-2')))
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    fireEvent.contextMenu(within(review).getByTestId(testIdFor.kanbanItemStart('NK-2')))
+    expect(screen.queryByRole('menu', { name: 'Copy selection' })).toBeNull()
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanStartMenuDraft))
+    expect(onStartDraft).toHaveBeenCalledTimes(1)
+    expect(onStartDraft.mock.calls[0]?.[0].ref).toBe('NK-2')
+  })
+})

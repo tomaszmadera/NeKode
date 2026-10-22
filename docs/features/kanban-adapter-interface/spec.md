@@ -891,3 +891,51 @@ An extension of the task preview (`ItemReview`) with a comments section, and sup
 3. `ItemReview` in NeKode fetches and shows the task comments; the empty state shows `No comments.`.
 4. `kanban_cli.py comment <ref> <text>` adds a comment to the task in Plane and confirms the creation.
 5. The `task-close` skill tells the agent to add a summary comment to the Kanban task after verification passes.
+
+## Kanban Start without sending amendment (NEKODE-99)
+
+Decyzja użytkownika 2026-10-22: tekst trafia do pola promptu NeKode, nie do pola wejściowego agenta. Sekcja rozszerza "Kanban task launch amendment" (Start) oraz "Kanban review Start and Resume buttons amendment" (NEKODE-84). Zwykły Start, Resume i menu kopiowania zostają bez zmian.
+
+### Cel i zakres
+
+Użytkownik uruchamia agenta dla zadania tak jak przez Start, ale polecenie zadania nie jest wysyłane. Polecenie czeka w polu promptu nowego czatu; użytkownik je przegląda, uzupełnia i sam wysyła klawiszem Enter.
+
+Poza zakresem: wpisywanie tekstu do terminala agenta, wykrywanie gotowości TUI agenta, zmiana treści polecenia Start, wariant bez wysyłania dla Resume, nowe pole profilu agenta.
+
+### Menu przycisku Start
+
+1. Prawy przycisk myszy na aktywnym Start oraz klawisz menu kontekstowego albo Shift+F10, gdy Start ma fokus, otwierają menu w każdym miejscu, gdzie jest Start: wiersz listy i podgląd zadania (`ItemReview`).
+2. Menu ma dwie pozycje z angielskimi etykietami: `Start` i `Start without sending`. `Start` działa jak kliknięcie Start. `Start without sending` otwiera ten sam modal wyboru agenta w wariancie bez wysyłania.
+3. Nieaktywny Start (widoczny Resume) nie otwiera menu. Escape, wybór pozycji i wskaźnik poza menu zamykają menu, tak jak menu kopiowania. Menu kopiowania podglądu nadal nie otwiera się na Start.
+
+### Modal i uruchomienie
+
+1. Wariant bez wysyłania ma tytuł `Start task without sending` i przycisk zatwierdzenia `Start without sending`. Wybór profilu, Cancel, Escape, Configure agents, stan pusty i komunikaty błędów działają jak w zwykłym Start.
+2. Main wykonuje te same kontrole co Start (projekt, powiązanie adaptera, aktualność zadania przez `getItem`, profil) i tworzy dokładnie jeden czat z tą samą nazwą i tożsamością (`taskRef`, nazwa agenta).
+3. Agent uruchamia się z argumentami interaktywnymi, jak w New Chat: `interactiveArgs`, gdy profil je ma, w przeciwnym razie argumenty profilu bez elementu `{prompt}` ([new-chat-agent-menu](../new-chat-agent-menu/spec.md#interactive-profile-arguments-nekode-78)). Argumenty procesu nie zawierają polecenia zadania.
+4. Main buduje polecenie tą samą funkcją co Start (Start.5) i zwraca je w wyniku uruchomienia. Renderer nie składa polecenia.
+5. Po udanym uruchomieniu NeKode aktywuje nowy czat i wstawia polecenie do jego pola promptu przez istniejący mechanizm wypełniania (`PromptInjection`), zastępując pustą wartość. Nic nie jest zapisywane do PTY. Enter albo Send wysyła tekst istniejącą ścieżką pola promptu.
+6. Ustawienie `handoffResume.autoSend` nie wpływa na ten wariant.
+7. Gdy proces agenta nie wystartuje, obowiązuje istniejące zachowanie wstrzymanego uruchomienia (held launch) i ponowienia. Polecenie trafia do pola promptu dopiero po udanym ponowieniu. Ponowienie używa trybu bez wysyłania.
+
+### Dane i zgodność
+
+- `kanban:launchTask` przyjmuje trzeci tryb `mode: 'draft'` z polami wspólnymi Start. Walidacja IPC i usługi odrzuca nieznane pola, tak jak dla `start`.
+- `KanbanLaunchResult` zawiera opcjonalne `draftPrompt: string`, obecne tylko dla trybu `draft` przy `delivered: true`. Tryby `start` i `resume` nie zmieniają kształtu wyniku.
+- Brak migracji danych i zmian profili. Uprawnienia jak w Start.
+
+### Kryteria akceptacji
+
+1. Prawy przycisk, klawisz menu i Shift+F10 na aktywnym Start w liście i podglądzie otwierają menu z `Start` i `Start without sending`; nieaktywny Start menu nie otwiera.
+2. `Start` z menu zachowuje się jak kliknięcie Start.
+3. `Start without sending` po zatwierdzeniu tworzy jeden czat, uruchamia profil bez polecenia w argv (z `interactiveArgs`, jeśli są) i wstawia polecenie Start do pola promptu tego czatu; do PTY nie trafia żaden zapis.
+4. Polecenie w polu jest identyczne z poleceniem zwykłego Start dla tego samego zadania.
+5. Błąd spawnu daje held launch; po udanym ponowieniu polecenie trafia do pola promptu.
+6. Kontrakt IPC odrzuca `draft` z nadmiarowymi polami; `start` i `resume` działają bez zmian.
+
+### Wymagana weryfikacja
+
+- Testy jednostkowe usługi uruchomienia: argv trybu `draft` (z `interactiveArgs` i bez), zwrócone `draftPrompt` równe poleceniu Start, ponowienie.
+- Testy walidacji IPC dla `mode: 'draft'`.
+- Testy komponentów: menu Start (mysz, klawiatura, nieaktywny Start, podgląd), wariant modalu, wypełnienie pola promptu po uruchomieniu.
+- Ręczna próba z Claude Code: wieloliniowe polecenie wysłane z pola promptu dociera do agenta jako jedna wiadomość. Jeżeli nie, wynik jest zgłaszany użytkownikowi przed zamknięciem zadania.

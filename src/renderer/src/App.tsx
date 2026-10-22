@@ -98,8 +98,9 @@ import {
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { TEST_ID, testIdFor } from './lib/test-ids'
 import {
-  isThemeId,
+  DEFAULT_THEME_ID,
   QUICK_THEME_SWITCH_STORAGE_KEY,
+  resolveStoredThemeId,
   THEME_STORAGE_KEY,
   THEMES,
   type ThemeId,
@@ -273,9 +274,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [themeState, setThemeState] = useState<{ theme: ThemeId; error: string | null }>(() => {
     try {
       const saved = localStorage.getItem(THEME_STORAGE_KEY)
-      return { theme: isThemeId(saved) ? saved : 'default', error: null }
+      return { theme: resolveStoredThemeId(saved), error: null }
     } catch {
-      return { theme: 'default', error: 'Failed to load the saved theme.' }
+      return { theme: DEFAULT_THEME_ID, error: 'Failed to load the saved theme.' }
     }
   })
   const [quickThemeSwitchState, setQuickThemeSwitchState] = useState<{
@@ -484,7 +485,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const [settledKanbanProjects, setSettledKanbanProjects] = useState<ReadonlySet<string>>(new Set())
   const kanbanBindingsGeneration = useRef(0)
   const [kanbanVersions, setKanbanVersions] = useState<Record<string, number>>({})
-  const [taskStart, setTaskStart] = useState<{ projectId: string; item: WorkItem } | null>(null)
+  const [taskStart, setTaskStart] = useState<{
+    projectId: string
+    item: WorkItem
+    draft: boolean
+  } | null>(null)
   const [taskResume, setTaskResume] = useState<{ projectId: string; item: WorkItem } | null>(null)
   const [heldLaunches, setHeldLaunches] = useState<Record<string, HeldLaunch>>({})
   const heldLaunchesRef = useRef(heldLaunches)
@@ -823,6 +828,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [app, autoSendHandoff, cancelPendingSubmit, liveChatIds],
   )
 
+  // Start without sending (NEKODE-99): the prompt main returned for a delivered
+  // draft launch fills the new chat's prompt input; nothing is written to the PTY.
+  const fillDraftPrompt = useCallback((chatId: string, text: string): void => {
+    promptInjectionNonceRef.current += 1
+    setPromptInjection({ chatId, text, nonce: promptInjectionNonceRef.current })
+  }, [])
+
   const handlePromptInjected = useCallback((nonce: number): void => {
     setPromptInjection((previous) =>
       previous !== null && previous.nonce === nonce ? null : previous,
@@ -1096,7 +1108,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   }, [tabProjectId])
 
   const handleStartTask = useCallback((projectId: string, item: WorkItem): void => {
-    setTaskStart({ projectId, item })
+    setTaskStart({ projectId, item, draft: false })
+  }, [])
+
+  // Start without sending (NEKODE-99): the same confirmation in its draft variant.
+  const handleStartTaskDraft = useCallback((projectId: string, item: WorkItem): void => {
+    setTaskStart({ projectId, item, draft: true })
   }, [])
 
   // Project Settings on the Agents tab. Start and Resume share this opener.
@@ -1938,6 +1955,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       }
       adoptLaunchedChat(projectId, result.chat)
       if (result.delivered) {
+        if (result.draftPrompt !== undefined) {
+          fillDraftPrompt(result.chat.id, result.draftPrompt)
+        }
         setHeldLaunches((previous) => {
           if (!(result.chat.id in previous)) {
             return previous
@@ -1958,7 +1978,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setTaskStart(null)
       setTaskResume(null)
     },
-    [adoptLaunchedChat],
+    [adoptLaunchedChat, fillDraftPrompt],
   )
 
   const handleRetryHeldLaunch = useCallback(
@@ -1985,6 +2005,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               return next
             })
             adoptLaunchedChat(held.input.projectId, result.chat)
+            if (result.draftPrompt !== undefined) {
+              fillDraftPrompt(result.chat.id, result.draftPrompt)
+            }
           } else {
             setHeldLaunches((previous) => ({
               ...previous,
@@ -2013,7 +2036,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
       })()
     },
-    [adoptLaunchedChat, app],
+    [adoptLaunchedChat, app, fillDraftPrompt],
   )
 
   // Terminal-exit close flow (spec Behaviour 11): remove the chat from the
@@ -2466,7 +2489,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       : null
   const statusProject = tabProject
 
-  // Floating shell theme (NeKode Float v2): the title bar strip stays (without
+  // Floating shell theme (NeKode Float): the title bar strip stays (without
   // its hairline), the left panel floats detached with rounded corners and
   // the center content below the tab strip sits in a rounded frame with the
   // tabs attached to its top. Attached themes keep the window-edge shell.
@@ -2812,6 +2835,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 onConfigure={handleOpenKanbanSettings}
                 onConfigureHandoffs={handleConfigureProjectHandoffs}
                 onStart={handleStartTask}
+                onStartDraft={handleStartTaskDraft}
                 onResume={handleResumeTask}
                 onToolbarControls={handleKanbanToolbarControls}
               />
@@ -2829,6 +2853,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           app={app}
           projectId={taskStart.projectId}
           item={taskStart.item}
+          draft={taskStart.draft}
           onCancel={() => {
             setTaskStart(null)
           }}

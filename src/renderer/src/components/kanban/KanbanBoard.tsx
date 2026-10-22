@@ -91,6 +91,11 @@ interface KanbanBoardProps {
    */
   onStart?: (item: WorkItem) => void
   /**
+   * Start without sending (NEKODE-99): the Start button's context menu offers
+   * it. Without this callback the Start button has no menu.
+   */
+  onStartDraft?: (item: WorkItem) => void
+  /**
    * Opens the Resume and handoff confirmation in the app shell. Resume is a
    * row control shown only for an item the batch handoff check proved
    * available.
@@ -417,6 +422,82 @@ function ItemCopyMenu({
   )
 }
 
+/** Start button menu (NEKODE-99): Start, or Start without sending. */
+function StartMenu({
+  item,
+  x,
+  y,
+  onStart,
+  onStartDraft,
+  onClose,
+}: {
+  item: WorkItem
+  x: number
+  y: number
+  onStart?: (item: WorkItem) => void
+  onStartDraft: (item: WorkItem) => void
+  onClose: () => void
+}): React.JSX.Element {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      role="menu"
+      aria-label={`Start ${item.ref}`}
+      className="fixed inset-0 z-40"
+      data-testid={TEST_ID.kanbanStartMenu}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') onClose()
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+    >
+      <div
+        className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
+        style={{ left: x, top: y }}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          className={MENU_ITEM_CLASS}
+          data-testid={TEST_ID.kanbanStartMenuStart}
+          onClick={() => {
+            onClose()
+            onStart?.(item)
+          }}
+        >
+          Start
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className={MENU_ITEM_CLASS}
+          data-testid={TEST_ID.kanbanStartMenuDraft}
+          onClick={() => {
+            onClose()
+            onStartDraft(item)
+          }}
+        >
+          Start without sending
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** Right-click on the review copies the selection captured when the menu opened. */
 function ReviewTextMenu({
   text,
@@ -515,11 +596,13 @@ function ItemLaunchButtons({
   resumeEnabled,
   onStart,
   onResume,
+  onOpenStartMenu,
 }: {
   item: WorkItem
   resumeEnabled: boolean
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
+  onOpenStartMenu?: (item: WorkItem, x: number, y: number) => void
 }): React.JSX.Element {
   return (
     <div className="flex shrink-0 gap-1">
@@ -530,6 +613,19 @@ function ItemLaunchButtons({
         disabled={resumeEnabled}
         onClick={() => {
           onStart?.(item)
+        }}
+        onKeyDown={(event) => {
+          if (resumeEnabled || onOpenStartMenu === undefined) return
+          if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+            event.preventDefault()
+            const rect = event.currentTarget.getBoundingClientRect()
+            onOpenStartMenu(item, rect.left, rect.bottom)
+          }
+        }}
+        onContextMenu={(event) => {
+          if (resumeEnabled || onOpenStartMenu === undefined) return
+          event.preventDefault()
+          onOpenStartMenu(item, event.clientX, event.clientY)
         }}
       >
         Start
@@ -558,6 +654,7 @@ function WorkItemSurface({
   onOpenMenu,
   onStart,
   onResume,
+  onOpenStartMenu,
 }: {
   item: WorkItem
   resumeEnabled: boolean
@@ -565,6 +662,7 @@ function WorkItemSurface({
   onOpenMenu: (item: WorkItem, x: number, y: number) => void
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
+  onOpenStartMenu?: (item: WorkItem, x: number, y: number) => void
 }): React.JSX.Element {
   return (
     <div
@@ -579,6 +677,7 @@ function WorkItemSurface({
         resumeEnabled={resumeEnabled}
         onStart={onStart}
         onResume={onResume}
+        onOpenStartMenu={onOpenStartMenu}
       />
     </div>
   )
@@ -610,6 +709,7 @@ function ItemReview({
   resumeEnabled,
   onStart,
   onResume,
+  onOpenStartMenu,
   onStatusChange,
   onPriorityChange,
   onCopyText,
@@ -630,6 +730,7 @@ function ItemReview({
   commentsError: string | null
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
+  onOpenStartMenu?: (item: WorkItem, x: number, y: number) => void
   onStatusChange: (stateName: string) => void
   onPriorityChange: (priority: KanbanPriority | null) => void
   onCopyText: (text: string, x: number, y: number) => void
@@ -715,6 +816,7 @@ function ItemReview({
             resumeEnabled={resumeEnabled}
             onStart={onStart}
             onResume={onResume}
+            onOpenStartMenu={onOpenStartMenu}
           />
           <div className="flex flex-col gap-1">
             <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanReviewPriority}>
@@ -1040,6 +1142,7 @@ export function KanbanBoard({
   onConfigure,
   onConfigureHandoffs,
   onStart,
+  onStartDraft,
   onResume,
   active = true,
   onToolbarControls,
@@ -1049,6 +1152,7 @@ export function KanbanBoard({
   const [error, setError] = useState<string | null>(null)
   const [reviewRef, setReviewRef] = useState<string | null>(null)
   const [copyMenu, setCopyMenu] = useState<{ item: WorkItem; x: number; y: number } | null>(null)
+  const [startMenu, setStartMenu] = useState<{ item: WorkItem; x: number; y: number } | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [collapsedStates, setCollapsedStates] = useState<Set<string>>(() =>
     loadCollapsedStateIds(projectId),
@@ -1113,6 +1217,7 @@ export function KanbanBoard({
     setPhase('loading')
     setReviewRef(null)
     setCopyMenu(null)
+    setStartMenu(null)
     setError(null)
     setRefreshing(false)
     createGeneration.current += 1
@@ -1323,6 +1428,7 @@ export function KanbanBoard({
         setBoard({ states: [], items: [] })
         setReviewRef(null)
         setCopyMenu(null)
+        setStartMenu(null)
         setError(payload.message)
         setPhase(payload.code === 'validation' ? 'not-configured' : 'error')
         return
@@ -1490,6 +1596,7 @@ export function KanbanBoard({
 
   const openReview = (ref: string): void => {
     setCopyMenu(null)
+    setStartMenu(null)
     setReviewCopy(null)
     closeNewTask()
     setStatusChoice(null)
@@ -1500,8 +1607,16 @@ export function KanbanBoard({
   }
 
   const openCopyMenu = (item: WorkItem, x: number, y: number): void => {
+    setStartMenu(null)
     setCopyMenu({ item, x, y })
   }
+
+  const openStartMenu = (item: WorkItem, x: number, y: number): void => {
+    setCopyMenu(null)
+    setReviewCopy(null)
+    setStartMenu({ item, x, y })
+  }
+  const startMenuOpener = onStartDraft === undefined ? undefined : openStartMenu
 
   const onToolbarControlsRef = useRef(onToolbarControls)
   onToolbarControlsRef.current = onToolbarControls
@@ -1746,6 +1861,7 @@ export function KanbanBoard({
           commentsError={reviewCommentsError}
           onStart={onStart}
           onResume={onResume}
+          onOpenStartMenu={startMenuOpener}
           onStatusChange={(nextName) => {
             void submitReviewWrite({ field: 'status', stateRef: nextName })
           }}
@@ -1802,6 +1918,7 @@ export function KanbanBoard({
                           onOpenMenu={openCopyMenu}
                           onStart={onStart}
                           onResume={onResume}
+                          onOpenStartMenu={startMenuOpener}
                         />
                       </li>
                     ))}
@@ -1819,6 +1936,18 @@ export function KanbanBoard({
           y={copyMenu.y}
           onClose={() => {
             setCopyMenu(null)
+          }}
+        />
+      ) : null}
+      {startMenu !== null && onStartDraft !== undefined ? (
+        <StartMenu
+          item={startMenu.item}
+          x={startMenu.x}
+          y={startMenu.y}
+          onStart={onStart}
+          onStartDraft={onStartDraft}
+          onClose={() => {
+            setStartMenu(null)
           }}
         />
       ) : null}

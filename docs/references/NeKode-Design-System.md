@@ -103,20 +103,21 @@ This makes later theme variants possible without rewriting components.
 
 Implementation status (2026-10-01, updated 2026-10-21): `src/renderer/src/theme.css` imports the
 `default` tokens from `themes/default.css` (Tailwind v4 `@theme`) and the
-override theme from `themes/nekode-float-v2.css`.
+override theme from `themes/nekode-float.css`.
 Every override theme covers every default token name (theme.test.ts asserts
 name parity against `default.css` for each override file, not value parity),
 so themes may diverge freely. Theme membership, display labels and the shell
 layout variant live in the registry `src/renderer/src/lib/theme.ts`:
-`default` ("NeKode Flat") keeps the attached shell, and `nekode-float-v2`
-("NeKode Float v2") uses a dark indigo palette with glowing accents. It
+`default` ("NeKode Flat") keeps the attached shell, and `nekode-float`
+("NeKode Float", the default theme) uses a dark indigo palette with glowing accents. It
 switches the shell to the floating layout: the title bar
 strip without its separating hairline (the app name stays top-left beside
 the Windows caption buttons), a detached rounded left panel with a gap to
 the center column, and file tabs attached to the top of the rounded frame
 around the center content below the tab strip (App.tsx, user decision
-2026-10-04). NeKode Float (`nekode-float`) was removed on 2026-10-21; a
-stored `nekode-float` id resolves to `default`. A theme restyles shell
+2026-10-04). The original NeKode Float was removed on 2026-10-21; on
+2026-10-22 NeKode Float v2 was renamed NeKode Float and made the default,
+and a stored `nekode-float-v2` id resolves to `nekode-float`. A theme restyles shell
 elements beyond tokens only through `nk-` semantic hooks or existing
 semantic classes and state attributes, never through test
 ids, utility-class combinations or DOM position

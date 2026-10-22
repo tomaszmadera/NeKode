@@ -12,6 +12,7 @@ import type {
 } from '../../../shared/ipc-contract'
 import { AGENT_PROMPT_PLACEHOLDER } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
+import { agentArgs } from '../agent-chat-launch-service'
 import { agentDisplayName } from '../agent-identity'
 import type { ShellSpec } from '../terminal/terminal-service'
 import { validateWslExecutable } from '../terminal/wsl'
@@ -24,7 +25,9 @@ import { validateWslExecutable } from '../terminal/wsl'
 // Start and Resume share this path; Resume additionally rechecks the handoff
 // file and its stamp immediately before the chat is created (spec Resume.3)
 // and uses the Resume prompt. A detected file is never treated as plan
-// approval.
+// approval. Draft (Start without sending, NEKODE-99) shares the Start checks
+// and prompt, starts the profile with its interactive argv like New Chat, and
+// returns the prompt for the renderer's prompt input instead of the process.
 
 const CHANNEL = 'kanban:launchTask'
 const SPAWN_LOG = '[kanban-launch] failed to start the task process'
@@ -75,6 +78,8 @@ interface Attempt {
   stamp: string | null
   chat: ChatInfo | null
   delivered: boolean
+  /** The Start prompt a delivered draft returns; null for Start and Resume. */
+  draftPrompt: string | null
   dropped: boolean
   inflight: Promise<KanbanLaunchResult> | null
 }
@@ -84,6 +89,7 @@ interface PreparedLaunch {
   projectPath: string
   profile: AgentProfile
   shell: ShellSpec
+  draftPrompt: string | null
 }
 
 /** Start context: the description, URL, project instructions and handoff directory. */
@@ -138,6 +144,11 @@ function substitutePrompt(args: readonly string[], prompt: string): string[] {
   return next
 }
 
+/** The result of a delivered attempt; a draft carries its prompt. */
+function deliveredResult(chat: ChatInfo, draftPrompt: string | null): KanbanLaunchResult {
+  return draftPrompt === null ? { chat, delivered: true } : { chat, delivered: true, draftPrompt }
+}
+
 function logSpawnFailure(): void {
   console.error(SPAWN_LOG)
 }
@@ -188,7 +199,7 @@ export class TaskLaunchService {
         return Promise.reject(new AppError('not_found', 'Project not found.', CHANNEL))
       }
       if (existing.delivered && existing.chat !== null) {
-        return Promise.resolve({ chat: existing.chat, delivered: true })
+        return Promise.resolve(deliveredResult(existing.chat, existing.draftPrompt))
       }
       if (existing.inflight !== null) {
         return existing.inflight
@@ -208,6 +219,7 @@ export class TaskLaunchService {
       ...resumeFields(input),
       chat: null,
       delivered: false,
+      draftPrompt: null,
       dropped: this.#droppedProjects.has(input.projectId),
       inflight: null,
     }
@@ -266,14 +278,14 @@ export class TaskLaunchService {
   async #retry(attempt: Attempt, input: KanbanLaunchTaskInput): Promise<KanbanLaunchResult> {
     try {
       if (attempt.delivered && attempt.chat !== null) {
-        return { chat: attempt.chat, delivered: true }
+        return deliveredResult(attempt.chat, attempt.draftPrompt)
       }
       if (attempt.dropped || this.#droppedProjects.has(input.projectId)) {
         throw new AppError('not_found', 'Project not found.', CHANNEL)
       }
       const prepared = await this.#prepare(input)
       if (attempt.delivered && attempt.chat !== null) {
-        return { chat: attempt.chat, delivered: true }
+        return deliveredResult(attempt.chat, attempt.draftPrompt)
       }
       if (attempt.dropped || this.#droppedProjects.has(input.projectId) || attempt.chat === null) {
         throw new AppError('not_found', 'Project not found.', CHANNEL)
@@ -336,9 +348,12 @@ export class TaskLaunchService {
     if (profile === undefined) {
       throw new AppError('not_found', 'The selected agent profile is no longer available.', CHANNEL)
     }
+    const draft = input.mode === 'draft'
     const shell = {
       file: profile.executable,
-      args: substitutePrompt(profile.args, prompt),
+      args: draft
+        ? agentArgs(profile.args, profile.interactiveArgs, CHANNEL)
+        : substitutePrompt(profile.args, prompt),
     }
     // A missing Linux CLI must reject before a persisted chat exists. The
     // terminal checks again at spawn; PTY creation alone only proves wsl.exe ran.
@@ -348,6 +363,7 @@ export class TaskLaunchService {
       projectPath: current.path,
       profile,
       shell,
+      draftPrompt: draft ? prompt : null,
     }
   }
 
@@ -382,7 +398,7 @@ export class TaskLaunchService {
       throw new AppError('conflict', 'The task chat is missing.', CHANNEL)
     }
     if (attempt.delivered) {
-      return { chat: attempt.chat, delivered: true }
+      return deliveredResult(attempt.chat, attempt.draftPrompt)
     }
     if (attempt.dropped || this.#droppedProjects.has(attempt.projectId)) {
       throw new AppError('not_found', 'Project not found.', CHANNEL)
@@ -394,7 +410,8 @@ export class TaskLaunchService {
       return { chat: attempt.chat, delivered: false }
     }
     attempt.delivered = true
-    return { chat: attempt.chat, delivered: true }
+    attempt.draftPrompt = prepared.draftPrompt
+    return deliveredResult(attempt.chat, attempt.draftPrompt)
   }
 
   #assertSame(attempt: Attempt, input: KanbanLaunchTaskInput): void {
@@ -421,7 +438,7 @@ export class TaskLaunchService {
       throw new AppError('validation', 'kanban:launchTask requires an object.', CHANNEL)
     }
     const record = input as unknown as Record<string, unknown>
-    if (record.mode !== 'start' && record.mode !== 'resume') {
+    if (record.mode !== 'start' && record.mode !== 'resume' && record.mode !== 'draft') {
       throw new AppError('validation', 'kanban:launchTask mode is invalid.', CHANNEL)
     }
     const fields: readonly string[] = record.mode === 'resume' ? RESUME_FIELDS : LAUNCH_FIELDS

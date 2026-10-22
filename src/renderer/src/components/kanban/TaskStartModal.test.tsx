@@ -299,3 +299,41 @@ describe('TaskStartModal', () => {
     })
   })
 })
+
+describe('TaskStartModal draft variant (NEKODE-99)', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('names the draft action and sends mode draft', async () => {
+    const app = appMock()
+    vi.mocked(app.kanban.launchTask).mockResolvedValue({
+      chat: { id: 'chat-1', projectId: 'p1', name: 'Codex' },
+      delivered: true,
+      draftPrompt: 'Work on task NK-1: Ship the launch.',
+    })
+    const onLaunched = vi.fn()
+    render(
+      <TaskStartModal
+        app={app}
+        projectId="p1"
+        item={item}
+        draft
+        onCancel={vi.fn()}
+        onConfigureAgents={vi.fn()}
+        onLaunched={onLaunched}
+      />,
+    )
+    expect(screen.getByRole('dialog').textContent).toContain('Start task without sending')
+    const confirm = await screen.findByTestId(TEST_ID.kanbanStartConfirm)
+    expect(confirm.textContent).toBe('Start without sending')
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(confirm)
+    await waitFor(() => expect(onLaunched).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(app.kanban.launchTask).mock.calls[0]?.[0].mode).toBe('draft')
+    expect(onLaunched.mock.calls[0]?.[0]).toMatchObject({
+      draftPrompt: 'Work on task NK-1: Ship the launch.',
+      input: { mode: 'draft' },
+    })
+  })
+})

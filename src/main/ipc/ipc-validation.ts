@@ -334,8 +334,8 @@ function assertKanbanLaunchTask(
     fail(label, 'must be an object')
   }
   const input = value as Record<string, unknown>
-  if (input.mode !== 'start' && input.mode !== 'resume') {
-    fail(`${label}.mode`, 'must be "start" or "resume"')
+  if (input.mode !== 'start' && input.mode !== 'resume' && input.mode !== 'draft') {
+    fail(`${label}.mode`, 'must be "start", "resume" or "draft"')
   }
   const allowed: readonly string[] =
     input.mode === 'resume' ? LAUNCH_TASK_RESUME_FIELDS : LAUNCH_TASK_FIELDS

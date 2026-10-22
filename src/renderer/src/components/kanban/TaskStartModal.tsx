@@ -18,6 +18,8 @@ interface TaskStartModalProps {
   /** Project Settings on the Agents tab. Creates no chat. */
   onConfigureAgents: () => void
   onLaunched: (result: KanbanLaunchResult & { input: KanbanLaunchTaskInput }) => void
+  /** Start without sending (NEKODE-99): main returns the prompt instead of passing it. */
+  draft?: boolean
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -38,6 +40,7 @@ export function TaskStartModal({
   onCancel,
   onConfigureAgents,
   onLaunched,
+  draft = false,
 }: TaskStartModalProps): React.JSX.Element {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
@@ -134,7 +137,7 @@ export function TaskStartModal({
       ref: item.ref,
       profileId: selectedId,
       attemptId: crypto.randomUUID(),
-      mode: 'start',
+      mode: draft ? 'draft' : 'start',
     }
     void app.kanban
       .launchTask(input)
@@ -181,7 +184,7 @@ export function TaskStartModal({
           data-testid={TEST_ID.kanbanStartDialog}
         >
           <h2 id="kanban-start-title" className="text-[14.7px] font-semibold text-ink">
-            Start task
+            {draft ? 'Start task without sending' : 'Start task'}
           </h2>
           <p
             id="kanban-start-task"
@@ -271,7 +274,7 @@ export function TaskStartModal({
                 disabled={!ready || selectedId === null || busy}
                 onClick={handleConfirm}
               >
-                Start
+                {draft ? 'Start without sending' : 'Start'}
               </button>
             )}
           </div>

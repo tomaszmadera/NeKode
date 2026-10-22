@@ -13,6 +13,8 @@ interface Props {
   onConfigureHandoffs?: (projectId: string) => void
   /** Start on a work item. The shell owns the confirmation dialog. */
   onStart?: (projectId: string, item: WorkItem) => void
+  /** Start without sending (NEKODE-99). The shell owns the confirmation dialog. */
+  onStartDraft?: (projectId: string, item: WorkItem) => void
   /** Resume on a work item. The shell owns the handoff confirmation dialog. */
   onResume?: (projectId: string, item: WorkItem) => void
   /** Reports toolbar controls of the active board. */
@@ -27,6 +29,7 @@ function KanbanSessionItem({
   onConfigure,
   onConfigureHandoffs,
   onStart,
+  onStartDraft,
   onResume,
   onToolbarControls,
 }: {
@@ -37,6 +40,7 @@ function KanbanSessionItem({
   onConfigure: () => void
   onConfigureHandoffs?: (projectId: string) => void
   onStart?: (projectId: string, item: WorkItem) => void
+  onStartDraft?: (projectId: string, item: WorkItem) => void
   onResume?: (projectId: string, item: WorkItem) => void
   onToolbarControls?: (projectId: string, controls: KanbanToolbarControls | null) => void
 }): React.JSX.Element {
@@ -54,6 +58,12 @@ function KanbanSessionItem({
       onStart?.(id, item)
     },
     [id, onStart],
+  )
+  const handleStartDraft = useCallback(
+    (item: WorkItem) => {
+      onStartDraft?.(id, item)
+    },
+    [id, onStartDraft],
   )
   const handleResume = useCallback(
     (item: WorkItem) => {
@@ -78,6 +88,7 @@ function KanbanSessionItem({
           onConfigureHandoffs === undefined ? undefined : handleConfigureHandoffs
         }
         onStart={onStart === undefined ? undefined : handleStart}
+        onStartDraft={onStartDraft === undefined ? undefined : handleStartDraft}
         onResume={onResume === undefined ? undefined : handleResume}
         onToolbarControls={onToolbarControls === undefined ? undefined : handleControls}
       />
@@ -94,6 +105,7 @@ export function KanbanSessions({
   onConfigure,
   onConfigureHandoffs,
   onStart,
+  onStartDraft,
   onResume,
   onToolbarControls,
 }: Props): React.JSX.Element {
@@ -125,6 +137,7 @@ export function KanbanSessions({
           onConfigure={onConfigure}
           onConfigureHandoffs={onConfigureHandoffs}
           onStart={onStart}
+          onStartDraft={onStartDraft}
           onResume={onResume}
           onToolbarControls={onToolbarControls}
         />

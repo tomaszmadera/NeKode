@@ -900,8 +900,19 @@ describe('ipc payload validation', () => {
     expect(() => launch?.parse([{ ...launchInput, prompt: 'secret' }])).toThrow(
       /unexpected or missing/,
     )
+    // Start without sending (NEKODE-99) carries exactly the Start fields.
+    const draftInput = { ...launchInput, mode: 'draft' as const }
+    launch?.invoke(launch.parse([draftInput]))
+    expect(services.kanban.launchTask).toHaveBeenCalledWith(draftInput)
+    expect(() => launch?.parse([{ ...draftInput, fileName: 'x.md' }])).toThrow(
+      /unexpected or missing/,
+    )
+    expect(() => launch?.parse([{ ...draftInput, prompt: 'secret' }])).toThrow(
+      /unexpected or missing/,
+    )
+    expect(() => launch?.parse([{ ...launchInput, mode: 'other' }])).toThrow(ValidationError)
     expect(services.kanban.getItem).toHaveBeenCalledTimes(1)
-    expect(services.kanban.launchTask).toHaveBeenCalledTimes(2)
+    expect(services.kanban.launchTask).toHaveBeenCalledTimes(3)
   })
 
   it('validates kanban:handoffCandidates before the service', () => {

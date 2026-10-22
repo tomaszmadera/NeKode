@@ -477,11 +477,17 @@ export function ChatWorkspace({
         {Object.entries(sessions).map(([chatId, record]) => {
           // Only the addressed chat sees the fill (Behaviour 7): hidden
           // terminals must not consume another chat's injection.
-          const injectionNonce = promptInjection?.chatId === chatId ? promptInjection.nonce : null
-          const injection: PromptInjection | null =
-            promptInjection !== null && promptInjection.chatId === chatId
-              ? { text: promptInjection.text, nonce: promptInjection.nonce }
-              : null
+          // A failed view has no process and is replaced on a successful retry
+          // (NEKODE-99 held draft launch): it must not consume the fill meant
+          // for the remounted view.
+          const addressed =
+            promptInjection !== null &&
+            promptInjection.chatId === chatId &&
+            record.status !== 'error'
+          const injectionNonce = addressed ? promptInjection.nonce : null
+          const injection: PromptInjection | null = addressed
+            ? { text: promptInjection.text, nonce: promptInjection.nonce }
+            : null
           return (
             <div
               key={`${chatId}:${record.generation}`}

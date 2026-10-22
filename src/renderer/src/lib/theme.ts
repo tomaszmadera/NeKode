@@ -9,7 +9,7 @@
 //   the tab strip sits in a rounded frame with the tabs attached to its top.
 export const THEMES = {
   default: { label: 'NeKode Flat', layout: 'attached' },
-  'nekode-float-v2': { label: 'NeKode Float v2', layout: 'floating' },
+  'nekode-float': { label: 'NeKode Float', layout: 'floating' },
 } as const
 
 export type ThemeId = keyof typeof THEMES
@@ -17,11 +17,27 @@ export type ThemeLayout = (typeof THEMES)[ThemeId]['layout']
 
 export const THEME_IDS = Object.keys(THEMES) as ThemeId[]
 
+export const DEFAULT_THEME_ID: ThemeId = 'nekode-float'
+
+// Stored ids of renamed themes, so a saved choice survives the rename.
+const RENAMED_THEME_IDS: Readonly<Record<string, ThemeId>> = {
+  'nekode-float-v2': 'nekode-float',
+}
+
 export const THEME_STORAGE_KEY = 'nekode.theme.v1'
 export const QUICK_THEME_SWITCH_STORAGE_KEY = 'nekode.quickThemeSwitch.v1'
 
 export function isThemeId(value: string | null): value is ThemeId {
   return THEME_IDS.some((theme) => theme === value)
+}
+
+// Missing or unknown stored ids resolve to the default theme.
+export function resolveStoredThemeId(stored: string | null): ThemeId {
+  if (isThemeId(stored)) return stored
+  if (stored !== null && Object.hasOwn(RENAMED_THEME_IDS, stored)) {
+    return RENAMED_THEME_IDS[stored]
+  }
+  return DEFAULT_THEME_ID
 }
 
 export function nextThemeId(current: ThemeId): ThemeId {

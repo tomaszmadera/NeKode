@@ -45,10 +45,14 @@ export interface AgentChatLaunchDeps {
  * The profile contract guarantees exactly one prompt element; a document
  * that violates it would silently drop a real argument, so it is refused.
  */
-function agentArgs(args: readonly string[], interactiveArgs?: readonly string[]): string[] {
+export function agentArgs(
+  args: readonly string[],
+  interactiveArgs?: readonly string[],
+  channel: string = CHANNEL,
+): string[] {
   const next = args.filter((arg) => arg !== AGENT_PROMPT_PLACEHOLDER)
   if (args.length - next.length !== 1 || agentInteractiveArgsError(interactiveArgs) !== null) {
-    throw new AppError('validation', 'The selected agent profile is invalid.', CHANNEL)
+    throw new AppError('validation', 'The selected agent profile is invalid.', channel)
   }
   return interactiveArgs === undefined ? next : [...interactiveArgs]
 }
