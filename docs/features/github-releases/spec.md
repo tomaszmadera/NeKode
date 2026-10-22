@@ -13,7 +13,7 @@ Publiczne repozytorium `tomaszmadera/NeKode` udostępnia gotowe do pobrania wyda
 - Work item NEKODE-104 (Plane), decyzje z 2026-10-22 w komentarzu karty.
 - `docs/operations/branching-model.md` (NEKODE-15): wydania to tagi na `main`.
 - `docs/features/ci-pipeline/spec.md` (NEKODE-12): istniejący workflow `verify` i `verify-linux`.
-- NEKODE-13 (Linux): zakres Ubuntu 22.04 i 24.04, x64.
+- NEKODE-13 (Linux): zakres Ubuntu 22.04 i 24.04, x64. Decyzja maintainera z 2026-10-22 zawęża zakres wydań binarnych do Ubuntu 24.04 i nowszych: AppImage budowany na 24.04 nie startuje na 22.04 (starsza glibc). Ubuntu 26.04 zostanie dodane później jako platforma testowa, bez zmiany systemu budującego.
 
 ## Scope
 
@@ -36,7 +36,8 @@ Publiczne repozytorium `tomaszmadera/NeKode` udostępnia gotowe do pobrania wyda
 
 ### Zasady wydań
 
-- Każdy tag wersji na `main` jest wydaniem z binarkami Windows i Linux. Nie ma tagów bez wydania.
+- Każdy tag wersji na `main` jest wydaniem z binarkami Windows i Linux. Wyjątek: tag, którego run wydania zakończył się błędem z powodu defektu w otagowanym commicie albo którego szkic utrzymujący odrzucił, zostaje bez wydania; jego numeru nie używa się ponownie, a poprawka trafia do kolejnej wersji patch.
+- Branch `main` i tag wypycha się atomowo (`git push --atomic`), żeby tag nie trafił na origin bez commita na `main`. Błąd infrastruktury lub bramki pochodzenia z `main`, wynikający z kolejności pushy, pozwala ponowić nieudane joby tego samego runu.
 - Zmiany gromadzą się na `main`; wersję podnosi się tylko na wyraźne polecenie utrzymującego. Jedno wydanie obejmuje wszystkie zmiany od poprzedniego tagu. Pojedyncza poprawka dostaje własne wydanie tylko na polecenie utrzymującego (np. crash, utrata danych).
 - Nazwy tagów to numeryczny semver bez prefiksu `v` (np. `0.15.0`), zgodnie z istniejącą konwencją.
 - Wersje `X.Y.Z` bez sufiksu to zwykłe wydania (widoczne jako "Latest"), także w okresie 0.x. Status beta komunikuje tytuł wydania, notatki i README.
@@ -45,7 +46,7 @@ Publiczne repozytorium `tomaszmadera/NeKode` udostępnia gotowe do pobrania wyda
 ### Pakowanie
 
 - Windows: instalator NSIS x64 o nazwie `NeKode-Setup-<version>.exe`.
-- Linux: AppImage x64 o nazwie `NeKode-<version>-x86_64.AppImage`, budowany na Ubuntu 22.04 (baza glibc z `verify-linux`).
+- Linux: AppImage x64 o nazwie `NeKode-<version>-x86_64.AppImage`, budowany na Ubuntu 24.04 (`ubuntu-24.04`, ta sama wersja co `verify-linux`). Minimalny system to Ubuntu 24.04 lub dystrybucja z taką samą albo nowszą glibc.
 - Pakowanie nigdy nie publikuje samodzielnie: electron-builder działa z `--publish never`, a wydanie tworzy wyłącznie workflow.
 - Lokalne skrypty: istniejący `build:win` oraz nowy `build:linux` dają te same nazwy plików co CI.
 
@@ -69,9 +70,9 @@ Publiczne repozytorium `tomaszmadera/NeKode` udostępnia gotowe do pobrania wyda
 
 ## Business rules
 
-- Tag = wydanie; brak wersji bez binarek.
+- Tag = wydanie; brak wersji bez binarek, z wyjątkiem nieudanego lub odrzuconego tagu opisanego w "Zasady wydań" (numer pominięty, poprawka w kolejnej wersji patch).
 - Szkic nie jest wydaniem dla użytkowników, dopóki utrzymujący go nie opublikuje.
-- Opublikowanego wydania ani tagu nie przenosi się. Błędne wydanie naprawia się kolejną wersją patch.
+- Wypchniętego tagu ani opublikowanego wydania nie przenosi się i nie usuwa. Błędne wydanie lub nieudany tag naprawia się kolejną wersją patch; numer nieudanego tagu zostaje pominięty.
 
 ## Authorization
 
@@ -88,7 +89,7 @@ Publiczne repozytorium `tomaszmadera/NeKode` udostępnia gotowe do pobrania wyda
 - Pierwszy tag po wdrożeniu: poprzedni tag to `0.14.19` lub nowszy istniejący; notatki obejmują commity od niego.
 - Tag z sufiksem: wydanie oznaczone pre-release, nie zmienia "Latest".
 - Ponowne uruchomienie workflow dla tagu, którego wydanie już istnieje: workflow kończy się błędem z czytelnym komunikatem, nic nie nadpisuje.
-- Tag niebędący wersją (np. `test`): workflow się nie uruchamia.
+- Tag, który nie zaczyna się od liczbowego `X.Y.Z` (np. `test`): workflow się nie uruchamia; inny niepoprawny tag (np. `1.2.3foo`) zatrzymuje pierwsza bramka.
 
 ## Errors
 
@@ -98,7 +99,7 @@ Publiczne repozytorium `tomaszmadera/NeKode` udostępnia gotowe do pobrania wyda
 ## Acceptance criteria
 
 1. `pnpm run build:win` tworzy `dist/NeKode-Setup-<version>.exe`; instalator instaluje i uruchamia aplikację na Windows 11.
-2. `pnpm run build:linux` na Ubuntu 22.04 tworzy `dist/NeKode-<version>-x86_64.AppImage`; plik uruchamia aplikację na Ubuntu 22.04 lub 24.04 z terminalem działającym w sesji.
+2. `pnpm run build:linux` na Ubuntu 24.04 tworzy `dist/NeKode-<version>-x86_64.AppImage`; plik uruchamia aplikację na Ubuntu 24.04 z terminalem działającym w sesji.
 3. Ręczne uruchomienie workflow wydania produkuje oba pliki jako artefakty runu i nie tworzy wydania.
 4. Push tagu z wersją niezgodną z `package.json` kończy workflow błędem bez wydania.
 5. Push poprawnego tagu tworzy szkic z trzema plikami; sumy z `SHA256SUMS.txt` zgadzają się z pobranymi plikami.
@@ -108,7 +109,7 @@ Publiczne repozytorium `tomaszmadera/NeKode` udostępnia gotowe do pobrania wyda
 ## Required tests
 
 - Lokalny smoke instalatora Windows (kryterium 1) i AppImage (kryterium 2).
-- Run `workflow_dispatch` (kryterium 3) i run z celowo błędnym tagiem na forku lub z tagiem testowym usuniętym przed publikacją (kryterium 4), uzgodniony z utrzymującym.
+- Run `workflow_dispatch` (kryterium 3) i run z celowo błędnym tagiem na forku (kryterium 4), uzgodniony z utrzymującym.
 - Smoke plików pobranych z opublikowanego wydania (kryterium 7).
 - `pnpm run verify` bez regresji.
 

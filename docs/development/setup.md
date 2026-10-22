@@ -1,7 +1,7 @@
 # Instrukcja Konfiguracji Środowiska Deweloperskiego (Setup)
 
 **Platforma aplikacji:** Windows 11 (wspierana). WSL2 jest opcjonalną integracją powłoki dostępną tylko, gdy NeKode działa na Windows.
-**Linux (eksperymentalnie):** NeKode buduje się i uruchamia ze źródeł na Linuksie x64; zakres to Ubuntu 22.04 i 24.04 (szczegóły w [sekcji 1a](#1a-linux-eksperymentalnie)). Nie ma jeszcze linuksowych wydań ani instalatorów.
+**Linux (eksperymentalnie):** NeKode buduje się i uruchamia ze źródeł na Linuksie x64; zakres budowania ze źródeł to Ubuntu 22.04 i 24.04, CI testuje na Ubuntu 24.04, a pliki wydań wymagają Ubuntu 24.04 albo dystrybucji z taką samą lub nowszą glibc (szczegóły w [sekcji 1a](#1a-linux-eksperymentalnie)). Gotowe pliki wydań (instalator Windows, AppImage dla Linuksa) buduje workflow wydania; procedurę opisuje [releases.md](../operations/releases.md).
 **Główny stos technologiczny:** Electron, React, TypeScript, Vite, Tailwind CSS, SQLite (`better-sqlite3`), `node-pty`
 
 Bieżące wersje i polecenia odczytuj z [package.json](../../package.json), [pnpm-lock.yaml](../../pnpm-lock.yaml), [polityki instalacji](../../pnpm-workspace.yaml) i [konfiguracji pakowania](../../electron-builder.yml). [Kontrakt projektu](project-contract.md) określa zasady zmian i źródła wymagań.
@@ -23,9 +23,12 @@ zainstalowane i przetestowane wraz z buildem instalatora i uruchomieniem aplikac
 
 ## 1a. Linux (eksperymentalnie)
 
-Zakres: Ubuntu 22.04 i 24.04, x64 (NEKODE-13). Inne dystrybucje i ARM nie są testowane.
-Uruchomienie ze źródeł (`pnpm run dev`) i lokalna paczka działają; oficjalne wydania
-linuksowe (AppImage, deb) to osobny, późniejszy etap.
+Zakres budowania ze źródeł: Ubuntu 22.04 i 24.04, x64 (NEKODE-13). Inne dystrybucje i ARM nie są testowane.
+CI (`verify-linux`) testuje na Ubuntu 24.04.
+Uruchomienie ze źródeł (`pnpm run dev`) i lokalna paczka działają. Wydania linuksowe
+to AppImage x64 budowany przez workflow wydania na Ubuntu 24.04; wymaga Ubuntu 24.04
+albo dystrybucji z taką samą lub nowszą glibc ([releases.md](../operations/releases.md)).
+Pakiety deb, rpm, Snap i Flatpak są poza zakresem.
 
 Wymagania dodatkowe względem sekcji 1:
 
@@ -98,7 +101,14 @@ Sekwencja zweryfikowana na czystym środowisku:
    i wymaga sieci tylko za pierwszym razem.
 4. `pnpm run build` — build produkcyjny (`out/`).
 5. `pnpm run build:unpack` — spakowana aplikacja w `dist/win-unpacked/` (najszybszy smoke poza dev).
-6. `pnpm run build:win` — instalator NSIS `dist/nekode Setup <wersja>.exe`.
+6. `pnpm run build:win`: instalator NSIS `dist/NeKode-Setup-<wersja>.exe`.
+7. Linux: `pnpm run build:linux` (po `pnpm rebuild node-pty`): AppImage
+   `dist/NeKode-<wersja>-x86_64.AppImage`. Uruchomienie: `chmod +x` na pliku; AppImage
+   wymaga FUSE 2 (`sudo apt-get install libfuse2t64` na Ubuntu 24.04+) albo startu
+   z `--appimage-extract-and-run`.
+
+Oba skrypty pakowania działają z `--publish never` i dają te same nazwy plików co
+[workflow wydania](ci.md#workflow-wydania); lokalne pliki służą do testów, nie do publikacji.
 
 ### Uruchomienie instalatora / test instalacji
 
@@ -133,8 +143,8 @@ przyszłego harnessu, nie warunkiem uruchomienia aplikacji.
 - `pnpm test` / `pnpm test:watch` — Vitest 5 (projekty `node` i `jsdom`).
 - `pnpm lint` / `pnpm format` — Biome 2: statyczna analiza i formatowanie.
 - `pnpm run typecheck` — `tsc --noEmit` dla tsconfig.node.json i tsconfig.web.json.
-- `pnpm run build:unpack` / `pnpm run build:win` — paczka / instalator Windows.
-- CI: GitHub Actions biega automatycznie na każdym pull requestcie i pushu na `main` (`pnpm install --frozen-lockfile` + `pnpm run verify` na `windows-latest` jako wymagany check oraz doradczo na `ubuntu-22.04`); jak to działa i jak czytać wynik: [ci.md](ci.md).
+- `pnpm run build:unpack` / `pnpm run build:win` / `pnpm run build:linux`: paczka / instalator Windows / AppImage Linux.
+- CI: GitHub Actions biega automatycznie na każdym pull requestcie i pushu na `main` (`pnpm install --frozen-lockfile` + `pnpm run verify` na `windows-latest` jako wymagany check oraz doradczo na `ubuntu-24.04`); jak to działa i jak czytać wynik: [ci.md](ci.md).
 
 ## 5. Moduły natywne i diagnostyka
 
@@ -151,7 +161,7 @@ prebuildów linuksowych, więc na Linuksie jest kompilowany ze źródeł. Wymaga
 `build-essential` i `python3` (Debian/Ubuntu: `sudo apt-get install build-essential python3`),
 a po `pnpm install` polecenia `pnpm rebuild node-pty`. Moduł jest N-API, więc jedna
 binarka działa w Node (Vitest) i w Electronie; `npmRebuild: false` zostaje. Job CI
-`verify-linux` robi to samo na `ubuntu-22.04`. Windows nadal używa wyłącznie prebuildów.
+`verify-linux` robi to samo na `ubuntu-24.04`, a linuksowy build workflow wydania przed `pnpm run build:linux`. Windows nadal używa wyłącznie prebuildów.
 `npmRebuild: false` pozostaje właściwe dopóki wszystkie moduły natywne mają
 odpowiednie binaria N-API; przejście na moduł zależny od ABI wymaga ponownej oceny.
 

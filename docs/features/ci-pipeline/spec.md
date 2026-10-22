@@ -36,7 +36,7 @@ Każda zmiana w repozytorium jest automatycznie sprawdzana na GitHub Actions tym
 
 - Trigger: `push` na `main` oraz `pull_request` (każda gałąź źródłowa).
 - Job `verify` na `runs-on: windows-latest` (wymagany check ochrony `main`, nazwa bez zmian); limit czasu 20 minut.
-- Doradczy job `verify-linux` na `runs-on: ubuntu-22.04` (faza 0 wersji na Linuksa, 2026-10-20): instaluje `build-essential` i `python3`, po `pnpm install --frozen-lockfile` kompiluje `node-pty` (`pnpm rebuild node-pty`) i uruchamia `pnpm run verify`; limit 20 minut; nie jest wymagany przez ochronę gałęzi.
+- Doradczy job `verify-linux` na `runs-on: ubuntu-24.04` (faza 0 wersji na Linuksa, 2026-10-20; od 2026-10-22 ta sama wersja Ubuntu co build AppImage w workflow wydania, NEKODE-104): instaluje `build-essential` i `python3`, po `pnpm install --frozen-lockfile` kompiluje `node-pty` (`pnpm rebuild node-pty`) i uruchamia `pnpm run verify`; limit 20 minut; nie jest wymagany przez ochronę gałęzi.
 - Współbieżność: nowy push do tego samego refa anuluje nadal biegnący run (`concurrency` z `cancel-in-progress`).
 - Kroki w kolejności: checkout; instalacja pnpm z pola `packageManager` (`pnpm@12.5.1`); instalacja Node 24 z cache magazynu pnpm; `pnpm install --frozen-lockfile`; `pnpm run verify`.
 - Job `verify` nie instaluje VS C++ Build Tools ani żadnego kompilatora (wyjątek: `verify-linux`, patrz wyżej); nie używa sekretów; nie ustawia `continue-on-error` na żadnym kroku.
