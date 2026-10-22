@@ -37,7 +37,8 @@
         "usedPercent": { "$ref": "#/$defs/nonnegative" }, "used": { "$ref": "#/$defs/nonnegative" },
         "limit": { "$ref": "#/$defs/number" }, "amount": { "$ref": "#/$defs/number" },
         "unit": { "$ref": "#/$defs/optionalText" }, "bucketId": { "$ref": "#/$defs/optionalText" },
-        "reason": { "$ref": "#/$defs/optionalText" }, "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" }
+        "reason": { "$ref": "#/$defs/optionalText" }, "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+        "providerId": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" }
       },
       "allOf": [
         {

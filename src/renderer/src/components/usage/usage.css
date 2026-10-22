@@ -88,6 +88,10 @@
   outline: 2px solid var(--usage-current);
   outline-offset: -2px;
 }
+.usage-source {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--usage-border);
+}
 .usage-source h3 {
   padding: 8px 14px 2px;
   margin: 0;
@@ -155,10 +159,6 @@
 .usage-stale::after {
   background: transparent;
   border: 1px solid var(--color-usage-stale);
-}
-.usage-avatar-space {
-  width: 20px;
-  flex-shrink: 0;
 }
 .usage-graphic {
   display: flex;
@@ -240,10 +240,6 @@
   font-size: 11px;
   color: var(--color-ink-secondary, #a3a9bd);
   overflow-wrap: anywhere;
-}
-.usage-source-note {
-  border-bottom: 1px solid var(--usage-border);
-  padding-bottom: 6px;
 }
 .usage-panel footer {
   padding: 8px 14px;

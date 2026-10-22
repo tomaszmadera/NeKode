@@ -39,6 +39,11 @@ export interface UsageMetric {
   periodStart?: string | null
   resetsAt?: string | null
   windowDurationSeconds?: number | null
+  /**
+   * Provider of this one metric when an adapter aggregates several providers in one subscription
+   * (spec rule 6); the row avatar uses it instead of the account's provider id.
+   */
+  providerId?: string
 }
 export interface UsageSubscription {
   id: string
@@ -226,6 +231,7 @@ export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocum
         'periodStart',
         'resetsAt',
         'windowDurationSeconds',
+        'providerId',
       ])
       const metric: UsageMetric = {
         id: text(m.id),
@@ -258,6 +264,11 @@ export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocum
         metric[key] = number(m[key], key === 'usedPercent' || key === 'used')
       for (const key of ['unit', 'currency', 'bucketId', 'reason'] as const)
         metric[key] = m[key] == null ? undefined : text(m[key])
+      if (m.providerId != null) {
+        if (typeof m.providerId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(m.providerId))
+          invalid('Invalid usage metric provider id.')
+        metric.providerId = m.providerId
+      }
       if (metric.state === 'unavailable') {
         if (
           !metric.reason ||

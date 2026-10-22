@@ -157,9 +157,41 @@ describe('Usage panel', () => {
       if (!element) throw new Error('Usage source note is missing')
       return element
     })
-    expect(note.textContent).toBe(
-      'usage-file: Usage source config. Check the account and retry. 7d: Age unknown',
-    )
+    expect(note.textContent).toBe('Usage source config. Check the account and retry.')
+  })
+  it('gives every row its own avatar and freshness badge and no per-row source note', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot(),
+      sub = s.connections[0].subscription
+    if (!sub) throw new Error('Fixture subscription is missing')
+    const now = Date.now()
+    sub.metrics = [
+      {
+        ...sub.metrics[0],
+        id: 'claude-5h',
+        label: 'Claude 5h',
+        providerId: 'claude',
+        observedAt: new Date(now - 60_000).toISOString(),
+      },
+      {
+        ...sub.metrics[0],
+        id: 'codex-weekly',
+        label: 'Codex weekly',
+        providerId: 'codex',
+        observedAt: new Date(now - 3 * 3_600_000).toISOString(),
+      },
+      { ...sub.metrics[0], id: 'other', label: 'Other' },
+    ]
+    vi.mocked(api.read).mockResolvedValue(s)
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await waitFor(() => expect(api.read).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    const rows = await screen.findAllByRole('button', { name: /^Fixture account, / })
+    const avatars = rows.map((row) => row.querySelector('.usage-avatar'))
+    expect(avatars.map((a) => a?.textContent)).toEqual(['CL', 'CO', 'TE'])
+    expect(avatars[0]?.classList.contains('usage-fresh')).toBe(true)
+    expect(avatars[1]?.classList.contains('usage-stale')).toBe(true)
+    expect(document.querySelector('.usage-source-note')).toBeNull()
   })
   it('closes on an outside pointer click', () => {
     render(<UsageToolbar api={createAppApiStub().usage} onConfigure={() => {}} />)

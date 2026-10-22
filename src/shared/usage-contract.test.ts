@@ -75,6 +75,16 @@ describe('normalized usage observations', () => {
       parseUsageDocument(document(windowMetric({ resetsAt: '2026-10-17T00:00:00Z' })), NOW),
     ).toThrow('end')
   })
+  it('keeps an optional per-metric provider id and rejects a malformed one', () => {
+    const doc = parseUsageDocument(document(windowMetric({ providerId: 'claude' })), NOW)
+    expect(doc.subscriptions[0].metrics[0].providerId).toBe('claude')
+    expect(
+      parseUsageDocument(document(windowMetric()), NOW).subscriptions[0].metrics[0],
+    ).not.toHaveProperty('providerId')
+    expect(() =>
+      parseUsageDocument(document(windowMetric({ providerId: 'Claude!' })), NOW),
+    ).toThrow('provider id')
+  })
   it('expires a window without advancing or resetting the value', () => {
     const m = windowMetric()
     expect(usageFreshness(m, Date.parse('2026-10-25T12:00:00Z'))).toBe('Expired - refresh required')

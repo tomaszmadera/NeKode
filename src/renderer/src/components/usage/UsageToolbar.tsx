@@ -22,6 +22,10 @@ function badge(source: UsageConnectionSnapshot, metric: UsageMetric, now: number
           ? ''
           : 'usage-stale'
 }
+/** Row avatar: the metric's own provider for an aggregating account, else the account's. */
+function avatar(source: UsageConnectionSnapshot, metric: UsageMetric): string {
+  return (metric.providerId ?? source.connection.providerId).slice(0, 2).toUpperCase()
+}
 function value(metric: UsageMetric): string {
   if (metric.state === 'unavailable') return 'Unavailable'
   if (metric.kind === 'balance') return `${metric.currency} ${metric.amount?.toFixed(2)}`
@@ -224,7 +228,7 @@ export function UsageToolbar({
         {pinned && pinnedSource ? (
           <>
             <span className={`usage-avatar ${badge(pinnedSource, pinned, now)}`}>
-              {pinnedSource.connection.providerId.slice(0, 2).toUpperCase()}
+              {avatar(pinnedSource, pinned)}
             </span>
             <span className="usage-trigger-period">{pinned.label}</span>
             <UsageGraphic metric={pinned} now={now} />
@@ -298,7 +302,7 @@ export function UsageToolbar({
                 <div key={source.connection.id} className="usage-source">
                   <h3>{source.connection.label}</h3>
                   {source.subscription?.metrics.length ? (
-                    source.subscription.metrics.map((metric, index) => {
+                    source.subscription.metrics.map((metric) => {
                       const selected =
                         snapshot.pin?.connectionId === source.connection.id &&
                         snapshot.pin.metricId === metric.id
@@ -316,13 +320,9 @@ export function UsageToolbar({
                           onClick={() => void pin(source.connection.id, metric.id)}
                         >
                           <span className="usage-name">
-                            {index === 0 ? (
-                              <span className={`usage-avatar ${badge(source, metric, now)}`}>
-                                {source.connection.providerId.slice(0, 2).toUpperCase()}
-                              </span>
-                            ) : (
-                              <span className="usage-avatar-space" />
-                            )}
+                            <span className={`usage-avatar ${badge(source, metric, now)}`}>
+                              {avatar(source, metric)}
+                            </span>
                             <span>{metric.label}</span>
                           </span>
                           <UsageGraphic metric={metric} now={now} />
@@ -347,15 +347,12 @@ export function UsageToolbar({
                         : 'No usage data yet'}
                     </p>
                   )}
-                  <p className="usage-source-note">
-                    {source.connection.adapterId}
-                    {source.error
-                      ? `: ${source.error.message}${/[.!?]$/.test(source.error.message) ? '' : '.'} `
-                      : '. '}
-                    {source.subscription?.metrics
-                      .map((metric) => `${metric.label}: ${usageFreshness(metric, now)}`)
-                      .join('; ')}
-                  </p>
+                  {source.error ? (
+                    <p className="usage-source-note">
+                      {source.error.message}
+                      {/[.!?]$/.test(source.error.message) ? '' : '.'}
+                    </p>
+                  ) : null}
                 </div>
               ))
             )}
