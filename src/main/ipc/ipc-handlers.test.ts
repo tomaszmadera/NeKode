@@ -267,7 +267,7 @@ describe('usage IPC authorization', () => {
     ['pickFile', IPC_CHANNEL.usagePickFile, [false]],
     ['getEnabled', IPC_CHANNEL.usageGetEnabled, []],
     ['setEnabled', IPC_CHANNEL.usageSetEnabled, [true]],
-    ['inspectFile', IPC_CHANNEL.usageInspectFile, ['C:/data/usage.json']],
+    ['inspectFile', IPC_CHANNEL.usageInspectFile, [hostPath('C:/data/usage.json')]],
     ['claudeSetup', IPC_CHANNEL.usageClaudeSetup, ['account-1', null]],
     ['openAdaptersFolder', IPC_CHANNEL.usageOpenAdaptersFolder, []],
     [
