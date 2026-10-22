@@ -11,7 +11,7 @@ import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
-import { nextThemeId, THEMES, type ThemeId } from '../../lib/theme'
+import { BASE_THEME_ID, nextThemeId, THEMES, type ThemeId } from '../../lib/theme'
 import './StatusBar.css'
 
 // Status bar at the very bottom of the window (UX-UI §14): the project
@@ -229,7 +229,7 @@ function ThemeSwitchSection({
   theme: ThemeId
   onThemeChange: (theme: ThemeId) => void
 }): React.JSX.Element {
-  const currentTheme = THEMES[theme] ?? THEMES.default
+  const currentTheme = THEMES[theme] ?? THEMES[BASE_THEME_ID]
   const next = nextThemeId(theme)
   const nextLabel = THEMES[next]?.label ?? next
 

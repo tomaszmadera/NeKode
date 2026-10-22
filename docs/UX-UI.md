@@ -1036,7 +1036,7 @@ opener (gear icon with the label "App Settings") sits at the very bottom of
 the left panel (user decision 2026-10-02, after Zed), in both modes that host
 the panel: the projects navigation and the project files view. It opens App
 Settings including when no project is selected or the project files view is
-open. The dialog has two tabs: **General** (theme selector: `default` shown
+open. The dialog has two tabs: **General** (theme selector: `nekode-flat` shown
 as "NeKode Flat" and `nekode-float` shown as "NeKode Float" (the default
 theme, user decision 2026-10-22), which
 switches the shell to the floating layout: the title bar strip without its

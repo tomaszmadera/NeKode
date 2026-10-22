@@ -270,14 +270,14 @@ describe('status bar — quick theme switcher', () => {
   })
 
   it('does not render quick theme switcher when quickThemeSwitch is false or omitted', () => {
-    render(<StatusBar app={app} project={projectA} theme="default" onThemeChange={vi.fn()} />)
+    render(<StatusBar app={app} project={projectA} theme="nekode-flat" onThemeChange={vi.fn()} />)
     expect(screen.queryByTestId(TEST_ID.statusThemeSwitcher)).toBeNull()
 
     render(
       <StatusBar
         app={app}
         project={projectA}
-        theme="default"
+        theme="nekode-flat"
         quickThemeSwitch={false}
         onThemeChange={vi.fn()}
       />,
@@ -290,7 +290,7 @@ describe('status bar — quick theme switcher', () => {
       <StatusBar
         app={app}
         project={projectA}
-        theme="default"
+        theme="nekode-flat"
         quickThemeSwitch={true}
         onThemeChange={vi.fn()}
       />,
@@ -307,7 +307,7 @@ describe('status bar — quick theme switcher', () => {
       <StatusBar
         app={app}
         project={projectA}
-        theme="default"
+        theme="nekode-flat"
         quickThemeSwitch={true}
         onThemeChange={onThemeChange}
       />,
@@ -327,7 +327,7 @@ describe('status bar — quick theme switcher', () => {
     )
     expect(screen.getByTestId(TEST_ID.statusThemeSwitcher).textContent).toContain('NeKode Float')
     fireEvent.click(screen.getByTestId(TEST_ID.statusThemeSwitcher))
-    expect(onThemeChange).toHaveBeenCalledWith('default')
+    expect(onThemeChange).toHaveBeenCalledWith('nekode-flat')
   })
 
   it('renders quick theme switcher on the right even when project is null', () => {
@@ -335,7 +335,7 @@ describe('status bar — quick theme switcher', () => {
       <StatusBar
         app={app}
         project={null}
-        theme="default"
+        theme="nekode-flat"
         quickThemeSwitch={true}
         onThemeChange={vi.fn()}
       />,

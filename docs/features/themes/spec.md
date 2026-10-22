@@ -13,6 +13,7 @@ Let the user pick a visual theme for the NeKode window, and let a theme restyle 
 - User decision 2026-10-21: remove the NeKode Float theme and keep NeKode Float v2.
 - User decisions 2026-10-21 for the NeKode Float v2 cleanup: the WSL directory list and the bottom panel tab bar get their normal opaque background back; the Kanban tab icon gets the pink glow the theme always declared.
 - User decision 2026-10-22: rename NeKode Float v2 to NeKode Float (id `nekode-float-v2` becomes `nekode-float`) and make it the default theme.
+- User decision 2026-10-22: rename the NeKode Flat id `default` to `nekode-flat`, so the id no longer suggests the default theme. `themes/default.css` keeps its name as the base token file.
 
 ## Scope
 
@@ -25,15 +26,15 @@ Let the user pick a visual theme for the NeKode window, and let a theme restyle 
 
 - New themes or palette changes.
 - Light themes, per-project themes, or user-authored themes.
-- Changing NeKode Flat (`default`) visuals.
+- Changing NeKode Flat (`nekode-flat`) visuals.
 - Theming Monaco.
 
 ## Behaviour
 
-1. The registry `src/renderer/src/lib/theme.ts` (`THEMES`) is the only source of theme membership. It lists exactly `default` ("NeKode Flat", attached layout) and `nekode-float` ("NeKode Float", floating layout). `DEFAULT_THEME_ID` is `nekode-float`.
-2. Every registry id has exactly one file `src/renderer/src/themes/<id>.css` and exactly one `@import` in `src/renderer/src/theme.css`, and every theme file and import has a registry id.
+1. The registry `src/renderer/src/lib/theme.ts` (`THEMES`) is the only source of theme membership. It lists exactly `nekode-flat` ("NeKode Flat", attached layout) and `nekode-float` ("NeKode Float", floating layout). `DEFAULT_THEME_ID` is `nekode-float`.
+2. Every registry id has exactly one file `src/renderer/src/themes/<id>.css` and exactly one `@import` in `src/renderer/src/theme.css`, and every theme file and import has a registry id. The exception is `BASE_THEME_ID` (`nekode-flat`), whose file is the base token file `themes/default.css`.
 3. Each override theme declares every token name that `themes/default.css` declares.
-4. The active theme is `data-theme="<id>"` on the document root, stored in `localStorage` under `nekode.theme.v1`. A stored `nekode-float-v2` (the id before the 2026-10-22 rename) resolves to `nekode-float`. A missing or unknown stored id resolves to `DEFAULT_THEME_ID`; so does a storage read failure.
+4. The active theme is `data-theme="<id>"` on the document root, stored in `localStorage` under `nekode.theme.v1`. A stored `nekode-float-v2` (the id before the 2026-10-22 rename) resolves to `nekode-float`, and a stored `default` (the NeKode Flat id before the 2026-10-22 rename) resolves to `nekode-flat`. A missing or unknown stored id resolves to `DEFAULT_THEME_ID`; so does a storage read failure.
 5. The quick theme switcher in the status bar cycles through registry ids in registry order.
 6. Theme hooks: a theme file targets a shell element beyond tokens only through
    - a semantic class with the `nk-` prefix that the owning component renders for that purpose, or
@@ -66,7 +67,7 @@ none
 
 - A stored `nekode-float-v2` id after upgrade: the window renders NeKode Float and App Settings shows "NeKode Float". The next theme change saves the new id.
 - A stored `nekode-float` id from before the 2026-10-21 removal now renders NeKode Float.
-- A stored `default` id keeps NeKode Flat; only users without a saved choice get the new default.
+- A stored `default` id renders NeKode Flat (resolved to `nekode-flat`); only users without a saved choice get the new default. The next theme change saves the new id.
 - The bottom panel prompt input and terminal use the same components as the chat surface and keep the same NeKode Float styling as today.
 - The status dot color is set inline from the chat status config; NeKode Float overrides it with `!important` (Behaviour 7 exception).
 
@@ -76,11 +77,11 @@ Storage read or write failures keep the existing App Settings error behavior. No
 
 ## Acceptance criteria
 
-1. `THEMES` has exactly `default` and `nekode-float`; `themes/nekode-float-v2.css` and its import do not exist; `theme.test.ts` registry parity passes.
+1. `THEMES` has exactly `nekode-flat` and `nekode-float`; `themes/nekode-float-v2.css` and its import do not exist; `theme.test.ts` registry parity passes.
 2. `grep` for `data-testid`, `:nth-of-type`, `:first-child`, `:first-of-type`, `:last-of-type`, `div.bg-`, `form.bg-`, `aside.bg-` and `.rounded-lg.` in `src/renderer/src/themes/*.css` returns nothing.
 3. `!important` appears in `themes/nekode-float.css` only on declarations that override an inline style, each with a comment.
 4. A real-app CDP capture of computed styles (default, hover, focus, `::after`) for every element NeKode Float v2 styled before the 2026-10-21 cleanup shows no difference between before and after for `default`, and for `nekode-float-v2` (now `nekode-float`) shows differences only on the WSL directory list background, the bottom panel tab bar background, and the Kanban tab icon color and filter.
-5. A stored `nekode-float-v2` id resolves to `nekode-float`; a missing or unknown id resolves to `nekode-float`; a stored `default` stays `default` (unit test).
+5. A stored `nekode-float-v2` id resolves to `nekode-float`; a missing or unknown id resolves to `nekode-float`; a stored `default` resolves to `nekode-flat` (unit test).
 6. Lint, typecheck and the renderer test suite pass.
 
 ## Required tests

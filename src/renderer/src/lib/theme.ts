@@ -8,7 +8,7 @@
 //   panel floats detached with rounded corners and the center content below
 //   the tab strip sits in a rounded frame with the tabs attached to its top.
 export const THEMES = {
-  default: { label: 'NeKode Flat', layout: 'attached' },
+  'nekode-flat': { label: 'NeKode Flat', layout: 'attached' },
   'nekode-float': { label: 'NeKode Float', layout: 'floating' },
 } as const
 
@@ -22,7 +22,11 @@ export const DEFAULT_THEME_ID: ThemeId = 'nekode-float'
 // Stored ids of renamed themes, so a saved choice survives the rename.
 const RENAMED_THEME_IDS: Readonly<Record<string, ThemeId>> = {
   'nekode-float-v2': 'nekode-float',
+  default: 'nekode-flat',
 }
+
+// NeKode Flat has no override file: it is the base tokens in themes/default.css.
+export const BASE_THEME_ID: ThemeId = 'nekode-flat'
 
 export const THEME_STORAGE_KEY = 'nekode.theme.v1'
 export const QUICK_THEME_SWITCH_STORAGE_KEY = 'nekode.quickThemeSwitch.v1'

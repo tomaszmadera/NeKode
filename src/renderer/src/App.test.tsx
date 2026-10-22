@@ -391,9 +391,9 @@ describe('app settings and themes', () => {
         .map((option) => option.textContent),
     ).toEqual(['NeKode Flat', 'NeKode Float'])
     expect(document.documentElement.dataset.theme).toBe('nekode-float')
-    fireEvent.change(select, { target: { value: 'default' } })
-    expect(document.documentElement.dataset.theme).toBe('default')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default')
+    fireEvent.change(select, { target: { value: 'nekode-flat' } })
+    expect(document.documentElement.dataset.theme).toBe('nekode-flat')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-flat')
     const close = within(dialog).getByRole('button', { name: 'Close app settings' })
     close.focus()
     fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
@@ -416,10 +416,10 @@ describe('app settings and themes', () => {
     expect(document.activeElement).toBe(opener)
     view.unmount()
     render(<App app={app} />)
-    expect(document.documentElement.dataset.theme).toBe('default')
+    expect(document.documentElement.dataset.theme).toBe('nekode-flat')
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const restored = screen.getByRole('combobox', { name: 'Theme' })
-    expect((restored as HTMLSelectElement).value).toBe('default')
+    expect((restored as HTMLSelectElement).value).toBe('nekode-flat')
     fireEvent.change(restored, { target: { value: 'nekode-float' } })
     expect(document.documentElement.dataset.theme).toBe('nekode-float')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-float')
@@ -432,7 +432,9 @@ describe('app settings and themes', () => {
     { stored: 'removed-theme', expected: 'nekode-float' },
     // nekode-float-v2 is the pre-rename id of NeKode Float (spec themes Behaviour 4).
     { stored: 'nekode-float-v2', expected: 'nekode-float' },
-    { stored: 'default', expected: 'default' },
+    { stored: 'nekode-flat', expected: 'nekode-flat' },
+    // default is the pre-rename id of NeKode Flat.
+    { stored: 'default', expected: 'nekode-flat' },
   ])('resolves the saved theme $stored to $expected', ({ stored, expected }) => {
     if (stored !== null) localStorage.setItem(THEME_STORAGE_KEY, stored)
     render(<App app={createAppApiStub()} />)
@@ -452,7 +454,7 @@ describe('app settings and themes', () => {
     const ATTACHED_PANEL_FRAME = 'border-r'
     const ATTACHED_TAB_FRAME = 'border-b border-edge'
 
-    localStorage.setItem(THEME_STORAGE_KEY, 'default')
+    localStorage.setItem(THEME_STORAGE_KEY, 'nekode-flat')
     const app = createAppApiStub()
     const view = render(<App app={app} />)
     // Attached shell first: the title bar strip is present and the left panel
@@ -521,8 +523,8 @@ describe('app settings and themes', () => {
     // Click quick theme switcher to toggle theme to "NeKode Flat"
     fireEvent.click(switcher)
     expect(switcher.textContent).toContain('NeKode Flat')
-    expect(document.documentElement.dataset.theme).toBe('default')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('default')
+    expect(document.documentElement.dataset.theme).toBe('nekode-flat')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-flat')
 
     // Click again to toggle back to "NeKode Float"
     fireEvent.click(switcher)
@@ -606,7 +608,7 @@ describe('app settings and themes', () => {
         throw new Error('Storage unavailable')
       })
       fireEvent.change(screen.getByRole('combobox', { name: 'Theme' }), {
-        target: { value: 'default' },
+        target: { value: 'nekode-flat' },
       })
     }
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })

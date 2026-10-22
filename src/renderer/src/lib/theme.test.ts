@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { THEMES } from './theme'
+import { BASE_THEME_ID, THEMES } from './theme'
 
 const THEMES_DIR = 'src/renderer/src/themes'
 
@@ -11,8 +11,10 @@ const tokenNames = (source: string): string[] =>
 describe('theme registry', () => {
   it('matches the theme CSS files and the theme.css imports one to one', () => {
     // An unregistered file never loads, and a registered id without a file
-    // silently runs on the default palette.
-    const ids = Object.keys(THEMES).sort()
+    // silently runs on the default palette. The base theme maps to default.css.
+    const ids = Object.keys(THEMES)
+      .map((id) => (id === BASE_THEME_ID ? 'default' : id))
+      .sort()
     const files = readdirSync(THEMES_DIR)
       .filter((file) => file.endsWith('.css'))
       .map((file) => file.slice(0, -'.css'.length))

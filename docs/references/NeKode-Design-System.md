@@ -108,7 +108,7 @@ Every override theme covers every default token name (theme.test.ts asserts
 name parity against `default.css` for each override file, not value parity),
 so themes may diverge freely. Theme membership, display labels and the shell
 layout variant live in the registry `src/renderer/src/lib/theme.ts`:
-`default` ("NeKode Flat") keeps the attached shell, and `nekode-float`
+`nekode-flat` ("NeKode Flat", the base tokens without overrides) keeps the attached shell, and `nekode-float`
 ("NeKode Float", the default theme) uses a dark indigo palette with glowing accents. It
 switches the shell to the floating layout: the title bar
 strip without its separating hairline (the app name stays top-left beside
@@ -125,7 +125,8 @@ ids, utility-class combinations or DOM position
 App Settings applies the selected theme
 through `data-theme` on the document root and saves its identifier in
 `localStorage` under `nekode.theme.v1`. Missing or unknown identifiers use
-`default`; storage failures are shown in App Settings. Renderer components
+`nekode-float`, and the pre-rename identifiers `nekode-float-v2` and `default`
+resolve to `nekode-float` and `nekode-flat`; storage failures are shown in App Settings. Renderer components
 continue to consume semantic utilities. The xterm terminal palette resolves
 the active theme's `--color-terminal`, `--color-ink`, and `--color-scrollbar`
 at mount (components/lib/theme-color.ts); the Monaco palette is not
