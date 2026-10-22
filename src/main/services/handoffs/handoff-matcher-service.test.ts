@@ -392,7 +392,7 @@ describe('HandoffMatcherService.candidates', () => {
   })
 })
 
-// Batch handoff availability (spec Dostępność Resume): one directory read and
+// Batch handoff availability (spec Resume availability): one directory read and
 // at most one read per qualifying file, matched against every loaded item with
 // the same rules as `candidates`.
 describe('HandoffMatcherService.availability', () => {

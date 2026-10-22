@@ -2,13 +2,13 @@
 // Initials extraction, deterministic color assignment, and the 7-shade palette.
 
 export const PROJECT_COLOR_PALETTE = [
-  '#8B7CF6', // lawenda
-  '#5AA9FF', // niebieski
-  '#F59E8B', // łosoś
-  '#4ADE80', // zielony
-  '#F2C94C', // żółty
-  '#F472B6', // róż
-  '#2DD4BF', // morski
+  '#8B7CF6', // lavender
+  '#5AA9FF', // blue
+  '#F59E8B', // salmon
+  '#4ADE80', // green
+  '#F2C94C', // yellow
+  '#F472B6', // pink
+  '#2DD4BF', // teal
 ] as const
 
 export type ProjectColor = (typeof PROJECT_COLOR_PALETTE)[number]

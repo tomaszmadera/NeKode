@@ -182,7 +182,7 @@ export function ActionSettings({
         setConfigError(null)
         // A saved directory invalidates the previous availability result: the
         // board session is keyed by this version, so it re-scans (spec
-        // Dostępność Resume pkt 6).
+        // Resume availability item 6).
         onKanbanInvalidate?.(projectId)
       } catch (cause) {
         setHandoffDirSaved(false)
