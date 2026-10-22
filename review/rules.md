@@ -21,6 +21,12 @@ R2 | Every bug fix adds a test that fails without the fix | check: PR diff + tes
 R3 | The PR references its Plane work item (NEKODE-<n>) and describes the change | check: PR description
 R4 | No changes outside the scope of the work item | check: list of changed files
 R5 | A change under adapters/plane has a green `pnpm run test:adapters` | check: command log (CI does not run it)
+R6 | Every red-test log attached to the PR comes with the literal command that produced it | check: PR description or PR comment with the raw log and the command
+R7 | A red run that fails only because a module is missing does not count as a red run | check: raw red log fails on an assertion or the expected error, not on a missing module or import
+R8 | A breaking API change adds a CHANGELOG entry and updates every spec that contains the affected signature | check: diff of CHANGELOG.md + search of docs/ for the old signature
+R9 | The PR does not reference documents that exist only on an unmerged branch | check: every linked repository path exists on main or in the PR diff
+R10 | A plan criterion the change does not meet is flagged in the PR, and either the plan is changed or the owner decides | check: PR description + plan diff or the owner's decision in the PR or Plane
+R11 | Spec amendments are written in the language of the spec they amend | check: diff of docs/
 ```
 
 Notes on evidence:
@@ -34,6 +40,15 @@ Notes on evidence:
 - R5: the Plane adapter tests use the Python standard library only, so the log
   may come from any machine with Python 3.11 or newer. Paste the command, exit
   code, and test count into the handoff.
+- R6: the command is the exact one that was run, copied as typed, not a
+  description of it. A log without its command does not count as evidence.
+- R7: an import error shows only that the code under test does not exist yet.
+  A red run for R2 must reach the test and fail on the behavior it checks.
+- R8: NeKode has no CHANGELOG.md yet; the first breaking change creates it in
+  the repository root. "Every spec" includes specs in `docs/features/` and
+  `docs/product/` that quote the old signature, in any language.
+- R10: the owner is Tomasz; his decision is recorded in the PR or the Plane
+  work item.
 
 ## Item rules
 
@@ -58,6 +73,12 @@ R2 FAIL: fix in <file> has no new test
 R3 PASS
 R4 PASS
 R5 PASS: not applicable, no change under adapters/plane
+R6 PASS
+R7 PASS
+R8 PASS: not applicable, no API change
+R9 PASS
+R10 PASS
+R11 PASS
 T1 PASS
 T2 FAIL: docs/ unchanged
 Result: FAIL (2), back to the doer
