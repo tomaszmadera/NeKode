@@ -435,9 +435,13 @@ export function ActionBar({
           <div className="nk-btn-group shrink-0">
             <div className="flex h-[30px] items-center gap-2 px-2.5">
               <Icon.search size={14} aria-hidden className="text-ink-disabled shrink-0" />
+              {/* Task search is not implemented yet: the field stays disabled
+                  and its tooltip says so instead of the placeholder. */}
               <input
                 type="text"
-                placeholder="Search... (not working yet)"
+                placeholder="Search"
+                title="Search is not available yet"
+                aria-label="Search is not available yet"
                 disabled
                 data-testid={TEST_ID.kanbanSearchInput}
                 className="w-48 bg-transparent text-sm text-ink placeholder:text-ink-disabled opacity-70 cursor-not-allowed outline-none"
