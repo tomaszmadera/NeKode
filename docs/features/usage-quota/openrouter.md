@@ -50,8 +50,8 @@ The metric id is `balance`, kind `balance`, label `Account balance`, with `amoun
 1. Read [Management key privileges](#management-key-privileges).
 2. In OpenRouter, open Management API Keys, choose `Create New Key`, name it (for example `NeKode usage`), set an expiration and copy the key; it is shown only once.
 3. NeKode ships this adapter ([shipped adapters](usage.md)); nothing to copy. App Settings lists `OpenRouter account balance` with its executable and the privilege explanation; enabling it lets it run with your user permissions.
-4. In `App Settings > Usage`, turn on `Show usage quota` and add a connection: provider id `openrouter` (the adapter reports this id), an account label, and this source. Enter the key in `OpenRouter Management key`.
-5. Test the connection, then enable and save it.
+4. In `App Settings > Usage`, turn on `Show usage quota` and choose `Add account` and this service, then enter a name. Enter the key in `OpenRouter Management key`.
+5. `Test`, then `Save`.
 
 The key is stored encrypted with Electron `safeStorage`. If encryption is unavailable, NeKode refuses to save it and never stores plaintext. The field is write-only: leave it blank to keep the stored key, or use `Clear stored OpenRouter Management key`. NeKode sends the key to the adapter over stdin only; the adapter sends it only in the `Authorization` header and never writes it to output, errors or command-line arguments.
 
@@ -59,8 +59,8 @@ The key is stored encrypted with Electron `safeStorage`. If encryption is unavai
 
 | Error | Cause and action |
 |---|---|
-| `Usage source config. Enter an OpenRouter Management key, not an ordinary API key...` | OpenRouter returned 403: the key is an ordinary API key. Create a Management key and enter it. Also shown when no key is stored. Automatic retries stop until you change the connection or refresh. |
-| `Usage source auth` | OpenRouter returned 401: the key is invalid, expired or revoked. Create a new Management key and save it. Automatic retries stop until you change the connection or refresh. |
+| `Usage source config. Enter an OpenRouter Management key, not an ordinary API key...` | OpenRouter returned 403: the key is an ordinary API key. Create a Management key and enter it. Also shown when no key is stored. Automatic retries stop until you change the account or refresh. |
+| `Usage source auth` | OpenRouter returned 401: the key is invalid, expired or revoked. Create a new Management key and save it. Automatic retries stop until you change the account or refresh. |
 | `Usage source rate_limited` | OpenRouter returned 429. NeKode waits at least 300 seconds (the adapter minimum), longer when `Retry-After` or the failure backoff asks for more. |
 | `Usage source timeout` | No complete answer within 20 seconds. Retries back off at 300 seconds (the adapter minimum). |
 | `Usage source network` | The API could not be reached or returned a 5xx error. Retries back off. |

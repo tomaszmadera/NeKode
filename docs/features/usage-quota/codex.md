@@ -32,18 +32,18 @@ Credits, plan type, reset credits and upsell data are not mapped.
 
 1. Check compatibility: `codex --version` must print `codex-cli 0.163.0` or later.
 2. Sign in with the Codex CLI itself using ChatGPT. NeKode does not sign you in.
-3. NeKode ships this adapter ([shipped adapters](usage.md)); nothing to copy. App Settings lists `Codex CLI app-server (experimental)` with its executable; enabling it lets it run with your user permissions.
-4. Add a connection: provider id `codex` (the adapter reports this id), an account label, and this adapter. Leave `Codex executable` empty to use `codex` from `PATH`, or set the absolute path of `codex.exe`. Script shims such as `codex.cmd` cannot run without a shell and are refused.
+3. NeKode ships this adapter ([shipped adapters](usage.md)); nothing to copy. `Add account` lists `Codex CLI` marked `Experimental`, and `Advanced` shows its executable; enabling it lets it run with your user permissions.
+4. Choose `Add account`, then `Codex CLI` (marked `Experimental`), and enter a name. Leave `Codex executable` empty to use `codex` from `PATH`, or set the absolute path of `codex.exe`. Script shims such as `codex.cmd` cannot run without a shell and are refused.
 
    An npm global install (`npm install -g @openai/codex`) puts only script shims (`codex`, `codex.cmd`, `codex.ps1`) in the npm prefix folder on `PATH`, so set the executable path. The binary is in the platform package under the npm global root: run `npm root -g`, then use `<root>\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe` (layout observed in `@openai/codex` 0.155.1 on Windows x64; on Windows ARM the package is `codex-win32-arm64`). If your version differs, search that package folder for `codex.exe`. For other installs, `(Get-Command codex).Source` in PowerShell shows the executable when it is a real `.exe`.
-5. Test the connection, then enable and save it.
+5. `Test`, then `Save`.
 
 ## Troubleshooting
 
 | Error | Cause and action |
 |---|---|
 | `Usage source config` | Codex was not found, or the executable path is relative or a script shim. Set the absolute `codex.exe` path. |
-| `Usage source unsupported` | Codex is older than 0.163.0, its version cannot be read, or the app-server lacks a method. Update Codex. Automatic retries stop until you retry or change the connection. |
+| `Usage source unsupported` | Codex is older than 0.163.0, its version cannot be read, or the app-server lacks a method. Update Codex. Automatic retries stop until you retry or change the account. |
 | `Usage source auth` | Codex is not signed in, uses an API key or another provider, or the backend denied the read. Sign in with the configured Codex CLI using ChatGPT, then retry. |
 | `Usage source timeout` | The version check and app-server read did not finish within the 25-second deadline. Retries back off at 60, 120, 240 and 300 seconds. |
 | `Usage source rate_limited` | app-server reported overload; NeKode waits at least 60 seconds. |

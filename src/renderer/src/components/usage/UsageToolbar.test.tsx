@@ -146,7 +146,7 @@ describe('Usage panel', () => {
       s = snapshot()
     s.connections[0].error = {
       code: 'config',
-      message: 'Usage source config. Check the connection and retry.',
+      message: 'Usage source config. Check the account and retry.',
     }
     vi.mocked(api.read).mockResolvedValue(s)
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
@@ -158,7 +158,7 @@ describe('Usage panel', () => {
       return element
     })
     expect(note.textContent).toBe(
-      'usage-file: Usage source config. Check the connection and retry. 7d: Age unknown',
+      'usage-file: Usage source config. Check the account and retry. 7d: Age unknown',
     )
   })
   it('closes on an outside pointer click', () => {

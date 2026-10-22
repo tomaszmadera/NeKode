@@ -38,7 +38,7 @@ describe('usage adapter process boundary', () => {
     )
     await expect(new UsageAdapterHost().read(a, {}, 'account', signal())).rejects.toMatchObject({
       code: 'validation_error',
-      message: 'Usage source validation_error. Check the connection and retry.',
+      message: 'Usage source validation_error. Check the account and retry.',
     })
   })
   it('sends configuration only in the versioned stdin request', async () => {
@@ -167,14 +167,31 @@ describe('usage adapter process boundary', () => {
     write('bad-field', {
       configSchema: [{ key: 'k', label: 'K', type: 'text', description: 'x'.repeat(513) }],
     })
+    write('service', { providerId: 'service-provider', summary: 'One line.', experimental: true })
+    write('bad-provider', { providerId: 'Not Valid' })
+    write('long-summary', { summary: 'x'.repeat(161) })
+    write('bad-experimental', { experimental: 'yes' })
     const result = discoverUsageAdapters(root)
+    expect(result.find((r) => r.id === 'service')).toMatchObject({
+      providerId: 'service-provider',
+      summary: 'One line.',
+      experimental: true,
+    })
     expect(result.find((r) => r.id === 'described')).toMatchObject({
       description: 'Explains privileges before enabling.',
       errorActions: { auth: 'Check the key.', config: 'Use a management key.' },
       configSchema: [{ key: 'apiKey', description: 'Write-only.' }],
     })
     expect(result.find((r) => r.id === 'described')?.error).toBeUndefined()
-    for (const name of ['bad-code', 'long-action', 'long-description', 'bad-field'])
+    for (const name of [
+      'bad-code',
+      'long-action',
+      'long-description',
+      'bad-field',
+      'bad-provider',
+      'long-summary',
+      'bad-experimental',
+    ])
       expect(result.find((r) => r.id === `invalid:${name}`)?.error).toContain('Invalid')
   })
   it('lists invalid manifests disabled and disables every duplicate', () => {
@@ -285,6 +302,13 @@ describe('bundled and user usage adapters', () => {
       'openrouter-credits',
     ])
     expect(listed.every((a) => a.bundled && !a.error)).toBe(true)
+    // Spec rules 22-23: every shipped service declares its provider and a picker summary.
+    expect(listed.map((a) => [a.id, a.providerId, a.experimental ?? false]).sort()).toEqual([
+      ['codex-app-server', 'codex', true],
+      ['elevenlabs-subscription', 'elevenlabs', false],
+      ['openrouter-credits', 'openrouter', false],
+    ])
+    expect(listed.every((a) => a.summary)).toBe(true)
     const packaged = [
       ...readFileSync(join(repo, 'electron-builder.yml'), 'utf8').matchAll(
         /to: usage-adapters\/([\w-]+)/g,

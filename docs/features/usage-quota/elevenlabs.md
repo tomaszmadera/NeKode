@@ -40,8 +40,8 @@ Tier, status, currency, invoices, voice limits and every other field are discard
 
 1. Create an API key in ElevenLabs. If you restrict the key's endpoint access, allow it to read user data (the subscription endpoint is under `/v1/user`); the exact permission name is in your ElevenLabs API key settings.
 2. NeKode ships this adapter ([shipped adapters](usage.md)); nothing to copy. App Settings lists `ElevenLabs subscription` with its executable; enabling it lets it run with your user permissions.
-3. In `App Settings > Usage`, turn on `Show usage quota` and add a connection: provider id `elevenlabs` (the adapter reports this id), an account label, and this source. Enter the key in `ElevenLabs API key`. Leave `API region` on `default` unless your workspace uses ElevenLabs data residency (`us`, `eu`, `in`, `sg`).
-4. Test the connection, then enable and save it.
+3. In `App Settings > Usage`, turn on `Show usage quota` and choose `Add account` and this service, then enter a name. Enter the key in `ElevenLabs API key`. Leave `API region` on `default` unless your workspace uses ElevenLabs data residency (`us`, `eu`, `in`, `sg`).
+4. `Test`, then `Save`.
 
 The key is stored encrypted with Electron `safeStorage`. If encryption is unavailable, NeKode refuses to save it and never stores plaintext. The field is write-only: leave it blank to keep the stored key, or use `Clear stored ElevenLabs API key`. NeKode sends the key to the adapter over stdin only; the adapter sends it only in the `xi-api-key` header and never writes it to output, errors or command-line arguments.
 
@@ -49,7 +49,7 @@ The key is stored encrypted with Electron `safeStorage`. If encryption is unavai
 
 | Error | Cause and action |
 |---|---|
-| `Usage source auth` | ElevenLabs returned 401 or 403: the key is invalid, revoked, or may not read user data. Enter a valid key and save. Automatic retries stop until you change the connection or refresh. |
+| `Usage source auth` | ElevenLabs returned 401 or 403: the key is invalid, revoked, or may not read user data. Enter a valid key and save. Automatic retries stop until you change the account or refresh. |
 | `Usage source config` | No key is stored, or the region is not one of the documented values. Set the key and region, then save. |
 | `Usage source rate_limited` | ElevenLabs returned 429. NeKode waits at least 300 seconds (the adapter minimum), longer when `Retry-After` or the failure backoff asks for more. |
 | `Usage source timeout` | No complete answer within 20 seconds. Retries back off at 300 seconds (the adapter minimum). |

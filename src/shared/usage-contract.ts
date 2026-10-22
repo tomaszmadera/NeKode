@@ -76,6 +76,12 @@ export interface UsageAdapter {
   description?: string
   /** Optional fixed next action per declared failure code, replacing the generic one. */
   errorActions?: Partial<Record<UsageErrorCode, string>>
+  /** Provider id the service reports; main assigns it to accounts (spec rule 23). */
+  providerId?: string
+  /** One sentence for the service picker (spec rule 22, at most 160 characters). */
+  summary?: string
+  /** Shown as `Experimental` in the service picker. */
+  experimental?: boolean
   directory?: string
   /** Shipped with NeKode (spec rule 17); absent for user-added adapters. */
   bundled?: boolean
@@ -89,6 +95,17 @@ export interface UsageConnection {
   enabled: boolean
   config: Record<string, string | boolean>
   secretKeys?: string[]
+}
+/** One subscription found in a JSON input file (spec rule 25); no metrics. */
+export interface UsageFileSubscription {
+  id: string
+  providerId: string
+  label: string
+}
+/** Proposed Claude snapshot directory and setup preview command (spec rule 24). */
+export interface UsageClaudeSetup {
+  directory: string
+  command: string
 }
 export interface UsagePin {
   connectionId: string
@@ -123,6 +140,12 @@ export interface UsageApi {
   getEnabled(): Promise<boolean>
   /** Persist the switch; off stops all usage activity and keeps settings. Returns the new value. */
   setEnabled(enabled: boolean): Promise<boolean>
+  /** Subscriptions of a JSON input file, without metrics (spec rule 25). */
+  inspectFile(path: string): Promise<UsageFileSubscription[]>
+  /** Directory (proposed when `directory` is null) and setup command for a Claude account. */
+  claudeSetup(connectionId: string, directory: string | null): Promise<UsageClaudeSetup>
+  /** Create `<userData>/usage-adapters` when missing and open it (spec rule 26). */
+  openAdaptersFolder(): Promise<void>
 }
 
 function invalid(message: string): never {
@@ -291,7 +314,8 @@ export function parseUsageSettings(value: unknown): UsageSettings {
     return {
       id,
       label: text(c.label),
-      providerId: text(c.providerId),
+      // Main assigns the provider id on save (spec rule 23); a new account may send none.
+      providerId: c.providerId === undefined || c.providerId === '' ? '' : text(c.providerId),
       adapterId: text(c.adapterId),
       enabled: c.enabled,
       config: config as UsageConnection['config'],

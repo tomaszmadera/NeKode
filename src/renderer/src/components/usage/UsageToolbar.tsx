@@ -282,7 +282,7 @@ export function UsageToolbar({
             ) : null}
             {snapshot.connections.length === 0 ? (
               <div className="usage-empty">
-                <p>No usage connections enabled.</p>
+                <p>No usage accounts enabled.</p>
                 <button
                   type="button"
                   onClick={() => {

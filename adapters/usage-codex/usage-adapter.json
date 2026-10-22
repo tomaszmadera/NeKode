@@ -1,6 +1,9 @@
 {
   "id": "codex-app-server",
-  "name": "Codex CLI app-server (experimental)",
+  "name": "Codex CLI",
+  "providerId": "codex",
+  "summary": "Codex plan limits read through the Codex CLI you are signed in to.",
+  "experimental": true,
   "protocolVersion": 1,
   "invocation": { "command": "node", "args": ["index.cjs"] },
   "sourceKind": "cli",

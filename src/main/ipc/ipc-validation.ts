@@ -596,6 +596,22 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       },
       invoke: (args) => services.usage.setEnabled(args[0] as boolean),
     },
+    serviceChannel(IPC_CHANNEL.usageInspectFile, ['path'], (args) =>
+      services.usage.inspectFile(args[0] as string),
+    ),
+    {
+      channel: IPC_CHANNEL.usageClaudeSetup,
+      parse(payload) {
+        requireArgs(payload, 2, IPC_CHANNEL.usageClaudeSetup)
+        assertString(payload[0], 'usage account id')
+        if (payload[1] !== null) assertSafePath(payload[1], 'usage Claude directory')
+        return payload
+      },
+      invoke: (args) => services.usage.claudeSetup(args[0] as string, args[1] as string | null),
+    },
+    serviceChannel(IPC_CHANNEL.usageOpenAdaptersFolder, [], () =>
+      services.usage.openAdaptersFolder(),
+    ),
     serviceChannel(IPC_CHANNEL.dictationStatus, [], () => services.dictation.status()),
     serviceChannel(IPC_CHANNEL.dictationDesktopSetup, [], () => services.dictation.desktopSetup()),
     // The handler derives the window identity after sender and payload validation.

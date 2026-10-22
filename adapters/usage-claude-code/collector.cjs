@@ -9,15 +9,14 @@
 // unchanged payload write nothing. With `--pass-through` the raw input is copied to stdout so a
 // previous status-line command piped after this one keeps working.
 //
-// The default directory equals the optional Agent Harness snapshot directory:
-//   ${AGENT_CAPACITY_SNAPSHOT_DIR:-${XDG_CACHE_HOME:-~/.cache}/agent-capacity}/claude
-// Use one directory per Claude account.
+// `--dir` is required; there is no default directory (spec rule 24). NeKode proposes one
+// directory per Claude account in its settings. Record each Claude account once per computer:
+// if another tool already writes these snapshots, read its directory instead of adding this writer.
 //
-// Usage: node collector.cjs [--dir <absolute directory>] [--pass-through]
+// Usage: node collector.cjs --dir <absolute directory> [--pass-through]
 // Docs: docs/features/usage-quota/claude-code.md
 const { randomUUID } = require('node:crypto')
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 
 const MAX_INPUT_BYTES = 1024 * 1024
@@ -25,14 +24,7 @@ const MAX_INPUT_BYTES = 1024 * 1024
 const MAX_SNAPSHOT_BYTES = 256 * 1024
 const SESSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
-function defaultDirectory(env = process.env, home = os.homedir()) {
-  const base =
-    env.AGENT_CAPACITY_SNAPSHOT_DIR ||
-    path.join(env.XDG_CACHE_HOME || path.join(home, '.cache'), 'agent-capacity')
-  return path.join(base, 'claude')
-}
-
-function parseArgs(argv, env = process.env) {
+function parseArgs(argv) {
   const options = { passThrough: false }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -41,9 +33,8 @@ function parseArgs(argv, env = process.env) {
     else if (arg === '--dir') options.dir = argv[++i]
     else throw new Error('unknown argument')
   }
-  options.dir ??= defaultDirectory(env)
   if (typeof options.dir !== 'string' || !path.isAbsolute(options.dir))
-    throw new Error('--dir must be an absolute path')
+    throw new Error('--dir is required and must be an absolute path')
   return options
 }
 
@@ -122,4 +113,4 @@ function main() {
 
 if (require.main === module) main()
 
-module.exports = { collect, defaultDirectory, parseArgs }
+module.exports = { collect, parseArgs }

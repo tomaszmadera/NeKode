@@ -5,7 +5,9 @@ import type { UsageAdapter, UsageDocument, UsageMetric } from '../../../shared/u
 
 export const CLAUDE_SNAPSHOT_ADAPTER: UsageAdapter = {
   id: 'claude-code-snapshots',
-  name: 'Claude Code session snapshots',
+  name: 'Claude Code',
+  providerId: 'claude',
+  summary: 'Reads 5h and 7-day limits that Claude Code sessions write to a snapshot directory.',
   protocolVersion: 1,
   invocation: { command: 'Built-in Claude snapshot reader', args: [] },
   sourceKind: 'file',

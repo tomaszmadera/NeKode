@@ -13,7 +13,10 @@ import { allowsMicrophone, allowsRendererClipboard } from './security/media-perm
 import { isTrustedRendererUrl } from './security/sender-guard'
 import { createServices } from './services/create-services'
 import { DesktopShortcutSender, desktopHelperPath } from './services/dictation/desktop-sender'
-import { bundledUsageAdapterDirectories } from './services/usage/adapter-host'
+import {
+  bundledUsageAdapterDirectories,
+  claudeSetupScriptPath,
+} from './services/usage/adapter-host'
 import { registerShutdown } from './shutdown'
 import { applyUserDataOverride } from './user-data-override'
 
@@ -168,6 +171,11 @@ app
           safeStorage,
           packaged: app.isPackaged,
           bundledUsageAdapterDirectories: bundledUsageAdapterDirectories(
+            app.isPackaged,
+            app.getAppPath(),
+            process.resourcesPath,
+          ),
+          claudeSetupScript: claudeSetupScriptPath(
             app.isPackaged,
             app.getAppPath(),
             process.resourcesPath,

@@ -1,6 +1,8 @@
 {
   "id": "elevenlabs-subscription",
   "name": "ElevenLabs subscription",
+  "providerId": "elevenlabs",
+  "summary": "Character usage and limit of your ElevenLabs subscription.",
   "protocolVersion": 1,
   "invocation": { "command": "node", "args": ["index.cjs"] },
   "sourceKind": "api",

@@ -10,14 +10,14 @@ const packageDirectory = resolve(__dirname, '../../../../adapters/usage-claude-c
 const load = createRequire(__filename)
 const collector = load(join(packageDirectory, 'collector.cjs')) as {
   collect(payload: unknown, options: Options): 'written' | 'unchanged' | 'skipped'
-  defaultDirectory(env: Record<string, string | undefined>, home: string): string
-  parseArgs(argv: string[], env?: Record<string, string | undefined>): Options
+  parseArgs(argv: string[]): Options
 }
 const setup = load(join(packageDirectory, 'setup.cjs')) as {
   apply(options: Record<string, string>): { proposed: { command: string } }
   plan(options: Record<string, string>): {
     proposed: Record<string, unknown> & { command: string }
     warnings: string[]
+    note: string
   }
   remove(options: Record<string, string>): unknown
 }
@@ -89,20 +89,12 @@ describe('Claude Code status-line snapshot writer', () => {
       expect(() => collector.collect(payload(BOTH, id), options)).toThrow('session_id')
     expect(() => collector.collect(payload([1]), options)).toThrow('rate_limits')
   })
-  it('defaults to the Agent Harness snapshot directory', () => {
+  it('requires an absolute --dir and has no default directory (spec rule 24)', () => {
     const home = join(tmpdir(), 'fixture-home')
-    expect(collector.defaultDirectory({}, home)).toBe(
-      join(home, '.cache', 'agent-capacity', 'claude'),
+    expect(() => collector.parseArgs([])).toThrow('--dir is required')
+    expect(() => collector.parseArgs(['--pass-through', '--nekode-usage'])).toThrow(
+      '--dir is required',
     )
-    expect(collector.defaultDirectory({ XDG_CACHE_HOME: join(home, 'xdg') }, home)).toBe(
-      join(home, 'xdg', 'agent-capacity', 'claude'),
-    )
-    expect(
-      collector.defaultDirectory(
-        { AGENT_CAPACITY_SNAPSHOT_DIR: join(home, 'capacity'), XDG_CACHE_HOME: join(home, 'xdg') },
-        home,
-      ),
-    ).toBe(join(home, 'capacity', 'claude'))
     expect(collector.parseArgs(['--dir', join(home, 'd')]).dir).toBe(join(home, 'd'))
     expect(() => collector.parseArgs(['--dir', 'relative'])).toThrow('absolute')
     expect(() => collector.parseArgs(['--output', join(home, 'x.json')])).toThrow('unknown')
@@ -214,6 +206,13 @@ describe('Claude Code status-line setup', () => {
     expect(readFileSync(f.settings, 'utf8')).toBe(before)
     expect(existsSync(`${f.settings}.nekode-usage-backup.json`)).toBe(false)
     expect(() => setup.apply({ ...f.args, node: 'node' })).not.toThrow()
+  })
+  it('requires --dir and states the one-recorder rule in the preview (spec rule 16)', () => {
+    const f = settingsFixture(ORIGINAL)
+    expect(() => setup.plan({ settings: f.settings, node: 'node' })).toThrow('--dir is required')
+    expect(setup.plan({ ...f.args, node: 'node' }).note).toContain(
+      'Record each Claude account once per computer',
+    )
   })
   it('rejects a snapshot directory that contains the settings file', () => {
     const f = settingsFixture(ORIGINAL)

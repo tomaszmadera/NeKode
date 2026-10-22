@@ -757,6 +757,12 @@ describe('global usage service', () => {
     service.saveSettings(s)
     expect(service.getSettings().connections[0].config).toEqual({})
     expect(service.getSettings().connections[0].secretKeys).toEqual(['key'])
+    // Renaming keeps the stored secret when the field is left blank.
+    service.saveSettings({
+      ...service.getSettings(),
+      connections: [{ ...service.getSettings().connections[0], label: 'Renamed secret account' }],
+    })
+    expect(service.getSettings().connections[0].secretKeys).toEqual(['key'])
     expect(JSON.stringify(service.read())).not.toContain('fixture-secret')
     const host = new UsageAdapterHost()
     const read = vi.spyOn(host, 'read')
@@ -776,5 +782,242 @@ describe('global usage service', () => {
     expect(restarted.read().connections[0].error?.code).toBe('config')
     expect(restarted.read().connections[0].error?.message).toContain('Cannot decrypt')
     expect(read).not.toHaveBeenCalled()
+  })
+})
+
+describe('accounts settings flow (spec rules 21-28)', () => {
+  function subscription(id: string, providerId: string, percent: number) {
+    return {
+      id,
+      providerId,
+      label: `Label ${id}`,
+      sourceKind: 'file',
+      status: 'available',
+      metrics: [
+        {
+          id: 'week',
+          label: '7d',
+          kind: 'window',
+          state: 'available',
+          observedAt: '2026-10-20T12:00:00Z',
+          usedPercent: percent,
+          resetsAt: '2026-10-25T00:00:00Z',
+        },
+      ],
+    }
+  }
+  function writeSubscriptions(path: string, subs: unknown[]) {
+    writeFileSync(path, JSON.stringify({ schemaVersion: 1, subscriptions: subs }))
+  }
+  function adapter(f: ReturnType<typeof fixture>, providerId?: string) {
+    const directory = join(f.deps.userDataPath, 'usage-adapters', 'declared')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(
+      join(directory, 'usage-adapter.json'),
+      JSON.stringify({
+        id: 'declared',
+        name: 'Declared',
+        ...(providerId ? { providerId } : {}),
+        summary: 'Fixture service.',
+        protocolVersion: 1,
+        invocation: { command: 'node', args: ['fixture.cjs'] },
+        sourceKind: 'api',
+        capabilities: ['window'],
+        minimumRefreshSeconds: 60,
+        configSchema: [],
+      }),
+    )
+    const host = new UsageAdapterHost()
+    const read = vi.spyOn(host, 'read')
+    const service = new UsageService({ ...f.deps, host })
+    services.push(service)
+    return { service, read, host }
+  }
+  const account = (adapterId: string, providerId = '') => ({
+    id: 'account',
+    label: 'Fixture account',
+    providerId,
+    adapterId,
+    enabled: true,
+    config: {} as Record<string, string | boolean>,
+  })
+
+  it('assigns the declared provider id and ignores the one sent by the renderer', async () => {
+    const f = fixture()
+    const { service, read } = adapter(f, 'declared-provider')
+    service.saveSettings({ ...f.settings, connections: [account('declared', 'typed')] })
+    expect(service.getSettings().connections[0].providerId).toBe('declared-provider')
+    read.mockResolvedValue({
+      schemaVersion: 1,
+      subscriptions: [subscription('account', 'other-provider', 10)],
+    })
+    service.setVisible(true)
+    await service.refresh()
+    expect(service.read().connections[0].error?.message).toContain('its provider')
+    read.mockResolvedValue({
+      schemaVersion: 1,
+      subscriptions: [subscription('account', 'declared-provider', 10)],
+    })
+    await service.test(service.getSettings().connections[0])
+  })
+  it('uses the adapter id without a declared provider and accepts any reported provider', async () => {
+    const f = fixture()
+    const { service, read } = adapter(f)
+    service.saveSettings({ ...f.settings, connections: [account('declared')] })
+    expect(service.getSettings().connections[0].providerId).toBe('declared')
+    read.mockResolvedValue({
+      schemaVersion: 1,
+      subscriptions: [subscription('account', 'reported', 20)],
+    })
+    service.setVisible(true)
+    await service.refresh()
+    const source = service.read().connections[0]
+    expect(source.error).toBeNull()
+    expect(source.subscription?.providerId).toBe('declared')
+  })
+  it('replaces a saved provider id that differs from the declared one', () => {
+    const f = fixture()
+    const { host } = adapter(f, 'declared-provider')
+    f.state.set(
+      USAGE_STATE_KEY,
+      JSON.stringify({
+        ...f.settings,
+        connections: [account('declared', 'legacy')],
+      }),
+    )
+    const legacy = new UsageService({ ...f.deps, host })
+    services.push(legacy)
+    expect(legacy.getSettings().connections[0].providerId).toBe('legacy')
+    // Saving another account leaves the legacy one unchanged (criterion 15).
+    const added = legacy.saveSettings({
+      ...legacy.getSettings(),
+      connections: [
+        ...legacy.getSettings().connections,
+        { ...account('declared', 'typed'), id: 'other', label: 'Other account' },
+      ],
+    })
+    expect(added.connections.map((c) => c.providerId)).toEqual(['legacy', 'declared-provider'])
+    // Editing the legacy account assigns the declared id.
+    const edited = legacy.saveSettings({
+      ...added,
+      connections: added.connections.map((c) =>
+        c.id === 'account' ? { ...c, label: 'Renamed account' } : c,
+      ),
+    })
+    expect(edited.connections[0].providerId).toBe('declared-provider')
+  })
+  it('takes the provider id of a re-chosen file subscription whose provider changed', () => {
+    const f = fixture()
+    writeSubscriptions(f.input, [subscription('b', 'pb', 22)])
+    const file = { ...account('usage-file', 'pb'), config: { path: f.input, subscriptionId: 'b' } }
+    f.service.saveSettings({ ...f.settings, connections: [file] })
+    writeSubscriptions(f.input, [subscription('b', 'pb2', 22)])
+    const saved = f.service.saveSettings({
+      ...f.service.getSettings(),
+      connections: [{ ...file, providerId: 'pb2' }],
+    })
+    expect(saved.connections[0].providerId).toBe('pb2')
+  })
+  it('binds a JSON file account to the chosen subscription, ignores others and never rebinds', async () => {
+    const f = fixture()
+    writeSubscriptions(f.input, [subscription('a', 'pa', 11), subscription('b', 'pb', 22)])
+    f.service.saveSettings({
+      ...f.settings,
+      connections: [
+        { ...account('usage-file', 'pb'), config: { path: f.input, subscriptionId: 'b' } },
+      ],
+    })
+    f.service.setVisible(true)
+    await f.service.refresh()
+    const source = f.service.read().connections[0]
+    expect(source.error).toBeNull()
+    expect(source.subscription).toMatchObject({ id: 'account', providerId: 'pb' })
+    expect(source.subscription?.metrics[0].usedPercent).toBe(22)
+    writeSubscriptions(f.input, [subscription('a', 'pa', 33)])
+    f.advance(6000)
+    await f.service.refresh()
+    const missing = f.service.read().connections[0]
+    expect(missing.error).toMatchObject({ code: 'io' })
+    expect(missing.error?.message).toContain('has no subscription "b"')
+    expect(missing.subscription?.metrics[0].usedPercent).toBe(22)
+  })
+  it('rejects two accounts bound to one file subscription and a file account without a provider', () => {
+    const f = fixture()
+    writeSubscriptions(f.input, [subscription('a', 'pa', 11)])
+    const one = { ...account('usage-file', 'pa'), config: { path: f.input, subscriptionId: 'a' } }
+    expect(() =>
+      f.service.saveSettings({
+        ...f.settings,
+        connections: [one, { ...one, id: 'second', label: 'Second' }],
+      }),
+    ).toThrow('already tracked by the account "Fixture account"')
+    expect(() =>
+      f.service.saveSettings({ ...f.settings, connections: [{ ...one, providerId: '' }] }),
+    ).toThrow('Choose the JSON file again')
+    expect(f.state.get(USAGE_STATE_KEY)).toBeUndefined()
+  })
+  it('inspects a JSON file only while the switch is on', () => {
+    const f = fixture()
+    writeSubscriptions(f.input, [subscription('a', 'pa', 11), subscription('b', 'pb', 22)])
+    expect(f.service.inspectFile(f.input)).toEqual([
+      { id: 'a', providerId: 'pa', label: 'Label a' },
+      { id: 'b', providerId: 'pb', label: 'Label b' },
+    ])
+    expect(() => f.service.inspectFile(join(f.dir, 'missing.json'))).toThrow(
+      'Usage file does not exist',
+    )
+    f.service.setEnabled(false)
+    expect(() => f.service.inspectFile(f.input)).toThrow('Turn on Show usage quota')
+  })
+  it('proposes a Claude directory and setup command and creates the directory on save', () => {
+    const f = fixture()
+    const script = join(f.dir, 'resources', 'setup.cjs')
+    const service = new UsageService({
+      ...f.deps,
+      claudeSetupScript: script,
+      homeDirectory: join(f.dir, 'home'),
+    })
+    services.push(service)
+    const proposed = join(f.deps.userDataPath, 'claude-code-usage', 'account-1')
+    const setup = service.claudeSetup('account-1', null)
+    expect(setup.directory).toBe(proposed)
+    expect(service.claudeSetup('account-1', proposed).directory).toBe(proposed)
+    expect(setup.command).toBe(
+      `node "${script}" --settings "${join(f.dir, 'home', '.claude', 'settings.json')}" --dir "${proposed}"`,
+    )
+    expect(() => service.claudeSetup('../escape', null)).toThrow('cannot name a Claude directory')
+    expect(() => service.claudeSetup('account-1', join(f.dir, '$x'))).toThrow('cannot contain')
+    expect(() => service.claudeSetup('account-1', join(f.dir, 'x\u201D ; calc ; \u201Cy'))).toThrow(
+      'cannot contain',
+    )
+    expect(() => f.service.claudeSetup('account-1', null)).toThrow('writer is missing')
+    expect(existsSync(proposed)).toBe(false)
+    const claude = { ...account('claude-code-snapshots'), id: 'account-1' }
+    service.saveSettings({
+      ...f.settings,
+      connections: [{ ...claude, config: { directory: proposed } }],
+    })
+    expect(existsSync(proposed)).toBe(true)
+    expect(service.getSettings().connections[0].providerId).toBe('claude')
+    mkdirSync(join(f.dir, 'elsewhere'))
+    const other = join(f.dir, 'elsewhere', 'claude')
+    service.saveSettings({
+      ...f.settings,
+      connections: [{ ...claude, config: { directory: other } }],
+    })
+    expect(existsSync(other)).toBe(false)
+  })
+  it('creates and opens the user adapters folder', async () => {
+    const f = fixture()
+    const openPath = vi.fn(async (_path: string) => '')
+    const service = new UsageService({ ...f.deps, openPath })
+    services.push(service)
+    const folder = join(f.deps.userDataPath, 'usage-adapters')
+    await service.openAdaptersFolder()
+    expect(existsSync(folder)).toBe(true)
+    expect(openPath).toHaveBeenCalledExactlyOnceWith(folder)
+    openPath.mockResolvedValueOnce('Access denied')
+    await expect(service.openAdaptersFolder()).rejects.toMatchObject({ code: 'io' })
+    await expect(f.service.openAdaptersFolder()).rejects.toMatchObject({ code: 'not_found' })
   })
 })

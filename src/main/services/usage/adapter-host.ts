@@ -12,13 +12,18 @@ import { CLAUDE_SNAPSHOT_ADAPTER } from './claude-snapshots'
 
 export const FILE_ADAPTER: UsageAdapter = {
   id: 'usage-file',
-  name: 'Normalized JSON file',
+  name: 'Custom JSON file',
+  summary: 'Reads limits that another program writes to a JSON file on this computer.',
   protocolVersion: 1,
   invocation: { command: 'Built-in JSON reader', args: [] },
   sourceKind: 'file',
   capabilities: ['window', 'credits', 'balance'],
   minimumRefreshSeconds: 5,
-  configSchema: [{ key: 'path', label: 'JSON input file', type: 'file', required: true }],
+  configSchema: [
+    { key: 'path', label: 'JSON input file', type: 'file', required: true },
+    // Chosen from the file by the account editor (spec rule 25); absent means the connection id.
+    { key: 'subscriptionId', label: 'Subscription', type: 'text' },
+  ],
 }
 
 const ERROR_CODES: UsageErrorCode[] = [
@@ -49,6 +54,21 @@ function errorActions(value: unknown): UsageAdapter['errorActions'] {
   )
     throw new Error('manifest error actions')
   return actions as UsageAdapter['errorActions']
+}
+
+/**
+ * The Claude snapshot writer's setup script (spec rules 17, 24): `<resources>/usage-collectors/
+ * claude-code/setup.cjs` in a packaged app, `<appPath>/adapters/usage-claude-code/setup.cjs` when
+ * unpackaged.
+ */
+export function claudeSetupScriptPath(
+  packaged: boolean,
+  appPath: string,
+  resourcesPath: string,
+): string {
+  return packaged
+    ? join(resourcesPath, 'usage-collectors', 'claude-code', 'setup.cjs')
+    : join(appPath, 'adapters', 'usage-claude-code', 'setup.cjs')
 }
 
 /** Usage adapters shipped with NeKode (spec rule 17); `adapters/<name>` in the repository. */
@@ -130,7 +150,11 @@ function readManifest(dir: string, name: string): UsageAdapter {
       m.minimumRefreshSeconds > 86400 ||
       !Array.isArray(m.configSchema) ||
       m.configSchema.length > 50 ||
-      !bounded(m.description, 1024)
+      !bounded(m.description, 1024) ||
+      (m.providerId !== undefined &&
+        (typeof m.providerId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(m.providerId))) ||
+      !bounded(m.summary, 160) ||
+      (m.experimental !== undefined && typeof m.experimental !== 'boolean')
     )
       throw new Error('manifest contract')
     const actions = errorActions(m.errorActions)
@@ -165,11 +189,15 @@ function readManifest(dir: string, name: string): UsageAdapter {
       configSchema: m.configSchema as UsageAdapter['configSchema'],
       ...(m.description === undefined ? {} : { description: m.description as string }),
       ...(actions ? { errorActions: actions } : {}),
+      ...(m.providerId === undefined ? {} : { providerId: m.providerId as string }),
+      ...(m.summary === undefined ? {} : { summary: m.summary as string }),
+      ...(m.experimental === undefined ? {} : { experimental: m.experimental }),
       directory: dir,
     }
   } catch {
     return {
       ...FILE_ADAPTER,
+      summary: undefined,
       id: `invalid:${name}`,
       name,
       directory: dir,
@@ -243,7 +271,7 @@ export class UsageAdapterHost {
     const cancel = () => stop(new AppError('config', 'Usage request was cancelled.'))
     signal.addEventListener('abort', cancel, { once: true })
     const timer = setTimeout(
-      () => stop(new AppError('timeout', 'Usage adapter timed out. Retry the connection.')),
+      () => stop(new AppError('timeout', 'Usage adapter timed out. Retry the account.')),
       this.timeoutMs,
     )
     child.stdout.on('data', (chunk: Buffer) => {
@@ -301,7 +329,7 @@ export class UsageAdapterHost {
             ? 'Sign in with the CLI or account this adapter uses, then retry.'
             : error.code === 'unsupported'
               ? 'Update the CLI or adapter to a supported version, then retry.'
-              : 'Check the connection and retry.')
+              : 'Check the account and retry.')
         const typed = new AppError(error.code, `Usage source ${error.code}. ${action}`)
         Object.assign(typed, { retryAfterSeconds: error.retryAfterSeconds })
         throw typed

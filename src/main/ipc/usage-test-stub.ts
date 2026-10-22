@@ -18,5 +18,8 @@ export function usageTestStub(): AppServices['usage'] {
     setEnabled: vi.fn((enabled: boolean) => enabled),
     setVisible: vi.fn(),
     shutdown: vi.fn(),
+    inspectFile: vi.fn(() => []),
+    claudeSetup: vi.fn(() => ({ directory: 'C:/data/claude', command: 'node setup.cjs' })),
+    openAdaptersFolder: vi.fn(async () => undefined),
   }
 }

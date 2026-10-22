@@ -168,12 +168,28 @@ describe('ipc payload validation', () => {
     expect(channel(IPC_CHANNEL.usageSetEnabled).parse([false])).toEqual([false])
     for (const bad of [[], ['true'], [1], [null], [true, false]])
       expect(() => channel(IPC_CHANNEL.usageSetEnabled).parse(bad)).toThrow()
+    expect(channel(IPC_CHANNEL.usageInspectFile).parse(['C:/data/usage.json'])).toEqual([
+      'C:/data/usage.json',
+    ])
+    for (const bad of [[], [null], ['relative.json'], ['C:/a/../b.json'], ['C:/a.json', 'x']])
+      expect(() => channel(IPC_CHANNEL.usageInspectFile).parse(bad)).toThrow()
+    expect(channel(IPC_CHANNEL.usageClaudeSetup).parse(['account-1', null])).toEqual([
+      'account-1',
+      null,
+    ])
+    expect(channel(IPC_CHANNEL.usageClaudeSetup).parse(['account-1', 'C:/claude'])).toEqual([
+      'account-1',
+      'C:/claude',
+    ])
+    for (const bad of [[], ['account-1'], [1, null], ['account-1', 'relative'], ['a', null, 'x']])
+      expect(() => channel(IPC_CHANNEL.usageClaudeSetup).parse(bad)).toThrow()
     for (const name of [
       IPC_CHANNEL.usageRead,
       IPC_CHANNEL.usageRefresh,
       IPC_CHANNEL.usageGetSettings,
       IPC_CHANNEL.usageListAdapters,
       IPC_CHANNEL.usageGetEnabled,
+      IPC_CHANNEL.usageOpenAdaptersFolder,
     ])
       expect(() => channel(name).parse(['extra'])).toThrow()
     expect(() => channel(IPC_CHANNEL.stateSet).parse(['usage.enabled', 'true'])).toThrow(

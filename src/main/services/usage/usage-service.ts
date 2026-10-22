@@ -10,6 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, parse, resolve } from 'node:path'
 import { AppError } from '../../../shared/ipc-error'
 import {
@@ -19,16 +20,18 @@ import {
   USAGE_MAX_BYTES,
   USAGE_STATE_KEY,
   type UsageAdapter,
+  type UsageClaudeSetup,
   type UsageConnection,
   type UsageConnectionSnapshot,
   type UsageDocument,
   type UsageFailure,
+  type UsageFileSubscription,
   type UsageSettings,
   type UsageSnapshot,
   type UsageSubscription,
   usageObject,
 } from '../../../shared/usage-contract'
-import { discoverUsageAdapters, UsageAdapterHost } from './adapter-host'
+import { discoverUsageAdapters, FILE_ADAPTER, UsageAdapterHost } from './adapter-host'
 import { CLAUDE_SNAPSHOT_ADAPTER, newerWindow, readClaudeSnapshots } from './claude-snapshots'
 
 interface Storage {
@@ -62,7 +65,15 @@ export interface UsageServiceDeps {
   /** `app.isPackaged`: a packaged app never passes the adapter test seam to adapters. */
   packaged?: boolean
   startTimer?: boolean
+  /** Claude snapshot writer setup script (`claudeSetupScriptPath`, spec rule 24). */
+  claudeSetupScript?: string
+  /** Home directory holding `.claude/settings.json`; defaults to the OS home. */
+  homeDirectory?: string
+  /** Opens a folder in the system file manager; resolves '' on success (shell.openPath). */
+  openPath?: (path: string) => Promise<string>
 }
+/** Connection ids that can name a proposed Claude directory (spec rule 24). */
+const DIRECTORY_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const empty = (): UsageSettings => ({
   connections: [],
   pin: null,
@@ -84,6 +95,11 @@ function connectionRevisions(value: unknown): Record<string, string> {
   return revisions as Record<string, string>
 }
 /** Rule 16 comparison key of an available age-unknown window metric. */
+/** Equal adapter configurations regardless of key order. */
+function sameConfig(a: UsageConnection['config'], b: UsageConnection['config']): boolean {
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
+}
 function windowKey(metric: UsageSubscription['metrics'][number]) {
   if (metric.state !== 'available' || typeof metric.usedPercent !== 'number') return null
   return {
@@ -324,12 +340,9 @@ export class UsageService {
     const a = this.adapter(c),
       config = { ...c.config }
     const previous = this.settings.connections.find(
-      (p) =>
-        p.id === c.id &&
-        p.adapterId === c.adapterId &&
-        p.providerId === c.providerId &&
-        p.label === c.label,
+      (p) => p.id === c.id && p.adapterId === c.adapterId,
     )
+    if (config.subscriptionId === '') delete config.subscriptionId
     if (Object.keys(config).some((k) => !a.configSchema.some((f) => f.key === k)))
       throw new AppError('validation_error', 'Unknown usage adapter configuration field.')
     for (const f of a.configSchema) {
@@ -345,14 +358,14 @@ export class UsageService {
           if (!this.deps.safeStorage?.isEncryptionAvailable())
             throw new AppError(
               'config',
-              'Secret encryption is unavailable. Cannot save this connection.',
+              'Secret encryption is unavailable. Cannot save this account.',
             )
           value = `encrypted:${this.deps.safeStorage.encryptString(value).toString('base64')}`
         }
         if (value !== undefined) config[f.key] = value
       }
       if (f.required && (value === undefined || value === ''))
-        throw new AppError('config', `Set ${f.label} before saving this connection.`)
+        throw new AppError('config', `Set ${f.label} before saving this account.`)
       if (
         value !== undefined &&
         (f.type === 'boolean' ? typeof value !== 'boolean' : typeof value !== 'string')
@@ -361,11 +374,147 @@ export class UsageService {
       if (f.type === 'choice' && value !== undefined && !f.choices?.includes(value as string))
         throw new AppError('validation_error', 'Invalid usage adapter choice.')
     }
-    return { ...c, config }
+    return { ...c, config, providerId: this.providerFor(c, a, config) }
+  }
+  /** Spec rule 23: the service's declared id, a JSON file subscription's id, or the adapter id. */
+  private providerFor(
+    c: UsageConnection,
+    a: UsageAdapter,
+    config: UsageConnection['config'],
+  ): string {
+    const stored = this.settings.connections.find((p) => p.id === c.id && p.adapterId === a.id)
+    // Criterion 15: saving one account leaves every other stored account unchanged,
+    // including a provider id stored before services declared theirs.
+    if (
+      stored?.providerId &&
+      c.providerId === stored.providerId &&
+      c.label === stored.label &&
+      c.enabled === stored.enabled &&
+      sameConfig(config, stored.config)
+    )
+      return stored.providerId
+    if (a.providerId) return a.providerId
+    if (a.id !== FILE_ADAPTER.id) return a.id
+    // The editor chose a subscription from the file (spec rule 25); saving reads no file
+    // (rule 12) and every read checks this provider id.
+    if (c.providerId) return c.providerId
+    if (
+      stored?.providerId &&
+      stored.config.path === config.path &&
+      stored.config.subscriptionId === config.subscriptionId
+    )
+      return stored.providerId
+    throw new AppError('config', 'Choose the JSON file again to select its subscription.')
+  }
+  /** Spec rule 25: the subscriptions of a JSON input file, without metrics. */
+  inspectFile(path: string): UsageFileSubscription[] {
+    // Rule 12: while off, even an explicit read touches no file.
+    if (!this.enabled)
+      throw new AppError('config', 'Turn on Show usage quota to read the JSON file.')
+    const checked = this.checkedPath(path, false)
+    if (!existsSync(checked))
+      throw new AppError('not_found', 'Usage file does not exist. Choose an existing JSON file.')
+    return this.readDocument(checked).subscriptions.map((x) => ({
+      id: x.id,
+      providerId: x.providerId,
+      label: x.label,
+    }))
+  }
+  private proposedClaudeDirectory(connectionId: string): string {
+    if (typeof connectionId !== 'string' || !DIRECTORY_ID.test(connectionId))
+      throw new AppError('validation_error', 'This account id cannot name a Claude directory.')
+    return join(this.deps.userDataPath, 'claude-code-usage', connectionId)
+  }
+  /** Spec rule 24: the proposed directory, or the chosen one, and the setup preview command. */
+  claudeSetup(connectionId: string, directory: string | null): UsageClaudeSetup {
+    const proposed = DIRECTORY_ID.test(connectionId)
+      ? this.proposedClaudeDirectory(connectionId)
+      : null
+    // The proposed directory may not exist before the account is saved.
+    const dir =
+      directory === null
+        ? this.proposedClaudeDirectory(connectionId)
+        : proposed && this.pathKey(directory) === this.pathKey(proposed)
+          ? proposed
+          : this.checkedPath(directory, false)
+    const script = this.deps.claudeSetupScript
+    if (!script)
+      throw new AppError(
+        'not_found',
+        'The Claude snapshot writer is missing. Repair your NeKode installation.',
+      )
+    const settings = join(this.deps.homeDirectory ?? homedir(), '.claude', 'settings.json')
+    const quote = (value: string) => {
+      // PowerShell expands $ and backticks inside double quotes and also ends a
+      // double-quoted string at the typographic double quotes U+201C-U+201E.
+      if (/["\u201C-\u201E`$\r\n]/.test(value))
+        throw new AppError(
+          'validation_error',
+          'Paths for the setup command cannot contain quotes, backticks, $ or line breaks.',
+        )
+      return `"${value}"`
+    }
+    return {
+      directory: dir,
+      command: `node ${quote(script)} --settings ${quote(settings)} --dir ${quote(dir)}`,
+    }
+  }
+  /** Spec rule 26: create the user adapters folder when missing and open it. */
+  async openAdaptersFolder(): Promise<void> {
+    const dir = join(this.deps.userDataPath, 'usage-adapters')
+    try {
+      mkdirSync(dir, { recursive: true })
+    } catch {
+      throw new AppError('io', 'Cannot create the usage adapters folder. Check its permissions.')
+    }
+    if (!this.deps.openPath)
+      throw new AppError('not_found', 'Cannot open folders in this NeKode build.')
+    if (await this.deps.openPath(dir))
+      throw new AppError('io', 'Cannot open the usage adapters folder.')
+  }
+  /** Spec rule 24: saving or testing a Claude account creates its proposed directory. */
+  private createProposedDirectories(settings: UsageSettings): void {
+    for (const c of settings.connections) {
+      if (
+        c.adapterId !== CLAUDE_SNAPSHOT_ADAPTER.id ||
+        typeof c.config.directory !== 'string' ||
+        !DIRECTORY_ID.test(c.id)
+      )
+        continue
+      const proposed = this.proposedClaudeDirectory(c.id)
+      if (this.pathKey(c.config.directory) !== this.pathKey(proposed) || existsSync(proposed))
+        continue
+      try {
+        mkdirSync(proposed, { recursive: true })
+      } catch {
+        throw new AppError(
+          'io',
+          'Cannot create the Claude snapshot directory. Check its permissions.',
+        )
+      }
+    }
+  }
+  /** Spec rule 2: two accounts cannot bind the same JSON file subscription. */
+  private rejectDuplicateFileBindings(settings: UsageSettings): void {
+    const bound = new Map<string, string>()
+    for (const c of settings.connections) {
+      if (c.adapterId !== FILE_ADAPTER.id || typeof c.config.path !== 'string') continue
+      const key = `${this.pathKey(c.config.path)}\n${(c.config.subscriptionId as string | undefined) || c.id}`
+      const other = bound.get(key)
+      if (other !== undefined)
+        throw new AppError(
+          'validation_error',
+          `This file subscription is already tracked by the account "${other}".`,
+        )
+      bound.set(key, c.label)
+    }
   }
   saveSettings(raw: UsageSettings): UsageSettings {
     const next = parseUsageSettings(raw)
     next.connections = next.connections.map((c) => this.prepare(c))
+    this.rejectDuplicateFileBindings(next)
+    // The proposed directory must exist before path validation resolves its parent.
+    this.createProposedDirectories(next)
     this.validatePaths(next)
     const invalidated = new Set<string>()
     for (const c of next.connections) {
@@ -502,10 +651,7 @@ export class UsageService {
       const value = config[f.key]
       if (typeof value === 'string' && value.startsWith('encrypted:')) {
         if (!this.deps.safeStorage?.isEncryptionAvailable())
-          throw new AppError(
-            'config',
-            'Secret encryption is unavailable. Reconfigure the connection.',
-          )
+          throw new AppError('config', 'Secret encryption is unavailable. Reconfigure the account.')
         try {
           config[f.key] = this.deps.safeStorage.decryptString(
             Buffer.from(value.slice(10), 'base64'),
@@ -523,29 +669,47 @@ export class UsageService {
   private async load(c: UsageConnection, signal: AbortSignal): Promise<UsageSubscription> {
     const a = this.adapter(c),
       config = this.secrets(c, a)
+    if (a.id === FILE_ADAPTER.id) {
+      // Spec rule 25: read the bound subscription, ignore the others, never rebind.
+      const id = (config.subscriptionId as string | undefined) || c.id
+      const sub = this.readDocument(this.fileInput(config.path as string)).subscriptions.find(
+        (x) => x.id === id,
+      )
+      if (!sub)
+        throw new AppError(
+          'io',
+          `Usage file has no subscription "${id}". Collection retries automatically.`,
+        )
+      if (sub.providerId !== c.providerId)
+        throw new AppError(
+          'validation_error',
+          'The usage file subscription changed its provider. Choose the file again for this account.',
+        )
+      return { ...sub, id: c.id, label: c.label, sourceKind: a.sourceKind }
+    }
     const document =
-      a.id === 'usage-file'
-        ? this.readDocument(this.fileInput(config.path as string))
-        : a.id === CLAUDE_SNAPSHOT_ADAPTER.id
-          ? parseUsageDocument(
-              readClaudeSnapshots(
-                this.snapshotDirectory(config.directory as string),
-                c,
-                this.now(),
-              ),
-              this.now(),
-            )
-          : parseUsageDocument(await this.host.read(a, config, c.id, signal), this.now())
+      a.id === CLAUDE_SNAPSHOT_ADAPTER.id
+        ? parseUsageDocument(
+            readClaudeSnapshots(this.snapshotDirectory(config.directory as string), c, this.now()),
+            this.now(),
+          )
+        : parseUsageDocument(await this.host.read(a, config, c.id, signal), this.now())
+    // Spec rule 23: the provider id must match only when the service declares one.
     if (
       document.subscriptions.length !== 1 ||
       document.subscriptions[0].id !== c.id ||
-      document.subscriptions[0].providerId !== c.providerId
+      (a.providerId !== undefined && document.subscriptions[0].providerId !== c.providerId)
     )
       throw new AppError(
         'validation_error',
-        'Usage input must contain one subscription matching this connection id and provider.',
+        'Usage source must return one subscription for this account and its provider.',
       )
-    return { ...document.subscriptions[0], label: c.label, sourceKind: a.sourceKind }
+    return {
+      ...document.subscriptions[0],
+      providerId: c.providerId,
+      label: c.label,
+      sourceKind: a.sourceKind,
+    }
   }
   async test(raw: UsageConnection): Promise<void> {
     // Rule 12: while off, even an explicit test reads no file and starts no process.
@@ -558,6 +722,8 @@ export class UsageService {
     })
     const c = this.prepare(settings.connections[0])
     settings.connections = [c]
+    // The proposed directory must exist before path validation resolves its parent.
+    this.createProposedDirectories(settings)
     this.validatePaths(settings)
     await this.load(c, new AbortController().signal)
   }

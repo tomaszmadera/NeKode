@@ -1,6 +1,6 @@
 // Previewed, separately enabled setup for the NeKode Claude Code snapshot writer.
 //
-//   node setup.cjs --settings <claude settings.json> [--dir <absolute snapshot directory>]
+//   node setup.cjs --settings <claude settings.json> --dir <absolute snapshot directory>
 //                  [--node <node executable>] [--apply | --remove]
 //
 // Without --apply or --remove the script only prints the proposed change. --apply writes a
@@ -9,14 +9,13 @@
 // (padding, refreshInterval, ...) and every other setting are kept. If writing the settings
 // fails, the backup is removed again so neither changed settings nor a stale backup remain.
 // --remove restores the backed up status line exactly. The settings path is always explicit;
-// nothing is modified by default. The default --dir is the Agent Harness snapshot directory;
-// use one directory per Claude account.
+// nothing is modified by default. --dir is required (NeKode settings propose one directory per
+// Claude account). Record each Claude account once per computer: setup refuses a second NeKode
+// writer, but cannot recognise other tools that already record usage, so the preview says so.
 // Docs: docs/features/usage-quota/claude-code.md
 const { randomUUID } = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
-
-const { defaultDirectory } = require('./collector.cjs')
 
 const MARKER = '--nekode-usage'
 const COLLECTOR = path.join(__dirname, 'collector.cjs')
@@ -40,9 +39,10 @@ function parseArgs(argv) {
 }
 
 function checkDirectory(options) {
-  options.dir ??= defaultDirectory()
   if (typeof options.dir !== 'string' || !path.isAbsolute(options.dir))
-    throw new SetupError('--dir must be an absolute path for the snapshot directory.')
+    throw new SetupError(
+      '--dir is required and must be an absolute path for the snapshot directory.',
+    )
   const dir = path.resolve(options.dir).toLowerCase()
   const settings = path.resolve(options.settings).toLowerCase()
   if (
@@ -119,6 +119,7 @@ function plan(options) {
     proposed: { ...(current ?? {}), type: 'command', command },
     directory: options.dir,
     warnings,
+    note: "Record each Claude account once per computer. If the kept status-line command already records Claude usage for another tool, do not apply; select that tool's directory in NeKode instead.",
   }
 }
 

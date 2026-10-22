@@ -5,12 +5,39 @@ import type {
   UsageSettings as Settings,
   UsageAdapter,
   UsageConnection,
+  UsageSnapshot,
 } from '../../../../shared/usage-contract'
+import { UsageAccountEditor } from './UsageAccountEditor'
 
-/** Where a source comes from (spec rule 18); built-in readers have no directory. */
-function origin(adapter: UsageAdapter | undefined): string {
-  if (!adapter?.directory) return 'Built-in reader.'
-  return adapter.bundled ? 'Shipped with NeKode.' : 'Added in your usage-adapters folder.'
+type View =
+  | { kind: 'list' }
+  | { kind: 'pick' }
+  | { kind: 'edit'; connection: UsageConnection; isNew: boolean }
+
+/** Where an adapter comes from (spec rules 18, 26); built-in readers have no directory. */
+function origin(adapter: UsageAdapter): string {
+  if (!adapter.directory) return 'Built in'
+  return adapter.bundled ? 'Shipped with NeKode' : 'Added by you'
+}
+
+function age(ms: number): string {
+  const minutes = Math.floor(Math.max(0, ms) / 60_000)
+  return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`
+}
+
+/** Textual account status for the list (spec rule 21). */
+function status(c: UsageConnection, snapshot: UsageSnapshot | null, now: number): string {
+  if (!c.enabled) return 'Disabled'
+  const source = snapshot?.connections.find((s) => s.connection.id === c.id)
+  if (source?.error) return source.error.message
+  const metrics = source?.subscription?.metrics ?? []
+  if (metrics.length === 0) return 'No reading yet'
+  const observed = metrics
+    .map((m) => (m.observedAt ? Date.parse(m.observedAt) : null))
+    .filter((t): t is number => t !== null)
+  return observed.length
+    ? `Last reading ${age(now - Math.max(...observed))}`
+    : 'Last reading, age unknown'
 }
 
 export function UsageSettings({
@@ -22,22 +49,29 @@ export function UsageSettings({
 }): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null),
     [adapters, setAdapters] = useState<UsageAdapter[]>([]),
-    [savedIds, setSavedIds] = useState<string[]>([]),
-    [enabled, setEnabled] = useState(false)
-  const [rowKeys, setRowKeys] = useState<string[]>([])
+    [snapshot, setSnapshot] = useState<UsageSnapshot | null>(null),
+    [enabled, setEnabled] = useState(false),
+    [view, setView] = useState<View>({ kind: 'list' }),
+    [removing, setRemoving] = useState<string | null>(null),
+    [exportDraft, setExportDraft] = useState<Settings['export'] | null>(null)
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
-    void Promise.all([app.usage.getSettings(), app.usage.listAdapters(), app.usage.getEnabled()])
-      .then(([s, a, on]) => {
+    void Promise.all([
+      app.usage.getSettings(),
+      app.usage.listAdapters(),
+      app.usage.getEnabled(),
+      app.usage.read(),
+    ])
+      .then(([s, a, on, snap]) => {
         if (alive) {
           setEnabled(on)
           setSettings(s)
-          setRowKeys(s.connections.map(() => crypto.randomUUID()))
-          setSavedIds(s.connections.map((c) => c.id))
+          setExportDraft(s.export)
           setAdapters(a)
+          setSnapshot(snap)
         }
       })
       .catch((e) => {
@@ -47,14 +81,6 @@ export function UsageSettings({
       alive = false
     }
   }, [app])
-  function update(index: number, patch: Partial<UsageConnection>): void {
-    setSettings((s) =>
-      s
-        ? { ...s, connections: s.connections.map((c, i) => (i === index ? { ...c, ...patch } : c)) }
-        : s,
-    )
-    setNotice(null)
-  }
   async function action(operation: () => Promise<void>): Promise<void> {
     setBusy(true)
     setError(null)
@@ -67,9 +93,153 @@ export function UsageSettings({
       setBusy(false)
     }
   }
-  if (!settings)
+  /** Store a whole settings value built from the stored one (spec rules 23, 27). */
+  async function store(next: Settings, message: string): Promise<Settings> {
+    const saved = await app.usage.saveSettings(next)
+    setSettings(saved)
+    setAdapters(await app.usage.listAdapters())
+    setSnapshot(await app.usage.read())
+    setNotice(message)
+    onSaved?.()
+    return saved
+  }
+  if (!settings || !exportDraft)
     return <p role={error ? 'alert' : 'status'}>{error ?? 'Loading usage settings...'}</p>
   const s = settings
+  const usable = adapters.filter((a) => !a.error)
+  const now = Date.now()
+
+  let accounts: React.JSX.Element
+  if (view.kind === 'edit') {
+    const adapter = usable.find((a) => a.id === view.connection.adapterId)
+    accounts = (
+      <UsageAccountEditor
+        app={app}
+        adapter={adapter}
+        initial={view.connection}
+        isNew={view.isNew}
+        switchOn={enabled}
+        onCancel={() => setView({ kind: 'list' })}
+        onSave={async (c) => {
+          const connections = view.isNew
+            ? [...s.connections, c]
+            : s.connections.map((x) => (x.id === c.id ? c : x))
+          const saved = await app.usage.saveSettings({ ...s, connections })
+          setSettings(saved)
+          setSnapshot(await app.usage.read())
+          setView({ kind: 'list' })
+          setNotice(`Account saved: ${c.label}`)
+          onSaved?.()
+        }}
+      />
+    )
+  } else if (view.kind === 'pick') {
+    accounts = (
+      <fieldset className="space-y-2" aria-label="Choose a service">
+        <legend>Choose the service that reports this account's limits.</legend>
+        {usable.map((a) => (
+          <button
+            key={`${a.id}:${a.directory ?? ''}`}
+            type="button"
+            className="block w-full rounded border border-edge p-2 text-left"
+            onClick={() =>
+              setView({
+                kind: 'edit',
+                isNew: true,
+                connection: {
+                  id: crypto.randomUUID(),
+                  label: '',
+                  providerId: '',
+                  adapterId: a.id,
+                  enabled: true,
+                  config: {},
+                },
+              })
+            }
+          >
+            <span className="font-semibold">{a.name}</span>
+            {a.experimental ? <span className="ml-2 text-xs">Experimental</span> : null}
+            {a.directory && !a.bundled ? <span className="ml-2 text-xs">Added by you</span> : null}
+            {a.summary ? <span className="block text-xs text-ink-muted">{a.summary}</span> : null}
+          </button>
+        ))}
+        <button type="button" onClick={() => setView({ kind: 'list' })}>
+          Back
+        </button>
+      </fieldset>
+    )
+  } else {
+    accounts = (
+      <div className="space-y-2">
+        {s.connections.length > 0 ? (
+          <ul className="space-y-2" aria-label="Accounts">
+            {s.connections.map((c) => (
+              <li
+                key={c.id}
+                className="flex flex-wrap items-center gap-3 rounded border border-edge p-2"
+              >
+                <span className="font-semibold">{c.label}</span>
+                <span className="text-xs text-ink-secondary">
+                  {adapters.find((a) => a.id === c.adapterId)?.name ?? c.adapterId}
+                </span>
+                <span className="text-xs text-ink-muted">{status(c, snapshot, now)}</span>
+                <span className="ml-auto flex gap-2">
+                  {removing === c.id ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          void action(async () => {
+                            await store(
+                              { ...s, connections: s.connections.filter((x) => x.id !== c.id) },
+                              `Account removed: ${c.label}`,
+                            )
+                            setRemoving(null)
+                          })
+                        }
+                      >
+                        Confirm remove {c.label}
+                      </button>
+                      <button type="button" onClick={() => setRemoving(null)}>
+                        Keep
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        aria-label={`Edit ${c.label}`}
+                        onClick={() => setView({ kind: 'edit', isNew: false, connection: c })}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${c.label}`}
+                        onClick={() => setRemoving(c.id)}
+                      >
+                        Remove
+                      </button>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded border border-edge px-3 py-1"
+          onClick={() => setView({ kind: 'pick' })}
+        >
+          Add account
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4 text-sm">
       <label className="flex items-center gap-2">
@@ -91,265 +261,42 @@ export function UsageSettings({
       </label>
       <p className="text-xs text-ink-muted">
         Off hides the title-bar button and stops every usage read, adapter process and export.
-        Connections, the pin and cached values are kept.
+        Accounts, the pin and cached values are kept.
       </p>
-      <p className="text-ink-secondary">
-        Connections belong to a subscription or account across all projects. No source runs until
-        you save an enabled connection.
-      </p>
-      <p className="text-xs text-ink-muted">
-        NeKode ships its usage adapters. To add your own, put each in a folder under usage-adapters
-        in your NeKode user data directory; one with a shipped adapter's id replaces it. Adapters
-        are trusted executables: enabling one lets it run with your permissions.
-      </p>
-      {s.connections.map((c, index) => {
-        const adapter = adapters.find((a) => a.id === c.adapterId)
-        return (
-          <fieldset
-            key={rowKeys[index]}
-            className="space-y-2 rounded border border-edge p-3"
-            disabled={busy}
-          >
-            <legend className="px-1">{c.label || 'New connection'}</legend>
-            <label className="block">
-              Connection id
-              <input
-                aria-label={`Connection id ${index + 1}`}
-                className="ml-2 rounded border border-edge bg-app p-1"
-                disabled={savedIds.includes(c.id)}
-                value={c.id}
-                onChange={(e) => update(index, { id: e.target.value })}
-              />
-            </label>
-            <label className="block">
-              Account label
-              <input
-                aria-label={`Account label ${index + 1}`}
-                className="ml-2 rounded border border-edge bg-app p-1"
-                value={c.label}
-                onChange={(e) => update(index, { label: e.target.value })}
-              />
-            </label>
-            <label className="block">
-              Provider id
-              <input
-                aria-label={`Provider id ${index + 1}`}
-                className="ml-2 rounded border border-edge bg-app p-1"
-                value={c.providerId}
-                onChange={(e) => update(index, { providerId: e.target.value })}
-              />
-            </label>
-            <label className="block">
-              Source
-              <select
-                aria-label={`Usage source ${index + 1}`}
-                className="ml-2 rounded border border-edge bg-app p-1"
-                value={c.adapterId}
-                onChange={(e) => update(index, { adapterId: e.target.value, config: {} })}
-              >
-                {adapters.map((a) => (
-                  <option key={`${a.id}:${a.directory ?? ''}`} value={a.id} disabled={!!a.error}>
-                    {a.name}
-                    {a.error ? `: ${a.error}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="text-xs text-ink-muted">
-              {adapter?.sourceKind ?? 'Unavailable'};{' '}
-              {adapter?.capabilities.join(', ') ?? 'No capabilities'}. {origin(adapter)} Executable:{' '}
-              {adapter?.invocation.command ?? 'Unavailable'} {adapter?.invocation.args.join(' ')}
-            </p>
-            {adapter?.description ? (
-              <p className="text-xs text-ink-secondary">{adapter.description}</p>
-            ) : null}
-            {adapter?.configSchema.map((f) => (
-              <div key={f.key}>
-                <label className="block" htmlFor={`usage-${c.id}-${f.key}`}>
-                  {f.label}
-                  {f.type === 'boolean' ? (
-                    <input
-                      id={`usage-${c.id}-${f.key}`}
-                      aria-label={`${f.label} ${index + 1}`}
-                      type="checkbox"
-                      aria-describedby={f.description ? `usage-${c.id}-${f.key}-help` : undefined}
-                      checked={c.config[f.key] === true}
-                      onChange={(e) =>
-                        update(index, { config: { ...c.config, [f.key]: e.target.checked } })
-                      }
-                    />
-                  ) : f.type === 'choice' ? (
-                    <select
-                      id={`usage-${c.id}-${f.key}`}
-                      aria-label={`${f.label} ${index + 1}`}
-                      aria-describedby={f.description ? `usage-${c.id}-${f.key}-help` : undefined}
-                      value={String(c.config[f.key] ?? '')}
-                      onChange={(e) =>
-                        update(index, { config: { ...c.config, [f.key]: e.target.value } })
-                      }
-                    >
-                      <option value="">Choose</option>
-                      {f.choices?.map((choice) => (
-                        <option key={choice}>{choice}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      id={`usage-${c.id}-${f.key}`}
-                      aria-label={`${f.label} ${index + 1}`}
-                      type={f.type === 'secret' ? 'password' : 'text'}
-                      aria-describedby={f.description ? `usage-${c.id}-${f.key}-help` : undefined}
-                      autoComplete="off"
-                      className="mt-1 w-full rounded border border-edge bg-app p-2"
-                      placeholder={
-                        c.secretKeys?.includes(f.key) ? 'Secret stored; leave blank to keep' : ''
-                      }
-                      value={String(c.config[f.key] ?? '')}
-                      onChange={(e) => {
-                        const config = { ...c.config }
-                        if (e.target.value || f.type !== 'secret') config[f.key] = e.target.value
-                        else delete config[f.key]
-                        update(index, { config })
-                      }}
-                    />
-                  )}
-                </label>
-                {f.description ? (
-                  <p id={`usage-${c.id}-${f.key}-help`} className="text-xs text-ink-muted">
-                    {f.description}
-                  </p>
-                ) : null}
-                {f.type === 'directory' ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void action(async () => {
-                        const current = c.config[f.key]
-                        const path = await app.dialogs.pickDirectory(
-                          typeof current === 'string' && current ? current : null,
-                        )
-                        if (path) update(index, { config: { ...c.config, [f.key]: path } })
-                      })
-                    }
-                  >
-                    Choose directory
-                  </button>
-                ) : null}
-                {adapter.id === 'claude-code-snapshots' ? (
-                  <p className="text-xs text-ink-muted">
-                    One directory per Claude account. With the Agent Harness, select its snapshot
-                    directory; otherwise install the NeKode snapshot writer (see the Claude Code
-                    usage guide).
-                  </p>
-                ) : null}
-                {f.type === 'file' ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void action(async () => {
-                        const path = await app.usage.pickFile(false)
-                        if (path) update(index, { config: { ...c.config, [f.key]: path } })
-                      })
-                    }
-                  >
-                    Choose JSON input
-                  </button>
-                ) : null}
-                {f.type === 'secret' ? (
-                  <button
-                    type="button"
-                    onClick={() => update(index, { config: { ...c.config, [f.key]: '' } })}
-                  >
-                    Clear stored {f.label}
-                  </button>
-                ) : null}
-              </div>
-            ))}
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={c.enabled}
-                onChange={(e) => update(index, { enabled: e.target.checked })}
-              />
-              Enabled
-            </label>
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                disabled={!enabled}
-                aria-describedby={enabled ? undefined : `usage-test-off-${index}`}
-                onClick={() =>
-                  void action(async () => {
-                    await app.usage.test(c)
-                    setNotice(`Connection test succeeded: ${c.label}`)
-                  })
-                }
-              >
-                Test connection
-              </button>
-              {enabled ? null : (
-                <span id={`usage-test-off-${index}`} className="text-xs text-ink-muted">
-                  Turn on Show usage quota to test connections.
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setSettings({ ...s, connections: s.connections.filter((_, i) => i !== index) })
-                  setRowKeys((keys) => keys.filter((_, i) => i !== index))
-                }}
-              >
-                Remove connection
-              </button>
-            </div>
-          </fieldset>
-        )
-      })}
-      <button
-        type="button"
-        disabled={busy}
-        className="rounded border border-edge px-3 py-1"
-        onClick={() => {
-          setRowKeys((keys) => [...keys, crypto.randomUUID()])
-          setSettings({
-            ...s,
-            connections: [
-              ...s.connections,
-              {
-                id: crypto.randomUUID(),
-                label: '',
-                providerId: '',
-                adapterId: 'usage-file',
-                enabled: false,
-                config: {},
-              },
-            ],
-          })
-        }}
-      >
-        Add connection
-      </button>
-      <fieldset className="space-y-2 rounded border border-edge p-3" disabled={busy}>
-        <legend className="px-1">Local JSON export</legend>
+      <section className="space-y-2" aria-labelledby="usage-accounts">
+        <h3 id="usage-accounts" className="font-semibold">
+          Accounts
+        </h3>
+        <p className="text-ink-secondary">
+          Add each subscription or API account you want to track. NeKode reads its limits from the
+          service you choose and shows them in the title bar.
+        </p>
+        {accounts}
+      </section>
+      <section className="space-y-2 rounded border border-edge p-3" aria-labelledby="usage-export">
+        <h3 id="usage-export" className="font-semibold">
+          Write usage to a JSON file
+        </h3>
+        <p className="text-xs text-ink-muted">
+          Other programs on this computer, such as dashboards or sync scripts, can read this file.
+          It contains no secrets. Use a separate file from every input. Turning this off keeps the
+          last file.
+        </p>
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={s.export.enabled}
-            onChange={(e) =>
-              setSettings({ ...s, export: { ...s.export, enabled: e.target.checked } })
-            }
+            checked={exportDraft.enabled}
+            onChange={(e) => setExportDraft({ ...exportDraft, enabled: e.target.checked })}
           />
-          Enable export
+          Write the file
         </label>
         <label className="block">
           Output file
           <input
             aria-label="Usage export output file"
             className="mt-1 w-full rounded border border-edge bg-app p-2"
-            value={s.export.path ?? ''}
-            onChange={(e) =>
-              setSettings({ ...s, export: { ...s.export, path: e.target.value || null } })
-            }
+            value={exportDraft.path ?? ''}
+            onChange={(e) => setExportDraft({ ...exportDraft, path: e.target.value || null })}
           />
         </label>
         <button
@@ -357,7 +304,7 @@ export function UsageSettings({
           onClick={() =>
             void action(async () => {
               const path = await app.usage.pickFile(true)
-              if (path) setSettings({ ...s, export: { ...s.export, path } })
+              if (path) setExportDraft({ ...exportDraft, path })
             })
           }
         >
@@ -366,35 +313,53 @@ export function UsageSettings({
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={s.export.replaceExisting === true}
-            onChange={(e) =>
-              setSettings({ ...s, export: { ...s.export, replaceExisting: e.target.checked } })
-            }
+            checked={exportDraft.replaceExisting === true}
+            onChange={(e) => setExportDraft({ ...exportDraft, replaceExisting: e.target.checked })}
           />
           Replace an existing file at the selected output
         </label>
-        <p className="text-xs text-ink-muted">
-          Export excludes secrets. Use a separate file from every input. Turning export off retains
-          the last file. A hosted consumer needs its own synchronization.
-        </p>
-      </fieldset>
-      <button
-        type="button"
-        disabled={busy}
-        className="rounded border border-edge bg-highlight px-3 py-2"
-        onClick={() =>
-          void action(async () => {
-            const next = await app.usage.saveSettings(s)
-            setSettings(next)
-            setSavedIds(next.connections.map((c) => c.id))
-            setAdapters(await app.usage.listAdapters())
-            setNotice('Usage settings saved.')
-            onSaved?.()
-          })
-        }
-      >
-        {busy ? 'Working...' : 'Save usage settings'}
-      </button>
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded border border-edge bg-highlight px-3 py-1"
+          onClick={() =>
+            void action(async () => {
+              const saved = await store({ ...s, export: exportDraft }, 'Export settings saved.')
+              setExportDraft(saved.export)
+            })
+          }
+        >
+          Save export settings
+        </button>
+      </section>
+      <details className="rounded border border-edge p-3">
+        <summary>Advanced</summary>
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-ink-muted">
+            Adapters are trusted executables: enabling an account lets its adapter run with your
+            permissions. To add your own adapter, put a folder with a usage-adapter.json manifest in
+            the adapters folder; one with a shipped adapter's id replaces it. Reopen settings to
+            list it.
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void action(() => app.usage.openAdaptersFolder())}
+          >
+            Open adapters folder
+          </button>
+          <ul className="space-y-2" aria-label="Usage adapters">
+            {adapters.map((a) => (
+              <li key={`${a.id}:${a.directory ?? ''}`} className="text-xs">
+                <span className="font-semibold">{a.name}</span> ({a.id}). {origin(a)}.{' '}
+                {a.sourceKind}; {a.capabilities.join(', ')}. Executable: {a.invocation.command}{' '}
+                {a.invocation.args.join(' ')}
+                {a.error ? <span className="block text-error">{a.error}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </details>
       {error ? (
         <p role="alert" className="text-error">
           {error}

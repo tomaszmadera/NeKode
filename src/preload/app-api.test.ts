@@ -57,6 +57,9 @@ describe('preload app api', () => {
     await api.pickFile(false)
     await api.getEnabled()
     await api.setEnabled(true)
+    await api.inspectFile('C:/data/usage.json')
+    await api.claudeSetup('account-1', null)
+    await api.openAdaptersFolder()
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.usageListAdapters, args: [] },
       { channel: IPC_CHANNEL.usageGetSettings, args: [] },
@@ -67,6 +70,9 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.usagePickFile, args: [false] },
       { channel: IPC_CHANNEL.usageGetEnabled, args: [] },
       { channel: IPC_CHANNEL.usageSetEnabled, args: [true] },
+      { channel: IPC_CHANNEL.usageInspectFile, args: ['C:/data/usage.json'] },
+      { channel: IPC_CHANNEL.usageClaudeSetup, args: ['account-1', null] },
+      { channel: IPC_CHANNEL.usageOpenAdaptersFolder, args: [] },
     ])
   })
 
