@@ -188,706 +188,706 @@ and agent display identity to the persisted chat returned by Start and Resume.
 It owns left-navigation labels; stored names and launch/retry semantics below
 remain unchanged.
 
-Ta sekcja jest kontraktem NEKODE-28 zaakceptowanym przez użytkownika
-2026-10-07. Akceptacja dotyczy specyfikacji. Sekcja zastępuje ograniczenie dotyczące akcji kart
-w Goal i Non-goals oraz sposób
-otwierania szczegółów z Behaviour 14 i AC14. Pozostały kontrakt adaptera,
-w tym cached board rendering amendment, pozostaje obowiązujący.
+This section is the NEKODE-28 contract, accepted by the user on
+2026-10-07. The acceptance covers the specification. The section replaces the limit on card actions
+in Goal and Non-goals and the way
+details open from Behaviour 14 and AC14. The rest of the adapter contract,
+including the cached board rendering amendment, stays in force.
 
-### Cel i odbiorca
+### Goal and audience
 
-Użytkownik uruchamia pracę nad zadaniem z listy lub kolumn Kanbana w nowym
-czacie wybranego agenta. Może też wznowić pracę z konkretnym handoffem
-powiązanym z tym zadaniem. NeKode obsługuje konfigurację i uruchomienie;
-Harness pozostaje niezależnym narzędziem agenta.
+The user starts work on a task from the Kanban list or columns in a new
+chat of the chosen agent. The user can also resume work from a specific handoff
+linked to that task. NeKode handles the configuration and the launch;
+Harness stays an independent agent tool.
 
-### Zakres i wyłączenia
+### Scope and exclusions
 
-- Lista i kolumny: Start i Resume. Osobne kontrolki slugu i tytułu zastępuje sekcja "Kanban item editing amendment".
-- Lista: wiersz wyższy o 50%. Kolumny: miejsce na przyciski bez narzucania
-  wzrostu wysokości karty o 50%.
-- Profile agentów w Project Settings, modal wyboru agenta i uruchomienie
-  w nowym czacie z poleceniem dotyczącym wybranego zadania.
-- Wyszukiwanie handoffów w skonfigurowanym katalogu projektu przez zgodną
-  nazwę pliku i wybór dopasowanego kandydata w modalu Resume.
-- Poza zakresem: drag-and-drop, nowa lokalna encja Task, automatyczna zmiana
-  statusu zadania w backendzie, worktrees, API modeli, instalowanie agentów,
-  wznawianie wewnętrznego identyfikatora sesji CLI oraz zmiany Harness.
-- Istniejący Resume na pasku akcji nadal działa według
-  [handoff-resume-flow](../handoff-resume-flow/spec.md). Nowy Resume zadania
-  ma odrębny przepływ, wymagający powiązanego pliku i tworzący nowy czat.
+- List and columns: Start and Resume. The separate slug and title controls are replaced by the "Kanban item editing amendment" section.
+- List: a row 50% taller. Columns: room for the buttons without forcing
+  the card height to grow by 50%.
+- Agent profiles in Project Settings, an agent choice modal and a launch
+  in a new chat with an instruction about the chosen task.
+- Finding handoffs in the configured project directory by a matching
+  file name, and choosing the matched candidate in the Resume modal.
+- Out of scope: drag-and-drop, a new local Task entity, automatic task status
+  changes in the backend, worktrees, model APIs, installing agents,
+  resuming the internal CLI session identifier, and Harness changes.
+- The existing Resume on the action bar still works according to
+  [handoff-resume-flow](../handoff-resume-flow/spec.md). The new task Resume
+  has a separate flow that requires a linked file and creates a new chat.
 
-### Nawigacja i wygląd
+### Navigation and appearance
 
-1. Kliknięcie slugu (`WorkItem.ref`) lub tytułu otwiera istniejący widok
-   szczegółów. Kliknięcie tła, priorytetu albo wolnego miejsca nie otwiera go.
-   Hover podświetla cały wiersz. Fokus i podkreślenie wskazują konkretne
-   kontrolki. Start i Resume nie otwierają szczegółów.
-2. Slug i tytuł są oddzielnymi kontrolkami dostępnymi z klawiatury. Nie wolno
-   zagnieżdżać przycisków we wspólnym przycisku wiersza. Modal ma opis,
-   obsługę Escape, utrzymanie fokusu wewnątrz i powrót fokusu po anulowaniu.
-   Sekcja "Kanban item editing amendment" zastępuje osobne kontrolki slugu
-   i tytułu jednym łączem. Zdania tego punktu o modalu zostają.
-3. Docelowa minimalna wysokość jednoliniowego wiersza listy wynosi 1,5 jego
-   wysokości sprzed zmiany. Bazową wysokość trzeba zmierzyć przed edycją
-   przy domyślnym motywie i skali 100%; tolerancja wynosi 1 px. Zwiększenie
-   paddingu o 50% samo w sobie nie spełnia tego warunku. Typografia
-   12.6px / 14.7px, kolory, sortowanie, grupowanie i zwijanie grup zostają.
-4. Start jest stale widoczny w obu układach, także bez aktywnego czatu.
-   Decyzja użytkownika 2026-10-11: gdy dla zadania jest widoczny Resume,
-   Start jest nieaktywny, nie przyjmuje fokusu i nie otwiera modalu.
-   Po zniknięciu Resume Start znów jest aktywny.
-   Widoczność Resume określa sekcja "Dostępność Resume i kontrakt producenta
-   handoffu" poniżej. Przy małej szerokości akcje nie zasłaniają tytułu ani priorytetu;
-   dopuszczalny jest osobny rząd przycisków. Stan backendu sam nie blokuje
-   tych akcji. Etykiety interfejsu i generowane polecenia są angielskie.
+1. Clicking the slug (`WorkItem.ref`) or the title opens the existing details
+   view. Clicking the background, the priority or empty space does not open it.
+   Hover highlights the whole row. Focus and underline point to the specific
+   controls. Start and Resume do not open the details.
+2. The slug and the title are separate controls reachable from the keyboard. Buttons must not
+   be nested in a shared row button. The modal has a description,
+   Escape handling, keeps focus inside and returns focus after cancelling.
+   The "Kanban item editing amendment" section replaces the separate slug
+   and title controls with one link. The sentences of this point about the modal stay.
+3. The target minimum height of a single-line list row is 1.5 times its
+   height before the change. The base height must be measured before the edit
+   with the default theme and 100% scale; the tolerance is 1 px. Increasing
+   the padding by 50% does not meet this condition by itself. Typography
+   12.6px / 14.7px, colors, sorting, grouping and group collapsing stay.
+4. Start is always visible in both layouts, also without an active chat.
+   User decision 2026-10-11: when Resume is visible for a task,
+   Start is inactive, does not take focus and does not open the modal.
+   When Resume disappears, Start is active again.
+   Resume visibility is defined in the "Resume availability and handoff producer
+   contract" section below. At a small width, the actions do not cover the title or the priority;
+   a separate row of buttons is allowed. The backend state alone does not block
+   these actions. Interface labels and generated instructions are in English.
 
-### Profile agentów
+### Agent profiles
 
-Decyzja użytkownika z 2026-10-14 zastępuje projektowe definicje profili
-z 2026-10-07 globalną biblioteką i projektowym opt-in. Właścicielem
-konfiguracji, formularza, przypisań i migracji jest
-[global-agent-profiles](../global-agent-profiles/spec.md). To zaakceptowany
-kontrakt do wdrożenia, nie deklaracja ukończonej implementacji. Profile nie
-są listą wszystkich Actions i nie są wykrywane na podstawie nazw przycisków.
+The user decision of 2026-10-14 replaces the per-project profile definitions
+of 2026-10-07 with a global library and a per-project opt-in. The
+configuration, form, assignments and migration are owned by
+[global-agent-profiles](../global-agent-profiles/spec.md). This is an accepted
+contract for implementation, not a statement of a finished implementation. Profiles are not
+a list of all Actions and are not detected from button names.
 
-- Profil zawiera stabilny lokalny id, nazwę oraz konfigurację uruchomienia:
-  executable i tablicę argumentów. W argumentach dokładnie jeden element
-  `{prompt}` oznacza całe początkowe polecenie przekazane jako jeden argument.
-  Profil jest przeznaczony dla interaktywnego CLI przyjmującego taki prompt.
-  Wrapper może obsłużyć CLI o innym interfejsie, ale aplikacja go nie generuje.
-- Definicje są zarządzane w App Settings. Project Settings pozwala zaznaczyć
-  dostępne profile i ustawić profil domyślny spośród zaznaczonych. Nowy
-  projekt ma pusty wybór (opt-in). Bez zaznaczonych profili modal pokazuje
-  Configure agents i otwiera projektową zakładkę Agents; nie tworzy czatu.
-  Walidację komendy i migrację określa kontrakt global-agent-profiles.
-- Katalog pracy to katalog projektu, z którego pochodzi zadanie. Profile
-  nie zmieniają globalnej konfiguracji shell ani istniejących Actions.
-- Lista w modalu pokazuje nazwy profili i zaznacza domyślny. Użytkownik
-  zatwierdza przyciskiem Start albo Resume. Brak wyboru blokuje zatwierdzenie.
-  Usunięcie profilu domyślnego czyści domyślny wybór.
+- A profile has a stable local id, a name and a launch configuration:
+  an executable and an argument array. In the arguments, exactly one element
+  `{prompt}` stands for the whole initial instruction passed as one argument.
+  A profile is meant for an interactive CLI that accepts such a prompt.
+  A wrapper can handle a CLI with a different interface, but the app does not generate it.
+- Definitions are managed in App Settings. Project Settings lets you select
+  the available profiles and set a default profile among the selected ones. A new
+  project has an empty selection (opt-in). Without selected profiles, the modal shows
+  Configure agents and opens the project Agents tab; it does not create a chat.
+  Command validation and migration are defined by the global-agent-profiles contract.
+- The working directory is the directory of the project the task comes from. Profiles
+  do not change the global shell configuration or existing Actions.
+- The list in the modal shows the profile names and marks the default. The user
+  confirms with the Start or Resume button. No choice blocks confirmation.
+  Deleting the default profile clears the default choice.
 
 ### Start
 
-1. Start otwiera modal z ref i tytułem zadania oraz wyborem agenta. Cancel
-   i Escape nie tworzą czatu ani procesu.
-2. Po zatwierdzeniu aplikacja sprawdza istnienie projektu, bieżące powiązanie
-   adaptera, aktualność zadania i wybranego profilu. Pobiera bieżący opis
-   zadania przez adapter, aby nie wysyłać nieaktualnego opisu z cache.
-3. Powstaje dokładnie jeden nowy czat tego projektu, widoczny w nawigacji.
-   Aplikacja aktywuje powierzchnię czatu w istniejącym systemie zakładek.
-   Nie przebudowuje systemu na osobną zakładkę górnego paska dla każdego czatu.
-   Poprzedni czat i sesja Kanbana zachowują swój stan.
-4. Wybrany agent uruchamia się w nowej sesji terminala, z początkowym
-   poleceniem przekazanym przy uruchomieniu procesu. Aplikacja nie wpisuje
-   promptu do shell przed startem agenta ani po stałym opóźnieniu.
-5. Polecenie zaczyna się od `Work on task <ref>: <title>.`, następnie zawiera
-   opis (albo informację o jego braku) i URL, jeśli adapter go zwraca.
-   Zawiera także `Follow the project's instructions. Do not assume approval
-   for actions that require it.` oraz informację o katalogu handoffów, jeżeli
-   jest skonfigurowany. Zaleca zachowanie pełnego ref w nazwie przyszłego
-   lokalnego rekordu i handoffu, zgodnie z instrukcjami projektu.
-6. Zatwierdzenie oznacza uruchomienie i przekazanie polecenia, niezależnie od
-   `handoffResume.autoSend`. Ta istniejąca opcja dotyczy paska akcji.
-   Sukces uruchomienia nie oznacza wykonania zadania przez agenta.
+1. Start opens a modal with the task ref and title and the agent choice. Cancel
+   and Escape do not create a chat or a process.
+2. After confirmation, the app checks that the project exists, the current adapter
+   binding, and that the task and the chosen profile are current. It fetches the current task
+   description through the adapter, so it does not send a stale description from the cache.
+3. Exactly one new chat of this project is created, visible in the navigation.
+   The app activates the chat surface in the existing tab system.
+   It does not rebuild the system into a separate top bar tab for every chat.
+   The previous chat and the Kanban session keep their state.
+4. The chosen agent starts in a new terminal session, with the initial
+   instruction passed when the process starts. The app does not type
+   the prompt into the shell before the agent starts or after a fixed delay.
+5. The instruction starts with `Work on task <ref>: <title>.`, then contains
+   the description (or a note that there is none) and the URL, if the adapter returns it.
+   It also contains `Follow the project's instructions. Do not assume approval
+   for actions that require it.` and information about the handoff directory, if
+   one is configured. It recommends keeping the full ref in the name of the future
+   local record and handoff, following the project's instructions.
+6. Confirmation means launching and passing the instruction, regardless of
+   `handoffResume.autoSend`. That existing option applies to the action bar.
+   A successful launch does not mean the agent has done the task.
 
-### Powiązanie handoffu z zadaniem
+### Linking a handoff to a task
 
-Proponowany most między aplikacją i dowolnym narzędziem agenta opiera się
-na plikach i ref zadania. NeKode nie importuje Harness, nie uruchamia
-`taskctl`, nie czyta `.agents/.env` i nie modyfikuje szablonów ani rekordów
-Harness. Samo `task_id` oznacza lokalny rekord i nie jest ref Kanbana.
+The proposed bridge between the app and any agent tool is based
+on files and the task ref. NeKode does not import Harness, does not run
+`taskctl`, does not read `.agents/.env` and does not modify Harness templates or
+records. A `task_id` alone means a local record and is not a Kanban ref.
 
-1. Zakres wyszukiwania to skonfigurowany `project.handoffDir:<projectId>`.
-   Ścieżka względna rozwiązuje się względem katalogu projektu, absolutna
-   może wskazywać poza projekt. Skan jest płytki: regularne pliki `.md`,
-   bez `README.md`, katalogów, archiwów w podkatalogach i dowiązań.
-2. Automatyczne dopasowanie opiera się wyłącznie na nazwie pliku.
-   NeKode nie interpretuje `work_item_ref`, `work_item_id` ani
-   `work_item_adapter` w treści handoffu. Producent nie musi ich zapisywać.
-3. Pełny ref musi być początkiem nazwy
-   bez rozszerzenia: `nekode-28` albo `nekode-28-<opis>`. Porównanie ignoruje
-   wielkość liter. `nekode-2` nie pasuje do `nekode-20`, `nekode-28` ani
-   `old-nekode-2`. Ten sposób jest jedynym dopasowaniem automatycznym;
-   modal nie rozróżnia rodzajów dopasowania i pokazuje samą nazwę pliku
-   (decyzja użytkownika 2026-10-09).
-4. NeKode nie udostępnia ręcznego przypisania handoffu. Link handoff
-   nie występuje w szczegółach zadania ani w modalu Resume. Zmiana
-   katalogu wymaga nowego sprawdzenia kandydatów automatycznych.
-5. Kandydaci automatyczni są sortowani po czasie modyfikacji malejąco,
-   przy remisie po nazwie. Wszystkie pasujące pliki są widoczne; najnowszy
-   może być zaznaczony, lecz użytkownik zatwierdza konkretny plik. Nazwa
-   i `task_id` bez rozpoznawalnego ref nie powodują zgadywania po tytule
-   zadania ani po dowolnej wzmiance w treści handoffu.
+1. The search scope is the configured `project.handoffDir:<projectId>`.
+   A relative path resolves against the project directory; an absolute one
+   may point outside the project. The scan is shallow: regular `.md` files,
+   without `README.md`, directories, archives in subdirectories and links.
+2. Automatic matching is based only on the file name.
+   NeKode does not interpret `work_item_ref`, `work_item_id` or
+   `work_item_adapter` in the handoff content. The producer does not have to write them.
+3. The full ref must be the start of the name
+   without the extension: `nekode-28` or `nekode-28-<description>`. The comparison ignores
+   letter case. `nekode-2` does not match `nekode-20`, `nekode-28` or
+   `old-nekode-2`. This is the only automatic matching;
+   the modal does not distinguish kinds of matches and shows only the file name
+   (user decision 2026-10-09).
+4. NeKode does not offer manual handoff assignment. A Link handoff link
+   does not appear in the task details or in the Resume modal. A change of
+   directory needs a new check of the automatic candidates.
+5. Automatic candidates are sorted by modification time, newest first,
+   with ties broken by name. All matching files are visible; the newest
+   may be selected, but the user confirms a specific file. A name
+   and a `task_id` without a recognizable ref do not lead to guessing by the task
+   title or by any mention in the handoff content.
 
 ### Resume
 
-1. Widoczny Resume otwiera modal dla zadania i rozpoczyna świeży odczyt jego handoffów.
-   Bez katalogu pokazuje Configure handoffs. Bez dopasowań pokazuje
-   `No linked handoff`. Nie udostępnia ręcznego przypisania pliku i nie przełącza się automatycznie
-   na Start ani na polecenie Resume bez ścieżki.
-2. Modal zawiera wybór konkretnego handoffu i tego samego rodzaju profil
-   agenta co Start. Zatwierdzenie jest możliwe dopiero po zakończeniu
-   wyszukiwania i wskazaniu istniejącego powiązanego pliku oraz profilu.
-3. Tuż przed utworzeniem czatu main ponownie sprawdza plik, jego powiązanie
-   i aktualną konfigurację. Usunięty, nieczytelny, podmieniony lub zmieniony
-   po wyświetleniu plik wymaga odświeżenia wyboru. Nie powstaje wtedy czat.
-4. Dalej obowiązuje przepływ Start, ale domyślny prompt ma postać
-   `Resume from <handoff file path>`. Zatwierdzona zmiana NEKODE-83
-   pozwala zastąpić go lokalnym szablonem JSON zgodnie z
-   [kontraktem szablonu Resume](../handoff-resume-flow/spec.md#resume-template-amendment-nekode-83),
-   zatwierdzonym 2026-10-17.
-   Decyzja użytkownika 2026-10-11: instrukcje wznowienia należą do skilla
-   handoff/resume. Bez override'u Resume przekazuje tylko polecenie i ścieżkę pliku.
-   Prompt Start zachowuje opis i kontekst.
-   Ścieżka jest względna względem projektu, jeśli plik leży wewnątrz niego;
-   w przeciwnym razie absolutna. Jest danymi promptu, nie kodem shell.
-5. Resume rozpoczyna nową sesję wybranego agenta z kontekstem pliku.
-   Nie wymaga tego samego agenta, który zapisał handoff, ani starej sesji CLI.
+1. A visible Resume opens a modal for the task and starts a fresh read of its handoffs.
+   Without a directory, it shows Configure handoffs. Without matches, it shows
+   `No linked handoff`. It does not offer manual file assignment and does not switch automatically
+   to Start or to a Resume instruction without a path.
+2. The modal has a choice of a specific handoff and the same kind of agent profile
+   as Start. Confirmation is possible only after the search has finished
+   and an existing linked file and a profile are chosen.
+3. Right before creating the chat, main checks the file, its link
+   and the current configuration again. A file that was deleted, became unreadable, was replaced or changed
+   after it was shown requires refreshing the choice. No chat is created then.
+4. The Start flow then applies, but the default prompt has the form
+   `Resume from <handoff file path>`. The approved NEKODE-83 change
+   lets a local JSON template replace it, according to the
+   [Resume template contract](../handoff-resume-flow/spec.md#resume-template-amendment-nekode-83),
+   approved on 2026-10-17.
+   User decision 2026-10-11: resume instructions belong to the
+   handoff/resume skill. Without an override, Resume passes only the instruction and the file path.
+   The Start prompt keeps the description and context.
+   The path is relative to the project if the file lies inside it;
+   otherwise absolute. It is prompt data, not shell code.
+5. Resume starts a new session of the chosen agent with the file context.
+   It does not require the same agent that wrote the handoff, or the old CLI session.
 
-### Dane, uprawnienia i zgodność
+### Data, permissions and compatibility
 
-- Renderer korzysta z typowanego IPC. Main jest właścicielem odczytów plików,
-  sprawdzania projektu, profili, powiązania zadania i uruchomienia procesu.
-  Nie przyjmuje dowolnej ścieżki od renderer jako zaufanego źródła handoffu.
-- Profile i domyślny wybór są ustawieniami lokalnymi per
-  projekt w istniejącym `app_state`; ich usunięcie jest częścią usuwania
-  projektu. Nie ma nowej encji Task ani migracji tabel projektów lub czatów.
-- Kontrakt potrzebuje operacji listowania/zapisu profili, znajdowania
-  handoffów oraz uruchomienia zadania z profilem i opcjonalnym
-  handoffem. Szczegółowe nazwy IPC i podział kodu należą do późniejszego planu.
-- Tożsamość zadania używa istniejących WorkItem.id i WorkItem.ref; tytuł
-  i opis mogą się zmieniać bez zmiany reguły dopasowania nazwy.
-- Odczyt plików wymaga UTF-8 i limitu 1 MiB; dopasowanie nie analizuje frontmatter.
-  Plik większy lub niepoprawny ma widoczny powód odrzucenia. Renderer nie
-  otrzymuje całej treści pliku. Dostępność Resume sprawdza zbiorczy skan
-  opisany poniżej; modal ponawia wyszukiwanie przy otwarciu Resume lub
-  jawnym Refresh, bez skanowania dysku przy hover i bez stałego pollingu.
-- Opis zadania, URL, ref i ścieżka nigdy nie są interpolowane jako kod shell.
-  Executable i argumenty pochodzą z profilu wybranego przez użytkownika;
-  prompt trafia jako pojedynczy argument procesu. Nie trafia do logów,
-  komunikatów diagnostycznych ani poleceń publikowanych na Kanbanie.
-  Argumenty procesu mogą być widoczne dla lokalnych narzędzi systemowych.
-- NeKode waliduje powiązanie i możliwość odczytu. Zgodność handoffu z
-  bieżącym stanem repozytorium sprawdza agent według instrukcji projektu;
-  aplikacja nie traktuje wykrytego pliku jako zatwierdzenia planu.
-- Dotychczasowe handoffs:list i Resume paska akcji zachowują swój kontrakt,
-  w tym paste-only / auto-send. Nowe filtrowanie dotyczy wyłącznie Resume
-  zadania. Protocol v1 adaptera nie wymaga zmiany.
+- The renderer uses typed IPC. Main owns file reads,
+  the project check, profiles, the task link and the process launch.
+  It does not accept an arbitrary path from the renderer as a trusted handoff source.
+- Profiles and the default choice are local settings per
+  project in the existing `app_state`; deleting them is part of deleting
+  the project. There is no new Task entity and no migration of the project or chat tables.
+- The contract needs operations to list/save profiles, to find
+  handoffs, and to launch a task with a profile and an optional
+  handoff. The detailed IPC names and code split belong to a later plan.
+- Task identity uses the existing WorkItem.id and WorkItem.ref; the title
+  and description can change without changing the name matching rule.
+- File reads require UTF-8 and a 1 MiB limit; matching does not parse frontmatter.
+  A larger or invalid file has a visible rejection reason. The renderer does not
+  receive the whole file content. Resume availability is checked by the batch scan
+  described below; the modal repeats the search when Resume opens or on an
+  explicit Refresh, without scanning the disk on hover and without constant polling.
+- The task description, URL, ref and path are never interpolated as shell code.
+  The executable and arguments come from the profile the user chose;
+  the prompt goes in as a single process argument. It does not go into logs,
+  diagnostic messages or instructions published on the Kanban board.
+  Process arguments may be visible to local system tools.
+- NeKode validates the link and readability. Whether the handoff matches
+  the current repository state is checked by the agent according to the project's instructions;
+  the app does not treat a detected file as approval of a plan.
+- The existing handoffs:list and the action bar Resume keep their contract,
+  including paste-only / auto-send. The new filtering applies only to the task
+  Resume. The adapter's Protocol v1 needs no change.
 
-### Błędy i wyścigi
+### Errors and races
 
-- Brak katalogu, nieprawidłowe uprawnienia, błąd adaptera i brak executable
-  mają osobne, widoczne komunikaty w odpowiednim modalu lub czacie.
-  Nie ma zastępowania agenta innym profilem ani cichego pomijania błędu.
-- Nieczytelny plik nie ukrywa poprawnych kandydatów;
-  modal pokazuje ostrzeżenie z nazwą odrzuconego pliku. Awaria odczytu
-  katalogu nie jest prezentowana jako brak handoffów.
-- Podczas zatwierdzania kontrolki są zablokowane. Podwójny klik lub Enter
-  tworzy najwyżej jeden czat i proces dla tego zatwierdzenia. Po zakończeniu
-  użytkownik może jawnie rozpocząć następny czat tego samego zadania.
-- Anulowanie, zamknięcie modalu lub usunięcie projektu przed zatwierdzeniem
-  unieważnia oczekujące odpowiedzi. Spóźniony skan innego projektu lub
-  zadania nie może zmienić wyboru ani uruchomić procesu.
-- Błąd po utworzeniu czatu pozostawia ten konkretny czat z czytelnym błędem
-  i jawnym Retry. Retry nie tworzy dodatkowego czatu i nie ponawia w ciemno
-  już dostarczonego promptu. Ponowne otwarcie aplikacji nie uruchamia zadania
-  automatycznie ani nie odtwarza początkowego polecenia.
+- A missing directory, wrong permissions, an adapter error and a missing executable
+  have separate, visible messages in the matching modal or chat.
+  There is no replacement of the agent with another profile and no silent skipping of an error.
+- An unreadable file does not hide valid candidates;
+  the modal shows a warning with the name of the rejected file. A failure to read
+  the directory is not presented as no handoffs.
+- While confirming, the controls are locked. A double click or Enter
+  creates at most one chat and process for that confirmation. After it finishes,
+  the user can explicitly start the next chat for the same task.
+- Cancelling, closing the modal or deleting the project before confirmation
+  invalidates pending responses. A late scan of another project or
+  task must not change the choice or start a process.
+- An error after the chat was created leaves that specific chat with a readable error
+  and an explicit Retry. Retry does not create an extra chat and does not blindly repeat
+  a prompt that was already delivered. Reopening the app does not start the task
+  automatically and does not replay the initial instruction.
 
-### Kryteria akceptacji
+### Acceptance criteria
 
-1. W obu widokach tylko tytuł i slug otwierają szczegóły. Tło, priorytet,
-   Start i Resume nie otwierają szczegółów; klawiatura obsługuje każdą akcję.
-2. Wysokość wiersza listy ma współczynnik 1,5 względem zapisanej wartości
-   bazowej, z tolerancją 1 px. Przyciski pozostają czytelne w obu układach.
-3. Dodany profil jest dostępny po ponownym otwarciu ustawień i restarcie;
-   profil innego projektu nie pojawia się w modalu bieżącego projektu.
-4. Anulowanie modalu Start nie tworzy sesji. Zatwierdzenie uruchamia wybrany
-   profil w nowym czacie właściwego projektu z ref, tytułem i aktualnym opisem.
-5. Bez profili albo przy błędzie walidacji nic się nie uruchamia. Prompt
-   ze spacjami, cudzysłowami, nowymi liniami i znakami shell jest nadal
-   pojedynczym argumentem i nie wykonuje dodatkowych poleceń.
-6. Resume automatycznie wykrywa zgodne nazwy i odróżnia NEKODE-2 od
-   NEKODE-20. Metadane tożsamości nie wpływają na dopasowanie.
-7. Kilka kandydatów wymaga zatwierdzenia konkretnego dopasowanego pliku.
-   W szczegółach i modalu nie ma Link handoff ani listy ręcznego przypisania.
-8. Brak powiązanego pliku, brak konfiguracji albo błąd odczytu nie uruchamia
-   Resume. Plik zmieniony lub usunięty po skanie blokuje zatwierdzenie.
-9. Resume tworzy nowy czat wybranego profilu i przekazuje konkretną ścieżkę
-   oraz ref zadania. Wynik dopasowania nie przechodzi na inne powiązanie adaptera.
-10. Podwójne zatwierdzenie nie duplikuje czatu; błąd i Retry nie duplikują
-    procesu ani polecenia. Wynik spóźnionego skanu nie przechodzi między
-    projektami. Istniejące czaty i zachowanie cache Kanbana działają dalej.
-11. Funkcja działa bez Harness. Żaden przepływ nie zapisuje plików Harness,
-    nie zmienia statusu zadania i nie uruchamia modelowego API.
+1. In both views, only the title and the slug open the details. The background, the priority,
+   Start and Resume do not open the details; the keyboard handles every action.
+2. The list row height has a factor of 1.5 relative to the recorded base
+   value, with a tolerance of 1 px. The buttons stay readable in both layouts.
+3. An added profile is available after reopening the settings and after a restart;
+   a profile of another project does not appear in the modal of the current project.
+4. Cancelling the Start modal creates no session. Confirmation starts the chosen
+   profile in a new chat of the right project with the ref, the title and the current description.
+5. Without profiles or on a validation error, nothing starts. A prompt
+   with spaces, quotes, new lines and shell characters is still
+   a single argument and does not run extra commands.
+6. Resume automatically detects matching names and tells NEKODE-2 apart from
+   NEKODE-20. Identity metadata does not affect matching.
+7. Several candidates require confirming a specific matched file.
+   The details and the modal have no Link handoff and no manual assignment list.
+8. No linked file, no configuration or a read error does not start
+   Resume. A file changed or deleted after the scan blocks confirmation.
+9. Resume creates a new chat of the chosen profile and passes the specific path
+   and the task ref. A match result does not carry over to another adapter binding.
+10. A double confirmation does not duplicate the chat; an error and Retry do not duplicate
+    the process or the instruction. A late scan result does not carry over between
+    projects. Existing chats and the Kanban cache behavior keep working.
+11. The feature works without Harness. No flow writes Harness files,
+    changes the task status or calls a model API.
 
-Kryteria dostępności przycisku i zalecany kontrakt producenta handoffów
-określa poniższe uzupełnienie NEKODE-30.
+The button availability criteria and the recommended handoff producer contract
+are defined by the NEKODE-30 addition below.
 
-### Wymagana weryfikacja
+### Required verification
 
-- Testy usług: zapis i izolacja profili; dopasowanie pełnego ref
-  w nazwach; brak dopasowania przez metadane; unieważnianie wyników;
-  brak katalogu, odmowa odczytu, zły UTF-8, limit rozmiaru, dowiązania,
-  ponowna walidacja pliku i usunięcie projektu.
-- Testy IPC i uruchomienia: walidacja nadawcy i wejść; bieżące dane zadania;
-  argv z dokładnie jednym promptem; błąd procesu, deduplikacja i Retry.
-- Testy renderer: zakres kliknięcia, modal i fokus, brak profili, wybór
-  agenta/pliku, anulowanie, stany ładowania i błędów, stale responses,
-  izolacja projektu oraz zachowanie starego Resume i cache Kanbana.
-- Weryfikacja rzeczywistej aplikacji Electron: pomiar wysokości wiersza,
-  lista i kolumny przy wąskim panelu, otwarcie nowego czatu i start CLI
-  w katalogu właściwego projektu z poprawnym promptem. Testowy lokalny
-  CLI musi pokazać odebrane argumenty bez kontaktu z modelem. Osobny smoke
-  wybranego skonfigurowanego agenta potwierdza przyjęcie promptu przez CLI;
-  same testy jsdom nie dowodzą działania terminala.
+- Service tests: saving and isolation of profiles; matching the full ref
+  in names; no matching through metadata; invalidation of results;
+  a missing directory, read refusal, bad UTF-8, the size limit, links,
+  revalidation of the file and deleting the project.
+- IPC and launch tests: validation of the sender and inputs; current task data;
+  argv with exactly one prompt; a process error, deduplication and Retry.
+- Renderer tests: the click scope, the modal and focus, no profiles, the agent/file
+  choice, cancelling, loading and error states, stale responses,
+  project isolation, and keeping the old Resume and the Kanban cache.
+- Verification in the real Electron app: measuring the row height,
+  the list and columns with a narrow panel, opening a new chat and starting the CLI
+  in the right project directory with the correct prompt. A local test
+  CLI must show the received arguments without contacting a model. A separate smoke
+  of a chosen configured agent confirms that the CLI accepts the prompt;
+  jsdom tests alone do not prove that the terminal works.
 
-### Źródła i zaakceptowane decyzje
+### Sources and accepted decisions
 
-- Wiersz listy nie jest przyciskiem `WorkItemButton`. Na HEAD `7e40e49` powierzchnia to `WorkItemSurface` (`src/renderer/src/components/kanban/KanbanBoard.tsx:500`). Klasy `ITEM_BUTTON_CLASS` nie ma. Styl kontrolki to `ITEM_CONTROL_CLASS` (`:157`), a podkreślenie hover to `ACTION_HOVER_CLASS` (`:161`). Sekcja edycji pozycji z 2026-10-11 zastępuje model jednego przycisku.
-- Istniejący katalog i listowanie bez treści: `HandoffsService.list` w
-  `src/main/services/handoffs/handoffs-service.ts:85` oraz kontrakt
-  [handoff-resume-flow](../handoff-resume-flow/spec.md).
-- Nowy czat i aktywacja powierzchni: `handleCreateChat` w
-  `src/renderer/src/App.tsx:1692`; uruchomienie akcji w trybie `new-terminal`:
+- The list row is not a `WorkItemButton` button. At HEAD `7e40e49` the surface is `WorkItemSurface` (`src/renderer/src/components/kanban/KanbanBoard.tsx:500`). There is no `ITEM_BUTTON_CLASS` class. The control style is `ITEM_CONTROL_CLASS` (`:157`), and the hover underline is `ACTION_HOVER_CLASS` (`:161`). The item editing section of 2026-10-11 replaces the single-button model.
+- The existing directory and listing without content: `HandoffsService.list` in
+  `src/main/services/handoffs/handoffs-service.ts:85` and the
+  [handoff-resume-flow](../handoff-resume-flow/spec.md) contract.
+- A new chat and surface activation: `handleCreateChat` in
+  `src/renderer/src/App.tsx:1692`; running an action in `new-terminal` mode:
   `src/main/services/action-service.ts:306`.
-- Powiązanie opiera się na zgodności pełnego refu z nazwą pliku handoffu:
-  nazwa pliku pochodzi od identyfikatora zadania i nie zawiera referencji
-  elementu pracy backendu. To uzasadnia oddzielne dopasowanie.
-- [Product requirements](../../product/requirements.md), sekcja 3: lokalna encja Task i handoffy powiązane z zadaniami pozostają post-MVP (`docs/product/requirements.md:67`, `:68`). Tablica adaptera jest dostarczona i nie jest tą encją (`docs/product/requirements.md:70`). Ten kontrakt nie wprowadza lokalnej encji Task.
-- Użytkownik zaakceptował 2026-10-07 całą specyfikację, w tym zasady
-  dopasowania handoffów, ręczne przypisania, argv `{prompt}` oraz użycie
-  istniejącej powierzchni czatu. Osobne profile w Project Settings były
-  wcześniej zaakceptowaną decyzją tego samego dnia.
-- Decyzja użytkownika 2026-10-09 zastępuje wcześniejsze dopasowanie przez
-  metadane: jedna konwencja nazw i jednorazowe dostosowanie danych,
-  bez obsługi starego formatu. Późniejsze polecenie tego samego dnia
-  usuwa Link handoff z interfejsu; funkcja ręcznego przypisania może
-  wrócić dopiero po przyszłej decyzji.
+- The link is based on the full ref matching the handoff file name:
+  the file name comes from the task identifier and does not contain a reference
+  to the backend work item. This justifies the separate matching.
+- [Product requirements](../../product/requirements.md), section 3: the local Task entity and handoffs linked to tasks stay post-MVP (`docs/product/requirements.md:67`, `:68`). The adapter board is delivered and is not that entity (`docs/product/requirements.md:70`). This contract does not introduce a local Task entity.
+- On 2026-10-07 the user accepted the whole specification, including the handoff
+  matching rules, manual assignments, the `{prompt}` argv and the use of
+  the existing chat surface. Separate profiles in Project Settings were
+  an earlier accepted decision of the same day.
+- The user decision of 2026-10-09 replaces the earlier matching by
+  metadata: one naming convention and a one-time data adjustment,
+  without support for the old format. A later instruction of the same day
+  removes Link handoff from the interface; the manual assignment feature can
+  return only after a future decision.
 
-## Dostępność Resume i kontrakt producenta handoffu (NEKODE-30)
+## Resume availability and handoff producer contract (NEKODE-30)
 
-Wymaganie użytkownika z 2026-10-08: Resume na liście Kanban jest widoczne
-tylko wtedy, gdy istnieje handoff danego zadania w skonfigurowanym katalogu.
-Ta sama reguła obowiązuje w widoku Board, który używa tych samych akcji.
-Konwencja nazw wynika z decyzji użytkownika 2026-10-09. Pozostały zakres Etapu 2
-w NeKode został zatwierdzony 2026-10-09; zlecenie przygotowania specyfikacji
-samo nie zatwierdzało implementacji.
-Ta sekcja aktualizuje kontrakt w miejscu, zamiast tworzyć drugą specyfikację.
+User requirement of 2026-10-08: Resume on the Kanban list is visible
+only when a handoff for the given task exists in the configured directory.
+The same rule applies in the Board view, which uses the same actions.
+The naming convention comes from the user decision of 2026-10-09. The rest of the Stage 2 scope
+in NeKode was approved on 2026-10-09; the request to prepare the specification
+did not by itself approve the implementation.
+This section updates the contract in place instead of creating a second specification.
 
-### Cel i zakres
+### Goal and scope
 
-Użytkownik widzi Resume wyłącznie dla zadania z potwierdzonym dopasowanym
-handoffem. Może skonfigurować katalog i zatwierdzić konkretnego kandydata.
-Agent zapisujący handoff zachowuje pełny ref w jego nazwie. Zmiana tytułu
-zadania nie zmienia ref ani wymaganego prefiksu nazwy.
+The user sees Resume only for a task with a confirmed matched
+handoff. The user can configure the directory and confirm a specific candidate.
+The agent that writes the handoff keeps the full ref in its name. Changing the task
+title does not change the ref or the required name prefix.
 
-Zakres obejmuje zbiorczą dostępność handoffów w Kanbanie, nawigację do
-konfiguracji, pełny ref w promptach, jednorazowe dostosowanie
-danych oraz kontrakt producenta dla Harness. Zmiana producenta należy do właściciela
-szablonu Harness, a nie do działającej aplikacji NeKode.
+The scope covers batch handoff availability in Kanban, navigation to the
+configuration, the full ref in prompts, a one-time data
+adjustment and the producer contract for Harness. The producer change belongs to the owner
+of the Harness template, not to the running NeKode app.
 
-Podział zaakceptowany 2026-10-09: HARNESS-24 obejmuje producenta w Agent
-Harness; NEKODE-30 obejmuje konsumenta i końcową integrację w NeKode.
-Zadania mają osobne rekordy, testy, review i odbiór. Integracja w NeKode
-wymaga odebranej zmiany producenta i zatwierdzonej synchronizacji.
+Split accepted on 2026-10-09: HARNESS-24 covers the producer in Agent
+Harness; NEKODE-30 covers the consumer and the final integration in NeKode.
+The tasks have separate records, tests, reviews and acceptance. The integration in NeKode
+needs an accepted producer change and an approved sync.
 
-Poza zakresem są zapis lokalnej ścieżki w backendzie Kanbana, automatyczne
-tworzenie handoffu podczas Start, stała obsługa starych formatów,
-rekurencyjne skanowanie, watchery i polling oraz zmiana Resume paska akcji.
-Sukces uruchomienia agenta ani sam lokalny rekord nie oznaczają istnienia handoffu.
+Out of scope: storing the local path in the Kanban backend, automatic
+handoff creation during Start, permanent support for old formats,
+recursive scanning, watchers and polling, and changing the action bar Resume.
+Neither a successful agent launch nor a local record alone means that a handoff exists.
 
-### Widoczność i przepływ
+### Visibility and flow
 
-1. Resume jest renderowany tylko po udanym sprawdzeniu skonfigurowanego
-   katalogu, jeżeli zadanie ma co najmniej jeden czytelny, zaakceptowany
-   kandydat dopasowany przez pełny ref w nazwie.
-   Samo istnienie dowolnego pliku w katalogu nie wystarcza.
-   Brak profilu agenta nie ukrywa Resume; modal zachowuje Configure agents.
-2. Podczas pierwszego skanu, po unieważnieniu wyniku, bez katalogu, bez
-   powiązanego pliku lub przy błędzie skanu Resume jest ukryty, również
-   przed klawiaturą i technologiami asystującymi. Start pozostaje dostępny.
-   Status zadania w backendzie sam nie rozstrzyga dostępności.
-3. Bez konfiguracji Kanban pokazuje komunikat
-   `Handoff directory is not configured.` i Configure handoffs prowadzący do ustawienia istniejącego
-   `project.handoffDir:<projectId>`. Nie ustawia katalogu domyślnie. Dla
-   projektu z Harness użytkownik wskazuje `.agents/handoffs`; dla innych
-   producentów wskazuje rzeczywisty katalog wyjściowy.
-4. Błąd odczytu katalogu jest osobnym widocznym stanem z komunikatem i Retry.
-   Poprawnie odczytany katalog bez kandydatów jest stanem pustym, nie błędem.
-   Odrzucone pliki mają widoczne ostrzeżenia z nazwą i przyczyną; poprawni
-   kandydaci pozostają dostępni. Awaria skanu nie usuwa załadowanej tablicy.
-5. Decyzja użytkownika 2026-10-09: Link handoff jest usunięty z interfejsu.
-   Szczegóły zadania i modal Resume nie udostępniają przycisku, listy
-   ani potwierdzenia ręcznego przypisania. Ewentualne wprowadzenie tej
-   funkcji wymaga przyszłej decyzji produktowej. Szczegóły nadal korzystają
-   z danych załadowanej tablicy.
-6. Dostępność jest sprawdzana przy pierwszej aktywacji Kanbana, powrocie do
-   jego zakładki, jawnym Refresh oraz po zapisaniu zmiany katalogu,
-   powiązania adaptera. Zmiana katalogu albo
-   powiązania natychmiast unieważnia poprzedni wynik. Nie ma skanów na hover,
-   przy sortowaniu, zmianie List/Board ani zwijaniu grup. Ukryte sesje nie
-   inicjują skanów; powrót odświeża ich wynik.
-7. Jeden cykl sprawdzenia dla aktywnego projektu czyta katalog i każdy
-   kwalifikujący się plik najwyżej raz, a następnie dopasowuje ten sam
-   zestaw do wszystkich załadowanych zadań. Nie wolno wywoływać pełnego
-   skanu osobno dla każdego wiersza. Renderowanie tablicy nie czeka na skan.
-8. Wynik jest migawką. Zmiana pliku poza aplikacją pojawia się po Refresh
-   albo powrocie do zakładki. Otwarcie modalu i zatwierdzenie Resume zawsze
-   ponownie sprawdzają plik; migawka listy nie zastępuje tej walidacji.
-   Usunięty, nieczytelny lub zmieniony plik blokuje uruchomienie i odświeża
-   dostępność. Nie powstaje czat ani proces dla odrzuconego zatwierdzenia.
-9. Spóźnione odpowiedzi nie mogą odtworzyć Resume po zmianie projektu,
-   katalogu, powiązania, zestawu zadań lub nowszym skanie. Równoległe
-   wyzwalacze tego samego sprawdzenia są scalane. Każdy wynik należy do
-   konkretnego projektu, konfiguracji i generacji żądania.
+1. Resume is rendered only after a successful check of the configured
+   directory, if the task has at least one readable, accepted
+   candidate matched by the full ref in the name.
+   The existence of any file in the directory is not enough.
+   A missing agent profile does not hide Resume; the modal keeps Configure agents.
+2. During the first scan, after a result is invalidated, without a directory, without
+   a linked file or on a scan error, Resume is hidden, also
+   from the keyboard and assistive technologies. Start stays available.
+   The task status in the backend alone does not decide availability.
+3. Without a configuration, Kanban shows the message
+   `Handoff directory is not configured.` and Configure handoffs, which leads to the existing
+   `project.handoffDir:<projectId>` setting. It does not set a directory by default. For
+   a project with Harness, the user points to `.agents/handoffs`; for other
+   producers, the user points to the actual output directory.
+4. A directory read error is a separate visible state with a message and Retry.
+   A correctly read directory without candidates is an empty state, not an error.
+   Rejected files have visible warnings with the name and the reason; valid
+   candidates stay available. A scan failure does not remove the loaded board.
+5. User decision 2026-10-09: Link handoff is removed from the interface.
+   The task details and the Resume modal offer no button, list
+   or confirmation for manual assignment. Bringing this feature back
+   needs a future product decision. The details still use
+   the data of the loaded board.
+6. Availability is checked on the first Kanban activation, on return to
+   its tab, on an explicit Refresh and after saving a change of the directory
+   or the adapter binding. A change of the directory or
+   the binding immediately invalidates the previous result. There are no scans on hover,
+   on sorting, on a List/Board switch or on collapsing groups. Hidden sessions do not
+   start scans; a return refreshes their result.
+7. One check cycle for the active project reads the directory and each
+   qualifying file at most once, and then matches the same
+   set against all loaded tasks. A full scan must not be called
+   separately for each row. Rendering the board does not wait for the scan.
+8. The result is a snapshot. A file change outside the app shows up after Refresh
+   or a return to the tab. Opening the modal and confirming Resume always
+   check the file again; the list snapshot does not replace this validation.
+   A deleted, unreadable or changed file blocks the launch and refreshes
+   availability. No chat or process is created for a rejected confirmation.
+9. Late responses must not bring Resume back after a change of project,
+   directory, binding, task set or a newer scan. Parallel
+   triggers of the same check are merged. Each result belongs to
+   a specific project, configuration and request generation.
 
-### Jednolita konwencja nazw producenta
+### Uniform producer naming convention
 
-Decyzja użytkownika 2026-10-09: producent i NeKode stosują jedną konwencję
-nazw. Nie ma wymiany trzech pól work_item ani parsera ich metadanych
-w runtime NeKode. Istniejące dane są dostosowywane jednorazowo.
+User decision 2026-10-09: the producer and NeKode use one naming
+convention. There is no exchange of three work_item fields and no parser of their metadata
+in the NeKode runtime. Existing data is adjusted once.
 
-1. Prompt Start przekazuje rzeczywisty pełny ref, opis i URL zadania oraz
-   skonfigurowany katalog. Resume przekazuje pełny ref, tytuł, ścieżkę handoffu
-   i instrukcje z sekcji Resume powyżej. Nie wymaga utrwalania
-   work_item_ref/id/adapter przez producenta. Id i adapter pozostają
-   wewnętrznymi danymi NeKode do izolacji operacji Kanbana i przypisań.
-   Brak katalogu nie blokuje Start ani nie ustawia go domyślnie.
-2. Dla zadania z bezpiecznym pełnym ref lokalne `task_id` zaczyna się
-   jego pełną znormalizowaną postacią, np. `nekode-30-kanban-handoff-availability`.
-   Katalog rekordu zachowuje nazwę task_id, a handoff nazwę `<task_id>.md`.
-   Krótki opis i sufiks rozróżniają rekordy bez skracania ref. Nie powstaje
-   osobny podkatalog handoffu, bo skan NeKode jest płytki. Ref niezgodny z
-   ograniczeniami task_id nie jest arbitralnie zmieniany. Producent zgłasza
-   brak możliwości zastosowania konwencji; nie uruchamia alternatywnego
-   powiązania przez metadane. NeKode nie zgaduje po tytule ani treści.
-3. Istniejące dane dla zadań z Kanbana muszą spełniać tę samą konwencję.
-   Jednorazowe dostosowanie obejmuje nazwę katalogu rekordu, task_id,
-   nazwę handoffu i odwołania do tych ścieżek. Zadania spoza Kanbana
-   zachowują własne nazwy. Nie ma wyjątków dla starych rekordów Kanbana.
-4. Producent nie wyprowadza katalogu Harness z ustawienia aplikacji.
-   Harness zachowuje `.agents/handoffs/<task_id>.md`, swoją walidację,
-   powiązanie z rekordem oraz cykl tworzenia, zastępowania i zamykania.
-   Dla takiego projektu skonfigurowany katalog NeKode musi wskazywać ten
-   sam katalog wyjściowy. Rozbieżność nie uruchamia kopiowania plików.
-5. NeKode porównuje pełny ref z nazwą bez rozszerzenia: zgodna jest nazwa
-   równa ref albo zaczynająca się od ref i separatora `-`, bez rozróżniania
-   wielkości liter. Prefiks tylko w nazwie katalogu nie wystarcza.
-   Skonfigurowany katalog odpowiada jednemu projektowi Kanbana; plików
-   różnych źródeł o identycznym ref nie można odróżnić samą nazwą.
-6. Link handoff nie jest częścią bieżącej funkcji. Jedynym sposobem
-   powiązania jest zgodność pełnego ref z nazwą pliku. Brak zgodnej nazwy
-   wymaga dostosowania danych według zatwierdzonej listy.
+1. The Start prompt passes the actual full ref, the description and URL of the task, and
+   the configured directory. Resume passes the full ref, the title, the handoff path
+   and the instructions from the Resume section above. It does not require the producer to persist
+   work_item_ref/id/adapter. The id and the adapter stay
+   internal NeKode data for isolating Kanban operations and assignments.
+   A missing directory does not block Start and is not set by default.
+2. For a task with a safe full ref, the local `task_id` starts with
+   its full normalized form, for example `nekode-30-kanban-handoff-availability`.
+   The record directory keeps the task_id name, and the handoff the name `<task_id>.md`.
+   A short description and a suffix tell records apart without shortening the ref. No
+   separate handoff subdirectory is created, because the NeKode scan is shallow. A ref that does not fit
+   the task_id limits is not changed arbitrarily. The producer reports
+   that the convention cannot be applied; it does not start an alternative
+   link through metadata. NeKode does not guess by title or content.
+3. Existing data for Kanban tasks must follow the same convention.
+   The one-time adjustment covers the record directory name, the task_id,
+   the handoff name and references to these paths. Tasks from outside Kanban
+   keep their own names. There are no exceptions for old Kanban records.
+4. The producer does not derive the Harness directory from the app setting.
+   Harness keeps `.agents/handoffs/<task_id>.md`, its validation,
+   the link to the record and the create, replace and close cycle.
+   For such a project, the configured NeKode directory must point to the same
+   output directory. A mismatch does not start file copying.
+5. NeKode compares the full ref with the name without the extension: a name matches if it
+   equals the ref or starts with the ref and the `-` separator, ignoring
+   letter case. A prefix only in the directory name is not enough.
+   A configured directory corresponds to one Kanban project; files from
+   different sources with an identical ref cannot be told apart by name alone.
+6. Link handoff is not part of the current feature. The only way
+   to link is a full ref matching the file name. A name that does not match
+   needs a data adjustment according to the approved list.
 
-Przykład nazw dla tego zadania:
+Example names for this task:
 
 ```text
 .agents/tasks/nekode-30-kanban-handoff-availability/task.md
 .agents/handoffs/nekode-30-kanban-handoff-availability.md
 ```
 
-Wewnętrzny format rekordu i handoffu oraz ich walidacja należą do Harness.
-NeKode nie musi znać task_id, faz, wersji Harness ani ścieżki rekordu.
+The internal format of the record and the handoff and their validation belong to Harness.
+NeKode does not need to know the task_id, phases, the Harness version or the record path.
 
-### Jednorazowe dostosowanie danych
+### One-time data adjustment
 
-Przed zmianą nazw powstaje lista konkretnych starych i nowych ścieżek oraz
-odwołań wymagających aktualizacji. Powiązanie z zadaniem wymaga dokładnego
-ref potwierdzonego w Kanbanie lub przez użytkownika; tytuł nie jest dowodem.
-Lista ujawnia kolizje nazw i rekordy bez potwierdzonego powiązania.
-Zmiana obejmuje wyłącznie zatwierdzoną listę, nie inne zadania ani projekty.
-Po zmianie walidatory Harness sprawdzają rekord i handoff, a NeKode rozpoznaje
-plik według nowej nazwy. Nie powstaje stały mechanizm migracji w aplikacji.
+Before the renaming, a list of the specific old and new paths and of the
+references that need updating is made. A link to a task needs an exact
+ref confirmed in Kanban or by the user; the title is not proof.
+The list shows name collisions and records without a confirmed link.
+The change covers only the approved list, not other tasks or projects.
+After the change, the Harness validators check the record and the handoff, and NeKode recognizes
+the file by its new name. No permanent migration mechanism is added to the app.
 
-### Dane, autoryzacja i zgodność
+### Data, authorization and compatibility
 
-- Nowa typowana operacja IPC przyjmuje projectId oraz zbiór `{ itemId, ref }`
-  załadowanych zadań. Zwraca `not-configured`, `error` z komunikatem albo
-  `ready` z dostępnością każdego zadania i ostrzeżeniami. Dostępność jest
-  wartością logiczną, nie obietnicą uruchomienia ani wyborem konkretnego pliku.
-- Main waliduje projekt, powiązanie, tożsamości wejściowe i aktualny katalog.
-  Renderer nie wskazuje ścieżki dyskowej. Wynik nie zawiera treści plików
-  ani konfiguracji adaptera. Ref i ścieżki nigdy nie stają się kodem shell.
-- Zbiorczy skan oraz `handoffCandidates` używają tych samych reguł dopasowania,
-  odrzucenia. Lista i modal nie mogą
-  rozstrzygać inaczej dla tego samego pliku i zadania przy tej samej migawce.
-- Obowiązują istniejące ograniczenia: płytki skan regularnych `.md`, bez
-  `README.md` i dowiązań, UTF-8 i limit 1 MiB. Dostępność jest stanem sesji,
-  nie trwałym polem zadania i nie wymaga migracji bazy danych.
-- Odczyt tablicy nie zapisuje niczego w backendzie Kanbana, plikach ani
-  Harness. Interfejs nie zapisuje ręcznych przypisań handoffów.
-  Uruchomienie nadal wymaga zatwierdzenia pliku i agenta w modalu.
-- Zmiana producenta wymaga pracy w źródle szablonu Harness i jego testów.
-  Wdrożenie do projektu musi korzystać z przewidzianej synchronizacji;
-  aplikacja NeKode nie edytuje współdzielonego harnessu podczas działania.
-  Zlecenie napisania tego kontraktu nie upoważnia do jego zmiany.
+- A new typed IPC operation accepts a projectId and a set of `{ itemId, ref }`
+  of the loaded tasks. It returns `not-configured`, `error` with a message or
+  `ready` with the availability of each task and warnings. Availability is
+  a boolean, not a promise of a launch or a choice of a specific file.
+- Main validates the project, the binding, the input identities and the current directory.
+  The renderer does not name a disk path. The result contains no file content
+  and no adapter configuration. Refs and paths never become shell code.
+- The batch scan and `handoffCandidates` use the same matching
+  and rejection rules. The list and the modal must not
+  decide differently for the same file and task with the same snapshot.
+- The existing limits apply: a shallow scan of regular `.md` files, without
+  `README.md` and links, UTF-8 and a 1 MiB limit. Availability is session state,
+  not a persistent task field, and needs no database migration.
+- Reading the board writes nothing to the Kanban backend, to files or to
+  Harness. The interface does not store manual handoff assignments.
+  A launch still requires confirming the file and the agent in the modal.
+- The producer change requires work in the Harness template source and its tests.
+  Deploying it to a project must use the intended sync;
+  the NeKode app does not edit the shared harness while it runs.
+  The request to write this contract does not authorize changing it.
 
-### Kryteria akceptacji i wymagana weryfikacja
+### Acceptance criteria and required verification
 
-1. Lista i Board pokazują Resume tylko dla zadania z
-   dopasowanym czytelnym handoffem. Brak konfiguracji, wynik pusty, ładowanie
-   i błąd skanu nie renderują tej kontrolki. Start jest nieaktywny dokładnie
-   wtedy, gdy dla tego zadania jest widoczny Resume, w widokach List i Board.
-2. Configure handoffs jest dostępne bez Resume. Skonfigurowanie właściwego
-   katalogu powoduje nowy skan; błąd odczytu ma odrębny komunikat i Retry.
-3. Szczegóły i modal Resume nie zawierają Link handoff ani przepływu
-   ręcznego przypisania. Wybór i zatwierdzenie dopasowanego kandydata,
-   Configure handoffs, Configure agents oraz Refresh nadal są dostępne.
-4. Dla wielu zadań liczniki adaptera plików potwierdzają jeden odczyt
-   katalogu i najwyżej jeden odczyt każdego pliku na zbiorczy cykl.
-   Sortowanie, zwijanie, hover i przełączenie List/Board nie ponawiają skanu.
-5. Testy obejmują nazwę z pełnym ref, NEKODE-2 kontra NEKODE-20,
-   brak dopasowania po tytule i metadanych, kilka kandydatów,
-   brak ręcznego przypisania w UI i pliki odrzucone.
-   Odrzucony plik nie ukrywa poprawnego kandydata.
-6. Zmiana katalogu, adaptera lub projektu usuwa stary wynik, a spóźnione
-   odpowiedzi nie przywracają przycisku. Ukryta sesja nie skanuje; powrót,
-   Refresh odświeżają dostępność.
-7. Usunięcie albo zmiana pliku po skanie listy lub modalu blokuje
-   zatwierdzenie bez tworzenia czatu i procesu. Nie ma Resume bez ścieżki.
-8. Oba prompty przekazują rzeczywisty pełny ref, a Start dodatkowo instrukcję
-   nazewnictwa bez sekretów. Test
-   uruchomienia zachowuje pojedynczy argument promptu i obecne reguły logowania.
-9. Testy producenta Harness potwierdzają prefiks pełnego ref w task_id,
-   zachowanie nazwy przy handoff-create i replace oraz zgodność nazwy
-   handoffu z task_id. Jednorazowe dostosowanie ma zatwierdzoną listę
-   zmian i poprawną walidację rekordów, handoffów oraz odwołań.
-   Zadania spoza Kanbana nie otrzymują wymuszonego prefiksu Kanbana.
-10. Smoke rzeczywistego Electron używa lokalnych plików i testowego CLI:
-    brak pliku, utworzenie poprawnego pliku i Refresh, wybór dopasowanego
-    pliku, usunięcie po skanie oraz projekt bez Harness. Regresja paska akcji
-    nie zmienia jego dotychczasowego Resume ani paste-only / auto-send.
+1. List and Board show Resume only for a task with a
+   matched readable handoff. No configuration, an empty result, loading
+   and a scan error do not render this control. Start is inactive exactly
+   when Resume is visible for this task, in the List and Board views.
+2. Configure handoffs is available without Resume. Configuring the right
+   directory causes a new scan; a read error has a separate message and Retry.
+3. The details and the Resume modal contain no Link handoff and no
+   manual assignment flow. Choosing and confirming a matched candidate,
+   Configure handoffs, Configure agents and Refresh are still available.
+4. For many tasks, the file adapter counters confirm one read of the
+   directory and at most one read of each file per batch cycle.
+   Sorting, collapsing, hover and a List/Board switch do not repeat the scan.
+5. The tests cover a name with the full ref, NEKODE-2 versus NEKODE-20,
+   no matching by title and metadata, several candidates,
+   no manual assignment in the UI, and rejected files.
+   A rejected file does not hide a valid candidate.
+6. A change of directory, adapter or project removes the old result, and late
+   responses do not bring the button back. A hidden session does not scan; a return
+   and Refresh refresh availability.
+7. Deleting or changing a file after the list or modal scan blocks
+   confirmation without creating a chat and a process. There is no Resume without a path.
+8. Both prompts pass the actual full ref, and Start also passes a naming
+   instruction without secrets. The launch
+   test keeps the single prompt argument and the current logging rules.
+9. The Harness producer tests confirm the full ref prefix in the task_id,
+   keeping the name on handoff-create and replace, and that the handoff name
+   matches the task_id. The one-time adjustment has an approved list
+   of changes and correct validation of records, handoffs and references.
+   Tasks from outside Kanban do not get a forced Kanban prefix.
+10. A smoke in real Electron uses local files and a test CLI:
+    no file, creating a valid file and Refresh, choosing a matched
+    file, deleting after the scan, and a project without Harness. The action bar regression
+    does not change its existing Resume or paste-only / auto-send.
 
-Testy usług, IPC i renderer dowodzą dostępności, błędów i izolacji sesji;
-testy producenta dowodzą konwencji nazw. Żaden test automatyczny nie
-wymaga kontaktu z modelem ani zapisu do produkcyjnego Kanbana.
+Service, IPC and renderer tests prove availability, errors and session isolation;
+producer tests prove the naming convention. No automated test
+needs contact with a model or a write to a production Kanban.
 
-### Podstawa rekomendacji
+### Basis for the recommendation
 
-- `src/main/services/handoffs/handoff-matcher-service.ts:96` (`filenameMatchesRef`) dopasowuje pełny ref albo prefiks `ref-` i odrzuca dłuższy ref taki jak NEKODE-20. Kontrakt konsumenta dopuszcza wyłącznie tę ścieżkę; analiza metadanych tożsamości nie należy do dopasowania.
-- Kanał `kanban:linkHandoff` nie występuje w `src/shared/ipc-contract.ts`. `src/main/ipc/ipc-validation.test.ts:512` sprawdza jego brak. Jedynym powiązaniem pozostaje zgodność pełnego ref z nazwą pliku.
-- `src/renderer/src/components/kanban/KanbanBoard.tsx:920` uzależnia Resume od udanego skanu i dostępności handoffu danego zadania.
-- Katalog handoffów jest konfigurowany per projekt, a nazwa pliku pochodzi od
-  identyfikatora zadania; zgodność nazwy z pełnym refem jest wymaganiem
-  kontraktu konsumenta.
-- Szablon handoffu zawiera task_id. Nowy kontrakt nie wymaga dodawania
-  work_item_ref, work_item_id ani work_item_adapter do szablonu.
+- `src/main/services/handoffs/handoff-matcher-service.ts:96` (`filenameMatchesRef`) matches the full ref or the `ref-` prefix and rejects a longer ref such as NEKODE-20. The consumer contract allows only this path; parsing identity metadata is not part of matching.
+- The `kanban:linkHandoff` channel does not appear in `src/shared/ipc-contract.ts`. `src/main/ipc/ipc-validation.test.ts:512` checks that it is absent. The only link stays a full ref matching the file name.
+- `src/renderer/src/components/kanban/KanbanBoard.tsx:920` makes Resume depend on a successful scan and on handoff availability for the given task.
+- The handoff directory is configured per project, and the file name comes from
+  the task identifier; a name matching the full ref is a requirement
+  of the consumer contract.
+- The handoff template contains the task_id. The new contract does not require adding
+  work_item_ref, work_item_id or work_item_adapter to the template.
 
 ## Kanban item editing amendment (user decision 2026-10-11)
 
-Ta sekcja jest kontraktem NEKODE-41. Decyzje pochodzą z odpowiedzi
-użytkownika z 2026-10-11. Zastępuje osobne kontrolki slugu i tytułu z sekcji
-"Nawigacja i wygląd" pkt 1-2 oraz zdania o osobnym refie, osobnym tytule
-i wyłącznie odczytywanym podglądzie w Goal, Behaviour 14, AC14 oraz
-w `docs/UX-UI.md` §18. Nie zmienia Start, Resume, wysokości wiersza,
-sortowania ani zakazu przeciągania. Pamięć podręczna tablicy zostaje,
-z wyjątkiem punktu 8 sekcji "Nowe zadanie".
+This section is the NEKODE-41 contract. The decisions come from the user's answers
+of 2026-10-11. It replaces the separate slug and title controls from the
+"Navigation and appearance" section, items 1-2, and the sentences about a separate ref, a separate title
+and a read-only preview in Goal, Behaviour 14, AC14 and
+in `docs/UX-UI.md` §18. It does not change Start, Resume, the row height,
+sorting or the ban on dragging. The board cache stays,
+except for item 8 of the "New task" section.
 
-### Cel
+### Goal
 
-Użytkownik widzi na tablicy i na liście jedno łącze zadania, kopiuje jego
-slug albo adres, dodaje zadanie i zmienia status w podglądzie.
+On the board and on the list, the user sees one task link, copies its
+slug or address, adds a task and changes the status in the preview.
 
-### Zakres i wyłączenia
+### Scope and exclusions
 
-W zakresie: jedno podkreślone łącze na karcie i w wierszu, menu `Copy slug`
-oraz `Copy link`, formularz `New task` z polami Status, Title i Description,
-oraz zmiana statusu wyłącznie w podglądzie.
+In scope: one underlined link on the card and in the row, a `Copy slug`
+and `Copy link` menu, a `New task` form with the Status, Title and Description fields,
+and changing the status only in the preview.
 
-Poza zakresem: przeciąganie między kolumnami, edycja tytułu, opisu
-i priorytetu, składanie adresu Plane w rendererze, nowe kanały IPC, menu
-na Start, Resume, priorytecie i tle karty oraz zmiana reguł sortowania.
+Out of scope: dragging between columns, editing the title, description
+and priority, building the Plane address in the renderer, new IPC channels, a menu
+on Start, Resume, the priority and the card background, and changing the sorting rules.
 
-### Łącze
+### Link
 
-1. Na Board i na List jedna kontrolka pokazuje `WorkItem.ref`, jedną spację
-   i `WorkItem.title`. Tekst jest zawsze podkreślony.
-2. Klik oraz Enter i Space otwierają istniejący podgląd. Start, Resume
-   i priorytet nie otwierają podglądu.
-3. Na liście łącze zajmuje elastyczne miejsce tytułu i jest obcinane.
-   Na karcie łącze zawija się w całości. Podgląd nadal pokazuje pełny tytuł.
-4. Identyfikator testowy kontrolki to `kanban-item-link-<ref>`. Osobne
-   `kanban-item-ref-<ref>` i `kanban-item-title-<ref>` znikają z karty
-   i z wiersza.
-5. Sortowanie po slugu nadal porównuje sam `WorkItem.ref`.
+1. On Board and on List, one control shows `WorkItem.ref`, one space
+   and `WorkItem.title`. The text is always underlined.
+2. A click and Enter and Space open the existing preview. Start, Resume
+   and the priority do not open the preview.
+3. On the list, the link takes the flexible title space and is truncated.
+   On the card, the link wraps in full. The preview still shows the full title.
+4. The control's test identifier is `kanban-item-link-<ref>`. The separate
+   `kanban-item-ref-<ref>` and `kanban-item-title-<ref>` disappear from the card
+   and from the row.
+5. Sorting by slug still compares `WorkItem.ref` alone.
 
-### Menu kopiowania
+### Copy menu
 
-1. Menu otwiera prawy przycisk na łączu oraz klawisz menu kontekstowego
-   albo Shift+F10, gdy łącze ma fokus.
-2. Pozycje mają angielskie etykiety: `Copy slug` i `Copy link`.
-3. `Copy slug` zapisuje w schowku dokładnie `WorkItem.ref`.
-4. `Copy link` zapisuje dokładnie `WorkItem.url`. Gdy `url` jest `null`
-   albo puste po obcięciu białych znaków, pozycja jest nieaktywna i nic
-   nie zapisuje.
-5. Udany zapis, Escape i wskaźnik poza menu zamykają menu.
-6. Błąd schowka zostaje widoczny. Interfejs nie podaje nieudanego zapisu
-   za udany.
+1. The menu opens with a right click on the link and with the context menu key
+   or Shift+F10 when the link has focus.
+2. The items have English labels: `Copy slug` and `Copy link`.
+3. `Copy slug` writes exactly `WorkItem.ref` to the clipboard.
+4. `Copy link` writes exactly `WorkItem.url`. When `url` is `null`
+   or empty after trimming whitespace, the item is inactive and writes
+   nothing.
+5. A successful write, Escape and the pointer outside the menu close the menu.
+6. A clipboard error stays visible. The interface does not present a failed write
+   as a successful one.
 
-### Nowe zadanie
+### New task
 
-1. Przycisk `New task` jest w nagłówku, gdy tablica jest gotowa i podgląd
-   jest zamknięty. Jest na Board i na List.
-2. Formularz pod nagłówkiem ma pola Status, Title i Description oraz
-   przyciski Create i Cancel. Osobnego pola kolumny nie ma: wybrany status
-   jest kolumną tablicy.
-3. Status wymienia `board.states` w kolejności adaptera. Etykieta i wartość
-   `stateRef` to `state.name`.
-4. Domyślny status to pierwszy stan o nazwie `Todo` bez względu na wielkość
-   liter. Gdy takiego stanu nie ma, nic nie jest wybrane, a Create jest
-   nieaktywny.
-5. Title jest wymagany. Create jest nieaktywny, gdy tytuł po obcięciu
-   białych znaków jest pusty.
-6. Description może być pusta. Wartość pusta albo złożona z samych białych
-   znaków nie wchodzi do żądania.
-7. Create woła istniejące `kanban:createItem` z `title`, `stateRef`
-   i opcjonalnym `description`. Nie wysyła `priority`.
-8. Sukces zamyka formularz, usuwa szkic i wstawia zwrócony `WorkItem`
-   do załadowanej tablicy po `ref`, bez drugiej kopii. Widok zostaje.
-   Podgląd się nie otwiera. Odpowiedź `kanban:listBoard`, która była już
-   w toku w chwili tego sukcesu, zostawia ten ref, gdy migawka go nie
-   zawiera. Odświeżenie rozpoczęte po sukcesie nadal usuwa ref nieobecny
-   w migawce.
-9. Błąd zostawia formularz i wpisane wartości oraz pokazuje treść błędu.
-   Lokalna pozycja nie powstaje.
-10. Cancel, otwarcie pozycji oraz zmiana Board albo List zamykają formularz
-    i usuwają szkic. Escape robi to samo, gdy fokus jest w formularzu.
+1. The `New task` button is in the header when the board is ready and the preview
+   is closed. It is on Board and on List.
+2. The form under the header has the Status, Title and Description fields and
+   the Create and Cancel buttons. There is no separate column field: the chosen status
+   is the board column.
+3. Status lists `board.states` in the adapter's order. The label and the value
+   `stateRef` are `state.name`.
+4. The default status is the first state named `Todo`, ignoring letter
+   case. When there is no such state, nothing is selected and Create is
+   inactive.
+5. Title is required. Create is inactive when the title is empty after trimming
+   whitespace.
+6. Description may be empty. An empty value or one made only of whitespace
+   does not go into the request.
+7. Create calls the existing `kanban:createItem` with `title`, `stateRef`
+   and an optional `description`. It does not send `priority`.
+8. Success closes the form, removes the draft and inserts the returned `WorkItem`
+   into the loaded board by `ref`, without a second copy. The view stays.
+   The preview does not open. A `kanban:listBoard` response that was already
+   in progress at the moment of this success keeps this ref when the snapshot does not
+   contain it. A refresh started after the success still removes a ref that is absent
+   from the snapshot.
+9. An error keeps the form and the entered values and shows the error text.
+   No local item is created.
+10. Cancel, opening an item and switching Board or List close the form
+    and remove the draft. Escape does the same when focus is in the form.
 
-### Status w podglądzie
+### Status in the preview
 
-1. Podgląd ma listę Status z tymi samymi stanami. Wybrana jest nazwa
-   potwierdzonej pozycji.
-2. Gdy bieżącej nazwy nie ma wśród `board.states`, pozostaje ona dodatkową
-   wybraną opcją.
-3. Zmiana woła istniejące `kanban:updateItem` z samym `stateRef` równym
-   wybranej nazwie.
-4. Sukces zastępuje tę pozycję zwróconym `WorkItem` i zostawia podgląd
-   otwarty.
-5. Błąd przywraca potwierdzoną nazwę stanu i pokazuje treść błędu.
-6. Ref, tytuł, opis i priorytet w podglądzie zostają tylko do odczytu.
-7. Karta i wiersz nie mają kontrolki statusu.
+1. The preview has a Status list with the same states. The name of the
+   confirmed item is selected.
+2. When the current name is not among `board.states`, it stays an extra
+   selected option.
+3. A change calls the existing `kanban:updateItem` with only `stateRef` equal to
+   the chosen name.
+4. Success replaces this item with the returned `WorkItem` and keeps the preview
+   open.
+5. An error restores the confirmed state name and shows the error text.
+6. The ref, title, description and priority in the preview stay read-only.
+7. The card and the row have no status control.
 
-### Błędy
+### Errors
 
-Błąd IPC jest pokazany przy formularzu albo przy podglądzie. Brak cichego
-przejścia na inny stan i brak odświeżenia, które ukrywa błąd.
+An IPC error is shown at the form or at the preview. There is no silent
+switch to another state and no refresh that hides the error.
 
-### Kryteria akceptacji
+### Acceptance criteria
 
-1. Karta i wiersz mają jedno podkreślone łącze `ref title`. Klik otwiera
-   podgląd. Start, Resume i priorytet zostają osobnymi kontrolkami.
-2. Prawy przycisk i klawisz menu na zfokusowanym łączu dają `Copy slug`
-   oraz `Copy link`. Pierwsza pozycja kopiuje ref. Druga kopiuje `url`,
-   a przy pustym `url` jest nieaktywna.
-3. `New task` pokazuje Status, Title i Description. Domyślny status to
-   `Todo`, gdy taki stan jest na tablicy. Pusty tytuł nie tworzy zadania.
-   Pusty opis jest dozwolony i nie jest wysyłany. Priorytet nie jest wysyłany.
-4. Udane tworzenie wstawia zwróconą pozycję do kolumny wybranego statusu
-   i zamyka formularz. Błąd zostawia szkic.
-5. W podglądzie zmiana Status woła aktualizację z `stateRef`. Sukces
-   zostawia podgląd i pokazuje zwrócony stan. Błąd zostawia poprzedni stan.
-6. Karta, wiersz i formularz nie zmieniają statusu inaczej niż przez pole
-   Status formularza albo listę w podglądzie.
+1. The card and the row have one underlined `ref title` link. A click opens
+   the preview. Start, Resume and the priority stay separate controls.
+2. A right click and the menu key on the focused link give `Copy slug`
+   and `Copy link`. The first item copies the ref. The second copies `url`,
+   and with an empty `url` it is inactive.
+3. `New task` shows Status, Title and Description. The default status is
+   `Todo` when such a state is on the board. An empty title does not create a task.
+   An empty description is allowed and is not sent. The priority is not sent.
+4. A successful create inserts the returned item into the column of the chosen status
+   and closes the form. An error keeps the draft.
+5. In the preview, a Status change calls the update with `stateRef`. Success
+   keeps the preview and shows the returned state. An error keeps the previous state.
+6. The card, the row and the form do not change the status other than through the
+   Status field of the form or the list in the preview.
 
-### Wymagana weryfikacja
+### Required verification
 
-Testy renderera tablicy pokrywają łącze, menu, formularz, domyślne `Todo`,
-pusty tytuł, pusty opis, sukces i błąd tworzenia oraz sukces i błąd zmiany
-statusu. Nie wymagają sieci Plane. Zdania `docs/UX-UI.md` §18 o osobnym
-refie i tytule oraz o wyłącznie odczytywanym podglądzie są poprawione
-w etapach, które te zachowania wprowadzają.
+The board renderer tests cover the link, the menu, the form, the default `Todo`,
+an empty title, an empty description, create success and error, and status change
+success and error. They do not need the Plane network. The sentences of `docs/UX-UI.md` §18 about a separate
+ref and title and about a read-only preview are corrected
+in the stages that introduce these behaviors.
 
-### Źródła
+### Sources
 
-- Odpowiedzi użytkownika z 2026-10-11: status tylko w podglądzie; formularz
-  Status, Title, Description z domyślnym `Todo`; jedno łącze otwierające
-  podgląd; menu `Copy slug` i `Copy link`.
-- `KanbanCreateInput`, `KanbanUpdatePatch` i `WorkItem.url` w
+- The user's answers of 2026-10-11: status only in the preview; a form with
+  Status, Title, Description and a default `Todo`; one link that opens
+  the preview; a `Copy slug` and `Copy link` menu.
+- `KanbanCreateInput`, `KanbanUpdatePatch` and `WorkItem.url` in
   `src/shared/ipc-contract.ts`.
-- Adres pozycji Plane składa adapter w `adapters/plane/plane_adapter.py`
-  (`issue_url`). Renderer kopiuje gotowe pole.
+- The Plane item address is built by the adapter in `adapters/plane/plane_adapter.py`
+  (`issue_url`). The renderer copies the ready field.
 
 ## Kanban row and review amendment (user decision 2026-10-12)
 
-Ta sekcja zastępuje w sekcji "Kanban item editing amendment (user decision 2026-10-11)" jedno podkreślone łącze `ref title`, identyfikator `kanban-item-link-<ref>` oraz zdanie, że priorytet w podglądzie zostaje tylko do odczytu. Nie zmienia formularza `New task`, menu `Copy slug` i `Copy link`, zakazu przeciągania ani reguły, że status zmienia się tylko w podglądzie. Tworzenie zadania nadal nie wysyła priorytetu.
+This section replaces, in the "Kanban item editing amendment (user decision 2026-10-11)" section, the single underlined `ref title` link, the `kanban-item-link-<ref>` identifier and the sentence that the priority in the preview stays read-only. It does not change the `New task` form, the `Copy slug` and `Copy link` menu, the ban on dragging or the rule that the status changes only in the preview. Creating a task still does not send the priority.
 
-Późniejsza decyzja tego samego dnia zostawia podświetlenie całego wiersza na hover. Hover podkreśla tylko slug, tytuł, włączony Start i pokazany Resume. Tylko te elementy mają akcję kliknięcia.
+A later decision of the same day keeps the whole-row highlight on hover. Hover underlines only the slug, the title, an enabled Start and a shown Resume. Only these elements have a click action.
 
-Kolejna decyzja tego samego dnia usuwa widok Board i przełącznik List | Board. Zostaje sama lista. Podgląd jest w dwóch kolumnach: lewa ma trzy czwarte szerokości i zawiera ref, tytuł i opis, prawa ma jedną czwartą i zawiera Priority i Status. Przycisk Back ma ten sam styl co Back to Projects i jest w nagłówku zaraz po napisie Kanban.
+Another decision of the same day removes the Board view and the List | Board switch. Only the list stays. The preview has two columns: the left one is three quarters wide and contains the ref, title and description, the right one is one quarter wide and contains Priority and Status. The Back button has the same style as Back to Projects and is in the header right after the Kanban label.
 
-### Kolumny
+### Columns
 
-1. Na liście slug (`WorkItem.ref`) i tytuł są osobnymi kolumnami. W spoczynku żaden tekst nie jest podkreślony. Hover podkreśla slug, tytuł, włączony Start i pokazany Resume. Szerokość tych kontrolek jest szerokością tekstu, więc klik poza tekstem nic nie robi.
-2. Wiersze mają wspólną szerokość kolumny slugu. Tytuł jest obcinany.
-3. Hover podświetla cały wiersz. Podkreślenie jest tylko na tekście, który ma akcję.
-4. Klik, Enter i Space na slugu albo na tytule otwierają podgląd. Klik na włączonym Start otwiera potwierdzenie uruchomienia. Klik na pokazanym Resume otwiera potwierdzenie wznowienia. Wyłączony Start, tekst priorytetu i tło wiersza nie mają akcji i się nie podkreślają.
-5. Identyfikatory to `kanban-item-ref-<ref>` i `kanban-item-title-<ref>`.
-6. Menu kopiowania zostaje na slugu i na tytule. Nie otwiera się na Start, Resume, priorytecie ani tle.
+1. On the list, the slug (`WorkItem.ref`) and the title are separate columns. At rest, no text is underlined. Hover underlines the slug, the title, an enabled Start and a shown Resume. The width of these controls is the width of the text, so a click outside the text does nothing.
+2. The rows share the width of the slug column. The title is truncated.
+3. Hover highlights the whole row. The underline is only on text that has an action.
+4. A click, Enter and Space on the slug or on the title open the preview. A click on an enabled Start opens the launch confirmation. A click on a shown Resume opens the resume confirmation. A disabled Start, the priority text and the row background have no action and are not underlined.
+5. The identifiers are `kanban-item-ref-<ref>` and `kanban-item-title-<ref>`.
+6. The copy menu stays on the slug and on the title. It does not open on Start, Resume, the priority or the background.
 
-### Priorytet w podglądzie
+### Priority in the preview
 
-1. Podgląd ma listę Priority: Urgent, High, Medium, Low, None, w prawej kolumnie obok Status. Wiersz pokazuje priorytet jako tekst.
-2. Zmiana woła istniejące `kanban:updateItem` z samym `priority`. None wysyła `null`. Pominięte pole nadal nic nie zmienia.
-3. Sukces, błąd i blokada drugiej zmiany działają tak jak przy Status. Jeden zapis podglądu jest w toku naraz, więc Status i Priority nie wyprzedzają się nawzajem.
-4. `KanbanUpdatePatch.priority` przyjmuje nazwany priorytet albo `null`. `KanbanCreateInput.priority` nadal nie przyjmuje `null`.
-5. Adapter Plane traktuje obecny `null` jako `none`. Brak klucza zostawia priorytet bez zmiany.
+1. The preview has a Priority list: Urgent, High, Medium, Low, None, in the right column next to Status. The row shows the priority as text.
+2. A change calls the existing `kanban:updateItem` with only `priority`. None sends `null`. An omitted field still changes nothing.
+3. Success, error and the lock on a second change work the same as for Status. One preview save is in progress at a time, so Status and Priority do not overtake each other.
+4. `KanbanUpdatePatch.priority` accepts a named priority or `null`. `KanbanCreateInput.priority` still does not accept `null`.
+5. The Plane adapter treats a present `null` as `none`. A missing key leaves the priority unchanged.
 
-### Zaznaczanie tekstu
+### Text selection
 
-1. Ref, tytuł i opis w podglądzie da się zaznaczyć, mimo `select-none` na `body`.
-2. Prawy przycisk poza przyciskiem i listą otwiera `Copy`. Pozycja kopiuje zaznaczenie z chwili otwarcia menu. Puste zaznaczenie zostawia ją nieaktywną.
-3. Ctrl+C kopiuje bieżące zaznaczenie przeglądarki.
+1. The ref, title and description in the preview can be selected, despite `select-none` on `body`.
+2. A right click outside a button and the list opens `Copy`. The item copies the selection from the moment the menu opened. An empty selection leaves it inactive.
+3. Ctrl+C copies the current browser selection.
 
-### Kryteria akceptacji
+### Acceptance criteria
 
-1. Wiersz ma osobny slug i tytuł. Hover podświetla cały wiersz i podkreśla slug, tytuł, włączony Start i pokazany Resume. Tylko te elementy obsługują klik. Widoku Board nie ma.
-2. Priorytet zmienia się tylko w podglądzie. Lista nie ma tej kontrolki. Priority i Status są w prawej kolumnie podglądu. Ta kolumna ma jedną czwartą szerokości. Back ma obramowanie, tło panelu i ikonę, jak Back to Projects, i jest w nagłówku zaraz po napisie Kanban.
-3. None wysyła `priority: null`. Nazwany priorytet wysyła tę nazwę i nic więcej.
-4. Zaznaczony tekst podglądu da się skopiować. Puste zaznaczenie nie jest kopiowane jako sukces.
+1. The row has a separate slug and title. Hover highlights the whole row and underlines the slug, the title, an enabled Start and a shown Resume. Only these elements handle a click. There is no Board view.
+2. The priority changes only in the preview. The list does not have this control. Priority and Status are in the right column of the preview. This column is one quarter wide. Back has a border, the panel background and an icon, like Back to Projects, and is in the header right after the Kanban label.
+3. None sends `priority: null`. A named priority sends that name and nothing else.
+4. Selected preview text can be copied. An empty selection is not copied as a success.
 
 ## Kanban review Start and Resume buttons amendment (NEKODE-84)
 
-Wprowadzone w ramach zadania NEKODE-84 rozszerzenie podglądu zadania (`ItemReview`) o przyciski uruchomienia i wznowienia:
+An extension of the task preview (`ItemReview`) with launch and resume buttons, introduced in task NEKODE-84:
 
-1. Podgląd zadania (`ItemReview`) w prawej kolumnie, powyżej pól Priority i Status, zawiera kontrolki Start oraz Resume (`ItemLaunchButtons`).
-2. Start jest stale widoczny, wyłączony gdy Resume jest aktywny dla danego zadania (spójnie z wierszem listy).
-3. Resume renderuje się tylko dla zadania, dla którego zbiorcze sprawdzenie handoffów potwierdziło dostępność powiązanego pliku.
-4. Kliknięcie Start otwiera potwierdzenie uruchomienia (`onStart(item)`), kliknięcie Resume otwiera potwierdzenie wznowienia (`onResume(item)`).
-5. Styl wizualny kontrolek jest spójny z wierszem listy (`text-ink` z `hover:underline` dla aktywnych akcji).
-6. Menu kontekstowe kopiowania tekstu podglądu nie otwiera się przy kliknięciu prawym przyciskiem myszy na przyciski Start i Resume.
-7. Identyfikatory testowe kontrolek to `kanban-item-start-<ref>` i `kanban-item-resume-<ref>`.
+1. The task preview (`ItemReview`) has the Start and Resume controls (`ItemLaunchButtons`) in the right column, above the Priority and Status fields.
+2. Start is always visible, and disabled when Resume is active for the given task (consistent with the list row).
+3. Resume renders only for a task for which the batch handoff check confirmed that a linked file is available.
+4. A click on Start opens the launch confirmation (`onStart(item)`), a click on Resume opens the resume confirmation (`onResume(item)`).
+5. The visual style of the controls is consistent with the list row (`text-ink` with `hover:underline` for active actions).
+6. The context menu for copying preview text does not open on a right click on the Start and Resume buttons.
+7. The test identifiers of the controls are `kanban-item-start-<ref>` and `kanban-item-resume-<ref>`.
 
 ## Kanban task comments and completion amendment (NEKODE-85)
 
-Wprowadzone w ramach zadania NEKODE-85 rozszerzenie podglądu zadania (`ItemReview`) o sekcję komentarzy oraz dodanie obsługi komentarzy przy zamykaniu zadania:
+An extension of the task preview (`ItemReview`) with a comments section, and support for comments when closing a task, introduced in task NEKODE-85:
 
-### Cel i zakres
+### Goal and scope
 
-1. Podgląd zadania (`ItemReview` w `KanbanBoard.tsx`) w lewej kolumnie pod opisem (`Description`) wyświetla sekcję `Comments`.
-2. Przy braku komentarzy sekcja pokazuje tekst `No comments.` (analogicznie do `No description.`).
-3. Przy obecności komentarzy wyświetlana jest lista, gdzie każdy komentarz zawiera:
-   - autora (display name, email lub identyfikator użytkownika z mapy członków projektu),
-   - znacznik czasu utworzenia (czytelnie sformatowany),
-   - treść komentarza (bezpieczny tekst przekonwertowany z HTML przez parser adaptera).
-4. Pobieranie komentarzy:
-   - Komentarze są pobierane leniwie (na żądanie) po otwarciu podglądu zadania (`ItemReview`) przez nową akcję adaptera `listComments` z parametrem `{ ref }` i kanał IPC `kanban:getComments(projectId, ref)` zwracający `KanbanComment[]`.
-   - Zapobiega to lawinowym zapytaniom HTTP (N+1) podczas ładowania całej tablicy (`listBoard`).
-5. Typy kontraktu IPC (`src/shared/ipc-contract.ts`):
+1. The task preview (`ItemReview` in `KanbanBoard.tsx`) shows a `Comments` section in the left column under the description (`Description`).
+2. Without comments, the section shows the text `No comments.` (like `No description.`).
+3. With comments, a list is shown where each comment has:
+   - the author (display name, email or user identifier from the project member map),
+   - the creation timestamp (formatted for reading),
+   - the comment text (safe text converted from HTML by the adapter's parser).
+4. Fetching comments:
+   - Comments are fetched lazily (on demand) after the task preview (`ItemReview`) opens, through a new adapter action `listComments` with the `{ ref }` parameter and the IPC channel `kanban:getComments(projectId, ref)`, which returns `KanbanComment[]`.
+   - This prevents a flood of HTTP requests (N+1) while the whole board loads (`listBoard`).
+5. IPC contract types (`src/shared/ipc-contract.ts`):
    - `KanbanComment`: `{ id: string; author: string | null; text: string; createdAt: string | null }`.
-   - Nowy kanał w `IPC_CHANNEL`: `kanbanGetComments: 'kanban:getComments'`.
-   - Metoda w `AppApi`: `kanbanGetComments(projectId: string, ref: string): Promise<KanbanComment[]>`.
-6. Adapter Plane (`adapters/plane/plane_adapter.py`):
-   - Nowa akcja `listComments(cfg, params)`: odpytuje endpoint Plane `/workspaces/{ws}/projects/{project_id}/work-items/{uuid}/comments/`, mapuje autora przez `member_map(cfg)`, konwertuje `comment_html` na czytelny tekst przez `_DescriptionParser`, i zwraca tablicę obiektów `{ id, author, text, createdAt }`.
-7. Narzędzia Harnessu (`.agents/skills/kanban/` oraz `.agents/skills/task-close/`):
-   - W `kanban_cli.py`: nowa podkomenda `comment <ref> <text>` (dodaje komentarz przez POST `/workspaces/{ws}/projects/{pid}/work-items/{uuid}/comments/` z `comment_html`).
-   - W `kanban` skill (`.agents/skills/kanban/SKILL.md`): udokumentowanie użycia `comment <ref> <text>`.
-   - W procedurze zamykania zadania (`task-close` skill w `.agents/skills/task-close/SKILL.md`): dodanie kroku, w którym dla zadań powiązanych z Kanbanem (zidentyfikowanych przez ref w nazwie zadania) agent przed zamknięciem publikuje komentarz podsumowujący najważniejsze zrealizowane zmiany (np. dodane/zmodyfikowane pliki, kluczowe punkty realizacji).
+   - A new channel in `IPC_CHANNEL`: `kanbanGetComments: 'kanban:getComments'`.
+   - A method in `AppApi`: `kanbanGetComments(projectId: string, ref: string): Promise<KanbanComment[]>`.
+6. The Plane adapter (`adapters/plane/plane_adapter.py`):
+   - A new action `listComments(cfg, params)`: queries the Plane endpoint `/workspaces/{ws}/projects/{project_id}/work-items/{uuid}/comments/`, maps the author through `member_map(cfg)`, converts `comment_html` to readable text through `_DescriptionParser`, and returns an array of `{ id, author, text, createdAt }` objects.
+7. Harness tools (`.agents/skills/kanban/` and `.agents/skills/task-close/`):
+   - In `kanban_cli.py`: a new subcommand `comment <ref> <text>` (adds a comment through POST `/workspaces/{ws}/projects/{pid}/work-items/{uuid}/comments/` with `comment_html`).
+   - In the `kanban` skill (`.agents/skills/kanban/SKILL.md`): documents the use of `comment <ref> <text>`.
+   - In the task closing procedure (the `task-close` skill in `.agents/skills/task-close/SKILL.md`): a step is added in which, for tasks linked to Kanban (identified by the ref in the task name), the agent posts a comment that summarizes the main delivered changes (for example added/modified files, key delivery points) before closing.
 
-### Kryteria akceptacji
+### Acceptance criteria
 
-1. `kanban:getComments` weryfikuje poprawność `projectId` i `ref`.
-2. Akcja `listComments` adaptera Plane poprawnie odczytuje komentarze danego zadania i zwraca znormalizowane obiekty `KanbanComment`.
-3. `ItemReview` w NeKode pobiera i wyświetla komentarze zadania; stan pusty pokazuje `No comments.`.
-4. `kanban_cli.py comment <ref> <text>` dodaje komentarz do zadania w Plane i potwierdza utworzenie.
-5. `task-close` skill instruuje agenta o dodaniu komentarza podsumowującego do zadania Kanban po przejściu weryfikacji.
+1. `kanban:getComments` validates `projectId` and `ref`.
+2. The Plane adapter's `listComments` action correctly reads the comments of the given task and returns normalized `KanbanComment` objects.
+3. `ItemReview` in NeKode fetches and shows the task comments; the empty state shows `No comments.`.
+4. `kanban_cli.py comment <ref> <text>` adds a comment to the task in Plane and confirms the creation.
+5. The `task-close` skill tells the agent to add a summary comment to the Kanban task after verification passes.

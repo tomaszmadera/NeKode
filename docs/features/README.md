@@ -34,9 +34,9 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [center-layout-tabs-actions](center-layout-tabs-actions/spec.md) | Center Layout: Tab Strip, Action Row, and Status Bar | Delivered |
 | [chat-attention-badge](chat-attention-badge/spec.md) | Chat attention badge | Delivered |
 | [chat-terminal-activity](chat-terminal-activity/spec.md) | Chat terminal activity | Delivered |
-| [ci-pipeline](ci-pipeline/spec.md) | CI: automatyczna weryfikacja na GitHub Actions | Delivered |
+| [ci-pipeline](ci-pipeline/spec.md) | CI: automatic verification on GitHub Actions | Delivered |
 | [dictation-provider-architecture](dictation-provider-architecture/spec.md) | Dictation provider architecture | Not delivered (parent contract); the OpenWhispr specialization ships desktop V1 |
-| [global-agent-profiles](global-agent-profiles/spec.md) | Globalne profile agentów i opt-in w projektach | Delivered |
+| [global-agent-profiles](global-agent-profiles/spec.md) | Global agent profiles and project opt-in | Delivered |
 | [handoff-resume-flow](handoff-resume-flow/spec.md) | Handoff/Resume flow | Delivered |
 | [kanban-adapter-interface](kanban-adapter-interface/spec.md) | Kanban adapter interface | Delivered (adapter-backed board); drag-and-drop and the UX-UI 26-30 visual design remain later work |
 | [markdown-mermaid-diagrams](markdown-mermaid-diagrams/spec.md) | Markdown preview: Mermaid diagrams | Delivered |

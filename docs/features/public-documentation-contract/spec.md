@@ -15,7 +15,7 @@ The project's local agent harness and `AGENTS.md` remain local and unchanged. Pu
 
 - User decision 2026-10-07: retain the ignored local harness and `AGENTS.md`; explain the choice in README; make all project requirements discoverable in public documentation.
 - User-approved scope 2026-10-07: README, CONTRIBUTING, a public project contract, architecture and verification guidance, an independent release procedure, and repaired source hierarchy and references.
-- Work item: NEKODE-27, Publiczny kontrakt projektu i dokumentacja niezależna od harnessu.
+- Work item: NEKODE-27, Public project contract and documentation independent of the harness (title translated from Polish).
 - [Product requirements](../../product/requirements.md).
 - [Architecture](../../architecture/sdd.md).
 - [UX/UI contract](../../UX-UI.md).

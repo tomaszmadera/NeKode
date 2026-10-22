@@ -11,9 +11,9 @@ Let the user start a chat with a configured agent directly from the left panel: 
 
 ## Related requirements
 
-- NEKODE-42 (Plane work item `354e0221-94dd-4ff9-a692-4cda6eb3e1dd`): "W lewym panelu dodać menu kontekstowe na prawy klawisz myszy na 'New chat'. Ma być lista profili agentów. Po wybraniu profilu, wystartuje nowy czat z załadowanym agentem."
+- NEKODE-42 (Plane work item `354e0221-94dd-4ff9-a692-4cda6eb3e1dd`): "In the left panel, add a right-click context menu on 'New chat'. It should list the agent profiles. After a profile is chosen, a new chat starts with the agent loaded." (translated from Polish)
 - NEKODE-78 (Plane work item `f7589e3c-daeb-47a2-af5f-552a78ff4d40`): explicit interactive arguments for profiles whose task prompt is an option value, including Hermes and AntiGravity (AGY).
-- [Global agent profiles](../global-agent-profiles/spec.md): accepted user decision 2026-10-14, replacing per-project definitions with a global library and explicit project opt-in. It owns configuration and migration, and that library is in the application. [Kanban task launch amendment](../kanban-adapter-interface/spec.md#profile-agentów) owns the task prompt contract.
+- [Global agent profiles](../global-agent-profiles/spec.md): accepted user decision 2026-10-14, replacing per-project definitions with a global library and explicit project opt-in. It owns configuration and migration, and that library is in the application. [Kanban task launch amendment](../kanban-adapter-interface/spec.md#agent-profiles) owns the task prompt contract.
 - [mvp-core-shell](../mvp-core-shell/spec.md) and [project-shell-selection](../project-shell-selection/spec.md): chat naming `[shell] profile name`.
 - `docs/UX-UI.md` §22-25 (console agent model, agent selection; the future selector surface stays out of scope here).
 
@@ -64,7 +64,7 @@ Let the user start a chat with a configured agent directly from the left panel: 
 
 - `AgentProfile` and `AgentProfilePut` support optional `interactiveArgs: string[]`. Absence retains the existing prompt-removal behavior; `[]` explicitly starts the executable without arguments. The field is the entire interactive argv, not a suffix appended to `args`.
 - The executable is shared by task and interactive launches. For a Node-based CLI, interactive arguments must include its script path and any other required startup arguments.
-- Profile configuration, validation, copying, and persistence follow [global agent profiles](../global-agent-profiles/spec.md#argumenty-interaktywne-nekode-78). Saving a profile never starts its CLI.
+- Profile configuration, validation, copying, and persistence follow [global agent profiles](../global-agent-profiles/spec.md#interactive-arguments-nekode-78). Saving a profile never starts its CLI.
 - Profiles with prompt flags require explicit configuration: task `args: ['-q', '{prompt}']` with `interactiveArgs: []` launches Hermes without `-q`; task `args: ['-i', '{prompt}', '--model', 'configured-model']` with `interactiveArgs: ['--model', 'configured-model']` launches AGY without `-i`. These illustrate argv selection using the task's reported CLI forms, not new bundled templates or a guarantee about installed CLI versions.
 - Existing profiles receive no automatic rewrite or inferred arguments. Codex and Grok profiles without `interactiveArgs` keep their existing positional-prompt behavior. Kanban Start/Resume always uses `args` with its task prompt substituted, even when `interactiveArgs` is present.
 
