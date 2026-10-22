@@ -9,7 +9,7 @@ An agent-first desktop workspace for Windows 11 (Linux: experimental). CLI codin
 | Markdown preview | Kanban | Usage panel |
 | --- | --- | --- |
 | ![A README.md open in a file tab as a rendered Markdown preview with a diagram and a table, with the project file tree in the left panel](docs/images/nekode-file-tree-markdown.png) | ![Kanban list of work items grouped by status: Backlog, Todo, In Progress, In Review, and Done](docs/images/nekode-kanban.png) | ![Usage panel open over the main window, with 5-hour, 7-day, and monthly quota bars for two subscriptions and a balance for a model router](docs/images/nekode-usage-quota-panel.png) |
-| Markdown opens in a file tab; the project file tree replaces the chat list in the left panel. | Needs the [Plane adapter](adapters/plane/README.md), installed separately. | Quota and balance for the configured usage sources. |
+| Markdown opens in a file tab; the project file tree replaces the chat list in the left panel. | Needs a Kanban adapter, such as the [Plane adapter](adapters/plane/README.md), installed separately. | Quota and balance for the configured usage sources. |
 
 <details>
 <summary>More screenshots</summary>
