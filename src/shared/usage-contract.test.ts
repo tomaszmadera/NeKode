@@ -95,25 +95,35 @@ describe('normalized usage observations', () => {
       usagePercent(windowMetric({ kind: 'credits', used: 12, limit: 0, unit: 'characters' })),
     ).toBeNull()
   })
-  it('uses elapsed intervals for seven daily slices and no stale pace advice', () => {
+  it('uses elapsed intervals for seven daily slices and pace advice for any open window', () => {
     const m = windowMetric({ usedPercent: 10 })
     const slices = usageSlices(m, NOW)
     if (!slices) throw new Error('Expected weekly slices')
     expect(slices.shares).toHaveLength(7)
     expect(slices.current).toBe(2)
     expect(slices.pace).toBe('↑ 19pp')
-    expect(usageSlices({ ...m, observedAt: null }, NOW)?.pace).toBeNull()
-    expect(usageSlices({ ...m, observedAt: '2026-10-20T10:00:00Z' }, NOW)?.pace).toBeNull()
+    // Age-unknown (Claude) and stale observations still get pace advice.
+    expect(usageSlices({ ...m, observedAt: null }, NOW)?.pace).toBe('↑ 19pp')
+    expect(usageSlices({ ...m, observedAt: '2026-10-20T10:00:00Z' }, NOW)?.pace).toBe('↑ 19pp')
+    expect(usageSlices({ ...m, usedPercent: 50 }, NOW)?.pace).toBe('Ahead of pace')
+    // Expired or closed windows get none.
+    expect(usageSlices({ ...m, state: 'expired' }, NOW)?.pace).toBeNull()
+    expect(usageSlices(m, Date.parse('2026-10-25T12:00:00Z'))?.pace).toBeNull()
     expect(usageSlices({ ...m, periodStart: null }, NOW)).toBeNull()
   })
-  it('splits actual 31 day monthly intervals with a shorter final slice', () => {
+  it('splits actual monthly intervals into four equal quarters', () => {
     const slices = usageSlices(
-      windowMetric({ periodStart: '2026-10-01T00:00:00Z', resetsAt: '2026-11-01T00:00:00Z' }),
+      windowMetric({
+        usedPercent: 10,
+        periodStart: '2026-10-01T00:00:00Z',
+        resetsAt: '2026-11-01T00:00:00Z',
+      }),
       NOW,
     )
     if (!slices) throw new Error('Expected monthly slices')
-    expect(slices.shares).toHaveLength(5)
-    expect(slices.shares[4]).toBeCloseTo((3 / 31) * 100)
-    expect(slices.shares.reduce((a, b) => a + b, 0)).toBeCloseTo(100)
+    expect(slices.shares).toEqual([25, 25, 25, 25])
+    // 19.5 of 31 days elapsed: the third quarter, 40pp behind its lower share.
+    expect(slices.current).toBe(2)
+    expect(slices.pace).toBe('↑ 40pp')
   })
 })

@@ -57,7 +57,13 @@ export function UsageGraphic({
   const slices = usageSlices(metric, now)
   let offset = 0
   return (
-    <span className="usage-graphic" aria-hidden="true">
+    <span
+      className="usage-graphic"
+      aria-hidden="true"
+      style={
+        slices ? ({ '--usage-slices': slices.shares.length } as React.CSSProperties) : undefined
+      }
+    >
       {slices ? (
         slices.shares.map((share, index) => {
           const fill = Math.max(0, Math.min(1, (percent - offset) / share)) * 100
@@ -66,7 +72,6 @@ export function UsageGraphic({
             <span
               key={offset}
               className={`usage-slice ${index === slices.current ? 'usage-current' : ''} ${slices.pace?.startsWith('↑') && index < slices.current ? 'usage-unused' : ''} ${slices.pace === 'Ahead of pace' && index > slices.current ? 'usage-ahead' : ''}`}
-              style={{ flexGrow: share }}
             >
               <span style={{ width: `${fill}%` }} />
             </span>
@@ -329,7 +334,9 @@ export function UsageToolbar({
                           <strong className={metric.kind === 'balance' ? 'usage-balance' : ''}>
                             {value(metric)}
                           </strong>
-                          <span className="usage-hint">
+                          <span
+                            className={`usage-hint ${slices?.pace?.startsWith('↑') ? 'usage-behind' : ''}`}
+                          >
                             {slices?.pace?.startsWith('↑') ? slices.pace : reset(metric, now)}
                           </span>
                           <span className="usage-row-status">

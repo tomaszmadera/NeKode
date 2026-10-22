@@ -390,23 +390,21 @@ export function usageSlices(
     duration = end - start
   const day = 86_400_000
   if (duration !== 7 * day && (duration < 28 * day || duration > 31 * day)) return null
-  const step = duration === 7 * day ? day : 7 * day
-  const shares: number[] = []
-  for (let remaining = duration; remaining > 0; remaining -= step)
-    shares.push((Math.min(step, remaining) / duration) * 100)
-  if (shares.length > 60) return null
+  // A week has seven daily slices and a monthly cycle four equal quarters, so every
+  // slice of one graphic has the same width.
+  const count = duration === 7 * day ? 7 : 4
+  const share = 100 / count
+  const shares = Array.from({ length: count }, () => share)
   const elapsed = Math.max(0, Math.min(duration - 1, now - start))
-  const current = Math.min(shares.length - 1, Math.floor(elapsed / step))
-  const lower = shares.slice(0, current).reduce((a, b) => a + b, 0),
-    upper = lower + shares[current]
+  const current = Math.min(count - 1, Math.floor((elapsed * count) / duration))
+  const lower = current * share,
+    upper = lower + share
   const percent = usagePercent(metric)
-  const fresh =
-    metric.observedAt &&
-    now - Date.parse(metric.observedAt) <= 3_600_000 &&
-    now < end &&
-    metric.state === 'available'
+  // Usage within a window never decreases, so any observation of an open window
+  // supports pace advice, whatever its age (user decision 2026-10-22).
+  const open = now < end && metric.state === 'available'
   const pace =
-    fresh && percent !== null
+    open && percent !== null
       ? percent < lower
         ? `↑ ${Math.round(lower - percent)}pp`
         : percent > upper

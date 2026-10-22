@@ -5,6 +5,7 @@
   --usage-track: var(--color-usage-track);
   --usage-fill: var(--color-usage-fill);
   --usage-current: var(--color-usage-current);
+  --usage-behind: var(--color-usage-behind);
   --usage-pin: var(--color-usage-pin);
   font-family: var(--font-mono, monospace);
   font-size: 12px;
@@ -161,8 +162,9 @@
   border: 1px solid var(--color-usage-stale);
 }
 .usage-graphic {
+  --usage-gap: 2px;
   display: flex;
-  gap: 2px;
+  gap: var(--usage-gap);
   height: 12px;
   min-width: 0;
 }
@@ -184,17 +186,31 @@
   display: block;
   background: var(--usage-fill);
 }
+/* Whole-pixel slices: equal widths and exact gaps; the spare pixels stay at the end. */
+.usage-slice {
+  flex: none;
+  width: round(
+    down,
+    calc((100% - (var(--usage-slices) - 1) * var(--usage-gap)) / var(--usage-slices)),
+    1px
+  );
+}
 .usage-bar {
   width: 100%;
   height: 6px;
   align-self: center;
 }
-.usage-current {
-  outline: 1px solid var(--usage-current);
-  outline-offset: 1px;
+/* Drawn inside the slice, so the marker never covers the gap to a neighbour. */
+.usage-current::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--usage-current);
+  border-radius: inherit;
+  pointer-events: none;
 }
 .usage-unused {
-  background: rgba(245, 158, 11, 0.45);
+  background: var(--usage-behind);
 }
 .usage-ahead > span {
   background: repeating-linear-gradient(
@@ -216,6 +232,10 @@
   color: var(--color-ink-secondary, #a3a9bd);
   text-align: right;
   white-space: nowrap;
+}
+.usage-hint.usage-behind {
+  color: var(--usage-behind);
+  font-weight: 700;
 }
 .usage-row-status {
   position: absolute;
