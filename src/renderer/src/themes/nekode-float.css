@@ -178,6 +178,18 @@
   filter: drop-shadow(0 0 3px rgba(255, 122, 217, 0.6));
 }
 
+[data-theme="nekode-float"] .nk-app-settings svg {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border-radius: 8px;
+  border: 1px solid #2a2f4a;
+  background: linear-gradient(180deg, #1f2442, #181d34);
+  color: #b9a6ff;
+  flex: none;
+}
+
 /* Fixed agent action buttons with prototype glowing accents */
 [data-theme="nekode-float"] [data-fixed-action="handoff"]:not(:disabled) svg {
   color: #b9a6ff;
@@ -442,18 +454,6 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-}
-
-[data-theme="nekode-float"] .nk-app-settings svg {
-  box-sizing: border-box;
-  width: 28px;
-  height: 28px;
-  padding: 5px;
-  border-radius: 8px;
-  border: 1px solid #2a2f4a;
-  background: linear-gradient(180deg, #1f2442, #181d34);
-  color: #b9a6ff;
-  flex: none;
 }
 
 /* Project row action buttons: New chat and File tree */

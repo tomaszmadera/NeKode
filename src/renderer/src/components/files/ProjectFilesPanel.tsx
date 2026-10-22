@@ -76,20 +76,22 @@ export function ProjectFilesPanel({
         }
       }}
     >
-      {/* Header: back button, project avatar and name in active style, refresh button */}
+      {/* Back row: one full-width labelled button (NEKODE-103) */}
       <div className="flex h-control shrink-0 items-center px-2 py-1.5">
         <button
           type="button"
           ref={backButtonRef}
-          className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-transparent text-ink-muted hover:bg-[#232C41] hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="flex h-full w-full items-center justify-center gap-1.5 rounded-md border border-edge bg-panel text-sm text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           data-testid={TEST_ID.filesBackButton}
           aria-label="Back to projects"
-          title="Back to Projects"
           onClick={onBack}
         >
-          <Icon.back size={12} aria-hidden />
-          <span className="sr-only">Back to Projects</span>
+          <Icon.back size={14} aria-hidden />
+          <span>Back to Projects</span>
         </button>
+      </div>
+      {/* Project row: avatar and name in active style, refresh button */}
+      <div className="flex h-control shrink-0 items-center px-3 py-1.5">
         {showProjectIcons ? (
           <span
             aria-hidden="true"
