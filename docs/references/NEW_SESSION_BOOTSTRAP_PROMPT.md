@@ -1,62 +1,62 @@
 # New session bootstrap prompt
 
-Status: historyczny prompt z etapu koncepcji. Nie jest instrukcją wznowienia bieżącej pracy ani nadrzędnym kontraktem produktu. Zawarte niżej twierdzenia o źródłach prawdy i stanie projektu opisują tamten kontekst; bieżące zasady określa [publiczny kontrakt](../development/project-contract.md), a architekturę plik [sdd.md](../architecture/sdd.md).
+Status: a historical prompt from the concept stage. It is not an instruction for resuming the current work and not an overriding product contract. The claims below about sources of truth and the project state describe that context; the current rules are set by the [public contract](../development/project-contract.md), and the architecture by the [sdd.md](../architecture/sdd.md) file.
 
-Wklej poniższy prompt na początku nowej sesji, a następnie — jeśli chcesz — od razu wklej `SDD.md`, `UX-UI.md` albo inne przygotowane dokumenty.
+Paste the prompt below at the start of a new session, and then, if you want, paste `SDD.md`, `UX-UI.md` or other prepared documents right away.
 
 ---
 
 ## Prompt
 
-Pracujemy nad projektem desktopowej aplikacji do **agentic coding** na Windows 11.
+We are working on a desktop app for **agentic coding** on Windows 11.
 
-Chcę kontynuować projekt od istniejącej koncepcji, a nie projektować go od zera.
+I want to continue the project from the existing concept, not design it from scratch.
 
-### Krótki opis produktu
+### Short product description
 
-Budujemy **agent-first coding workspace** inspirowany kierunkiem UX ZCode, ale jako własny, niezależny produkt.
+We are building an **agent-first coding workspace** inspired by the UX direction of ZCode, but as our own independent product.
 
-Aplikacja ma służyć do:
+The app is meant for:
 
-- zarządzania projektami programistycznymi,
-- zarządzania taskami,
-- uruchamiania coding agentów przez terminal,
-- przełączania się pomiędzy aktywnymi zadaniami,
-- wznawiania pracy z Handoffów,
-- przeglądania plików projektu,
-- obserwowania Git branch / worktree status / runtime,
-- uruchamiania konfigurowalnych akcji projektu,
-- oraz docelowo zarządzania pracą głównie przez Kanban.
+- managing software projects,
+- managing tasks,
+- running coding agents through the terminal,
+- switching between active tasks,
+- resuming work from Handoffs,
+- browsing project files,
+- watching Git branch / worktree status / runtime,
+- running configurable project actions,
+- and eventually managing work mainly through Kanban.
 
-MVP jest **terminal-first** i nie wymaga ACP.
+The MVP is **terminal-first** and does not need ACP.
 
-Agent w MVP jest zwykłą aplikacją konsolową, np.:
+In the MVP, an agent is a regular console app, for example:
 
 - Codex,
 - Claude Code,
 - OpenCode,
 - agy,
 - Gemini CLI,
-- dowolny inny skonfigurowany agent CLI.
+- any other configured CLI agent.
 
-Użytkownik ma:
+The user has:
 
-- globalnego Default Console Agent,
-- opcjonalnego agenta domyślnego dla projektu,
-- opcjonalnego agenta przypisanego do Taska,
-- możliwość jednorazowego wyboru innego agenta.
+- a global Default Console Agent,
+- an optional default agent for the project,
+- an optional agent assigned to the Task,
+- the option to choose a different agent once.
 
 ---
 
-## Główna koncepcja domenowa
+## Main domain concept
 
-Centralnym obiektem jest:
+The central object is:
 
 ```text
 Task
 ```
 
-Task może mieć:
+A Task can have:
 
 ```text
 Project
@@ -70,9 +70,9 @@ Kanban state
 Progress checkpoints
 ```
 
-Kanban card i Task w drzewku projektu reprezentują **ten sam obiekt**.
+A Kanban card and a Task in the project tree represent **the same object**.
 
-Docelowy model:
+Target model:
 
 ```text
 Project
@@ -90,9 +90,9 @@ Project
 
 ---
 
-## Główna struktura UI
+## Main UI structure
 
-Aplikacja ma pięć głównych obszarów:
+The app has five main areas:
 
 ```text
 TOP
@@ -100,7 +100,7 @@ Project Action Bar
 
 LEFT
 Projects → Tasks
-lub kontekstowo Project File Tree
+or, in context, Project File Tree
 
 CENTER HEADER
 Project / Workspace context:
@@ -122,56 +122,56 @@ Ctrl + `
 
 RIGHT
 Secondary tools
-domyślnie ukryte
-np. Browser / second Terminal
+hidden by default
+for example Browser / second Terminal
 ```
 
 ---
 
-## Istotne decyzje UX
+## Key UX decisions
 
-UI całej aplikacji jest po angielsku.
+The UI of the whole app is in English.
 
-Styl:
+Style:
 
 - dark-first,
-- minimalistyczny,
-- spokojny,
-- premium developer tool,
-- zwarty,
-- inspirowany ZCode,
-- ale nie będący kopią VS Code.
+- minimalist,
+- calm,
+- a premium developer tool,
+- compact,
+- inspired by ZCode,
+- but not a copy of VS Code.
 
-Animacje mają być:
+Animations should be:
 
-- subtelne,
-- krótkie,
-- satysfakcjonujące,
-- pomocne w orientacji przestrzennej,
-- nigdy rozpraszające.
+- subtle,
+- short,
+- satisfying,
+- helpful for spatial orientation,
+- never distracting.
 
-Szczególnie ważne są animowane przejścia:
+Animated transitions are especially important:
 
 - Projects/Tasks → File Tree,
 - Project → Task,
 - Files ↔ Kanban,
-- otwieranie bottom terminala,
-- otwieranie right panelu,
-- Resume z Handoffu.
+- opening the bottom terminal,
+- opening the right panel,
+- Resume from a Handoff.
 
 ---
 
 ## Kanban
 
-Kanban ma być jednym z głównych elementów produktu.
+Kanban should be one of the main parts of the product.
 
-Na poziomie projektu:
+At the project level:
 
 ```text
 Files | Kanban
 ```
 
-Podstawowe kolumny:
+Basic columns:
 
 ```text
 Backlog
@@ -180,83 +180,83 @@ In Progress
 Done
 ```
 
-Docelowo prawdopodobnie także:
+Probably also, eventually:
 
 ```text
 Review
 ```
 
-Karta Taska może mieć akcję:
+A Task card can have the action:
 
 ```text
 Implement
 ```
 
-dla nowego zadania,
+for a new task,
 
-oraz:
+and:
 
 ```text
 Resume
 ```
 
-dla zadania aktywnego lub posiadającego Handoff.
+for a task that is active or has a Handoff.
 
-Kliknięcie `Implement` powinno uruchomić Task z domyślnym agentem, chyba że użytkownik wybierze innego.
+Clicking `Implement` should start the Task with the default agent, unless the user chooses another one.
 
 ---
 
 ## Handoffs
 
-Handoff jest zasobem Taska.
+A Handoff is a resource of a Task.
 
-Ma pozwalać wznowić pracę jednym kliknięciem.
+It should let you resume work with one click.
 
-Kliknięcie:
+Clicking:
 
 ```text
 Resume
 ```
 
-powinno automatycznie:
+should automatically:
 
-1. wybrać właściwy Project,
-2. wybrać właściwy Task,
-3. otworzyć / przywrócić Workspace,
-4. otworzyć lub utworzyć Terminal,
-5. dobrać właściwego Console Agenta,
-6. uruchomić go, jeśli potrzeba,
-7. przekazać mu kontekst Handoffu,
-8. kontynuować pracę.
+1. select the right Project,
+2. select the right Task,
+3. open / restore the Workspace,
+4. open or create a Terminal,
+5. pick the right Console Agent,
+6. start it, if needed,
+7. pass it the Handoff context,
+8. continue the work.
 
-MVP nie może zakładać ACP.
+The MVP must not assume ACP.
 
-Handoff może być przekazany agentowi np. jako:
+A Handoff can be passed to the agent, for example, as:
 
-- przygotowany prompt,
-- plik tymczasowy,
-- argument CLI,
-- tekst wklejony do terminala.
+- a prepared prompt,
+- a temporary file,
+- a CLI argument,
+- text pasted into the terminal.
 
 ---
 
 ## Task Progress / Checkpoints
 
-Task może mieć wizualny progress z checkpointami, np.:
+A Task can have a visual progress with checkpoints, for example:
 
 ```text
 Plan → Inspect → Implement → Test → Review
 ```
 
-To nie jest zwykły procentowy progress bar.
+This is not a regular percentage progress bar.
 
-Ma odpowiadać na:
+It should answer:
 
-- co już zrobiono,
-- gdzie jesteśmy,
-- co zostało.
+- what has been done,
+- where we are,
+- what is left.
 
-Checkpointy mogą mieć status:
+Checkpoints can have the status:
 
 ```text
 pending
@@ -267,24 +267,24 @@ blocked
 skipped
 ```
 
-Progress powinien działać również przy pracy nieliniowej.
+Progress should also work for non-linear work.
 
-Handoff zachowuje stan checkpointów.
+A Handoff keeps the checkpoint state.
 
 ---
 
-# Przygotowane dokumenty
+# Prepared documents
 
-Mamy już przygotowane następujące dokumenty.
+We already have the following documents.
 
 ## 1. `SDD.md`
 
 Software Design Document.
 
-Zawiera między innymi:
+It contains, among other things:
 
-- architekturę Electron + React + TypeScript,
-- model Project / Task / Workspace / TerminalSession,
+- the Electron + React + TypeScript architecture,
+- the Project / Task / Workspace / TerminalSession model,
 - SQLite persistence,
 - `node-pty`,
 - GitService,
@@ -293,25 +293,25 @@ Zawiera między innymi:
 - IPC,
 - file browsing,
 - read-only Monaco,
-- MVP scope,
+- the MVP scope,
 - acceptance criteria,
-- rozdział MVP vs post-MVP,
-- kierunek przyszłych worktrees i agent integrations.
+- the MVP vs post-MVP split,
+- the direction of future worktrees and agent integrations.
 
-Jeśli wkleję `SDD.md` w tej sesji:
+If I paste `SDD.md` in this session:
 
-**traktuj go jako aktualne źródło prawdy dla architektury technicznej**, chyba że później jawnie uzgodnimy zmianę.
+**treat it as the current source of truth for the technical architecture**, unless we explicitly agree on a change later.
 
 ---
 
 ## 2. `UX-UI.md`
 
-Pełna specyfikacja UX/UI.
+The full UX/UI specification.
 
-Zawiera między innymi:
+It contains, among other things:
 
-- układ aplikacji,
-- wszystkie główne powierzchnie,
+- the app layout,
+- all main surfaces,
 - Project/Task navigation,
 - File Tree,
 - Kanban,
@@ -329,26 +329,26 @@ Zawiera między innymi:
 - accessibility,
 - English-only UI.
 
-Jeśli wkleję `UX-UI.md`:
+If I paste `UX-UI.md`:
 
-**traktuj go jako aktualne źródło prawdy dla UX/UI**, chyba że później jawnie uzgodnimy zmianę.
+**treat it as the current source of truth for UX/UI**, unless we explicitly agree on a change later.
 
 ---
 
 ## 3. Mockup prompt pack
 
-Istnieje zestaw promptów do generowania mockupów wszystkich istotnych widoków aplikacji.
+There is a set of prompts for generating mockups of all important views of the app.
 
-Zawiera:
+It contains:
 
-- inventory widoków,
-- master visual system,
-- prompty dla pełnych ekranów,
-- prompty dla dialogów i stanów,
-- komponenty,
-- storyboardy animacji.
+- a view inventory,
+- a master visual system,
+- prompts for full screens,
+- prompts for dialogs and states,
+- components,
+- animation storyboards.
 
-Pliki obejmują między innymi:
+The files include, among others:
 
 ```text
 00_MASTER_VISUAL_SYSTEM.md
@@ -357,56 +357,56 @@ ALL_PROMPTS.md
 README.md
 ```
 
-oraz osobne prompty widoków.
+and separate view prompts.
 
-Nie musisz ich znać, jeśli ich nie wkleję.
+You do not need to know them if I do not paste them.
 
 ---
 
 ## 4. `MAIN_HOME_VIEW_PROMPT.md`
 
-Osobny prompt do wygenerowania jednego głównego mockupu aplikacji.
+A separate prompt for generating one main mockup of the app.
 
-Ma służyć do sprawdzenia ogólnego:
+It is meant to check the overall:
 
-- feelu,
+- feel,
 - density,
 - hierarchy,
 - visual direction,
 - mood,
 
-zanim zaczniemy generować wszystkie pozostałe mockupy.
+before we start generating all the other mockups.
 
 ---
 
-# Jak pracować w tej sesji
+# How to work in this session
 
-Jeśli po tym promptcie wkleję jeden lub kilka dokumentów:
+If I paste one or more documents after this prompt:
 
-1. przeczytaj je dokładnie,
-2. nie proś mnie o ponowne podawanie informacji, które już w nich są,
-3. wykrywaj sprzeczności pomiędzy dokumentami,
-4. jeśli coś się różni, przyjmij:
-   - nowsze jawne ustalenie z rozmowy > dokument,
-   - UX-UI.md dla UX/UI,
-   - SDD.md dla architektury technicznej,
-5. nie rozszerzaj MVP bez potrzeby,
-6. nie zamieniaj projektu w klasyczne IDE,
-7. zachowuj terminal-first charakter MVP,
-8. pamiętaj, że Kanban, Handoff i Task są elementami jednego spójnego modelu,
-9. nowe propozycje oceniaj pod kątem zgodności z całą architekturą produktu.
+1. read them carefully,
+2. do not ask me again for information that is already in them,
+3. detect contradictions between the documents,
+4. if something differs, apply:
+   - a newer explicit agreement from the conversation > a document,
+   - UX-UI.md for UX/UI,
+   - SDD.md for the technical architecture,
+5. do not expand the MVP without need,
+6. do not turn the project into a classic IDE,
+7. keep the terminal-first character of the MVP,
+8. remember that Kanban, Handoff and Task are parts of one consistent model,
+9. assess new proposals for consistency with the whole product architecture.
 
-Jeżeli proponujesz zmianę architektury albo UX, wskaż:
+If you propose an architecture or UX change, state:
 
-- co zmieniasz,
-- dlaczego,
-- jakie są konsekwencje,
-- czy wymaga to aktualizacji `SDD.md`, `UX-UI.md` lub obu.
+- what you change,
+- why,
+- what the consequences are,
+- whether it needs an update of `SDD.md`, `UX-UI.md` or both.
 
 ---
 
-# Aktualny cel
+# Current goal
 
-Po wklejeniu tego promptu i dokumentów chcę móc od razu kontynuować pracę nad projektem bez ponownego rekonstruowania wcześniejszych ustaleń.
+After pasting this prompt and the documents, I want to be able to continue working on the project right away, without reconstructing earlier agreements again.
 
-Potwierdź krótko, że rozumiesz projekt i przeczytaj dostarczone dokumenty przed dalszym projektowaniem.
+Confirm briefly that you understand the project, and read the provided documents before designing further.

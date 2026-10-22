@@ -1,88 +1,88 @@
-# Usage quota: analiza źródeł danych
+# Usage quota: data source analysis
 
-Stan analizy: 2026-10-20. Zakres: NEKODE-90, rekomendacja i projekt wdrożenia do zatwierdzenia. Nie wykonano połączeń do prywatnych kont, odczytu tokenów ani zmian konfiguracji agentów.
+State of the analysis: 2026-10-20. Scope: NEKODE-90, a recommendation and an implementation design for approval. No connections to private accounts, no token reads and no changes to agent configuration were made.
 
-## Rekomendacja
+## Recommendation
 
-Panel powinien należeć do NeKode, a integracje być opcjonalnymi adapterami subskrypcji. Main zbiera znormalizowane odczyty, renderer pokazuje panel, a lokalny eksport JSON pozwala wykorzystać dane poza aplikacją. Adapter może odczytywać API dostawcy, udokumentowany interfejs CLI albo wskazany plik. Brak źródła oznacza jawną niedostępność, bez szacowania procentu z liczby tokenów.
+The panel should belong to NeKode, and the integrations should be optional subscription adapters. Main collects normalized readings, the renderer shows the panel, and a local JSON export lets the data be used outside the app. An adapter can read a provider API, a documented CLI interface or a chosen file. A missing source means explicit unavailability, without estimating a percentage from token counts.
 
-Uniwersalny jest kontrakt danych. Nie da się obiecać niezawodnego, stale aktualnego odczytu każdej subskrypcji. Zamknięcie sesji, brak uprawnień lub zmiana API muszą być widoczne jako stan źródła. Sam zapis w hooku nie potwierdza, że procent został ponownie pobrany od dostawcy.
+The data contract is universal. A reliable, always current reading of every subscription cannot be promised. A closed session, missing permissions or an API change must be visible as the source state. A write in a hook alone does not confirm that the percentage was fetched from the provider again.
 
-Nie rekomenduję dodatkowego systemu no-code jako obowiązkowej warstwy. Jeśli obecny collector Agent Harness może eksportować uzgodniony format, adapter plikowy wykorzysta jego dane bez drugiego zbierania. Format collectora nie został wskazany ani zweryfikowany; kompatybilność wymaga przykładu bez sekretów. Plan nie zmienia Agent Harness.
+I do not recommend an extra no-code system as a mandatory layer. If the current Agent Harness collector can export the agreed format, the file adapter will use its data without a second collection. The collector format was not named or verified; compatibility needs an example without secrets. The plan does not change Agent Harness.
 
-## Dostępne źródła
+## Available sources
 
-| Subskrypcja / usługa | Potwierdzone źródło | Ograniczenie i proponowana decyzja |
+| Subscription / service | Confirmed source | Limitation and proposed decision |
 |---|---|---|
-| Claude, używany przez Claude Code | Oficjalny statusLine: rate_limits.five_hour i seven_day, procent i reset | Dane po odpowiedzi API; okna mogą nie występować. Pro/Max lub odrębny spend limit bramki. Opcjonalny collector plikowy. |
-| ChatGPT / Codex | Oficjalnie opisany codex app-server, account/rateLimits/read i account/rateLimits/updated | App-server jest eksperymentalny i niewspierany dla produkcji. Jawnie eksperymentalny adapter po sprawdzeniu wersji CLI, bez tur modelu. |
-| ElevenLabs | GET /v1/user/subscription: character_count, character_limit, next_character_count_reset_unix | Wymaga uprawnień. Procent wynika z licznika i limitu; reset nie ustala początku okresu. |
-| OpenRouter | GET /api/v1/credits: total_credits, total_usage | Wymaga Management key. To saldo konta, nie procent subskrypcji ani limit klucza. Tak szeroki klucz nie powinien być wymagany domyślnie. |
-| Command Code | Oficjalny /usage pokazuje okno 5h i tygodniowe; dokumentacja opisuje też pule miesięczne | Nie potwierdzono maszynowego API odczytu subskrypcji. Pierwsze wdrożenie: import JSON. |
-| AGY z prototypu | Nazwa nie identyfikuje jednoznacznie dostawcy ani konta | Nie utożsamiać automatycznie z Antigravity. Dokumentacja Antigravity potwierdza interaktywny /usage, bez ustalenia interfejsu maszynowego do tego celu. |
-| Grok z prototypu | Dokumentacja subskrypcji opisuje pule i widoki użycia | Nie potwierdzono API odczytu tej subskrypcji. Nie zastępować jej limitami API xAI. Pierwsze wdrożenie: import JSON. |
+| Claude, used by Claude Code | The official statusLine: rate_limits.five_hour and seven_day, percentage and reset | Data after an API response; the windows may be absent. Pro/Max or a separate gateway spend limit. An optional file collector. |
+| ChatGPT / Codex | The officially described codex app-server, account/rateLimits/read and account/rateLimits/updated | The app-server is experimental and not supported for production. An explicitly experimental adapter after checking the CLI version, without model turns. |
+| ElevenLabs | GET /v1/user/subscription: character_count, character_limit, next_character_count_reset_unix | Needs permissions. The percentage comes from the counter and the limit; the reset does not fix the start of the period. |
+| OpenRouter | GET /api/v1/credits: total_credits, total_usage | Needs a Management key. This is the account balance, not a subscription percentage or a key limit. Such a broad key should not be required by default. |
+| Command Code | The official /usage shows the 5h and weekly windows; the documentation also describes monthly pools | No machine API for reading the subscription was confirmed. First implementation: JSON import. |
+| AGY from the prototype | The name does not clearly identify the provider or the account | Do not automatically equate it with Antigravity. The Antigravity documentation confirms an interactive /usage, without establishing a machine interface for this purpose. |
+| Grok from the prototype | The subscription documentation describes pools and usage views | No API for reading this subscription was confirmed. Do not replace it with the xAI API limits. First implementation: JSON import. |
 
-Źródła pierwotne odczytane 2026-10-20:
+Primary sources read on 2026-10-20:
 
-- [Claude Code: status line](https://code.claude.com/docs/en/statusline): pola, warunkowa obecność, wyzwalanie i refreshInterval. Timer uruchamia skrypt; dokumentacja nie gwarantuje nowego odczytu limitów z serwera przy każdym uruchomieniu. Bez działającej sesji collector status line nie działa.
-- [OpenAI: Codex App Server](https://learn.chatgpt.com/docs/app-server): handshake initialize / initialized, stdio JSONL, metody konta, rateLimitsByLimitId, usedPercent, windowDurationMins, resetsAt oraz eksperymentalny status app-server. Długości okien należy czytać z odpowiedzi, bez stałego założenia 5h/7d.
-- [ElevenLabs: get user subscription](https://elevenlabs.io/docs/api-reference/user/subscription/get): licznik, limit, okres i czas resetu.
-- [OpenRouter: get remaining credits](https://openrouter.ai/docs/api/api-reference/credits/get-remaining-credits): dane konta i wymaganie Management key. Saldo = total_credits - total_usage.
-- [Command Code: pricing limits](https://commandcode.ai/docs/resources/pricing-limits): rodzaje pul oraz interaktywny /usage.
-- [Antigravity CLI: model quotas](https://www.antigravity.google/docs/cli/commands/usage): /usage / /quota otwiera interaktywny panel i pobiera dane backendu.
-- [Grok: usage limits](https://docs.x.ai/x-subscription/usage-limits): zakres współdzielonej puli i widoki na koncie. Nie dowodzi mapowania do konkretnej subskrypcji użytkownika.
+- [Claude Code: status line](https://code.claude.com/docs/en/statusline): fields, conditional presence, triggering and refreshInterval. A timer runs the script; the documentation does not guarantee a new read of the limits from the server on every run. Without a running session, the status line collector does not work.
+- [OpenAI: Codex App Server](https://learn.chatgpt.com/docs/app-server): the initialize / initialized handshake, stdio JSONL, account methods, rateLimitsByLimitId, usedPercent, windowDurationMins, resetsAt and the experimental status of the app-server. Window lengths should be read from the response, without a fixed 5h/7d assumption.
+- [ElevenLabs: get user subscription](https://elevenlabs.io/docs/api-reference/user/subscription/get): counter, limit, period and reset time.
+- [OpenRouter: get remaining credits](https://openrouter.ai/docs/api/api-reference/credits/get-remaining-credits): account data and the Management key requirement. Balance = total_credits - total_usage.
+- [Command Code: pricing limits](https://commandcode.ai/docs/resources/pricing-limits): kinds of pools and the interactive /usage.
+- [Antigravity CLI: model quotas](https://www.antigravity.google/docs/cli/commands/usage): /usage / /quota opens an interactive panel and fetches backend data.
+- [Grok: usage limits](https://docs.x.ai/x-subscription/usage-limits): the scope of the shared pool and the views in the account. It does not prove a mapping to a specific user subscription.
 
-Nieoficjalny endpoint Claude nie jest potrzebny do podstawowego odczytu podczas pracy Claude Code. Analiza nie potwierdza jego kontraktu, uprawnień ani stabilności. Nie wchodzi do wdrożenia. Scraping strony lub terminalowego /usage również nie jest podstawą niezawodnej integracji.
+The unofficial Claude endpoint is not needed for the basic reading while Claude Code works. The analysis does not confirm its contract, permissions or stability. It is not part of the implementation. Scraping a web page or the terminal /usage is not a basis for a reliable integration either.
 
-## Dopasowanie do repozytorium
+## Fit with the repository
 
-- [Architektura, IPC boundary](../../architecture/sdd.md#ipc-boundary): main posiada filesystem, procesy i persystencję; renderer korzysta z typowanego bridge. Nowe odczyty nie wymagają uprawnień Node w rendererze.
-- [Adaptery Kanban](../kanban-adapter-interface/spec.md#behaviour), punkty 1-6, oraz src/main/services/kanban/adapter-host.ts:1: istnieje wzorzec procesów, manifestu, JSON przez stdin/stdout, limitu odpowiedzi i timeoutu. Można zastosować podobny mechanizm bez łączenia domen Kanban i quota. Nie należy z góry refaktoryzować Kanban.
-- src/main/services/kanban/kanban-service.ts:55: istnieje interfejs safeStorage. Quota może korzystać z tego mechanizmu szyfrowania, z jawnym błędem przy niedostępności zamiast zapisu jawnego.
-- src/main/services/app-state-service.ts:8: istnieje globalny magazyn app_state. Konfiguracja subskrypcji i pin nie wymagają nowej tabeli ani powiązania z projektem.
-- src/renderer/src/App.tsx:2510: istnieje pasek tytułu z marką aplikacji. To miejsce na globalny przycisk quota; klikany obszar musi mieć no-drag i omijać przyciski systemowe.
-- src/renderer/src/components/settings/AppSettings.tsx:44: globalne ustawienia mają jawną listę zakładek. Quota powinna mieć osobną zakładkę Usage, niezależną od profili agentów.
-- [Wymagania produktu](../../product/requirements.md): UI jest angielski, agenci pozostają procesami CLI. Odczyt metadanych subskrypcji nie uruchamia modeli ani nie zastępuje terminali.
+- [Architecture, IPC boundary](../../architecture/sdd.md#ipc-boundary): main owns the filesystem, processes and persistence; the renderer uses the typed bridge. New reads do not need Node permissions in the renderer.
+- [Kanban adapters](../kanban-adapter-interface/spec.md#behaviour), points 1-6, and src/main/services/kanban/adapter-host.ts:1: there is a pattern of processes, a manifest, JSON over stdin/stdout, a response limit and a timeout. A similar mechanism can be used without joining the Kanban and quota domains. Kanban should not be refactored up front.
+- src/main/services/kanban/kanban-service.ts:55: there is a safeStorage interface. Quota can use this encryption mechanism, with an explicit error when it is unavailable instead of a plain-text write.
+- src/main/services/app-state-service.ts:8: there is a global app_state store. The subscription configuration and the pin need no new table and no link to a project.
+- src/renderer/src/App.tsx:2510: there is a title bar with the app brand. This is the place for a global quota button; the clickable area must be no-drag and avoid the system buttons.
+- src/renderer/src/components/settings/AppSettings.tsx:44: the global settings have an explicit list of tabs. Quota should have a separate Usage tab, independent of the agent profiles.
+- [Product requirements](../../product/requirements.md): the UI is in English, and agents stay CLI processes. Reading subscription metadata does not run models and does not replace terminals.
 
-W początkowym wyszukaniu quota|subscription|usage w src/shared, src/main, src/renderer nie znaleziono serwisu limitów subskrypcji; subscription dotyczyło głównie subskrypcji zdarzeń terminala.
+The initial search for quota|subscription|usage in src/shared, src/main, src/renderer found no subscription limit service; "subscription" mostly referred to terminal event subscriptions.
 
-## Prototyp i prawdziwe dane
+## Prototype and real data
 
-Lokalny tmp/nekode-prototype/README.md opisuje eksport jako referencję wizualną. Main.dc.html:74 zawiera panel, :558 stałe przykładowe odczyty, a :660 wiersze, segmenty, świeżość i przypinanie. Przykładowe odczyty nie dowodzą możliwości integracji.
+The local tmp/nekode-prototype/README.md describes the export as a visual reference. Main.dc.html:74 contains the panel, :558 fixed sample readings, and :660 the rows, segments, freshness and pinning. The sample readings do not prove that an integration is possible.
 
-Kontrakt zachowuje panel 400px, kompaktowe wiersze, awatary, paski i segmenty, wskaźnik świeżości oraz przypinanie do paska. Rzeczywiste dane wymagają kilku reguł:
+The contract keeps the 400px panel, compact rows, avatars, bars and segments, the freshness indicator and pinning to the bar. Real data needs a few rules:
 
-- Subskrypcja/konto jest jednostką grupowania. Dwie sesje tego samego konta nie dodają procentów i nie tworzą dwóch subskrypcji.
-- Nie każdy dostawca ma 5h i 7d. Nieobecne okno nie oznacza 0%.
-- Świeżość ma wiek danych i pochodzenie. Ponowny odczyt pliku lub uruchomienie status line nie czyni starych danych aktualnymi. Podstawowy payload Claude nie podaje czasu obserwacji limitu, więc collector przekazuje Age unknown oraz osobno czas odbioru.
-- Tempo ma sens dla znanego początku i końca okresu. resetsAt bez czasu trwania nie wystarcza. Różnica procentów to punkty procentowe, oznaczane pp.
-- Reset, który minął, unieważnia wartość okna do nowego odczytu. Aplikacja nie wpisuje wtedy 0%.
-- Saldo dolarowe OpenRouter nie jest paskiem miesięcznego zużycia. Uprawnienia klucza muszą być wyjaśnione przed konfiguracją.
+- The subscription/account is the grouping unit. Two sessions of the same account do not add percentages and do not create two subscriptions.
+- Not every provider has 5h and 7d. A missing window does not mean 0%.
+- Freshness has a data age and an origin. Reading a file again or running the status line does not make old data current. The basic Claude payload does not give the time the limit was observed, so the collector passes Age unknown and, separately, the receive time.
+- Pace makes sense for a known start and end of the period. resetsAt without a duration is not enough. A difference of percentages is percentage points, marked pp.
+- A reset that has passed invalidates the window value until a new reading. The app does not write 0% then.
+- The OpenRouter dollar balance is not a monthly usage bar. The key's permissions must be explained before configuration.
 
-## Jedno zbieranie, wielu odbiorców
+## One collection, many consumers
 
-Proponowany przepływ:
+Proposed flow:
 
 ```text
-API / oficjalny CLI / istniejący collector
+API / official CLI / existing collector
                   |
-         opcjonalny adapter quota
+         optional quota adapter
                   |
-        walidacja + cache w main
+        validation + cache in main
              /             \
-        typowany IPC    eksport JSON (opt-in)
+        typed IPC       JSON export (opt-in)
              |               |
-      panel NeKode      lokalny konsument / sync użytkownika
+      NeKode panel      local consumer / user's sync
 ```
 
-Collector może zapisywać ten sam normalizowany format poza NeKode. Wtedy adapter plikowy tylko czyta dane; zbieranie i dotychczasowy upload pozostają u collectora. Eksport NeKode jest osobnym plikiem do odczytu przez konsumentów, z jednym właścicielem zapisu i atomową podmianą. Nie wolno wskazać eksportu jako wejścia collectora, bo powstałaby pętla odświeżania.
+A collector can write the same normalized format outside NeKode. Then the file adapter only reads the data; collection and the existing upload stay with the collector. The NeKode export is a separate file for consumers to read, with one write owner and an atomic replace. The export must not be named as the collector's input, because that would create a refresh loop.
 
-Desktopowy konsument z dostępem do filesystemu może czytać lokalny JSON bez serwera. Zwykła strona www i hostowany no-code nie mają takiego dostępu. Wymagają wybranego synchronizatora lub uwierzytelnionej usługi. Automatyczny upload, lokalny serwer HTTP i kolejna integracja chmurowa są poza planem; sam plik ich nie zastępuje. Gdy NeKode jest zamknięty, jego eksport przestaje się odświeżać. Niezależny collector może nadal odświeżać swój plik.
+A desktop consumer with filesystem access can read the local JSON without a server. A regular web page and hosted no-code do not have such access. They need a chosen synchronizer or an authenticated service. Automatic upload, a local HTTP server and another cloud integration are outside the plan; the file alone does not replace them. When NeKode is closed, its export stops refreshing. An independent collector can still refresh its own file.
 
-## Proponowana kolejność
+## Proposed order
 
-1. Panel, ustawienia subskrypcji, pin, normalizacja, adapter plikowy i eksport. Działający wynik na fixture i zewnętrznym pliku, bez kont dostawców.
-2. Collector Claude Code oraz eksperymentalny adapter Codex przez stdio. Osobny test kompatybilności wersji i uprawnień. Brak danych pozostaje jawnym stanem.
-3. Opcjonalne adaptery ElevenLabs i OpenRouter, z obsługą sekretów, ograniczeń odświeżania i błędów konta.
+1. The panel, subscription settings, pin, normalization, the file adapter and the export. A working result on a fixture and an external file, without provider accounts.
+2. The Claude Code collector and an experimental Codex adapter over stdio. A separate compatibility test of versions and permissions. Missing data stays an explicit state.
+3. Optional ElevenLabs and OpenRouter adapters, with handling of secrets, refresh limits and account errors.
 
-Bezpośrednie adaptery Command Code, AGY i Grok pozostają poza planem do potwierdzenia produktu, kontraktu i autoryzacji. Ich dane można dostarczyć przez adapter plikowy. Szczegóły są w [projekcie specyfikacji](spec.md), a wykonanie w lokalnym planie NEKODE-90. Zatwierdzenie planu nie gwarantuje stabilności eksperymentalnego interfejsu Codex ani dostępu do kont.
+Direct Command Code, AGY and Grok adapters stay outside the plan until the product, the contract and the authorization are confirmed. Their data can be delivered through the file adapter. The details are in the [specification draft](spec.md), and the execution in the local NEKODE-90 plan. Approving the plan does not guarantee the stability of the experimental Codex interface or access to the accounts.

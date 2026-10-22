@@ -41,7 +41,7 @@ git diff
 git diff --cached
 ```
 
-Inspect and separate unrelated work. Use the [verification guidance](../development/ci.md#dobór-weryfikacji) for the change; code changes require the appropriate focused checks and `pnpm run verify`, and native/packaging changes also require real Electron/package smoke. Prose-only changes need document/link/reference checks. Record commands and exits before creating a scoped change commit. A failed check blocks publication; no bypass is part of this runbook.
+Inspect and separate unrelated work. Use the [verification guidance](../development/ci.md#choosing-verification) for the change; code changes require the appropriate focused checks and `pnpm run verify`, and native/packaging changes also require real Electron/package smoke. Prose-only changes need document/link/reference checks. Record commands and exits before creating a scoped change commit. A failed check blocks publication; no bypass is part of this runbook.
 
 ## Change commit and integration
 
@@ -163,4 +163,4 @@ The `Hash` value must equal the hash on the installer line of `SHA256SUMS.txt`. 
 
 ## Local packaging
 
-On Windows, `pnpm run build:win` builds `dist/NeKode-Setup-<version>.exe`; test the installer following [setup](../development/setup.md#uruchomienie-instalatora--test-instalacji). On Linux, run `pnpm rebuild node-pty` after `pnpm install`, then `pnpm run build:linux` builds `dist/NeKode-<version>-x86_64.AppImage`. Local builds are for testing; release files come only from the release workflow.
+On Windows, `pnpm run build:win` builds `dist/NeKode-Setup-<version>.exe`; test the installer following [setup](../development/setup.md#running-the-installer--install-test). On Linux, run `pnpm rebuild node-pty` after `pnpm install`, then `pnpm run build:linux` builds `dist/NeKode-<version>-x86_64.AppImage`. Local builds are for testing; release files come only from the release workflow.

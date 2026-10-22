@@ -27,7 +27,7 @@ import { joinProjectPath } from '../project-path'
 // (a batch of loaded items). Usable files are read at most once into a snapshot,
 // then `resolveItem` matches that same snapshot against each item, so the list
 // view and the Resume modal can never resolve the same file+item+snapshot
-// differently (spec Dostępność Resume, Dane i zgodność).
+// differently (spec Resume availability, Data, authorization and compatibility).
 
 const MAX_HANDOFF_BYTES = 1024 * 1024
 
@@ -162,7 +162,7 @@ export class HandoffMatcherService {
 
   /**
    * One batch scan of the configured directory for the loaded items (spec
-   * Dostępność Resume, Dane): the directory and each qualifying file are read
+   * Resume availability, Data): the directory and each qualifying file are read
    * at most once, then the same snapshot is matched against every item.
    */
   async availability(
