@@ -1,6 +1,5 @@
 # electron-builder configuration (added 2026-09-24, stack-update-hardening).
-# Everything else uses electron-builder defaults (installer format and
-# distribution strategy unchanged). Only native-module handling is explicit:
+# Release targets and artifact names are explicit for Windows and Linux.
 #
 # npmRebuild: false - both native dependencies ship ABI-stable N-API prebuilds
 #   (better-sqlite3 13.x: prebuilds/*.node incl. win32-x64; node-pty 1.1.0:
@@ -33,10 +32,19 @@ extraResources:
 # same file is the dev window icon (BrowserWindow icon in src/main/index.ts).
 win:
   icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: NeKode-Setup-${version}.${ext}
 
 # Linux application icon (added 2026-10-20, NEKODE-13 Phase 1): 512x512 PNG
 # rasterized from the same cat-icon-tile.svg as icon.ico (cairosvg
-# svg2png, output 512x512). Only the icon is configured for Linux; targets
-# and packaging workflows stay at electron-builder defaults for now.
+# svg2png, output 512x512).
 linux:
   icon: resources/icon.png
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  artifactName: NeKode-${version}-x86_64.${ext}
