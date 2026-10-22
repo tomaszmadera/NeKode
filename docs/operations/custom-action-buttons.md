@@ -1,69 +1,69 @@
-# Przyciski akcji: uruchamianie aplikacji (start.ps1 / stop.ps1)
+# Action buttons: starting the app (start.ps1 / stop.ps1)
 
-System **Actions** jest już wbudowany w NeKode — przycisk dodaje się z poziomu UI,
-bez zmian w kodzie.
+The **Actions** system is built into NeKode. You add a button from the UI,
+without code changes.
 
-W polu Working Dir podaj własny bezwzględny katalog klonu NeKode. Polecenia poniżej używają ścieżek względnych wobec tego katalogu; zastąp znacznik katalogu przed zapisem.
+In the Working Dir field, enter the absolute path of your own NeKode clone. The commands below use paths relative to that directory; replace the directory placeholder before saving.
 
-## Jak dodać przycisk
+## How to add a button
 
-1. Otwórz panel: **ikona ustawień na pasku akcji** (nad główną powierzchnią)
-   albo **Project Settings** w lewej nawigacji → sekcja **Actions**.
-2. Kliknij **Add Action** i wypełnij pola:
+1. Open the panel: **the settings icon on the action bar** (above the main surface)
+   or **Project Settings** in the left navigation → the **Actions** section.
+2. Click **Add Action** and fill in the fields:
 
-| Pole        | Wartość                                                |
+| Field       | Value                                                  |
 | ----------- | ------------------------------------------------------ |
-| Scope       | Global (albo Project, jeśli ma być per-projekt)        |
+| Scope       | Global (or Project, if it should be per project)       |
 | Title       | `Start NeKode`                                         |
-| Icon        | `None` (paleta Lucide) albo `Custom (emoji)`, np. 🚀   |
+| Icon        | `None` (Lucide palette) or `Custom (emoji)`, for example 🚀 |
 | Command     | `powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start.ps1"` |
-| Working Dir | `<katalog-klonu-NeKode>`                                   |
+| Working Dir | `<NeKode-clone-directory>`                             |
 | Run In      | `Background`                                           |
-| Confirm     | opcjonalnie                                            |
+| Confirm     | optional                                               |
 
-3. **Save** — przycisk pojawia się na pasku akcji.
+3. **Save**: the button appears on the action bar.
 
-## Ikona przycisku
+## Button icon
 
-Pole **Icon** daje dwa tryby wyboru:
+The **Icon** field has two modes:
 
-- **Paleta Lucide** (predefiniowane, spójne z resztą UI): run, stop, preview,
+- **Lucide palette** (predefined, consistent with the rest of the UI): run, stop, preview,
   continue, retry, build, test, bug, deploy, web, terminal, database, package,
-  timer. Wybrana nazwa renderuje się jako glif Lucide przed tytułem przycisku.
-- **Custom (emoji)**: dowolna emotka (np. 🚀) wklejona do pola tekstowego —
-  renderuje się dosłownie.
+  timer. The selected name renders as a Lucide glyph before the button title.
+- **Custom (emoji)**: any emoji (for example 🚀) pasted into the text field.
+  It renders as is.
 
-`None` = bez ikony; przycisk pokazuje wtedy tylko znacznik statusu (idle /
-running / failed) i tytuł. Wybór nie wpływa na wykonanie komendy.
+`None` means no icon; the button then shows only the status marker (idle /
+running / failed) and the title. The choice does not affect how the command runs.
 
 ## Run with PowerShell NoProfile
 
-Checkbox zaraz pod polem Command — jego etykieta pokazuje pełny prefiks
-`powershell -NoProfile -ExecutionPolicy Bypass -File`, który zostaje doklejony
-do zapisywanej komendy.
-W polu Command wpisz ścieżkę skryptu i jego argumenty, np. `./scripts/start.ps1`.
-Ścieżkę ze spacjami umieść w cudzysłowach.
-Opcja działa dla każdego Run In. Przy edycji zapisanej akcji formularz pokazuje
-oryginalne polecenie i zaznaczony checkbox; odznaczenie usuwa opakowanie PowerShell.
-Przy edycji polecenia z tym prefiksem checkbox jest automatycznie zaznaczony.
+The checkbox right under the Command field. Its label shows the full prefix
+`powershell -NoProfile -ExecutionPolicy Bypass -File`, which is prepended
+to the saved command.
+In the Command field, enter the script path and its arguments, for example `./scripts/start.ps1`.
+Put a path with spaces in quotes.
+The option works for every Run In. When you edit a saved action, the form shows
+the original command with the checkbox selected; clearing it removes the PowerShell wrapper.
+When you edit a command with this prefix, the checkbox is selected automatically.
 
-## Ważne
+## Important
 
-- Przy odznaczonym checkboxie **Run with powershell -NoProfile -ExecutionPolicy
-  Bypass -File** pole Command jest odpalane przez
-  `cmd.exe` (`spawn` z `shell: true`), a cmd nie wykona .ps1 bezpośrednio.
-  Dlatego komenda opakowuje skrypt w `powershell -NoProfile -ExecutionPolicy Bypass -File ...`.
-- Run In = **Background**: `start.ps1` sam odpala `pnpm run dev` w tle
-  (logi w `tmp\logs\`), a sam kończy się po ~3 s, więc przycisk pokaże
-  running → success, a apka dalej działa.
-- Jeśli apka już biega, `start.ps1` wychodzi z kodem 1 („already running")
-  i przycisk pokaże **failed** — to zamierzone. Zatrzymywanie przez stop.ps1 (niżej).
-- Dev-mode odpalony **z wnętrza** NeKode uruchomi **drugą instancję**
-  (drugie okno obok pierwszej). Jeśli chcesz „otwierać apkę" z poziomu
-  zwykłego używania, użyj trybu Unpacked (niżej) po wcześniejszym
-  `pnpm run build:unpack`.
+- With the **Run with powershell -NoProfile -ExecutionPolicy
+  Bypass -File** checkbox cleared, the Command field is run by
+  `cmd.exe` (`spawn` with `shell: true`), and cmd does not run .ps1 directly.
+  That is why the command wraps the script in `powershell -NoProfile -ExecutionPolicy Bypass -File ...`.
+- Run In = **Background**: `start.ps1` starts `pnpm run dev` in the background
+  (logs in `tmp\logs\`) and exits after about 3 s, so the button shows
+  running → success while the app keeps running.
+- If the app is already running, `start.ps1` exits with code 1 ("already running")
+  and the button shows **failed**. This is intended. Stop it with stop.ps1 (below).
+- Dev mode started **from inside** NeKode starts **a second instance**
+  (a second window next to the first). If you want to "open the app" during
+  normal use, use the Unpacked mode (below) after running
+  `pnpm run build:unpack` first.
 
-## Gotowe komendy do wklejenia
+## Ready-to-paste commands
 
 Start (dev):
 
@@ -77,10 +77,10 @@ Stop:
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\stop.ps1"
 ```
 
-Start (skompilowana apka, wymaga wcześniejszego `pnpm run build:unpack`):
+Start (built app, requires `pnpm run build:unpack` first):
 
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start.ps1" -Mode Unpacked
 ```
 
-Dla Stop/Unpacked pozostałe pola identyczne (Title tylko inny).
+For Stop/Unpacked the other fields are the same (only the Title differs).
