@@ -29,7 +29,8 @@ import { ResumeTemplateService } from './handoffs/resume-template-service'
 import { KanbanService, type SafeStorageLike } from './kanban/kanban-service'
 import { buildResumePrompt, TaskLaunchService } from './kanban/task-launch-service'
 import { ProjectService } from './project-service'
-import { TaskRecordService } from './tasks/task-record-service'
+import { TASK_PROGRESS_ADAPTERS_DIR_NAME } from './task-progress/adapter-manifest'
+import { TaskProgressService } from './task-progress/task-progress-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { ShellService } from './terminal/shell-service'
 import { type ShellSpec, TerminalService } from './terminal/terminal-service'
@@ -133,7 +134,6 @@ export function createServices(options: CreateServicesOptions): AppServices {
   /** The project's stored shell choice, resolved to a spawnable spec. */
   const projectShell = (projectId: string) =>
     shells.resolve(state.get(projectShellKey(projectId)), projects.get(projectId)?.path)
-  const taskRecords = new TaskRecordService()
   const chats = new ChatService({
     db,
     // The chat prefix is the compact shell code (spec project-shell-selection
@@ -141,10 +141,6 @@ export function createServices(options: CreateServicesOptions): AppServices {
     // settings list and the bottom-tab text.
     chatNameForProject: (projectId) =>
       shells.chatLabel(state.get(projectShellKey(projectId)), projects.get(projectId)?.path),
-    taskResolver: (projectId, chatName, taskRef) => {
-      const projectPath = projects.get(projectId)?.path
-      return projectPath ? taskRecords.getTaskForChat(projectPath, chatName, taskRef) : undefined
-    },
   })
   const terminals = new TerminalService({ createPty: createNodePty })
   const git = new GitService({ projects })
@@ -175,6 +171,13 @@ export function createServices(options: CreateServicesOptions): AppServices {
         : join(options.userDataPath, 'kanban-adapters')
     },
     safeStorage: options.safeStorage,
+  })
+  // One fixed adapters directory without a setting or override (spec
+  // task-progress-adapters Behaviour 1).
+  const taskProgress = new TaskProgressService({
+    projects,
+    state,
+    adaptersDir: join(options.userDataPath, TASK_PROGRESS_ADAPTERS_DIR_NAME),
   })
   const agentProfiles = new AgentProfilesService({ projects, state })
   // Both profile launch flows resolve the current execution environment only for a new PTY.
@@ -424,6 +427,19 @@ export function createServices(options: CreateServicesOptions): AppServices {
       cleanupProject: (projectId) => kanban.cleanupProject(projectId),
       dropLaunchProject: (projectId) => taskLaunch.dropProject(projectId),
       blocksProjectShell: (chatId) => taskLaunch.blocksProjectShell(chatId),
+    },
+    taskProgress: {
+      adaptersList: () => taskProgress.adaptersList(),
+      getBinding: (projectId) => taskProgress.getBinding(projectId),
+      saveBinding: (projectId, adapterId, config) =>
+        taskProgress.saveBinding(projectId, adapterId, config),
+      test: (projectId, adapterId, config) => taskProgress.test(projectId, adapterId, config),
+      observe: (projectIds) => taskProgress.observe(projectIds),
+      get: (projectId) => taskProgress.get(projectId),
+      onChanged: (callback) => taskProgress.onChanged(callback),
+      setVisible: (visible) => taskProgress.setVisible(visible),
+      shutdown: () => taskProgress.shutdown(),
+      cleanupProject: (projectId) => taskProgress.cleanupProject(projectId),
     },
     agentProfiles: {
       get: (projectId) => agentProfiles.get(projectId),

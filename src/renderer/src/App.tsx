@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { createBottomTabId } from '../../shared/bottom-tab-id'
 import type {
@@ -11,6 +11,8 @@ import type {
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   ProjectInfo,
+  SessionTaskProgress,
+  TaskProgressSnapshot,
   WorkItem,
 } from '../../shared/ipc-contract'
 import { APP_STATE_KEY, projectColorKey, projectKanbanAdapterKey } from '../../shared/ipc-contract'
@@ -86,6 +88,7 @@ import {
 import type { ChatAttention } from './lib/chat-attention'
 import { isNewChatChord } from './lib/new-chat-chord'
 import { writeSubmitLine } from './lib/pty-submit'
+import { sessionTaskProgress } from './lib/task-progress'
 import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -391,6 +394,17 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
 
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [chatsByProject, setChatsByProject] = useState<Record<string, ChatInfo[]>>({})
+  const [taskSnapshots, setTaskSnapshots] = useState<Record<string, TaskProgressSnapshot>>({})
+  const sessionTasks = useMemo(() => {
+    const progress: Record<string, SessionTaskProgress> = {}
+    for (const chats of Object.values(chatsByProject)) {
+      for (const chat of chats) {
+        const task = sessionTaskProgress(chat, taskSnapshots[chat.projectId])
+        if (task !== undefined) progress[chat.id] = task
+      }
+    }
+    return progress
+  }, [chatsByProject, taskSnapshots])
   // Projects whose chat list finished loading. The "Start new chat" empty
   // state renders only for those: a missing entry means "not loaded yet",
   // never "no chats" (it must not flash before the load settles).
@@ -609,6 +623,61 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   useEffect(() => {
     void refreshKanbanBindings()
   }, [refreshKanbanBindings])
+
+  // Task progress observation (spec task-progress-adapters Behaviour 15): main
+  // reads bound projects that are visible, meaning selected or expanded in the
+  // left navigation. The full set is reported on every change.
+  const visibleProjectKey = useMemo(() => {
+    const known = new Set(projects.map((project) => project.id))
+    const visible = new Set([...expandedProjectIds].filter((id) => known.has(id)))
+    if (selectedProjectId !== null && known.has(selectedProjectId)) visible.add(selectedProjectId)
+    return JSON.stringify([...visible].sort())
+  }, [projects, expandedProjectIds, selectedProjectId])
+
+  useEffect(() => {
+    let alive = true
+    const ids = JSON.parse(visibleProjectKey) as string[]
+    const visible = new Set(ids)
+    const revisions = new Map(ids.map((id) => [id, 0]))
+    setTaskSnapshots((previous) =>
+      Object.fromEntries(Object.entries(previous).filter(([id]) => visible.has(id))),
+    )
+    const unsubscribe = app.taskProgress.onChanged((event) => {
+      if (!alive || !visible.has(event.projectId)) return
+      revisions.set(event.projectId, (revisions.get(event.projectId) ?? 0) + 1)
+      setTaskSnapshots((previous) => {
+        const next = { ...previous }
+        if ('cleared' in event) delete next[event.projectId]
+        else next[event.projectId] = event
+        return next
+      })
+    })
+    void app.taskProgress
+      .observe(ids)
+      .then(() =>
+        Promise.all(
+          ids.map(async (id) => {
+            // A changed/cleared event supersedes the startup read, including one
+            // emitted while observe was pending. A retired effect cannot publish.
+            const snapshot = await app.taskProgress.get(id)
+            if (!alive || revisions.get(id) !== 0) return
+            setTaskSnapshots((previous) => {
+              const next = { ...previous }
+              if (snapshot === null) delete next[id]
+              else next[id] = snapshot
+              return next
+            })
+          }),
+        ),
+      )
+      .catch((error: unknown) => {
+        if (alive) setNotice(errorMessage(error, 'Failed to load task progress.'))
+      })
+    return () => {
+      alive = false
+      unsubscribe()
+    }
+  }, [app, visibleProjectKey])
 
   useEffect(() => {
     let alive = true
@@ -2600,6 +2669,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               showProjectIcons={showProjectIcons}
               projectColors={projectColors}
               chatsByProject={chatsByProject}
+              sessionTasks={sessionTasks}
               expandedProjectIds={expandedProjectIds}
               selectedProjectId={selectedProjectId}
               selectedChatId={selectedChatId}
@@ -2707,7 +2777,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               projectId={tabProjectId}
               activeChatId={activeChat?.id ?? null}
               chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
-              task={activeChat?.task}
+              task={activeChat === null ? undefined : sessionTasks[activeChat.id]}
               isKanban={activeTab.kind === 'kanban'}
               kanbanControls={
                 tabProjectId !== null && activeTab.kind === 'kanban'

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-23T09:27:37Z",
+  "watch": [{ "path": ".nekode", "recursive": false }],
+  "tasks": [
+    {
+      "id": "demo-1-first-task",
+      "ref": "DEMO-1",
+      "title": "DEMO-1: First task",
+      "state": "active",
+      "location": "live",
+      "recordState": "valid",
+      "phases": [
+        {
+          "name": "Build",
+          "steps": [
+            { "id": "1", "label": "Write tests", "done": true },
+            { "id": "2", "label": "Implement", "done": false }
+          ]
+        }
+      ],
+      "currentStepId": "2",
+      "updatedAt": "2026-10-23T09:27:37Z"
+    }
+  ]
+}

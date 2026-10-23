@@ -1,6 +1,6 @@
 # Postęp zadań przez adaptery źródeł
 
-Status: Not delivered (kontrakt NEKODE-81; obecny parser `task.md` w rdzeniu zostaje zastąpiony).
+Status: Delivered (NEKODE-81).
 Path: `docs/features/task-progress-adapters/spec.md`.
 
 Ten plik jest kontraktem zachowania funkcji. Agenci implementują na jego podstawie. Nie zapisuj tu postępu wykonania, list plików ani historii architektury.

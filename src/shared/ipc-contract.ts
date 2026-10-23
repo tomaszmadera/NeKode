@@ -43,6 +43,8 @@ export interface SessionTaskProgress {
   stepNames?: readonly string[]
   ariaLabel?: string
   label?: string
+  stale?: boolean
+  staleReason?: string
 }
 
 /** Launch-time display identity, independent of mutable agent profile definitions. */
@@ -57,7 +59,6 @@ export interface ChatInfo extends ChatLaunchIdentity {
   projectId: string
   name: string
   status?: SessionStatus
-  task?: SessionTaskProgress
 }
 
 export interface ActionInput {
@@ -256,6 +257,149 @@ export interface KanbanAdapterInfo {
   configSchema: KanbanConfigField[]
 }
 
+// ---------------------------------------------------------------------------
+// Task progress adapters (spec task-progress-adapters). Adapters are external
+// user-installed processes discovered in one fixed directory; the renderer
+// never supplies a command, path, or adapters directory.
+// ---------------------------------------------------------------------------
+
+/** v1 field types. There are no secret or directory fields (spec Behaviour 2, Non-goals). */
+export type TaskProgressConfigFieldType = 'string' | 'select' | 'boolean'
+
+export interface TaskProgressConfigField {
+  key: string
+  label: string
+  type: TaskProgressConfigFieldType
+  required: boolean
+  /** `select` fields only: the allowed values (at least one). */
+  options?: string[]
+  default?: string | boolean
+}
+
+export type TaskProgressEnvironment = 'local' | 'wsl'
+
+export interface TaskProgressAdapterInfo {
+  id: string
+  name: string
+  /** Project environments the adapter supports; the manifest default is `["local"]`. */
+  environments: TaskProgressEnvironment[]
+  configSchema: TaskProgressConfigField[]
+}
+
+/** `taskProgress:adaptersList` result: a fresh scan plus skipped-manifest warnings. */
+export interface TaskProgressAdapterList {
+  adapters: TaskProgressAdapterInfo[]
+  warnings: string[]
+}
+
+/**
+ * Stored project binding. Field values travel as strings (`boolean` fields as
+ * `"true"`/`"false"`), like the kanban adapter config.
+ */
+export interface TaskProgressBinding {
+  adapterId: string | null
+  config: Record<string, string>
+}
+
+/** Typed error codes (spec Errors): host codes first, then adapter-reported codes. */
+export type TaskProgressErrorCode =
+  | 'adapter_missing'
+  | 'environment_unsupported'
+  | 'timeout'
+  | 'protocol'
+  | 'spawn'
+  | 'config'
+  | 'runtime'
+  | 'unsupported_source'
+  | 'transient'
+  | 'internal'
+
+export interface TaskProgressError {
+  code: TaskProgressErrorCode
+  /** Names the adapter id and the action; never carries adapter stderr. */
+  message: string
+}
+
+/** `taskProgress:test` result: the adapter summary or a typed error, never a toast. */
+export type TaskProgressTestResult =
+  | { ok: true; summary: string }
+  | { ok: false; error: TaskProgressError }
+
+export type TaskProgressTaskState = 'active' | 'blocked' | 'completed'
+export type TaskProgressLocation = 'live' | 'archived'
+export type TaskProgressRecordState = 'valid' | 'invalid' | 'unsupported'
+export type TaskProgressActivity = 'working' | 'waiting' | 'idle'
+
+export interface TaskProgressStep {
+  id: string
+  label: string
+  done: boolean
+}
+
+export interface TaskProgressPhase {
+  name: string
+  steps: TaskProgressStep[]
+}
+
+/**
+ * One task of a validated `snapshot` response (spec Data / API). Optional
+ * adapter fields are normalized: absent text and timestamps read as null,
+ * absent lists as empty, absent counters as 0.
+ */
+export interface TaskProgressItem {
+  id: string
+  ref: string | null
+  title: string | null
+  state: TaskProgressTaskState
+  location: TaskProgressLocation
+  recordState: TaskProgressRecordState
+  errors: string[]
+  activity: TaskProgressActivity | null
+  phases: TaskProgressPhase[]
+  currentStepId: string | null
+  currentLabel: string | null
+  corrections: number
+  reviews: number
+  nextAction: string | null
+  blockers: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  completedAt: string | null
+  checkpoints: { stepId: string; completedAt: string }[]
+  /** Relative, informational only. */
+  path: string | null
+}
+
+/**
+ * In-memory progress of one bound, observed project (spec Data / API).
+ * `stale` keeps the last valid tasks and carries the current error.
+ * `receivedAt` is the time of the last valid snapshot, null before the first.
+ */
+export interface TaskProgressSnapshot {
+  projectId: string
+  adapterId: string
+  status: 'ok' | 'stale'
+  tasks: TaskProgressItem[]
+  receivedAt: string | null
+  error?: TaskProgressError
+}
+
+/** `taskProgress:changed` payload: a new snapshot, or the project's snapshot was dropped. */
+export type TaskProgressChangedEvent = TaskProgressSnapshot | { projectId: string; cleared: true }
+
+/** Structural guard for the preload event listener. */
+export function isTaskProgressChangedEvent(value: unknown): value is TaskProgressChangedEvent {
+  if (typeof value !== 'object' || value === null) return false
+  const event = value as Record<string, unknown>
+  if (typeof event.projectId !== 'string') return false
+  if (event.cleared === true) return true
+  return (
+    typeof event.adapterId === 'string' &&
+    (event.status === 'ok' || event.status === 'stale') &&
+    Array.isArray(event.tasks)
+  )
+}
+
 /** kanban:getConfig result: secret values never leave main (spec Business rules). */
 export interface KanbanProjectConfig {
   adapterId: string | null
@@ -398,6 +542,13 @@ export const IPC_CHANNEL = {
   kanbanLaunchTask: 'kanban:launchTask',
   kanbanHandoffCandidates: 'kanban:handoffCandidates',
   kanbanHandoffAvailability: 'kanban:handoffAvailability',
+  taskProgressAdaptersList: 'taskProgress:adaptersList',
+  taskProgressGetBinding: 'taskProgress:getBinding',
+  taskProgressSaveBinding: 'taskProgress:saveBinding',
+  taskProgressTest: 'taskProgress:test',
+  taskProgressObserve: 'taskProgress:observe',
+  taskProgressGet: 'taskProgress:get',
+  taskProgressChanged: 'taskProgress:changed',
   agentProfilesGet: 'agentProfiles:get',
   agentProfilesPut: 'agentProfiles:put',
   agentProfilesDelete: 'agentProfiles:delete',
@@ -468,6 +619,26 @@ export function projectKanbanAdapterKey(projectId: string): string {
 /** Per-project Kanban adapter config JSON key (field values, secrets included). */
 export function projectKanbanConfigKey(projectId: string): string {
   return `project.kanbanConfig:${projectId}`
+}
+
+/** Per-project task progress adapter id (spec task-progress-adapters Data/API). */
+export function projectTaskProgressAdapterKey(projectId: string): string {
+  return `project.taskProgressAdapter:${projectId}`
+}
+
+/** Per-project task progress adapter field values (JSON object of strings). */
+export function projectTaskProgressConfigKey(projectId: string): string {
+  return `project.taskProgressConfig:${projectId}`
+}
+
+/**
+ * Task progress binding keys are written only through the validated
+ * taskProgress:* channels (spec Authorization), never via generic state IPC.
+ */
+export function isTaskProgressStateKey(key: string): boolean {
+  return (
+    key.startsWith('project.taskProgressAdapter:') || key.startsWith('project.taskProgressConfig:')
+  )
 }
 
 /** Keys that carry secret values and must never be accessed via generic state IPC. */
@@ -954,6 +1125,36 @@ export interface AppApi {
     handoffAvailability(
       input: KanbanHandoffAvailabilityInput,
     ): Promise<KanbanHandoffAvailabilityResult>
+  }
+  taskProgress: {
+    /** Fresh one-level scan of the fixed `<userData>/task-progress-adapters` directory. */
+    adaptersList(): Promise<TaskProgressAdapterList>
+    /** Stored binding; `adapterId` null keeps the saved field values. */
+    getBinding(projectId: string): Promise<TaskProgressBinding>
+    /**
+     * Saves the adapter id and field values (validated against the manifest).
+     * `null` removes the binding and keeps the stored values.
+     */
+    saveBinding(
+      projectId: string,
+      adapterId: string | null,
+      config: Record<string, string>,
+    ): Promise<void>
+    /** Runs the adapter `test` action with the given, possibly unsaved, values; saves nothing. */
+    test(
+      projectId: string,
+      adapterId: string,
+      config: Record<string, string>,
+    ): Promise<TaskProgressTestResult>
+    /**
+     * The full set of visible projects (selected or expanded in the left
+     * navigation). Bound projects in the set are observed; the rest stop.
+     */
+    observe(projectIds: string[]): Promise<void>
+    /** Current in-memory snapshot of the project, or null. */
+    get(projectId: string): Promise<TaskProgressSnapshot | null>
+    /** `taskProgress:changed` events; returns the unsubscribe function. */
+    onChanged(callback: (event: TaskProgressChangedEvent) => void): Unsubscribe
   }
   agentProfiles: {
     /** Current global definitions selected by this project, in library order. */

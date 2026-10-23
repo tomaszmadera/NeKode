@@ -154,6 +154,34 @@ describe('preload app api', () => {
     unsubscribe()
     expect(ipc.listeners.get(IPC_CHANNEL.dictationResult)?.size).toBe(0)
   })
+  it('routes taskProgress observe/get and filters malformed changed events', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.taskProgress.observe(['p1', 'p2'])
+    await api.taskProgress.get('p1')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.taskProgressObserve, args: [['p1', 'p2']] },
+      { channel: IPC_CHANNEL.taskProgressGet, args: ['p1'] },
+    ])
+    const callback = vi.fn()
+    const unsubscribe = api.taskProgress.onChanged(callback)
+    const listener = [...(ipc.listeners.get(IPC_CHANNEL.taskProgressChanged) ?? [])][0]
+    listener({}, { projectId: 'p1' })
+    listener({}, { projectId: 7, cleared: true })
+    expect(callback).not.toHaveBeenCalled()
+    const snapshot = {
+      projectId: 'p1',
+      adapterId: 'demo',
+      status: 'ok',
+      tasks: [],
+      receivedAt: '2026-10-23T10:00:00.000Z',
+    }
+    listener({}, snapshot)
+    listener({}, { projectId: 'p1', cleared: true })
+    expect(callback.mock.calls).toEqual([[snapshot], [{ projectId: 'p1', cleared: true }]])
+    unsubscribe()
+    expect(ipc.listeners.get(IPC_CHANNEL.taskProgressChanged)?.size).toBe(0)
+  })
   it('routes the five dictation methods without exposing transport controls', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)

@@ -229,14 +229,26 @@ app
               result,
             )
           },
+          broadcastTaskProgress: (event) => {
+            broadcastToTrustedWindows(
+              BrowserWindow.getAllWindows(),
+              getTrustedRendererUrls(),
+              IPC_CHANNEL.taskProgressChanged,
+              event,
+            )
+          },
         })
 
-        const updateUsageVisibility = () =>
-          services.usage.setVisible(
-            BrowserWindow.getAllWindows().some(
-              (window) => !window.isDestroyed() && window.isVisible() && !window.isMinimized(),
-            ),
+        // Usage polling and task progress reads pause while no window is
+        // visible and not minimized (usage-quota rule 12, task-progress-adapters
+        // Behaviour 18).
+        const updateUsageVisibility = () => {
+          const visible = BrowserWindow.getAllWindows().some(
+            (window) => !window.isDestroyed() && window.isVisible() && !window.isMinimized(),
           )
+          services.usage.setVisible(visible)
+          services.taskProgress.setVisible(visible)
+        }
         app.on('browser-window-created', (_, window) => {
           window.on('show', updateUsageVisibility)
           window.on('hide', updateUsageVisibility)
@@ -244,7 +256,10 @@ app
           window.on('restore', updateUsageVisibility)
           window.on('closed', updateUsageVisibility)
         })
-        app.on('before-quit', () => services.usage.shutdown())
+        app.on('before-quit', () => {
+          services.usage.shutdown()
+          services.taskProgress.shutdown()
+        })
 
         // App-quit PTY teardown (spec Behaviour 8): terminate every chat terminal
         // so no orphaned pwsh/powershell processes outlive the app. Quit is NOT a

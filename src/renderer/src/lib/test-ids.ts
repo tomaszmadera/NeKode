@@ -185,6 +185,23 @@ export const TEST_ID = {
   /** Active adapters directory display + Browse override. */
   settingsKanbanDir: 'settings-kanban-dir',
   settingsKanbanDirBrowse: 'settings-kanban-dir-browse',
+  /** Project Settings: Task progress tab (spec task-progress-adapters Behaviour 7-10). */
+  settingsTaskProgressTab: 'settings-task-progress-tab',
+  settingsTaskProgressPanel: 'settings-task-progress-panel',
+  settingsTaskProgressLoading: 'settings-task-progress-loading',
+  settingsTaskProgressEmpty: 'settings-task-progress-empty',
+  settingsTaskProgressWarnings: 'settings-task-progress-warnings',
+  settingsTaskProgressAdapterSelect: 'settings-task-progress-adapter-select',
+  settingsTaskProgressAdapterMissing: 'settings-task-progress-adapter-missing',
+  settingsTaskProgressSave: 'settings-task-progress-save',
+  settingsTaskProgressSaved: 'settings-task-progress-saved',
+  settingsTaskProgressFormError: 'settings-task-progress-form-error',
+  settingsTaskProgressTest: 'settings-task-progress-test',
+  settingsTaskProgressTestResult: 'settings-task-progress-test-result',
+  settingsTaskProgressCopy: 'settings-task-progress-copy',
+  settingsTaskProgressCopyList: 'settings-task-progress-copy-list',
+  settingsTaskProgressCopyNotice: 'settings-task-progress-copy-notice',
+  settingsTaskProgressReadState: 'settings-task-progress-read-state',
   /** Project Settings: Agents tab (kanban task launch amendment). */
   settingsAgentsTab: 'settings-agents-tab',
   settingsAgentsPanel: 'settings-agents-panel',
@@ -331,6 +348,11 @@ export const testIdFor = {
   kanbanField: (key: string): string => `settings-kanban-field-${key}`,
   /** "stored" indicator beside a secret field that holds a value in main. */
   kanbanSecretStored: (key: string): string => `settings-kanban-secret-stored-${key}`,
+  /** Task progress settings config field widget, keyed by the manifest field key. */
+  taskProgressField: (key: string): string => `settings-task-progress-field-${key}`,
+  /** One project offered by Copy from project, keyed by project id. */
+  taskProgressCopySource: (projectId: string): string =>
+    `settings-task-progress-copy-source-${projectId}`,
   /** One work item on the list, keyed by its ref (Plane slug). */
   kanbanItem: (ref: string): string => `kanban-item-${ref}`,
   /** Slug column. Opens the review. Not underlined. */

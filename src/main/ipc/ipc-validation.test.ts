@@ -115,6 +115,18 @@ function fakeServices(): AppServices {
       dropLaunchProject: vi.fn(),
       blocksProjectShell: vi.fn(() => false),
     },
+    taskProgress: {
+      adaptersList: vi.fn(() => ({ adapters: [], warnings: [] })),
+      getBinding: vi.fn(() => ({ adapterId: null, config: {} })),
+      saveBinding: vi.fn(),
+      test: vi.fn(() => Promise.resolve({ ok: true as const, summary: 'ok' })),
+      observe: vi.fn(),
+      get: vi.fn(() => null),
+      onChanged: vi.fn(() => () => undefined),
+      setVisible: vi.fn(),
+      shutdown: vi.fn(),
+      cleanupProject: vi.fn(),
+    },
     agentProfiles: {
       get: vi.fn(() => ({ defaultId: null, profiles: [] })),
       libraryGet: vi.fn(() => ({ version: 1 as const, profiles: [] })),
@@ -565,6 +577,7 @@ describe('ipc payload validation', () => {
       IPC_CHANNEL.dictationResult,
       IPC_CHANNEL.terminalsData,
       IPC_CHANNEL.terminalsExit,
+      IPC_CHANNEL.taskProgressChanged,
     ])
     const expectedInvokeChannels = new Set(
       Object.values(IPC_CHANNEL).filter((channel) => !pushChannels.has(channel)),
@@ -985,6 +998,9 @@ describe('ipc payload validation', () => {
       'project.kanbanConfig',
       'project.kanbanConfig:p1',
       'project.kanbanConfig:',
+      // Written only through the validated taskProgress:* channels.
+      'project.taskProgressAdapter:p1',
+      'project.taskProgressConfig:p1',
     ]) {
       expect(() => stateGet.parse([key])).toThrow(/is a protected key/)
       expect(() => stateSet.parse([key, 'val'])).toThrow(/is a protected key/)

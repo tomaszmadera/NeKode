@@ -233,6 +233,18 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
       dropLaunchProject: vi.fn(),
       blocksProjectShell: vi.fn(() => false),
     },
+    taskProgress: {
+      adaptersList: vi.fn(() => ({ adapters: [], warnings: [] })),
+      getBinding: vi.fn(() => ({ adapterId: null, config: {} })),
+      saveBinding: vi.fn(),
+      test: vi.fn(() => Promise.resolve({ ok: true as const, summary: 'ok' })),
+      observe: vi.fn(),
+      get: vi.fn(() => null),
+      onChanged: vi.fn(() => () => undefined),
+      setVisible: vi.fn(),
+      shutdown: vi.fn(),
+      cleanupProject: vi.fn(),
+    },
     agentProfiles: fakeAgentProfiles(),
     dialogs: {
       pickDirectory: vi.fn(() => Promise.resolve(null)),
@@ -667,6 +679,18 @@ describe('registered ipc handlers', () => {
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
       },
+      taskProgress: {
+        adaptersList: vi.fn(() => ({ adapters: [], warnings: [] })),
+        getBinding: vi.fn(() => ({ adapterId: null, config: {} })),
+        saveBinding: vi.fn(),
+        test: vi.fn(() => Promise.resolve({ ok: true as const, summary: 'ok' })),
+        observe: vi.fn(),
+        get: vi.fn(() => null),
+        onChanged: vi.fn(() => () => undefined),
+        setVisible: vi.fn(),
+        shutdown: vi.fn(),
+        cleanupProject: vi.fn(),
+      },
       agentProfiles: fakeAgentProfiles(),
       dialogs: {
         pickDirectory: vi.fn(() => Promise.resolve(null)),
@@ -777,6 +801,18 @@ describe('registered ipc handlers', () => {
         cleanupProject: vi.fn(),
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
+      },
+      taskProgress: {
+        adaptersList: vi.fn(() => ({ adapters: [], warnings: [] })),
+        getBinding: vi.fn(() => ({ adapterId: null, config: {} })),
+        saveBinding: vi.fn(),
+        test: vi.fn(() => Promise.resolve({ ok: true as const, summary: 'ok' })),
+        observe: vi.fn(),
+        get: vi.fn(() => null),
+        onChanged: vi.fn(() => () => undefined),
+        setVisible: vi.fn(),
+        shutdown: vi.fn(),
+        cleanupProject: vi.fn(),
       },
       agentProfiles: fakeAgentProfiles(),
       dialogs: {
@@ -896,6 +932,18 @@ describe('registered ipc handlers', () => {
         cleanupProject: vi.fn(),
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
+      },
+      taskProgress: {
+        adaptersList: vi.fn(() => ({ adapters: [], warnings: [] })),
+        getBinding: vi.fn(() => ({ adapterId: null, config: {} })),
+        saveBinding: vi.fn(),
+        test: vi.fn(() => Promise.resolve({ ok: true as const, summary: 'ok' })),
+        observe: vi.fn(),
+        get: vi.fn(() => null),
+        onChanged: vi.fn(() => () => undefined),
+        setVisible: vi.fn(),
+        shutdown: vi.fn(),
+        cleanupProject: vi.fn(),
       },
       agentProfiles: fakeAgentProfiles(),
       dialogs: {
@@ -1201,6 +1249,114 @@ describe('kanban:* channels (adapter integration)', () => {
       expect(message).toContain('auth')
       expect(message).toContain('Plane rejected the token.')
     }
+  })
+})
+
+describe('taskProgress:* channels (task progress adapters)', () => {
+  it('routes validated payloads to the task progress service', async () => {
+    const { services, invoke } = createHarness()
+    await invoke(IPC_CHANNEL.taskProgressAdaptersList, [])
+    expect(services.taskProgress.adaptersList).toHaveBeenCalled()
+
+    await invoke(IPC_CHANNEL.taskProgressGetBinding, ['p1'])
+    expect(services.taskProgress.getBinding).toHaveBeenCalledWith('p1')
+
+    await invoke(IPC_CHANNEL.taskProgressSaveBinding, ['p1', 'demo-adapter', { path: 'a.json' }])
+    expect(services.taskProgress.saveBinding).toHaveBeenCalledWith('p1', 'demo-adapter', {
+      path: 'a.json',
+    })
+    await invoke(IPC_CHANNEL.taskProgressSaveBinding, ['p1', null, {}])
+    expect(services.taskProgress.saveBinding).toHaveBeenCalledWith('p1', null, {})
+
+    await expect(
+      invoke(IPC_CHANNEL.taskProgressTest, ['p1', 'demo-adapter', { path: 'draft.json' }]),
+    ).resolves.toEqual({ ok: true, summary: 'ok' })
+    expect(services.taskProgress.test).toHaveBeenCalledWith('p1', 'demo-adapter', {
+      path: 'draft.json',
+    })
+  })
+
+  it('rejects invalid payloads before the service', () => {
+    const { services, invoke } = createHarness()
+    const cases: Array<[string, unknown[]]> = [
+      [IPC_CHANNEL.taskProgressGetBinding, []],
+      [IPC_CHANNEL.taskProgressGetBinding, [42]],
+      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', 'demo']],
+      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', 7, {}]],
+      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', '../evil', {}]],
+      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', 'demo', { k: 1 }]],
+      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', 'demo', []]],
+      [IPC_CHANNEL.taskProgressTest, ['p1', null, {}]],
+      [IPC_CHANNEL.taskProgressTest, ['p1', 'C:/adapters/x', {}]],
+      [IPC_CHANNEL.taskProgressTest, ['p1', 'demo', { k: true }]],
+      [IPC_CHANNEL.taskProgressTest, ['p1', 'demo']],
+    ]
+    for (const [channel, payload] of cases) {
+      try {
+        invoke(channel, payload)
+        expect.unreachable(`validation must reject ${channel} ${JSON.stringify(payload)}`)
+      } catch (error) {
+        expect((error as Error).message).toContain(APP_ERROR_MARKER)
+        expect((error as Error).message).toContain('validation')
+      }
+    }
+    expect(services.taskProgress.getBinding).not.toHaveBeenCalled()
+    expect(services.taskProgress.saveBinding).not.toHaveBeenCalled()
+    expect(services.taskProgress.test).not.toHaveBeenCalled()
+  })
+
+  it('routes observe and get to the service', async () => {
+    const { services, invoke } = createHarness()
+    await invoke(IPC_CHANNEL.taskProgressObserve, [['p1', 'p2']])
+    expect(services.taskProgress.observe).toHaveBeenCalledWith(['p1', 'p2'])
+    await invoke(IPC_CHANNEL.taskProgressObserve, [[]])
+    expect(services.taskProgress.observe).toHaveBeenLastCalledWith([])
+    expect(await invoke(IPC_CHANNEL.taskProgressGet, ['p1'])).toBeNull()
+    expect(services.taskProgress.get).toHaveBeenCalledWith('p1')
+  })
+
+  it.each([
+    [IPC_CHANNEL.taskProgressObserve, []],
+    [IPC_CHANNEL.taskProgressObserve, ['p1']],
+    [IPC_CHANNEL.taskProgressObserve, [[1]]],
+    [IPC_CHANNEL.taskProgressObserve, [Array.from({ length: 1001 }, (_, index) => `p${index}`)]],
+    [IPC_CHANNEL.taskProgressGet, []],
+    [IPC_CHANNEL.taskProgressGet, [7]],
+  ])('rejects invalid %s payload %j before the service', (channel, payload) => {
+    const { services, invoke } = createHarness()
+    expect(() => invoke(channel, payload as unknown[])).toThrow(/validation/)
+    expect(services.taskProgress.observe).not.toHaveBeenCalled()
+    expect(services.taskProgress.get).not.toHaveBeenCalled()
+  })
+
+  it('forwards taskProgress:changed events to the broadcast hook', () => {
+    const { services } = createHarness()
+    const events: unknown[] = []
+    registerAppIpcHandlers(createFakeIpcMain().ipcMain, services, {
+      showOpenDialog: vi.fn() as never,
+      broadcastTaskProgress: (event) => events.push(event),
+    })
+    const listener = vi.mocked(services.taskProgress.onChanged).mock.calls.at(-1)?.[0]
+    listener?.({ projectId: 'p1', cleared: true })
+    expect(events).toEqual([{ projectId: 'p1', cleared: true }])
+  })
+
+  it('projects:remove cleans the per-project task progress keys after the removal', () => {
+    const { services, invoke } = createHarness()
+    invoke(IPC_CHANNEL.projectsRemove, ['p1'])
+    expect(services.taskProgress.cleanupProject).toHaveBeenCalledWith('p1')
+    expect(vi.mocked(services.projects.remove).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(services.taskProgress.cleanupProject).mock.invocationCallOrder[0],
+    )
+  })
+
+  it('keeps the task progress keys when the project removal fails', () => {
+    const { services, invoke } = createHarness()
+    vi.mocked(services.projects.remove).mockImplementation(() => {
+      throw new AppError('not_found', 'Project not found.', 'projects:remove')
+    })
+    expect(() => invoke(IPC_CHANNEL.projectsRemove, ['missing'])).toThrow(/Project not found/)
+    expect(services.taskProgress.cleanupProject).not.toHaveBeenCalled()
   })
 })
 

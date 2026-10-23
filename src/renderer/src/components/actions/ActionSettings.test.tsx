@@ -223,6 +223,35 @@ describe('Kanban tab shell', () => {
     expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.settingsAgentsPanel)).toBeNull()
   })
+
+  it('places the Task progress tab right after Kanban and renders its panel', async () => {
+    const app = {
+      ...kanbanAppMock(),
+      taskProgress: {
+        adaptersList: vi.fn().mockResolvedValue({ adapters: [], warnings: [] }),
+        getBinding: vi.fn().mockResolvedValue({ adapterId: null, config: {} }),
+        get: vi.fn().mockResolvedValue(null),
+        onChanged: vi.fn(() => () => undefined),
+      },
+    } as unknown as AppApi
+    render(
+      <ActionSettings
+        app={app}
+        actions={[]}
+        projectId="p1"
+        projectPath="D:/p"
+        autoSend={false}
+        onAutoSendChange={vi.fn()}
+        onRefresh={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    )
+    const labels = screen.getAllByRole('tab').map((tab) => tab.textContent)
+    expect(labels.indexOf('Task progress')).toBe(labels.indexOf('Kanban') + 1)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsTaskProgressTab))
+    expect(await screen.findByTestId(TEST_ID.settingsTaskProgressEmpty)).toBeTruthy()
+    expect(app.taskProgress.getBinding).toHaveBeenCalledWith('p1')
+  })
 })
 
 describe('handoff directory save', () => {

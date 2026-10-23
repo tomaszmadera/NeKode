@@ -8,6 +8,8 @@ import type {
   HandoffCandidatesResult,
   KanbanBoard as KanbanBoardData,
   ProjectInfo,
+  TaskProgressChangedEvent,
+  TaskProgressSnapshot,
 } from '../../shared/ipc-contract'
 import {
   APP_STATE_KEY,
@@ -2230,6 +2232,143 @@ describe('project and chat data flow', () => {
     // The active project gets the New Chat button (UX-UI §10): no naming form.
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
   })
+
+  it('reports the selected and expanded projects to task progress observation', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectNoRuntime])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+
+    render(<App app={app} />)
+    await screen.findByTestId(testIdFor.projectRow('p1'))
+    await waitFor(() => expect(app.taskProgress.observe).toHaveBeenLastCalledWith([]))
+
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    await waitFor(() => expect(app.taskProgress.observe).toHaveBeenLastCalledWith(['p1']))
+
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p2')))
+    await waitFor(() => expect(app.taskProgress.observe).toHaveBeenLastCalledWith(['p1', 'p2']))
+
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p2')))
+    await waitFor(() => expect(app.taskProgress.observe).toHaveBeenLastCalledWith(['p1']))
+  })
+
+  function progressSnapshot(projectId = 'p1', currentStepId = 'plan'): TaskProgressSnapshot {
+    return {
+      projectId,
+      adapterId: 'example',
+      status: 'ok',
+      receivedAt: null,
+      tasks: [
+        {
+          id: 'nekode-74',
+          ref: 'NEKODE-74',
+          title: null,
+          state: 'active',
+          location: 'live',
+          recordState: 'valid',
+          errors: [],
+          activity: null,
+          phases: [
+            {
+              name: 'Work',
+              steps: [
+                { id: 'plan', label: 'Plan', done: true },
+                { id: 'build', label: 'Build', done: false },
+              ],
+            },
+          ],
+          currentStepId,
+          currentLabel: null,
+          corrections: 0,
+          reviews: 0,
+          nextAction: null,
+          blockers: null,
+          createdAt: null,
+          updatedAt: null,
+          completedAt: null,
+          checkpoints: [],
+          path: null,
+        },
+      ],
+    }
+  }
+
+  it('feeds both indicators from startup snapshots and project-scoped changed events, including stale and cleared states', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectNoRuntime])
+    vi.mocked(app.chats.list).mockImplementation(async (projectId) => [
+      { id: `${projectId}-chat`, projectId, name: '[PS7] Codex', taskRef: 'NEKODE-74' },
+    ])
+    vi.mocked(app.taskProgress.get).mockImplementation(async (id) => progressSnapshot(id))
+    let changed: (event: TaskProgressChangedEvent) => void = () => undefined
+    vi.mocked(app.taskProgress.onChanged).mockImplementation((callback) => {
+      changed = callback
+      return vi.fn()
+    })
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('p1-chat')))
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.taskProgressButton).textContent).toContain('Plan'),
+    )
+    expect(screen.getByTestId(testIdFor.chatTaskProgress('p1-chat')).textContent).toBe('1/2')
+
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p2')))
+    await screen.findByTestId(testIdFor.chatTaskProgress('p2-chat'))
+    act(() => changed(progressSnapshot('p1', 'build')))
+    expect(screen.getByTestId(testIdFor.chatTaskProgress('p1-chat')).textContent).toBe('2/2')
+    expect(screen.getByTestId(testIdFor.chatTaskProgress('p2-chat')).textContent).toBe('1/2')
+    expect(screen.getByTestId(TEST_ID.taskProgressButton).textContent).toContain('Build')
+
+    act(() =>
+      changed({
+        ...progressSnapshot('p1', 'build'),
+        status: 'stale',
+        error: { code: 'runtime', message: 'Source unavailable' },
+      }),
+    )
+    expect(screen.getByTestId(TEST_ID.taskProgressButton).getAttribute('aria-label')).toMatch(
+      /^Out of date: Source unavailable/,
+    )
+    expect(screen.getByTestId(testIdFor.chatTaskProgress('p1-chat')).style.opacity).toBe('0.5')
+    const invalid = progressSnapshot()
+    invalid.tasks[0].recordState = 'invalid'
+    act(() => changed(invalid))
+    expect(screen.queryByTestId(TEST_ID.taskProgressButton)).toBeNull()
+    expect(screen.queryByTestId(testIdFor.chatTaskProgress('p1-chat'))).toBeNull()
+    act(() => changed(progressSnapshot()))
+    act(() => changed({ projectId: 'p1', cleared: true }))
+    expect(screen.queryByTestId(TEST_ID.taskProgressButton)).toBeNull()
+    expect(screen.queryByTestId(testIdFor.chatTaskProgress('p1-chat'))).toBeNull()
+  })
+
+  it.each(['clear', 'unobserve'] as const)(
+    'rejects a startup get that resolves after %s',
+    async (change) => {
+      vi.mocked(app.projects.list).mockResolvedValue([projectA])
+      vi.mocked(app.chats.list).mockResolvedValue([{ ...chatOne, taskRef: 'NEKODE-74' }])
+      let resolveGet: (snapshot: TaskProgressSnapshot) => void = () => undefined
+      vi.mocked(app.taskProgress.get).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveGet = resolve
+          }),
+      )
+      let changed: (event: TaskProgressChangedEvent) => void = () => undefined
+      vi.mocked(app.taskProgress.onChanged).mockImplementation((callback) => {
+        changed = callback
+        return vi.fn()
+      })
+      render(<App app={app} />)
+      fireEvent.click(await screen.findByTestId(testIdFor.projectToggle('p1')))
+      await screen.findByTestId(testIdFor.chatRow('t1'))
+      await waitFor(() => expect(app.taskProgress.get).toHaveBeenCalledWith('p1'))
+      if (change === 'clear') act(() => changed({ projectId: 'p1', cleared: true }))
+      else fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p1')))
+      await act(async () => resolveGet(progressSnapshot()))
+      expect(screen.queryByTestId(testIdFor.chatTaskProgress('t1'))).toBeNull()
+      expect(screen.queryByTestId(TEST_ID.taskProgressButton)).toBeNull()
+      if (change === 'unobserve') expect(app.taskProgress.observe).toHaveBeenLastCalledWith([])
+    },
+  )
 
   it('add-project: dialog result refreshes the list and selects the new project', async () => {
     let resolveInitialList: ((projects: ProjectInfo[]) => void) | null = null

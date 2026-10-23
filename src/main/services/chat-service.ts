@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import type { ChatInfo, ChatLaunchIdentity, SessionTaskProgress } from '../../shared/ipc-contract'
+import type { ChatInfo, ChatLaunchIdentity } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import { shellDisplayName } from './terminal/terminal-service'
 
@@ -22,11 +22,6 @@ export interface ChatServiceDeps {
    */
   chatName?: () => string
   chatNameForProject?: (projectId: string) => string
-  taskResolver?: (
-    projectId: string,
-    chatName: string,
-    taskRef?: string,
-  ) => SessionTaskProgress | null | undefined
 }
 
 interface ChatRow {
@@ -38,22 +33,13 @@ interface ChatRow {
   created_at: string
 }
 
-function toInfo(
-  row: ChatRow,
-  taskResolver?: (
-    projectId: string,
-    chatName: string,
-    taskRef?: string,
-  ) => SessionTaskProgress | null | undefined,
-): ChatInfo {
-  const task = taskResolver?.(row.project_id, row.name, row.task_ref ?? undefined) ?? undefined
+function toInfo(row: ChatRow): ChatInfo {
   return {
     id: row.id,
     projectId: row.project_id,
     name: row.name,
     ...(row.task_ref === null ? {} : { taskRef: row.task_ref }),
     ...(row.agent_name === null ? {} : { agentName: row.agent_name }),
-    ...(task ? { task } : {}),
   }
 }
 
@@ -61,17 +47,11 @@ export class ChatService {
   private readonly db: Database.Database
   private readonly chatName: () => string
   private readonly chatNameForProject: (projectId: string) => string
-  private readonly taskResolver?: (
-    projectId: string,
-    chatName: string,
-    taskRef?: string,
-  ) => SessionTaskProgress | null | undefined
 
   constructor(deps: ChatServiceDeps) {
     this.db = deps.db
     this.chatName = deps.chatName ?? (() => shellDisplayName())
     this.chatNameForProject = deps.chatNameForProject ?? (() => this.chatName())
-    this.taskResolver = deps.taskResolver
   }
 
   list(projectId: string): ChatInfo[] {
@@ -80,7 +60,7 @@ export class ChatService {
         'SELECT id, project_id, name, task_ref, agent_name FROM chats WHERE project_id = ? ORDER BY created_at, name',
       )
       .all(projectId) as ChatRow[]
-    return rows.map((row) => toInfo(row, this.taskResolver))
+    return rows.map(toInfo)
   }
 
   /**
@@ -159,10 +139,6 @@ export class ChatService {
       ...(identity.taskRef === undefined ? {} : { taskRef: identity.taskRef }),
       ...(identity.agentName === undefined ? {} : { agentName: identity.agentName }),
     }
-    const task = this.taskResolver?.(projectId, name, identity.taskRef)
-    if (task) {
-      info.task = task
-    }
     return info
   }
 
@@ -170,7 +146,7 @@ export class ChatService {
     const row = this.db
       .prepare('SELECT id, project_id, name, task_ref, agent_name FROM chats WHERE id = ?')
       .get(chatId) as ChatRow | undefined
-    return row ? toInfo(row, this.taskResolver) : null
+    return row ? toInfo(row) : null
   }
 
   /**

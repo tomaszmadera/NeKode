@@ -7,6 +7,26 @@ import { TaskProgressButton } from './TaskProgressButton'
 afterEach(cleanup)
 
 describe('TaskProgressButton', () => {
+  it('dims stale progress and exposes the error in its tooltip and accessible label', () => {
+    render(
+      <TaskProgressButton
+        task={{
+          taskId: 'NEKODE-74',
+          step: 1,
+          totalSteps: 2,
+          stale: true,
+          staleReason: 'Source unavailable',
+          ariaLabel: 'Out of date: Source unavailable. Task progress: step 1 of 2, Plan',
+        }}
+      />,
+    )
+    const button = screen.getByTestId(TEST_ID.taskProgressButton)
+    expect(button.style.opacity).toBe('0.5')
+    expect(button.getAttribute('title')).toBe(
+      'Out of date: Source unavailable. Task progress: step 1 of 2, Plan',
+    )
+    expect(button.getAttribute('aria-label')).toBe(button.getAttribute('title'))
+  })
   it('renders with exact aria-label "Task progress: step 5 of 8, Fixes, fix 3"', () => {
     const task: SessionTaskProgress = {
       taskId: 'NEKODE-74',

@@ -29,10 +29,14 @@ import type {
   KanbanProjectConfig,
   ProjectInfo,
   ShellInfo,
+  TaskProgressAdapterList,
+  TaskProgressBinding,
+  TaskProgressSnapshot,
+  TaskProgressTestResult,
   Unsubscribe,
   WorkItem,
 } from '../shared/ipc-contract'
-import { IPC_CHANNEL } from '../shared/ipc-contract'
+import { IPC_CHANNEL, isTaskProgressChangedEvent } from '../shared/ipc-contract'
 import { parseAppErrorPayload } from '../shared/ipc-error'
 import type { IpcRendererLike } from './bridge-types'
 
@@ -227,6 +231,25 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
         invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanHandoffCandidates, input),
       handoffAvailability: (input) =>
         invoke<KanbanHandoffAvailabilityResult>(IPC_CHANNEL.kanbanHandoffAvailability, input),
+    },
+    taskProgress: {
+      adaptersList: () => invoke<TaskProgressAdapterList>(IPC_CHANNEL.taskProgressAdaptersList),
+      getBinding: (projectId) =>
+        invoke<TaskProgressBinding>(IPC_CHANNEL.taskProgressGetBinding, projectId),
+      saveBinding: (projectId, adapterId, config) =>
+        invoke<void>(IPC_CHANNEL.taskProgressSaveBinding, projectId, adapterId, config),
+      test: (projectId, adapterId, config) =>
+        invoke<TaskProgressTestResult>(IPC_CHANNEL.taskProgressTest, projectId, adapterId, config),
+      observe: (projectIds) => invoke<void>(IPC_CHANNEL.taskProgressObserve, projectIds),
+      get: (projectId) =>
+        invoke<TaskProgressSnapshot | null>(IPC_CHANNEL.taskProgressGet, projectId),
+      onChanged: (callback) => {
+        const listener = (...args: unknown[]) => {
+          if (isTaskProgressChangedEvent(args[1])) callback(args[1])
+        }
+        ipc.on(IPC_CHANNEL.taskProgressChanged, listener)
+        return () => ipc.off(IPC_CHANNEL.taskProgressChanged, listener)
+      },
     },
     agentProfiles: {
       get: (projectId) => invoke<AgentProfilesDocument>(IPC_CHANNEL.agentProfilesGet, projectId),

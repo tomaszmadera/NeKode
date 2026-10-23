@@ -43,6 +43,7 @@ export function TaskProgressButton({
     <button
       type="button"
       className="nk-tb inline-flex h-8 items-center gap-3 rounded-lg border border-[#2e364d] bg-[#151823] px-2.5 text-[#c3c7d4] transition-colors hover:bg-[#2d3852] focus:outline-none"
+      style={{ opacity: task.stale ? 0.5 : undefined }}
       onClick={handleClick}
       aria-expanded={isOpen}
       aria-label={ariaLabel}

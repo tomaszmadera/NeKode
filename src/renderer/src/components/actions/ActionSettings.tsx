@@ -9,6 +9,7 @@ import { TEST_ID } from '../../lib/test-ids'
 import { AgentProfilesSettings } from '../settings/AgentProfilesSettings'
 import { KanbanSettings } from '../settings/KanbanSettings'
 import { ShellTab } from '../settings/ShellTab'
+import { TaskProgressSettings } from '../settings/TaskProgressSettings'
 
 interface Props {
   app: AppApi
@@ -34,14 +35,15 @@ interface Props {
   suspended?: boolean
 }
 
-export type SettingsTabId = 'shell' | 'actions' | 'kanban' | 'agents'
+export type SettingsTabId = 'shell' | 'actions' | 'kanban' | 'taskProgress' | 'agents'
 
-const SETTINGS_TABS = ['shell', 'actions', 'kanban', 'agents'] as const
+const SETTINGS_TABS = ['shell', 'actions', 'kanban', 'taskProgress', 'agents'] as const
 
 const TAB_LABEL: Record<SettingsTabId, string> = {
   shell: 'Shell',
   actions: 'Actions & Configuration',
   kanban: 'Kanban',
+  taskProgress: 'Task progress',
   agents: 'Agents',
 }
 
@@ -49,6 +51,7 @@ const TAB_TEST_ID: Record<SettingsTabId, string> = {
   shell: TEST_ID.settingsShellTab,
   actions: TEST_ID.settingsActionsTab,
   kanban: TEST_ID.settingsKanbanTab,
+  taskProgress: TEST_ID.settingsTaskProgressTab,
   agents: TEST_ID.settingsAgentsTab,
 }
 
@@ -385,6 +388,8 @@ export function ActionSettings({
                 />
               ) : activeTab === 'kanban' ? (
                 <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
+              ) : activeTab === 'taskProgress' ? (
+                <TaskProgressSettings app={app} projectId={projectId} />
               ) : activeTab === 'agents' ? (
                 <AgentProfilesSettings
                   app={app}

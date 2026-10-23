@@ -3,6 +3,9 @@ import {
   AGENT_PROMPT_PLACEHOLDER,
   agentProfileFieldError,
   isSecretStateKey,
+  isTaskProgressStateKey,
+  projectTaskProgressAdapterKey,
+  projectTaskProgressConfigKey,
   relativeToProject,
 } from './ipc-contract'
 
@@ -47,6 +50,16 @@ describe('isSecretStateKey', () => {
     expect(isSecretStateKey('selection.projectId')).toBe(false)
     expect(isSecretStateKey('region.left.width')).toBe(false)
     expect(isSecretStateKey('kanban.adaptersDir')).toBe(false)
+  })
+})
+
+describe('task progress state keys', () => {
+  it('uses the spec keys and marks them as channel-only', () => {
+    expect(projectTaskProgressAdapterKey('p1')).toBe('project.taskProgressAdapter:p1')
+    expect(projectTaskProgressConfigKey('p1')).toBe('project.taskProgressConfig:p1')
+    expect(isTaskProgressStateKey(projectTaskProgressAdapterKey('p1'))).toBe(true)
+    expect(isTaskProgressStateKey(projectTaskProgressConfigKey('p1'))).toBe(true)
+    expect(isTaskProgressStateKey('project.kanbanAdapter:p1')).toBe(false)
   })
 })
 

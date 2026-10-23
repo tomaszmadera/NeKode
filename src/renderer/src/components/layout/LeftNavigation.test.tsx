@@ -151,7 +151,7 @@ describe('LeftNavigation session status indicators', () => {
     expect(row3.getAttribute('aria-label')).toBe('Chat 3, idle, now')
   })
 
-  it('renders task progress badge only when session has a Kanban task', () => {
+  it('renders task progress badge only when normalized progress is supplied', () => {
     const props = {
       ...defaultProps(),
       chatsByProject: {
@@ -160,7 +160,6 @@ describe('LeftNavigation session status indicators', () => {
             id: 't1',
             projectId: 'p1',
             name: 'Task session',
-            task: { taskId: 'NEKODE-42', step: 5, totalSteps: 8 },
           },
           {
             id: 't2',
@@ -169,6 +168,7 @@ describe('LeftNavigation session status indicators', () => {
           },
         ],
       },
+      sessionTasks: { t1: { taskId: 'NEKODE-42', step: 5, totalSteps: 8 } },
     }
     render(<LeftNavigation {...props} />)
 
@@ -403,7 +403,7 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(closeBtn.className).toContain('right-5')
   })
 
-  it('renders task progress badge 5/8 on the session row button when chat.task is present', () => {
+  it('dims stale progress and exposes its error in the title and accessible label', () => {
     const props = {
       ...defaultProps(),
       chatsByProject: {
@@ -412,15 +412,18 @@ describe('LeftNavigation project avatar and initials', () => {
             id: 'n74',
             projectId: 'p1',
             name: 'NEKODE-74',
-            task: {
-              taskId: 'NEKODE-74',
-              step: 5,
-              totalSteps: 8,
-              stepName: 'Fixes',
-              fix: 3,
-            },
           },
         ],
+      },
+      sessionTasks: {
+        n74: {
+          taskId: 'NEKODE-74',
+          step: 5,
+          totalSteps: 8,
+          stale: true,
+          staleReason: 'Source unavailable',
+          ariaLabel: 'Out of date: Source unavailable. Task progress: step 5 of 8, Fixes',
+        },
       },
     }
     render(<LeftNavigation {...props} />)
@@ -428,6 +431,12 @@ describe('LeftNavigation project avatar and initials', () => {
     const badge = screen.getByTestId(testIdFor.chatTaskProgress('n74'))
     expect(badge).toBeTruthy()
     expect(badge.textContent).toBe('5/8')
-    expect(badge.getAttribute('title')).toBe('Task NEKODE-74: step 5 of 8')
+    expect(badge.style.opacity).toBe('0.5')
+    expect(badge.getAttribute('title')).toBe(
+      'Out of date: Source unavailable. Task NEKODE-74: step 5 of 8',
+    )
+    expect(badge.getAttribute('aria-label')).toBe(
+      'Out of date: Source unavailable. Task progress: step 5 of 8, Fixes',
+    )
   })
 })

@@ -1,0 +1,20 @@
+{
+  "id": "task-progress-example",
+  "name": "Example: JSON snapshot file",
+  "kind": "task-progress",
+  "protocolVersion": 1,
+  "invocation": {
+    "command": "node",
+    "args": ["adapter.cjs"]
+  },
+  "environments": ["local", "wsl"],
+  "configSchema": [
+    {
+      "key": "path",
+      "label": "Snapshot file (relative to the project root)",
+      "type": "string",
+      "required": true,
+      "default": ".nekode/task-progress.json"
+    }
+  ]
+}

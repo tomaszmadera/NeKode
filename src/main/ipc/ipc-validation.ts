@@ -24,6 +24,7 @@ import {
   agentProfileFieldError,
   IPC_CHANNEL,
   isSecretStateKey,
+  isTaskProgressStateKey,
   KANBAN_PRIORITIES,
 } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
@@ -99,10 +100,13 @@ const assertRelativePath: Validator = (value, label) => {
 
 const assertStateKey: Validator = (value, label) => {
   assertString(value, label)
-  if (isSecretStateKey(value as string)) {
+  if (isSecretStateKey(value as string) || isTaskProgressStateKey(value as string)) {
     fail(label, 'is a protected key')
   }
 }
+
+/** Upper bound for the visible project set of taskProgress:observe. */
+const MAX_OBSERVED_PROJECTS = 1000
 
 function fail(label: string, rule: string): never {
   throw new ValidationError(`${label} ${rule}`)
@@ -166,6 +170,14 @@ function assertKanbanValues(
     if (typeof entry !== 'string') {
       fail(`${label}.${key}`, 'must be a string')
     }
+  }
+}
+
+/** Adapter ids are kebab-case manifest ids; anything else never names an adapter. */
+function assertAdapterId(value: unknown, label: string): asserts value is string {
+  assertString(value, label)
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(value as string)) {
+    fail(label, 'must be a kebab-case adapter id')
   }
 }
 
@@ -983,6 +995,70 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       invoke: (args) =>
         services.kanban.handoffAvailability(args[0] as KanbanHandoffAvailabilityInput),
     },
+    // Task progress adapter channels (spec task-progress-adapters Data/API).
+    // The renderer names only an adapter id; main resolves the command and
+    // directory from the discovered manifest.
+    serviceChannel(IPC_CHANNEL.taskProgressAdaptersList, [], () =>
+      services.taskProgress.adaptersList(),
+    ),
+    serviceChannel(IPC_CHANNEL.taskProgressGetBinding, ['string'], (args) =>
+      services.taskProgress.getBinding(args[0]),
+    ),
+    {
+      channel: IPC_CHANNEL.taskProgressSaveBinding,
+      parse: (payload) => {
+        const channel = IPC_CHANNEL.taskProgressSaveBinding
+        requireArgs(payload, 3, channel)
+        assertString(payload[0], `${channel} arg[0]`)
+        if (payload[1] !== null) {
+          assertAdapterId(payload[1], `${channel} arg[1]`)
+        }
+        assertKanbanValues(payload[2], `${channel} arg[2]`)
+        return payload
+      },
+      invoke: (args) =>
+        services.taskProgress.saveBinding(
+          args[0] as string,
+          args[1] as string | null,
+          args[2] as Record<string, string>,
+        ),
+    },
+    {
+      channel: IPC_CHANNEL.taskProgressTest,
+      parse: (payload) => {
+        const channel = IPC_CHANNEL.taskProgressTest
+        requireArgs(payload, 3, channel)
+        assertString(payload[0], `${channel} arg[0]`)
+        assertAdapterId(payload[1], `${channel} arg[1]`)
+        assertKanbanValues(payload[2], `${channel} arg[2]`)
+        return payload
+      },
+      invoke: (args) =>
+        services.taskProgress.test(
+          args[0] as string,
+          args[1] as string,
+          args[2] as Record<string, string>,
+        ),
+    },
+    {
+      channel: IPC_CHANNEL.taskProgressObserve,
+      parse: (payload) => {
+        const channel = IPC_CHANNEL.taskProgressObserve
+        requireArgs(payload, 1, channel)
+        const ids = payload[0]
+        if (!Array.isArray(ids) || ids.length > MAX_OBSERVED_PROJECTS) {
+          fail(`${channel} arg[0]`, `must be an array of at most ${MAX_OBSERVED_PROJECTS} ids`)
+        }
+        ;(ids as unknown[]).forEach((id, index) => {
+          assertString(id, `${channel} arg[0][${index}]`)
+        })
+        return payload
+      },
+      invoke: (args) => services.taskProgress.observe(args[0] as string[]),
+    },
+    serviceChannel(IPC_CHANNEL.taskProgressGet, ['string'], (args) =>
+      services.taskProgress.get(args[0]),
+    ),
     serviceChannel(IPC_CHANNEL.agentProfilesGet, ['string'], (args) =>
       services.agentProfiles.get(args[0]),
     ),

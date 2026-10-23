@@ -37,6 +37,11 @@ import type {
   KanbanUpdatePatch,
   ProjectInfo,
   ShellInfo,
+  TaskProgressAdapterList,
+  TaskProgressBinding,
+  TaskProgressChangedEvent,
+  TaskProgressSnapshot,
+  TaskProgressTestResult,
   Unsubscribe,
   WorkItem,
 } from '../../shared/ipc-contract'
@@ -221,6 +226,29 @@ export interface AppServices {
      * `terminals:create` must not start the project shell for that chat.
      */
     blocksProjectShell(chatId: string): boolean
+  }
+  taskProgress: {
+    /** Fresh scan of the fixed task progress adapters directory. */
+    adaptersList(): TaskProgressAdapterList
+    getBinding(projectId: string): TaskProgressBinding
+    saveBinding(projectId: string, adapterId: string | null, config: Record<string, string>): void
+    /** Adapter `test` action with possibly unsaved values; persists nothing. */
+    test(
+      projectId: string,
+      adapterId: string,
+      config: Record<string, string>,
+    ): Promise<TaskProgressTestResult>
+    /** Full visible project set; bound ones are observed, the rest stop. */
+    observe(projectIds: string[]): void
+    get(projectId: string): TaskProgressSnapshot | null
+    /** taskProgress:changed source; not on the renderer bridge. */
+    onChanged(callback: (event: TaskProgressChangedEvent) => void): Unsubscribe
+    /** Any window visible and not minimized (spec Behaviour 18); not on the bridge. */
+    setVisible(visible: boolean): void
+    /** App quit: stop observations, kill adapter processes; not on the bridge. */
+    shutdown(): void
+    /** Per-project key cleanup on projects:remove; not on the renderer bridge. */
+    cleanupProject(projectId: string): void
   }
   agentProfiles: {
     /** Selected current global definitions, in library order. */

@@ -137,6 +137,15 @@ function createAppMock(): AppMockBundle {
         rejections: [],
       })),
     },
+    taskProgress: {
+      adaptersList: vi.fn().mockResolvedValue({ adapters: [], warnings: [] }),
+      getBinding: vi.fn().mockResolvedValue({ adapterId: null, config: {} }),
+      saveBinding: vi.fn().mockResolvedValue(undefined),
+      test: vi.fn(),
+      observe: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue(null),
+      onChanged: vi.fn(() => () => undefined),
+    },
     agentProfiles: {
       get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
       libraryGet: vi.fn().mockResolvedValue({ version: 1, profiles: [] }),

@@ -234,12 +234,15 @@ export function SessionRowItem({
         ) : null}
         {task !== undefined ? (
           <span
+            role="img"
             className="rounded-[3px] px-1.5 py-0.5 text-[11px] font-mono shrink-0 leading-none"
             style={{
               color: '#5AA9FF',
               backgroundColor: 'rgba(90, 169, 255, 0.12)',
+              opacity: task.stale ? 0.5 : undefined,
             }}
-            title={`Task ${task.taskId}: step ${task.step} of ${task.totalSteps}`}
+            title={`${task.stale ? `Out of date: ${task.staleReason}. ` : ''}Task ${task.taskId}: step ${task.step} of ${task.totalSteps}`}
+            aria-label={task.ariaLabel}
             data-testid={testIdFor.chatTaskProgress(chat.id)}
           >
             {task.step}/{task.totalSteps}
@@ -628,7 +631,7 @@ export function LeftNavigation({
                                 resolvedStatus = 'running'
                               }
 
-                              const resolvedTask = sessionTasks?.[chat.id] ?? chat.task
+                              const resolvedTask = sessionTasks?.[chat.id]
 
                               return (
                                 <SessionRowItem

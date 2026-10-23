@@ -44,7 +44,7 @@ interface ActionBarProps {
     onChange: (mode: MarkdownViewMode) => void
   } | null
   /**
-   * Optional task progress for the active session (agent harness task record).
+   * Optional normalized adapter progress for the active session.
    */
   task?: SessionTaskProgress
   /**
