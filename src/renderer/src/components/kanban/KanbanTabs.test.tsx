@@ -138,10 +138,11 @@ describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
     expect(kanbanTab.nextElementSibling).toBe(chatTab)
     // Non-closable: no close control inside the tab.
     expect(within(kanbanTab).queryByRole('button', { name: /Close/ })).toBeNull()
-    // Icon-only without title text, square (aspect-square) with centered content (justify-center):
-    expect(kanbanTab.textContent).toBe('')
-    expect(kanbanTab.className).toContain('aspect-square')
-    expect(kanbanTab.className).toContain('justify-center')
+    // Icon plus the project name (cased per the default uppercase setting); full name in the tooltip.
+    expect(kanbanTab.textContent).toBe('DEMO')
+    expect(kanbanTab.getAttribute('title')).toBe('Kanban: DEMO')
+    // The Kanban tab carries the name, so no separate project-name label.
+    expect(screen.queryByTestId(TEST_ID.tabProjectName)).toBeNull()
 
     // Unbound project: no Kanban tab at all.
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))

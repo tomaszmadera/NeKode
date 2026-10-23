@@ -30,6 +30,12 @@ interface TabStripProps {
    * (kanban-adapter-interface spec Behaviour 14).
    */
   kanbanAvailable: boolean
+  /**
+   * Tab-strip project's display name (already cased per the project-name
+   * style setting), shortened by truncateProjectName: the Kanban tab label,
+   * or a non-interactive label leading the strip when there is no Kanban tab.
+   */
+  projectName: string | null
   /** Open file tabs of the active project, in open order. */
   openFiles: readonly string[]
   /** Absolute path of the tab-strip project's root; null shows no absolute-path item. */
@@ -38,6 +44,22 @@ interface TabStripProps {
   onSelectTab: (tab: TabId) => void
   onCloseFile: (relativePath: string) => void
   onSettings: () => void
+}
+
+/** Project names longer than this many characters are shortened. */
+export const PROJECT_TAB_NAME_MAX = 10
+
+/**
+ * Kanban tab label: names of up to PROJECT_TAB_NAME_MAX characters stay
+ * whole; longer names keep the first PROJECT_TAB_NAME_MAX - 1 characters plus
+ * an ellipsis. Counts grapheme clusters, so emoji are never split.
+ */
+export function truncateProjectName(name: string, max: number = PROJECT_TAB_NAME_MAX): string {
+  const graphemes = Array.from(
+    new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(name),
+    (part) => part.segment,
+  )
+  return graphemes.length <= max ? name : `${graphemes.slice(0, max - 1).join('')}…`
 }
 
 /** File name = the last path segment (spec Behaviour 3). */
@@ -67,6 +89,7 @@ export function TabStrip({
   floating = false,
   chatName,
   kanbanAvailable,
+  projectName,
   openFiles,
   projectRoot,
   active,
@@ -121,22 +144,35 @@ export function TabStrip({
       {kanbanAvailable ? (
         /* Kanban project-view tab (spec kanban-adapter-interface Behaviour
            14): non-closable (no close control), first tab in the strip when
-           the tab-strip project is bound, icon only without title.
-           Selecting it shows the board in the center surface. */
+           the tab-strip project is bound. Icon plus the project name
+           (shortened; full name in the tooltip), so the tab also names the
+           active project. Selecting it shows the board in the center surface. */
         <button
           type="button"
           className={cn(
-            'nk-tab-kanban no-drag flex aspect-square items-center justify-center rounded-t-md border-x border-t border-edge px-2.5 text-sm transition-colors duration-fast ease-standard',
+            'nk-tab-kanban no-drag flex shrink-0 items-center gap-1.5 rounded-t-md border-x border-t border-edge px-3 text-sm transition-colors duration-fast ease-standard',
             active.kind === 'kanban' ? 'nk-tab-active' : 'nk-tab-inactive',
           )}
           data-testid={TEST_ID.kanbanTab}
           data-selected={active.kind === 'kanban' ? 'true' : 'false'}
           onClick={() => onSelectTab(KANBAN_TAB)}
-          aria-label="Kanban"
-          title="Kanban"
+          title={projectName === null ? 'Kanban' : `Kanban: ${projectName}`}
         >
           <Icon.kanban size={14} aria-hidden className="shrink-0" />
+          <span className="whitespace-nowrap">
+            {projectName === null ? 'Kanban' : truncateProjectName(projectName)}
+          </span>
         </button>
+      ) : projectName !== null ? (
+        /* Unbound project: the strip still names the active project with a
+           plain label (no Kanban icon, not a tab, not clickable). */
+        <span
+          className="flex shrink-0 items-center whitespace-nowrap px-3 text-sm text-ink-secondary"
+          data-testid={TEST_ID.tabProjectName}
+          title={projectName}
+        >
+          {truncateProjectName(projectName)}
+        </span>
       ) : null}
       <button
         type="button"

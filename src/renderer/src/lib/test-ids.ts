@@ -10,6 +10,8 @@ export const TEST_ID = {
   tabTerminal: 'tab-terminal',
   /** Non-closable Kanban project-view tab (spec kanban-adapter-interface). */
   kanbanTab: 'tab-kanban',
+  /** Non-interactive project-name label leading the strip when the project has no Kanban tab. */
+  tabProjectName: 'tab-project-name',
   tabNewChat: 'tab-new-chat',
   /** Project Settings gear button in the tab strip. */
   tabProjectSettings: 'tab-project-settings',

@@ -118,7 +118,12 @@ describe('tab strip — order and labels (spec Behaviour 1–3, AC1)', () => {
     const terminalTab = screen.getByTestId(TEST_ID.tabTerminal)
     expect(terminalTab.textContent).toBe('First chat')
     expect(terminalTab.getAttribute('data-selected')).toBe('true')
-    expect(strip.firstElementChild).toBe(terminalTab)
+    // Unbound project: a plain project-name label leads the strip, then the first tab.
+    const nameLabel = screen.getByTestId(TEST_ID.tabProjectName)
+    expect(nameLabel.textContent).toBe('DEMO')
+    expect(nameLabel.tagName).toBe('SPAN')
+    expect(strip.firstElementChild).toBe(nameLabel)
+    expect(nameLabel.nextElementSibling).toBe(terminalTab)
 
     await enterFilesMode(app, 'p1')
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))

@@ -2746,6 +2746,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             floating={floatingTheme}
             chatName={activeChat?.name ?? null}
             kanbanAvailable={tabProject !== null && kanbanProjectIds.has(tabProject.id)}
+            projectName={
+              tabProject === null
+                ? null
+                : projectNamesUppercase
+                  ? tabProject.name.toUpperCase()
+                  : tabProject.name
+            }
             openFiles={tabsSession.openFiles}
             projectRoot={tabProject?.path ?? null}
             active={activeTab}
