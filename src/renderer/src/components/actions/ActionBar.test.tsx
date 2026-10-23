@@ -74,6 +74,7 @@ describe('ActionBar', () => {
     const onRefresh = vi.fn()
     const onNewTask = vi.fn()
     const onCloseReview = vi.fn()
+    const onSearchQueryChange = vi.fn()
 
     render(
       <ActionBar
@@ -95,6 +96,8 @@ describe('ActionBar', () => {
           isReviewing: false,
           creatingBusy: false,
           sortState: { sortBy: 'slug', direction: 'asc' },
+          searchQuery: 'first',
+          onSearchQueryChange,
           onSortByChange,
           onToggleSortDirection,
           onRefresh,
@@ -117,13 +120,17 @@ describe('ActionBar', () => {
     expect(screen.getByTestId('kanban-search-input')).toBeTruthy()
     expect(screen.getByTestId('kanban-new-task')).toBeTruthy()
 
-    // Task search is not implemented: the field stays disabled, has a neutral
-    // placeholder, and its tooltip says why it is disabled.
+    // Search is controlled by the active board session.
     const searchInput = screen.getByTestId('kanban-search-input') as HTMLInputElement
-    expect(searchInput.placeholder).toBe('Search')
-    expect(searchInput.title).toBe('Search is not available yet')
-    expect(searchInput.getAttribute('aria-label')).toBe('Search is not available yet')
-    expect(searchInput.disabled).toBe(true)
+    expect(searchInput.placeholder).toBe('Search titles...')
+    expect(searchInput.disabled).toBe(false)
+    expect(searchInput.value).toBe('first')
+    fireEvent.change(searchInput, { target: { value: 'second' } })
+    expect(onSearchQueryChange).toHaveBeenCalledWith('second')
+    fireEvent.keyDown(searchInput, { key: 'Escape' })
+    expect(onSearchQueryChange).toHaveBeenLastCalledWith('')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(onSearchQueryChange).toHaveBeenLastCalledWith('')
 
     // Interacting with controls invokes callbacks
     fireEvent.change(screen.getByTestId('kanban-sort-by'), { target: { value: 'priority' } })
@@ -172,6 +179,8 @@ describe('ActionBar', () => {
           refreshing: false,
           isReviewing: true,
           creatingBusy: false,
+          searchQuery: 'first',
+          onSearchQueryChange: vi.fn(),
           sortState: { sortBy: 'slug', direction: 'asc' },
           onSortByChange: vi.fn(),
           onToggleSortDirection: vi.fn(),
@@ -189,6 +198,7 @@ describe('ActionBar', () => {
 
     // New task button is not rendered during review
     expect(screen.queryByTestId('kanban-new-task')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Search titles' })).toHaveProperty('disabled', true)
   })
 
   it('renders TaskProgressButton with exact aria-label when task is present in session mode', async () => {

@@ -13,6 +13,7 @@ import { writeSubmitLine } from '../../lib/pty-submit'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import type { MarkdownViewMode } from '../files/markdown-path'
 import type { KanbanSortBy, KanbanToolbarControls } from '../kanban/KanbanBoard'
+import { KanbanSearch } from '../kanban/KanbanSearch'
 import { TaskProgressButton } from '../task-progress/TaskProgressButton'
 import { ActionContextMenu } from './ActionContextMenu'
 
@@ -433,20 +434,11 @@ export function ActionBar({
             </button>
           </fieldset>
           <div className="nk-btn-group shrink-0">
-            <div className="flex h-[30px] items-center gap-2 px-2.5">
-              <Icon.search size={14} aria-hidden className="text-ink-disabled shrink-0" />
-              {/* Task search is not implemented yet: the field stays disabled
-                  and its tooltip says so instead of the placeholder. */}
-              <input
-                type="text"
-                placeholder="Search"
-                title="Search is not available yet"
-                aria-label="Search is not available yet"
-                disabled
-                data-testid={TEST_ID.kanbanSearchInput}
-                className="w-48 bg-transparent text-sm text-ink placeholder:text-ink-disabled opacity-70 cursor-not-allowed outline-none"
-              />
-            </div>
+            <KanbanSearch
+              query={kanbanControls?.searchQuery ?? ''}
+              onQueryChange={(query) => kanbanControls?.onSearchQueryChange(query)}
+              disabled={kanbanControls?.phase !== 'ready' || kanbanControls?.isReviewing}
+            />
           </div>
         </>
       ) : (

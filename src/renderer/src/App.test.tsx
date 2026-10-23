@@ -4142,6 +4142,34 @@ describe('kanban task resume — removing the project', () => {
     expect(screen.queryByTestId(TEST_ID.kanbanBoard)).not.toBeNull()
   })
 
+  it('connects live title search between the action bar and the active kanban board', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.kanban.listBoard).mockResolvedValue({
+      ...board,
+      items: [
+        board.items[0],
+        { ...board.items[0], id: 'another', ref: 'NEKODE-999', title: 'Different title' },
+      ],
+    })
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === projectKanbanAdapterKey('p1') ? 'demo' : null,
+    )
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+    await screen.findByTestId(testIdFor.kanbanItem('NEKODE-999'))
+    const search = screen.getByRole('textbox', { name: 'Search titles' })
+    fireEvent.change(search, { target: { value: 'different' } })
+    await waitFor(() => expect(search).toHaveProperty('value', 'different'))
+    expect(screen.queryByTestId(testIdFor.kanbanItem(board.items[0].ref))).toBeNull()
+    expect(screen.getByTestId(testIdFor.kanbanItem('NEKODE-999'))).toBeTruthy()
+    fireEvent.keyDown(search, { key: 'Escape' })
+    await waitFor(() => expect(search).toHaveProperty('value', ''))
+    expect(screen.getByTestId(testIdFor.kanbanItem(board.items[0].ref))).toBeTruthy()
+    expect(app.kanban.listBoard).toHaveBeenCalledTimes(1)
+  })
+
   it('suppresses fixed action bar buttons and preserves settings when viewing the kanban tab', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])

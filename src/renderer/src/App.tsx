@@ -523,7 +523,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           existing.isReviewing === controls.isReviewing &&
           existing.creatingBusy === controls.creatingBusy &&
           existing.sortState.sortBy === controls.sortState.sortBy &&
-          existing.sortState.direction === controls.sortState.direction
+          existing.sortState.direction === controls.sortState.direction &&
+          existing.searchQuery === controls.searchQuery
         ) {
           return previous
         }

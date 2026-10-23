@@ -5,6 +5,18 @@ Path: `docs/features/kanban-adapter-interface/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
+## Filtrowanie tytułów (NEKODE-117, decyzja użytkownika 2026-10-23)
+
+Pole `Search titles` filtruje lokalnie wszystkie pozycje już pobrane dla aktywnego projektu, także poza obszarem przewijania i w zwiniętych grupach. Wyniki zmieniają się od pierwszego znaku, bez Entera, debounce ani dodatkowych wywołań IPC/API. Dopasowanie sprawdza dosłowny fragment tytułu bez rozróżniania wielkości liter, po usunięciu skrajnych spacji zapytania. Ref i opis nie uczestniczą w dopasowaniu.
+
+Filtr zawsze korzysta z pełnego aktualnego zbioru. Zachowuje sortowanie i kolejność grup statusów. Niepuste zapytanie ukrywa grupy bez dopasowań; grupy z wynikami są rozwinięte i mają licznik pasujących pozycji. Podczas filtrowania ich zwijanie jest nieaktywne. Wyczyszczenie przywraca poprzednie zwinięcia i wszystkie pozycje, bez zmiany zapisanych preferencji. Zapytanie złożone wyłącznie ze spacji działa jak puste.
+
+Brak dopasowań pokazuje `No matching tasks.`, niezależnie od stanu pustej tablicy. Przycisk `Clear search` czyści tekst i przenosi fokus do pola; Escape w polu także czyści zapytanie. Podczas podglądu zadania pole w pasku aplikacji jest nieaktywne.
+
+Zapytanie pozostaje w pamięci sesji Kanban projektu podczas odświeżenia, podglądu zadania i zmiany aktywnego widoku. Projekty mają niezależne zapytania; aplikacja nie zapisuje ich trwale. Odświeżenie, utworzenie i aktualizacja zadania stosują filtr do nowych danych.
+
+Weryfikacja obejmuje pierwszy znak, fragment tytułu i wielkość liter, pominięcie refu i opisu, czyszczenie, brak wyników, sortowanie, przywracanie zwinięć, podgląd i zmiany danych, izolację sesji projektów oraz zbiór kilkuset pozycji bez dodatkowych żądań.
+
 ## Goal
 
 Let NeKode read and change work items from an external Kanban backend (Plane today, others later) through user-provided adapter plugins, without building any backend knowledge into the application. The user drops adapters into one directory, binds one adapter per project in Project Settings, fills the adapter's declared config fields, and the application talks to that backend only through a versioned process protocol. This feature also ships the first real Kanban surface, reached from a `Kanban` tile under the project's name in the left navigation and a `Kanban` tab in the top tab strip. The tab is unstyled beyond the basics: a grouped list, separate slug and title columns, a hover underline on the slug, the title, enabled Start, and shown Resume as the only click targets, the priority, Start and Resume, a New task form, an item review with Status and Priority plus the full title and description, and a refresh icon on the header's right side. In the review, Status and Priority save, and the ref, title, and description stay read-only and can be selected and copied. The editing rules are in "Kanban item editing amendment (user decision 2026-10-11)" and "Kanban row and review amendment (user decision 2026-10-12)". Drag-and-drop and the visual design in UX-UI §26-30 remain later work.

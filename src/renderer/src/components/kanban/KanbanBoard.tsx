@@ -14,6 +14,7 @@ import type {
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { KanbanSearch } from './KanbanSearch'
 
 // Kanban surface (spec kanban-adapter-interface Behaviour 14, AC14).
 // The only arrangement is a list: the items grouped under the state names, in
@@ -70,6 +71,8 @@ export interface KanbanToolbarControls {
   isReviewing: boolean
   creatingBusy: boolean
   sortState: KanbanSortState
+  searchQuery: string
+  onSearchQueryChange: (query: string) => void
   onSortByChange: (sortBy: KanbanSortBy) => void
   onToggleSortDirection: () => void
   onRefresh: () => void
@@ -1158,6 +1161,17 @@ export function KanbanBoard({
     loadCollapsedStateIds(projectId),
   )
   const [sortState, setSortState] = useState<KanbanSortState>(() => loadKanbanSort(projectId))
+  const [searchQuery, setSearchQuery] = useState('')
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const isFiltering = normalizedQuery !== ''
+  const columns = boardColumns(
+    isFiltering
+      ? {
+          ...board,
+          items: board.items.filter((item) => item.title.toLowerCase().includes(normalizedQuery)),
+        }
+      : board,
+  ).filter((column) => !isFiltering || column.items.length > 0)
   // Handoff availability (spec Resume availability): Resume is hidden until a
   // batch check succeeds and the item has a readable accepted candidate. The
   // check runs beside the board load and never delays rendering the board.
@@ -1225,6 +1239,7 @@ export function KanbanBoard({
     setCreatingBusy(false)
     setCollapsedStates(loadCollapsedStateIds(projectId))
     setSortState(loadKanbanSort(projectId))
+    setSearchQuery('')
     closeNewTask()
     setStatusChoice(null)
     setStatusError(null)
@@ -1628,6 +1643,7 @@ export function KanbanBoard({
     creatingBusy: boolean
     sortBy: KanbanSortBy
     direction: KanbanSortDirection
+    searchQuery: string
   } | null>(null)
 
   useEffect(() => {
@@ -1649,7 +1665,8 @@ export function KanbanBoard({
       prev.isReviewing === isReviewing &&
       prev.creatingBusy === creatingBusy &&
       prev.sortBy === sortState.sortBy &&
-      prev.direction === sortState.direction
+      prev.direction === sortState.direction &&
+      prev.searchQuery === searchQuery
     ) {
       return
     }
@@ -1661,6 +1678,7 @@ export function KanbanBoard({
       creatingBusy,
       sortBy: sortState.sortBy,
       direction: sortState.direction,
+      searchQuery,
     }
     onToolbarControlsRef.current({
       phase,
@@ -1668,6 +1686,8 @@ export function KanbanBoard({
       isReviewing,
       creatingBusy,
       sortState,
+      searchQuery,
+      onSearchQueryChange: setSearchQuery,
       onSortByChange: handleSortByChange,
       onToggleSortDirection: toggleSortDirection,
       onRefresh: () => {
@@ -1683,6 +1703,7 @@ export function KanbanBoard({
     reviewItem,
     creatingBusy,
     sortState,
+    searchQuery,
     handleSortByChange,
     toggleSortDirection,
     load,
@@ -1731,6 +1752,9 @@ export function KanbanBoard({
               <Icon.plus size={14} aria-hidden />
               New task
             </button>
+          ) : null}
+          {phase === 'ready' && reviewItem === null ? (
+            <KanbanSearch query={searchQuery} onQueryChange={setSearchQuery} />
           ) : null}
           {/* Refresh sits on the right (UX-UI §63). */}
           <div className="ml-auto flex items-center gap-1">
@@ -1875,8 +1899,9 @@ export function KanbanBoard({
       ) : null}
       {phase === 'ready' && reviewItem === null ? (
         <div className="flex min-w-0 flex-col gap-3" data-testid={TEST_ID.kanbanList}>
-          {boardColumns(board).map((column) => {
-            const isCollapsed = collapsedStates.has(column.stateId)
+          {isFiltering && columns.length === 0 ? <p role="status">No matching tasks.</p> : null}
+          {columns.map((column) => {
+            const isCollapsed = !isFiltering && collapsedStates.has(column.stateId)
             const listId = `kanban-list-items-${column.stateId}`
             const sortedItems = sortWorkItems(column.items, sortState.sortBy, sortState.direction)
             return (
@@ -1886,6 +1911,7 @@ export function KanbanBoard({
                     type="button"
                     className="flex w-full items-center justify-between rounded px-1 py-0.5 text-left hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                     aria-expanded={!isCollapsed}
+                    disabled={isFiltering}
                     aria-controls={listId}
                     data-testid={testIdFor.kanbanGroupToggle(column.stateId)}
                     onClick={() => {

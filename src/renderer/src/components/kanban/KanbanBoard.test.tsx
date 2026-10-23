@@ -12,6 +12,7 @@ import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
 import { kanbanBoardFixture as fixture, kanbanWorkItem as item } from '../../test/kanban-fixtures'
 import {
   KanbanBoard,
+  type KanbanToolbarControls,
   kanbanCollapsedStorageKey,
   kanbanSortStorageKey,
   PRIORITY_COLOR,
@@ -652,6 +653,158 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
       longTitle,
     )
     expect(listBoard).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('live title filtering (NEKODE-117)', () => {
+  it('filters hundreds of loaded titles from the first character and restores the full source on every edit', async () => {
+    const board = {
+      states: fixture.states,
+      items: Array.from({ length: 500 }, (_, index) =>
+        item(`NK-${index}`, index % 2 === 0 ? `Alpha ${index}` : `Beta ${index}`, 's1'),
+      ),
+    }
+    const listBoard = vi.fn().mockResolvedValue(board)
+    const app = appWith(listBoard)
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+    await screen.findByTestId(testIdFor.kanbanItem('NK-0'))
+    const search = screen.getByRole('textbox', { name: 'Search titles' })
+    fireEvent.change(search, { target: { value: 'b' } })
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-0'))).toBeNull()
+    expect(screen.getAllByTestId(/^kanban-item-NK-/)).toHaveLength(250)
+    fireEvent.change(search, { target: { value: '  LpH  ' } })
+    expect(screen.getAllByTestId(/^kanban-item-NK-/)).toHaveLength(250)
+    expect(screen.getByTestId(testIdFor.kanbanItem('NK-0'))).toBeTruthy()
+    fireEvent.change(search, { target: { value: 'NK-' } })
+    expect(screen.getByRole('status').textContent).toBe('No matching tasks.')
+    expect(screen.queryByTestId(TEST_ID.kanbanBoardEmpty)).toBeNull()
+    fireEvent.change(search, { target: { value: '   ' } })
+    expect(screen.getAllByTestId(/^kanban-item-NK-/)).toHaveLength(500)
+    fireEvent.change(search, { target: { value: 'missing' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(search).toHaveProperty('value', '')
+    expect(document.activeElement).toBe(search)
+    expect(screen.getAllByTestId(/^kanban-item-NK-/)).toHaveLength(500)
+    expect(listBoard).toHaveBeenCalledTimes(1)
+    expect(app.kanban.handoffAvailability).toHaveBeenCalledTimes(1)
+  })
+
+  it('reveals collapsed matches, counts and sorts results, then restores the saved collapse state', async () => {
+    localStorage.setItem(kanbanCollapsedStorageKey('p1'), JSON.stringify(['s1']))
+    const board = {
+      ...fixture,
+      items: [
+        { ...item('NK-10', 'Match low', 's1'), priority: 'low' as const },
+        { ...item('NK-2', 'Match urgent', 's1'), priority: 'urgent' as const },
+        { ...item('NK-1', 'Other', 's2'), description: 'Match' },
+      ],
+    }
+    render(
+      <KanbanBoard
+        app={appWith(vi.fn().mockResolvedValue(board))}
+        projectId="p1"
+        onConfigure={vi.fn()}
+      />,
+    )
+    await screen.findByTestId(testIdFor.kanbanGroupToggle('s1'))
+    const search = screen.getByRole('textbox', { name: 'Search titles' })
+    fireEvent.change(search, { target: { value: 'match' } })
+    const group = screen.getByTestId(testIdFor.kanbanListGroup('s1'))
+    const toggle = within(group).getByTestId(testIdFor.kanbanGroupToggle('s1'))
+    expect(within(toggle).getByText('2')).toBeTruthy()
+    expect(toggle).toHaveProperty('disabled', true)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByTestId(testIdFor.kanbanListGroup('s2'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.kanbanListGroup('s3'))).toBeNull()
+    fireEvent.change(screen.getByTestId(TEST_ID.kanbanSortBy), { target: { value: 'priority' } })
+    expect(listedKanbanItemIds(group)).toEqual([
+      testIdFor.kanbanItem('NK-2'),
+      testIdFor.kanbanItem('NK-10'),
+    ])
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanSortDirection))
+    expect(listedKanbanItemIds(group)).toEqual([
+      testIdFor.kanbanItem('NK-10'),
+      testIdFor.kanbanItem('NK-2'),
+    ])
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(search).toHaveProperty('value', '')
+    expect(toggle).toHaveProperty('disabled', false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-2'))).toBeNull()
+    expect(localStorage.getItem(kanbanCollapsedStorageKey('p1'))).toBe(JSON.stringify(['s1']))
+    expect(screen.getByTestId(testIdFor.kanbanListGroup('s2'))).toBeTruthy()
+  })
+
+  it('retains the query through review and applies it to refreshed and locally written items', async () => {
+    const created = item('NK-8', 'First added', 's1')
+    const listBoard = vi
+      .fn()
+      .mockResolvedValueOnce(fixture)
+      .mockResolvedValue({
+        ...fixture,
+        items: [item('NK-4', 'First refreshed', 's1'), item('NK-5', 'Other refreshed', 's1')],
+      })
+    const app = appWith(listBoard)
+    app.kanban.createItem = vi.fn().mockResolvedValue(created)
+    app.kanban.updateItem = vi
+      .fn()
+      .mockResolvedValue({ ...fixture.items[0], title: 'Changed title' })
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+    await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
+    const search = screen.getByRole('textbox', { name: 'Search titles' })
+    fireEvent.change(search, { target: { value: 'first' } })
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
+    fireEvent.change(screen.getByTestId(TEST_ID.kanbanReviewPriority), {
+      target: { value: 'high' },
+    })
+    await waitFor(() => expect(app.kanban.updateItem).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.kanbanReviewPriority)).toHaveProperty('disabled', false),
+    )
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
+    expect(screen.getByRole('textbox', { name: 'Search titles' })).toHaveProperty('value', 'first')
+    expect(screen.getByRole('status').textContent).toBe('No matching tasks.')
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanNewTask))
+    fireEvent.change(screen.getByTestId(TEST_ID.kanbanNewTaskStatus), {
+      target: { value: 'Backlog' },
+    })
+    fireEvent.change(screen.getByTestId(TEST_ID.kanbanNewTaskTitle), {
+      target: { value: created.title },
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanNewTaskCreate))
+    await screen.findByTestId(testIdFor.kanbanItem('NK-8'))
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    await screen.findByTestId(testIdFor.kanbanItem('NK-4'))
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-5'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-8'))).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Search titles' })).toHaveProperty('value', 'first')
+    expect(listBoard).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains independent in-memory queries in project sessions', async () => {
+    const listBoard = vi.fn().mockResolvedValue(fixture)
+    const app = appWith(listBoard)
+    const reported: { controls: KanbanToolbarControls | null } = { controls: null }
+    const onToolbarControls = (_id: string, next: KanbanToolbarControls | null): void => {
+      if (next !== null) reported.controls = next
+    }
+    const props = {
+      app,
+      projectIds: new Set(['p1', 'p2']),
+      versions: {},
+      onConfigure: vi.fn(),
+      onToolbarControls,
+    }
+    const ui = render(<KanbanSessions {...props} activeProjectId="p1" />)
+    await waitFor(() => expect(reported.controls?.phase).toBe('ready'))
+    act(() => reported.controls?.onSearchQueryChange('first'))
+    expect(reported.controls?.searchQuery).toBe('first')
+    ui.rerender(<KanbanSessions {...props} activeProjectId="p2" />)
+    await waitFor(() => expect(reported.controls?.searchQuery).toBe(''))
+    await waitFor(() => expect(reported.controls?.phase).toBe('ready'))
+    act(() => reported.controls?.onSearchQueryChange('second'))
+    ui.rerender(<KanbanSessions {...props} activeProjectId="p1" />)
+    await waitFor(() => expect(reported.controls?.searchQuery).toBe('first'))
   })
 })
 
