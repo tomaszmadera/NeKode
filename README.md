@@ -131,9 +131,9 @@ CI runs `pnpm run verify` on `windows-latest` (the required check) for every pul
 
 ## Dictation
 
-NeKode has no speech recognition of its own. On Windows, the Dictation button next to a chat prompt uses the [OpenWhispr](https://docs.openwhispr.com/) desktop app: NeKode focuses that prompt, moves the caret to the end of the draft, and sends the OpenWhispr shortcut once. OpenWhispr records, transcribes, and pastes the text into the focused field. NeKode does not record or receive the audio.
+NeKode has no speech recognition of its own. On Windows, the Dictation button next to a chat prompt uses the [OpenWhispr](https://docs.openwhispr.com/) desktop app: NeKode focuses that prompt, moves the caret to the end of the draft, and sends the OpenWhispr shortcut once. OpenWhispr records, transcribes, and pastes the text into the focused field. In this desktop route, NeKode does not record or receive the audio.
 
-Requirements: Windows, and OpenWhispr installed and running with the dictation hotkey `Ctrl + Super` (Windows key) and activation mode `Tap`. Other shortcuts and Hold mode are not supported. NeKode does not install, start, or configure OpenWhispr. Set the microphone, language, model, and Cloud or Local processing in OpenWhispr; it handles your audio according to the mode you select there.
+Requirements: Windows, and OpenWhispr installed and running with the dictation hotkey `Ctrl + Super` (Windows key) and activation mode `Tap`. Other shortcuts and Hold mode are not supported. NeKode does not install, start, or configure OpenWhispr. Set the microphone, language, model, and Cloud or Local processing in OpenWhispr. In Cloud mode, OpenWhispr handles your audio according to its selected mode.
 
 Dictation is off by default. In App Settings > Dictation, select `Enable desktop dictation`, then confirm that OpenWhispr is running with `Ctrl + Super` / `Tap`. Turning dictation off or on again clears the confirmation. With `Tap`, the shortcut starts or stops a recording depending on OpenWhispr's state; stop or cancel a recording in OpenWhispr or with its shortcut. Keep the prompt focused until the text appears, because OpenWhispr pastes into whichever field has focus, and send the prompt yourself; NeKode never submits it. The same settings tab also lists the OpenWhispr dictionary, read-only, through OpenWhispr's local bridge.
 
