@@ -1021,3 +1021,124 @@ describe('accounts settings flow (spec rules 21-28)', () => {
     await expect(f.service.openAdaptersFolder()).rejects.toMatchObject({ code: 'not_found' })
   })
 })
+
+describe('pinning a metric of an external adapter (NEKODE-120)', () => {
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (v: string) => Buffer.from(v),
+    decryptString: (v: Buffer) => v.toString(),
+  }
+  // Mirrors the Personal Data Hub manifest: the secret is declared between two text fields.
+  function hub(f: ReturnType<typeof fixture>, keys = ['hubUrl', 'token', 'agents']) {
+    const directory = join(f.deps.userDataPath, 'usage-adapters', 'hub')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(
+      join(directory, 'usage-adapter.json'),
+      JSON.stringify({
+        id: 'hub',
+        name: 'Hub',
+        providerId: 'hub',
+        protocolVersion: 1,
+        invocation: { command: 'node', args: ['fixture.cjs'] },
+        sourceKind: 'api',
+        capabilities: ['window'],
+        minimumRefreshSeconds: 60,
+        configSchema: keys.map((key) => ({
+          key,
+          label: key,
+          type: key === 'token' ? 'secret' : 'text',
+          required: key !== 'agents',
+        })),
+      }),
+    )
+    const host = new UsageAdapterHost()
+    vi.spyOn(host, 'read').mockResolvedValue({
+      schemaVersion: 1,
+      subscriptions: [
+        {
+          id: 'hub-account',
+          providerId: 'hub',
+          label: 'Hub',
+          sourceKind: 'api',
+          status: 'available',
+          metrics: ['claude-5h', 'codex-weekly'].map((id) => ({
+            id,
+            label: id,
+            providerId: id.split('-')[0],
+            kind: 'window',
+            state: 'available',
+            observedAt: '2026-10-20T12:00:00Z',
+            usedPercent: 30,
+            resetsAt: '2026-10-25T00:00:00Z',
+          })),
+        },
+      ],
+    })
+    const service = new UsageService({ ...f.deps, host, safeStorage })
+    services.push(service)
+    return { service, host }
+  }
+  const pin = { connectionId: 'hub-account', metricId: 'codex-weekly' }
+  const connection = (config: Record<string, string | boolean>) => ({
+    id: 'hub-account',
+    label: 'PDH',
+    providerId: '',
+    adapterId: 'hub',
+    enabled: true,
+    config,
+  })
+
+  it('keeps the pin through the toolbar settings roundtrip, refresh, and restart', async () => {
+    const f = fixture()
+    const { service, host } = hub(f)
+    service.saveSettings({
+      ...f.settings,
+      connections: [connection({ hubUrl: 'https://hub.test', token: 't', agents: '' })],
+    })
+    await service.refresh()
+    // UsageToolbar.pin(): getSettings, then saveSettings with the pin.
+    service.saveSettings({ ...service.getSettings(), pin })
+    expect(service.read().pin).toEqual(pin)
+    expect(service.read().connections[0].subscription?.metrics).toHaveLength(2)
+    await service.refresh()
+    expect(service.read().pin).toEqual(pin)
+    const restarted = new UsageService({ ...f.deps, host, safeStorage })
+    services.push(restarted)
+    expect(restarted.read().pin).toEqual(pin)
+    await restarted.refresh()
+    expect(restarted.read().pin).toEqual(pin)
+  })
+  it('pins an account saved under an older adapter manifest that declared other fields', async () => {
+    const f = fixture()
+    const old = hub(f, ['token', 'hubUrl', 'agent'])
+    old.service.saveSettings({
+      ...f.settings,
+      connections: [connection({ token: 't', hubUrl: 'https://hub.test', agent: 'agy' })],
+    })
+    const { service } = hub(f)
+    await service.refresh()
+    service.saveSettings({ ...service.getSettings(), pin })
+    expect(service.read().pin).toEqual(pin)
+    expect(service.getSettings().connections[0].config).toEqual({ hubUrl: 'https://hub.test' })
+    const added = service.getSettings()
+    added.connections[0].config.region = 'eu'
+    expect(() => service.saveSettings(added)).toThrow('field "region"')
+  })
+  it('reports why a requested pin is refused and keeps the current pin', async () => {
+    const f = fixture()
+    const { service } = hub(f)
+    service.saveSettings({
+      ...f.settings,
+      connections: [connection({ hubUrl: 'https://hub.test', token: 't' })],
+    })
+    expect(() =>
+      service.saveSettings({ ...service.getSettings(), pin: { ...pin, metricId: 'claude-5h' } }),
+    ).toThrow('reports no value for it')
+    await service.refresh()
+    service.saveSettings({ ...service.getSettings(), pin })
+    expect(() =>
+      service.saveSettings({ ...service.getSettings(), pin: { ...pin, metricId: 'grok-weekly' } }),
+    ).toThrow('reports no value for it')
+    expect(service.read().pin).toEqual(pin)
+  })
+})

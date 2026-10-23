@@ -26,6 +26,7 @@ import {
   type UsageDocument,
   type UsageFailure,
   type UsageFileSubscription,
+  type UsagePin,
   type UsageSettings,
   type UsageSnapshot,
   type UsageSubscription,
@@ -343,8 +344,15 @@ export class UsageService {
       (p) => p.id === c.id && p.adapterId === c.adapterId,
     )
     if (config.subscriptionId === '') delete config.subscriptionId
-    if (Object.keys(config).some((k) => !a.configSchema.some((f) => f.key === k)))
-      throw new AppError('validation_error', 'Unknown usage adapter configuration field.')
+    // Spec rule 20: a stored field the adapter no longer declares is dropped; a new one is rejected.
+    const unknown = Object.keys(config).find(
+      (k) => !a.configSchema.some((f) => f.key === k) && previous?.config[k] !== config[k],
+    )
+    if (unknown !== undefined)
+      throw new AppError(
+        'validation_error',
+        `Unknown usage adapter configuration field "${unknown}".`,
+      )
     for (const f of a.configSchema) {
       let value = config[f.key]
       if (f.type === 'secret') {
@@ -374,7 +382,14 @@ export class UsageService {
       if (f.type === 'choice' && value !== undefined && !f.choices?.includes(value as string))
         throw new AppError('validation_error', 'Invalid usage adapter choice.')
     }
-    return { ...c, config, providerId: this.providerFor(c, a, config) }
+    return { ...c, config: this.declared(config, a), providerId: this.providerFor(c, a, config) }
+  }
+  /** Spec rule 20: the configuration as the adapter declares it, in schema order, so field order
+   * and fields the adapter no longer declares never change account identity. */
+  private declared(config: UsageConnection['config'], a: UsageAdapter): UsageConnection['config'] {
+    const declared: UsageConnection['config'] = {}
+    for (const f of a.configSchema) if (config[f.key] !== undefined) declared[f.key] = config[f.key]
+    return declared
   }
   /** Spec rule 23: the service's declared id, a JSON file subscription's id, or the adapter id. */
   private providerFor(
@@ -509,6 +524,20 @@ export class UsageService {
       bound.set(key, c.label)
     }
   }
+  /** Why `pin` cannot target a metric under `next`, or null when it can. */
+  private pinRefusal(pin: UsagePin, next: UsageSettings, invalidated: Set<string>): string | null {
+    if (!next.connections.some((c) => c.id === pin.connectionId && c.enabled))
+      return 'Cannot pin this metric: its account is removed or disabled.'
+    if (invalidated.has(pin.connectionId))
+      return 'Cannot pin this metric: its account settings changed. Pin it after the next refresh.'
+    if (
+      !this.runtime
+        .get(pin.connectionId)
+        ?.subscription?.metrics.some((m) => m.id === pin.metricId && m.state !== 'unavailable')
+    )
+      return 'Cannot pin this metric: its account reports no value for it.'
+    return null
+  }
   saveSettings(raw: UsageSettings): UsageSettings {
     const next = parseUsageSettings(raw)
     next.connections = next.connections.map((c) => this.prepare(c))
@@ -524,21 +553,18 @@ export class UsageService {
         previous.label !== c.label ||
         previous.providerId !== c.providerId ||
         previous.adapterId !== c.adapterId ||
-        JSON.stringify(previous.config) !== JSON.stringify(c.config)
+        JSON.stringify(this.declared(previous.config, this.adapter(c))) !== JSON.stringify(c.config)
       )
         invalidated.add(c.id)
     }
-    if (
-      next.pin &&
-      (invalidated.has(next.pin.connectionId) ||
-        !next.connections.some((c) => c.id === next.pin?.connectionId && c.enabled) ||
-        !this.runtime
-          .get(next.pin.connectionId)
-          ?.subscription?.metrics.some(
-            (m) => m.id === next.pin?.metricId && m.state !== 'unavailable',
-          ))
-    )
+    const refusal = next.pin && this.pinRefusal(next.pin, next, invalidated)
+    if (next.pin && refusal) {
+      const current = this.settings.pin
+      // Spec rule 9: a new pin request reports why it failed; a kept pin whose target is gone clears.
+      if (current?.connectionId !== next.pin.connectionId || current.metricId !== next.pin.metricId)
+        throw new AppError('validation_error', refusal)
       next.pin = null
+    }
     next.export.replaceExisting = undefined
     const revisions = Object.fromEntries(
       next.connections.map((c) => [
