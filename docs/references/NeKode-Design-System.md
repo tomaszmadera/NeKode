@@ -105,8 +105,11 @@ Implementation status (2026-10-01, updated 2026-10-21): `src/renderer/src/theme.
 `default` tokens from `themes/default.css` (Tailwind v4 `@theme`) and the
 override theme from `themes/nekode-float.css`.
 Every override theme covers every default token name (theme.test.ts asserts
-name parity against `default.css` for each override file, not value parity),
-so themes may diverge freely. Theme membership, display labels and the shell
+shared name parity against `default.css` for each override file, not value parity).
+NeKode Float also has local `--float-*` tokens for repeated colors, overlays,
+glow and the primary gradient in its structure overrides. These extend the shared
+base token surface without changing NeKode Flat; themes may diverge freely.
+Theme membership, display labels and the shell
 layout variant live in the registry `src/renderer/src/lib/theme.ts`:
 `nekode-flat` ("NeKode Flat", the base tokens without overrides) keeps the attached shell, and `nekode-float`
 ("NeKode Float", the default theme) uses a dark indigo palette with glowing accents. It

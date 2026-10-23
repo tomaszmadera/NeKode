@@ -44,7 +44,8 @@ describe('theme palettes', () => {
       expect(names.length).toBeGreaterThan(0)
       // A theme override file must cover the full default token surface: a
       // missing name would silently fall back to the default palette there.
-      expect(names).toEqual(defaultNames)
+      // Float-only structure tokens extend that shared surface.
+      expect(names.filter((name) => !name.startsWith('--float-'))).toEqual(defaultNames)
     },
   )
 })
