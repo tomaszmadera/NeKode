@@ -502,8 +502,20 @@ try {
   await shot('panel-error-cached')
   // Exercise the built-in source's actual automatic scheduler, without an explicit retry.
   writeFileSync(input, JSON.stringify(doc))
+  // The service of a saved account cannot change (spec rule 23): replace the account with a
+  // Custom JSON file account bound to the file subscription and its provider id (rule 25).
   const builtIn = await evaluate('window.app.usage.getSettings()')
-  builtIn.connections[0].adapterId = 'usage-file'
+  builtIn.connections = [
+    {
+      id: 'fixture-file-account',
+      label: 'Fixture file subscription (test data)',
+      providerId: 'fixture',
+      adapterId: 'usage-file',
+      enabled: true,
+      config: { path: input, subscriptionId: 'fixture-account' },
+    },
+  ]
+  builtIn.pin = null
   await evaluate(`window.app.usage.saveSettings(${JSON.stringify(builtIn)})`)
   await evaluate('window.app.usage.refresh()')
   await sleep(5200)

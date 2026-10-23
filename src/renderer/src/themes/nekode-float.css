@@ -6,16 +6,16 @@
    Every color utility (bg-panel, text-ink, border-edge, ...) derives from
    these names — override values only, never token names. */
 [data-theme="nekode-float"] {
-  /* Compact subscription quota panel: the default palette's usage values.
-     The first five match the approved usage reference
-     (tmp/nekode-prototype/Main.dc.html); stale follows default.css. */
-  --color-usage-surface: #151823;
-  --color-usage-track: #232838;
-  --color-usage-fill: #8b7cf6;
-  --color-usage-current: #7dd3fc;
+  /* Compact subscription quota panel in this theme's palette: surface = panel,
+     track = highlight, fill = accent, current = info, pin = row hover.
+     Stale keeps the coral ring of spec rule 10 (same value as default.css). */
+  --color-usage-surface: rgb(24 29 52);
+  --color-usage-track: rgb(38 45 74);
+  --color-usage-fill: rgb(185 166 255);
+  --color-usage-current: rgb(94 231 255);
   /* Unused allowance of past slices: behind pace, a loss to act on (not amber). */
-  --color-usage-behind: #ef4444;
-  --color-usage-pin: #262b3f;
+  --color-usage-behind: rgb(255 122 184);
+  --color-usage-pin: rgb(33 38 60);
   --color-usage-stale: #ff8b87;
   /* Surfaces */
   --color-app: rgb(11 14 26);

@@ -227,6 +227,16 @@ function terminate(child: ChildProcess): void {
 /** Fixture seam read by the provider adapters; only an unpackaged (development or smoke) app passes it. */
 export const USAGE_TEST_BASE_URL_ENV = 'NEKODE_USAGE_TEST_BASE_URL'
 
+/**
+ * Remove a variable from a copied environment. Windows names are case-insensitive, so a variant
+ * such as `nekode_usage_test_base_url` reaches the child under the exact name and is removed too.
+ */
+function deleteEnv(env: NodeJS.ProcessEnv, name: string): void {
+  for (const key of Object.keys(env))
+    if (key === name || (process.platform === 'win32' && key.toUpperCase() === name))
+      delete env[key]
+}
+
 /** One bounded process per read. Never transport adapter diagnostics or arbitrary messages. */
 export class UsageAdapterHost {
   private readonly children = new Set<ChildProcess>()
@@ -236,10 +246,10 @@ export class UsageAdapterHost {
   ) {}
   private childEnv(adapter: UsageAdapter): NodeJS.ProcessEnv {
     const env = { ...process.env }
-    if (this.options.packaged) delete env[USAGE_TEST_BASE_URL_ENV]
+    if (this.options.packaged) deleteEnv(env, USAGE_TEST_BASE_URL_ENV)
     // Bundled adapters run on NeKode's executable in Node mode (spec rule 19).
+    deleteEnv(env, 'ELECTRON_RUN_AS_NODE')
     if (adapter.bundled) env.ELECTRON_RUN_AS_NODE = '1'
-    else delete env.ELECTRON_RUN_AS_NODE
     return env
   }
   shutdown(): void {

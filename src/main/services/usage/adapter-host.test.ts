@@ -160,6 +160,30 @@ describe('usage adapter process boundary', () => {
       else process.env.NEKODE_USAGE_TEST_BASE_URL = previous
     }
   })
+  it.runIf(process.platform === 'win32')(
+    'strips case variants of the seam and run-as-node variables on Windows',
+    async () => {
+      // Windows variable names are case-insensitive: a child reads a variant under the exact name.
+      const a = adapter(
+        `console.log(JSON.stringify({protocolVersion:1,ok:true,data:{seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,node:process.env.ELECTRON_RUN_AS_NODE??null}}))`,
+      )
+      const names = ['NEKODE_USAGE_TEST_BASE_URL', 'ELECTRON_RUN_AS_NODE']
+      const previous = names.map((name) => process.env[name])
+      for (const name of names) delete process.env[name]
+      process.env.Nekode_Usage_Test_Base_Url = 'http://127.0.0.1:9'
+      process.env.Electron_Run_As_Node = '1'
+      try {
+        expect(
+          await new UsageAdapterHost(30_000, { packaged: true }).read(a, {}, 'account', signal()),
+        ).toEqual({ seam: null, node: null })
+      } finally {
+        names.forEach((name, i) => {
+          delete process.env[name]
+          if (previous[i] !== undefined) process.env[name] = previous[i]
+        })
+      }
+    },
+  )
   it('uses a manifest next action for a declared failure instead of adapter text', async () => {
     const a = {
       ...adapter(

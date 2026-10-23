@@ -38,7 +38,7 @@ Tier, status, currency, invoices, voice limits and every other field are discard
 
 ## Setup
 
-1. Create an API key in ElevenLabs. If you restrict the key's endpoint access, allow it to read user data (the subscription endpoint is under `/v1/user`); the exact permission name is in your ElevenLabs API key settings.
+1. Create an API key in ElevenLabs. If you restrict the key, enable the permission that allows reading usage (the adapter calls `GET /v1/user/subscription`).
 2. NeKode ships this adapter ([shipped adapters](usage.md)); nothing to copy. App Settings lists `ElevenLabs subscription` with its executable; enabling it lets it run with your user permissions.
 3. In `App Settings > Usage`, turn on `Show usage quota` and choose `Add account` and this service, then enter a name. Enter the key in `ElevenLabs API key`. Leave `API region` on `default` unless your workspace uses ElevenLabs data residency (`us`, `eu`, `in`, `sg`).
 4. `Test`, then `Save`.
