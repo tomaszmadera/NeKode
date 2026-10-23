@@ -14,9 +14,8 @@ type View =
   | { kind: 'pick' }
   | { kind: 'edit'; connection: UsageConnection; isNew: boolean }
 
-/** Where an adapter comes from (spec rules 18, 26); built-in readers have no directory. */
+/** Where an adapter comes from (spec rule 26). */
 function origin(adapter: UsageAdapter): string {
-  if (!adapter.directory) return 'Built in'
   return adapter.bundled ? 'Shipped with NeKode' : 'Added by you'
 }
 

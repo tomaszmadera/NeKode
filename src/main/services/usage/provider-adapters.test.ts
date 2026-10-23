@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseUsageDocument, type UsageAdapter, usagePercent } from '../../../shared/usage-contract'
 import {
+  assertLiveRefresh,
   bundledUsageAdapterDirectories,
   discoverUsageAdapters,
   UsageAdapterHost,
@@ -381,6 +382,25 @@ describe('provider adapters through the process host', () => {
     })
     expect(JSON.stringify(data)).not.toContain(KEY)
   })
+  it.each([
+    ['usage-elevenlabs', SUBSCRIPTION, '/v1/user/subscription'],
+    ['usage-openrouter', CREDITS, '/api/v1/credits'],
+  ])(
+    'answers a refresh of %s with one provider request made during it (L2)',
+    async (name, body, path) => {
+      const fake = await serve(() => [200, body])
+      const startedAt = Date.now()
+      const data = await new UsageAdapterHost().read(
+        manifest(name),
+        { apiKey: KEY },
+        'account',
+        new AbortController().signal,
+        'refresh',
+      )
+      expect(fake.requests).toEqual([expect.objectContaining({ method: 'GET', path })])
+      expect(() => assertLiveRefresh(parseUsageDocument(data), startedAt)).not.toThrow()
+    },
+  )
   it('surfaces the OpenRouter ordinary-key denial with the manifest next action', async () => {
     const fake = await serve(() => [
       403,

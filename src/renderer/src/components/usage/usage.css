@@ -38,9 +38,10 @@
 }
 .usage-backdrop {
   position: fixed;
-  inset: 40px 0 0;
+  inset: 0;
   z-index: 90;
   background: rgba(8, 9, 14, 0.35);
+  -webkit-app-region: no-drag;
 }
 .usage-panel {
   position: fixed;

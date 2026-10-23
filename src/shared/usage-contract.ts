@@ -61,19 +61,23 @@ export interface UsageDocument {
 export interface UsageConfigField {
   key: string
   label: string
-  /** `directory` is used only by the built-in Claude snapshot reader. */
-  type: 'text' | 'secret' | 'boolean' | 'choice' | 'file' | 'directory'
+  type: 'text' | 'secret' | 'boolean' | 'choice' | 'file'
   required?: boolean
   choices?: string[]
   /** Optional help shown with the field (at most 512 characters). */
   description?: string
 }
+/**
+ * Adapter request action (spec L2): `read` for scheduled collection, `refresh` for a manual
+ * `Refresh usage`, which must return values obtained from the provider during the request.
+ */
+export type UsageAdapterAction = 'read' | 'refresh'
 export interface UsageAdapter {
   id: string
   name: string
-  protocolVersion: 1
+  protocolVersion: 2
   invocation: { command: string; args: string[] }
-  sourceKind: 'api' | 'cli' | 'file'
+  sourceKind: 'api' | 'cli'
   capabilities: string[]
   minimumRefreshSeconds: number
   configSchema: UsageConfigField[]
@@ -92,6 +96,13 @@ export interface UsageAdapter {
   bundled?: boolean
   error?: string
 }
+/**
+ * Adapter ids of the removed passive sources (spec L6-L7): the built-in JSON file reader and the
+ * Claude snapshot reader. A stored account of either is kept and never collected.
+ */
+export const USAGE_REMOVED_ADAPTER_IDS: readonly string[] = ['usage-file', 'claude-code-snapshots']
+export const USAGE_REMOVED_ADAPTER_MESSAGE =
+  'This service is no longer available. Remove the account and add it again with a supported service.'
 export interface UsageConnection {
   id: string
   label: string
@@ -100,17 +111,6 @@ export interface UsageConnection {
   enabled: boolean
   config: Record<string, string | boolean>
   secretKeys?: string[]
-}
-/** One subscription found in a JSON input file (spec rule 25); no metrics. */
-export interface UsageFileSubscription {
-  id: string
-  providerId: string
-  label: string
-}
-/** Proposed Claude snapshot directory and setup preview command (spec rule 24). */
-export interface UsageClaudeSetup {
-  directory: string
-  command: string
 }
 export interface UsagePin {
   connectionId: string
@@ -126,12 +126,21 @@ export interface UsageConnectionSnapshot {
   subscription: UsageSubscription | null
   refreshing: boolean
   error: UsageFailure | null
+  /** Earliest time a manual refresh may start (spec L5), or null when it may start now. */
+  nextRefreshAt: string | null
+}
+export interface UsageRefreshSkip {
+  connectionId: string
+  until: string
+  reason: 'interval' | 'backoff'
 }
 export interface UsageSnapshot {
   connections: UsageConnectionSnapshot[]
   pin: UsagePin | null
   cacheError: string | null
   exportError: string | null
+  /** Present only on a manual refresh response; read includes joined and failed reads. */
+  refresh?: { read: string[]; skipped: UsageRefreshSkip[] }
 }
 export interface UsageApi {
   listAdapters(): Promise<UsageAdapter[]>
@@ -145,10 +154,6 @@ export interface UsageApi {
   getEnabled(): Promise<boolean>
   /** Persist the switch; off stops all usage activity and keeps settings. Returns the new value. */
   setEnabled(enabled: boolean): Promise<boolean>
-  /** Subscriptions of a JSON input file, without metrics (spec rule 25). */
-  inspectFile(path: string): Promise<UsageFileSubscription[]>
-  /** Directory (proposed when `directory` is null) and setup command for a Claude account. */
-  claudeSetup(connectionId: string, directory: string | null): Promise<UsageClaudeSetup>
   /** Create `<userData>/usage-adapters` when missing and open it (spec rule 26). */
   openAdaptersFolder(): Promise<void>
 }

@@ -1,4 +1,4 @@
-// NeKode usage adapter for the ElevenLabs subscription (protocol version 1).
+// NeKode usage adapter for the ElevenLabs subscription (protocol version 2).
 //
 // One read sends exactly one documented metadata request,
 // `GET /v1/user/subscription` with the `xi-api-key` header
@@ -209,18 +209,20 @@ function main() {
       } catch {
         throw new Failure('protocol', 'Invalid usage adapter request.')
       }
-      if (request.protocolVersion !== 1 || request.action !== 'read')
+      // Protocol 2 (usage-quota spec L2): every read already asks the provider during this
+      // request, so the scheduled `read` and the manual live `refresh` share one path.
+      if (request.protocolVersion !== 2 || !['read', 'refresh'].includes(request.action))
         throw new Failure('protocol', 'Unsupported usage adapter request.')
       const data = await collect({
         connectionId: request.params?.connectionId,
         config: request.config,
       })
-      respond({ protocolVersion: 1, ok: true, data }, 0)
+      respond({ protocolVersion: 2, ok: true, data }, 0)
     } catch (error) {
       const known = error instanceof Failure
       respond(
         {
-          protocolVersion: 1,
+          protocolVersion: 2,
           ok: false,
           error: {
             code: known ? error.code : 'protocol',

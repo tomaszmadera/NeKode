@@ -1,4 +1,4 @@
-// Experimental NeKode usage adapter for the Codex CLI app-server (protocol version 1).
+// Experimental NeKode usage adapter for the Codex CLI app-server (protocol version 2).
 //
 // One read: check `codex --version`, start `codex app-server` over stdio JSONL, send
 // `initialize`, `initialized`, `account/read` (refreshToken false) and
@@ -395,18 +395,20 @@ function main() {
       } catch {
         throw new Failure('protocol', 'Invalid usage adapter request.')
       }
-      if (request.protocolVersion !== 1 || request.action !== 'read')
+      // Protocol 2 (usage-quota spec L2): every read already asks the provider during this
+      // request, so the scheduled `read` and the manual live `refresh` share one path.
+      if (request.protocolVersion !== 2 || !['read', 'refresh'].includes(request.action))
         throw new Failure('protocol', 'Unsupported usage adapter request.')
       const { document } = await collect({
         connectionId: request.params?.connectionId,
         config: request.config,
       })
-      respond({ protocolVersion: 1, ok: true, data: document }, 0)
+      respond({ protocolVersion: 2, ok: true, data: document }, 0)
     } catch (error) {
       const known = error instanceof Failure
       respond(
         {
-          protocolVersion: 1,
+          protocolVersion: 2,
           ok: false,
           error: {
             code: known ? error.code : 'protocol',

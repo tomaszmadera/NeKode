@@ -64,8 +64,6 @@ export interface AppServices {
     | 'setEnabled'
     | 'setVisible'
     | 'shutdown'
-    | 'inspectFile'
-    | 'claudeSetup'
     | 'openAdaptersFolder'
   > & { pickFile(output: boolean): Promise<string | null> }
   dictation: {

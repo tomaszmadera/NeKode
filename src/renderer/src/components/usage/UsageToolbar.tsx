@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { formatErrorMessage } from '../../../../shared/ipc-error'
 import type {
   UsageApi,
@@ -88,6 +89,32 @@ export function UsageGraphic({
 function tooltip(source: UsageConnectionSnapshot, metric: UsageMetric, now: number): string {
   return `${source.connection.label}; ${metric.label}; ${value(metric)}; ${source.error?.message ?? usageFreshness(metric, now)}; observation ${metric.observedAt ?? 'unknown'}; collected ${metric.collectedAt ?? source.subscription?.collectedAt ?? 'unknown'}; source ${source.connection.adapterId}; reset ${metric.resetsAt ?? 'unknown'}. Pace compares elapsed allowance slices, not a provider restriction or prediction.`
 }
+function refreshWait(label: string, until: string | null, now: number): string {
+  const seconds = until ? Math.ceil((Date.parse(until) - now) / 1000) : 0
+  return seconds > 0 ? `${label} can refresh again in ${seconds} s` : `${label} is ready to refresh`
+}
+function refreshOutcome(snapshot: UsageSnapshot, now: number): string {
+  const result = snapshot.refresh
+  const failed = snapshot.connections.filter(
+    (c) => result?.read.includes(c.connection.id) && c.error,
+  ).length
+  const summary = result?.read.length
+    ? failed
+      ? `Usage refresh completed; ${failed} source(s) failed.`
+      : 'Usage refreshed.'
+    : snapshot.connections.length
+      ? 'No usage sources read.'
+      : 'No usage accounts enabled.'
+  const skipped =
+    result?.skipped.map((skip) => {
+      const label =
+        snapshot.connections.find((c) => c.connection.id === skip.connectionId)?.connection.label ??
+        skip.connectionId
+      const reason = skip.reason === 'backoff' ? 'provider backoff' : '60-second limit'
+      return `${refreshWait(label, skip.until, now)} (${reason}).`
+    }) ?? []
+  return [summary, ...skipped].join(' ')
+}
 export function UsageToolbar({
   api,
   version = 0,
@@ -102,6 +129,9 @@ export function UsageToolbar({
     [now, setNow] = useState(Date.now()),
     [error, setError] = useState<string | null>(null)
   const [position, setPosition] = useState({ left: 12, top: 46 })
+  const [manualPending, setManualPending] = useState(false),
+    [manualResult, setManualResult] = useState<UsageSnapshot | null>(null)
+  const manualFlight = useRef(false)
   const trigger = useRef<HTMLButtonElement>(null),
     dialog = useRef<HTMLElement>(null)
   const readFlight = useRef<{ api: UsageApi; promise: Promise<UsageSnapshot> } | null>(null),
@@ -111,6 +141,7 @@ export function UsageToolbar({
     let mounted = true
     let reading = false
     alive.current = true
+    setManualResult(null)
     const read = async () => {
       if (document.hidden || reading) return
       reading = true
@@ -134,11 +165,16 @@ export function UsageToolbar({
     const timer = setInterval(() => {
       void read()
     }, 5000)
+    // Countdown is derived from main's absolute deadlines, independent of snapshot polling.
+    const clock = setInterval(() => {
+      if (!document.hidden) setNow(Date.now())
+    }, 1000)
     document.addEventListener('visibilitychange', read)
     return () => {
       mounted = false
       alive.current = false
       clearInterval(timer)
+      clearInterval(clock)
       document.removeEventListener('visibilitychange', read)
     }
   }, [api, version])
@@ -163,30 +199,52 @@ export function UsageToolbar({
       trigger.current?.focus()
     }
   }, [open])
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        dialog.current &&
+        !dialog.current.contains(event.target as Node) &&
+        !trigger.current?.contains(event.target as Node)
+      ) {
+        setOpen(false)
+      }
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [open])
   const pinnedSource = snapshot.connections.find(
     (c) => c.connection.id === snapshot.pin?.connectionId,
   )
   const pinned = pinnedSource?.subscription?.metrics.find((m) => m.id === snapshot.pin?.metricId)
-  const refreshing = snapshot.connections.some((c) => c.refreshing)
+  const refreshing = manualPending || snapshot.connections.some((c) => c.refreshing)
+  const refreshDescription = snapshot.connections.length
+    ? snapshot.connections
+        .map((c) => `${refreshWait(c.connection.label, c.nextRefreshAt, now)}.`)
+        .join(' ')
+    : 'No usage accounts enabled.'
   async function refresh(): Promise<void> {
+    if (manualFlight.current) return
+    manualFlight.current = true
+    setManualPending(true)
+    setManualResult(null)
     try {
-      setSnapshot((s) => ({
-        ...s,
-        connections: s.connections.map((c) => ({ ...c, refreshing: true })),
-      }))
       const s = await api.refresh()
       if (alive.current) {
         setSnapshot(s)
+        setManualResult(s)
+        setNow(Date.now())
         setError(null)
       }
     } catch (e) {
       if (alive.current) {
         setError(formatErrorMessage(e))
-        setSnapshot((s) => ({
-          ...s,
-          connections: s.connections.map((c) => ({ ...c, refreshing: false })),
-        }))
       }
+    } finally {
+      manualFlight.current = false
+      if (alive.current) setManualPending(false)
     }
   }
   async function pin(connectionId: string, metricId: string): Promise<void> {
@@ -251,144 +309,165 @@ export function UsageToolbar({
         )}
         <span aria-hidden="true">⌄</span>
       </button>
-      {open ? (
-        <>
-          <div
-            className="usage-backdrop no-drag"
-            onMouseDown={() => setOpen(false)}
-            aria-hidden="true"
-          />
-          <section
-            ref={dialog}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="usage-title"
-            className="usage-panel no-drag"
-            style={position}
-            onKeyDown={keydown}
-          >
-            <header>
-              <h2 id="usage-title">Usage</h2>
-              <span className="usage-head-note">
-                {refreshing ? 'Refreshing usage...' : `${snapshot.connections.length} sources`}
-              </span>
-              <button
-                type="button"
-                aria-label="Refresh usage"
-                onClick={() => void refresh()}
-                disabled={refreshing}
+      {open
+        ? createPortal(
+            <>
+              <div
+                className="usage-backdrop no-drag"
+                onMouseDown={() => setOpen(false)}
+                aria-hidden="true"
+              />
+              <section
+                ref={dialog}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="usage-title"
+                className="usage-panel no-drag"
+                style={position}
+                onKeyDown={keydown}
               >
-                ↻
-              </button>
-              <button type="button" aria-label="Close usage panel" onClick={() => setOpen(false)}>
-                ×
-              </button>
-            </header>
-            {error ? (
-              <p role="alert" className="usage-message">
-                {error}
-              </p>
-            ) : null}
-            {snapshot.connections.length === 0 ? (
-              <div className="usage-empty">
-                <p>No usage accounts enabled.</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false)
-                    onConfigure()
-                  }}
-                >
-                  Configure usage
-                </button>
-              </div>
-            ) : (
-              snapshot.connections.map((source) => (
-                <div key={source.connection.id} className="usage-source">
-                  <h3>{source.connection.label}</h3>
-                  {source.subscription?.metrics.length ? (
-                    source.subscription.metrics.map((metric) => {
-                      const selected =
-                        snapshot.pin?.connectionId === source.connection.id &&
-                        snapshot.pin.metricId === metric.id
-                      const freshness = usageFreshness(metric, now),
-                        slices = usageSlices(metric, now)
-                      return (
-                        <button
-                          type="button"
-                          className={`usage-row ${selected ? 'usage-pinned' : ''} ${freshness.startsWith('Stale') || freshness.startsWith('Expired') ? 'usage-old' : ''}`}
-                          key={metric.id}
-                          aria-pressed={selected}
-                          disabled={metric.state === 'unavailable'}
-                          aria-label={`${source.connection.label}, ${metric.label}, ${value(metric)}, ${source.error ? `Error: ${source.error.message}, ` : ''}${freshness}${slices?.pace ? `, ${slices.pace}` : ''}`}
-                          title={tooltip(source, metric, now)}
-                          onClick={() => void pin(source.connection.id, metric.id)}
-                        >
-                          <span className="usage-name">
-                            <span className={`usage-avatar ${badge(source, metric, now)}`}>
-                              {avatar(source, metric)}
-                            </span>
-                            <span>{metric.label}</span>
-                          </span>
-                          <UsageGraphic metric={metric} now={now} />
-                          <strong className={metric.kind === 'balance' ? 'usage-balance' : ''}>
-                            {value(metric)}
-                          </strong>
-                          <span
-                            className={`usage-hint ${slices?.pace?.startsWith('↑') ? 'usage-behind' : ''}`}
-                          >
-                            {slices?.pace?.startsWith('↑') ? slices.pace : reset(metric, now)}
-                          </span>
-                          <span className="usage-row-status">
-                            {source.error ? 'Error; ' : ''}
-                            {freshness}
-                            {slices?.pace === 'Ahead of pace' ? '; Ahead of pace' : ''}
-                          </span>
-                        </button>
-                      )
-                    })
-                  ) : (
-                    <p className="usage-message">
-                      {source.subscription?.status === 'unavailable'
-                        ? 'Unavailable'
-                        : 'No usage data yet'}
-                    </p>
-                  )}
-                  {source.error ? (
-                    <p className="usage-source-note">
-                      {source.error.message}
-                      {/[.!?]$/.test(source.error.message) ? '' : '.'}
-                    </p>
-                  ) : null}
-                </div>
-              ))
-            )}
-            {snapshot.cacheError ? (
-              <p role="status" className="usage-message">
-                {snapshot.cacheError}
-              </p>
-            ) : null}
-            {snapshot.exportError ? (
-              <p role="alert" className="usage-message">
-                {snapshot.exportError}
-              </p>
-            ) : null}
-            {snapshot.connections.length > 0 ? (
-              <footer>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false)
-                    onConfigure()
-                  }}
-                >
-                  Configure usage
-                </button>
-              </footer>
-            ) : null}
-          </section>
-        </>
-      ) : null}
+                <header>
+                  <h2 id="usage-title">Usage</h2>
+                  <span className="usage-head-note">
+                    {refreshing ? 'Refreshing usage...' : `${snapshot.connections.length} sources`}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Refresh usage"
+                    title={refreshDescription}
+                    aria-description={refreshDescription}
+                    onClick={() => void refresh()}
+                    disabled={refreshing}
+                  >
+                    ↻
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Close usage panel"
+                    onClick={() => setOpen(false)}
+                  >
+                    ×
+                  </button>
+                </header>
+                {manualPending || manualResult ? (
+                  <p role="status" className="usage-message">
+                    {manualPending
+                      ? 'Refreshing usage...'
+                      : manualResult
+                        ? refreshOutcome(manualResult, now)
+                        : ''}
+                  </p>
+                ) : null}
+                {error ? (
+                  <p role="alert" className="usage-message">
+                    {error}
+                  </p>
+                ) : null}
+                {snapshot.connections.length === 0 ? (
+                  <div className="usage-empty">
+                    <p>No usage accounts enabled.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpen(false)
+                        onConfigure()
+                      }}
+                    >
+                      Configure usage
+                    </button>
+                  </div>
+                ) : (
+                  snapshot.connections.map((source) => (
+                    <div key={source.connection.id} className="usage-source">
+                      <h3>{source.connection.label}</h3>
+                      {source.subscription?.metrics.length ? (
+                        source.subscription.metrics.map((metric) => {
+                          const selected =
+                            snapshot.pin?.connectionId === source.connection.id &&
+                            snapshot.pin.metricId === metric.id
+                          const freshness = usageFreshness(metric, now),
+                            slices = usageSlices(metric, now)
+                          return (
+                            <button
+                              type="button"
+                              className={`usage-row ${selected ? 'usage-pinned' : ''} ${freshness.startsWith('Stale') || freshness.startsWith('Expired') ? 'usage-old' : ''}`}
+                              key={metric.id}
+                              aria-pressed={selected}
+                              disabled={metric.state === 'unavailable'}
+                              aria-label={`${source.connection.label}, ${metric.label}, ${value(metric)}, ${source.error ? `Error: ${source.error.message}, ` : ''}${freshness}${slices?.pace ? `, ${slices.pace}` : ''}`}
+                              title={tooltip(source, metric, now)}
+                              onClick={() => {
+                                setOpen(false)
+                                void pin(source.connection.id, metric.id)
+                              }}
+                            >
+                              <span className="usage-name">
+                                <span className={`usage-avatar ${badge(source, metric, now)}`}>
+                                  {avatar(source, metric)}
+                                </span>
+                                <span>{metric.label}</span>
+                              </span>
+                              <UsageGraphic metric={metric} now={now} />
+                              <strong className={metric.kind === 'balance' ? 'usage-balance' : ''}>
+                                {value(metric)}
+                              </strong>
+                              <span
+                                className={`usage-hint ${slices?.pace?.startsWith('↑') ? 'usage-behind' : ''}`}
+                              >
+                                {slices?.pace?.startsWith('↑') ? slices.pace : reset(metric, now)}
+                              </span>
+                              <span className="usage-row-status">
+                                {source.error ? 'Error; ' : ''}
+                                {freshness}
+                                {slices?.pace === 'Ahead of pace' ? '; Ahead of pace' : ''}
+                              </span>
+                            </button>
+                          )
+                        })
+                      ) : (
+                        <p className="usage-message">
+                          {source.subscription?.status === 'unavailable'
+                            ? 'Unavailable'
+                            : 'No usage data yet'}
+                        </p>
+                      )}
+                      {source.error ? (
+                        <p className="usage-source-note">
+                          {source.error.message}
+                          {/[.!?]$/.test(source.error.message) ? '' : '.'}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+                {snapshot.cacheError ? (
+                  <p role="status" className="usage-message">
+                    {snapshot.cacheError}
+                  </p>
+                ) : null}
+                {snapshot.exportError ? (
+                  <p role="alert" className="usage-message">
+                    {snapshot.exportError}
+                  </p>
+                ) : null}
+                {snapshot.connections.length > 0 ? (
+                  <footer>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpen(false)
+                        onConfigure()
+                      }}
+                    >
+                      Configure usage
+                    </button>
+                  </footer>
+                ) : null}
+              </section>
+            </>,
+            document.body,
+          )
+        : null}
     </>
   )
 }

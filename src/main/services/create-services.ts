@@ -78,8 +78,6 @@ export interface CreateServicesOptions {
   packaged?: boolean
   /** Shipped usage adapter directories (`bundledUsageAdapterDirectories`, main/index.ts). */
   bundledUsageAdapterDirectories?: readonly string[]
-  /** Shipped Claude snapshot writer setup script (`claudeSetupScriptPath`, main/index.ts). */
-  claudeSetupScript?: string
 }
 
 export function createServices(options: CreateServicesOptions): AppServices {
@@ -93,7 +91,6 @@ export function createServices(options: CreateServicesOptions): AppServices {
     bundledAdapterDirectories: options.bundledUsageAdapterDirectories,
     safeStorage: options.safeStorage,
     packaged: options.packaged,
-    claudeSetupScript: options.claudeSetupScript,
     openPath: (path) => options.openExternal(path),
   })
   const desktopDictation = new DesktopDictation(
@@ -243,8 +240,6 @@ export function createServices(options: CreateServicesOptions): AppServices {
       test: (connection) => usage.test(connection),
       getEnabled: () => usage.getEnabled(),
       setEnabled: (enabled) => usage.setEnabled(enabled),
-      inspectFile: (path) => usage.inspectFile(path),
-      claudeSetup: (connectionId, directory) => usage.claudeSetup(connectionId, directory),
       openAdaptersFolder: () => usage.openAdaptersFolder(),
       setVisible: (visible) => usage.setVisible(visible),
       shutdown: () => usage.shutdown(),

@@ -1,40 +1,18 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { UsageSettings as Settings, UsageAdapter } from '../../../../shared/usage-contract'
+import {
+  type UsageSettings as Settings,
+  USAGE_REMOVED_ADAPTER_MESSAGE,
+  type UsageAdapter,
+} from '../../../../shared/usage-contract'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { UsageSettings } from './UsageSettings'
 
 afterEach(cleanup)
 
 const base = {
-  protocolVersion: 1 as const,
+  protocolVersion: 2 as const,
   minimumRefreshSeconds: 60,
-}
-const FILE: UsageAdapter = {
-  ...base,
-  id: 'usage-file',
-  name: 'Custom JSON file',
-  summary: 'Reads limits from a JSON file.',
-  invocation: { command: 'Built-in JSON reader', args: [] },
-  sourceKind: 'file',
-  capabilities: ['window'],
-  configSchema: [
-    { key: 'path', label: 'JSON input file', type: 'file', required: true },
-    { key: 'subscriptionId', label: 'Subscription', type: 'text' },
-  ],
-}
-const CLAUDE: UsageAdapter = {
-  ...base,
-  id: 'claude-code-snapshots',
-  name: 'Claude Code',
-  providerId: 'claude',
-  summary: 'Reads 5h and 7-day limits.',
-  invocation: { command: 'Built-in Claude snapshot reader', args: [] },
-  sourceKind: 'file',
-  capabilities: ['window'],
-  configSchema: [
-    { key: 'directory', label: 'Claude snapshot directory', type: 'directory', required: true },
-  ],
 }
 const OPENROUTER: UsageAdapter = {
   ...base,
@@ -77,11 +55,13 @@ const MINE: UsageAdapter = {
   invocation: { command: 'node', args: ['hub.cjs'] },
   sourceKind: 'api',
   capabilities: ['window'],
-  configSchema: [],
+  configSchema: [{ key: 'input', label: 'Hub input file', type: 'file', required: true }],
   directory: 'C:/profile/usage-adapters/hub',
 }
 const BROKEN: UsageAdapter = {
-  ...FILE,
+  ...MINE,
+  invocation: { command: '', args: [] },
+  configSchema: [],
   id: 'invalid:broken',
   name: 'broken',
   directory: 'C:/profile/usage-adapters/broken',
@@ -105,14 +85,7 @@ const STORED: Settings = {
 
 function setup(settings: Settings = STORED, enabled = true) {
   const app = createAppApiStub()
-  vi.mocked(app.usage.listAdapters).mockResolvedValue([
-    FILE,
-    CLAUDE,
-    OPENROUTER,
-    CODEX,
-    MINE,
-    BROKEN,
-  ])
+  vi.mocked(app.usage.listAdapters).mockResolvedValue([OPENROUTER, CODEX, MINE, BROKEN])
   vi.mocked(app.usage.getSettings).mockResolvedValue(structuredClone(settings))
   vi.mocked(app.usage.getEnabled).mockResolvedValue(enabled)
   vi.mocked(app.usage.saveSettings).mockImplementation(async (s) => s)
@@ -222,84 +195,72 @@ describe('Usage settings', () => {
     })
     expect(vi.mocked(app.usage.saveSettings).mock.calls[0][0].connections).toEqual([])
   })
-  it('binds a JSON file with one subscription automatically', async () => {
+  it('offers no JSON file or Claude snapshot service and no Claude setup (LA4)', async () => {
     const app = setup()
-    vi.mocked(app.usage.pickFile).mockResolvedValue('C:/data/usage.json')
-    vi.mocked(app.usage.inspectFile).mockResolvedValue([
-      { id: 'only', providerId: 'hub', label: 'Hub Claude' },
+    fireEvent.click(await screen.findByRole('button', { name: 'Add account' }))
+    const picker = screen.getByRole('group', { name: 'Choose a service' })
+    expect(
+      within(picker)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual([
+      expect.stringContaining('OpenRouter account balance'),
+      expect.stringContaining('Codex CLI'),
+      expect.stringContaining('My hub'),
+      'Back',
     ])
-    await pick(/Custom JSON file/)
+    // A user adapter's file field takes a picked path without reading the file.
+    vi.mocked(app.usage.pickFile).mockResolvedValue('C:/data/hub.json')
+    fireEvent.click(within(picker).getByRole('button', { name: /My hub/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Choose JSON file' }))
     })
-    expect(app.usage.inspectFile).toHaveBeenCalledExactlyOnceWith('C:/data/usage.json')
-    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(
-      'Hub Claude',
-    )
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    })
-    expect(vi.mocked(app.usage.saveSettings).mock.calls[0][0].connections[1]).toMatchObject({
-      providerId: 'hub',
-      config: { path: 'C:/data/usage.json', subscriptionId: 'only' },
-    })
+    expect(app.usage.pickFile).toHaveBeenCalledExactlyOnceWith(false)
+    expect(screen.getByDisplayValue('C:/data/hub.json')).toBeTruthy()
+    expect(screen.queryByRole('combobox', { name: 'Subscription' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /setup command|directory/i })).toBeNull()
+    expect(document.body.textContent).not.toMatch(/snapshot/i)
   })
-  it('asks for a subscription when the file has several and blocks Save until chosen', async () => {
-    const app = setup()
-    vi.mocked(app.usage.pickFile).mockResolvedValue('C:/data/usage.json')
-    vi.mocked(app.usage.inspectFile).mockResolvedValue([
-      { id: 'a', providerId: 'pa', label: 'First' },
-      { id: 'b', providerId: 'pb', label: 'Second' },
-    ])
-    await pick(/Custom JSON file/)
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Choose JSON file' }))
+  it('shows the removed-service message for a stored JSON file or Claude account (L7)', async () => {
+    const legacy: Settings = {
+      ...STORED,
+      connections: [
+        {
+          id: 'old-claude',
+          label: 'Old Claude',
+          providerId: 'claude',
+          adapterId: 'claude-code-snapshots',
+          enabled: true,
+          config: { directory: 'C:/data/claude' },
+          secretKeys: [],
+        },
+      ],
+    }
+    const app = createAppApiStub()
+    vi.mocked(app.usage.listAdapters).mockResolvedValue([OPENROUTER])
+    vi.mocked(app.usage.getSettings).mockResolvedValue(structuredClone(legacy))
+    vi.mocked(app.usage.getEnabled).mockResolvedValue(true)
+    vi.mocked(app.usage.read).mockResolvedValue({
+      connections: [
+        {
+          connection: legacy.connections[0],
+          subscription: null,
+          refreshing: false,
+          error: { code: 'config', message: USAGE_REMOVED_ADAPTER_MESSAGE },
+          nextRefreshAt: null,
+        },
+      ],
+      pin: null,
+      cacheError: null,
+      exportError: null,
     })
-    const save = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement
-    expect(save.disabled).toBe(true)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Subscription' }), {
-      target: { value: 'b' },
-    })
-    expect(save.disabled).toBe(false)
-    await act(async () => {
-      fireEvent.click(save)
-    })
-    expect(vi.mocked(app.usage.saveSettings).mock.calls[0][0].connections[1]).toMatchObject({
-      label: 'Second',
-      providerId: 'pb',
-      config: { subscriptionId: 'b' },
-    })
-  })
-  it('shows an error and keeps Save blocked for a file without subscriptions', async () => {
-    const app = setup()
-    vi.mocked(app.usage.pickFile).mockResolvedValue('C:/data/empty.json')
-    vi.mocked(app.usage.inspectFile).mockResolvedValue([])
-    await pick(/Custom JSON file/)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'X' } })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Choose JSON file' }))
-    })
-    expect(screen.getByRole('alert').textContent).toContain('no subscriptions')
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
-  })
-  it('proposes the Claude directory and copies the setup command', async () => {
-    const app = setup()
-    vi.mocked(app.usage.claudeSetup).mockImplementation(async (id, directory) => ({
-      directory: directory ?? `C:/profile/claude-code-usage/${id}`,
-      command: `node "setup.cjs" --dir "${directory ?? 'proposed'}"`,
-    }))
-    const writeText = vi.fn(async () => undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    await pick(/Claude Code/)
-    const directory = (await screen.findByDisplayValue(/claude-code-usage/)) as HTMLInputElement
-    expect(screen.getByText(/Record each account once on this computer/)).toBeTruthy()
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy setup command' }))
-    })
-    const id = vi.mocked(app.usage.claudeSetup).mock.calls[0][0]
-    expect(app.usage.claudeSetup).toHaveBeenLastCalledWith(id, directory.value)
-    expect(writeText).toHaveBeenCalledExactlyOnceWith(`node "setup.cjs" --dir "${directory.value}"`)
-    expect(screen.getByText('Setup command copied.')).toBeTruthy()
+    render(<UsageSettings app={app} />)
+    const list = await screen.findByRole('list', { name: 'Accounts' })
+    expect(within(list).getByText(USAGE_REMOVED_ADAPTER_MESSAGE)).toBeTruthy()
+    expect(within(list).getByText('claude-code-snapshots')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Old Claude' }))
+    expect(screen.getByRole('alert').textContent).toBe(USAGE_REMOVED_ADAPTER_MESSAGE)
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
   })
   it('saves export settings separately and keeps accounts unchanged', async () => {
     const app = setup()
@@ -322,7 +283,7 @@ describe('Usage settings', () => {
       .getAllByRole('listitem')
       .map((li) => li.textContent)
     expect(rows).toContain(
-      'Claude Code (claude-code-snapshots). Built in. file; window. Executable: Built-in Claude snapshot reader ',
+      'Codex CLI (codex-app-server). Shipped with NeKode. cli; window. Executable: C:/NeKode/nekode.exe index.cjs',
     )
     expect(
       within(adapters).getByText(/Shipped with NeKode\. api; balance\. Executable: C:\/NeKode/),

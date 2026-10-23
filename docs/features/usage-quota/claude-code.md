@@ -1,92 +1,63 @@
-# Claude Code session snapshots
+# Claude Code usage adapter
 
-NeKode reads Claude Code subscription rate limits from a snapshot directory. Each Claude Code session writes its own `<session_id>.json` file there from its [status line](https://code.claude.com/docs/en/statusline), and the built-in `Claude Code` reader merges the files. Nothing is sent to a server and no model is called. NeKode never writes to the directory.
+The bundled `Claude Code` service shows your Claude plan limits: the 5-hour window and the 7-day window, with daily slices for the 7-day window. It reads the Claude Code sign-in on this computer and asks Anthropic for the current values on every read. Contract: usage-quota spec L10-L14.
 
-Two writers produce compatible files:
+Package: [adapters/usage-claude](../../../adapters/usage-claude), shipped with NeKode as `usage-adapters/usage-claude` and run on the NeKode executable in Node mode. Manifest id `claude-code-usage`, provider `claude`, source kind `api`, marked experimental. NeKode reads it at most every 300 seconds on schedule; a manual `Refresh usage` reads it live at most once per 60 seconds (spec L5).
 
-- Another tool's status-line script may already write Claude Code's raw status-line JSON to a directory. If so, select that directory in NeKode; no setup is needed.
-- Otherwise NeKode's snapshot writer ([adapters/usage-claude-code](../../../adapters/usage-claude-code)) writes a reduced file that holds only `session_id` and `rate_limits`. It is installed by a previewed setup script.
+Tested against sanitized fixture credentials in a temporary config directory and a local fixture HTTP server only. A live read against `api.anthropic.com` with a real sign-in was not run (`not run: needs the user's Claude Code sign-in`); fixture results do not prove that your account or a later version of the endpoint works.
 
-Use one directory per Claude account. The reader cannot tell accounts apart, so sessions of two accounts in one directory would mix their values.
+## Privileges
 
-Record each Claude account once per computer. If another tool already records Claude usage (for example to send it to a service that NeKode reads through a [user adapter](usage.md)), do not install NeKode's writer as well: read that tool's directory or its adapter instead. Setup refuses a second NeKode writer, but it cannot recognise other tools' status-line scripts, so its preview repeats this rule next to the command it would keep.
+Read this before enabling the service. NeKode shows the same explanation in `App Settings > Usage` when you select it.
 
-Tested CLI version: Claude Code 2.1.304 with protocol fixtures. A live read against a Claude account was not run (`not run: account access unavailable`); fixture results do not prove that your account reports limits.
+- It uses the Claude Code sign-in on this computer: it reads the OAuth access token from the Claude Code credentials file.
+- It sends that token only to `api.anthropic.com`, in the `Authorization` header of one request per read. Redirects are refused, so the token never goes to another host.
+- It never reads or sends the refresh token, never refreshes the access token, never writes the credentials file, and never changes the Claude Code sign-in. When the access token expires, Claude Code renews it the next time you use Claude Code.
+- It never writes the token to its output, errors, diagnostics (stderr) or command-line arguments. The token is not stored in NeKode settings, the usage cache or the JSON export.
 
-## What the reader uses
+The endpoint `GET /api/oauth/usage` is not publicly documented by Anthropic. It can change or stop working without notice; the service then fails with a `protocol` error and shows no older values in place of a live read. There is no fallback endpoint.
 
-Only the documented `rate_limits` fields:
+## What one read does
 
-| Status-line field | Metric id | Notes |
-|---|---|---|
-| `rate_limits.five_hour.used_percentage`, `resets_at` | `five_hour` (`5h`) | 5-hour window; start is `resets_at` minus 5 hours |
-| `rate_limits.seven_day.used_percentage`, `resets_at` | `seven_day` (`7d`) | 7-day window; start is `resets_at` minus 7 days |
-| `rate_limits.spend_limit.used_percentage`, `resets_at` | `spend_limit` | Only when a file reports it (Claude apps gateway); no period length is derived |
+Scheduled reads and a manual refresh run the same steps (spec L2, L12):
 
-`resets_at` is Unix epoch seconds. Context-window percentages, cost, paths, model and every other field are ignored and never copied into NeKode's cache or export.
+1. Resolve the config directory: the `Claude Code config directory` field if set (it must be an absolute path); otherwise `CLAUDE_CONFIG_DIR` from NeKode's environment (it must also be an absolute path; a relative value fails as `config`); otherwise `~/.claude`.
+2. Read `<config directory>/.credentials.json` (at most 64 KiB) and take `claudeAiOauth.accessToken` and `claudeAiOauth.expiresAt` (epoch milliseconds). An expired token fails as `auth` without a request.
+3. Send exactly one `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer <access token>` and `anthropic-beta: oauth-2025-04-20`. One 10-second deadline covers the request and the response body.
+4. Map the response and exit.
 
-Per poll the reader takes at most the 256 most recently modified regular `*.json` files of at most 256 KiB each. Modification time only selects files; it never makes data fresh. For each window:
+## Mapping
 
-- a later `resets_at` wins, so an idle session that re-renders old cached values cannot replace a newer window;
-- for the same `resets_at` the higher `used_percentage` wins, because usage within one window does not decrease;
-- a window that is absent or invalid in one file does not erase a valid value from another.
-
-A reset time that has already passed loses to an unknown (`null`) reset, because the window it described is over; a future numeric reset beats an unknown one.
-
-Across polls NeKode keeps a previously shown value only while its numeric reset is still in the future: if the file that held the newest value is deleted, NeKode keeps that value rather than showing an older one from another session. A kept value whose reset has passed, or whose reset is unknown, is replaced by the current read, so two reads with unknown resets show the latest value rather than pinning an old higher one. Changing the account (name, source or directory) clears it.
-
-Unparseable, oversized and foreign files (JSON without a `rate_limits` object) are skipped. If no file has a valid window, `five_hour` and `seven_day` show `Unavailable` with reason `not_reported`, never 0%. `rate_limits` appears only for claude.ai Pro and Max subscribers (or behind a gateway spend limit), and only after a session's first API response.
-
-## Freshness and polling
-
-The status-line payload does not say when Claude Code learned the quota values, so every metric has `observedAt: null` and NeKode shows `Age unknown`. A known reset that passes shows `Expired - refresh required` until a session reports a new value. Without a running Claude Code session there are no new values.
-
-The reader polls at most every five seconds while `Show usage quota` is on and the app is visible. A missing directory whose parent folder exists is a transient error: NeKode keeps the last values and retries every five seconds, so the directory can appear after the first status-line run. A missing parent folder, a symbolic link or junction in the path, or an export file inside the directory is rejected when you save.
-
-## Read a directory written by another tool
-
-1. In NeKode open `App Settings > Usage`, turn on `Show usage quota`, choose `Add account`, then `Claude Code`.
-2. Enter a name, replace the proposed directory with the other tool's directory (`Choose directory`), then `Test` and `Save`.
-
-## Use NeKode's writer
-
-1. In NeKode open `App Settings > Usage`, choose `Add account`, then `Claude Code`. NeKode proposes its own directory, `<userData>\claude-code-usage\<account id>`, and creates it when you save. Enter a name and save.
-2. Choose `Copy setup command` and run the copied command in PowerShell. It names the shipped setup script, your `.claude\settings.json` and the account's directory, and only previews the change. To run setup by hand instead, open the writer's folder in PowerShell. NeKode ships it: in an installed app it is `resources\usage-collectors\claude-code` next to `nekode.exe`; when you run NeKode from source it is `adapters\usage-claude-code` in the repository. Setup records that folder in Claude Code's status line, so moving or uninstalling NeKode breaks the status line until you run setup again from the new folder. Claude Code, not NeKode, starts the writer, so it needs Node.js on the `PATH` of the shell Claude Code uses (or `--node <path>`).
-2. Preview the change. Nothing is written:
-
-   ```powershell
-   node setup.cjs --settings "$env:USERPROFILE\.claude\settings.json" --dir "<absolute directory>"
-   ```
-
-   `--dir` is required: there is no default directory. Use the directory shown in the account editor. The directory must not contain the settings file. The JSON result shows the current `statusLine`, the proposed one, the directory, the backup path, any warnings and the one-recorder note. Read it before continuing.
-3. Apply it by repeating the command with `--apply`. Setup writes `settings.json.nekode-usage-backup.json` beside the settings file, then replaces only `statusLine.command`. An existing status-line command is kept: the writer copies its input unchanged to stdout and the previous command runs after a pipe (`collector --pass-through | <previous command>`), so its output stays on screen. `padding`, `refreshInterval` and other settings are kept. Paths use forward slashes, as Claude Code requires for Git Bash on Windows. If writing the settings fails, setup removes its backup again, so you can retry.
-5. Use Claude Code. After the first response of a session the writer creates `<session_id>.json` (atomic rename); unchanged payloads and payloads without `rate_limits` write nothing.
-
-To undo, run `node setup.cjs --settings "<same path>" --remove`. It restores the backed-up status line exactly (or removes `statusLine` if there was none) and deletes the backup. If you changed the status line after setup, removal stops and you restore it manually from the backup. Session files stay in the directory; delete them yourself if you no longer need them.
-
-## Pruning old session files
-
-Claude Code creates a new session id for each session, so the directory gains one small file per session, and nothing deletes them: the reader never writes, and the NeKode writer only replaces the file of its own session. Every poll lists the directory and checks the modification time of each `*.json` file, then reads at most the 256 newest. Thousands of files make each poll slower.
-
-Delete old session files from time to time, for example files not modified in the last 14 days:
-
-```powershell
-Get-ChildItem "<snapshot directory>" -Filter *.json -File |
-  Where-Object LastWriteTime -lt (Get-Date).AddDays(-14) | Remove-Item
-```
-
-Replace the path with your directory. A deleted file whose window has not reset yet does not lower the value NeKode shows (see above), and an active session writes its file again on its next status-line update.
-
-## Troubleshooting
-
-| Symptom | Cause and action |
+| Response field | Metric |
 |---|---|
-| `Cannot read Claude snapshot directory. It does not exist yet` | No status-line run has written a file since setup, or the paths differ. Start Claude Code, send a message, and compare the directory with the account. |
-| Rows say `Unavailable` (`not_reported`) | Your plan does not report subscription limits to the status line, no session has had an API response yet, or every file was skipped. |
-| Polls get slow or the directory is large | Old session files accumulate. Prune them as described above. |
-| Values stay `Age unknown` | Expected: Claude Code does not report observation time. |
-| `Expired - refresh required` | The reset passed and no session has reported since. Use Claude Code again. |
-| Values from another account appear | Two accounts share a directory. Give each account its own `--dir` and NeKode account. |
-| Previous status line disappeared | The compound-command warning applied, or the command needs its own shell syntax. Run `--remove`, move the command into a script, and set up again. |
-| Status line shows nothing at all | Node is not on Claude Code's shell `PATH`. Re-run setup with `--node <absolute node.exe>`. The writer prints a one-line reason to stderr without payload content. |
-| `already configured` / `backup already exists` | Run `--remove` first. |
+| `five_hour.utilization`, `five_hour.resets_at` | `five_hour`, "5-hour window", window of 18000 seconds |
+| `seven_day.utilization`, `seven_day.resets_at` | `seven_day`, "7-day window", window of 604800 seconds |
+
+`usedPercent` is `utilization`. `resetsAt` is `resets_at` converted to UTC with at most millisecond precision (the endpoint sends microseconds and a `+00:00` offset). `periodStart` is `resetsAt` minus the window duration. `observedAt` is the time the response arrived. A missing or null window, or a null `utilization`, shows that window as unavailable (`not_reported`); a null `resets_at` keeps the percentage without a reset time. Other response fields, such as per-model windows, are ignored.
+
+## Setup
+
+1. Sign in to Claude Code on this computer (`claude`, then `/login`).
+2. In `App Settings > Usage`, turn on `Show usage quota`, choose `Add account` and the `Claude Code` service, and enter a name.
+3. Leave `Claude Code config directory` empty to use `CLAUDE_CONFIG_DIR` or `~/.claude`.
+4. `Test`, then `Save`.
+
+### Several Claude accounts
+
+Use one NeKode account per Claude Code config directory. Claude Code keeps one sign-in per config directory, so sign in to each Claude account with its own `CLAUDE_CONFIG_DIR` (for example `C:\Users\you\.claude-work`), then add one NeKode account per directory and enter that absolute path in `Claude Code config directory`.
+
+## Errors
+
+| Error | Cause and action |
+|---|---|
+| `auth` | No credentials file, no access token, no expiry, an expired token, or HTTP 401 or 403. Open Claude Code and sign in again, then retry. Scheduled reads stay suspended until you save the account or refresh manually. |
+| `config` | The config directory field is not an absolute path, or the field is empty and `CLAUDE_CONFIG_DIR` is set to a relative path. Enter an absolute path in the field, or set `CLAUDE_CONFIG_DIR` to an absolute path (or unset it) and leave the field empty. |
+| `io` | The credentials file exists but cannot be read (for example, access denied). |
+| `rate_limited` | HTTP 429. NeKode waits for `Retry-After` seconds (at most 86400), otherwise 300 seconds; a manual refresh reports this as `backoff`. |
+| `protocol` | Another HTTP status, an invalid body, or an unexpected response shape. The endpoint may have changed. Messages never include the response body. |
+| `network` | Anthropic cannot be reached. |
+| `timeout` | No complete answer within 10 seconds. |
+
+## Removed snapshot service
+
+The Claude Code session snapshot source was removed on 2026-10-23 (spec L6-L8): NeKode no longer reads a snapshot directory written by a Claude Code status line and no longer ships the snapshot writer. An account saved with the snapshot service (`claude-code-snapshots`) stays listed with the message "This service is no longer available. Remove the account and add it again with a supported service." Its cached values and pin are kept until you remove it. Add a new account with the `Claude Code` service instead.

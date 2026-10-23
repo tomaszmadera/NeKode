@@ -25,8 +25,6 @@ export function createAppApiStub(): AppApi {
       test: vi.fn(),
       pickFile: vi.fn(),
       getEnabled: vi.fn().mockResolvedValue(false),
-      inspectFile: vi.fn().mockResolvedValue([]),
-      claudeSetup: vi.fn(),
       openAdaptersFolder: vi.fn().mockResolvedValue(undefined),
       setEnabled: vi.fn((enabled: boolean) => Promise.resolve(enabled)),
     },

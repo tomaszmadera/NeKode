@@ -279,8 +279,6 @@ describe('usage IPC authorization', () => {
     ['pickFile', IPC_CHANNEL.usagePickFile, [false]],
     ['getEnabled', IPC_CHANNEL.usageGetEnabled, []],
     ['setEnabled', IPC_CHANNEL.usageSetEnabled, [true]],
-    ['inspectFile', IPC_CHANNEL.usageInspectFile, [hostPath('C:/data/usage.json')]],
-    ['claudeSetup', IPC_CHANNEL.usageClaudeSetup, ['account-1', null]],
     ['openAdaptersFolder', IPC_CHANNEL.usageOpenAdaptersFolder, []],
     [
       'saveSettings',
@@ -301,7 +299,7 @@ describe('usage IPC authorization', () => {
           id: 'fixture',
           label: 'Fixture',
           providerId: 'test',
-          adapterId: 'usage-file',
+          adapterId: 'fixture',
           enabled: false,
           config: { path: 'C:/fixture.json' },
         },

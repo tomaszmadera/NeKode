@@ -1,0 +1,25 @@
+{
+  "id": "claude-code-usage",
+  "name": "Claude Code",
+  "providerId": "claude",
+  "summary": "Claude plan limits (5-hour and 7-day windows) read with the Claude Code sign-in.",
+  "experimental": true,
+  "protocolVersion": 2,
+  "invocation": { "command": "node", "args": ["index.cjs"] },
+  "sourceKind": "api",
+  "capabilities": ["window"],
+  "minimumRefreshSeconds": 300,
+  "description": "Uses the Claude Code sign-in on this computer. It reads the access token from the Claude Code credentials file (.credentials.json) and sends it only to api.anthropic.com, in one GET /api/oauth/usage request per read. That endpoint is not publicly documented and can change or stop working. NeKode never refreshes the token, never writes the credentials file and never changes the Claude Code sign-in.",
+  "errorActions": {
+    "auth": "Open Claude Code and sign in again, then retry.",
+    "config": "Set the Claude Code config directory to an absolute path, then save. To leave it empty, set CLAUDE_CONFIG_DIR to an absolute path or unset it."
+  },
+  "configSchema": [
+    {
+      "key": "configDirectory",
+      "label": "Claude Code config directory",
+      "type": "text",
+      "description": "Optional absolute path. Empty uses CLAUDE_CONFIG_DIR, otherwise ~/.claude. Use one account per config directory."
+    }
+  ]
+}

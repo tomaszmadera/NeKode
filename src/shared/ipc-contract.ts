@@ -473,8 +473,6 @@ export const IPC_CHANNEL = {
   usagePickFile: 'usage:pickFile',
   usageGetEnabled: 'usage:getEnabled',
   usageSetEnabled: 'usage:setEnabled',
-  usageInspectFile: 'usage:inspectFile',
-  usageClaudeSetup: 'usage:claudeSetup',
   usageOpenAdaptersFolder: 'usage:openAdaptersFolder',
   dictationStatus: 'dictation:status',
   dictationDesktopSetup: 'dictation:desktopSetup',

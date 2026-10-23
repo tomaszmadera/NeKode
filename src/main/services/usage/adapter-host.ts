@@ -4,26 +4,33 @@ import { basename, join } from 'node:path'
 import { AppError, isAppErrorCode } from '../../../shared/ipc-error'
 import {
   USAGE_MAX_BYTES,
+  USAGE_REMOVED_ADAPTER_IDS,
   type UsageAdapter,
+  type UsageAdapterAction,
+  type UsageDocument,
   type UsageErrorCode,
   usageObject,
 } from '../../../shared/usage-contract'
-import { CLAUDE_SNAPSHOT_ADAPTER } from './claude-snapshots'
 
-export const FILE_ADAPTER: UsageAdapter = {
-  id: 'usage-file',
-  name: 'Custom JSON file',
-  summary: 'Reads limits that another program writes to a JSON file on this computer.',
-  protocolVersion: 1,
-  invocation: { command: 'Built-in JSON reader', args: [] },
-  sourceKind: 'file',
-  capabilities: ['window', 'credits', 'balance'],
-  minimumRefreshSeconds: 5,
-  configSchema: [
-    { key: 'path', label: 'JSON input file', type: 'file', required: true },
-    // Chosen from the file by the account editor (spec rule 25); absent means the connection id.
-    { key: 'subscriptionId', label: 'Subscription', type: 'text' },
-  ],
+/** Adapter protocol version (spec L1): version 2 requires the live `refresh` action. */
+export const USAGE_PROTOCOL_VERSION = 2
+const UNSUPPORTED_PROTOCOL =
+  'This adapter uses an unsupported protocol version. Update it to protocol version 2, which requires live refresh.'
+const INVALID_MANIFEST =
+  'Invalid usage-adapter.json. Check protocol version 2 and required manifest fields.'
+
+/**
+ * Spec L3: every available metric of a `refresh` response must be observed no earlier than the
+ * start of the request, compared at whole-second precision. `unavailable` metrics are exempt.
+ */
+export function assertLiveRefresh(document: UsageDocument, startedAt: number): void {
+  const start = Math.floor(startedAt / 1000)
+  for (const subscription of document.subscriptions)
+    for (const metric of subscription.metrics) {
+      if (metric.state !== 'available') continue
+      if (!metric.observedAt || Math.floor(Date.parse(metric.observedAt) / 1000) < start)
+        throw new AppError('protocol', 'Usage adapter did not return a live refresh.')
+    }
 }
 
 const ERROR_CODES: UsageErrorCode[] = [
@@ -56,23 +63,13 @@ function errorActions(value: unknown): UsageAdapter['errorActions'] {
   return actions as UsageAdapter['errorActions']
 }
 
-/**
- * The Claude snapshot writer's setup script (spec rules 17, 24): `<resources>/usage-collectors/
- * claude-code/setup.cjs` in a packaged app, `<appPath>/adapters/usage-claude-code/setup.cjs` when
- * unpackaged.
- */
-export function claudeSetupScriptPath(
-  packaged: boolean,
-  appPath: string,
-  resourcesPath: string,
-): string {
-  return packaged
-    ? join(resourcesPath, 'usage-collectors', 'claude-code', 'setup.cjs')
-    : join(appPath, 'adapters', 'usage-claude-code', 'setup.cjs')
-}
-
 /** Usage adapters shipped with NeKode (spec rule 17); `adapters/<name>` in the repository. */
-export const BUNDLED_USAGE_ADAPTERS = ['usage-codex', 'usage-elevenlabs', 'usage-openrouter']
+export const BUNDLED_USAGE_ADAPTERS = [
+  'usage-claude',
+  'usage-codex',
+  'usage-elevenlabs',
+  'usage-openrouter',
+]
 
 /**
  * Shipped adapter directories: `<resources>/usage-adapters/<name>` in a packaged app (copied by
@@ -88,14 +85,13 @@ export function bundledUsageAdapterDirectories(
 }
 
 /**
- * Built-in readers, then bundled adapters (one directory each), then user adapters one level under
- * `userDirectory` (spec rules 17-18). A valid user adapter replaces a bundled one with the same id.
+ * Bundled adapters (one directory each), then user adapters one level under `userDirectory`
+ * (spec rule 17, L9). A valid user adapter replaces a bundled one with the same id.
  */
 export function discoverUsageAdapters(
   userDirectory: string,
   bundledDirectories: readonly string[] = [],
 ): UsageAdapter[] {
-  const builtIn: UsageAdapter[] = [{ ...FILE_ADAPTER }, structuredClone(CLAUDE_SNAPSHOT_ADAPTER)]
   const bundled = bundledDirectories
     .filter((dir) => existsSync(join(dir, 'usage-adapter.json')))
     .map((dir) => {
@@ -112,35 +108,46 @@ export function discoverUsageAdapters(
         .map((e) => readManifest(join(userDirectory, e.name), e.name))
     : []
   const overridden = new Set(user.filter((a) => !a.error).map((a) => a.id))
-  const result = [...builtIn, ...bundled.filter((a) => !overridden.has(a.id)), ...user]
+  const result = [...bundled.filter((a) => !overridden.has(a.id)), ...user]
   const counts = new Map<string, number>()
   for (const a of result) counts.set(a.id, (counts.get(a.id) ?? 0) + 1)
   return result.map((a) =>
     (counts.get(a.id) ?? 0) > 1
       ? { ...a, error: 'Duplicate usage adapter id. Give each adapter a unique id.' }
-      : a,
+      : USAGE_REMOVED_ADAPTER_IDS.includes(a.id)
+        ? // Spec L7: accounts of these ids are never collected, so no adapter may claim one.
+          {
+            ...a,
+            error: 'This adapter id belongs to a removed NeKode service. Give it another id.',
+          }
+        : a,
   )
 }
 
 function readManifest(dir: string, name: string): UsageAdapter {
+  let error = INVALID_MANIFEST
   try {
     const file = readFileSync(join(dir, 'usage-adapter.json'))
     if (file.length > 64 * 1024) throw new Error('manifest size')
     const m = usageObject(JSON.parse(file.toString('utf8')))
+    if (m.protocolVersion !== USAGE_PROTOCOL_VERSION) {
+      // A declared other version gets the L1 message; a missing or malformed one stays invalid.
+      if (typeof m.protocolVersion === 'number') error = UNSUPPORTED_PROTOCOL
+      throw new Error('manifest protocol version')
+    }
     const i = usageObject(m.invocation)
     if (
       typeof m.id !== 'string' ||
       !/^[a-z0-9][a-z0-9-]{0,63}$/.test(m.id) ||
       typeof m.name !== 'string' ||
       m.name.length > 256 ||
-      m.protocolVersion !== 1 ||
       typeof i.command !== 'string' ||
       !i.command ||
       i.command.length > 4096 ||
       !Array.isArray(i.args) ||
       i.args.length > 50 ||
       i.args.some((a) => typeof a !== 'string' || a.length > 4096 || a.includes('\0')) ||
-      !['file', 'api', 'cli'].includes(m.sourceKind as string) ||
+      !['api', 'cli'].includes(m.sourceKind as string) ||
       !Array.isArray(m.capabilities) ||
       m.capabilities.length > 3 ||
       m.capabilities.some((c) => !['window', 'credits', 'balance'].includes(c as string)) ||
@@ -181,7 +188,7 @@ function readManifest(dir: string, name: string): UsageAdapter {
     return {
       id: m.id,
       name: m.name,
-      protocolVersion: 1,
+      protocolVersion: 2,
       invocation: { command: i.command, args: i.args as string[] },
       sourceKind: m.sourceKind as UsageAdapter['sourceKind'],
       capabilities: m.capabilities as string[],
@@ -196,12 +203,16 @@ function readManifest(dir: string, name: string): UsageAdapter {
     }
   } catch {
     return {
-      ...FILE_ADAPTER,
-      summary: undefined,
       id: `invalid:${name}`,
       name,
+      protocolVersion: 2,
+      invocation: { command: '', args: [] },
+      sourceKind: 'api',
+      capabilities: [],
+      minimumRefreshSeconds: 60,
+      configSchema: [],
       directory: dir,
-      error: 'Invalid usage-adapter.json. Check protocol version 1 and required manifest fields.',
+      error,
     }
   }
 }
@@ -260,6 +271,7 @@ export class UsageAdapterHost {
     config: Record<string, string | boolean>,
     connectionId: string,
     signal: AbortSignal,
+    action: UsageAdapterAction = 'read',
   ): Promise<unknown> {
     if (signal.aborted) throw new AppError('config', 'Usage request was cancelled.')
     const child = spawn(adapter.invocation.command, adapter.invocation.args, {
@@ -305,7 +317,12 @@ export class UsageAdapterHost {
       })
     })
     child.stdin.end(
-      JSON.stringify({ protocolVersion: 1, action: 'read', config, params: { connectionId } }),
+      JSON.stringify({
+        protocolVersion: USAGE_PROTOCOL_VERSION,
+        action,
+        config,
+        params: { connectionId },
+      }),
     )
     try {
       const code = await exit
@@ -316,7 +333,7 @@ export class UsageAdapterHost {
       } catch {
         throw new AppError('protocol', 'Usage adapter must return one valid JSON response.')
       }
-      if (response.protocolVersion !== 1)
+      if (response.protocolVersion !== USAGE_PROTOCOL_VERSION)
         throw new AppError('protocol', 'Unsupported usage adapter version.')
       if (response.ok === true && code === 0) return response.data
       if (response.ok === false && code === 1) {

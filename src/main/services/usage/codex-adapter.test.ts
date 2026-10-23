@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseUsageDocument, type UsageAdapter } from '../../../shared/usage-contract'
-import { UsageAdapterHost } from './adapter-host'
+import { assertLiveRefresh, UsageAdapterHost } from './adapter-host'
 
 const adapterDirectory = resolve(__dirname, '../../../../adapters/usage-codex')
 const codex = createRequire(__filename)(join(adapterDirectory, 'index.cjs')) as {
@@ -165,6 +165,21 @@ describe('experimental Codex app-server usage adapter', () => {
       expect(text).not.toContain(leaked)
     await eventuallyDead(f.serverAlive)
   })
+  it('answers a refresh with values observed during the request (L2, L3)', async () => {
+    // The `read` and `refresh` actions share this collect path (main); the real clock stands in
+    // for a manual refresh, which the host checks with assertLiveRefresh.
+    const f = scenario('ok')
+    const startedAt = Date.now()
+    const { document } = await f.run({ now: () => new Date() })
+    const parsed = parseUsageDocument(document)
+    expect(parsed.subscriptions[0].metrics.some((m) => m.state === 'available')).toBe(true)
+    expect(() => assertLiveRefresh(parsed, startedAt)).not.toThrow()
+    expect(f.transcript().filter((m) => m.method === 'account/rateLimits/read')).toHaveLength(1)
+    // The same values dated before the request fail the live check.
+    expect(() => assertLiveRefresh(parsed, Date.now() + 2000)).toThrow(
+      'Usage adapter did not return a live refresh.',
+    )
+  })
   it('sends only initialization and read-only account messages', async () => {
     const f = scenario('ok')
     await f.run()
@@ -261,18 +276,21 @@ describe('experimental Codex app-server usage adapter', () => {
       invocation: { command: process.execPath, args: ['index.cjs'] },
       directory: adapterDirectory,
     }
-    // Node's own `--version` is not a Codex CLI version, so the adapter refuses it.
-    await expect(
-      new UsageAdapterHost().read(
-        adapter,
-        { codexPath: process.execPath },
-        'codex-account',
-        new AbortController().signal,
-      ),
-    ).rejects.toMatchObject({
-      code: 'unsupported',
-      message:
-        'Usage source unsupported. Update the CLI or adapter to a supported version, then retry.',
-    })
+    // Node's own `--version` is not a Codex CLI version, so the adapter refuses it. Both protocol
+    // 2 actions reach the same live CLI read (spec L2).
+    for (const action of ['read', 'refresh'] as const)
+      await expect(
+        new UsageAdapterHost().read(
+          adapter,
+          { codexPath: process.execPath },
+          'codex-account',
+          new AbortController().signal,
+          action,
+        ),
+      ).rejects.toMatchObject({
+        code: 'unsupported',
+        message:
+          'Usage source unsupported. Update the CLI or adapter to a supported version, then retry.',
+      })
   })
 })

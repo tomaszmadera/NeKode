@@ -3,8 +3,9 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { UsageAdapter } from '../../../shared/usage-contract'
+import type { UsageAdapter, UsageDocument, UsageMetric } from '../../../shared/usage-contract'
 import {
+  assertLiveRefresh,
   BUNDLED_USAGE_ADAPTERS,
   bundledUsageAdapterDirectories,
   discoverUsageAdapters,
@@ -19,7 +20,7 @@ function adapter(script: string): UsageAdapter & { directory: string } {
   return {
     id: 'fixture',
     name: 'Fixture',
-    protocolVersion: 1,
+    protocolVersion: 2,
     invocation: { command: process.execPath, args: ['fixture.cjs'] },
     sourceKind: 'cli',
     capabilities: ['window'],
@@ -62,7 +63,7 @@ async function waitForProcessExit(pid: number, timeoutMs = 2000): Promise<boolea
 describe('usage adapter process boundary', () => {
   it('preserves a declared validation error with sanitized text', async () => {
     const a = adapter(
-      `console.log(JSON.stringify({protocolVersion:1,ok:false,error:{code:'validation_error',message:'fixture-secret'}}));process.exitCode=1`,
+      `console.log(JSON.stringify({protocolVersion:2,ok:false,error:{code:'validation_error',message:'fixture-secret'}}));process.exitCode=1`,
     )
     await expect(new UsageAdapterHost().read(a, {}, 'account', signal())).rejects.toMatchObject({
       code: 'validation_error',
@@ -71,7 +72,7 @@ describe('usage adapter process boundary', () => {
   })
   it('sends configuration only in the versioned stdin request', async () => {
     const a = adapter(
-      `let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);console.log(JSON.stringify({protocolVersion:1,ok:true,data:{protocol:r.protocolVersion,action:r.action,id:r.params.connectionId,secret:r.config.secret,argv:process.argv}}))})`,
+      `let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);console.log(JSON.stringify({protocolVersion:2,ok:true,data:{protocol:r.protocolVersion,action:r.action,id:r.params.connectionId,secret:r.config.secret,argv:process.argv}}))})`,
     )
     const result = (await new UsageAdapterHost().read(
       a,
@@ -81,17 +82,21 @@ describe('usage adapter process boundary', () => {
     )) as { secret: string; argv: string[]; protocol: number; action: string; id: string }
     expect(result.secret).toBe('fixture-secret')
     expect(result.argv.join(' ')).not.toContain('fixture-secret')
-    expect(result).toMatchObject({ protocol: 1, action: 'read', id: 'account' })
+    expect(result).toMatchObject({ protocol: 2, action: 'read', id: 'account' })
+    const manual = (await new UsageAdapterHost().read(a, {}, 'account', signal(), 'refresh')) as {
+      action: string
+    }
+    expect(manual.action).toBe('refresh')
   })
   it.each([
-    [`console.log(JSON.stringify({protocolVersion:2,ok:true,data:{}}))`, 'Unsupported'],
+    [`console.log(JSON.stringify({protocolVersion:1,ok:true,data:{}}))`, 'Unsupported'],
     [`console.log('{} {}')`, 'one valid JSON'],
     [
-      `console.log(JSON.stringify({protocolVersion:1,ok:true,data:{}}));process.exitCode=1`,
+      `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{}}));process.exitCode=1`,
       'exit code',
     ],
     [
-      `process.stderr.write('fixture-secret');console.log(JSON.stringify({protocolVersion:1,ok:false,error:{code:'auth',message:'fixture-secret'}}));process.exitCode=1`,
+      `process.stderr.write('fixture-secret');console.log(JSON.stringify({protocolVersion:2,ok:false,error:{code:'auth',message:'fixture-secret'}}));process.exitCode=1`,
       'source auth',
     ],
     [`process.stdout.write('x'.repeat(1048577))`, 'exceeds'],
@@ -143,7 +148,7 @@ describe('usage adapter process boundary', () => {
   })
   it('passes the test base URL seam only to adapters of an unpackaged app', async () => {
     const a = adapter(
-      `console.log(JSON.stringify({protocolVersion:1,ok:true,data:{seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,path:Boolean(process.env.PATH??process.env.Path)}}))`,
+      `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,path:Boolean(process.env.PATH??process.env.Path)}}))`,
     )
     const previous = process.env.NEKODE_USAGE_TEST_BASE_URL
     process.env.NEKODE_USAGE_TEST_BASE_URL = 'http://127.0.0.1:9'
@@ -165,7 +170,7 @@ describe('usage adapter process boundary', () => {
     async () => {
       // Windows variable names are case-insensitive: a child reads a variant under the exact name.
       const a = adapter(
-        `console.log(JSON.stringify({protocolVersion:1,ok:true,data:{seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,node:process.env.ELECTRON_RUN_AS_NODE??null}}))`,
+        `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,node:process.env.ELECTRON_RUN_AS_NODE??null}}))`,
       )
       const names = ['NEKODE_USAGE_TEST_BASE_URL', 'ELECTRON_RUN_AS_NODE']
       const previous = names.map((name) => process.env[name])
@@ -187,7 +192,7 @@ describe('usage adapter process boundary', () => {
   it('uses a manifest next action for a declared failure instead of adapter text', async () => {
     const a = {
       ...adapter(
-        `console.log(JSON.stringify({protocolVersion:1,ok:false,error:{code:'config',message:'fixture-secret'}}));process.exitCode=1`,
+        `console.log(JSON.stringify({protocolVersion:2,ok:false,error:{code:'config',message:'fixture-secret'}}));process.exitCode=1`,
       ),
       errorActions: { config: 'Use a fixture management key.' },
     }
@@ -264,6 +269,56 @@ describe('usage adapter process boundary', () => {
   })
 })
 
+describe('live refresh validation (spec L3)', () => {
+  const start = Date.parse('2026-10-23T12:00:00.500Z')
+  const document = (...metrics: Partial<UsageMetric>[]): UsageDocument => ({
+    schemaVersion: 1,
+    subscriptions: [
+      {
+        id: 'account',
+        providerId: 'fixture',
+        label: 'Fixture',
+        sourceKind: 'api',
+        status: 'available',
+        metrics: metrics.map((m, i) => ({
+          id: `m${i}`,
+          label: `M${i}`,
+          kind: 'window',
+          state: 'available',
+          observedAt: null,
+          usedPercent: 10,
+          ...m,
+        })),
+      },
+    ],
+  })
+  it('accepts available metrics observed in the request second or later', () => {
+    expect(() =>
+      assertLiveRefresh(
+        document(
+          { observedAt: '2026-10-23T12:00:00Z' },
+          { observedAt: '2026-10-23T12:00:07.250Z' },
+          { state: 'unavailable', observedAt: null, usedPercent: null, reason: 'not_reported' },
+        ),
+        start,
+      ),
+    ).not.toThrow()
+  })
+  it.each([
+    ['an earlier second', '2026-10-23T11:59:59.999Z'],
+    ['no observation time', null],
+  ])('rejects an available metric with %s as a protocol failure', (_name, observedAt) => {
+    expect(() =>
+      assertLiveRefresh(document({ observedAt: '2026-10-23T12:00:01Z' }, { observedAt }), start),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'protocol',
+        message: 'Usage adapter did not return a live refresh.',
+      }),
+    )
+  })
+})
+
 describe('bundled and user usage adapters', () => {
   function tree() {
     const root = mkdtempSync(join(tmpdir(), 'nekode-usage-sources-'))
@@ -279,7 +334,7 @@ describe('bundled and user usage adapters', () => {
         JSON.stringify({
           id,
           name: id,
-          protocolVersion: 1,
+          protocolVersion: 2,
           invocation: { command: 'node', args: ['index.cjs'] },
           sourceKind: 'api',
           capabilities: ['balance'],
@@ -335,11 +390,29 @@ describe('bundled and user usage adapters', () => {
     manifest(join(user, 'a'), 'elevenlabs')
     manifest(join(user, 'b'), 'elevenlabs')
     manifest(join(user, 'c'), 'usage-file')
+    manifest(join(user, 'd'), 'claude-code-snapshots')
     const result = discoverUsageAdapters(user, [shipped])
     const ids = result.filter((a) => a.id === 'elevenlabs')
     expect(ids).toHaveLength(2)
     expect(ids.every((a) => !a.bundled && a.error?.includes('Duplicate'))).toBe(true)
-    expect(result.filter((a) => a.id === 'usage-file').every((a) => a.error)).toBe(true)
+    // Spec L7: the ids of removed passive sources stay unusable.
+    for (const id of ['usage-file', 'claude-code-snapshots'])
+      expect(result.find((a) => a.id === id)?.error).toContain('removed NeKode service')
+  })
+
+  it('lists only version 2 API or CLI manifests and names the unsupported version (L1)', () => {
+    const { user, manifest } = tree()
+    manifest(join(user, 'old'), 'old-protocol', { protocolVersion: 1 })
+    manifest(join(user, 'file'), 'file-source', { sourceKind: 'file' })
+    manifest(join(user, 'cli'), 'cli-source', { sourceKind: 'cli' })
+    const result = discoverUsageAdapters(user)
+    expect(result.map((a) => a.id).sort()).toEqual(['cli-source', 'invalid:file', 'invalid:old'])
+    expect(result.find((a) => a.id === 'invalid:old')?.error).toBe(
+      'This adapter uses an unsupported protocol version. Update it to protocol version 2, which requires live refresh.',
+    )
+    expect(result.find((a) => a.id === 'invalid:file')?.error).toContain('protocol version 2')
+    expect(result.find((a) => a.id === 'cli-source')).toMatchObject({ protocolVersion: 2 })
+    expect(result.find((a) => a.id === 'cli-source')?.error).toBeUndefined()
   })
 
   it('ships exactly the repository adapters listed in electron-builder.yml', () => {
@@ -349,6 +422,7 @@ describe('bundled and user usage adapters', () => {
       bundledUsageAdapterDirectories(false, repo, ''),
     ).filter((a) => a.directory)
     expect(listed.map((a) => a.id).sort()).toEqual([
+      'claude-code-usage',
       'codex-app-server',
       'elevenlabs-subscription',
       'openrouter-credits',
@@ -356,6 +430,7 @@ describe('bundled and user usage adapters', () => {
     expect(listed.every((a) => a.bundled && !a.error)).toBe(true)
     // Spec rules 22-23: every shipped service declares its provider and a picker summary.
     expect(listed.map((a) => [a.id, a.providerId, a.experimental ?? false]).sort()).toEqual([
+      ['claude-code-usage', 'claude', true],
       ['codex-app-server', 'codex', true],
       ['elevenlabs-subscription', 'elevenlabs', false],
       ['openrouter-credits', 'openrouter', false],
@@ -371,7 +446,7 @@ describe('bundled and user usage adapters', () => {
 
   it('starts a bundled adapter in Node mode and a user adapter without it', async () => {
     const a = adapter(
-      `console.log(JSON.stringify({protocolVersion:1,ok:true,data:{runAsNode:process.env.ELECTRON_RUN_AS_NODE??null}}))`,
+      `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{runAsNode:process.env.ELECTRON_RUN_AS_NODE??null}}))`,
     )
     const previous = process.env.ELECTRON_RUN_AS_NODE
     delete process.env.ELECTRON_RUN_AS_NODE

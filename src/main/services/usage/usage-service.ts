@@ -10,7 +10,6 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, parse, resolve } from 'node:path'
 import { AppError } from '../../../shared/ipc-error'
 import {
@@ -18,22 +17,23 @@ import {
   parseUsageSettings,
   USAGE_ENABLED_KEY,
   USAGE_MAX_BYTES,
+  USAGE_REMOVED_ADAPTER_IDS,
+  USAGE_REMOVED_ADAPTER_MESSAGE,
   USAGE_STATE_KEY,
   type UsageAdapter,
-  type UsageClaudeSetup,
+  type UsageAdapterAction,
   type UsageConnection,
   type UsageConnectionSnapshot,
   type UsageDocument,
   type UsageFailure,
-  type UsageFileSubscription,
   type UsagePin,
+  type UsageRefreshSkip,
   type UsageSettings,
   type UsageSnapshot,
   type UsageSubscription,
   usageObject,
 } from '../../../shared/usage-contract'
-import { discoverUsageAdapters, FILE_ADAPTER, UsageAdapterHost } from './adapter-host'
-import { CLAUDE_SNAPSHOT_ADAPTER, newerWindow, readClaudeSnapshots } from './claude-snapshots'
+import { assertLiveRefresh, discoverUsageAdapters, UsageAdapterHost } from './adapter-host'
 
 interface Storage {
   get(key: string): string | null
@@ -49,7 +49,12 @@ interface Runtime {
   subscription: UsageSubscription | null
   error: UsageFailure | null
   refreshing: boolean
+  /** Next scheduled read (rules 12-13). */
   due: number
+  /** Start of the last read of either action; a manual refresh waits 60 s after it (spec L5). */
+  startedAt: number
+  /** Provider retry deadline of a `rate_limited` failure; a manual refresh honours it (L5). */
+  retryUntil: number
   failures: number
   suspended: boolean
   controller?: AbortController
@@ -66,15 +71,15 @@ export interface UsageServiceDeps {
   /** `app.isPackaged`: a packaged app never passes the adapter test seam to adapters. */
   packaged?: boolean
   startTimer?: boolean
-  /** Claude snapshot writer setup script (`claudeSetupScriptPath`, spec rule 24). */
-  claudeSetupScript?: string
-  /** Home directory holding `.claude/settings.json`; defaults to the OS home. */
-  homeDirectory?: string
   /** Opens a folder in the system file manager; resolves '' on success (shell.openPath). */
   openPath?: (path: string) => Promise<string>
 }
-/** Connection ids that can name a proposed Claude directory (spec rule 24). */
-const DIRECTORY_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
+/** Spec L5: a manual refresh starts at most once per 60 seconds per account. */
+const MANUAL_REFRESH_MS = 60_000
+/** Spec L7: an account of a removed passive source is listed and never collected. */
+const removedSource = (c: Pick<UsageConnection, 'adapterId'>) =>
+  USAGE_REMOVED_ADAPTER_IDS.includes(c.adapterId)
+const REMOVED_SOURCE: UsageFailure = { code: 'config', message: USAGE_REMOVED_ADAPTER_MESSAGE }
 const empty = (): UsageSettings => ({
   connections: [],
   pin: null,
@@ -95,18 +100,10 @@ function connectionRevisions(value: unknown): Record<string, string> {
     throw new AppError('validation_error', 'Invalid usage connection revisions.')
   return revisions as Record<string, string>
 }
-/** Rule 16 comparison key of an available age-unknown window metric. */
 /** Equal adapter configurations regardless of key order. */
 function sameConfig(a: UsageConnection['config'], b: UsageConnection['config']): boolean {
   const keys = Object.keys(a)
   return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
-}
-function windowKey(metric: UsageSubscription['metrics'][number]) {
-  if (metric.state !== 'available' || typeof metric.usedPercent !== 'number') return null
-  return {
-    usedPercent: metric.usedPercent,
-    resetsAt: metric.resetsAt ? Date.parse(metric.resetsAt) / 1000 : null,
-  }
 }
 const safeFailure = (error: unknown): UsageFailure =>
   error instanceof AppError
@@ -187,6 +184,8 @@ export class UsageService {
       error: null,
       refreshing: false,
       due: 0,
+      startedAt: 0,
+      retryUntil: 0,
       failures: 0,
       suspended: false,
     }
@@ -277,21 +276,14 @@ export class UsageService {
     return resolve(path).toLowerCase()
   }
   private validatePaths(settings: UsageSettings): void {
-    const inputs: string[] = [],
-      directories: string[] = []
+    const inputs: string[] = []
     for (const c of settings.connections) {
+      // Spec L7: a removed source reads nothing, so its stored paths are not inputs.
+      if (removedSource(c)) continue
       const a = this.adapter(c)
       for (const f of a.configSchema) {
-        if ((f.type !== 'file' && f.type !== 'directory') || typeof c.config[f.key] !== 'string')
-          continue
-        if (!c.config[f.key]) continue
-        const path = this.checkedPath(c.config[f.key] as string, false)
-        if (f.type === 'directory') {
-          if (existsSync(path) && !lstatSync(path).isDirectory())
-            throw new AppError('config', 'Claude snapshot directory must be a folder.')
-          directories.push(path)
-        }
-        inputs.push(path)
+        if (f.type !== 'file' || typeof c.config[f.key] !== 'string' || !c.config[f.key]) continue
+        inputs.push(this.checkedPath(c.config[f.key] as string, false))
       }
     }
     const cache = this.pathKey(this.cacheDirectory)
@@ -313,10 +305,6 @@ export class UsageService {
       key === cache ||
       key.startsWith(`${cache}\\`) ||
       key.startsWith(`${cache}/`) ||
-      directories.some((d) => {
-        const dir = this.pathKey(d)
-        return key.startsWith(`${dir}\\`) || key.startsWith(`${dir}/`)
-      }) ||
       inputs.some((p) => {
         if (this.pathKey(p) === key) return true
         if (!existsSync(output) || !existsSync(p)) return false
@@ -338,12 +326,17 @@ export class UsageService {
     }
   }
   private prepare(c: UsageConnection): UsageConnection {
-    const a = this.adapter(c),
-      config = { ...c.config }
     const previous = this.settings.connections.find(
       (p) => p.id === c.id && p.adapterId === c.adapterId,
     )
-    if (config.subscriptionId === '') delete config.subscriptionId
+    if (removedSource(c)) {
+      // Spec L7: a stored account of a removed source keeps its configuration and provider until
+      // the user removes it; no new account of such a service can be added.
+      if (!previous) throw new AppError('config', USAGE_REMOVED_ADAPTER_MESSAGE)
+      return { ...c, providerId: previous.providerId, config: previous.config }
+    }
+    const a = this.adapter(c),
+      config = { ...c.config }
     // Spec rule 20: a stored field the adapter no longer declares is dropped; a new one is rejected.
     const unknown = Object.keys(config).find(
       (k) => !a.configSchema.some((f) => f.key === k) && previous?.config[k] !== config[k],
@@ -391,7 +384,7 @@ export class UsageService {
     for (const f of a.configSchema) if (config[f.key] !== undefined) declared[f.key] = config[f.key]
     return declared
   }
-  /** Spec rule 23: the service's declared id, a JSON file subscription's id, or the adapter id. */
+  /** Spec rule 23: the service's declared id, otherwise the adapter id. */
   private providerFor(
     c: UsageConnection,
     a: UsageAdapter,
@@ -408,71 +401,7 @@ export class UsageService {
       sameConfig(config, stored.config)
     )
       return stored.providerId
-    if (a.providerId) return a.providerId
-    if (a.id !== FILE_ADAPTER.id) return a.id
-    // The editor chose a subscription from the file (spec rule 25); saving reads no file
-    // (rule 12) and every read checks this provider id.
-    if (c.providerId) return c.providerId
-    if (
-      stored?.providerId &&
-      stored.config.path === config.path &&
-      stored.config.subscriptionId === config.subscriptionId
-    )
-      return stored.providerId
-    throw new AppError('config', 'Choose the JSON file again to select its subscription.')
-  }
-  /** Spec rule 25: the subscriptions of a JSON input file, without metrics. */
-  inspectFile(path: string): UsageFileSubscription[] {
-    // Rule 12: while off, even an explicit read touches no file.
-    if (!this.enabled)
-      throw new AppError('config', 'Turn on Show usage quota to read the JSON file.')
-    const checked = this.checkedPath(path, false)
-    if (!existsSync(checked))
-      throw new AppError('not_found', 'Usage file does not exist. Choose an existing JSON file.')
-    return this.readDocument(checked).subscriptions.map((x) => ({
-      id: x.id,
-      providerId: x.providerId,
-      label: x.label,
-    }))
-  }
-  private proposedClaudeDirectory(connectionId: string): string {
-    if (typeof connectionId !== 'string' || !DIRECTORY_ID.test(connectionId))
-      throw new AppError('validation_error', 'This account id cannot name a Claude directory.')
-    return join(this.deps.userDataPath, 'claude-code-usage', connectionId)
-  }
-  /** Spec rule 24: the proposed directory, or the chosen one, and the setup preview command. */
-  claudeSetup(connectionId: string, directory: string | null): UsageClaudeSetup {
-    const proposed = DIRECTORY_ID.test(connectionId)
-      ? this.proposedClaudeDirectory(connectionId)
-      : null
-    // The proposed directory may not exist before the account is saved.
-    const dir =
-      directory === null
-        ? this.proposedClaudeDirectory(connectionId)
-        : proposed && this.pathKey(directory) === this.pathKey(proposed)
-          ? proposed
-          : this.checkedPath(directory, false)
-    const script = this.deps.claudeSetupScript
-    if (!script)
-      throw new AppError(
-        'not_found',
-        'The Claude snapshot writer is missing. Repair your NeKode installation.',
-      )
-    const settings = join(this.deps.homeDirectory ?? homedir(), '.claude', 'settings.json')
-    const quote = (value: string) => {
-      // PowerShell expands $ and backticks inside double quotes and also ends a
-      // double-quoted string at the typographic double quotes U+201C-U+201E.
-      if (/["\u201C-\u201E`$\r\n]/.test(value))
-        throw new AppError(
-          'validation_error',
-          'Paths for the setup command cannot contain quotes, backticks, $ or line breaks.',
-        )
-      return `"${value}"`
-    }
-    return {
-      directory: dir,
-      command: `node ${quote(script)} --settings ${quote(settings)} --dir ${quote(dir)}`,
-    }
+    return a.providerId ?? a.id
   }
   /** Spec rule 26: create the user adapters folder when missing and open it. */
   async openAdaptersFolder(): Promise<void> {
@@ -486,43 +415,6 @@ export class UsageService {
       throw new AppError('not_found', 'Cannot open folders in this NeKode build.')
     if (await this.deps.openPath(dir))
       throw new AppError('io', 'Cannot open the usage adapters folder.')
-  }
-  /** Spec rule 24: saving or testing a Claude account creates its proposed directory. */
-  private createProposedDirectories(settings: UsageSettings): void {
-    for (const c of settings.connections) {
-      if (
-        c.adapterId !== CLAUDE_SNAPSHOT_ADAPTER.id ||
-        typeof c.config.directory !== 'string' ||
-        !DIRECTORY_ID.test(c.id)
-      )
-        continue
-      const proposed = this.proposedClaudeDirectory(c.id)
-      if (this.pathKey(c.config.directory) !== this.pathKey(proposed) || existsSync(proposed))
-        continue
-      try {
-        mkdirSync(proposed, { recursive: true })
-      } catch {
-        throw new AppError(
-          'io',
-          'Cannot create the Claude snapshot directory. Check its permissions.',
-        )
-      }
-    }
-  }
-  /** Spec rule 2: two accounts cannot bind the same JSON file subscription. */
-  private rejectDuplicateFileBindings(settings: UsageSettings): void {
-    const bound = new Map<string, string>()
-    for (const c of settings.connections) {
-      if (c.adapterId !== FILE_ADAPTER.id || typeof c.config.path !== 'string') continue
-      const key = `${this.pathKey(c.config.path)}\n${(c.config.subscriptionId as string | undefined) || c.id}`
-      const other = bound.get(key)
-      if (other !== undefined)
-        throw new AppError(
-          'validation_error',
-          `This file subscription is already tracked by the account "${other}".`,
-        )
-      bound.set(key, c.label)
-    }
   }
   /** Why `pin` cannot target a metric under `next`, or null when it can. */
   private pinRefusal(pin: UsagePin, next: UsageSettings, invalidated: Set<string>): string | null {
@@ -541,19 +433,19 @@ export class UsageService {
   saveSettings(raw: UsageSettings): UsageSettings {
     const next = parseUsageSettings(raw)
     next.connections = next.connections.map((c) => this.prepare(c))
-    this.rejectDuplicateFileBindings(next)
-    // The proposed directory must exist before path validation resolves its parent.
-    this.createProposedDirectories(next)
     this.validatePaths(next)
+    // Spec rule 2 and L5: only a changed source (provider, adapter, or configuration) invalidates
+    // an account's data, pin target, and deadlines; a label is display only.
     const invalidated = new Set<string>()
     for (const c of next.connections) {
       const previous = this.settings.connections.find((p) => p.id === c.id)
       if (
         !previous ||
-        previous.label !== c.label ||
         previous.providerId !== c.providerId ||
         previous.adapterId !== c.adapterId ||
-        JSON.stringify(this.declared(previous.config, this.adapter(c))) !== JSON.stringify(c.config)
+        JSON.stringify(
+          removedSource(c) ? previous.config : this.declared(previous.config, this.adapter(c)),
+        ) !== JSON.stringify(c.config)
       )
         invalidated.add(c.id)
     }
@@ -587,8 +479,18 @@ export class UsageService {
       const previous = this.settings.connections.find((p) => p.id === c.id)
       const changed = invalidated.has(c.id) || previous?.enabled !== c.enabled
       const r = changed ? this.newRuntime() : (retained.get(c.id) ?? this.newRuntime())
-      if (changed && !invalidated.has(c.id))
-        r.subscription = retained.get(c.id)?.subscription ?? null
+      const kept = retained.get(c.id)
+      if (changed && !invalidated.has(c.id)) r.subscription = kept?.subscription ?? null
+      // Spec L5: a save without a source change keeps every deadline, so neither a scheduled
+      // nor a manual read starts before the interval or a provider retry deadline. A read this
+      // save aborts never completed, so only its provider retry deadline remains.
+      if (changed && kept && !invalidated.has(c.id)) {
+        r.retryUntil = kept.retryUntil
+        r.startedAt = kept.flight ? 0 : kept.startedAt
+        r.due = kept.flight ? kept.retryUntil : Math.max(kept.due, kept.retryUntil)
+      }
+      if (r.subscription && r.subscription.label !== c.label)
+        r.subscription = { ...r.subscription, label: c.label }
       old.set(c.id, r)
     }
     this.settings = next
@@ -603,11 +505,13 @@ export class UsageService {
       .map((c) => {
         const { config: _config, ...connection } = c
         const r = this.runtimeFor(c.id)
+        const until = removedSource(c) ? 0 : this.manualDeadline(r).until
         return {
           connection,
           subscription: r.subscription,
-          error: r.error,
+          error: this.failure(c, r),
           refreshing: r.refreshing,
+          nextRefreshAt: this.now() < until ? new Date(until).toISOString() : null,
         }
       })
     return structuredClone({
@@ -626,11 +530,19 @@ export class UsageService {
       for (const c of this.settings.connections) if (c.enabled) void this.collect(c, false)
   }
   async refresh(): Promise<UsageSnapshot> {
-    if (!this.enabled) return this.read()
-    await Promise.all(
-      this.settings.connections.filter((c) => c.enabled).map((c) => this.collect(c, true)),
-    )
-    return this.read()
+    const refresh: NonNullable<UsageSnapshot['refresh']> = { read: [], skipped: [] }
+    if (this.enabled) {
+      const connections = this.settings.connections.filter((c) => c.enabled)
+      const runtimes = connections.map((c) => this.runtimeFor(c.id))
+      const results = await Promise.all(connections.map((c) => this.collect(c, true)))
+      results.forEach((result, index) => {
+        // A removed/reconfigured source cannot contribute an obsolete manual outcome.
+        if (!this.enabled || this.runtime.get(connections[index].id) !== runtimes[index]) return
+        if (result === 'read') refresh.read.push(connections[index].id)
+        else if (result) refresh.skipped.push(result)
+      })
+    }
+    return { ...this.read(), refresh }
   }
   private readJson(path: string): unknown {
     if (statSync(path).size > USAGE_MAX_BYTES)
@@ -647,29 +559,6 @@ export class UsageService {
         'Cannot parse usage file. Write one complete version 1 JSON document.',
       )
     }
-  }
-  /** A missing local input is transient (spec rule 13); only rejected paths are configuration errors. */
-  private fileInput(path: string): string {
-    const checked = this.checkedPath(path, false)
-    if (!existsSync(checked))
-      throw new AppError(
-        'io',
-        'Cannot read usage file. It does not exist yet; collection retries automatically.',
-      )
-    return checked
-  }
-  /** A missing snapshot directory in an existing folder is transient (spec rule 16). */
-  private snapshotDirectory(path: string): string {
-    const checked = this.checkedPath(path, false)
-    if (!existsSync(checked))
-      throw new AppError(
-        'io',
-        'Cannot read Claude snapshot directory. It does not exist yet; collection retries automatically.',
-      )
-    return checked
-  }
-  private readDocument(path: string): UsageDocument {
-    return parseUsageDocument(this.readJson(path), this.now())
   }
   private secrets(c: UsageConnection, a: UsageAdapter): Record<string, string | boolean> {
     const config = { ...c.config }
@@ -692,34 +581,35 @@ export class UsageService {
     }
     return config
   }
-  private async load(c: UsageConnection, signal: AbortSignal): Promise<UsageSubscription> {
+  /** Spec L7: an account of a removed source always reports the fixed configuration error. */
+  private failure(c: UsageConnection, r: Runtime): UsageFailure | null {
+    return removedSource(c) ? { ...REMOVED_SOURCE } : r.error
+  }
+  /** Spec L5: earliest manual refresh start, and whether a provider retry deadline sets it. */
+  private manualDeadline(r: Runtime): { until: number; reason: UsageRefreshSkip['reason'] } {
+    const interval = r.startedAt + MANUAL_REFRESH_MS
+    return r.retryUntil >= interval
+      ? { until: r.retryUntil, reason: 'backoff' }
+      : { until: interval, reason: 'interval' }
+  }
+  /**
+   * One adapter read. `refresh` (manual) responses must be live (spec L3): every available metric
+   * observed no earlier than `startedAt`.
+   */
+  private async load(
+    c: UsageConnection,
+    signal: AbortSignal,
+    action: UsageAdapterAction,
+    startedAt: number,
+  ): Promise<UsageSubscription> {
+    if (removedSource(c)) throw new AppError('config', USAGE_REMOVED_ADAPTER_MESSAGE)
     const a = this.adapter(c),
       config = this.secrets(c, a)
-    if (a.id === FILE_ADAPTER.id) {
-      // Spec rule 25: read the bound subscription, ignore the others, never rebind.
-      const id = (config.subscriptionId as string | undefined) || c.id
-      const sub = this.readDocument(this.fileInput(config.path as string)).subscriptions.find(
-        (x) => x.id === id,
-      )
-      if (!sub)
-        throw new AppError(
-          'io',
-          `Usage file has no subscription "${id}". Collection retries automatically.`,
-        )
-      if (sub.providerId !== c.providerId)
-        throw new AppError(
-          'validation_error',
-          'The usage file subscription changed its provider. Choose the file again for this account.',
-        )
-      return { ...sub, id: c.id, label: c.label, sourceKind: a.sourceKind }
-    }
-    const document =
-      a.id === CLAUDE_SNAPSHOT_ADAPTER.id
-        ? parseUsageDocument(
-            readClaudeSnapshots(this.snapshotDirectory(config.directory as string), c, this.now()),
-            this.now(),
-          )
-        : parseUsageDocument(await this.host.read(a, config, c.id, signal), this.now())
+    const document = parseUsageDocument(
+      await this.host.read(a, config, c.id, signal, action),
+      this.now(),
+    )
+    if (action === 'refresh') assertLiveRefresh(document, startedAt)
     // Spec rule 23: the provider id must match only when the service declares one.
     if (
       document.subscriptions.length !== 1 ||
@@ -748,33 +638,48 @@ export class UsageService {
     })
     const c = this.prepare(settings.connections[0])
     settings.connections = [c]
-    // The proposed directory must exist before path validation resolves its parent.
-    this.createProposedDirectories(settings)
     this.validatePaths(settings)
-    await this.load(c, new AbortController().signal)
+    await this.load(c, new AbortController().signal, 'read', this.now())
   }
-  private collect(c: UsageConnection, explicit: boolean): Promise<void> {
+  private async collect(
+    c: UsageConnection,
+    explicit: boolean,
+  ): Promise<'read' | UsageRefreshSkip | null> {
     const r = this.runtimeFor(c.id)
-    if (r.flight) return r.flight
-    if (this.stopped || (!explicit && r.suspended) || this.now() < r.due) return Promise.resolve()
+    if (r.flight) {
+      await r.flight
+      return 'read'
+    }
+    // Spec L7: an account of a removed source is never collected.
+    if (this.stopped || removedSource(c)) return null
+    if (explicit) {
+      // Spec L5: a manual refresh honours only the 60-second limit and a provider retry deadline;
+      // it ignores the adapter minimum interval, growing backoff and suspension.
+      const deadline = this.manualDeadline(r)
+      if (this.now() < deadline.until)
+        return {
+          connectionId: c.id,
+          until: new Date(deadline.until).toISOString(),
+          reason: deadline.reason,
+        }
+    } else if (r.suspended || this.now() < r.due) return null
     const revision = this.revision,
-      controller = new AbortController()
+      controller = new AbortController(),
+      startedAt = this.now()
     r.controller = controller
     r.refreshing = true
     r.suspended = false
-    let minimum = 60_000,
-      fileSource = false
+    let minimum = 60_000
     try {
-      const a = this.adapter(c)
-      fileSource = a.sourceKind === 'file'
-      minimum = Math.max(fileSource ? 5000 : 60_000, a.minimumRefreshSeconds * 1000)
+      minimum = Math.max(60_000, this.adapter(c).minimumRefreshSeconds * 1000)
     } catch {
       /* Collection reports the actionable configuration failure. */
     }
-    r.due = this.now() + minimum
+    r.startedAt = startedAt
+    r.due = startedAt + minimum
     r.flight = (async () => {
       try {
-        const sub = await this.load(c, controller.signal)
+        const sub = await this.load(c, controller.signal, explicit ? 'refresh' : 'read', startedAt)
         if (
           controller.signal.aborted ||
           revision !== this.revision ||
@@ -782,19 +687,12 @@ export class UsageService {
           this.stopped
         )
           return
+        // A rename during the read keeps it (spec rule 2); show the current label.
+        sub.label = this.settings.connections.find((p) => p.id === c.id)?.label ?? sub.label
         const now = this.now()
         const receivedAt = new Date(now).toISOString()
-        const snapshots = c.adapterId === CLAUDE_SNAPSHOT_ADAPTER.id
         sub.metrics = sub.metrics.map((metric) => {
           const previous = r.subscription?.metrics.find((m) => m.id === metric.id)
-          // Rule 16 across polls: a deleted newest session file cannot bring back an older value.
-          // Only a kept window whose numeric reset is still ahead is protected; an expired or
-          // unknown-reset window is replaced by the current read.
-          if (snapshots && previous?.resetsAt && Date.parse(previous.resetsAt) > now) {
-            const kept = windowKey(previous),
-              next = windowKey(metric)
-            if (kept && next && newerWindow(kept, next, now)) return previous
-          }
           const samePeriod =
             previous?.periodStart === metric.periodStart && previous?.resetsAt === metric.resetsAt
           if (
@@ -820,6 +718,7 @@ export class UsageService {
         r.error = null
         r.failures = 0
         r.suspended = false
+        r.retryUntil = 0
         this.persistCache()
         this.exportDocument()
       } catch (error) {
@@ -833,8 +732,11 @@ export class UsageService {
         r.error = safeFailure(error)
         r.failures++
         r.suspended = ['auth', 'unsupported', 'config'].includes(r.error.code)
-        // Local file sources retry at their own cadence; command/API sources back off (rule 13).
-        if (!r.suspended && !fileSource)
+        r.retryUntil =
+          r.error.code === 'rate_limited' && r.error.retryAfterSeconds
+            ? this.now() + r.error.retryAfterSeconds * 1000
+            : 0
+        if (!r.suspended) {
           r.due =
             this.now() +
             Math.max(
@@ -842,6 +744,7 @@ export class UsageService {
               Math.min(300, 60 * 2 ** Math.min(r.failures - 1, 3)) * 1000,
               (r.error.retryAfterSeconds ?? 0) * 1000,
             )
+        }
         this.exportDocument()
       } finally {
         if (revision === this.revision && this.runtime.get(c.id) === r) {
@@ -851,7 +754,8 @@ export class UsageService {
         }
       }
     })()
-    return r.flight
+    await r.flight
+    return 'read'
   }
   private document(): UsageDocument {
     return {
@@ -861,14 +765,15 @@ export class UsageService {
         .map((c) => {
           const r = this.runtimeFor(c.id)
           return r.subscription
-            ? { ...r.subscription, status: r.error ? 'error' : r.subscription.status }
+            ? { ...r.subscription, status: this.failure(c, r) ? 'error' : r.subscription.status }
             : {
                 id: c.id,
                 providerId: c.providerId,
                 label: c.label,
-                sourceKind: this.adapter(c).sourceKind,
+                // Exported documents keep `file` for accounts of removed passive sources (L6).
+                sourceKind: removedSource(c) ? 'file' : this.adapter(c).sourceKind,
                 metrics: [],
-                status: r.error ? 'error' : 'unavailable',
+                status: this.failure(c, r) ? 'error' : 'unavailable',
               }
         }),
     }

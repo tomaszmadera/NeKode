@@ -89,9 +89,6 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
       pickFile: (output) => invoke(IPC_CHANNEL.usagePickFile, output),
       getEnabled: () => invoke(IPC_CHANNEL.usageGetEnabled),
       setEnabled: (enabled) => invoke(IPC_CHANNEL.usageSetEnabled, enabled),
-      inspectFile: (path) => invoke(IPC_CHANNEL.usageInspectFile, path),
-      claudeSetup: (connectionId, directory) =>
-        invoke(IPC_CHANNEL.usageClaudeSetup, connectionId, directory),
       openAdaptersFolder: () => invoke(IPC_CHANNEL.usageOpenAdaptersFolder),
     },
     dictation: {

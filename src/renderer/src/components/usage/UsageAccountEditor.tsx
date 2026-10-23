@@ -1,17 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import { formatErrorMessage } from '../../../../shared/ipc-error'
-import type {
-  UsageAdapter,
-  UsageConnection,
-  UsageFileSubscription,
+import {
+  USAGE_REMOVED_ADAPTER_IDS,
+  USAGE_REMOVED_ADAPTER_MESSAGE,
+  type UsageAdapter,
+  type UsageConnection,
 } from '../../../../shared/usage-contract'
 
-const FILE_ADAPTER_ID = 'usage-file'
-const CLAUDE_ADAPTER_ID = 'claude-code-snapshots'
 const input = 'mt-1 w-full rounded border border-edge bg-app p-2'
 
-/** One account of one service (usage-quota spec rules 23-25). */
+/** One account of one service (usage-quota spec rule 23). */
 export function UsageAccountEditor({
   app,
   adapter,
@@ -34,28 +33,6 @@ export function UsageAccountEditor({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null)
-  const [subscriptions, setSubscriptions] = useState<UsageFileSubscription[] | null>(null)
-  const [command, setCommand] = useState<string | null>(null)
-  const isFile = adapter?.id === FILE_ADAPTER_ID,
-    isClaude = adapter?.id === CLAUDE_ADAPTER_ID
-
-  // Spec rule 24: a new Claude account starts with NeKode's proposed directory.
-  useEffect(() => {
-    if (!isNew || !isClaude || initial.config.directory) return
-    let alive = true
-    app.usage
-      .claudeSetup(initial.id, null)
-      .then((setup) => {
-        if (alive) setC((x) => ({ ...x, config: { ...x.config, directory: setup.directory } }))
-      })
-      .catch((e) => {
-        if (alive) setError(formatErrorMessage(e))
-      })
-    return () => {
-      alive = false
-    }
-  }, [app, isNew, isClaude, initial])
-
   function config(key: string, value: string | boolean | undefined): void {
     setC((x) => {
       const next = { ...x.config }
@@ -77,42 +54,19 @@ export function UsageAccountEditor({
       setBusy(false)
     }
   }
-  /** Spec rule 25: read the file's subscriptions; one is chosen automatically. */
-  async function inspect(path: string): Promise<void> {
-    setSubscriptions(null)
-    config('subscriptionId', undefined)
-    const found = await app.usage.inspectFile(path)
-    setSubscriptions(found)
-    if (found.length === 0) throw new Error('The JSON file contains no subscriptions.')
-    if (found.length === 1) choose(found[0])
-  }
-  function choose(sub: UsageFileSubscription): void {
-    setC((x) => ({
-      ...x,
-      label: x.label.trim() ? x.label : sub.label,
-      providerId: sub.providerId,
-      config: { ...x.config, subscriptionId: sub.id },
-    }))
-  }
-
   if (!adapter)
     return (
       <div className="space-y-2 rounded border border-edge p-3">
         <p role="alert" className="text-error">
-          The service of this account ({initial.adapterId}) is unavailable. Remove the account or
-          restore its adapter.
+          {USAGE_REMOVED_ADAPTER_IDS.includes(initial.adapterId)
+            ? USAGE_REMOVED_ADAPTER_MESSAGE
+            : `The service of this account (${initial.adapterId}) is unavailable. Remove the account or restore its adapter.`}
         </p>
         <button type="button" onClick={onCancel}>
           Back
         </button>
       </div>
     )
-  // A file account needs a chosen subscription, except a saved one whose file is unchanged.
-  const fileReady =
-    !isFile ||
-    !!c.config.subscriptionId ||
-    (!isNew && c.config.path === initial.config.path && !subscriptions)
-  const fields = adapter.configSchema.filter((f) => !(isFile && f.key === 'subscriptionId'))
   return (
     <form
       className="space-y-3 rounded border border-edge p-3"
@@ -138,7 +92,7 @@ export function UsageAccountEditor({
       {adapter.description ? (
         <p className="text-xs text-ink-secondary">{adapter.description}</p>
       ) : null}
-      {fields.map((f) => {
+      {adapter.configSchema.map((f) => {
         const id = `usage-field-${f.key}`,
           help = f.description ? `${id}-help` : undefined
         return (
@@ -180,15 +134,6 @@ export function UsageAccountEditor({
                 onChange={(e) =>
                   config(f.key, e.target.value || f.type !== 'secret' ? e.target.value : undefined)
                 }
-                onBlur={(e) => {
-                  if (
-                    isFile &&
-                    f.type === 'file' &&
-                    e.target.value &&
-                    e.target.value !== initial.config.path
-                  )
-                    void action(() => inspect(e.target.value))
-                }}
               />
             )}
             {f.description ? (
@@ -202,29 +147,11 @@ export function UsageAccountEditor({
                 onClick={() =>
                   void action(async () => {
                     const path = await app.usage.pickFile(false)
-                    if (!path) return
-                    config(f.key, path)
-                    await inspect(path)
-                  })
-                }
-              >
-                Choose JSON file
-              </button>
-            ) : null}
-            {f.type === 'directory' ? (
-              <button
-                type="button"
-                onClick={() =>
-                  void action(async () => {
-                    const current = c.config[f.key]
-                    const path = await app.dialogs.pickDirectory(
-                      typeof current === 'string' && current ? current : null,
-                    )
                     if (path) config(f.key, path)
                   })
                 }
               >
-                Choose directory
+                Choose JSON file
               </button>
             ) : null}
             {f.type === 'secret' ? (
@@ -235,57 +162,6 @@ export function UsageAccountEditor({
           </div>
         )
       })}
-      {isFile && subscriptions && subscriptions.length > 1 ? (
-        <label className="block">
-          Subscription
-          <select
-            aria-label="Subscription"
-            className="ml-2 rounded border border-edge bg-app p-1"
-            value={String(c.config.subscriptionId ?? '')}
-            onChange={(e) => {
-              const sub = subscriptions.find((x) => x.id === e.target.value)
-              if (sub) choose(sub)
-            }}
-          >
-            <option value="">Choose</option>
-            {subscriptions.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.label} ({x.id})
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      {isFile && subscriptions?.length === 1 ? (
-        <p className="text-xs text-ink-muted">
-          Reads the subscription {subscriptions[0].label} ({subscriptions[0].id}).
-        </p>
-      ) : null}
-      {isClaude ? (
-        <div className="space-y-2">
-          <p className="text-xs text-ink-muted">
-            Use one directory per Claude account. Record each account once on this computer: if
-            another tool already records Claude usage, choose its directory instead of installing
-            the NeKode writer. Otherwise run the setup command in PowerShell; it previews the change
-            and applies it only when you repeat it with --apply.
-          </p>
-          <button
-            type="button"
-            disabled={typeof c.config.directory !== 'string' || !c.config.directory}
-            onClick={() =>
-              void action(async () => {
-                const setup = await app.usage.claudeSetup(c.id, c.config.directory as string)
-                setCommand(setup.command)
-                await navigator.clipboard.writeText(setup.command)
-                setNotice('Setup command copied.')
-              })
-            }
-          >
-            Copy setup command
-          </button>
-          {command ? <code className="block break-all text-xs">{command}</code> : null}
-        </div>
-      ) : null}
       <label className="flex items-center gap-2">
         <input
           type="checkbox"
@@ -315,7 +191,7 @@ export function UsageAccountEditor({
         )}
         <button
           type="submit"
-          disabled={busy || !c.label.trim() || !fileReady}
+          disabled={busy || !c.label.trim()}
           className="rounded border border-edge bg-highlight px-3 py-1"
         >
           {busy ? 'Working...' : 'Save'}

@@ -13,7 +13,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppError } from '../../../shared/ipc-error'
-import { USAGE_STATE_KEY, type UsageSettings } from '../../../shared/usage-contract'
+import {
+  USAGE_REMOVED_ADAPTER_MESSAGE,
+  USAGE_STATE_KEY,
+  type UsageSettings,
+} from '../../../shared/usage-contract'
 import { UsageAdapterHost } from './adapter-host'
 import { UsageService } from './usage-service'
 
@@ -25,8 +29,40 @@ function fixture() {
   roots.push(dir)
   const state = new Map<string, string>([['usage.enabled', 'true']])
   let now = NOW
+  // The default source: a user adapter whose (mocked) process returns the input file (spec L1).
+  const source = join(dir, 'profile', 'usage-adapters', 'source')
+  mkdirSync(source, { recursive: true })
+  writeFileSync(
+    join(source, 'usage-adapter.json'),
+    JSON.stringify({
+      id: 'source',
+      name: 'Source',
+      providerId: 'fixture',
+      protocolVersion: 2,
+      invocation: { command: 'node', args: ['fixture.cjs'] },
+      sourceKind: 'api',
+      capabilities: ['window'],
+      minimumRefreshSeconds: 60,
+      configSchema: [{ key: 'path', label: 'Input file', type: 'file', required: true }],
+    }),
+  )
+  const host = new UsageAdapterHost()
+  const hostRead = vi.spyOn(host, 'read').mockImplementation(async (_adapter, config) => {
+    let text: string
+    try {
+      text = readFileSync(config.path as string, 'utf8')
+    } catch {
+      throw new AppError('io', 'Fixture input is missing.')
+    }
+    try {
+      return JSON.parse(text)
+    } catch {
+      throw new AppError('protocol', 'Usage adapter must return one valid JSON response.')
+    }
+  })
   const deps = {
     userDataPath: join(dir, 'profile'),
+    host,
     state: {
       get: (key: string) => state.get(key) ?? null,
       set: (key: string, v: string) => {
@@ -75,7 +111,7 @@ function fixture() {
         id: 'account',
         label: 'Fixture account',
         providerId: 'fixture',
-        adapterId: 'usage-file',
+        adapterId: 'source',
         enabled: true,
         config: { path: input },
       },
@@ -83,10 +119,21 @@ function fixture() {
     pin: null,
     export: { enabled: false, path: null },
   }
+  /** The input document with every observation at the current clock (a live provider read). */
+  const live = (percent = 42) => {
+    const document = JSON.parse(readFileSync(input, 'utf8'))
+    for (const metric of document.subscriptions[0].metrics) {
+      metric.observedAt = new Date(now).toISOString()
+      metric.usedPercent = percent
+    }
+    return document
+  }
   return {
     dir,
     state,
     deps,
+    hostRead,
+    live,
     service,
     input,
     output,
@@ -105,7 +152,7 @@ function plugin(f: ReturnType<typeof fixture>, minimumRefreshSeconds = 60) {
     JSON.stringify({
       id: 'fixture',
       name: 'Fixture',
-      protocolVersion: 1,
+      protocolVersion: 2,
       invocation: { command: 'node', args: ['fixture.cjs'] },
       sourceKind: 'api',
       capabilities: ['window'],
@@ -114,7 +161,7 @@ function plugin(f: ReturnType<typeof fixture>, minimumRefreshSeconds = 60) {
     }),
   )
   const host = new UsageAdapterHost()
-  const read = vi.spyOn(host, 'read').mockResolvedValue(JSON.parse(readFileSync(f.input, 'utf8')))
+  const read = vi.spyOn(host, 'read').mockImplementation(async () => f.live())
   const service = new UsageService({ ...f.deps, host })
   services.push(service)
   service.saveSettings({
@@ -122,6 +169,11 @@ function plugin(f: ReturnType<typeof fixture>, minimumRefreshSeconds = 60) {
     connections: [{ ...f.settings.connections[0], adapterId: 'fixture', config: {} }],
   })
   return { service, read }
+}
+/** One scheduled poll (spec rule 12): the visible service collects every due source. */
+async function poll(service: UsageService) {
+  service.setVisible(true)
+  await new Promise((resolve) => setImmediate(resolve))
 }
 afterEach(() => {
   for (const service of services.splice(0)) service.shutdown()
@@ -153,94 +205,33 @@ describe('global usage service', () => {
     services.push(next)
     expect(next.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
   })
-  it.each(['label', 'config'] as const)(
-    'rejects old-account cache after a durable %s change even when cache invalidation fails',
-    async (field) => {
-      const f = fixture()
-      f.service.saveSettings(f.settings)
-      await f.service.refresh()
-      f.service.saveSettings({
-        ...f.service.getSettings(),
-        pin: { connectionId: 'account', metricId: 'week' },
-      })
-      const cache = join(f.dir, 'profile', 'usage', 'observations.json')
-      const retained = join(f.dir, 'retained-cache.json')
-      renameSync(cache, retained)
-      mkdirSync(cache)
-      const next = f.service.getSettings()
-      if (field === 'label') next.connections[0].label = 'Other account'
-      else {
-        const other = join(f.dir, 'other-account.json')
-        writeFileSync(other, readFileSync(f.input))
-        next.connections[0].config.path = other
-      }
-      f.service.saveSettings(next)
-      expect(f.service.read().cacheError).toContain('Cannot write usage cache')
-      expect(f.service.read().connections[0].subscription).toBeNull()
-      rmSync(cache, { recursive: true })
-      renameSync(retained, cache)
-      const restarted = new UsageService(f.deps)
-      services.push(restarted)
-      expect(restarted.getSettings().connections[0]).toEqual(next.connections[0])
-      expect(restarted.read().pin).toBeNull()
-      expect(restarted.read().connections[0].subscription).toBeNull()
-    },
-  )
-  function scheduled(f: ReturnType<typeof fixture>) {
-    vi.useFakeTimers()
-    const service = new UsageService({ ...f.deps, startTimer: true })
-    services.push(service)
-    service.saveSettings(f.settings)
-    service.setVisible(true)
-    const step = async (ms: number) => {
-      f.advance(ms)
-      await vi.advanceTimersByTimeAsync(ms)
-    }
-    return { service, step }
-  }
-  it.each([
-    ['protocol', '{'],
-    ['validation_error', JSON.stringify({ schemaVersion: 1, subscriptions: 'partial' })],
-  ])(
-    'retries %s file data at the 5-second cadence without growing backoff',
-    async (code, partial) => {
-      const f = fixture(),
-        { service, step } = scheduled(f)
-      await Promise.resolve()
-      expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
-      const reads = vi.spyOn(service as unknown as { readDocument: () => unknown }, 'readDocument')
-      writeFileSync(f.input, partial)
-      for (let attempt = 1; attempt <= 4; attempt++) {
-        await step(4000)
-        expect(reads).toHaveBeenCalledTimes(attempt - 1)
-        await step(1000)
-        expect(reads).toHaveBeenCalledTimes(attempt)
-        expect(service.read().connections[0].error?.code).toBe(code)
-        expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
-      }
-      f.write(75, '2026-10-20T12:00:05Z')
-      await step(5000)
-      expect(service.read().connections[0].error).toBeNull()
-      expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(75)
-    },
-  )
-  it('treats a missing input file as transient and recovers without suspension', async () => {
-    const f = fixture(),
-      { service, step } = scheduled(f)
-    await Promise.resolve()
-    rmSync(f.input)
-    await step(5000)
-    expect(service.read().connections[0].error).toMatchObject({
-      code: 'io',
-      message: expect.stringContaining('Cannot read usage file'),
+  // A label-only save keeps the cache identity (spec rule 2); see the rename test below.
+  it('rejects old-account cache after a durable config change even when cache invalidation fails', async () => {
+    const f = fixture()
+    f.service.saveSettings(f.settings)
+    await f.service.refresh()
+    f.service.saveSettings({
+      ...f.service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'week' },
     })
-    expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
-    await step(5000)
-    expect(service.read().connections[0].error?.code).toBe('io')
-    f.write(64, '2026-10-20T12:00:10Z')
-    await step(5000)
-    expect(service.read().connections[0].error).toBeNull()
-    expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(64)
+    const cache = join(f.dir, 'profile', 'usage', 'observations.json')
+    const retained = join(f.dir, 'retained-cache.json')
+    renameSync(cache, retained)
+    mkdirSync(cache)
+    const next = f.service.getSettings()
+    const other = join(f.dir, 'other-account.json')
+    writeFileSync(other, readFileSync(f.input))
+    next.connections[0].config.path = other
+    f.service.saveSettings(next)
+    expect(f.service.read().cacheError).toContain('Cannot write usage cache')
+    expect(f.service.read().connections[0].subscription).toBeNull()
+    rmSync(cache, { recursive: true })
+    renameSync(retained, cache)
+    const restarted = new UsageService(f.deps)
+    services.push(restarted)
+    expect(restarted.getSettings().connections[0]).toEqual(next.connections[0])
+    expect(restarted.read().pin).toBeNull()
+    expect(restarted.read().connections[0].subscription).toBeNull()
   })
   it('saves a file connection whose input does not exist yet in an existing folder', () => {
     const f = fixture()
@@ -255,68 +246,49 @@ describe('global usage service', () => {
       }),
     ).toThrow('folder')
   })
-  it('lets manual refresh read a repaired file after 5 seconds while keeping single-flight', async () => {
-    const f = fixture()
-    f.service.saveSettings(f.settings)
-    await f.service.refresh()
-    f.advance(5000)
-    writeFileSync(f.input, '{')
-    await f.service.refresh()
-    expect(f.service.read().connections[0].error?.code).toBe('protocol')
-    f.write(81, '2026-10-20T12:00:05Z')
-    f.advance(4999)
-    await f.service.refresh()
-    expect(f.service.read().connections[0].error?.code).toBe('protocol')
-    f.advance(1)
-    const reads = vi.spyOn(f.service as unknown as { readDocument: () => unknown }, 'readDocument')
-    await Promise.all([f.service.refresh(), f.service.refresh()])
-    expect(reads).toHaveBeenCalledTimes(1)
-    expect(f.service.read().connections[0].error).toBeNull()
-    expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(81)
-  })
   it.each(['protocol', 'validation_error'] as const)(
-    'keeps the 60/120/240/300-second schedule for %s failures of a command source',
+    'keeps the scheduled 60/120/240/300-second backoff for %s failures',
     async (code) => {
       const f = fixture(),
         { service, read } = plugin(f)
       read.mockRejectedValue(new AppError(code, 'Fixture failure'))
-      await service.refresh()
+      await poll(service)
       expect(service.read().connections[0].error?.code).toBe(code)
       for (const delay of [60, 120, 240, 300, 300]) {
         const calls = read.mock.calls.length
         f.advance(delay * 1000 - 1)
-        await service.refresh()
+        await poll(service)
         expect(read).toHaveBeenCalledTimes(calls)
         f.advance(1)
-        await service.refresh()
+        await poll(service)
         expect(read).toHaveBeenCalledTimes(calls + 1)
       }
     },
   )
-  it('resets command backoff after a success between failures', async () => {
+  it('resets scheduled backoff after a success between failures', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
     const document = JSON.parse(readFileSync(f.input, 'utf8'))
     read.mockRejectedValueOnce(new AppError('network', 'Fixture failure'))
-    await service.refresh()
+    await poll(service)
     f.advance(60_000)
     read.mockRejectedValueOnce(new AppError('network', 'Fixture failure'))
-    await service.refresh()
+    await poll(service)
     f.advance(120_000)
     read.mockResolvedValueOnce(document)
-    await service.refresh()
+    await poll(service)
     expect(service.read().connections[0].error).toBeNull()
     f.advance(60_000)
     read.mockRejectedValueOnce(new AppError('network', 'Fixture failure'))
-    await service.refresh()
+    await poll(service)
     expect(service.read().connections[0].error?.code).toBe('network')
     const calls = read.mock.calls.length
     read.mockResolvedValue(document)
     f.advance(59_999)
-    await service.refresh()
+    await poll(service)
     expect(read).toHaveBeenCalledTimes(calls)
     f.advance(1)
-    await service.refresh()
+    await poll(service)
     expect(read).toHaveBeenCalledTimes(calls + 1)
     expect(service.read().connections[0].error).toBeNull()
   })
@@ -346,87 +318,342 @@ describe('global usage service', () => {
     await f.service.refresh()
     expect(readFileSync(unowned, 'utf8')).toBe('unowned fixture file')
   })
-  it('pauses hidden polling and refreshes once when visible with the adapter minimum cadence', async () => {
+  it('reports manual interval skips and reads again at the exact 60-second deadline', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f, 90)
+    expect(service.read().connections[0].nextRefreshAt).toBeNull()
+    expect((await service.refresh()).refresh).toEqual({ read: ['account'], skipped: [] })
+    const until = new Date(NOW + 60_000).toISOString()
+    expect(service.read().connections[0].nextRefreshAt).toBe(until)
+    f.advance(59_999)
+    expect((await service.refresh()).refresh).toEqual({
+      read: [],
+      skipped: [{ connectionId: 'account', until, reason: 'interval' }],
+    })
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(service.read()).not.toHaveProperty('refresh')
+    f.advance(1)
+    expect(service.read().connections[0].nextRefreshAt).toBeNull()
+    expect((await service.refresh()).refresh?.read).toEqual(['account'])
+    expect(read).toHaveBeenCalledTimes(2)
+  })
+  it('reports a provider retry deadline as backoff, then the 60-second interval', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    read.mockRejectedValue(
+      Object.assign(new AppError('rate_limited', 'Fixture deadline'), { retryAfterSeconds: 600 }),
+    )
+    await service.refresh()
+    const until = new Date(NOW + 600_000).toISOString()
+    expect(service.read().connections[0].nextRefreshAt).toBe(until)
+    expect((await service.refresh()).refresh?.skipped).toEqual([
+      { connectionId: 'account', until, reason: 'backoff' },
+    ])
+    expect(read).toHaveBeenCalledTimes(1)
+    f.advance(600_000)
+    read.mockImplementation(async () => f.live())
+    expect((await service.refresh()).refresh?.read).toEqual(['account'])
+    expect(service.read().connections[0].error).toBeNull()
+    expect((await service.refresh()).refresh?.skipped[0].reason).toBe('interval')
+  })
+  it('reports mixed results for a read account and one inside its 60-second limit', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    await service.refresh()
+    f.advance(5000)
+    service.saveSettings({
+      ...service.getSettings(),
+      connections: [
+        ...service.getSettings().connections,
+        { ...f.settings.connections[0], id: 'second', adapterId: 'fixture', config: {} },
+      ],
+    })
+    read.mockImplementation(async (_adapter, _config, id) => {
+      const document = f.live()
+      document.subscriptions[0].id = id
+      return document
+    })
+    expect((await service.refresh()).refresh).toEqual({
+      read: ['second'],
+      skipped: [
+        {
+          connectionId: 'account',
+          until: new Date(NOW + 60_000).toISOString(),
+          reason: 'interval',
+        },
+      ],
+    })
+    expect(read).toHaveBeenCalledTimes(2)
+  })
+  it('keeps manual deadlines across a label or enabled save and resets them on a config change (L5)', async () => {
+    const f = fixture()
+    f.service.saveSettings(f.settings)
+    await f.service.refresh()
+    f.advance(5000)
+    const account = () => f.service.getSettings().connections[0]
+    const save = (change: Partial<UsageSettings['connections'][number]>) =>
+      f.service.saveSettings({
+        ...f.service.getSettings(),
+        connections: [{ ...account(), config: { path: f.input }, ...change }],
+      })
+    const interval = new Date(NOW + 60_000).toISOString()
+    save({ label: 'Renamed account' })
+    expect(f.service.read().connections[0].nextRefreshAt).toBe(interval)
+    expect((await f.service.refresh()).refresh?.skipped).toEqual([
+      { connectionId: 'account', until: interval, reason: 'interval' },
+    ])
+    save({ enabled: false })
+    save({ enabled: true })
+    expect((await f.service.refresh()).refresh?.skipped).toEqual([
+      { connectionId: 'account', until: interval, reason: 'interval' },
+    ])
+    expect(f.hostRead).toHaveBeenCalledTimes(1)
+    // A provider retry deadline survives a label save too.
+    f.advance(55_000)
+    f.hostRead.mockRejectedValueOnce(
+      Object.assign(new AppError('rate_limited', 'Fixture deadline'), { retryAfterSeconds: 600 }),
+    )
+    await f.service.refresh()
+    const backoff = new Date(NOW + 60_000 + 600_000).toISOString()
+    save({ label: 'Renamed again' })
+    expect((await f.service.refresh()).refresh?.skipped).toEqual([
+      { connectionId: 'account', until: backoff, reason: 'backoff' },
+    ])
+    // A changed configuration is a new source: both deadlines reset.
+    const other = join(f.dir, 'other-input.json')
+    writeFileSync(other, readFileSync(f.input))
+    save({ config: { path: other } })
+    expect(f.service.read().connections[0].nextRefreshAt).toBeNull()
+    expect((await f.service.refresh()).refresh?.read).toEqual(['account'])
+    expect(f.hostRead).toHaveBeenCalledTimes(3)
+  })
+  it('keeps scheduled deadlines across a visible label or enabled save and resets them on a source change (L5)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f, 120)
+    const settle = () => new Promise((resolve) => setImmediate(resolve))
+    const save = (change: Partial<UsageSettings['connections'][number]>) =>
+      service.saveSettings({
+        ...service.getSettings(),
+        connections: [{ ...service.getSettings().connections[0], config: {}, ...change }],
+      })
+    const saves = async () => {
+      save({ label: `Renamed ${read.mock.calls.length}` })
+      await settle()
+      save({ enabled: false })
+      save({ enabled: true })
+      await settle()
+    }
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(1)
+    // Past the 60-second manual limit, inside the adapter's 120-second scheduled interval.
+    f.advance(90_000)
+    await saves()
+    expect(read).toHaveBeenCalledTimes(1)
+    f.advance(30_000)
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(2)
+    // A pending provider retry deadline survives the same saves.
+    read.mockRejectedValueOnce(
+      Object.assign(new AppError('rate_limited', 'Fixture deadline'), { retryAfterSeconds: 600 }),
+    )
+    f.advance(120_000)
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(3)
+    f.advance(300_000)
+    await saves()
+    expect(read).toHaveBeenCalledTimes(3)
+    expect((await service.refresh()).refresh?.skipped[0]?.reason).toBe('backoff')
+    f.advance(300_000)
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(4)
+    // A changed source resets every deadline and reads at once.
+    f.advance(10_000)
+    save({ adapterId: 'source', config: { path: f.input } })
+    await settle()
+    expect(read).toHaveBeenCalledTimes(5)
+  })
+  it('keeps the subscription, cache, pin and an in-flight read across a rename (rules 2 and 9)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f, 300)
+    const settle = () => new Promise((resolve) => setImmediate(resolve))
+    const rename = (label: string) =>
+      service.saveSettings({
+        ...service.getSettings(),
+        connections: [{ ...service.getSettings().connections[0], config: {}, label }],
+      })
+    await poll(service)
+    service.saveSettings({
+      ...service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'week' },
+    })
+    f.advance(90_000)
+    rename('Renamed account')
+    await settle()
+    const snapshot = service.read()
+    expect(snapshot.pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    expect(snapshot.connections[0].subscription?.label).toBe('Renamed account')
+    expect(snapshot.connections[0].subscription?.metrics[0].usedPercent).toBe(42)
+    expect(read).toHaveBeenCalledTimes(1)
+    // The cache entry keeps its identity, so a restart shows the values under the new label.
+    const restarted = new UsageService({ ...f.deps, host: new UsageAdapterHost() })
+    services.push(restarted)
+    expect(restarted.read().connections[0].subscription?.label).toBe('Renamed account')
+    expect(restarted.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    // A rename while a read is in flight keeps that read and shows its result under the new label.
+    f.advance(300_000)
+    let finish: (value: unknown) => void = () => {}
+    read.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(2)
+    rename('Renamed in flight')
+    expect(service.read().connections[0].refreshing).toBe(true)
+    finish(f.live(50))
+    await settle()
+    const after = service.read().connections[0]
+    expect(after.refreshing).toBe(false)
+    expect(after.subscription?.label).toBe('Renamed in flight')
+    expect(after.subscription?.metrics[0].usedPercent).toBe(50)
+    expect(service.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    expect(read).toHaveBeenCalledTimes(2)
+  })
+  it('does not delay the next read after disable and re-enable abort an in-flight read (L5)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f, 120)
+    const settle = () => new Promise((resolve) => setImmediate(resolve))
+    const save = (enabled: boolean) =>
+      service.saveSettings({
+        ...service.getSettings(),
+        connections: [{ ...service.getSettings().connections[0], config: {}, enabled }],
+      })
+    await poll(service)
+    f.advance(120_000)
+    read.mockImplementationOnce(() => new Promise(() => {}))
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(2)
+    save(false)
+    save(true)
+    await settle()
+    // The aborted read never completed, so neither its interval nor its 60-second limit applies.
+    expect(read).toHaveBeenCalledTimes(3)
+  })
+  it('reports a joined automatic read as read without starting a second flight', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    let finish: (value: unknown) => void = () => {}
+    read.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    service.setVisible(true)
+    const first = service.refresh(),
+      second = service.refresh()
+    expect(read).toHaveBeenCalledTimes(1)
+    finish(f.live())
+    for (const result of await Promise.all([first, second]))
+      expect(result.refresh).toEqual({ read: ['account'], skipped: [] })
+  })
+  it('keeps the completed read outcome when a cached metric is pinned during refresh', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    await service.refresh()
+    f.advance(60_000)
+    let finish: (value: unknown) => void = () => {}
+    read.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const pending = service.refresh()
+    service.saveSettings({
+      ...service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'week' },
+    })
+    finish(f.live())
+    const result = await pending
+    expect(result.refresh).toEqual({ read: ['account'], skipped: [] })
+    expect(result.pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    expect(read).toHaveBeenCalledTimes(2)
+  })
+  it('pauses hidden polling and polls once when visible with the adapter minimum cadence', async () => {
     const f = fixture(),
       { service, read } = plugin(f, 90)
     expect(read).not.toHaveBeenCalled()
-    service.setVisible(true)
-    await service.refresh()
+    await poll(service)
     expect(read).toHaveBeenCalledTimes(1)
     service.setVisible(false)
     f.advance(90_000)
     expect(read).toHaveBeenCalledTimes(1)
-    service.setVisible(true)
-    await service.refresh()
+    await poll(service)
     expect(read).toHaveBeenCalledTimes(2)
     f.advance(89_999)
-    await service.refresh()
+    await poll(service)
     expect(read).toHaveBeenCalledTimes(2)
     f.advance(1)
-    await service.refresh()
+    await poll(service)
     expect(read).toHaveBeenCalledTimes(3)
   })
-  it('obeys exponential network backoff, rate-limit deadlines and explicit auth retry cadence', async () => {
+  it('polls with exponential network backoff, rate-limit deadlines and auth suspension', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
     read.mockRejectedValue(new AppError('network', 'Fixture network failure'))
-    await service.refresh()
+    await poll(service)
     for (const delay of [60, 120, 240, 300]) {
       const calls = read.mock.calls.length
       f.advance(delay * 1000 - 1)
-      await service.refresh()
+      await poll(service)
       expect(read).toHaveBeenCalledTimes(calls)
       f.advance(1)
-      await service.refresh()
+      await poll(service)
       expect(read).toHaveBeenCalledTimes(calls + 1)
     }
     read.mockRejectedValue(
       Object.assign(new AppError('rate_limited', 'Fixture deadline'), { retryAfterSeconds: 600 }),
     )
     f.advance(300_000)
-    await service.refresh()
+    await poll(service)
     const calls = read.mock.calls.length
     f.advance(599_999)
-    await service.refresh()
+    await poll(service)
     expect(read).toHaveBeenCalledTimes(calls)
     read.mockRejectedValue(new AppError('auth', 'Fixture auth'))
     f.advance(1)
-    await service.refresh()
-    f.advance(60_000)
-    service.setVisible(true)
+    await poll(service)
     expect(read).toHaveBeenCalledTimes(calls + 1)
-    await service.refresh()
-    expect(read).toHaveBeenCalledTimes(calls + 2)
-    await service.refresh()
-    expect(read).toHaveBeenCalledTimes(calls + 2)
+    f.advance(3_600_000)
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(calls + 1)
   })
   it('accepts a healthy source while another source is pending, then isolates its failure', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
     let rejectRead: (reason: Error) => void = () => {}
-    read.mockImplementation(
-      () =>
-        new Promise((_, reject) => {
+    read.mockImplementation((_adapter, _config, id) => {
+      if (id !== 'healthy')
+        return new Promise((_, reject) => {
           rejectRead = reject
-        }),
-    )
+        })
+      const document = f.live()
+      document.subscriptions[0].id = 'healthy'
+      return Promise.resolve(document)
+    })
     const original = service.getSettings()
-    const document = JSON.parse(readFileSync(f.input, 'utf8'))
-    document.subscriptions[0].id = 'healthy'
-    writeFileSync(join(f.dir, 'healthy.json'), JSON.stringify(document))
     service.saveSettings({
       ...original,
       connections: [
         ...original.connections,
-        {
-          ...f.settings.connections[0],
-          id: 'healthy',
-          config: { path: join(f.dir, 'healthy.json') },
-        },
+        { ...f.settings.connections[0], id: 'healthy', adapterId: 'fixture', config: {} },
       ],
     })
     const pending = service.refresh()
-    await Promise.resolve()
+    await new Promise((resolve) => setImmediate(resolve))
     expect(
       service.read().connections.find((c) => c.connection.id === 'healthy')?.subscription
         ?.metrics[0].usedPercent,
@@ -477,8 +704,8 @@ describe('global usage service', () => {
     await f.service.refresh()
     const previous = readFileSync(output, 'utf8')
     renameSync(directory, join(f.dir, 'retained-exports'))
-    f.advance(5000)
-    f.write(75, '2026-10-20T12:00:05Z')
+    f.advance(60_000)
+    f.write(75, '2026-10-20T12:01:00Z')
     await f.service.refresh()
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(75)
     expect(f.service.read().exportError).toContain('previous file is retained')
@@ -486,14 +713,14 @@ describe('global usage service', () => {
   })
   it('reports cache failure independently and clears a removed pin persistently', async () => {
     const f = fixture()
-    mkdirSync(join(f.dir, 'profile'))
+    mkdirSync(join(f.dir, 'profile'), { recursive: true })
     writeFileSync(join(f.dir, 'profile', 'usage'), 'blocked cache directory')
     f.service.saveSettings(f.settings)
     await f.service.refresh()
     expect(f.service.read().cacheError).toContain('Cannot write usage cache')
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
     f.service.saveSettings({ ...f.settings, pin: { connectionId: 'account', metricId: 'week' } })
-    f.advance(5000)
+    f.advance(60_000)
     const document = JSON.parse(readFileSync(f.input, 'utf8'))
     document.subscriptions[0].metrics = []
     writeFileSync(f.input, JSON.stringify(document))
@@ -508,7 +735,7 @@ describe('global usage service', () => {
     const service = new UsageService({ ...f.deps, startTimer: true })
     services.push(service)
     expect(service.getEnabled()).toBe(false)
-    const reads = vi.spyOn(service as unknown as { readDocument: () => unknown }, 'readDocument')
+    const reads = f.hostRead
     service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } })
     service.setVisible(true)
     f.advance(30_000)
@@ -540,20 +767,18 @@ describe('global usage service', () => {
   it('refuses a connection test while the switch is off without reading files or processes', async () => {
     const f = fixture()
     f.state.set('usage.enabled', 'false')
-    const host = new UsageAdapterHost()
-    const hostRead = vi.spyOn(host, 'read')
-    const service = new UsageService({ ...f.deps, host })
+    const service = new UsageService(f.deps)
     services.push(service)
-    const reads = vi.spyOn(service as unknown as { readDocument: () => unknown }, 'readDocument')
     await expect(service.test(f.settings.connections[0])).rejects.toMatchObject({
       code: 'config',
       message: 'Turn on Show usage quota to test connections.',
     })
-    expect(reads).not.toHaveBeenCalled()
-    expect(hostRead).not.toHaveBeenCalled()
+    expect(f.hostRead).not.toHaveBeenCalled()
     service.setEnabled(true)
     await expect(service.test(f.settings.connections[0])).resolves.toBeUndefined()
-    expect(reads).toHaveBeenCalledTimes(1)
+    expect(f.hostRead).toHaveBeenCalledTimes(1)
+    // A connection test is not a manual refresh (spec L2).
+    expect(f.hostRead.mock.calls[0][4]).toBe('read')
   })
   it('aborts an in-flight adapter process read when the switch turns off and drops its late result', async () => {
     const f = fixture()
@@ -599,7 +824,8 @@ describe('global usage service', () => {
     f.service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } })
     await f.service.refresh()
     f.advance(65 * 60_000)
-    await f.service.refresh()
+    // A scheduled read may report an unchanged observation (spec L2).
+    await poll(f.service)
     const first = f.service.read().connections[0].subscription?.metrics[0]
     if (!first) throw new Error('Expected accepted fixture metric')
     expect(first.observedAt).toBe('2026-10-20T12:00:00Z')
@@ -613,21 +839,21 @@ describe('global usage service', () => {
       first.observedAt,
     )
   })
-  it('keeps last accepted metrics on malformed, older and age-unknown replacements', async () => {
+  it('keeps last accepted metrics on malformed, older and age-unknown scheduled replacements', async () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
-    await f.service.refresh()
-    f.advance(5000)
+    await poll(f.service)
+    f.advance(60_000)
     f.write(12, '2026-10-20T11:00:00Z')
-    await f.service.refresh()
+    await poll(f.service)
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
-    f.advance(5000)
+    f.advance(60_000)
     f.write(13, null)
-    await f.service.refresh()
+    await poll(f.service)
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
-    f.advance(5000)
+    f.advance(120_000)
     writeFileSync(f.input, '{')
-    await f.service.refresh()
+    await poll(f.service)
     expect(f.service.read().connections[0].error?.code).toBe('protocol')
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
   })
@@ -676,7 +902,9 @@ describe('global usage service', () => {
       pin: { connectionId: 'account', metricId: 'week' },
     })
     const s = f.service.getSettings()
-    s.connections[0].label = 'Other account'
+    const other = join(f.dir, 'other-account.json')
+    writeFileSync(other, readFileSync(f.input))
+    s.connections[0].config.path = other
     f.service.saveSettings(s)
     expect(f.service.read().pin).toBeNull()
     expect(f.service.read().connections[0].subscription).toBeNull()
@@ -690,7 +918,7 @@ describe('global usage service', () => {
       JSON.stringify({
         id: 'fixture',
         name: 'Fixture',
-        protocolVersion: 1,
+        protocolVersion: 2,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'cli',
         capabilities: ['window'],
@@ -717,7 +945,8 @@ describe('global usage service', () => {
     expect(read).toHaveBeenCalledTimes(1)
     service.saveSettings({ ...service.getSettings(), connections: [] })
     finish(JSON.parse(readFileSync(f.input, 'utf8')))
-    await Promise.all([first, second])
+    const results = await Promise.all([first, second])
+    for (const result of results) expect(result.refresh).toEqual({ read: [], skipped: [] })
     expect(service.read().connections).toEqual([])
   })
   it('blocks secret saving and use when encryption fails and never exposes stored values', async () => {
@@ -729,7 +958,7 @@ describe('global usage service', () => {
       JSON.stringify({
         id: 'secret',
         name: 'Secret fixture',
-        protocolVersion: 1,
+        protocolVersion: 2,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'api',
         capabilities: ['balance'],
@@ -806,9 +1035,6 @@ describe('accounts settings flow (spec rules 21-28)', () => {
       ],
     }
   }
-  function writeSubscriptions(path: string, subs: unknown[]) {
-    writeFileSync(path, JSON.stringify({ schemaVersion: 1, subscriptions: subs }))
-  }
   function adapter(f: ReturnType<typeof fixture>, providerId?: string) {
     const directory = join(f.deps.userDataPath, 'usage-adapters', 'declared')
     mkdirSync(directory, { recursive: true })
@@ -819,7 +1045,7 @@ describe('accounts settings flow (spec rules 21-28)', () => {
         name: 'Declared',
         ...(providerId ? { providerId } : {}),
         summary: 'Fixture service.',
-        protocolVersion: 1,
+        protocolVersion: 2,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'api',
         capabilities: ['window'],
@@ -906,107 +1132,6 @@ describe('accounts settings flow (spec rules 21-28)', () => {
     })
     expect(edited.connections[0].providerId).toBe('declared-provider')
   })
-  it('takes the provider id of a re-chosen file subscription whose provider changed', () => {
-    const f = fixture()
-    writeSubscriptions(f.input, [subscription('b', 'pb', 22)])
-    const file = { ...account('usage-file', 'pb'), config: { path: f.input, subscriptionId: 'b' } }
-    f.service.saveSettings({ ...f.settings, connections: [file] })
-    writeSubscriptions(f.input, [subscription('b', 'pb2', 22)])
-    const saved = f.service.saveSettings({
-      ...f.service.getSettings(),
-      connections: [{ ...file, providerId: 'pb2' }],
-    })
-    expect(saved.connections[0].providerId).toBe('pb2')
-  })
-  it('binds a JSON file account to the chosen subscription, ignores others and never rebinds', async () => {
-    const f = fixture()
-    writeSubscriptions(f.input, [subscription('a', 'pa', 11), subscription('b', 'pb', 22)])
-    f.service.saveSettings({
-      ...f.settings,
-      connections: [
-        { ...account('usage-file', 'pb'), config: { path: f.input, subscriptionId: 'b' } },
-      ],
-    })
-    f.service.setVisible(true)
-    await f.service.refresh()
-    const source = f.service.read().connections[0]
-    expect(source.error).toBeNull()
-    expect(source.subscription).toMatchObject({ id: 'account', providerId: 'pb' })
-    expect(source.subscription?.metrics[0].usedPercent).toBe(22)
-    writeSubscriptions(f.input, [subscription('a', 'pa', 33)])
-    f.advance(6000)
-    await f.service.refresh()
-    const missing = f.service.read().connections[0]
-    expect(missing.error).toMatchObject({ code: 'io' })
-    expect(missing.error?.message).toContain('has no subscription "b"')
-    expect(missing.subscription?.metrics[0].usedPercent).toBe(22)
-  })
-  it('rejects two accounts bound to one file subscription and a file account without a provider', () => {
-    const f = fixture()
-    writeSubscriptions(f.input, [subscription('a', 'pa', 11)])
-    const one = { ...account('usage-file', 'pa'), config: { path: f.input, subscriptionId: 'a' } }
-    expect(() =>
-      f.service.saveSettings({
-        ...f.settings,
-        connections: [one, { ...one, id: 'second', label: 'Second' }],
-      }),
-    ).toThrow('already tracked by the account "Fixture account"')
-    expect(() =>
-      f.service.saveSettings({ ...f.settings, connections: [{ ...one, providerId: '' }] }),
-    ).toThrow('Choose the JSON file again')
-    expect(f.state.get(USAGE_STATE_KEY)).toBeUndefined()
-  })
-  it('inspects a JSON file only while the switch is on', () => {
-    const f = fixture()
-    writeSubscriptions(f.input, [subscription('a', 'pa', 11), subscription('b', 'pb', 22)])
-    expect(f.service.inspectFile(f.input)).toEqual([
-      { id: 'a', providerId: 'pa', label: 'Label a' },
-      { id: 'b', providerId: 'pb', label: 'Label b' },
-    ])
-    expect(() => f.service.inspectFile(join(f.dir, 'missing.json'))).toThrow(
-      'Usage file does not exist',
-    )
-    f.service.setEnabled(false)
-    expect(() => f.service.inspectFile(f.input)).toThrow('Turn on Show usage quota')
-  })
-  it('proposes a Claude directory and setup command and creates the directory on save', () => {
-    const f = fixture()
-    const script = join(f.dir, 'resources', 'setup.cjs')
-    const service = new UsageService({
-      ...f.deps,
-      claudeSetupScript: script,
-      homeDirectory: join(f.dir, 'home'),
-    })
-    services.push(service)
-    const proposed = join(f.deps.userDataPath, 'claude-code-usage', 'account-1')
-    const setup = service.claudeSetup('account-1', null)
-    expect(setup.directory).toBe(proposed)
-    expect(service.claudeSetup('account-1', proposed).directory).toBe(proposed)
-    expect(setup.command).toBe(
-      `node "${script}" --settings "${join(f.dir, 'home', '.claude', 'settings.json')}" --dir "${proposed}"`,
-    )
-    expect(() => service.claudeSetup('../escape', null)).toThrow('cannot name a Claude directory')
-    expect(() => service.claudeSetup('account-1', join(f.dir, '$x'))).toThrow('cannot contain')
-    expect(() => service.claudeSetup('account-1', join(f.dir, 'x\u201D ; calc ; \u201Cy'))).toThrow(
-      'cannot contain',
-    )
-    expect(() => f.service.claudeSetup('account-1', null)).toThrow('writer is missing')
-    expect(existsSync(proposed)).toBe(false)
-    const claude = { ...account('claude-code-snapshots'), id: 'account-1' }
-    service.saveSettings({
-      ...f.settings,
-      connections: [{ ...claude, config: { directory: proposed } }],
-    })
-    expect(existsSync(proposed)).toBe(true)
-    expect(service.getSettings().connections[0].providerId).toBe('claude')
-    mkdirSync(join(f.dir, 'elsewhere'))
-    const other = join(f.dir, 'elsewhere', 'claude')
-    service.saveSettings({
-      ...f.settings,
-      connections: [{ ...claude, config: { directory: other } }],
-    })
-    expect(existsSync(other)).toBe(false)
-  })
   it('creates and opens the user adapters folder', async () => {
     const f = fixture()
     const openPath = vi.fn(async (_path: string) => '')
@@ -1019,6 +1144,184 @@ describe('accounts settings flow (spec rules 21-28)', () => {
     openPath.mockResolvedValueOnce('Access denied')
     await expect(service.openAdaptersFolder()).rejects.toMatchObject({ code: 'io' })
     await expect(f.service.openAdaptersFolder()).rejects.toMatchObject({ code: 'not_found' })
+  })
+})
+
+describe('live refresh and removed passive sources (spec L1-L7)', () => {
+  it('sends read on schedule and refresh on a manual click 60 seconds after a read (LA2)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f, 300)
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(read.mock.calls[0][4]).toBe('read')
+    f.advance(59_999)
+    expect((await service.refresh()).refresh).toEqual({
+      read: [],
+      skipped: [
+        {
+          connectionId: 'account',
+          until: new Date(NOW + 60_000).toISOString(),
+          reason: 'interval',
+        },
+      ],
+    })
+    expect(service.read().connections[0].nextRefreshAt).toBe(new Date(NOW + 60_000).toISOString())
+    f.advance(1)
+    expect((await service.refresh()).refresh).toEqual({ read: ['account'], skipped: [] })
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(read.mock.calls[1][4]).toBe('refresh')
+    expect(service.read().connections[0].error).toBeNull()
+    // The next scheduled read is due the adapter minimum after the manual read started.
+    f.advance(299_999)
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(2)
+    f.advance(1)
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(3)
+    expect(read.mock.calls[2][4]).toBe('read')
+  })
+  it('lets a manual refresh ignore growing backoff and suspension (LA2)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    read.mockRejectedValue(new AppError('network', 'Fixture network failure'))
+    await service.refresh()
+    for (let attempt = 2; attempt <= 5; attempt++) {
+      f.advance(60_000)
+      expect((await service.refresh()).refresh?.read).toEqual(['account'])
+      expect(read).toHaveBeenCalledTimes(attempt)
+    }
+    read.mockRejectedValue(new AppError('auth', 'Fixture auth'))
+    f.advance(60_000)
+    await service.refresh()
+    expect(service.read().connections[0].error?.code).toBe('auth')
+    f.advance(3_600_000)
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(6)
+    read.mockImplementation(async () => f.live(55))
+    expect((await service.refresh()).refresh?.read).toEqual(['account'])
+    expect(read).toHaveBeenCalledTimes(7)
+    expect(service.read().connections[0].error).toBeNull()
+    expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(55)
+  })
+  it.each([
+    ['an older', '2026-10-20T12:00:59Z'],
+    ['no', null],
+  ])(
+    'fails a refresh with %s observation time as protocol and keeps the previous one (LA3)',
+    async (_name, observedAt) => {
+      const f = fixture(),
+        { service, read } = plugin(f)
+      await service.refresh()
+      const previous = service.read().connections[0].subscription?.metrics[0]
+      f.advance(60_500)
+      const stale = f.live(77)
+      stale.subscriptions[0].metrics[0].observedAt = observedAt
+      read.mockResolvedValueOnce(stale)
+      expect((await service.refresh()).refresh?.read).toEqual(['account'])
+      expect(service.read().connections[0].error).toMatchObject({
+        code: 'protocol',
+        message: 'Usage adapter did not return a live refresh.',
+      })
+      expect(service.read().connections[0].subscription?.metrics[0]).toEqual(previous)
+    },
+  )
+  it('accepts a refresh observed in the request second and exempts unavailable metrics (L3)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    await service.refresh()
+    f.advance(60_500)
+    const document = f.live(77)
+    document.subscriptions[0].metrics[0].observedAt = '2026-10-20T12:01:00Z'
+    document.subscriptions[0].metrics.push({
+      id: 'credits',
+      label: 'Credits',
+      kind: 'credits',
+      state: 'unavailable',
+      observedAt: null,
+      reason: 'not_reported',
+    })
+    read.mockResolvedValueOnce(document)
+    await service.refresh()
+    expect(service.read().connections[0].error).toBeNull()
+    expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(77)
+  })
+  it('keeps stored accounts of removed sources listed, uncollected, cached and pinned (LA4)', async () => {
+    const f = fixture()
+    f.service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } })
+    await f.service.refresh()
+    f.service.saveSettings({
+      ...f.service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'week' },
+    })
+    // Stored before the passive sources were removed (spec L7).
+    const stored = JSON.parse(f.state.get(USAGE_STATE_KEY) ?? '')
+    stored.connections[0].adapterId = 'usage-file'
+    stored.connections.push({
+      id: 'claude',
+      label: 'Claude account',
+      providerId: 'claude',
+      adapterId: 'claude-code-snapshots',
+      enabled: true,
+      config: { directory: join(f.dir, 'claude') },
+    })
+    f.state.set(USAGE_STATE_KEY, JSON.stringify(stored))
+    f.hostRead.mockClear()
+    const service = new UsageService(f.deps)
+    services.push(service)
+    expect(service.read().cacheError).toBeNull()
+    expect(service.getSettings().connections.map((c) => c.adapterId)).toEqual([
+      'usage-file',
+      'claude-code-snapshots',
+    ])
+    const ids = service.listAdapters().map((a) => a.id)
+    expect(ids).not.toContain('usage-file')
+    expect(ids).not.toContain('claude-code-snapshots')
+    const removed = { code: 'config', message: USAGE_REMOVED_ADAPTER_MESSAGE }
+    for (const c of service.read().connections) {
+      expect(c.error).toEqual(removed)
+      expect(c.nextRefreshAt).toBeNull()
+    }
+    expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
+    expect(service.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    f.advance(3_600_000)
+    expect((await service.refresh()).refresh).toEqual({ read: [], skipped: [] })
+    await poll(service)
+    expect(f.hostRead).not.toHaveBeenCalled()
+    await expect(service.test(service.getSettings().connections[0])).rejects.toMatchObject(removed)
+    // Saving other changes keeps both accounts, their cache and the pin; export still works.
+    const saved = service.saveSettings({
+      ...service.getSettings(),
+      export: { enabled: true, path: f.output },
+    })
+    expect(saved.connections.map((c) => [c.adapterId, c.providerId, c.config])).toEqual([
+      ['usage-file', 'fixture', { path: f.input }],
+      ['claude-code-snapshots', 'claude', { directory: join(f.dir, 'claude') }],
+    ])
+    expect(service.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
+    expect(JSON.parse(readFileSync(f.output, 'utf8')).subscriptions).toMatchObject([
+      { id: 'account', status: 'error', metrics: [{ id: 'week', usedPercent: 42 }] },
+      { id: 'claude', status: 'error', sourceKind: 'file', metrics: [] },
+    ])
+    // Removing the account is the only way to drop its cache and pin.
+    service.saveSettings({
+      ...service.getSettings(),
+      connections: service.getSettings().connections.slice(1),
+      pin: null,
+    })
+    expect(service.read().connections.map((c) => c.connection.id)).toEqual(['claude'])
+    expect(f.hostRead).not.toHaveBeenCalled()
+  })
+  it('refuses a new account of a removed source (L7)', () => {
+    const f = fixture()
+    for (const adapterId of ['usage-file', 'claude-code-snapshots'])
+      expect(() =>
+        f.service.saveSettings({
+          ...f.settings,
+          connections: [{ ...f.settings.connections[0], adapterId }],
+        }),
+      ).toThrow(USAGE_REMOVED_ADAPTER_MESSAGE)
+    expect(f.state.get(USAGE_STATE_KEY)).toBeUndefined()
   })
 })
 
@@ -1038,7 +1341,7 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
         id: 'hub',
         name: 'Hub',
         providerId: 'hub',
-        protocolVersion: 1,
+        protocolVersion: 2,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'api',
         capabilities: ['window'],

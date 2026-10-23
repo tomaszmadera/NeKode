@@ -16,7 +16,8 @@ const profile = join(scratch, 'profile'),
   input = join(scratch, 'input.json'),
   output = join(scratch, 'export.json')
 const adapterDir = join(profile, 'usage-adapters', 'fixture'),
-  pidFile = join(scratch, 'adapter-pids.txt')
+  pidFile = join(scratch, 'adapter-pids.txt'),
+  actionsFile = join(scratch, 'adapter-actions.txt')
 mkdirSync(adapterDir, { recursive: true })
 const report = {
   target: 'Windows Electron built out/',
@@ -86,6 +87,11 @@ function cdp(ws) {
 }
 let child, browserSocket, pageSocket, inspectorSocket, call, mainCall, browserCall, fakeApi
 const PROVIDER_KEY = 'fixture-provider-key-not-a-real-secret'
+// Sanitized Claude Code sign-in in a scratch config directory (usage-quota spec L11-L12); the
+// user's real ~/.claude is never read.
+const CLAUDE_TOKEN = 'fixture-claude-access-token-not-real'
+const CLAUDE_REFRESH = 'fixture-claude-refresh-token-not-real'
+const claudeConfig = join(scratch, 'claude-config')
 const providerRequests = []
 const electronPids = new Set()
 async function launch() {
@@ -166,7 +172,7 @@ async function evaluate(expression, main = false) {
     )
   return result.result?.value
 }
-// Manual refresh obeys the adapter minimum interval (spec rule 13), so a read that
+// A manual refresh starts at most once per 60 seconds per account (spec L5), so a read that
 // follows an automatic poll may be deferred to the next due tick; wait for that tick.
 async function waitFor(expression, timeoutMs) {
   const end = Date.now() + timeoutMs
@@ -261,21 +267,50 @@ try {
         id: 'fixture-account',
         providerId: 'fixture',
         label: 'Fixture subscription',
-        sourceKind: 'file',
+        sourceKind: 'api',
         status: 'available',
         metrics,
       },
     ],
   }
   writeFileSync(input, JSON.stringify(doc))
+  // A user adapter speaking protocol 2 (spec L1-L2): `read` returns the fixture file as written,
+  // `refresh` stamps every available value with the response time, as a live provider read does.
   writeFileSync(
     join(adapterDir, 'index.cjs'),
-    `require('node:fs').appendFileSync(${JSON.stringify(pidFile)},String(process.pid)+'\\n');require(${JSON.stringify(join(root, 'adapters', 'usage-file', 'index.cjs'))})`,
+    `const fs = require('node:fs')
+fs.appendFileSync(${JSON.stringify(pidFile)}, String(process.pid) + '\\n')
+let input = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => { input += chunk })
+process.stdin.on('end', () => {
+  const respond = (body, code) => { process.stdout.write(JSON.stringify(body)); process.exitCode = code }
+  try {
+    const request = JSON.parse(input)
+    if (request.protocolVersion !== 2 || !['read', 'refresh'].includes(request.action)) throw new Error('request')
+    fs.appendFileSync(${JSON.stringify(actionsFile)}, request.action + '\\n')
+    const data = JSON.parse(fs.readFileSync(request.config.path, 'utf8'))
+    if (request.action === 'refresh') {
+      const at = new Date().toISOString()
+      for (const s of data.subscriptions) for (const m of s.metrics) if (m.state === 'available') m.observedAt = at
+    }
+    respond({ protocolVersion: 2, ok: true, data }, 0)
+  } catch {
+    respond({ protocolVersion: 2, ok: false, error: { code: 'protocol', message: 'Invalid fixture input.' } }, 1)
+  }
+})
+`,
   )
-  const manifest = JSON.parse(
-    readFileSync(join(root, 'adapters', 'usage-file', 'usage-adapter.json'), 'utf8'),
-  )
-  manifest.invocation.command = process.execPath
+  const manifest = {
+    id: 'fixture-process',
+    name: 'Fixture process adapter',
+    protocolVersion: 2,
+    invocation: { command: process.execPath, args: ['index.cjs'] },
+    sourceKind: 'api',
+    capabilities: ['window', 'credits', 'balance'],
+    minimumRefreshSeconds: 300,
+    configSchema: [{ key: 'path', label: 'Fixture input file', type: 'file', required: true }],
+  }
   writeFileSync(join(adapterDir, 'usage-adapter.json'), JSON.stringify(manifest))
   // Stage 3 provider adapters run unchanged against a local fake API (fixture data only). Only a
   // loopback origin is accepted by their NEKODE_USAGE_TEST_BASE_URL seam.
@@ -285,6 +320,9 @@ try {
       path: request.url,
       elevenlabsKey: request.headers['xi-api-key'] === PROVIDER_KEY,
       bearerKey: request.headers.authorization === `Bearer ${PROVIDER_KEY}`,
+      claudeToken:
+        request.headers.authorization === `Bearer ${CLAUDE_TOKEN}` &&
+        request.headers['anthropic-beta'] === 'oauth-2025-04-20',
     })
     const body =
       request.url === '/v1/user/subscription'
@@ -297,11 +335,34 @@ try {
           }
         : request.url === '/api/v1/credits'
           ? { data: { total_credits: 10, total_usage: 12.5 } }
-          : null
+          : request.url === '/api/oauth/usage'
+            ? {
+                five_hour: {
+                  utilization: 37,
+                  resets_at: new Date(now + 3_600_000).toISOString().replace('Z', '123+00:00'),
+                },
+                seven_day: {
+                  utilization: 12,
+                  resets_at: new Date(now + 3 * 86_400_000).toISOString().replace('Z', '+00:00'),
+                },
+              }
+            : null
     response.writeHead(body ? 200 : 404, { 'content-type': 'application/json' })
     response.end(JSON.stringify(body ?? {}))
   })
   await new Promise((r) => fakeApi.listen(0, '127.0.0.1', r))
+  mkdirSync(claudeConfig, { recursive: true })
+  writeFileSync(
+    join(claudeConfig, '.credentials.json'),
+    JSON.stringify({
+      claudeAiOauth: {
+        accessToken: CLAUDE_TOKEN,
+        refreshToken: CLAUDE_REFRESH,
+        expiresAt: now + 86_400_000,
+      },
+    }),
+  )
+  const claudeCredentials = readFileSync(join(claudeConfig, '.credentials.json'), 'utf8')
   process.env.NEKODE_USAGE_TEST_BASE_URL = `http://127.0.0.1:${fakeApi.address().port}`
   // The ElevenLabs and OpenRouter adapters are the shipped ones (usage-quota spec rule 17): the
   // unpackaged app reads them from adapters/ and runs them on Electron in Node mode (rule 19).
@@ -350,7 +411,8 @@ try {
     export: { enabled: true, path: output },
   }
   await evaluate(`window.app.usage.saveSettings(${JSON.stringify(settings)})`)
-  await evaluate('window.app.usage.refresh()')
+  // The visible app polls on its own; a scheduled `read` keeps the fixture observation times.
+  await waitFor('window.app.usage.read().then(s=>Boolean(s.connections[0]?.subscription))', 10000)
   await call('Page.reload')
   await sleep(1000)
   await evaluate(
@@ -403,18 +465,24 @@ try {
   report.assertions.push(
     'export equals the normalized accepted subscription, without configuration or secrets',
   )
-  await evaluate('document.querySelectorAll(".usage-row")[1].click()')
-  await sleep(250)
-  await check(
-    'only selected row is pinned',
-    'document.querySelector(".usage-row[aria-pressed=true]")?.textContent.includes("7d")===true && document.querySelector(".usage-trigger").textContent.includes("47%")',
-  )
   await shot('panel-default')
   await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' })
   await check(
     'Escape closes and restores trigger focus',
     '!document.querySelector(".usage-panel") && document.activeElement===document.querySelector(".usage-trigger")',
   )
+  // Choosing a row pins it and closes the panel (NEKODE-121); reopen it to inspect the rows.
+  await evaluate('document.querySelector(".usage-trigger").click()')
+  await sleep(100)
+  await evaluate('document.querySelectorAll(".usage-row")[1].click()')
+  await sleep(250)
+  await evaluate('document.querySelector(".usage-trigger").click()')
+  await sleep(100)
+  await check(
+    'only selected row is pinned',
+    'document.querySelector(".usage-row[aria-pressed=true]")?.textContent.includes("7d")===true && document.querySelector(".usage-trigger").textContent.includes("47%")',
+  )
+  await evaluate(`document.querySelector('[aria-label="Close usage panel"]').click()`)
   await shot('toolbar-pinned')
   // Use React's actual settings event, so both layout and theme tokens update.
   for (const theme of ['nekode-float']) {
@@ -469,6 +537,8 @@ try {
     'native window minimize, restore and maximize remain functional; drag/no-drag regions retain their computed ownership',
   )
   await close()
+  // The scheduled read at the next launch fails on this malformed input (protocol).
+  writeFileSync(input, '{')
   await launch()
   await sleep(500)
   await check(
@@ -477,10 +547,6 @@ try {
       JSON.stringify(metrics[0].observedAt) +
       ')})()',
   )
-  await sleep(5200)
-  writeFileSync(input, '{')
-  await evaluate('window.app.usage.refresh()')
-  // A malformed local file is transient (spec rule 13): the process adapter reports protocol.
   const pluginFailure =
     'window.app.usage.read().then(s=>s.pin?.metricId==="week"&&s.connections[0].error?.code==="protocol"&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===47)'
   await waitFor(pluginFailure, 7000)
@@ -500,65 +566,45 @@ try {
     'document.querySelector(".usage-source-note")?.textContent.includes("source protocol")===true && document.querySelector(".usage-trigger").textContent.includes("Error")',
   )
   await shot('panel-error-cached')
-  // Exercise the built-in source's actual automatic scheduler, without an explicit retry.
-  writeFileSync(input, JSON.stringify(doc))
-  // The service of a saved account cannot change (spec rule 23): replace the account with a
-  // Custom JSON file account bound to the file subscription and its provider id (rule 25).
-  const builtIn = await evaluate('window.app.usage.getSettings()')
-  builtIn.connections = [
-    {
-      id: 'fixture-file-account',
-      label: 'Fixture file subscription (test data)',
-      providerId: 'fixture',
-      adapterId: 'usage-file',
-      enabled: true,
-      config: { path: input, subscriptionId: 'fixture-account' },
-    },
-  ]
-  builtIn.pin = null
-  await evaluate(`window.app.usage.saveSettings(${JSON.stringify(builtIn)})`)
-  await evaluate('window.app.usage.refresh()')
-  await sleep(5200)
-  writeFileSync(input, '{')
-  await evaluate('window.app.usage.refresh()')
-  const protocolFailure =
-    'window.app.usage.read().then(s=>s.connections[0].error?.code==="protocol"&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===47)'
-  await waitFor(protocolFailure, 7000)
-  await check(
-    'built-in partial JSON reports protocol error and retains accepted values',
-    protocolFailure,
-  )
+  // Spec L5: a manual refresh reads 60 seconds after the last read although the adapter
+  // minimum is 300 seconds, sends `refresh`, and reports an interval skip inside 60 seconds.
   doc.subscriptions[0].metrics.find((m) => m.id === 'week').usedPercent = 48
-  doc.subscriptions[0].metrics.find((m) => m.id === 'week').observedAt = new Date().toISOString()
   writeFileSync(input, JSON.stringify(doc))
-  // Local file sources retry every 5 seconds without growing backoff; allow one scheduler
-  // tick and IPC latency on top of that cadence.
-  const recoveryStarted = Date.now()
-  for (let n = 0; n < 24; n++) {
-    if (
-      await evaluate(
-        'window.app.usage.read().then(s=>s.connections[0].error===null&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===48)',
-      )
-    )
-      break
-    await sleep(500)
-  }
-  report.automaticRecoveryMs = Date.now() - recoveryStarted
-  assert.ok(
-    report.automaticRecoveryMs <= 8000,
-    `file source recovered at the 5-second cadence (${report.automaticRecoveryMs} ms)`,
+  const nextRefreshAt = await evaluate(
+    'window.app.usage.read().then(s=>s.connections[0].nextRefreshAt)',
   )
+  assert.ok(nextRefreshAt, 'a manual refresh waits after the failed scheduled read')
+  report.manualRefresh = { nextRefreshAt }
   await check(
-    'repaired partial JSON recovers automatically at the 5-second file cadence without Refresh',
-    'window.app.usage.read().then(s=>s.connections[0].error===null&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===48)',
+    'a manual refresh inside the 60-second limit is skipped as interval',
+    'window.app.usage.refresh().then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval"&&s.refresh.skipped[0]?.connectionId==="fixture-account")',
+  )
+  const waitMs = Date.parse(nextRefreshAt) - Date.now() + 1000
+  if (waitMs > 0) await sleep(waitMs)
+  report.manualRefresh.at = new Date().toISOString()
+  await check(
+    'a manual refresh 60 seconds after the last read sends refresh inside the 300-second adapter interval',
+    'window.app.usage.refresh().then(s=>s.refresh.read.includes("fixture-account")&&s.connections[0].error===null&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===48)',
+  )
+  const actions = readFileSync(actionsFile, 'utf8').trim().split(/\s+/)
+  assert.equal(actions.at(-1), 'refresh', 'the manual read used the refresh action')
+  assert.ok(
+    actions.slice(0, -1).every((a) => a === 'read'),
+    'scheduled reads used the read action',
+  )
+  report.manualRefresh.actions = actions
+  report.assertions.push('scheduled reads send read and the manual read sends refresh')
+  await check(
+    'an immediate second manual refresh is skipped as interval',
+    'window.app.usage.refresh().then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval")',
   )
   await check(
     'OpenRouter adapter lists its Management key privilege explanation',
     'window.app.usage.listAdapters().then(a=>a.find(x=>x.id==="openrouter-credits")?.description?.includes("Management key")===true&&!a.find(x=>x.id==="elevenlabs-subscription")?.error)',
   )
   await check(
-    'shipped Codex, ElevenLabs and OpenRouter adapters are listed without copying, on the NeKode runtime',
-    'window.app.usage.listAdapters().then(a=>["codex-app-server","elevenlabs-subscription","openrouter-credits"].every(id=>{const x=a.find(y=>y.id===id);return x&&x.bundled===true&&!x.error&&/electron|nekode/i.test(x.invocation.command)}))',
+    'shipped Claude Code, Codex, ElevenLabs and OpenRouter adapters are listed without copying, on the NeKode runtime',
+    'window.app.usage.listAdapters().then(a=>["claude-code-usage","codex-app-server","elevenlabs-subscription","openrouter-credits"].every(id=>{const x=a.find(y=>y.id===id);return x&&x.bundled===true&&!x.error&&/electron|nekode/i.test(x.invocation.command)}))',
   )
   const providers = await evaluate('window.app.usage.getSettings()')
   providers.connections.push(
@@ -578,21 +624,37 @@ try {
       enabled: true,
       config: { apiKey: PROVIDER_KEY },
     },
+    {
+      id: 'claude-fixture',
+      label: 'Claude Code (test data)',
+      providerId: 'claude',
+      adapterId: 'claude-code-usage',
+      enabled: true,
+      config: { configDirectory: claudeConfig },
+    },
   )
   await evaluate(`window.app.usage.saveSettings(${JSON.stringify(providers)})`)
   await evaluate('window.app.usage.refresh()')
+  // Claude Code (spec L13): both windows with periods; the 7-day window has a 7-day period.
+  const claudeOk =
+    '(s=>{const c=s.connections.find(x=>x.connection.id==="claude-fixture");const [f,w]=c?.subscription?.metrics??[];return c?.error===null&&f?.id==="five_hour"&&f.usedPercent===37&&f.resetsAt?.length===24&&w?.id==="seven_day"&&w.usedPercent===12&&Date.parse(w.resetsAt)-Date.parse(w.periodStart)===604800000})'
   const providerValues =
-    'window.app.usage.read().then(s=>{const e=s.connections.find(c=>c.connection.id==="elevenlabs-fixture"),o=s.connections.find(c=>c.connection.id==="openrouter-fixture");const m=e?.subscription?.metrics[0],b=o?.subscription?.metrics[0];return e?.error===null&&o?.error===null&&m?.kind==="credits"&&m.used===25000&&m.limit===100000&&m.unit==="characters"&&b?.kind==="balance"&&b.amount===-2.5&&b.currency==="USD"})'
+    'window.app.usage.read().then(s=>{const e=s.connections.find(c=>c.connection.id==="elevenlabs-fixture"),o=s.connections.find(c=>c.connection.id==="openrouter-fixture");const m=e?.subscription?.metrics[0],b=o?.subscription?.metrics[0];return e?.error===null&&o?.error===null&&m?.kind==="credits"&&m.used===25000&&m.limit===100000&&m.unit==="characters"&&b?.kind==="balance"&&b.amount===-2.5&&b.currency==="USD"&&' +
+    claudeOk +
+    '(s)})'
   await waitFor(providerValues, 25000)
   await check(
-    'ElevenLabs credits and negative OpenRouter USD balance load through the real adapters',
+    'ElevenLabs credits, negative OpenRouter USD balance and Claude Code windows load through the real adapters',
     providerValues,
   )
   assert.ok(
     providerRequests.some((r) => r.path === '/v1/user/subscription' && r.elevenlabsKey) &&
       providerRequests.some((r) => r.path === '/api/v1/credits' && r.bearerKey) &&
+      providerRequests.some((r) => r.path === '/api/oauth/usage' && r.claudeToken) &&
       providerRequests.every(
-        (r) => r.method === 'GET' && ['/v1/user/subscription', '/api/v1/credits'].includes(r.path),
+        (r) =>
+          r.method === 'GET' &&
+          ['/v1/user/subscription', '/api/v1/credits', '/api/oauth/usage'].includes(r.path),
       ),
     'provider adapters send only the documented GETs with the key in the header',
   )
@@ -625,8 +687,18 @@ try {
     const path = join(profile, name)
     if (/\.(db|sqlite|sqlite3)(-wal|-shm)?$/i.test(name)) leaked.push(path)
   }
-  const found = leaked.filter((path) => readFileSync(path).includes(plaintext))
+  const found = leaked.filter((path) =>
+    [plaintext, Buffer.from(CLAUDE_TOKEN), Buffer.from(CLAUDE_REFRESH)].some((secret) =>
+      readFileSync(path).includes(secret),
+    ),
+  )
   assert.deepEqual(found, [], 'no plaintext provider key in export, cache or database files')
+  assert.equal(
+    readFileSync(join(claudeConfig, '.credentials.json'), 'utf8'),
+    claudeCredentials,
+    'the Claude Code credentials file is unchanged',
+  )
+  report.assertions.push('Claude Code tokens absent and credentials file unchanged')
   report.assertions.push(
     `no plaintext provider key in export, cache or database files (${leaked.length} files checked)`,
   )

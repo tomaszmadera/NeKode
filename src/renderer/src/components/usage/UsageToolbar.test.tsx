@@ -5,7 +5,10 @@ import type { UsageSnapshot } from '../../../../shared/usage-contract'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { UsageToolbar } from './UsageToolbar'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 const snapshot = (): UsageSnapshot => ({
   connections: [
     {
@@ -13,14 +16,14 @@ const snapshot = (): UsageSnapshot => ({
         id: 'account',
         label: 'Fixture account',
         providerId: 'test',
-        adapterId: 'usage-file',
+        adapterId: 'source',
         enabled: true,
       },
       subscription: {
         id: 'account',
         providerId: 'test',
         label: 'Fixture account',
-        sourceKind: 'file',
+        sourceKind: 'api',
         status: 'available',
         metrics: [
           {
@@ -35,6 +38,7 @@ const snapshot = (): UsageSnapshot => ({
       },
       error: null,
       refreshing: false,
+      nextRefreshAt: null,
     },
   ],
   pin: null,
@@ -42,6 +46,114 @@ const snapshot = (): UsageSnapshot => ({
   exportError: null,
 })
 describe('Usage panel', () => {
+  it.each(['interval', 'backoff'] as const)(
+    'explains %s skips and keeps feedback across polling and repeated clicks',
+    async (reason) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+      const api = createAppApiStub().usage,
+        s = snapshot()
+      const until = new Date(Date.now() + 42_000).toISOString()
+      s.connections[0].nextRefreshAt = until
+      vi.mocked(api.read).mockResolvedValue(s)
+      vi.mocked(api.refresh).mockResolvedValue({
+        ...s,
+        refresh: {
+          read: [],
+          skipped: [{ connectionId: 'account', until, reason }],
+        },
+      })
+      render(<UsageToolbar api={api} onConfigure={() => {}} />)
+      await act(async () => {})
+      fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+      const button = screen.getByRole('button', { name: 'Refresh usage' })
+      expect(button.getAttribute('aria-description')).toContain('42 s')
+      await act(async () => {
+        fireEvent.click(button)
+      })
+      const status = screen.getByRole('status')
+      expect(status.textContent).toContain('Fixture account can refresh again in 42 s')
+      expect(status.textContent).toContain(reason === 'backoff' ? 'backoff' : '60-second limit')
+      expect(button.hasAttribute('disabled')).toBe(false)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+      expect(status.textContent).toContain('37 s')
+      expect(button.getAttribute('title')).toContain('37 s')
+      await act(async () => {
+        fireEvent.click(button)
+      })
+      expect(api.refresh).toHaveBeenCalledTimes(2)
+      expect(screen.getByRole('status').textContent).toContain('37 s')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(37_000)
+      })
+      expect(button.getAttribute('aria-description')).toContain('ready to refresh')
+      expect(screen.getByRole('status').textContent).not.toContain('in 0 s')
+    },
+  )
+  it('keeps pending feedback through polling then reports an unchanged successful read', async () => {
+    vi.useFakeTimers()
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    vi.mocked(api.read).mockResolvedValue(s)
+    let finish: (s: UsageSnapshot) => void = () => {}
+    vi.mocked(api.refresh).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    const button = screen.getByRole('button', { name: 'Refresh usage' })
+    fireEvent.click(button)
+    expect(screen.getByRole('status').textContent).toBe('Refreshing usage...')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+    expect(screen.getByRole('status').textContent).toBe('Refreshing usage...')
+    expect(button.hasAttribute('disabled')).toBe(true)
+    await act(async () => {
+      finish({ ...s, refresh: { read: ['account'], skipped: [] } })
+    })
+    expect(screen.getByRole('status').textContent).toBe('Usage refreshed.')
+    expect(button.hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%/ })).toBeDefined()
+  })
+  it('reports mixed read and skipped outcomes without claiming that cached data is current', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    s.connections.push({
+      ...s.connections[0],
+      connection: { ...s.connections[0].connection, id: 'other', label: 'Other' },
+    })
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh).mockResolvedValue({
+      ...s,
+      refresh: {
+        read: ['account'],
+        skipped: [
+          {
+            connectionId: 'other',
+            until: new Date(Date.now() + 120_000).toISOString(),
+            reason: 'backoff',
+          },
+        ],
+      },
+    })
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh usage' }))
+    })
+    expect(screen.getByRole('status').textContent).toContain('Usage refreshed.')
+    expect(screen.getByRole('status').textContent).toContain('Other can refresh again in')
+    expect(screen.getByRole('status').textContent).toContain('backoff')
+    expect(screen.getByRole('status').textContent).not.toContain('Up to date')
+  })
   it('moves focus into the panel while the first source read is pending', async () => {
     const api = createAppApiStub().usage
     const pending = snapshot()
@@ -54,6 +166,24 @@ describe('Usage panel', () => {
     trigger.focus()
     fireEvent.click(trigger)
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close usage panel' }))
+  })
+  it('shows a rejected manual request and allows retry, including the empty state', async () => {
+    const api = createAppApiStub().usage
+    vi.mocked(api.refresh).mockRejectedValueOnce(new Error('Fixture refresh failed'))
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    const button = screen.getByRole('button', { name: 'Refresh usage' })
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(screen.getByRole('alert').textContent).toContain('Fixture refresh failed')
+    expect(button.hasAttribute('disabled')).toBe(false)
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(screen.getByRole('status').textContent).toBe('No usage accounts enabled.')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
   it('accepts the first snapshot under StrictMode without waiting for the polling interval', async () => {
     const api = createAppApiStub().usage
@@ -106,7 +236,7 @@ describe('Usage panel', () => {
     )
     expect(configure).toHaveBeenCalledOnce()
   })
-  it('pins the explicit row globally and preserves row focus during refresh failures', async () => {
+  it('pins the explicit row globally, closes the panel, and preserves row focus during refresh failures', async () => {
     const api = createAppApiStub().usage,
       s = snapshot()
     vi.mocked(api.read).mockResolvedValue(s)
@@ -118,7 +248,8 @@ describe('Usage panel', () => {
     vi.mocked(api.saveSettings).mockImplementation(async (settings) => settings)
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
     await waitFor(() => expect(api.read).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    const trigger = screen.getByRole('button', { name: 'Usage quota' })
+    fireEvent.click(trigger)
     const row = await screen.findByRole('button', { name: /Fixture account, 7d, 47%, Age unknown/ })
     row.focus()
     fireEvent.click(row)
@@ -127,19 +258,33 @@ describe('Usage panel', () => {
         expect.objectContaining({ pin: { connectionId: 'account', metricId: 'week' } }),
       ),
     )
-    const failed = {
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+
+    const failed: UsageSnapshot = {
       ...s,
+      pin: { connectionId: 'account', metricId: 'week' },
+      refresh: { read: ['account'], skipped: [] },
       connections: [
         { ...s.connections[0], error: { code: 'io' as const, message: 'Cannot read usage file' } },
       ],
     }
+    vi.mocked(api.read).mockResolvedValue(failed)
     vi.mocked(api.refresh).mockResolvedValue(failed)
+    fireEvent.click(trigger)
+    const refreshedRow = await screen.findByRole('button', {
+      name: /Fixture account, 7d, 47%/,
+    })
+    refreshedRow.focus()
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Refresh usage' }))
     })
-    expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%, Error/ })).toBe(row)
-    expect(document.activeElement).toBe(row)
+    expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%, Error/ })).toBe(
+      refreshedRow,
+    )
+    expect(document.activeElement).toBe(refreshedRow)
     expect(screen.getByText(/Cannot read usage file/)).toBeDefined()
+    expect(screen.getByRole('status').textContent).toContain('1 source(s) failed')
   })
   it('separates a source error that already ends with a period by one period', async () => {
     const api = createAppApiStub().usage,
@@ -199,6 +344,30 @@ describe('Usage panel', () => {
     const backdrop = document.querySelector('.usage-backdrop')
     if (!backdrop) throw new Error('Usage backdrop is missing')
     fireEvent.mouseDown(backdrop)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+  it('closes on an outside window pointerdown anywhere outside the dialog', () => {
+    const api = createAppApiStub().usage
+    render(
+      <div>
+        <div data-testid="outside-element">Outside area</div>
+        <UsageToolbar api={api} onConfigure={() => {}} />
+      </div>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    expect(screen.getByRole('dialog')).toBeDefined()
+    const outside = screen.getByTestId('outside-element')
+    fireEvent.pointerDown(outside)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+  it('toggles closed when clicking the trigger button while open', () => {
+    const api = createAppApiStub().usage
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    const trigger = screen.getByRole('button', { name: 'Usage quota' })
+    fireEvent.click(trigger)
+    expect(screen.getByRole('dialog')).toBeDefined()
+    fireEvent.pointerDown(trigger)
+    fireEvent.click(trigger)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

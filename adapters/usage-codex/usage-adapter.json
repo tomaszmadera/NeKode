@@ -4,7 +4,7 @@
   "providerId": "codex",
   "summary": "Codex plan limits read through the Codex CLI you are signed in to.",
   "experimental": true,
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "invocation": { "command": "node", "args": ["index.cjs"] },
   "sourceKind": "cli",
   "capabilities": ["window"],

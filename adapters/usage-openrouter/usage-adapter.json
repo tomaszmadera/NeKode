@@ -3,7 +3,7 @@
   "name": "OpenRouter account balance",
   "providerId": "openrouter",
   "summary": "Account balance in USD. Needs an OpenRouter Management key.",
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "invocation": { "command": "node", "args": ["index.cjs"] },
   "sourceKind": "api",
   "capabilities": ["balance"],
