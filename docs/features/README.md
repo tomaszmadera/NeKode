@@ -48,6 +48,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [project-shell-selection](project-shell-selection/spec.md) | Per-project terminal shell selection with system shell detection | Delivered |
 | [public-documentation-contract](public-documentation-contract/spec.md) | Public documentation contract independent of the local harness | Delivered |
 | [session-labels](session-labels/spec.md) | Session labels and agent badges | Delivered |
+| [task-progress-adapters](task-progress-adapters/spec.md) | Postęp zadań przez adaptery źródeł | Not delivered (NEKODE-81) |
 | [terminal-font-settings](terminal-font-settings/spec.md) | Terminal font settings | Delivered |
 | [test-suite-simplification](test-suite-simplification/spec.md) | Test suite audit and simplification | Delivered |
 | [themes](themes/spec.md) | Themes | Delivered |
