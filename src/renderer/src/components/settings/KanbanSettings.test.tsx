@@ -957,7 +957,9 @@ describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', 
     fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
     const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
     const confirm = screen.getByTestId(TEST_ID.confirmDialogConfirm)
-    expect(document.activeElement).toBe(confirm)
+    // ConfirmDialog focuses Confirm in a passive effect, which can run after
+    // findBy resolves.
+    await waitFor(() => expect(document.activeElement).toBe(confirm))
     fireEvent.click(confirm)
     await waitFor(() => expect(confirm.getAttribute('aria-disabled')).toBe('true'))
     // The confirm keeps focus (no `disabled` attribute), so keys stay in the dialog.

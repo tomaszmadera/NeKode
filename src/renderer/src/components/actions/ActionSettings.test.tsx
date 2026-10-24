@@ -206,7 +206,10 @@ describe('Kanban tab shell', () => {
       />,
     )
     fireEvent.click(await screen.findByTestId(TEST_ID.settingsKanbanTeachAgents))
-    await screen.findByTestId(TEST_ID.confirmDialog)
+    const firstDialog = await screen.findByTestId(TEST_ID.confirmDialog)
+    // ConfirmDialog moves focus in a passive effect, which can run after
+    // findBy resolves. Escape is sent to the focused element, so wait for it.
+    await waitFor(() => expect(firstDialog.contains(document.activeElement)).toBe(true))
     fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
     expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
     expect(onClose).not.toHaveBeenCalled()
@@ -218,6 +221,7 @@ describe('Kanban tab shell', () => {
     )
     fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
     const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
     fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
     await waitFor(() => expect(writeSkill).toHaveBeenCalledTimes(1))
     // Chromium drops focus from a `disabled` button (jsdom does not), which
