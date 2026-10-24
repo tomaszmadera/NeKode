@@ -23,4 +23,18 @@ describe('PanelFooter', () => {
     expect(`${url.origin}${url.pathname}`).toBe(ISSUE_REPORT_BASE_URL)
     expect(url.searchParams.get('body')).toContain('NeKode version: 0.0.0-test')
   })
+
+  it('renders the current application version on the right', () => {
+    render(
+      <PanelFooter
+        onOpenAppSettings={vi.fn()}
+        mascotVisible={false}
+        mascotError={null}
+        onToggleMascot={vi.fn()}
+      />,
+    )
+    const version = screen.getByTestId(TEST_ID.panelAppVersion)
+    expect(version.textContent).toBe('v0.0.0-test')
+    expect(version.getAttribute('title')).toBe('NeKode v0.0.0-test')
+  })
 })

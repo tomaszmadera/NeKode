@@ -400,7 +400,7 @@ describe('status bar — git sync (NEKODE-1)', () => {
     resolveSync()
     await waitFor(() => expect(syncButton.hasAttribute('disabled')).toBe(false))
     // Verifies git.getStatus was called again on completion
-    expect(app.git.getStatus).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledTimes(2))
   })
 
   it('calls onError callback when app.git.sync rejects', async () => {
@@ -416,7 +416,7 @@ describe('status bar — git sync (NEKODE-1)', () => {
     await waitFor(() => {
       expect(onError).toHaveBeenCalledWith('git push failed: remote rejected')
     })
-    expect(syncButton.hasAttribute('disabled')).toBe(false)
+    await waitFor(() => expect(syncButton.hasAttribute('disabled')).toBe(false))
   })
 
   it('preserves syncing state per project when switching projects', async () => {

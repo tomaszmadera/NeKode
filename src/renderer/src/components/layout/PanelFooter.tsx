@@ -71,6 +71,13 @@ export function PanelFooter({
         >
           <Icon.bug size={16} aria-hidden />
         </a>
+        <span
+          className="ml-auto font-mono text-xs text-ink-muted select-none"
+          data-testid={TEST_ID.panelAppVersion}
+          title={`NeKode v${__APP_VERSION__}`}
+        >
+          v{__APP_VERSION__}
+        </span>
       </div>
     </div>
   )
