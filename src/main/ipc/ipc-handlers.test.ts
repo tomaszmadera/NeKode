@@ -226,6 +226,9 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
       updateItem: vi.fn(() => Promise.resolve({} as never)),
       getItem: vi.fn(() => Promise.resolve({} as never)),
       getComments: vi.fn(() => Promise.resolve([])),
+      bindLocalFile: vi.fn(() => Promise.resolve()),
+      skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
+      writeSkill: vi.fn(() => Promise.resolve()),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
       handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
       handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
@@ -670,6 +673,9 @@ describe('registered ipc handlers', () => {
         updateItem: vi.fn(() => Promise.resolve({} as never)),
         getItem: vi.fn(() => Promise.resolve({} as never)),
         getComments: vi.fn(() => Promise.resolve([])),
+        bindLocalFile: vi.fn(() => Promise.resolve()),
+        skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
+        writeSkill: vi.fn(() => Promise.resolve()),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
@@ -793,6 +799,9 @@ describe('registered ipc handlers', () => {
         updateItem: vi.fn(() => Promise.resolve({} as never)),
         getItem: vi.fn(() => Promise.resolve({} as never)),
         getComments: vi.fn(() => Promise.resolve([])),
+        bindLocalFile: vi.fn(() => Promise.resolve()),
+        skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
+        writeSkill: vi.fn(() => Promise.resolve()),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
@@ -924,6 +933,9 @@ describe('registered ipc handlers', () => {
         updateItem: vi.fn(() => Promise.resolve({} as never)),
         getItem: vi.fn(() => Promise.resolve({} as never)),
         getComments: vi.fn(() => Promise.resolve([])),
+        bindLocalFile: vi.fn(() => Promise.resolve()),
+        skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
+        writeSkill: vi.fn(() => Promise.resolve()),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
         handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
         handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
@@ -1124,6 +1136,26 @@ describe('kanban:* channels (adapter integration)', () => {
     await invoke(IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', { stateRef: 'done' }])
     expect(services.kanban.updateItem).toHaveBeenCalledWith('p1', 'DEMO-1', { stateRef: 'done' })
 
+    // The local-file revision travels as one optional trailing argument.
+    await invoke(IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'Local' }, 3])
+    expect(services.kanban.createItem).toHaveBeenLastCalledWith('p1', { title: 'Local' }, 3)
+    await invoke(IPC_CHANNEL.kanbanUpdateItem, ['p1', 'T-1', { stateRef: 'Done' }, 4])
+    expect(services.kanban.updateItem).toHaveBeenLastCalledWith(
+      'p1',
+      'T-1',
+      { stateRef: 'Done' },
+      4,
+    )
+
+    await invoke(IPC_CHANNEL.kanbanBindLocalFile, ['p1'])
+    expect(services.kanban.bindLocalFile).toHaveBeenCalledWith('p1')
+
+    // Teach agents: only the project id crosses; main builds the skill text.
+    await invoke(IPC_CHANNEL.kanbanSkillStatus, ['p1'])
+    expect(services.kanban.skillStatus).toHaveBeenCalledWith('p1')
+    await invoke(IPC_CHANNEL.kanbanWriteSkill, ['p1'])
+    expect(services.kanban.writeSkill).toHaveBeenCalledWith('p1')
+
     await invoke(IPC_CHANNEL.kanbanGetItem, ['p1', 'DEMO-1'])
     expect(services.kanban.getItem).toHaveBeenCalledWith('p1', 'DEMO-1')
     const launchInput = {
@@ -1183,6 +1215,22 @@ describe('kanban:* channels (adapter integration)', () => {
       [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', {}]],
       [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', { bogus: 1 }]],
       [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', 'stateRef']],
+      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, 0]],
+      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, 1.5]],
+      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, '2']],
+      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, 2, 'extra']],
+      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'T-1', { title: 'x' }, -1]],
+      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'T-1', { title: 'x' }, 2, 'extra']],
+      [IPC_CHANNEL.kanbanBindLocalFile, []],
+      [IPC_CHANNEL.kanbanBindLocalFile, ['']],
+      [IPC_CHANNEL.kanbanBindLocalFile, [7]],
+      [IPC_CHANNEL.kanbanSkillStatus, []],
+      [IPC_CHANNEL.kanbanSkillStatus, ['']],
+      [IPC_CHANNEL.kanbanSkillStatus, ['p1', 'extra']],
+      [IPC_CHANNEL.kanbanWriteSkill, []],
+      [IPC_CHANNEL.kanbanWriteSkill, ['']],
+      [IPC_CHANNEL.kanbanWriteSkill, [7]],
+      [IPC_CHANNEL.kanbanWriteSkill, ['p1', '# injected skill text']],
       [IPC_CHANNEL.kanbanGetItem, ['p1']],
       [IPC_CHANNEL.kanbanGetItem, ['', 'DEMO-1']],
       [IPC_CHANNEL.kanbanLaunchTask, [{ projectId: 'p1', mode: 'resume' }]],
@@ -1228,6 +1276,11 @@ describe('kanban:* channels (adapter integration)', () => {
     }
     expect(services.kanban.setConfig).not.toHaveBeenCalled()
     expect(services.kanban.listBoard).not.toHaveBeenCalled()
+    expect(services.kanban.createItem).not.toHaveBeenCalled()
+    expect(services.kanban.updateItem).not.toHaveBeenCalled()
+    expect(services.kanban.bindLocalFile).not.toHaveBeenCalled()
+    expect(services.kanban.skillStatus).not.toHaveBeenCalled()
+    expect(services.kanban.writeSkill).not.toHaveBeenCalled()
     expect(services.kanban.handoffCandidates).not.toHaveBeenCalled()
     expect(services.kanban.handoffAvailability).not.toHaveBeenCalled()
   })

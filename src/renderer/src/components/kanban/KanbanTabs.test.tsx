@@ -7,21 +7,25 @@ import type {
   ProjectInfo,
   WorkItem,
 } from '../../../../shared/ipc-contract'
-import { projectKanbanAdapterKey } from '../../../../shared/ipc-contract'
+import {
+  APP_STATE_KEY,
+  LOCAL_TASK_FILE_MISSING,
+  projectKanbanAdapterKey,
+} from '../../../../shared/ipc-contract'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { resetMockFitAddons } from '../../test/fit-addon-mock'
 import { resetMockTerminals } from '../../test/xterm-mock'
 
-// Kanban entry points (spec kanban-adapter-interface Behaviour 14, AC14): a
-// project with a stored Kanban binding shows a `Kanban` tile as the first
-// element of its expanded left-navigation content and a non-closable `Kanban`
-// tab immediately after the chat tab; a project without a binding shows
-// neither. Selecting either entry point shows the grouped list in the center
-// surface (one lazy listBoard load). Selecting the chat tab or a file tab
-// returns to that surface. No center-surface `Files | Kanban` view-switch
-// strip exists.
+// Project home tab (project-home spec Behaviour 1-5, AC1-4; replaces the
+// kanban-adapter-interface Behaviour 14 entry-point rule): every selected
+// project, bound or not, has a non-closable home tab first in the strip,
+// labeled with the project name. A bound project's home tab shows the grouped
+// list (one listBoard load when it activates); an unbound one's shows the
+// setup welcome and never calls listBoard. The project name opens the home
+// tab. Selecting the chat tab or a file tab returns to that surface. No
+// center-surface `Files | Kanban` view-switch strip exists.
 
 vi.mock('@xterm/xterm', () => import('../../test/xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('../../test/fit-addon-mock'))
@@ -124,29 +128,58 @@ describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
     cleanup()
   })
 
-  it('sits as the first tab when bound, before the chat tab, non-closable and icon-only', async () => {
+  it('sits as the first tab for a bound and an unbound project, before the chat tab, non-closable', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
+    vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
     mockBindings(app, ['p1'])
 
     render(<App app={app} />)
-    // Bound project: the tab appears (its presence proves the binding loaded).
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const kanbanTab = await screen.findByTestId(TEST_ID.kanbanTab)
+    const homeTab = await screen.findByTestId(TEST_ID.kanbanTab)
     const strip = screen.getByTestId(TEST_ID.tabStrip)
     const chatTab = screen.getByTestId(TEST_ID.tabTerminal)
-    expect(strip.firstElementChild).toBe(kanbanTab)
-    expect(kanbanTab.nextElementSibling).toBe(chatTab)
+    expect(strip.firstElementChild).toBe(homeTab)
+    expect(homeTab.nextElementSibling).toBe(chatTab)
     // Non-closable: no close control inside the tab.
-    expect(within(kanbanTab).queryByRole('button', { name: /Close/ })).toBeNull()
-    // Icon plus the project name (cased per the default uppercase setting); full name in the tooltip.
-    expect(kanbanTab.textContent).toBe('DEMO')
-    expect(kanbanTab.getAttribute('title')).toBe('Kanban: DEMO')
-    // The Kanban tab carries the name, so no separate project-name label.
-    expect(screen.queryByTestId(TEST_ID.tabProjectName)).toBeNull()
+    expect(within(homeTab).queryByRole('button', { name: /Close/ })).toBeNull()
+    // Icon plus the project name (cased per the default uppercase setting);
+    // full name in the tooltip, which is also part of the accessible name.
+    expect(homeTab.textContent).toBe('DEMO')
+    expect(homeTab.getAttribute('title')).toBe('Tasks: DEMO')
+    expect(screen.getByRole('button', { name: 'Tasks: DEMO' })).toBe(homeTab)
+    // Bound: the home tab shows the task list.
+    await screen.findByTestId(TEST_ID.kanbanList)
 
-    // Unbound project: no Kanban tab at all.
+    // Unbound project: the same home tab, first in the strip, shows the welcome.
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
-    await waitFor(() => expect(screen.queryByTestId(TEST_ID.kanbanTab)).toBeNull())
+    await screen.findByTestId(TEST_ID.projectHomeWelcome)
+    const otherTab = screen.getByTestId(TEST_ID.kanbanTab)
+    expect(screen.getByTestId(TEST_ID.tabStrip).firstElementChild).toBe(otherTab)
+    expect(otherTab.nextElementSibling).toBe(screen.getByTestId(TEST_ID.tabTerminal))
+    expect(otherTab.textContent).toBe('OTHER')
+    expect(otherTab.getAttribute('title')).toBe('Tasks: OTHER')
+    expect(otherTab.getAttribute('data-selected')).toBe('true')
+  })
+
+  it('shortens a long project name on the tab and keeps the full name in the tooltip', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([
+      { ...projectB, name: 'Very long project name' },
+    ])
+    mockBindings(app, [])
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
+    const homeTab = await screen.findByTestId(TEST_ID.kanbanTab)
+    expect(homeTab.textContent).toBe('VERY LONG…')
+    expect(homeTab.getAttribute('title')).toBe('Tasks: VERY LONG PROJECT NAME')
+  })
+
+  it('renders no home tab without a project', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([])
+
+    render(<App app={app} />)
+    await screen.findByTestId(TEST_ID.welcomeSurface)
+    expect(screen.queryByTestId(TEST_ID.kanbanTab)).toBeNull()
   })
 
   it('no Files | Kanban center-surface strip remains in the DOM', async () => {
@@ -181,20 +214,21 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     cleanup()
   })
 
-  it('selecting the Kanban tab loads the board once (lazy)', async () => {
+  it('loads the board once, when the home tab activates (lazy)', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
     mockBindings(app, ['p1'])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    const tab = await screen.findByTestId(TEST_ID.kanbanTab)
-    // Lazy: nothing loaded before the tab is selected.
+    // Lazy: nothing loaded before the project's home tab is active.
+    await screen.findByTestId(testIdFor.projectSelect('p1'))
     expect(app.kanban.listBoard).not.toHaveBeenCalled()
     expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
 
-    fireEvent.click(tab)
+    // The project name opens the home tab; clicking the tab again is a no-op.
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     // The default view is the list; the load fires once either way.
     await screen.findByTestId(TEST_ID.kanbanList)
     expect(app.kanban.listBoard).toHaveBeenCalledTimes(1)
@@ -417,7 +451,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     expect(screen.queryByTestId(testIdFor.kanbanItem(fixture.items[0].ref))).toBeNull()
   })
 
-  it('closing Project Settings after an unbind hides the entry points and resets the Kanban tab', async () => {
+  it('closing Project Settings after an unbind keeps the home tab and shows the welcome', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
     vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
@@ -435,14 +469,343 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     await screen.findByRole('dialog', { name: 'Project Settings' })
     fireEvent.keyDown(window, { key: 'Escape' })
 
-    // Entry points gone (unbound); the active tab reset terminates the board
-    // instead of leaving a Kanban tab that no longer exists.
-    await waitFor(() => expect(screen.queryByTestId(TEST_ID.kanbanTab)).toBeNull())
-    expect(screen.queryByTestId(testIdFor.projectKanban('p1'))).toBeNull()
+    // The board is gone (unbound), but the home tab stays selected and shows
+    // the setup welcome: no redirect to the chat tab (project-home Behaviour 2).
+    await screen.findByTestId(TEST_ID.projectHomeWelcome)
     expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
-    await waitFor(() =>
-      expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    expect(isSelected(TEST_ID.tabTerminal)).toBe(false)
+    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
+  })
+})
+
+describe('project home tab without a task source (project-home spec Behaviour 2-5, AC1, AC3, AC4)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('shows the setup welcome, stays on the home tab and never calls listBoard', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    mockBindings(app, [])
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    const welcome = await screen.findByTestId(TEST_ID.projectHomeWelcome)
+    expect(within(welcome).getByRole('heading', { name: 'No task list yet' })).toBeTruthy()
+    expect(welcome.textContent).toContain(
+      'Keep tasks in a file in this project, or connect a tracker.',
     )
+    // Primary local action first, then the tracker action.
+    const buttons = within(welcome).getAllByRole('button')
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Use a local task list',
+      'Connect a tracker',
+    ])
+    expect(welcome.textContent).not.toMatch(/kanban/i)
+    // Showing the welcome writes nothing.
+    expect(app.kanban.bindLocalFile).not.toHaveBeenCalled()
+    // The home tab stays selected; the chat surface is hidden.
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
+    // No board toolbar on the welcome.
+    expect(screen.queryByTestId(TEST_ID.kanbanBoardRefresh)).toBeNull()
+    // The binding read ran and settled; still no redirect and no board load.
+    expect(app.state.get).toHaveBeenCalledWith(projectKanbanAdapterKey('p1'))
+    await act(async () => {})
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    expect(app.kanban.listBoard).not.toHaveBeenCalled()
+  })
+
+  it('shows a loading line until the binding read settles, then the welcome', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    let settle!: (value: string | null) => void
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === projectKanbanAdapterKey('p1')) {
+        return new Promise<string | null>((resolve) => {
+          settle = resolve
+        })
+      }
+      return null
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await screen.findByTestId(TEST_ID.projectHomeLoading)
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    await act(async () => settle(null))
+    await screen.findByTestId(TEST_ID.projectHomeWelcome)
+    expect(screen.queryByTestId(TEST_ID.projectHomeLoading)).toBeNull()
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    expect(app.kanban.listBoard).not.toHaveBeenCalled()
+  })
+
+  it('shows a failed binding read inline on the home tab instead of the loading line', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === projectKanbanAdapterKey('p1')) throw new Error('state read failed')
+      return null
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    const error = await screen.findByTestId(TEST_ID.projectHomeError)
+    expect(error.getAttribute('role')).toBe('alert')
+    expect(error.textContent).toBe('Failed to load task sources.')
+    expect(screen.queryByTestId(TEST_ID.projectHomeLoading)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.projectHomeWelcome)).toBeNull()
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    // A later action that clears the shell notice keeps the inline error.
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    expect(screen.getByTestId(TEST_ID.projectHomeError).textContent).toBe(
+      'Failed to load task sources.',
+    )
+    expect(app.kanban.listBoard).not.toHaveBeenCalled()
+
+    // The read recovers: a re-read (closing Project Settings) replaces the
+    // inline error with the welcome.
+    vi.mocked(app.state.get).mockResolvedValue(null)
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Project Settings' }))
+    await screen.findByRole('dialog', { name: 'Project Settings' })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await screen.findByTestId(TEST_ID.projectHomeWelcome)
+    expect(screen.queryByTestId(TEST_ID.projectHomeError)).toBeNull()
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+  })
+
+  it('Connect a tracker opens Project Settings on the Tasks section of that project', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockBindings(app, [])
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.projectHomeConnectTracker))
+    await screen.findByRole('dialog', { name: 'Project Settings' })
+    const tasksTab = screen.getByTestId(TEST_ID.settingsKanbanTab)
+    expect(tasksTab.textContent).toBe('Tasks')
+    await waitFor(() => expect(tasksTab.getAttribute('aria-selected')).toBe('true'))
+    expect(await screen.findByTestId(TEST_ID.settingsKanbanPanel)).toBeTruthy()
+    await waitFor(() => expect(app.kanban.getConfig).toHaveBeenCalledWith('p1'))
+  })
+
+  it('name click on the current project keeps the chat; on another project clears it and opens its home tab', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
+    vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
+      projectId === 'p1' ? [chatOne] : [],
+    )
+    mockBindings(app, [])
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+    await waitFor(() => expect(isSelected(TEST_ID.tabTerminal)).toBe(true))
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+
+    // Current project: the home tab opens and the chat stays selected.
+    vi.mocked(app.state.set).mockClear()
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    await waitFor(() => expect(isSelected(TEST_ID.kanbanTab)).toBe(true))
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
+    // The chat tab still names the same chat.
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
+
+    // Another project: selected, chat cleared, its home tab active.
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.projectRow('p2')).getAttribute('data-selected')).toBe(
+        'true',
+      ),
+    )
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    expect(screen.getByTestId(TEST_ID.kanbanTab).textContent).toBe('OTHER')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p2')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('Chat')
+  })
+
+  it('launch with a restored chat opens the chat tab', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
+      return null
+    })
+
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
     expect(isSelected(TEST_ID.tabTerminal)).toBe(true)
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(false)
+  })
+
+  it('launch with a restored project and no restored chat opens the home tab', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      // A stale chat id that no longer exists restores no chat.
+      if (key === APP_STATE_KEY.selectedChatId) return 'gone'
+      return null
+    })
+
+    render(<App app={app} />)
+    await screen.findByTestId(TEST_ID.projectHomeWelcome)
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    expect(isSelected(TEST_ID.tabTerminal)).toBe(false)
+    expect(app.terminals.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  /** Binding store that `bindLocalFile` writes, like main does. */
+  function mockLocalBinding(initial: string | null): void {
+    let binding = initial
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === projectKanbanAdapterKey('p1') ? binding : null,
+    )
+    vi.mocked(app.kanban.bindLocalFile).mockImplementation(async () => {
+      binding = 'local-file'
+    })
+  }
+
+  const emptyLocalBoard: KanbanBoard = {
+    states: [
+      { id: 'backlog', name: 'Backlog', group: 'backlog', order: 0 },
+      { id: 'todo', name: 'Todo', group: 'unstarted', order: 1 },
+    ],
+    items: [],
+    revision: 1,
+  }
+
+  it('Use a local task list binds local-file and shows the empty list with New task', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockLocalBinding(null)
+    vi.mocked(app.kanban.listBoard).mockResolvedValue(emptyLocalBoard)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await screen.findByTestId(TEST_ID.projectHomeWelcome)
+    expect(app.kanban.listBoard).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId(TEST_ID.projectHomeUseLocal))
+
+    await screen.findByTestId(TEST_ID.kanbanList)
+    expect(app.kanban.bindLocalFile).toHaveBeenCalledWith('p1')
+    expect(app.kanban.bindLocalFile).toHaveBeenCalledTimes(1)
+    expect(app.kanban.listBoard).toHaveBeenCalledWith('p1')
+    expect(screen.queryByTestId(TEST_ID.projectHomeWelcome)).toBeNull()
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    expect(await screen.findByRole('button', { name: 'New task' })).toBeTruthy()
+  })
+
+  it('a failed Use a local task list stays on the welcome with the error inline', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockBindings(app, [])
+    vi.mocked(app.kanban.bindLocalFile).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'unknown',
+      message: 'Could not create .nekode/tasks.json.',
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.projectHomeUseLocal))
+    const error = await screen.findByTestId(TEST_ID.projectHomeUseLocalError)
+    expect(error.textContent).toBe('Could not create .nekode/tasks.json.')
+    expect(screen.getByTestId(TEST_ID.projectHomeWelcome)).toBeTruthy()
+    expect(app.kanban.listBoard).not.toHaveBeenCalled()
+  })
+
+  it('a local-file binding with a missing file shows the typed error and Use a local task list', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockLocalBinding('local-file')
+    vi.mocked(app.kanban.listBoard)
+      .mockRejectedValueOnce({
+        nekodeAppError: true,
+        code: 'not_found',
+        message:
+          'The task file .nekode/tasks.json was not found. Use a local task list to create it.',
+        detail: LOCAL_TASK_FILE_MISSING,
+      })
+      .mockResolvedValue(emptyLocalBoard)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    const error = await screen.findByTestId(TEST_ID.kanbanBoardError)
+    expect(error.textContent).toContain('.nekode/tasks.json was not found')
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardUseLocal))
+    await screen.findByTestId(TEST_ID.kanbanList)
+    expect(app.kanban.bindLocalFile).toHaveBeenCalledWith('p1')
+    expect(app.kanban.listBoard).toHaveBeenCalledTimes(2)
+    expect(screen.queryByTestId(TEST_ID.kanbanBoardUseLocal)).toBeNull()
+  })
+
+  it.each([
+    ['a missing project folder', 'The project folder was not found.'],
+    ['an unknown project', 'Project "p1" not found.'],
+  ])(
+    'a local-file binding with %s shows the typed error without Use a local task list',
+    async (_label, message) => {
+      vi.mocked(app.projects.list).mockResolvedValue([projectA])
+      mockLocalBinding('local-file')
+      vi.mocked(app.kanban.listBoard).mockRejectedValue({
+        nekodeAppError: true,
+        code: 'not_found',
+        message,
+      })
+
+      render(<App app={app} />)
+      fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+      const error = await screen.findByTestId(TEST_ID.kanbanBoardError)
+      expect(error.textContent).toBe(message)
+      // Creating the task file cannot fix this, so the action is not offered.
+      expect(screen.queryByTestId(TEST_ID.kanbanBoardUseLocal)).toBeNull()
+      expect(app.kanban.bindLocalFile).not.toHaveBeenCalled()
+    },
+  )
+
+  it('a bound process-adapter project still renders the existing list and offers no local action', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockBindings(app, ['p1'])
+    vi.mocked(app.kanban.listBoard)
+      .mockRejectedValueOnce({
+        nekodeAppError: true,
+        code: 'not_found',
+        message: 'Kanban adapter "plane" is not installed in the adapters directory.',
+      })
+      .mockResolvedValue(fixture)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await screen.findByTestId(TEST_ID.kanbanBoardError)
+    // A missing process adapter is not a missing task file.
+    expect(screen.queryByTestId(TEST_ID.kanbanBoardUseLocal)).toBeNull()
+    // The toolbar Refresh stays disabled until the failed load reports done.
+    const refresh = screen.getByTestId(TEST_ID.kanbanBoardRefresh) as HTMLButtonElement
+    await waitFor(() => expect(refresh.disabled).toBe(false))
+    fireEvent.click(refresh)
+    await screen.findByTestId(TEST_ID.kanbanList)
+    expect(screen.getByText('First task')).toBeTruthy()
+    expect(screen.getByText('Second task')).toBeTruthy()
+    expect(app.kanban.bindLocalFile).not.toHaveBeenCalled()
   })
 })

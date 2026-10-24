@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { IPC_CHANNEL } from '../shared/ipc-contract'
+import { IPC_CHANNEL, LOCAL_TASK_FILE_MISSING } from '../shared/ipc-contract'
 import { AppError, serializeAppError } from '../shared/ipc-error'
 import { createAppApi } from './app-api'
 
@@ -102,6 +102,27 @@ describe('preload app api', () => {
       kind: 'not_found',
       message: 'No such project.',
       channel: 'projects:remove',
+    })
+  })
+  it('keeps the error detail the renderer uses to offer Use a local task list', async () => {
+    const ipc = createIpcMock()
+    ipc.invoke = () =>
+      Promise.reject(
+        new Error(
+          serializeAppError(
+            new AppError(
+              'not_found',
+              'The task file .nekode/tasks.json was not found.',
+              'kanban:listBoard',
+              undefined,
+              LOCAL_TASK_FILE_MISSING,
+            ),
+          ),
+        ),
+      )
+    await expect(createAppApi(ipc).kanban.listBoard('p1')).rejects.toMatchObject({
+      code: 'not_found',
+      detail: LOCAL_TASK_FILE_MISSING,
     })
   })
   it('routes desktop activation with no keys, window or command arguments', async () => {
@@ -418,6 +439,34 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.kanbanGetItem, args: ['p1', 'DEMO-1'] },
       { channel: IPC_CHANNEL.kanbanGetComments, args: ['p1', 'DEMO-1'] },
       { channel: IPC_CHANNEL.kanbanLaunchTask, args: [launchInput] },
+    ])
+  })
+
+  it('routes kanban writes with the local-file revision only when one is given, and bindLocalFile', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.kanban.createItem('p1', { title: 'Plane' })
+    await api.kanban.createItem('p1', { title: 'Local' }, 2)
+    await api.kanban.updateItem('p1', 'DEMO-1', { stateRef: 'done' })
+    await api.kanban.updateItem('p1', 'T-1', { stateRef: 'Done' }, 3)
+    await api.kanban.bindLocalFile('p1')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.kanbanCreateItem, args: ['p1', { title: 'Plane' }] },
+      { channel: IPC_CHANNEL.kanbanCreateItem, args: ['p1', { title: 'Local' }, 2] },
+      { channel: IPC_CHANNEL.kanbanUpdateItem, args: ['p1', 'DEMO-1', { stateRef: 'done' }] },
+      { channel: IPC_CHANNEL.kanbanUpdateItem, args: ['p1', 'T-1', { stateRef: 'Done' }, 3] },
+      { channel: IPC_CHANNEL.kanbanBindLocalFile, args: ['p1'] },
+    ])
+  })
+
+  it('routes Teach agents with the project id only', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.kanban.skillStatus('p1')
+    await api.kanban.writeSkill('p1')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.kanbanSkillStatus, args: ['p1'] },
+      { channel: IPC_CHANNEL.kanbanWriteSkill, args: ['p1'] },
     ])
   })
 

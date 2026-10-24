@@ -42,7 +42,7 @@ const SETTINGS_TABS = ['shell', 'actions', 'kanban', 'taskProgress', 'agents'] a
 const TAB_LABEL: Record<SettingsTabId, string> = {
   shell: 'Shell',
   actions: 'Actions & Configuration',
-  kanban: 'Kanban',
+  kanban: 'Tasks',
   taskProgress: 'Task progress',
   agents: 'Agents',
 }

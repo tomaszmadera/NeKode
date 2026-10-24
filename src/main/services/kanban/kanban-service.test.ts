@@ -197,15 +197,26 @@ describe('KanbanService adaptersList', () => {
     try {
       writeAdapter('demo', 'demo')
       const { service } = makeService({ adaptersDir: dir })
-      expect(service.adaptersList().map((info) => info.id)).toEqual(['demo'])
+      // The built-in local-file source always leads (project-home spec
+      // Behaviour 6-7), labeled Local file, without config fields.
+      expect(service.adaptersList()).toEqual([
+        { id: 'local-file', name: 'Local file', configSchema: [] },
+        expect.objectContaining({ id: 'demo' }),
+      ])
       // Fresh scan each call: an adapter added after the first call shows up.
       writeAdapter('extra', 'extra')
       expect(
         service
           .adaptersList()
           .map((info) => info.id)
+          .slice(1)
           .sort(),
       ).toEqual(['demo', 'extra'])
+      // A discovered adapter cannot claim the built-in id.
+      writeAdapter('impostor', 'local-file')
+      expect(service.adaptersList().filter((info) => info.id === 'local-file')).toEqual([
+        { id: 'local-file', name: 'Local file', configSchema: [] },
+      ])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

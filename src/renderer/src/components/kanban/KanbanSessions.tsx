@@ -8,6 +8,10 @@ interface Props {
   projectIds: ReadonlySet<string>
   activeProjectId: string | null
   versions: Readonly<Record<string, number>>
+  /** Projects bound to the built-in `local-file` source. */
+  localFileProjectIds?: ReadonlySet<string>
+  /** `Use a local task list` for a bound project whose task file is missing. */
+  onUseLocalTaskList?: (projectId: string) => Promise<void>
   onConfigure: () => void
   /** Opens Project Settings on the handoff-directory tab. */
   onConfigureHandoffs?: (projectId: string) => void
@@ -26,6 +30,7 @@ function KanbanSessionItem({
   id,
   version,
   active,
+  onUseLocalTaskList,
   onConfigure,
   onConfigureHandoffs,
   onStart,
@@ -37,6 +42,7 @@ function KanbanSessionItem({
   id: string
   version: number
   active: boolean
+  onUseLocalTaskList?: (projectId: string) => Promise<void>
   onConfigure: () => void
   onConfigureHandoffs?: (projectId: string) => void
   onStart?: (projectId: string, item: WorkItem) => void
@@ -53,6 +59,9 @@ function KanbanSessionItem({
   const handleConfigureHandoffs = useCallback(() => {
     onConfigureHandoffs?.(id)
   }, [id, onConfigureHandoffs])
+  const handleUseLocalTaskList = useCallback(async (): Promise<void> => {
+    await onUseLocalTaskList?.(id)
+  }, [id, onUseLocalTaskList])
   const handleStart = useCallback(
     (item: WorkItem) => {
       onStart?.(id, item)
@@ -83,6 +92,7 @@ function KanbanSessionItem({
         app={app}
         projectId={id}
         active={active}
+        onUseLocalTaskList={onUseLocalTaskList === undefined ? undefined : handleUseLocalTaskList}
         onConfigure={onConfigure}
         onConfigureHandoffs={
           onConfigureHandoffs === undefined ? undefined : handleConfigureHandoffs
@@ -102,6 +112,8 @@ export function KanbanSessions({
   projectIds,
   activeProjectId,
   versions,
+  localFileProjectIds,
+  onUseLocalTaskList,
   onConfigure,
   onConfigureHandoffs,
   onStart,
@@ -134,6 +146,7 @@ export function KanbanSessions({
           id={id}
           version={version}
           active={activeProjectId === id}
+          onUseLocalTaskList={localFileProjectIds?.has(id) ? onUseLocalTaskList : undefined}
           onConfigure={onConfigure}
           onConfigureHandoffs={onConfigureHandoffs}
           onStart={onStart}

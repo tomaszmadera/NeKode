@@ -1,7 +1,7 @@
 // Per-project tab-strip session state (center-layout-tabs-actions spec
-// Behaviour 3–5): the terminal-chat tab, the Kanban board tab (a project
-// view, present while the project is bound — kanban-adapter-interface spec
-// Behaviour 14) plus the open file tabs in open order, the active tab and the
+// Behaviour 3–5): the terminal-chat tab, the project home tab (kind
+// `kanban`, a project view present for every selected project, project-home
+// spec Behaviour 1) plus the open file tabs in open order, the active tab and the
 // previously active tab (close fallback). The session lives for the app
 // session only — never persisted across restarts. Held by App; components
 // stay presentational. The reducers here are pure so the tab contract (order,
@@ -11,7 +11,7 @@ export type TabId = { kind: 'terminal' } | { kind: 'file'; path: string } | { ki
 
 export const TERMINAL_TAB: TabId = { kind: 'terminal' }
 
-/** The per-project Kanban board tab (spec kanban-adapter-interface Behaviour 14). */
+/** The per-project home tab (project-home spec Behaviour 1); the kind keeps its `kanban` id. */
 export const KANBAN_TAB: TabId = { kind: 'kanban' }
 
 export function fileTab(path: string): TabId {

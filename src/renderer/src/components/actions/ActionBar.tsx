@@ -391,7 +391,7 @@ export function ActionBar({
             </div>
           ) : null}
           <fieldset className="nk-btn-group shrink-0">
-            <legend className="sr-only">Kanban sort</legend>
+            <legend className="sr-only">Task sort</legend>
             <label htmlFor="kanban-sort-by" className="sr-only">
               Sort by
             </label>

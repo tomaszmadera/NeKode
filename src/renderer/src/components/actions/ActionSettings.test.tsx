@@ -138,7 +138,7 @@ describe('Kanban tab shell', () => {
     } as unknown as AppApi
   }
 
-  it('renders Kanban as its own tab and keeps the Configuration/Actions sections on theirs', async () => {
+  it('renders Tasks as its own tab and keeps the Configuration/Actions sections on theirs', async () => {
     const props = {
       app: kanbanAppMock(),
       actions: [] as ActionControl[],
@@ -151,7 +151,8 @@ describe('Kanban tab shell', () => {
     }
     render(<ActionSettings {...props} />)
     const kanbanTab = screen.getByTestId(TEST_ID.settingsKanbanTab)
-    expect(kanbanTab.textContent).toBe('Kanban')
+    // Visible section label is Tasks (project-home spec Behaviour 6).
+    expect(kanbanTab.textContent).toBe('Tasks')
     expect(kanbanTab.getAttribute('aria-selected')).toBe('false')
     // The Configuration section is not part of the Kanban tab.
     expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
@@ -164,6 +165,72 @@ describe('Kanban tab shell', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
+  })
+
+  it('Escape in the Teach agents dialog closes only that dialog, and not while the write runs', async () => {
+    let finish: (value?: unknown) => void = () => undefined
+    const writeSkill = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const base = kanbanAppMock()
+    const app = {
+      ...base,
+      kanban: {
+        ...base.kanban,
+        adaptersList: vi
+          .fn()
+          .mockResolvedValue([{ id: 'local-file', name: 'Local file', configSchema: [] }]),
+        getConfig: vi
+          .fn()
+          .mockResolvedValue({ adapterId: 'local-file', values: {}, secretKeys: [] }),
+        skillStatus: vi.fn().mockResolvedValue({ exists: false }),
+        writeSkill,
+      },
+      agentProfiles: { get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }) },
+    } as unknown as AppApi
+    const onClose = vi.fn()
+    render(
+      <ActionSettings
+        app={app}
+        actions={[] as ActionControl[]}
+        projectId="p1"
+        projectPath="D:/p"
+        autoSend={false}
+        onAutoSendChange={vi.fn()}
+        onRefresh={vi.fn().mockResolvedValue(undefined)}
+        initialTab="kanban"
+        onClose={onClose}
+      />,
+    )
+    fireEvent.click(await screen.findByTestId(TEST_ID.settingsKanbanTeachAgents))
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId(TEST_ID.settingsKanbanTeachAgents) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    )
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(writeSkill).toHaveBeenCalledTimes(1))
+    // Chromium drops focus from a `disabled` button (jsdom does not), which
+    // would send Escape to the Project Settings window listener.
+    expect(screen.getByTestId(TEST_ID.confirmDialogConfirm).hasAttribute('disabled')).toBe(false)
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
+    expect(screen.getByTestId(TEST_ID.confirmDialog)).toBe(dialog)
+    expect(onClose).not.toHaveBeenCalled()
+
+    finish()
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('opens on the requested tab when an initialTab is passed (board Configure)', async () => {
@@ -185,7 +252,7 @@ describe('Kanban tab shell', () => {
     expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
   })
 
-  it('adds an Agents tab beside Shell, Actions, and Kanban', async () => {
+  it('adds an Agents tab beside Shell, Actions, and Tasks', async () => {
     const selectionGet = vi.fn().mockResolvedValue({ version: 1, selectedIds: [], defaultId: null })
     const app = {
       ...kanbanAppMock(),
@@ -211,7 +278,8 @@ describe('Kanban tab shell', () => {
     expect(agentsTab.getAttribute('aria-selected')).toBe('false')
     expect(screen.getByRole('tab', { name: 'Shell' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Actions & Configuration' })).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'Kanban' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Tasks' })).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: 'Kanban' })).toBeNull()
 
     fireEvent.click(agentsTab)
     expect(await screen.findByTestId(TEST_ID.settingsAgentsEmpty)).toBeTruthy()
@@ -224,7 +292,7 @@ describe('Kanban tab shell', () => {
     expect(screen.queryByTestId(TEST_ID.settingsAgentsPanel)).toBeNull()
   })
 
-  it('places the Task progress tab right after Kanban and renders its panel', async () => {
+  it('places the Task progress tab right after Tasks and renders its panel', async () => {
     const app = {
       ...kanbanAppMock(),
       taskProgress: {
@@ -247,7 +315,7 @@ describe('Kanban tab shell', () => {
       />,
     )
     const labels = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(labels.indexOf('Task progress')).toBe(labels.indexOf('Kanban') + 1)
+    expect(labels.indexOf('Task progress')).toBe(labels.indexOf('Tasks') + 1)
     fireEvent.click(screen.getByTestId(TEST_ID.settingsTaskProgressTab))
     expect(await screen.findByTestId(TEST_ID.settingsTaskProgressEmpty)).toBeTruthy()
     expect(app.taskProgress.getBinding).toHaveBeenCalledWith('p1')

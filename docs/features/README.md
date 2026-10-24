@@ -45,7 +45,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [openwhispr-dictation](openwhispr-dictation/spec.md) | OpenWhispr dictation integration | Delivered for desktop V1; the public Cloud API stays deferred (backlog item NEKODE-37) |
 | [project-environments](project-environments/spec.md) | Project environments: opening WSL projects | Delivered (WSL opening and the add-project UI extension) |
 | [project-files-view](project-files-view/spec.md) | Project Files: File Tree and Read-Only Preview | Delivered |
-| [project-home](project-home/spec.md) | Project home: Tasks tab, local file, and agent skill | Not delivered |
+| [project-home](project-home/spec.md) | Project home: Tasks tab, local file, and agent skill | Delivered (one skill file, no per-agent skill folders) |
 | [project-shell-selection](project-shell-selection/spec.md) | Per-project terminal shell selection with system shell detection | Delivered |
 | [public-documentation-contract](public-documentation-contract/spec.md) | Public documentation contract independent of the local harness | Delivered |
 | [session-labels](session-labels/spec.md) | Session labels and agent badges | Delivered |

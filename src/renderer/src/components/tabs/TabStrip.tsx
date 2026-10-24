@@ -8,10 +8,10 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { KANBAN_TAB, type TabId, TERMINAL_TAB } from './tabs-session'
 
 // Tab strip at the top of the center column (center-layout-tabs-actions spec
-// Behaviour 1–3, 8): the terminal-chat tab first (never closable, label = the
-// active chat's shell display name), then the Kanban project-view tab when the
-// tab-strip project is bound (non-closable, kanban-adapter-interface spec
-// Behaviour 14), then one tab per open file in open order (label = file name,
+// Behaviour 1–3, 8): the project home tab first whenever the strip has a
+// project, bound or not (non-closable, project-home spec Behaviour 1), then
+// the terminal-chat tab (never closable, label = the active chat's shell
+// display name), then one tab per open file in open order (label = file name,
 // tooltip = the path relative to the project root), and the Project Settings
 // control at the right end. File tabs close on
 // middle click and carry a context menu (right click / ContextMenu key /
@@ -26,15 +26,9 @@ interface TabStripProps {
   /** Active chat's shell display name; null shows the neutral "Chat" label. */
   chatName: string | null
   /**
-   * True when the tab-strip project has a stored Kanban binding: the
-   * non-closable icon-only `Kanban` tab then sits as the first tab
-   * (kanban-adapter-interface spec Behaviour 14).
-   */
-  kanbanAvailable: boolean
-  /**
    * Tab-strip project's display name (already cased per the project-name
-   * style setting), shortened by truncateProjectName: the Kanban tab label,
-   * or a non-interactive label leading the strip when there is no Kanban tab.
+   * style setting). Non-null renders the home tab first in the strip, labeled
+   * with the name shortened by truncateProjectName; null renders no home tab.
    */
   projectName: string | null
   /** Open file tabs of the active project, in open order. */
@@ -51,7 +45,7 @@ interface TabStripProps {
 export const PROJECT_TAB_NAME_MAX = 10
 
 /**
- * Kanban tab label: names of up to PROJECT_TAB_NAME_MAX characters stay
+ * Home tab label: names of up to PROJECT_TAB_NAME_MAX characters stay
  * whole; longer names keep the first PROJECT_TAB_NAME_MAX - 1 characters plus
  * an ellipsis. Counts grapheme clusters, so emoji are never split.
  */
@@ -89,7 +83,6 @@ interface TabContextMenuState {
 export function TabStrip({
   floating = false,
   chatName,
-  kanbanAvailable,
   projectName,
   openFiles,
   projectRoot,
@@ -142,12 +135,12 @@ export function TabStrip({
       // seamlessly to the panel below with no bottom line (user request 2026-10-13).
       data-testid={TEST_ID.tabStrip}
     >
-      {kanbanAvailable ? (
-        /* Kanban project-view tab (spec kanban-adapter-interface Behaviour
-           14): non-closable (no close control), first tab in the strip when
-           the tab-strip project is bound. Icon plus the project name
-           (shortened; full name in the tooltip), so the tab also names the
-           active project. Selecting it shows the board in the center surface. */
+      {projectName !== null ? (
+        /* Project home tab (spec project-home Behaviour 1-2): non-closable
+           (no close control), first tab in the strip for every project, bound
+           or not. Icon plus the project name (shortened; full name in the
+           tooltip and the accessible name). Selecting it shows the task list
+           when a source is bound, otherwise the setup welcome. */
         <button
           type="button"
           className={cn(
@@ -157,23 +150,12 @@ export function TabStrip({
           data-testid={TEST_ID.kanbanTab}
           data-selected={active.kind === 'kanban' ? 'true' : 'false'}
           onClick={() => onSelectTab(KANBAN_TAB)}
-          title={projectName === null ? 'Kanban' : `Kanban: ${projectName}`}
+          title={`Tasks: ${projectName}`}
+          aria-label={`Tasks: ${projectName}`}
         >
           <Icon.kanban size={14} aria-hidden className="shrink-0" />
-          <span className="whitespace-nowrap">
-            {projectName === null ? 'Kanban' : truncateProjectName(projectName)}
-          </span>
+          <span className="whitespace-nowrap">{truncateProjectName(projectName)}</span>
         </button>
-      ) : projectName !== null ? (
-        /* Unbound project: the strip still names the active project with a
-           plain label (no Kanban icon, not a tab, not clickable). */
-        <span
-          className="flex shrink-0 items-center whitespace-nowrap px-3 text-sm text-ink-secondary"
-          data-testid={TEST_ID.tabProjectName}
-          title={projectName}
-        >
-          {truncateProjectName(projectName)}
-        </span>
       ) : null}
       <button
         type="button"

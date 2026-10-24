@@ -310,9 +310,11 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(props.onSelectProject).toHaveBeenCalledWith('p2')
     expect(props.onToggleProject).toHaveBeenCalledTimes(2)
 
-    // The name of the already-open project does nothing.
+    // The name of the already-open project still reaches the host, which
+    // opens its home tab and keeps the chat (project-home spec Behaviour 4).
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
-    expect(props.onSelectProject).toHaveBeenCalledTimes(1)
+    expect(props.onSelectProject).toHaveBeenCalledTimes(2)
+    expect(props.onSelectProject).toHaveBeenLastCalledWith('p1')
     expect(props.onToggleProject).toHaveBeenCalledTimes(2)
   })
 

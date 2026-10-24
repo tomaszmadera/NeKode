@@ -15,7 +15,12 @@ import type {
   TaskProgressSnapshot,
   WorkItem,
 } from '../../shared/ipc-contract'
-import { APP_STATE_KEY, projectColorKey, projectKanbanAdapterKey } from '../../shared/ipc-contract'
+import {
+  APP_STATE_KEY,
+  LOCAL_FILE_ADAPTER_ID,
+  projectColorKey,
+  projectKanbanAdapterKey,
+} from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
 import { ActionBar } from './components/actions/ActionBar'
 import { ActionSettings, type SettingsTabId } from './components/actions/ActionSettings'
@@ -33,6 +38,11 @@ import { applyDirectoryRefresh } from './components/files/tree-refresh'
 import type { HeldLaunch } from './components/kanban/held-launch'
 import type { KanbanToolbarControls } from './components/kanban/KanbanBoard'
 import { KanbanSessions } from './components/kanban/KanbanSessions'
+import {
+  ProjectHomeError,
+  ProjectHomeLoading,
+  ProjectHomeWelcome,
+} from './components/kanban/ProjectHomeWelcome'
 import { TaskResumeModal } from './components/kanban/TaskResumeModal'
 import { TaskStartModal } from './components/kanban/TaskStartModal'
 import { AddProject } from './components/layout/AddProject'
@@ -490,13 +500,20 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // Code or Preview per markdown file for this app session (user decision
   // 2026-10-06). Not written to the database. Preview is the default.
   const [markdownViewByKey, setMarkdownViewByKey] = useState<Record<string, MarkdownViewMode>>({})
-  // Projects bound to a Kanban adapter (spec kanban-adapter-interface
-  // Behaviour 14): read once per projects change and again when Project
-  // Settings closes, through the generic `state:get` on the per-project
-  // binding key (no new IPC channel). A bound project shows the nav tile and
-  // the top-strip Kanban tab; an unbound one shows neither.
+  // Projects bound to a task source (project-home spec Behaviour 2): read
+  // once per projects change and again when Project Settings closes, through
+  // the generic `state:get` on the per-project binding key (no new IPC
+  // channel). A bound project's home tab shows the task list; an unbound
+  // one's shows the setup welcome. `settledKanbanProjects` marks the
+  // projects whose read has finished. `kanbanBindingsError` holds the message
+  // of the latest failed read (null after a successful one); the read covers
+  // all projects in one batch and fails as a whole, so the error is global.
   const [kanbanProjectIds, setKanbanProjectIds] = useState<ReadonlySet<string>>(new Set())
+  // Bound projects whose source is the built-in `local-file` (project-home
+  // spec Edge cases: a missing task file offers `Use a local task list`).
+  const [localFileProjectIds, setLocalFileProjectIds] = useState<ReadonlySet<string>>(new Set())
   const [settledKanbanProjects, setSettledKanbanProjects] = useState<ReadonlySet<string>>(new Set())
+  const [kanbanBindingsError, setKanbanBindingsError] = useState<string | null>(null)
   const kanbanBindingsGeneration = useRef(0)
   const [kanbanVersions, setKanbanVersions] = useState<Record<string, number>>({})
   const [taskStart, setTaskStart] = useState<{
@@ -597,32 +614,58 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     })
   }, [refreshActions])
 
-  // Kanban entry-point visibility (spec kanban-adapter-interface Behaviour
-  // 14): a project is bound when its per-project adapter key holds a value.
-  // Read through the generic `state:get` (no new IPC channel); recomputed on
-  // every projects-list change and when Project Settings closes, so a
-  // bind/unbind shows up in the navigation and tab strip without a restart.
+  // Task-source bindings (project-home spec Behaviour 2): a project is bound
+  // when its per-project adapter key holds a value. Read through the generic
+  // `state:get` (no new IPC channel); recomputed on every projects-list
+  // change and when Project Settings closes, so a bind/unbind switches the
+  // home tab between the list and the welcome without a restart.
   const refreshKanbanBindings = useCallback(async (): Promise<void> => {
     const requestGen = ++kanbanBindingsGeneration.current
     const targetProjects = projects
     try {
-      const ids = await Promise.all(
-        targetProjects.map(async (project) =>
-          (await app.state.get(projectKanbanAdapterKey(project.id))) ? project.id : null,
-        ),
+      const bindings = await Promise.all(
+        targetProjects.map(async (project) => ({
+          id: project.id,
+          adapterId: await app.state.get(projectKanbanAdapterKey(project.id)),
+        })),
       )
       if (requestGen !== kanbanBindingsGeneration.current) return
-      setKanbanProjectIds(new Set(ids.filter((id): id is string => id !== null)))
+      setKanbanProjectIds(
+        new Set(bindings.filter((binding) => binding.adapterId).map((binding) => binding.id)),
+      )
+      setLocalFileProjectIds(
+        new Set(
+          bindings
+            .filter((binding) => binding.adapterId === LOCAL_FILE_ADAPTER_ID)
+            .map((binding) => binding.id),
+        ),
+      )
       setSettledKanbanProjects(new Set(targetProjects.map((project) => project.id)))
+      setKanbanBindingsError(null)
     } catch (error) {
       if (requestGen !== kanbanBindingsGeneration.current) return
-      setNotice(errorMessage(error, 'Failed to load Kanban bindings.'))
+      // Shown inline on the home tab (project-home spec Errors), not as the
+      // shell notice, which later actions clear.
+      setKanbanBindingsError(errorMessage(error, 'Failed to load task sources.'))
     }
   }, [app, projects])
 
   useEffect(() => {
     void refreshKanbanBindings()
   }, [refreshKanbanBindings])
+
+  // `Use a local task list` (project-home spec Behaviour 7): main creates the
+  // task file when absent and binds `local-file`; the binding re-read then
+  // switches the home tab to the list. A rejection reaches the caller, which
+  // shows it inline.
+  const handleUseLocalTaskList = useCallback(
+    async (projectId: string): Promise<void> => {
+      await app.kanban.bindLocalFile(projectId)
+      invalidateKanban(projectId)
+      await refreshKanbanBindings()
+    },
+    [app, invalidateKanban, refreshKanbanBindings],
+  )
 
   // Task progress observation (spec task-progress-adapters Behaviour 15): main
   // reads bound projects that are visible, meaning selected or expanded in the
@@ -1045,11 +1088,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         // applyChatsUpdate applies synchronously, so the mirror already holds
         // the merged list here.
         const mergedChats = chatsByProjectRef.current[projectId] ?? []
-        setSelectedChatId(
-          savedChat !== null && mergedChats.some((chat) => chat.id === savedChat)
-            ? savedChat
-            : null,
-        )
+        const restoredChat =
+          savedChat !== null && mergedChats.some((chat) => chat.id === savedChat) ? savedChat : null
+        setSelectedChatId(restoredChat)
+        // Launch tab (project-home spec Behaviour 5): a restored chat opens on
+        // the chat tab (the session default); a restored project without a
+        // chat opens on its home tab. Tabs themselves are never persisted.
+        if (restoredChat === null) {
+          setTabsByProject((previous) => ({
+            ...previous,
+            [projectId]: activateTab(previous[projectId] ?? emptyTabsSession(), KANBAN_TAB),
+          }))
+        }
       } catch (error) {
         if (!cancelled) {
           setNotice(errorMessage(error, 'Failed to restore the workspace state.'))
@@ -1239,27 +1289,13 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     setActionSettingsOpen(true)
   }, [taskResume])
 
-  // Closing Project Settings re-reads the Kanban bindings (spec Behaviour 14):
-  // a bind/unbind saved in the dialog then shows or hides the nav tile and the
-  // top-strip tab without a restart.
+  // Closing Project Settings re-reads the task-source bindings (project-home
+  // spec Behaviour 2): a bind/unbind saved in the dialog then switches the
+  // home tab between the list and the welcome without a restart.
   const handleActionSettingsClose = useCallback((): void => {
     setActionSettingsOpen(false)
     void refreshKanbanBindings()
   }, [refreshKanbanBindings])
-
-  const handleSelectProject = useCallback(
-    (projectId: string): void => {
-      setNotice(null)
-      setSelectedProjectId(projectId)
-      setSelectedChatId(null)
-      setExpandedProjectIds((previous) => new Set(previous).add(projectId))
-      persistSelection(projectId, null)
-      void loadChats(projectId).catch((error: unknown) => {
-        setNotice(errorMessage(error, 'Failed to load chats.'))
-      })
-    },
-    [loadChats, persistSelection],
-  )
 
   const handleSelectChat = useCallback(
     (projectId: string, chatId: string): void => {
@@ -1278,16 +1314,12 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [persistSelection, updateTabsSession],
   )
 
-  // Left-navigation Kanban tile (spec kanban-adapter-interface Behaviour 14):
-  // selecting it makes its project the tab-strip project and activates the
-  // Kanban tab of that project's session, so the board shows in the center
-  // surface. Mirrors the project-select path (selection, persistence,
-  // expansion, chat load) plus the tab activation — but the tile and the
-  // top-strip tab are equivalent entry points, so the chat selection is
-  // discarded only when the tile actually SWITCHES projects (the canonical
-  // project-switch behaviour). Opening the board of the already-selected
-  // project keeps its chat selection, so returning via the chat tab shows the
-  // same chat instead of an empty surface.
+  // Project name or icon click in the left navigation (project-home spec
+  // Behaviour 4): makes the project the tab-strip project and activates its
+  // home tab. Switching projects selects, expands and clears the chat
+  // selection; clicking the already selected project keeps its chat
+  // selection, so returning via the chat tab shows the same chat instead of
+  // an empty surface.
   const handleOpenProjectKanban = useCallback(
     (projectId: string): void => {
       setNotice(null)
@@ -2545,20 +2577,23 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     tabProject !== null && activeTab.kind === 'file' && isMarkdownPath(activeTab.path)
       ? { projectId: tabProject.id, path: activeTab.path }
       : null
-  // A Kanban tab exists only while its project is bound: when the tab-strip
-  // project's active tab is Kanban but that project is not (or is no longer)
-  // bound — after a project switch, or after an unbind saved in Project
-  // Settings — the session falls back to the terminal tab during this render
-  // (the documented "adjust state when a prop changes" idiom the view switch
-  // used). The condition is false on the re-render, so this never loops.
-  if (
-    tabProjectId !== null &&
-    activeTab.kind === 'kanban' &&
-    settledKanbanProjects.has(tabProjectId) &&
-    !kanbanProjectIds.has(tabProjectId)
-  ) {
-    updateTabsSession(tabProjectId, (session) => activateTab(session, TERMINAL_TAB))
-  }
+  // Home tab contents (project-home spec Behaviour 2, Edge cases): a bound
+  // project shows its task list; an unbound one keeps the home tab selected
+  // and shows the setup welcome once the binding read settles (a loading line
+  // until then). A failed binding read shows its error instead of the loading
+  // line or a possibly stale welcome. No adapter never redirects to the chat
+  // tab.
+  const homeTabActive = tabProject !== null && activeTab.kind === 'kanban'
+  const homeTabBound = tabProject !== null && kanbanProjectIds.has(tabProject.id)
+  const homeTabState: 'none' | 'list' | 'error' | 'loading' | 'welcome' = !homeTabActive
+    ? 'none'
+    : homeTabBound
+      ? 'list'
+      : kanbanBindingsError !== null
+        ? 'error'
+        : tabProject !== null && settledKanbanProjects.has(tabProject.id)
+          ? 'welcome'
+          : 'loading'
   // The terminal-chat tab shows the active chat's name when the active project
   // has a chat selected.
   const activeChat =
@@ -2685,7 +2720,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               activity={chatActivity}
               attentionBadgeEnabled={attentionSettings.badge}
               attentionActiveIndicatorEnabled={attentionSettings.activeIndicator}
-              onSelectProject={handleSelectProject}
+              onSelectProject={handleOpenProjectKanban}
               onToggleProject={handleToggleProject}
               onSelectChat={handleSelectChat}
               onAddProject={handleAddProject}
@@ -2753,7 +2788,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           <TabStrip
             floating={floatingTheme}
             chatName={activeChat?.name ?? null}
-            kanbanAvailable={tabProject !== null && kanbanProjectIds.has(tabProject.id)}
             projectName={
               tabProject === null
                 ? null
@@ -2793,9 +2827,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               activeChatId={activeChat?.id ?? null}
               chatIsLive={activeChat !== null && liveChatIds.has(activeChat.id)}
               task={activeChat === null ? undefined : sessionTasks[activeChat.id]}
-              isKanban={activeTab.kind === 'kanban'}
+              isKanban={homeTabState === 'list'}
               kanbanControls={
-                tabProjectId !== null && activeTab.kind === 'kanban'
+                tabProjectId !== null && homeTabState === 'list'
                   ? (kanbanToolbarByProject[tabProjectId] ?? null)
                   : null
               }
@@ -2918,6 +2952,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                   tabProject !== null && activeTab.kind === 'kanban' ? tabProject.id : null
                 }
                 versions={kanbanVersions}
+                localFileProjectIds={localFileProjectIds}
+                onUseLocalTaskList={handleUseLocalTaskList}
                 onConfigure={handleOpenKanbanSettings}
                 onConfigureHandoffs={handleConfigureProjectHandoffs}
                 onStart={handleStartTask}
@@ -2925,6 +2961,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 onResume={handleResumeTask}
                 onToolbarControls={handleKanbanToolbarControls}
               />
+              {homeTabState === 'welcome' && tabProject !== null ? (
+                <ProjectHomeWelcome
+                  onUseLocalTaskList={() => handleUseLocalTaskList(tabProject.id)}
+                  onConnectTracker={handleOpenKanbanSettings}
+                />
+              ) : homeTabState === 'error' && kanbanBindingsError !== null ? (
+                <ProjectHomeError message={kanbanBindingsError} />
+              ) : homeTabState === 'loading' ? (
+                <ProjectHomeLoading />
+              ) : null}
             </main>
           </div>
         </div>

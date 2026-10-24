@@ -8,10 +8,18 @@ export const TEST_ID = {
   leftNav: 'region-left',
   tabStrip: 'tab-strip',
   tabTerminal: 'tab-terminal',
-  /** Non-closable Kanban project-view tab (spec kanban-adapter-interface). */
+  /** Non-closable project home tab, first in the strip (spec project-home Behaviour 1). */
   kanbanTab: 'tab-kanban',
-  /** Non-interactive project-name label leading the strip when the project has no Kanban tab. */
-  tabProjectName: 'tab-project-name',
+  /** Home tab setup welcome of a project with no task source (spec project-home Behaviour 3). */
+  projectHomeWelcome: 'project-home-welcome',
+  projectHomeConnectTracker: 'project-home-connect-tracker',
+  /** `Use a local task list` on the welcome (spec project-home Behaviour 7). */
+  projectHomeUseLocal: 'project-home-use-local',
+  projectHomeUseLocalError: 'project-home-use-local-error',
+  /** Home tab while the binding read is still loading (spec project-home Edge cases). */
+  projectHomeLoading: 'project-home-loading',
+  /** Home tab when the binding read failed (spec project-home Errors). */
+  projectHomeError: 'project-home-error',
   tabNewChat: 'tab-new-chat',
   /** Project Settings gear button in the tab strip. */
   tabProjectSettings: 'tab-project-settings',
@@ -177,6 +185,18 @@ export const TEST_ID = {
   settingsKanbanEmpty: 'settings-kanban-empty',
   settingsKanbanAdapterSelect: 'settings-kanban-adapter-select',
   settingsKanbanAdapterMissing: 'settings-kanban-adapter-missing',
+  /** `Use a local task list` in the Tasks section while unbound (spec project-home Behaviour 7). */
+  settingsKanbanUseLocal: 'settings-kanban-use-local',
+  /** Relative task-file path shown for `local-file` (spec project-home Behaviour 10). */
+  settingsKanbanLocalPath: 'settings-kanban-local-path',
+  /** `Teach agents` while a source is bound, and its confirm dialog (spec project-home Behaviour 11). */
+  settingsKanbanTeachAgents: 'settings-kanban-teach-agents',
+  settingsKanbanTeachFile: 'settings-kanban-teach-file',
+  settingsKanbanTeachReplace: 'settings-kanban-teach-replace',
+  settingsKanbanTeachProfiles: 'settings-kanban-teach-profiles',
+  settingsKanbanTeachNoProfiles: 'settings-kanban-teach-no-profiles',
+  settingsKanbanTeachError: 'settings-kanban-teach-error',
+  settingsKanbanTeachDone: 'settings-kanban-teach-done',
   settingsKanbanSave: 'settings-kanban-save',
   settingsKanbanSaved: 'settings-kanban-saved',
   settingsKanbanTest: 'settings-kanban-test',
@@ -221,6 +241,8 @@ export const TEST_ID = {
   kanbanBoardEmpty: 'kanban-board-empty',
   kanbanBoardUnconfigured: 'kanban-board-unconfigured',
   kanbanBoardConfigure: 'kanban-board-configure',
+  /** `Use a local task list` beside a missing `local-file` task file (spec project-home Edge cases). */
+  kanbanBoardUseLocal: 'kanban-board-use-local',
   kanbanBoardRefresh: 'kanban-board-refresh',
   /** Handoff availability notices under the board header (stage 1). */
   kanbanHandoffNotConfigured: 'kanban-handoff-not-configured',

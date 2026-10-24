@@ -8,6 +8,14 @@ interface ConfirmDialogProps {
   confirmLabel: string
   /** Destructive confirmations render the confirm action in the error color. */
   destructive?: boolean
+  /** Extra content under the body, such as a list or an inline error. */
+  children?: React.ReactNode
+  /**
+   * Disables Confirm, for example while the confirmed action runs. It is
+   * `aria-disabled` plus an ignored click, not the `disabled` attribute: a
+   * disabled button loses focus, and Escape would then miss this dialog.
+   */
+  confirmDisabled?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -24,6 +32,8 @@ export function ConfirmDialog({
   body,
   confirmLabel,
   destructive = false,
+  children,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps): React.JSX.Element {
@@ -76,6 +86,7 @@ export function ConfirmDialog({
             {title}
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-ink-secondary">{body}</p>
+          {children}
           <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
@@ -88,13 +99,16 @@ export function ConfirmDialog({
             <button
               ref={confirmRef}
               type="button"
+              aria-disabled={confirmDisabled ? true : undefined}
               className={
                 destructive
-                  ? 'h-control rounded-md bg-error/20 px-4 text-xs text-error hover:bg-error/30 focus-visible:outline focus-visible:outline-info'
-                  : 'h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover focus-visible:outline focus-visible:outline-info'
+                  ? 'h-control rounded-md bg-error/20 px-4 text-xs text-error hover:bg-error/30 focus-visible:outline focus-visible:outline-info aria-disabled:opacity-50'
+                  : 'h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover focus-visible:outline focus-visible:outline-info aria-disabled:opacity-50'
               }
               data-testid={TEST_ID.confirmDialogConfirm}
-              onClick={onConfirm}
+              onClick={() => {
+                if (!confirmDisabled) onConfirm()
+              }}
             >
               {confirmLabel}
             </button>

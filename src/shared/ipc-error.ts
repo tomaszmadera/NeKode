@@ -59,6 +59,12 @@ export interface AppErrorPayload {
   kind?: AppErrorKind
   message: string
   channel?: string
+  /**
+   * Optional machine-readable sub-reason within a code, for a case the
+   * renderer must tell apart without matching message text (for example
+   * `LOCAL_TASK_FILE_MISSING` under `not_found`). Absent on most errors.
+   */
+  detail?: string
 }
 
 export type NekodeAppError = AppErrorPayload
@@ -71,13 +77,21 @@ export class AppError extends Error {
   readonly code: AppErrorCode
   readonly kind: AppErrorKind
   readonly channel: string | undefined
+  readonly detail: string | undefined
 
-  constructor(code: AppErrorCode, message: string, channel?: string, kind?: AppErrorKind) {
+  constructor(
+    code: AppErrorCode,
+    message: string,
+    channel?: string,
+    kind?: AppErrorKind,
+    detail?: string,
+  ) {
     super(message)
     this.name = 'AppError'
     this.code = code
     this.kind = kind ?? code
     this.channel = channel
+    this.detail = detail
   }
 
   toPayload(): AppErrorPayload {
@@ -87,12 +101,18 @@ export class AppError extends Error {
       kind: this.kind,
       message: this.message,
       channel: this.channel,
+      ...(this.detail === undefined ? {} : { detail: this.detail }),
     }
   }
 }
 
 export function serializeAppError(error: AppError): string {
   return `${APP_ERROR_MARKER}${JSON.stringify(error.toPayload())}`
+}
+
+/** Keeps a string `detail`; drops anything else so the field stays absent. */
+function detailOf(value: unknown): { detail?: string } {
+  return typeof value === 'string' ? { detail: value } : {}
 }
 
 /**
@@ -121,6 +141,7 @@ export function parseAppErrorPayload(source: unknown): AppErrorPayload | null {
         kind: resolvedKind,
         message: candidate.message,
         channel: candidate.channel,
+        ...detailOf(candidate.detail),
       }
     }
     return null
@@ -153,6 +174,7 @@ export function parseAppErrorPayload(source: unknown): AppErrorPayload | null {
           kind: resolvedKind,
           message: parsed.message,
           channel: parsed.channel,
+          ...detailOf(parsed.detail),
         }
       }
     }
@@ -236,7 +258,7 @@ export function toTransportError(error: unknown, channel: string): Error {
   if (error instanceof AppError) {
     const withChannel =
       error.channel === undefined
-        ? new AppError(error.code, error.message, channel, error.kind)
+        ? new AppError(error.code, error.message, channel, error.kind, error.detail)
         : error
     return new Error(serializeAppError(withChannel))
   }

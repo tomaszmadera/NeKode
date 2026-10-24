@@ -551,19 +551,29 @@ Example (the tab strip and action bar sit above the surface per §5; the project
 
 # 18. Center Surface — Project
 
-When a Project is selected, the center surface shows that project's chat/files
-surface (the top tab strip holds the chat tab and the open file tabs).
+When a Project is selected, the top tab strip starts with the project's home
+tab, then the chat tab, then the open file tabs. The
+[project home spec](features/project-home/spec.md) owns the home tab and
+replaces the earlier rule that the board tab and the left-navigation tile
+exist only while a project is bound.
 
-A Project with a stored Kanban binding also exposes its Kanban board (§26) from
-two equivalent entry points:
+- The home tab is present for every selected project, bound or not. It is not
+  closable. Its label is the project name (shortened); its tooltip is
+  `Tasks: {full project name}`.
+- Clicking the project name or icon in the left navigation activates the home
+  tab. For the already selected project the open chat stays selected; another
+  project is selected with its chat selection cleared. The chevron only folds
+  the chat list.
+- On launch, a restored chat opens on the chat tab; a restored project without
+  a chat opens on the home tab.
+- A project with a stored task-source binding shows its task list on the home
+  tab. A project without one shows the setup welcome there (`No task list yet`,
+  with `Connect a tracker` opening Project Settings on the Tasks section) and
+  stays on the home tab.
 
-- a `Kanban` tile in the left navigation, directly under the project's name;
-- a `Kanban` tab in the top tab strip, immediately after the chat tab.
-
-Selecting either activates the `Kanban` tab, which renders the board in the
-center surface; selecting the chat tab or a file tab returns to that surface.
-There is no separate `Files | Kanban` view-switch strip. Inside the Kanban tab,
-the loaded items are a grouped list. Each row shows the slug and the title in
+Selecting the chat tab or a file tab returns to that surface. There is no
+separate `Files | Kanban` view-switch strip. On the home tab of a bound
+project, the loaded items are a grouped list. Each row shows the slug and the title in
 separate columns, and the priority. Hover highlights the whole row, and underlines the slug, the title,
 enabled Start, and shown Resume. Only those handle a click. Opening the
 slug or the title shows a two-column review: the full title and the
@@ -839,9 +849,10 @@ The goal is to let the user open Kanban and accurately judge how the future work
 
 Only navigation to/from the Kanban surface is functional in the MVP. Card-level workflow actions are post-MVP.
 
-Project navigation: a bound Project exposes its board from the left-navigation
-`Kanban` tile (under the project name) and the top-tab-strip `Kanban` tab; both
-select the board in the center surface (§18). The adapter-backed board
+Project navigation: every selected Project has a home tab first in the top
+tab strip, opened by its tab or by the project name in the left navigation
+(§18, [project home spec](features/project-home/spec.md)). A bound project's
+home tab shows its board; an unbound one's shows the setup welcome. The adapter-backed board
 (`kanban-adapter-interface`) is the post-MVP realization of this surface: a
 view of real backend states and items (`kanban:listBoard`), as a
 grouped list. Each item shows its slug and title in
@@ -1406,7 +1417,7 @@ Only show actions relevant to the current state.
 
 # 44. Kanban Navigation Animation
 
-Chat/files surface ↔ Kanban (via the left-navigation tile or the top tab):
+Chat/files surface ↔ Kanban (via the home tab or the project name):
 
 - smooth tab underline,
 - short crossfade,

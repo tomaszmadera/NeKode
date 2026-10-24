@@ -52,6 +52,10 @@ interface LeftNavigationProps {
    */
   attentionBadgeEnabled: boolean
   attentionActiveIndicatorEnabled: boolean
+  /**
+   * Project name or icon click: opens the project's home tab. Called for the
+   * already selected project too (project-home spec Behaviour 4).
+   */
   onSelectProject: (projectId: string) => void
   onToggleProject: (projectId: string) => void
   onSelectChat: (projectId: string, chatId: string) => void
@@ -473,9 +477,9 @@ export function LeftNavigation({
                   >
                     {/* Split surfaces (NEKODE-96): the chevron only folds and
                         unfolds the chat list and never changes the selection;
-                        the icon and name open the project. Clicking the name
-                        of the already-open project does nothing, so the
-                        active chat stays on screen. */}
+                        the icon and name open the project's home tab
+                        (project-home spec Behaviour 4). The host keeps the
+                        selected chat when the project is already selected. */}
                     <button
                       type="button"
                       className={cn(
@@ -518,9 +522,7 @@ export function LeftNavigation({
                       data-testid={testIdFor.projectSelect(project.id)}
                       title={project.path}
                       onClick={() => {
-                        if (!isSelected) {
-                          onSelectProject(project.id)
-                        }
+                        onSelectProject(project.id)
                       }}
                     >
                       {showProjectIcons ? (
