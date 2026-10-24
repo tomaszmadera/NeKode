@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { discoverAdapters, ManifestError, parseAdapterManifest } from './adapter-manifest'
 
@@ -50,6 +50,12 @@ describe('parseAdapterManifest', () => {
   it('rejects invalid JSON naming the path', () => {
     expect(() => parseAdapterManifest('{nope', 'x/adapter.json')).toThrow(ManifestError)
     expect(() => parseAdapterManifest('{nope', 'x/adapter.json')).toThrow(/x[/\\]adapter\.json/)
+  })
+
+  it('rejects a manifest with a kind field as not a task adapter', () => {
+    expect(() =>
+      parseAdapterManifest(JSON.stringify({ ...VALID_MANIFEST, kind: 'task-progress' }), 'm'),
+    ).toThrow(/not a task adapter/)
   })
 
   it('rejects a non-object manifest', () => {
@@ -178,6 +184,23 @@ describe('discoverAdapters', () => {
     expect(result.adapters.map((adapter) => adapter.info.id)).toEqual(['demo-adapter'])
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain(join(brokenDir, 'adapter.json'))
+  })
+
+  it('skips a manifest of another adapter kind with a warning and keeps task adapters', () => {
+    writeAdapter('progress', { ...VALID_MANIFEST, id: 'progress', kind: 'task-progress' })
+    writeAdapter('task', VALID_MANIFEST)
+    const result = discoverAdapters(dir)
+    expect(result.adapters.map((adapter) => adapter.info.id)).toEqual(['demo-adapter'])
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain(join(dir, 'progress', 'adapter.json'))
+    expect(result.warnings[0]).toContain('not a task adapter')
+  })
+
+  it('lists only task adapters from the repository adapters folder', () => {
+    const repoAdapters = resolve(__dirname, '../../../../adapters')
+    const ids = discoverAdapters(repoAdapters).adapters.map((adapter) => adapter.info.id)
+    expect(ids).toContain('plane')
+    expect(ids).not.toContain('task-progress-example')
   })
 
   it('skips a directory without a manifest', () => {

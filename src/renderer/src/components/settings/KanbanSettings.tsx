@@ -9,7 +9,6 @@ import type {
 } from '../../../../shared/ipc-contract'
 import {
   AGENT_SKILL_FILE_PATH,
-  APP_STATE_KEY,
   LOCAL_FILE_ADAPTER_ID,
   LOCAL_TASK_FILE_PATH,
 } from '../../../../shared/ipc-contract'
@@ -137,7 +136,6 @@ export function KanbanSettings({
   const [adapters, setAdapters] = useState<KanbanAdapterInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [adaptersDir, setAdaptersDir] = useState('')
   const [adapterId, setAdapterId] = useState<string | null>(null)
   // The binding id last confirmed by getConfig / a successful save. Test
   // connection runs against the STORED binding in main (`kanban:test` resolves
@@ -178,27 +176,19 @@ export function KanbanSettings({
   // the tab is selected, so a plain mount effect is the entry hook (AC1: a
   // newly dropped adapter appears without restart).
   const fetchState = useCallback(async () => {
-    const [list, dir] = await Promise.all([
-      app.kanban.adaptersList(),
-      app.state.get(APP_STATE_KEY.kanbanAdaptersDir),
-    ])
+    const list = await app.kanban.adaptersList()
     const config = projectId === null ? null : await app.kanban.getConfig(projectId)
-    return { list, dir: dir ?? '', config }
+    return { list, config }
   }, [app, projectId])
 
   const applyState = useCallback(
-    (state: {
-      list: KanbanAdapterInfo[]
-      dir: string
-      config: KanbanProjectConfig | null
-    }): void => {
+    (state: { list: KanbanAdapterInfo[]; config: KanbanProjectConfig | null }): void => {
       const schema =
         state.config === null
           ? []
           : (state.list.find((adapter) => adapter.id === state.config?.adapterId)?.configSchema ??
             [])
       setAdapters(state.list)
-      setAdaptersDir(state.dir)
       setAdapterId(state.config?.adapterId ?? null)
       setPersistedAdapterId(state.config?.adapterId ?? null)
       setStoredValues(state.config?.values ?? {})
@@ -428,33 +418,6 @@ export function KanbanSettings({
     }
   }
 
-  async function browseDir(): Promise<void> {
-    await guard.run(async () => {
-      setLoadError(null)
-      const current = adaptersDir.trim()
-      try {
-        const picked = await app.dialogs.pickDirectory(current.length > 0 ? current : null)
-        if (picked === null) return
-        await app.state.set(APP_STATE_KEY.kanbanAdaptersDir, picked)
-        onInvalidate?.(null)
-        // Persist-then-rescan (Behaviour 12 / AC13): the list reflects the new
-        // directory immediately, with no restart.
-        const list = await app.kanban.adaptersList()
-        if (projectId === null) {
-          setAdapters(list)
-          setAdaptersDir(picked)
-          return
-        }
-        const config = await app.kanban.getConfig(projectId)
-        applyState({ list, dir: picked, config })
-      } catch (cause) {
-        setLoadError(
-          parseAppErrorPayload(cause)?.message ?? 'Failed to change the adapters directory.',
-        )
-      }
-    })
-  }
-
   function renderField(field: KanbanConfigField): React.JSX.Element {
     const value = values[field.key] ?? ''
     const testId = testIdFor.kanbanField(field.key)
@@ -580,8 +543,9 @@ export function KanbanSettings({
               ) : null}
               {discoveredCount === 0 ? (
                 <p className="mt-2 text-ink-muted" data-testid={TEST_ID.settingsKanbanEmpty}>
-                  No adapters found in the adapters directory. Add an adapter folder containing an
-                  adapter.json, then reopen this tab.
+                  No task adapters are installed. Copy an adapter folder with its adapter.json into
+                  the kanban-adapters folder of the NeKode application data directory, then reopen
+                  this tab.
                 </p>
               ) : null}
               {missing ? (
@@ -756,28 +720,6 @@ export function KanbanSettings({
                 : null}
             </>
           )}
-          {/* Adapters directory (Behaviour 12): app-level, shown regardless of
-              project. The renderer only knows the stored override; the default
-              location is resolved in main, so an unset override shows a label. */}
-          <div className="mt-4 border-t border-edge pt-3">
-            <p className="text-ink-secondary">
-              Adapters directory:{' '}
-              <span className="text-ink" data-testid={TEST_ID.settingsKanbanDir}>
-                {adaptersDir.trim().length > 0 ? adaptersDir : 'Default (application data folder)'}
-              </span>
-            </p>
-            <button
-              type="button"
-              disabled={guard.busy}
-              className="mt-2 h-control rounded-md bg-button px-3 text-ink hover:bg-button-hover disabled:opacity-50"
-              data-testid={TEST_ID.settingsKanbanDirBrowse}
-              onClick={() => {
-                void browseDir()
-              }}
-            >
-              Browse…
-            </button>
-          </div>
         </>
       )}
     </div>

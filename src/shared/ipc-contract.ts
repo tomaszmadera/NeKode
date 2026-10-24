@@ -632,8 +632,6 @@ export const APP_STATE_KEY = {
   attentionActiveChimeEnabled: 'attention.activeChimeEnabled',
   /** '0' hides the attention indicator on the selected chat's row; missing or '1' means shown. */
   attentionActiveIndicatorEnabled: 'attention.activeIndicatorEnabled',
-  /** Absolute adapters directory override; missing means `<userData>/kanban-adapters`. */
-  kanbanAdaptersDir: 'kanban.adaptersDir',
   /**
    * JSON array of absolute executable paths the user added as custom shells
    * (spec project-shell-selection). App-level, shared across projects;

@@ -4,7 +4,7 @@ import type { KanbanAdapterInfo, KanbanConfigField } from '../../../shared/ipc-c
 
 // Adapter manifest parsing and directory discovery (spec kanban-adapter-
 // interface Behaviour 1–2). One subdirectory level; a valid `adapter.json`
-// makes the directory an adapter. Invalid manifests are skipped with a
+// without a `kind` field makes the directory an adapter. Invalid manifests are skipped with a
 // warning naming the path; valid siblings still list. Duplicate adapter ids
 // resolve in lexicographic directory-name order (first wins, later skipped).
 
@@ -44,6 +44,12 @@ export function parseAdapterManifest(content: string, manifestPath: string): Kan
     fail(manifestPath, 'must be a JSON object')
   }
   const manifest = raw as Record<string, unknown>
+
+  // Task adapter manifests carry no `kind`; any `kind` marks another adapter
+  // family (for example `task-progress`) that shares the manifest file name.
+  if (manifest.kind !== undefined) {
+    fail(manifestPath, 'field "kind" is set, so this is not a task adapter')
+  }
 
   const id = assertString(manifest.id, manifestPath, 'field "id" must be a string')
   if (!ADAPTER_ID_PATTERN.test(id)) {

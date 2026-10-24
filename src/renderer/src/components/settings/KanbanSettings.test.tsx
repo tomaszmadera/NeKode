@@ -14,8 +14,8 @@ afterEach(cleanup)
 // KanbanSettings unit tests (spec kanban-adapter-interface Behaviour 7–8,
 // 12–13, renderer level): the fresh-scan adapter select, the manifest-driven
 // config form with the secret keep/clear save rules, Test connection's inline
-// result, the "(missing)" binding, and the adapters-directory override. The
-// app.kanban/state/dialogs boundary is the typed AppApi.
+// result, the "(missing)" binding, and the fixed adapters directory (no
+// override). The app.kanban/state boundary is the typed AppApi.
 
 const PLANE_SCHEMA: KanbanConfigField[] = [
   { key: 'workspace', label: 'Workspace slug', type: 'string', required: true },
@@ -48,9 +48,6 @@ function appMock(
     skillStatus?: ReturnType<typeof vi.fn>
     writeSkill?: ReturnType<typeof vi.fn>
     agentProfilesGet?: ReturnType<typeof vi.fn>
-    stateGet?: ReturnType<typeof vi.fn>
-    stateSet?: ReturnType<typeof vi.fn>
-    pickDirectory?: ReturnType<typeof vi.fn>
   } = {},
 ): AppApi {
   return {
@@ -67,11 +64,8 @@ function appMock(
       updateItem: vi.fn(),
     },
     state: {
-      get: options.stateGet ?? vi.fn().mockResolvedValue(null),
-      set: options.stateSet ?? vi.fn().mockResolvedValue(undefined),
-    },
-    dialogs: {
-      pickDirectory: options.pickDirectory ?? vi.fn().mockResolvedValue(null),
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
     },
     agentProfiles: {
       get: options.agentProfilesGet ?? vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
@@ -85,19 +79,14 @@ async function renderLoaded(app: AppApi, projectId = 'p1'): Promise<void> {
 }
 
 describe('KanbanSettings', () => {
-  it('invalidates only after persistence succeeds, including directory changes before a failed rescan', async () => {
+  it('invalidates only after persistence succeeds', async () => {
     const save = vi
       .fn()
       .mockRejectedValueOnce({ nekodeAppError: true, code: 'internal', message: 'Save failed' })
       .mockResolvedValue(undefined)
-    const scan = vi
-      .fn()
-      .mockResolvedValueOnce([SECOND])
-      .mockRejectedValueOnce({ nekodeAppError: true, code: 'internal', message: 'Scan failed' })
     const app = appMock({
       setConfig: save,
-      adaptersList: scan,
-      pickDirectory: vi.fn().mockResolvedValue('D:/new-adapters'),
+      adaptersList: vi.fn().mockResolvedValue([SECOND]),
     })
     const invalidate = vi.fn()
     render(<KanbanSettings app={app} projectId="p1" onInvalidate={invalidate} />)
@@ -107,10 +96,7 @@ describe('KanbanSettings', () => {
     expect(invalidate).not.toHaveBeenCalled()
     fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanSave))
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith('p1'))
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanDirBrowse))
-    await screen.findByText('Scan failed')
-    expect(app.state.set).toHaveBeenCalled()
-    expect(invalidate.mock.calls).toEqual([['p1'], [null]])
+    expect(invalidate.mock.calls).toEqual([['p1']])
   })
   it('asks for a project in Tasks wording when none is selected (project-home Behaviour 6)', async () => {
     render(<KanbanSettings app={appMock()} projectId={null} />)
@@ -118,14 +104,17 @@ describe('KanbanSettings', () => {
     expect(screen.queryByText(/kanban/i)).toBeNull()
   })
 
-  it('shows the empty state and the default directory when no adapters are discovered', async () => {
-    await renderLoaded(appMock())
+  it('shows the fixed install folder in the empty state and offers no directory choice', async () => {
+    const app = appMock()
+    await renderLoaded(app)
     expect(screen.getByTestId(TEST_ID.settingsKanbanEmpty).textContent).toContain(
-      'No adapters found',
+      'kanban-adapters folder of the NeKode application data directory',
     )
     const select = screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect) as HTMLSelectElement
     expect(Array.from(select.options).map((option) => option.value)).toEqual([''])
-    expect(screen.getByTestId(TEST_ID.settingsKanbanDir).textContent).toContain('Default')
+    expect(screen.queryByText(/Adapters directory/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Browse/ })).toBeNull()
+    expect(app.state.get).not.toHaveBeenCalled()
   })
 
   it('renders exactly the manifest fields with their widget per type and masks the secret', async () => {
@@ -339,36 +328,6 @@ describe('KanbanSettings', () => {
       expect(setConfig).toHaveBeenCalledWith('p1', { adapterId: null, values: {} }),
     )
     expect(screen.getByTestId(TEST_ID.settingsKanbanSaved)).toBeTruthy()
-  })
-
-  it('persists a Browse override to kanban.adaptersDir and re-scans immediately', async () => {
-    const adaptersList = vi
-      .fn()
-      .mockResolvedValueOnce([PLANE])
-      .mockResolvedValueOnce([PLANE, SECOND])
-    const stateSet = vi.fn().mockResolvedValue(undefined)
-    const app = appMock({
-      adaptersList,
-      getConfig: vi.fn().mockResolvedValue(emptyConfig()),
-      stateGet: vi.fn().mockResolvedValue('C:\\old-adapters'),
-      stateSet,
-      pickDirectory: vi.fn().mockResolvedValue('C:\\new-adapters'),
-    })
-    await renderLoaded(app)
-    expect(screen.getByTestId(TEST_ID.settingsKanbanDir).textContent).toBe('C:\\old-adapters')
-
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanDirBrowse))
-    await waitFor(() =>
-      expect(stateSet).toHaveBeenCalledWith('kanban.adaptersDir', 'C:\\new-adapters'),
-    )
-    expect(adaptersList).toHaveBeenCalledTimes(2)
-    expect(screen.getByTestId(TEST_ID.settingsKanbanDir).textContent).toBe('C:\\new-adapters')
-    await waitFor(() => {
-      const values = Array.from(
-        (screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect) as HTMLSelectElement).options,
-      ).map((option) => option.value)
-      expect(values).toContain('second')
-    })
   })
 
   it('disables Test connection and does not test while the selected adapter is unsaved', async () => {
@@ -632,46 +591,7 @@ describe('KanbanSettings', () => {
     }
   }
 
-  // Original scenario: 'blocks rapid double activation of browseDir, disables
-  // button during mutation, and unlocks on error'.
-  async function browseDirCase(): Promise<GuardCase> {
-    let resolvePick: (path: string | null) => void = () => {}
-    const pickDirectory = vi.fn().mockImplementation(
-      () =>
-        new Promise<string | null>((resolve) => {
-          resolvePick = resolve
-        }),
-    )
-    const stateSet = vi.fn().mockResolvedValue(undefined)
-    const app = appMock({
-      pickDirectory,
-      stateSet,
-    })
-    await renderLoaded(app)
-    const button = screen.getByTestId(TEST_ID.settingsKanbanDirBrowse) as HTMLButtonElement
-    return {
-      button,
-      call: pickDirectory,
-      complete: async () => {
-        resolvePick('D:/new-adapters')
-        await waitFor(() => expect(button.disabled).toBe(false))
-      },
-      rearm: () => {
-        pickDirectory.mockRejectedValueOnce({
-          nekodeAppError: true,
-          code: 'internal',
-          message: 'Picker failed',
-        })
-        return button
-      },
-      errorMessage: 'Picker failed',
-    }
-  }
-
-  const guardRows: Array<[string, () => Promise<GuardCase>]> = [
-    ['save', saveCase],
-    ['browseDir', browseDirCase],
-  ]
+  const guardRows: Array<[string, () => Promise<GuardCase>]> = [['save', saveCase]]
 
   it.each(guardRows)(
     'blocks rapid double activation of %s, disables button during mutation, and unlocks on error',

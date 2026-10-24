@@ -49,7 +49,6 @@ describe('isSecretStateKey', () => {
     expect(isSecretStateKey('project.shell:proj-123')).toBe(false)
     expect(isSecretStateKey('selection.projectId')).toBe(false)
     expect(isSecretStateKey('region.left.width')).toBe(false)
-    expect(isSecretStateKey('kanban.adaptersDir')).toBe(false)
   })
 })
 

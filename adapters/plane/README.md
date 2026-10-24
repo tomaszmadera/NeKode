@@ -28,30 +28,30 @@ this adapter directory, so `plane_adapter.py` is resolved relative to
 
 ## Installation
 
-NeKode discovers adapters one level deep in its **adapters directory**. A
-subdirectory containing a valid `adapter.json` is an adapter. There are two
-ways to make this adapter visible:
-
-**Option A — install into the app's adapters directory.** Copy this entire
-`plane/` directory (both `adapter.json` and `plane_adapter.py`) into the app's
-adapters directory so the result is:
+NeKode discovers task adapters one level deep in one fixed directory,
+`<userData>/kanban-adapters`. A subdirectory containing a valid `adapter.json`
+without a `kind` field is an adapter. The directory cannot be changed in the
+app. Copy this entire `plane/` directory (both `adapter.json` and
+`plane_adapter.py`) there so the result is:
 
 ```text
 <userData>/kanban-adapters/plane/adapter.json
 <userData>/kanban-adapters/plane/plane_adapter.py
 ```
 
-`<userData>/kanban-adapters` is the default adapters directory. Project Settings
-→ Kanban shows the stored adapters-directory override when one is set, or the
-literal label `Default (application data folder)` when none is set (the
-resolved default path is not rendered in the UI).
+Windows (PowerShell):
 
-**Option B — run it directly from this repository.** Leave the directory here
-and point NeKode at this repository's `adapters/` folder (the folder that
-contains adapter subdirectories): in **Project Settings → Kanban**, use
-**Browse** under the adapters directory and select this repository's
-`adapters/` directory. NeKode re-scans immediately, and the adapter is listed
-without copying any files.
+```powershell
+Copy-Item -Recurse -Force "<nekode>\adapters\plane" "$env:APPDATA\nekode\kanban-adapters\plane"
+```
+
+Linux:
+
+```sh
+cp -r <nekode>/adapters/plane ~/.config/nekode/kanban-adapters/plane
+```
+
+Reopen Project Settings > Tasks; the adapter is listed without a restart.
 
 ## Configuration fields
 

@@ -159,14 +159,9 @@ export function createServices(options: CreateServicesOptions): AppServices {
   const kanban = new KanbanService({
     projects,
     state,
-    // Default adapters dir lives under userData; the stored app_state key
-    // overrides it (spec kanban-adapter-interface Behaviour 1).
-    adaptersDir: () => {
-      const override = state.get(APP_STATE_KEY.kanbanAdaptersDir)
-      return override !== null && override.trim().length > 0
-        ? override
-        : join(options.userDataPath, 'kanban-adapters')
-    },
+    // One fixed adapters directory under userData, without an override (spec
+    // kanban-adapter-interface Behaviour 1).
+    adaptersDir: () => join(options.userDataPath, 'kanban-adapters'),
     safeStorage: options.safeStorage,
   })
   // One fixed adapters directory without a setting or override (spec

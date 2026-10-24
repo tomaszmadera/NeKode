@@ -152,6 +152,8 @@ export const TEST_ID = {
   mascotToggle: 'mascot-toggle',
   /** Left-panel footer: opens a pre-filled GitHub issue (NEKODE-105). */
   reportIssueLink: 'report-issue-link',
+  /** Left-panel footer: displays current application version. */
+  panelAppVersion: 'panel-app-version',
   settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
   /** App Settings: quick theme switcher in status bar toggle. */
@@ -207,9 +209,6 @@ export const TEST_ID = {
    * adapter is not yet the persisted binding (spec Behaviour 8).
    */
   settingsKanbanTestHint: 'settings-kanban-test-hint',
-  /** Active adapters directory display + Browse override. */
-  settingsKanbanDir: 'settings-kanban-dir',
-  settingsKanbanDirBrowse: 'settings-kanban-dir-browse',
   /** Project Settings: Task progress tab (spec task-progress-adapters Behaviour 7-10). */
   settingsTaskProgressTab: 'settings-task-progress-tab',
   settingsTaskProgressPanel: 'settings-task-progress-panel',
