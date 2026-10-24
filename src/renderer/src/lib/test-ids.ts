@@ -17,6 +17,7 @@ export const TEST_ID = {
   tabProjectSettings: 'tab-project-settings',
   /** Context menu of a file tab (right click / ContextMenu key / Shift+F10). */
   tabContextMenu: 'tab-context-menu',
+  tabContextMenuOverlay: 'tab-context-menu-overlay',
   tabContextCopyRelative: 'tab-context-copy-relative',
   tabContextCopyAbsolute: 'tab-context-copy-absolute',
   actionRowSlot: 'action-row-slot',

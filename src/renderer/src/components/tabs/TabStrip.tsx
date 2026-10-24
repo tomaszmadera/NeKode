@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'
@@ -291,6 +292,11 @@ export function TabStrip({
  * the project context menu (LeftNavigation): a full-viewport fixed overlay
  * closes on backdrop click, Escape or a second right-click; menu-item clicks
  * run their own action and close through it.
+ *
+ * The overlay is portaled to document.body and marked no-drag: the tab strip
+ * is a window drag region (-webkit-app-region: drag), and in Electron a drag
+ * region swallows mouse clicks, so a menu rendered inside the strip could not
+ * be clicked (the same pattern as the usage panel in UsageToolbar).
  */
 function TabContextMenuOverlay({
   state,
@@ -323,11 +329,12 @@ function TabContextMenuOverlay({
   const copyLabel = fileName(state.relativePath)
   const absolutePath =
     projectRoot === null ? null : absoluteFilePath(projectRoot, state.relativePath)
-  return (
+  return createPortal(
     <div
       role="menu"
       aria-label={`File ${copyLabel}`}
-      className="fixed inset-0 z-40"
+      className="no-drag fixed inset-0 z-40"
+      data-testid={TEST_ID.tabContextMenuOverlay}
       onClick={(event) => {
         // Only the backdrop dismisses: menu-item clicks run their own action.
         if (event.target === event.currentTarget) {
@@ -389,6 +396,7 @@ function TabContextMenuOverlay({
           Close Tab
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

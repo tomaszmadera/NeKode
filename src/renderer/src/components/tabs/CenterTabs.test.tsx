@@ -278,6 +278,17 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
     expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-notes.txt'])
   })
 
+  it('renders the menu outside the drag-region tab strip, as a no-drag overlay', async () => {
+    // A window drag region swallows clicks in Electron, so the menu must not
+    // live inside the strip (regression: the menu items could not be clicked).
+    await openTwoTabs()
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('README.md')))
+    const overlay = await screen.findByTestId(TEST_ID.tabContextMenuOverlay)
+    expect(overlay.classList.contains('no-drag')).toBe(true)
+    expect(overlay.closest('.drag-region')).toBeNull()
+    expect(screen.getByTestId(TEST_ID.tabStrip).contains(overlay)).toBe(false)
+  })
+
   it('Copy Absolute Path copies the project root joined with the relative path', async () => {
     const clipboard = stubClipboard()
     await openTwoTabs()
