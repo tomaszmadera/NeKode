@@ -49,7 +49,7 @@ Each immediate child of the adapters directory has `usage-adapter.json`, protoco
 Main starts one process without a shell and writes one stdin request. `action` is `read` for automatic polling and `refresh` only for a manual `Refresh usage`; every adapter must implement both:
 
 ```json
-{"protocolVersion":2,"action":"refresh","config":{"region":"default"},"params":{"connectionId":"example-account"}}
+{"protocolVersion":2,"action":"refresh","config":{"region":"default"},"params":{"connectionId":"example-account","capabilities":["partial-refresh-v1"]}}
 ```
 
 Return one JSON object, then exit 0 for success:
@@ -61,6 +61,38 @@ Return one JSON object, then exit 0 for success:
 For `refresh`, the adapter obtains every value it returns from the provider during this request, never from its own cache, a previous process or a file another program wrote; for `read` it may use the same path. An adapter that cannot reach the provider fails with its typed error and never substitutes older values. Set `observedAt` to the time the provider response arrived, unless the provider reports an earlier observation time. Main rejects a `refresh` response with any `available` metric whose `observedAt` is missing or earlier than the request start (compared in whole seconds) as `protocol` ("Usage adapter did not return a live refresh.") and keeps the previous observation; `unavailable` metrics are exempt.
 
 For an actual read, `subscriptions` must contain exactly one subscription with the account's id (`params.connectionId`), and its provider id when the manifest declares `providerId`. A declared error exits 1 and returns `ok:false` with an `error` containing a typed `code`, safe `message` and optional numeric `retryAfterSeconds`. Supported codes are `validation_error`, `not_found`, `protocol`, `timeout`, `auth`, `network`, `rate_limited`, `unsupported`, `config`, `io`. Main replaces plugin error messages with `Usage source <code>.` plus the manifest's `errorActions` entry or a generic next action, and never transports stderr. Limits: 30 seconds, 1 MiB stdout, 8 KiB stderr, 100 subscriptions and 50 metrics per subscription. Timeout, cancellation and application shutdown terminate process trees. The normalized document is described by [schema.json](schema.json), with a sample in [example.json](example.json).
+
+### Partial refresh results (`partial-refresh-v1`)
+
+A manual refresh request may carry `params.capabilities: ["partial-refresh-v1"]`. An adapter that
+aggregates several upstream sources can use it to return a typed result for every source and window
+instead of failing the whole account. An adapter without the extension ignores the field and keeps
+the old behaviour. A successful response may add a top-level `refresh` object next to `data`:
+
+```json
+{"protocolVersion":2,"ok":true,"data":{"schemaVersion":1,"subscriptions":[]},"refresh":{"status":"partial","requestId":"...","measurementId":"...","reportId":"...","sources":[{"sourceId":"upstream-a","status":"succeeded","windows":[{"metricId":"a-5h","status":"succeeded"}]},{"sourceId":"upstream-b","status":"rate_limited","errorCode":"rate_limited","nextAllowedAt":"2026-10-26T12:00:00Z","windows":[{"metricId":"b-weekly","status":"rate_limited","nextAllowedAt":"2026-10-26T12:00:00Z"}]}]}}
+```
+
+Rules for authors:
+
+- `status` is `success`, `partial` or `failed`. Every source and window uses one of `succeeded`,
+  `failed`, `timed_out`, `unsupported`, `unavailable`, `rate_limited`, `stale_observation`; never
+  `pending` or `running` in a final response.
+- Only a `succeeded` window may have a metric in `data`. Every metric in `data` must appear as a
+  succeeded window, and a failed window must not carry a value. Metric and source ids are unique.
+- `errorCode` is one of the existing typed codes. `nextAllowedAt` is a full UTC deadline and may be
+  later than one day; the whole-account `error.retryAfterSeconds` keeps its 86400 cap.
+- Never put provider text, URLs or secrets in the result. NeKode builds user-facing messages from
+  the closed status/error codes only.
+- A missing `refresh` field stays valid. NeKode then keeps the L3 live-refresh check and the old
+  error transport. A required capability may be refused with a typed `config` failure before any
+  remote work; that refusal must send no request.
+
+NeKode checks every succeeded metric with L3 before merging. A failed source or window keeps the
+previous value and its original observation time, and a failed window without history becomes
+explicit unavailable. Per-source `nextAllowedAt` is persisted with the usage cache. The next manual
+refresh sends `params.refreshSources` with only the eligible source ids, while the account's
+60-second minimum still applies. The export document never contains this attempt metadata.
 
 Secret fields are write-only, stored encrypted through Electron safeStorage and delivered over stdin only. Missing encryption or failed decryption blocks use with a configuration error. Leave the field blank to keep a saved secret or use its explicit clear action.
 

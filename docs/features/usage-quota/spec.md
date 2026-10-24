@@ -284,3 +284,63 @@ L14. Errors: HTTP 401 and 403 are `auth` with the action "Open Claude Code and s
 - Packaging check that resources contain `usage-adapters/usage-claude` and the L8 outcome.
 - Real Windows Electron check with isolated user data and fixture adapters. A live Claude read needs the user's sign-in; record it as not run unless the user runs it.
 - Before release, the maintainer confirms that Anthropic's terms allow this use of the Claude Code token. This is a release gate, not a stage gate.
+
+## Amendment: partial refresh results (PDH-13)
+
+Status: approved by the user on 2026-10-24 for task PDH-13 together with implementation in the
+canonical NeKode adapter and Personal Data Hub. This amendment adds the `partial-refresh-v1`
+transport, merge and retry contract. L1-L5 and the earlier rules stay unchanged; the whole-account
+`retryAfterSeconds <= 86400` transport limit remains.
+
+### Transport
+
+- On a manual refresh the host sends
+  `params: {connectionId, capabilities: ["partial-refresh-v1"], refreshSources?: string[]}`.
+  `refreshSources` is an optional subset of the adapter's source ids whose provider retry deadline
+  passed. Scheduled `read` requests stay `params: {connectionId}`.
+- The adapter response keeps `protocolVersion: 2`, `ok: true` and the existing `data` document. It
+  may add a top-level `refresh` object with `status` (`success`, `partial`, `failed`), `sources`,
+  `requestId`, `measurementId` and `reportId`. Each source has `sourceId`, a terminal `status`,
+  optional `errorCode`, optional `nextAllowedAt` and `windows`; each window has `metricId`, a
+  terminal status, optional `errorCode` and optional `nextAllowedAt`.
+- Terminal statuses are `succeeded`, `failed`, `timed_out`, `unsupported`, `unavailable`,
+  `rate_limited` and `stale_observation`. `pending` and `running` are never final. Only a
+  `succeeded` window supplies a metric value.
+- The parser rejects unknown keys, duplicate source or metric ids, a metric that is not in the
+  document, a metric omitted from the result, a failed window that carries a value, non-UTC
+  timestamps and an inconsistent overall status. A missing `refresh` field stays valid: adapters
+  without the capability keep the old transport, and NeKode keeps the L3 live-refresh check.
+- An adapter that requires this capability must refuse an older host before creating remote work.
+  The Personal Data Hub adapter returns a typed `config` failure and makes no HTTP request when
+  `partial-refresh-v1` is absent.
+
+### Merge and retry
+
+- New succeeded values pass the existing L3 live-refresh check before merge. A failed source or
+  window keeps the previous value with its `observedAt`, `receivedAt` and pin unchanged; the new
+  typed failure is stored beside it. A failed window without history becomes explicit unavailable
+  with no number. The last error never refreshes the retained observation.
+- The typed result is kept on `UsageConnectionSnapshot.refreshResult` across automatic polls. It is
+  persisted under `<userData>/usage`, keyed by the connection revision, so a restart keeps the
+  display and the retry state. The export document contains no attempt metadata.
+- Retry is per source. The next manual refresh selects only sources whose `nextAllowedAt` passed
+  and sends them in `params.refreshSources`; sources without a deadline stay eligible. The
+  account's 60-second minimum from L5 still applies before any adapter process starts. A source in
+  retry does not block another source of the same account. PDH remains the final enforcer of the
+  full provider deadline, including deadlines above one day and after a restart or token change.
+- The UI shows the overall partial/failed result, one fixed line per source and window derived only
+  from the closed status/error codes, the retry deadline and the original age of the retained
+  value. It works without a previous value, keeps the last manual feedback across ordinary polling
+  and does not rely on colour alone.
+
+### Scope and verification
+
+Scope: this shared contract, host, service, toolbar, canonical Personal Data Hub adapter and the
+matching tests/documentation. No runtime copy, packaging change, publication or deployment.
+
+Verification: parser and older-adapter compatibility, older-host refusal before POST, mixed
+source/window results, retained dates and pin, per-source retry without blocking, the 60-second
+minimum, a deadline above one day, restart persistence, L3, and accessible UI states. The
+end-to-end proof runs a real adapter process against the test Personal Data Hub and a controlled
+collector, then an isolated Windows Electron profile. A real provider source remains separate
+evidence and requires the separately delivered host collector.

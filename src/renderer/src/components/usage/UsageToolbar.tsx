@@ -4,7 +4,11 @@ import { formatErrorMessage } from '../../../../shared/ipc-error'
 import type {
   UsageApi,
   UsageConnectionSnapshot,
+  UsageErrorCode,
   UsageMetric,
+  UsageRefreshSourceResult,
+  UsageRefreshSourceStatus,
+  UsageRefreshWindowResult,
   UsageSnapshot,
 } from '../../../../shared/usage-contract'
 import { usageFreshness, usagePercent, usageSlices } from '../../../../shared/usage-contract'
@@ -96,18 +100,104 @@ function refreshState(source: UsageConnectionSnapshot, now: number): string {
   const seconds = until ? Math.ceil((Date.parse(until) - now) / 1000) : 0
   return seconds > 0 ? `${label} can refresh again in ${seconds} s` : `${label} is ready to refresh`
 }
+/** Fixed text for the closed refresh statuses; adapter/provider text is never rendered. */
+const REFRESH_STATUS_TEXT: Record<UsageRefreshSourceStatus, string> = {
+  succeeded: 'updated',
+  failed: 'failed',
+  timed_out: 'timed out',
+  unsupported: 'not supported by the Hub',
+  unavailable: 'unavailable',
+  rate_limited: 'rate limited',
+  stale_observation: 'observation was stale',
+}
+const REFRESH_ERROR_TEXT: Partial<Record<UsageErrorCode, string>> = {
+  validation_error: 'invalid response',
+  not_found: 'not found',
+  protocol: 'invalid response',
+  timeout: 'timed out',
+  auth: 'sign-in required',
+  network: 'network error',
+  rate_limited: 'rate limited',
+  unsupported: 'not supported',
+  config: 'configuration error',
+  io: 'read error',
+}
+function refreshStatusText(status: UsageRefreshSourceStatus, errorCode?: UsageErrorCode): string {
+  const base = REFRESH_STATUS_TEXT[status]
+  const code = errorCode ? REFRESH_ERROR_TEXT[errorCode] : undefined
+  return code && code !== base ? `${base} (${code})` : base
+}
+function retryMessage(nextAllowedAt: string | undefined, now: number): string {
+  if (!nextAllowedAt) return ''
+  const remaining = Date.parse(nextAllowedAt) - now
+  if (!Number.isFinite(remaining)) return ''
+  if (remaining <= 0) return 'Retry now.'
+  const minutes = Math.ceil(remaining / 60_000)
+  const value =
+    minutes < 60
+      ? `${minutes}m`
+      : minutes < 1440
+        ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+        : `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`
+  return `Retry in ${value}.`
+}
+/** The original age of the value retained for a failed window, or explicit absence. */
+function retainedValue(source: UsageConnectionSnapshot, metricId: string, now: number): string {
+  const metric = source.subscription?.metrics.find((m) => m.id === metricId)
+  if (!metric || metric.state === 'unavailable') return 'No earlier value.'
+  return `Earlier value ${usageFreshness(metric, now)}.`
+}
+function refreshSourceLine(result: UsageRefreshSourceResult, now: number): string {
+  const status = refreshStatusText(result.status, result.errorCode)
+  const retry = retryMessage(result.nextAllowedAt, now)
+  return `${result.sourceId}: ${status}.${retry ? ` ${retry}` : ''}`
+}
+function refreshWindowLine(
+  window: UsageRefreshWindowResult,
+  source: UsageConnectionSnapshot,
+  now: number,
+): string {
+  const status = refreshStatusText(window.status, window.errorCode)
+  const retry = retryMessage(window.nextAllowedAt, now)
+  const retained =
+    window.status === 'succeeded' ? '' : ` ${retainedValue(source, window.metricId, now)}`
+  return `${window.metricId}: ${status}.${retry ? ` ${retry}` : ''}${retained}`.trim()
+}
 function refreshOutcome(snapshot: UsageSnapshot, current: UsageSnapshot, now: number): string {
   const result = snapshot.refresh
+  // Only connections read by this request feed the summary. An earlier attempt's stored result
+  // stays visible as per-source detail but must not describe a request that read nothing.
+  const read = new Set(result?.read ?? [])
+  const refreshResults = snapshot.connections.flatMap((c) =>
+    c.refreshResult && read.has(c.connection.id) ? [c.refreshResult] : [],
+  )
+  const failedSources = refreshResults
+    .flatMap((r) => r.sources)
+    .filter((source) => source.status !== 'succeeded').length
+  const failedWindows = refreshResults
+    .flatMap((r) => r.sources)
+    .flatMap((source) => source.windows)
+    .filter((window) => window.status !== 'succeeded').length
+  // Any connection that did not fully succeed makes the outcome partial, including one that
+  // failed outright while another connection succeeded.
+  const partial = refreshResults.some((r) => r.status !== 'success')
+  const failedRefresh =
+    refreshResults.length > 0 && refreshResults.every((r) => r.status === 'failed')
   const failed = snapshot.connections.filter(
     (c) => result?.read.includes(c.connection.id) && c.error,
   ).length
-  const summary = result?.read.length
-    ? failed
-      ? `Usage refresh completed; ${failed} source(s) failed.`
-      : 'Usage refreshed.'
-    : snapshot.connections.length
-      ? 'Last refresh request read no sources.'
-      : 'No usage accounts enabled.'
+  // An all-failed request keeps its explicit message; every other non-success outcome is partial.
+  const summary = failed
+    ? `Usage refresh completed; ${failed} source(s) failed.`
+    : failedRefresh
+      ? 'Usage refresh failed; earlier values were kept.'
+      : partial
+        ? `Usage refresh partially completed; ${failedSources} source(s) and ${failedWindows} window(s) failed.`
+        : result?.read.length
+          ? 'Usage refreshed.'
+          : snapshot.connections.length
+            ? 'Last refresh request read no sources.'
+            : 'No usage accounts enabled.'
   const skipped =
     result?.skipped.map((skip) => {
       const source = current.connections.find((c) => c.connection.id === skip.connectionId)
@@ -381,68 +471,94 @@ export function UsageToolbar({
                     </button>
                   </div>
                 ) : (
-                  snapshot.connections.map((source) => (
-                    <div key={source.connection.id} className="usage-source">
-                      <h3>{source.connection.label}</h3>
-                      {source.subscription?.metrics.length ? (
-                        source.subscription.metrics.map((metric) => {
-                          const selected =
-                            snapshot.pin?.connectionId === source.connection.id &&
-                            snapshot.pin.metricId === metric.id
-                          const freshness = usageFreshness(metric, now),
-                            slices = usageSlices(metric, now)
-                          return (
-                            <button
-                              type="button"
-                              className={`usage-row ${selected ? 'usage-pinned' : ''} ${freshness.startsWith('Stale') || freshness.startsWith('Expired') ? 'usage-old' : ''}`}
-                              key={metric.id}
-                              aria-pressed={selected}
-                              disabled={metric.state === 'unavailable'}
-                              aria-label={`${source.connection.label}, ${metric.label}, ${value(metric)}, ${source.error ? `Error: ${source.error.message}, ` : ''}${freshness}${slices?.pace ? `, ${slices.pace}` : ''}`}
-                              title={tooltip(source, metric, now)}
-                              onClick={() => {
-                                setOpen(false)
-                                void pin(source.connection.id, metric.id)
-                              }}
-                            >
-                              <span className="usage-name">
-                                <span className={`usage-avatar ${badge(source, metric, now)}`}>
-                                  {avatar(source, metric)}
-                                </span>
-                                <span>{metric.label}</span>
-                              </span>
-                              <UsageGraphic metric={metric} now={now} />
-                              <strong className={metric.kind === 'balance' ? 'usage-balance' : ''}>
-                                {value(metric)}
-                              </strong>
-                              <span
-                                className={`usage-hint ${slices?.pace?.startsWith('↑') ? 'usage-behind' : ''}`}
+                  snapshot.connections.map((source) => {
+                    const refreshDetail =
+                      manualResult?.connections.find(
+                        (c) => c.connection.id === source.connection.id,
+                      )?.refreshResult ?? source.refreshResult
+                    return (
+                      <div key={source.connection.id} className="usage-source">
+                        <h3>{source.connection.label}</h3>
+                        {source.subscription?.metrics.length ? (
+                          source.subscription.metrics.map((metric) => {
+                            const selected =
+                              snapshot.pin?.connectionId === source.connection.id &&
+                              snapshot.pin.metricId === metric.id
+                            const freshness = usageFreshness(metric, now),
+                              slices = usageSlices(metric, now)
+                            return (
+                              <button
+                                type="button"
+                                className={`usage-row ${selected ? 'usage-pinned' : ''} ${freshness.startsWith('Stale') || freshness.startsWith('Expired') ? 'usage-old' : ''}`}
+                                key={metric.id}
+                                aria-pressed={selected}
+                                disabled={metric.state === 'unavailable'}
+                                aria-label={`${source.connection.label}, ${metric.label}, ${value(metric)}, ${source.error ? `Error: ${source.error.message}, ` : ''}${freshness}${slices?.pace ? `, ${slices.pace}` : ''}`}
+                                title={tooltip(source, metric, now)}
+                                onClick={() => {
+                                  setOpen(false)
+                                  void pin(source.connection.id, metric.id)
+                                }}
                               >
-                                {slices?.pace?.startsWith('↑') ? slices.pace : reset(metric, now)}
-                              </span>
-                              <span className="usage-row-status">
-                                {source.error ? 'Error; ' : ''}
-                                {freshness}
-                                {slices?.pace === 'Ahead of pace' ? '; Ahead of pace' : ''}
-                              </span>
-                            </button>
-                          )
-                        })
-                      ) : (
-                        <p className="usage-message">
-                          {source.subscription?.status === 'unavailable'
-                            ? 'Unavailable'
-                            : 'No usage data yet'}
-                        </p>
-                      )}
-                      {source.error ? (
-                        <p className="usage-source-note">
-                          {source.error.message}
-                          {/[.!?]$/.test(source.error.message) ? '' : '.'}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))
+                                <span className="usage-name">
+                                  <span className={`usage-avatar ${badge(source, metric, now)}`}>
+                                    {avatar(source, metric)}
+                                  </span>
+                                  <span>{metric.label}</span>
+                                </span>
+                                <UsageGraphic metric={metric} now={now} />
+                                <strong
+                                  className={metric.kind === 'balance' ? 'usage-balance' : ''}
+                                >
+                                  {value(metric)}
+                                </strong>
+                                <span
+                                  className={`usage-hint ${slices?.pace?.startsWith('↑') ? 'usage-behind' : ''}`}
+                                >
+                                  {slices?.pace?.startsWith('↑') ? slices.pace : reset(metric, now)}
+                                </span>
+                                <span className="usage-row-status">
+                                  {source.error ? 'Error; ' : ''}
+                                  {freshness}
+                                  {slices?.pace === 'Ahead of pace' ? '; Ahead of pace' : ''}
+                                </span>
+                              </button>
+                            )
+                          })
+                        ) : (
+                          <p className="usage-message">
+                            {source.subscription?.status === 'unavailable'
+                              ? 'Unavailable'
+                              : 'No usage data yet'}
+                          </p>
+                        )}
+                        {refreshDetail ? (
+                          <div className="usage-refresh-detail">
+                            {refreshDetail.sources.map((result) => (
+                              <div key={result.sourceId}>
+                                <p className="usage-message">{refreshSourceLine(result, now)}</p>
+                                {result.windows.map((window) => (
+                                  <p
+                                    className="usage-message"
+                                    key={window.metricId}
+                                    title={window.nextAllowedAt ?? undefined}
+                                  >
+                                    {refreshWindowLine(window, source, now)}
+                                  </p>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {source.error ? (
+                          <p className="usage-source-note">
+                            {source.error.message}
+                            {/[.!?]$/.test(source.error.message) ? '' : '.'}
+                          </p>
+                        ) : null}
+                      </div>
+                    )
+                  })
                 )}
                 {snapshot.cacheError ? (
                   <p role="status" className="usage-message">

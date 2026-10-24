@@ -72,21 +72,40 @@ describe('usage adapter process boundary', () => {
   })
   it('sends configuration only in the versioned stdin request', async () => {
     const a = adapter(
-      `let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);console.log(JSON.stringify({protocolVersion:2,ok:true,data:{protocol:r.protocolVersion,action:r.action,id:r.params.connectionId,secret:r.config.secret,argv:process.argv}}))})`,
+      `let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);const m=(id,label)=>({id,label:String(label),kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1});console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:r.params.connectionId,providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[m('protocol',r.protocolVersion),m('action',r.action),m('id',r.params.connectionId),m('secret',r.config.secret),m('params',JSON.stringify(r.params)),m('argv',process.argv.join(' ').includes(r.config.secret))]}]}}))})`,
     )
-    const result = (await new UsageAdapterHost().read(
+    const labels = async (host: UsageAdapterHost, action: 'read' | 'refresh' = 'read') => {
+      const result = await host.read(a, { secret: 'fixture-secret' }, 'account', signal(), action)
+      return Object.fromEntries(
+        result.subscriptions[0].metrics.map((metric) => [metric.id, metric.label]),
+      )
+    }
+    const read = await labels(new UsageAdapterHost())
+    expect(read).toMatchObject({ protocol: '2', action: 'read', id: 'account', argv: 'false' })
+    expect(read.secret).toBe('fixture-secret')
+    expect(JSON.parse(read.params)).not.toHaveProperty('capabilities')
+    const manual = await labels(new UsageAdapterHost(), 'refresh')
+    expect(manual.action).toBe('refresh')
+    expect(JSON.parse(manual.params)).toEqual({
+      connectionId: 'account',
+      capabilities: ['partial-refresh-v1'],
+    })
+    const sourced = await new UsageAdapterHost().read(
       a,
       { secret: 'fixture-secret' },
       'account',
       signal(),
-    )) as { secret: string; argv: string[]; protocol: number; action: string; id: string }
-    expect(result.secret).toBe('fixture-secret')
-    expect(result.argv.join(' ')).not.toContain('fixture-secret')
-    expect(result).toMatchObject({ protocol: 2, action: 'read', id: 'account' })
-    const manual = (await new UsageAdapterHost().read(a, {}, 'account', signal(), 'refresh')) as {
-      action: string
-    }
-    expect(manual.action).toBe('refresh')
+      'refresh',
+      { refreshSources: ['claude'] },
+    )
+    const sourcedParams = JSON.parse(
+      sourced.subscriptions[0].metrics.find((metric) => metric.id === 'params')?.label ?? '{}',
+    )
+    expect(sourcedParams).toEqual({
+      connectionId: 'account',
+      capabilities: ['partial-refresh-v1'],
+      refreshSources: ['claude'],
+    })
   })
   it.each([
     [`console.log(JSON.stringify({protocolVersion:1,ok:true,data:{}}))`, 'Unsupported'],
@@ -148,18 +167,23 @@ describe('usage adapter process boundary', () => {
   })
   it('passes the test base URL seam only to adapters of an unpackaged app', async () => {
     const a = adapter(
-      `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,path:Boolean(process.env.PATH??process.env.Path)}}))`,
+      `const label=JSON.stringify({seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,path:Boolean(process.env.PATH??process.env.Path)});console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'m',label,kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1}]}]}}))`,
     )
+    const label = async (host: UsageAdapterHost) => {
+      const result = await host.read(a, {}, 'account', signal())
+      return JSON.parse(result.subscriptions[0].metrics[0].label)
+    }
     const previous = process.env.NEKODE_USAGE_TEST_BASE_URL
     process.env.NEKODE_USAGE_TEST_BASE_URL = 'http://127.0.0.1:9'
     try {
-      expect(await new UsageAdapterHost().read(a, {}, 'account', signal())).toEqual({
+      expect(await label(new UsageAdapterHost())).toEqual({
         seam: 'http://127.0.0.1:9',
         path: true,
       })
-      expect(
-        await new UsageAdapterHost(30_000, { packaged: true }).read(a, {}, 'account', signal()),
-      ).toEqual({ seam: null, path: true })
+      expect(await label(new UsageAdapterHost(30_000, { packaged: true }))).toEqual({
+        seam: null,
+        path: true,
+      })
     } finally {
       if (previous === undefined) delete process.env.NEKODE_USAGE_TEST_BASE_URL
       else process.env.NEKODE_USAGE_TEST_BASE_URL = previous
@@ -170,7 +194,7 @@ describe('usage adapter process boundary', () => {
     async () => {
       // Windows variable names are case-insensitive: a child reads a variant under the exact name.
       const a = adapter(
-        `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,node:process.env.ELECTRON_RUN_AS_NODE??null}}))`,
+        `const label=JSON.stringify({seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,node:process.env.ELECTRON_RUN_AS_NODE??null});console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'m',label,kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1}]}]}}))`,
       )
       const names = ['NEKODE_USAGE_TEST_BASE_URL', 'ELECTRON_RUN_AS_NODE']
       const previous = names.map((name) => process.env[name])
@@ -178,9 +202,16 @@ describe('usage adapter process boundary', () => {
       process.env.Nekode_Usage_Test_Base_Url = 'http://127.0.0.1:9'
       process.env.Electron_Run_As_Node = '1'
       try {
-        expect(
-          await new UsageAdapterHost(30_000, { packaged: true }).read(a, {}, 'account', signal()),
-        ).toEqual({ seam: null, node: null })
+        const result = await new UsageAdapterHost(30_000, { packaged: true }).read(
+          a,
+          {},
+          'account',
+          signal(),
+        )
+        expect(JSON.parse(result.subscriptions[0].metrics[0].label)).toEqual({
+          seam: null,
+          node: null,
+        })
       } finally {
         names.forEach((name, i) => {
           delete process.env[name]
@@ -319,6 +350,53 @@ describe('live refresh validation (spec L3)', () => {
   })
 })
 
+describe('partial refresh result parsing (PDH-13)', () => {
+  const document = `{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'m1',label:'M1',kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:10}]}]}`
+  const script = (refresh: string) =>
+    `console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document},refresh:${refresh}}))`
+
+  it('accepts the typed result and passes it beside the document', async () => {
+    const result = await new UsageAdapterHost().read(
+      adapter(
+        script(
+          `{status:'success',requestId:'request-1',measurementId:'measurement-1',reportId:'report-1',sources:[{sourceId:'source',status:'succeeded',nextAllowedAt:'2026-10-25T12:00:00Z',windows:[{metricId:'m1',status:'succeeded'}]}]}`,
+        ),
+      ),
+      {},
+      'account',
+      signal(),
+    )
+    expect(result.subscriptions[0].metrics[0].id).toBe('m1')
+    expect(result.refresh).toMatchObject({
+      status: 'success',
+      requestId: 'request-1',
+      measurementId: 'measurement-1',
+    })
+    expect(result.refresh?.sources[0].nextAllowedAt).toBe('2026-10-25T12:00:00Z')
+  })
+
+  it('keeps a missing refresh field valid for older adapters', async () => {
+    const result = await new UsageAdapterHost().read(
+      adapter(`console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document}}))`),
+      {},
+      'account',
+      signal(),
+    )
+    expect(result.refresh).toBeNull()
+  })
+
+  it('rejects an invalid refresh result as a protocol validation failure', async () => {
+    await expect(
+      new UsageAdapterHost().read(
+        adapter(script(`{status:'running',requestId:'request-1',sources:[]}`)),
+        {},
+        'account',
+        signal(),
+      ),
+    ).rejects.toMatchObject({ code: 'validation_error' })
+  })
+})
+
 describe('bundled and user usage adapters', () => {
   function tree() {
     const root = mkdtempSync(join(tmpdir(), 'nekode-usage-sources-'))
@@ -439,15 +517,19 @@ describe('bundled and user usage adapters', () => {
 
   it('starts a bundled adapter in Node mode and a user adapter without it', async () => {
     const a = adapter(
-      `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{runAsNode:process.env.ELECTRON_RUN_AS_NODE??null}}))`,
+      `const label=JSON.stringify({runAsNode:process.env.ELECTRON_RUN_AS_NODE??null});console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'m',label,kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1}]}]}}))`,
     )
     const previous = process.env.ELECTRON_RUN_AS_NODE
     delete process.env.ELECTRON_RUN_AS_NODE
+    const runAsNode = async (host: UsageAdapterHost, target: UsageAdapter) => {
+      const result = await host.read(target, {}, 'account', signal())
+      return JSON.parse(result.subscriptions[0].metrics[0].label)
+    }
     try {
-      expect(
-        await new UsageAdapterHost().read({ ...a, bundled: true }, {}, 'account', signal()),
-      ).toEqual({ runAsNode: '1' })
-      expect(await new UsageAdapterHost().read(a, {}, 'account', signal())).toEqual({
+      expect(await runAsNode(new UsageAdapterHost(), { ...a, bundled: true })).toEqual({
+        runAsNode: '1',
+      })
+      expect(await runAsNode(new UsageAdapterHost(), a)).toEqual({
         runAsNode: null,
       })
     } finally {

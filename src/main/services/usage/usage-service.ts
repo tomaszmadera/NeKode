@@ -14,6 +14,7 @@ import { dirname, isAbsolute, join, parse, resolve } from 'node:path'
 import { AppError } from '../../../shared/ipc-error'
 import {
   parseUsageDocument,
+  parseUsageRefreshResult,
   parseUsageSettings,
   USAGE_ENABLED_KEY,
   USAGE_MAX_BYTES,
@@ -26,8 +27,12 @@ import {
   type UsageConnectionSnapshot,
   type UsageDocument,
   type UsageFailure,
+  type UsageMetric,
   type UsagePin,
+  type UsageRefreshResult,
   type UsageRefreshSkip,
+  type UsageRefreshSourceResult,
+  type UsageRefreshWindowResult,
   type UsageSettings,
   type UsageSnapshot,
   type UsageSubscription,
@@ -49,6 +54,8 @@ interface Runtime {
   subscription: UsageSubscription | null
   error: UsageFailure | null
   refreshing: boolean
+  /** Last manual refresh outcome; survives automatic polls and restarts. */
+  refreshResult: UsageRefreshResult | null
   /** Next scheduled read (rules 12-13). */
   due: number
   /** Start of the last read of either action; a manual refresh waits 60 s after it (spec L5). */
@@ -114,6 +121,123 @@ const safeFailure = (error: unknown): UsageFailure =>
       }
     : { code: 'io', message: 'Cannot read usage source. Check its file or adapter configuration.' }
 
+const REFRESH_RESULTS_FILE = 'refresh-results.json'
+/** Overall status recomputed after retaining sources that were not attempted this time. */
+function refreshStatusOf(sources: UsageRefreshSourceResult[]): UsageRefreshResult['status'] {
+  if (
+    sources.length > 0 &&
+    sources.every(
+      (source) =>
+        source.status === 'succeeded' &&
+        source.windows.every((window) => window.status === 'succeeded'),
+    )
+  )
+    return 'success'
+  const succeeded = sources.some(
+    (source) =>
+      source.status === 'succeeded' ||
+      source.windows.some((window) => window.status === 'succeeded'),
+  )
+  return succeeded ? 'partial' : 'failed'
+}
+/**
+ * Merge a new operation result with the previous one. A source skipped because its retry deadline
+ * is still pending keeps its last typed failure and deadline, while a refreshed source replaces
+ * both its source and window results. The overall status is recomputed from the merged set.
+ */
+function mergeRefreshResult(
+  previous: UsageRefreshResult | null,
+  next: UsageRefreshResult,
+  keepMissing: boolean,
+): UsageRefreshResult {
+  const sources = new Map<string, UsageRefreshSourceResult>()
+  if (keepMissing)
+    for (const source of previous?.sources ?? []) sources.set(source.sourceId, source)
+  for (const source of next.sources) sources.set(source.sourceId, source)
+  const merged = [...sources.values()]
+  const measurementId = next.measurementId ?? (keepMissing ? previous?.measurementId : undefined)
+  const reportId = next.reportId ?? (keepMissing ? previous?.reportId : undefined)
+  return {
+    status: refreshStatusOf(merged),
+    sources: merged,
+    requestId: next.requestId,
+    ...(measurementId === undefined ? {} : { measurementId }),
+    ...(reportId === undefined ? {} : { reportId }),
+  }
+}
+/** The previous-good metric if the new one is older; otherwise the new metric with receipt time. */
+function acceptMetric(metric: UsageMetric, previous: UsageMetric | undefined, receivedAt: string) {
+  const samePeriod =
+    previous?.periodStart === metric.periodStart && previous?.resetsAt === metric.resetsAt
+  if (
+    previous?.observedAt &&
+    ((!metric.observedAt && samePeriod) ||
+      (metric.observedAt && Date.parse(metric.observedAt) < Date.parse(previous.observedAt)))
+  )
+    return previous
+  return { ...metric, receivedAt }
+}
+/**
+ * `<agent>-<window>` from a hub adapter to a readable row label; any other id stays unchanged.
+ * The metric id itself is never changed, since pins and cache entries use it.
+ */
+function windowLabel(metricId: string): string {
+  const match = /^(.+)-(5h|weekly|monthly)$/.exec(metricId)
+  if (!match) return metricId
+  const agent = match[1]
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ')
+  return `${agent} ${match[2]}`
+}
+/**
+ * Spec partial merge: succeeded windows replace values (after the L3 and newer-observation
+ * checks); a failed window or source keeps the previous value with every date untouched. A failed
+ * window without history becomes explicit unavailable with no number.
+ */
+function mergePartialMetrics(
+  previous: UsageSubscription | null,
+  next: UsageSubscription,
+  refresh: UsageRefreshResult,
+  receivedAt: string,
+  keepMissing: boolean,
+): UsageMetric[] {
+  const incoming = new Map(next.metrics.map((metric) => [metric.id, metric]))
+  const previousById = new Map((previous?.metrics ?? []).map((metric) => [metric.id, metric]))
+  const failed = new Map<string, UsageRefreshWindowResult>()
+  for (const source of refresh.sources)
+    for (const window of source.windows)
+      if (window.status !== 'succeeded') failed.set(window.metricId, window)
+  const metrics: UsageMetric[] = []
+  for (const old of previous?.metrics ?? []) {
+    const updated = incoming.get(old.id)
+    if (updated) {
+      metrics.push(acceptMetric(updated, old, receivedAt))
+      incoming.delete(old.id)
+    } else {
+      // A failed window keeps every previous date. A source not attempted this time (subset
+      // refresh) also keeps its values; a full refresh drops metrics the operation did not report.
+      if (keepMissing || failed.has(old.id)) metrics.push(old)
+    }
+  }
+  for (const [metricId, window] of failed) {
+    if (previousById.has(metricId) || incoming.has(metricId)) continue
+    metrics.push({
+      id: metricId,
+      label: windowLabel(metricId),
+      kind: 'window',
+      observedAt: null,
+      state: 'unavailable',
+      reason: window.errorCode ?? window.status,
+    })
+  }
+  for (const metric of incoming.values()) {
+    metrics.push(acceptMetric(metric, previousById.get(metric.id), receivedAt))
+  }
+  return metrics
+}
+
 export class UsageService {
   private settings: UsageSettings = empty()
   private connectionRevisions: Record<string, string> = {}
@@ -122,6 +246,7 @@ export class UsageService {
   private readonly host: UsageAdapterHost
   private readonly cacheDirectory: string
   private readonly cachePath: string
+  private readonly refreshResultsPath: string
   private timer?: ReturnType<typeof setInterval>
   private visible = false
   private stopped = false
@@ -135,6 +260,7 @@ export class UsageService {
     this.host = deps.host ?? new UsageAdapterHost(undefined, { packaged: deps.packaged })
     this.cacheDirectory = join(deps.userDataPath, 'usage')
     this.cachePath = join(this.cacheDirectory, 'observations.json')
+    this.refreshResultsPath = join(this.cacheDirectory, REFRESH_RESULTS_FILE)
     this.enabled = deps.state.get(USAGE_ENABLED_KEY) === 'true'
     const saved = deps.state.get(USAGE_STATE_KEY)
     if (saved) {
@@ -173,6 +299,7 @@ export class UsageService {
         this.cacheError = 'Cannot load usage cache. Refresh usage to restore it.'
       }
     }
+    this.loadRefreshResults()
     if (deps.startTimer !== false) {
       this.timer = setInterval(() => this.tick(), 1000)
       this.timer.unref?.()
@@ -183,6 +310,7 @@ export class UsageService {
       subscription: null,
       error: null,
       refreshing: false,
+      refreshResult: null,
       due: 0,
       startedAt: 0,
       retryUntil: 0,
@@ -480,7 +608,10 @@ export class UsageService {
       const changed = invalidated.has(c.id) || previous?.enabled !== c.enabled
       const r = changed ? this.newRuntime() : (retained.get(c.id) ?? this.newRuntime())
       const kept = retained.get(c.id)
-      if (changed && !invalidated.has(c.id)) r.subscription = kept?.subscription ?? null
+      if (changed && !invalidated.has(c.id)) {
+        r.subscription = kept?.subscription ?? null
+        r.refreshResult = kept?.refreshResult ?? null
+      }
       // Spec L5: a save without a source change keeps every deadline, so neither a scheduled
       // nor a manual read starts before the interval or a provider retry deadline. A read this
       // save aborts never completed, so only its provider retry deadline remains.
@@ -512,6 +643,7 @@ export class UsageService {
           error: this.failure(c, r),
           refreshing: r.refreshing,
           nextRefreshAt: this.now() < until ? new Date(until).toISOString() : null,
+          refreshResult: r.refreshResult,
         }
       })
     return structuredClone({
@@ -585,11 +717,22 @@ export class UsageService {
   private failure(c: UsageConnection, r: Runtime): UsageFailure | null {
     return removedSource(c) ? { ...REMOVED_SOURCE } : r.error
   }
+  /** All sources blocked by their provider retry deadline: the earliest one, else null. */
+  private sourceBlockedUntil(r: Runtime): number | null {
+    const sources = r.refreshResult?.sources ?? []
+    if (sources.length === 0 || sources.some((source) => !source.nextAllowedAt)) return null
+    const deadlines = sources.map((source) => Date.parse(source.nextAllowedAt as string))
+    if (deadlines.some((deadline) => !Number.isFinite(deadline))) return null
+    if (deadlines.some((deadline) => deadline <= this.now())) return null
+    return Math.min(...deadlines)
+  }
   /** Spec L5: earliest manual refresh start, and whether a provider retry deadline sets it. */
   private manualDeadline(r: Runtime): { until: number; reason: UsageRefreshSkip['reason'] } {
     const interval = r.startedAt + MANUAL_REFRESH_MS
-    return r.retryUntil >= interval
-      ? { until: r.retryUntil, reason: 'backoff' }
+    const sourceUntil = this.sourceBlockedUntil(r) ?? 0
+    const provider = Math.max(r.retryUntil, sourceUntil)
+    return provider >= interval && provider > 0
+      ? { until: provider, reason: 'backoff' }
       : { until: interval, reason: 'interval' }
   }
   /**
@@ -601,14 +744,20 @@ export class UsageService {
     signal: AbortSignal,
     action: UsageAdapterAction,
     startedAt: number,
-  ): Promise<UsageSubscription> {
+    refreshSources?: string[],
+  ): Promise<{ subscription: UsageSubscription; refresh: UsageRefreshResult | null }> {
     if (removedSource(c)) throw new AppError('config', USAGE_REMOVED_ADAPTER_MESSAGE)
     const a = this.adapter(c),
       config = this.secrets(c, a)
-    const document = parseUsageDocument(
-      await this.host.read(a, config, c.id, signal, action),
-      this.now(),
+    const result = await this.host.read(
+      a,
+      config,
+      c.id,
+      signal,
+      action,
+      refreshSources === undefined ? {} : { refreshSources },
     )
+    const document = result
     if (action === 'refresh') assertLiveRefresh(document, startedAt)
     // Spec rule 23: the provider id must match only when the service declares one.
     if (
@@ -621,10 +770,13 @@ export class UsageService {
         'Usage source must return one subscription for this source and its provider.',
       )
     return {
-      ...document.subscriptions[0],
-      providerId: c.providerId,
-      label: c.label,
-      sourceKind: a.sourceKind,
+      subscription: {
+        ...document.subscriptions[0],
+        providerId: c.providerId,
+        label: c.label,
+        sourceKind: a.sourceKind,
+      },
+      refresh: result.refresh,
     }
   }
   async test(raw: UsageConnection): Promise<void> {
@@ -663,6 +815,29 @@ export class UsageService {
           reason: deadline.reason,
         }
     } else if (r.suspended || this.now() < r.due) return null
+    // Spec partial contract: retry is per source. Sources whose provider deadline passed are
+    // refreshed now; the remaining sources keep their typed result instead of blocking the rest.
+    let refreshSources: string[] | undefined
+    if (explicit) {
+      const sources = r.refreshResult?.sources ?? []
+      if (sources.length > 0) {
+        const eligible = sources.filter(
+          (source) => !source.nextAllowedAt || Date.parse(source.nextAllowedAt) <= this.now(),
+        )
+        if (eligible.length === 0) {
+          const until = Math.min(
+            ...sources.map((source) => Date.parse(source.nextAllowedAt as string)),
+          )
+          return {
+            connectionId: c.id,
+            until: new Date(until).toISOString(),
+            reason: 'backoff',
+          }
+        }
+        if (eligible.length !== sources.length)
+          refreshSources = eligible.map((source) => source.sourceId)
+      }
+    }
     const revision = this.revision,
       controller = new AbortController(),
       startedAt = this.now()
@@ -679,7 +854,13 @@ export class UsageService {
     r.due = startedAt + minimum
     r.flight = (async () => {
       try {
-        const sub = await this.load(c, controller.signal, explicit ? 'refresh' : 'read', startedAt)
+        const loaded = await this.load(
+          c,
+          controller.signal,
+          explicit ? 'refresh' : 'read',
+          startedAt,
+          refreshSources,
+        )
         if (
           controller.signal.aborted ||
           revision !== this.revision ||
@@ -687,24 +868,37 @@ export class UsageService {
           this.stopped
         )
           return
+        const sub = loaded.subscription
         // A rename during the read keeps it (spec rule 2); show the current label.
         sub.label = this.settings.connections.find((p) => p.id === c.id)?.label ?? sub.label
         const now = this.now()
         const receivedAt = new Date(now).toISOString()
-        sub.metrics = sub.metrics.map((metric) => {
-          const previous = r.subscription?.metrics.find((m) => m.id === metric.id)
-          const samePeriod =
-            previous?.periodStart === metric.periodStart && previous?.resetsAt === metric.resetsAt
-          if (
-            previous?.observedAt &&
-            ((!metric.observedAt && samePeriod) ||
-              (metric.observedAt &&
-                Date.parse(metric.observedAt) < Date.parse(previous.observedAt)))
+        const refresh = explicit ? loaded.refresh : null
+        if (refresh) {
+          sub.metrics = mergePartialMetrics(
+            r.subscription,
+            sub,
+            refresh,
+            receivedAt,
+            refreshSources !== undefined,
           )
-            return previous
-          return { ...metric, receivedAt }
-        })
+          sub.status = sub.metrics.some((metric) => metric.state !== 'unavailable')
+            ? 'available'
+            : 'unavailable'
+        } else {
+          sub.metrics = sub.metrics.map((metric) =>
+            acceptMetric(
+              metric,
+              r.subscription?.metrics.find((m) => m.id === metric.id),
+              receivedAt,
+            ),
+          )
+        }
         r.subscription = sub
+        if (explicit)
+          r.refreshResult = refresh
+            ? mergeRefreshResult(r.refreshResult, refresh, refreshSources !== undefined)
+            : null
         if (
           this.settings.pin?.connectionId === c.id &&
           !sub.metrics.some((m) => m.id === this.settings.pin?.metricId)
@@ -746,6 +940,7 @@ export class UsageService {
             )
         }
         this.exportDocument()
+        if (explicit) this.persistRefreshResults()
       } finally {
         if (revision === this.revision && this.runtime.get(c.id) === r) {
           r.refreshing = false
@@ -803,6 +998,60 @@ export class UsageService {
       if (created && existsSync(temporary)) unlinkSync(temporary)
     }
   }
+  /** Restore the typed manual-refresh outcome only for the matching connection revision. */
+  private loadRefreshResults(): void {
+    if (!existsSync(this.refreshResultsPath)) return
+    try {
+      const raw = usageObject(this.readJson(this.refreshResultsPath))
+      const revisions =
+        raw.connectionRevisions === undefined ? {} : connectionRevisions(raw.connectionRevisions)
+      const results = raw.results === undefined ? {} : usageObject(raw.results)
+      for (const c of this.settings.connections) {
+        if (!revisions[c.id] || revisions[c.id] !== this.connectionRevisions[c.id]) continue
+        const r = this.runtimeFor(c.id)
+        const value = results[c.id]
+        if (value === undefined) continue
+        // Structural validation only: the stored result predates the merged subscription and its
+        // failed windows intentionally have no metric in the current document.
+        r.refreshResult = parseUsageRefreshResult(value, undefined, this.now())
+      }
+    } catch {
+      this.cacheError = 'Cannot load usage refresh results. Refresh usage to restore them.'
+    }
+  }
+  /**
+   * Persist per-source retry deadlines and the typed outcome under the usage cache, keyed by the
+   * connection revision. The export document never carries this attempt metadata.
+   */
+  private persistRefreshResults(): void {
+    try {
+      const results: Record<string, UsageRefreshResult> = {}
+      for (const c of this.settings.connections) {
+        const result = this.runtime.get(c.id)?.refreshResult
+        if (result) results[c.id] = result
+      }
+      const text = JSON.stringify(
+        { connectionRevisions: this.connectionRevisions, results },
+        null,
+        2,
+      )
+      if (Buffer.byteLength(text) > USAGE_MAX_BYTES)
+        throw new AppError('io', 'Usage refresh results exceed 1 MiB.')
+      mkdirSync(this.cacheDirectory, { recursive: true })
+      const temporary = `${this.refreshResultsPath}.${randomUUID()}.tmp`
+      let created = false
+      try {
+        writeFileSync(temporary, text, { flag: 'wx', mode: 0o600 })
+        created = true
+        renameSync(temporary, this.refreshResultsPath)
+      } finally {
+        if (created && existsSync(temporary)) unlinkSync(temporary)
+      }
+    } catch {
+      this.cacheError =
+        'Cannot write usage refresh results. Current data remains available until restart.'
+    }
+  }
   private persistCache(): void {
     try {
       if (this.settings.connections.some((c) => !this.connectionRevisions[c.id])) {
@@ -821,6 +1070,7 @@ export class UsageService {
       this.checkedPath(this.cachePath, false)
       this.atomicWrite(this.cachePath, this.document(), this.connectionRevisions)
       this.cacheError = null
+      this.persistRefreshResults()
     } catch {
       this.cacheError = 'Cannot write usage cache. Current data remains available until restart.'
     }

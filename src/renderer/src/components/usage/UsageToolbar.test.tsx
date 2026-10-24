@@ -430,4 +430,212 @@ describe('Usage panel', () => {
     fireEvent.click(trigger)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
+  it('shows partial refresh detail per source and window and keeps it across polling', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+    const api = createAppApiStub().usage,
+      s = snapshot(),
+      sub = s.connections[0].subscription
+    if (!sub) throw new Error('Fixture subscription is missing')
+    const old = new Date(Date.now() - 2 * 3_600_000).toISOString(),
+      deadline = new Date(Date.now() + 5 * 60_000).toISOString()
+    sub.metrics = [
+      { ...sub.metrics[0], id: 'claude-5h', label: 'Claude 5h', observedAt: old, usedPercent: 30 },
+      { ...sub.metrics[0], id: 'claude-weekly', label: 'Claude weekly', observedAt: old },
+    ]
+    s.connections[0].refreshResult = {
+      status: 'partial',
+      requestId: 'request-1',
+      measurementId: 'measurement-1',
+      reportId: 'report-1',
+      sources: [
+        {
+          sourceId: 'claude',
+          status: 'succeeded',
+          windows: [
+            { metricId: 'claude-5h', status: 'succeeded' },
+            { metricId: 'claude-weekly', status: 'failed', errorCode: 'network' },
+          ],
+        },
+        {
+          sourceId: 'codex',
+          status: 'rate_limited',
+          errorCode: 'rate_limited',
+          nextAllowedAt: deadline,
+          windows: [
+            {
+              metricId: 'codex-weekly',
+              status: 'rate_limited',
+              errorCode: 'rate_limited',
+              nextAllowedAt: deadline,
+            },
+          ],
+        },
+      ],
+    }
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh).mockResolvedValue({ ...s, refresh: { read: ['account'], skipped: [] } })
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh usage' }))
+    })
+    const status = screen.getByRole('status')
+    expect(status.textContent).toContain('Usage refresh partially completed')
+    expect(status.textContent).toContain('1 source(s) and 2 window(s) failed')
+    expect(screen.getByText('claude: updated.')).toBeDefined()
+    expect(screen.getByText('claude-5h: updated.')).toBeDefined()
+    const retained = screen.getByText(
+      'claude-weekly: failed (network error). Earlier value Stale - 2h 0m old.',
+    )
+    expect(retained).toBeDefined()
+    expect(screen.getByText('codex: rate limited. Retry in 5m.')).toBeDefined()
+    const missing = screen.getByText('codex-weekly: rate limited. Retry in 5m. No earlier value.')
+    expect(missing).toBeDefined()
+    expect(missing.getAttribute('title')).toBe(deadline)
+    // The fixed text contains no provider payload and the rows keep their earlier values.
+    expect(document.body.textContent).not.toContain('raw provider')
+    expect(screen.getByRole('button', { name: /Claude weekly, 47%, Stale/ })).toBeDefined()
+    // Ordinary polling may return a snapshot without the attempt metadata; the click feedback stays.
+    vi.mocked(api.read).mockResolvedValue({
+      ...s,
+      connections: s.connections.map((connection) => ({ ...connection, refreshResult: null })),
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+    expect(screen.getByText(/claude-weekly: failed \(network error\)/)).toBeDefined()
+    expect(screen.getByRole('status').textContent).toContain('Usage refresh partially completed')
+  })
+  it('does not repeat a partial summary when the next request reads no source', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    const until = new Date(Date.now() + 42_000).toISOString()
+    s.connections[0].refreshResult = {
+      status: 'partial',
+      requestId: 'request-1',
+      sources: [
+        {
+          sourceId: 'claude',
+          status: 'succeeded',
+          windows: [{ metricId: 'claude-weekly', status: 'failed', errorCode: 'network' }],
+        },
+      ],
+    }
+    s.connections[0].nextRefreshAt = until
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh)
+      .mockResolvedValueOnce({ ...s, refresh: { read: ['account'], skipped: [] } })
+      .mockResolvedValueOnce({
+        ...s,
+        refresh: { read: [], skipped: [{ connectionId: 'account', until, reason: 'interval' }] },
+      })
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    const button = screen.getByRole('button', { name: 'Refresh usage' })
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(screen.getByRole('status').textContent).toContain('Usage refresh partially completed')
+    expect(
+      screen.getByText('claude-weekly: failed (network error). No earlier value.'),
+    ).toBeDefined()
+    // A second click inside the 60-second minimum reads no source and must not claim a partial one.
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    const second = screen.getByRole('status').textContent ?? ''
+    expect(second).toContain('Last refresh request read no sources.')
+    expect(second).not.toContain('partially completed')
+    expect(second).toContain(
+      'Fixture account was skipped (60-second limit). Fixture account can refresh again in 42 s.',
+    )
+    // The stored per-source detail from the first attempt remains visible.
+    expect(
+      screen.getByText('claude-weekly: failed (network error). No earlier value.'),
+    ).toBeDefined()
+  })
+  it('reports a failed connection as a partial refresh when another connection succeeds', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    const other = structuredClone(s.connections[0])
+    other.connection = { ...other.connection, id: 'other', label: 'Other account' }
+    other.refreshResult = {
+      status: 'success',
+      requestId: 'request-3',
+      sources: [
+        {
+          sourceId: 'codex',
+          status: 'succeeded',
+          windows: [{ metricId: 'week', status: 'succeeded' }],
+        },
+      ],
+    }
+    s.connections[0].refreshResult = {
+      status: 'failed',
+      requestId: 'request-3',
+      sources: [
+        {
+          sourceId: 'claude',
+          status: 'failed',
+          errorCode: 'network',
+          windows: [{ metricId: 'week', status: 'failed', errorCode: 'network' }],
+        },
+      ],
+    }
+    s.connections.push(other)
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh).mockResolvedValue({
+      ...s,
+      refresh: { read: ['account', 'other'], skipped: [] },
+    })
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh usage' }))
+    })
+    const status = screen.getByRole('status').textContent ?? ''
+    // One connection failed outright and the other succeeded, so a clean summary is wrong.
+    expect(status).toContain('Usage refresh partially completed')
+    expect(status).toContain('1 source(s) and 1 window(s) failed')
+    expect(status).not.toContain('Usage refreshed.')
+  })
+  it('reports a failed refresh with no numbers and explicit missing history', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    s.connections[0].refreshResult = {
+      status: 'failed',
+      requestId: 'request-2',
+      sources: [
+        {
+          sourceId: 'claude',
+          status: 'failed',
+          errorCode: 'network',
+          windows: [{ metricId: 'claude-weekly', status: 'failed', errorCode: 'network' }],
+        },
+      ],
+    }
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh).mockResolvedValue({ ...s, refresh: { read: ['account'], skipped: [] } })
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh usage' }))
+    })
+    expect(screen.getByRole('status').textContent).toContain(
+      'Usage refresh failed; earlier values were kept.',
+    )
+    expect(screen.getByText('claude: failed (network error).')).toBeDefined()
+    expect(
+      screen.getByText('claude-weekly: failed (network error). No earlier value.'),
+    ).toBeDefined()
+    // The existing row remains visible rather than becoming zero.
+    expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%/ })).toBeDefined()
+  })
 })

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   parseUsageDocument,
+  parseUsageRefreshResult,
+  type UsageDocument,
   type UsageMetric,
   usageFreshness,
   usagePercent,
@@ -125,5 +127,208 @@ describe('normalized usage observations', () => {
     // 19.5 of 31 days elapsed: the third quarter, 40pp behind its lower share.
     expect(slices.current).toBe(2)
     expect(slices.pace).toBe('↑ 40pp')
+  })
+})
+
+describe('partial refresh result contract', () => {
+  const metric = (id: string): UsageMetric => ({
+    ...windowMetric({ observedAt: '2026-10-20T12:00:00Z' }),
+    id,
+    label: id,
+  })
+  const document = (metrics: UsageMetric[]): UsageDocument => ({
+    schemaVersion: 1,
+    subscriptions: [
+      {
+        id: 'account',
+        providerId: 'test',
+        label: 'Fixture account',
+        sourceKind: 'api',
+        status: 'available',
+        metrics,
+      },
+    ],
+  })
+  const windowResult = (metricId: string, patch: Record<string, unknown> = {}) => ({
+    metricId,
+    status: 'succeeded',
+    ...patch,
+  })
+  const refresh = (patch: Record<string, unknown> = {}) => ({
+    status: 'success',
+    requestId: 'request-1',
+    measurementId: 'measurement-1',
+    reportId: 'report-1',
+    sources: [{ sourceId: 'source', status: 'succeeded', windows: [windowResult('m1')] }],
+    ...patch,
+  })
+
+  it('accepts a complete success and preserves a retry deadline beyond one day', () => {
+    const result = parseUsageRefreshResult(
+      refresh({
+        sources: [
+          {
+            sourceId: 'source',
+            status: 'succeeded',
+            nextAllowedAt: '2026-10-25T12:00:00Z',
+            windows: [windowResult('m1', { nextAllowedAt: '2026-10-25T12:00:00Z' })],
+          },
+        ],
+      }),
+      document([metric('m1')]),
+      NOW,
+    )
+    expect(result).toMatchObject({ status: 'success', requestId: 'request-1' })
+    expect(result.sources[0].nextAllowedAt).toBe('2026-10-25T12:00:00Z')
+  })
+
+  it('accepts a partial result with a failed window that has no metric', () => {
+    const result = parseUsageRefreshResult(
+      refresh({
+        status: 'partial',
+        measurementId: undefined,
+        reportId: undefined,
+        sources: [
+          {
+            sourceId: 'source',
+            status: 'succeeded',
+            windows: [
+              windowResult('m1'),
+              {
+                metricId: 'm2',
+                status: 'rate_limited',
+                errorCode: 'rate_limited',
+                nextAllowedAt: '2026-10-20T13:00:00Z',
+              },
+            ],
+          },
+        ],
+      }),
+      document([metric('m1')]),
+      NOW,
+    )
+    expect(result.status).toBe('partial')
+    expect(result.sources[0].windows[1]).toMatchObject({
+      metricId: 'm2',
+      status: 'rate_limited',
+      errorCode: 'rate_limited',
+    })
+  })
+
+  it('rejects unknown keys, duplicate ids and unfinished statuses', () => {
+    expect(() =>
+      parseUsageRefreshResult(refresh({ extra: true }), document([metric('m1')]), NOW),
+    ).toThrow('Unexpected')
+    expect(() =>
+      parseUsageRefreshResult(
+        refresh({
+          sources: [refresh().sources[0], { sourceId: 'source', status: 'succeeded', windows: [] }],
+        }),
+        document([metric('m1')]),
+        NOW,
+      ),
+    ).toThrow('Duplicate')
+    expect(() =>
+      parseUsageRefreshResult(
+        refresh({
+          sources: [
+            {
+              sourceId: 'source',
+              status: 'succeeded',
+              windows: [windowResult('m1'), windowResult('m1')],
+            },
+          ],
+        }),
+        document([metric('m1')]),
+        NOW,
+      ),
+    ).toThrow('Duplicate')
+    expect(() =>
+      parseUsageRefreshResult(
+        refresh({
+          sources: [{ sourceId: 'source', status: 'running', windows: [windowResult('m1')] }],
+        }),
+        document([metric('m1')]),
+        NOW,
+      ),
+    ).toThrow('status')
+  })
+
+  it('rejects a failed window that still carries a document metric', () => {
+    expect(() =>
+      parseUsageRefreshResult(
+        refresh({
+          status: 'failed',
+          measurementId: undefined,
+          reportId: undefined,
+          sources: [
+            {
+              sourceId: 'source',
+              status: 'failed',
+              windows: [windowResult('m1', { status: 'failed', errorCode: 'network' })],
+            },
+          ],
+        }),
+        document([metric('m1')]),
+        NOW,
+      ),
+    ).toThrow('carries a value')
+  })
+
+  it('rejects a success that omits a document metric or its correlation ids', () => {
+    expect(() =>
+      parseUsageRefreshResult(
+        refresh({ sources: [{ sourceId: 'source', status: 'succeeded', windows: [] }] }),
+        document([metric('m1')]),
+        NOW,
+      ),
+    ).toThrow('omits')
+    expect(() =>
+      parseUsageRefreshResult(refresh({ measurementId: undefined }), document([metric('m1')]), NOW),
+    ).toThrow('measurement')
+  })
+
+  it('rejects non-UTC deadlines, unknown error codes and overlong ids', () => {
+    for (const nextAllowedAt of ['2026-10-20T12:00:00+02:00', 'tomorrow']) {
+      expect(() =>
+        parseUsageRefreshResult(
+          refresh({
+            sources: [
+              {
+                sourceId: 'source',
+                status: 'succeeded',
+                nextAllowedAt,
+                windows: [windowResult('m1')],
+              },
+            ],
+          }),
+          document([metric('m1')]),
+          NOW,
+        ),
+      ).toThrow('timestamp')
+    }
+    expect(() =>
+      parseUsageRefreshResult(
+        refresh({
+          sources: [
+            {
+              sourceId: 'source',
+              status: 'failed',
+              errorCode: 'teapot',
+              windows: [windowResult('m1', { status: 'failed', errorCode: 'teapot' })],
+            },
+          ],
+        }),
+        document([]),
+        NOW,
+      ),
+    ).toThrow('error code')
+    expect(() =>
+      parseUsageRefreshResult(
+        refresh({ requestId: 'x'.repeat(257) }),
+        document([metric('m1')]),
+        NOW,
+      ),
+    ).toThrow('1 to 256')
   })
 })

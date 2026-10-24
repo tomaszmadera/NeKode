@@ -16,12 +16,46 @@ import { AppError } from '../../../shared/ipc-error'
 import {
   USAGE_REMOVED_ADAPTER_MESSAGE,
   USAGE_STATE_KEY,
+  type UsageDocument,
+  type UsageRefreshResult,
+  type UsageRefreshSourceResult,
+  type UsageRefreshWindowResult,
   type UsageSettings,
 } from '../../../shared/usage-contract'
-import { UsageAdapterHost } from './adapter-host'
+import { UsageAdapterHost, type UsageAdapterResult } from './adapter-host'
 import { UsageService } from './usage-service'
 
 const NOW = Date.parse('2026-10-20T12:00:00Z')
+const adapterResult = (
+  document: unknown,
+  refresh: UsageRefreshResult | null = null,
+): UsageAdapterResult => {
+  const value = document as UsageDocument
+  Object.defineProperty(value, 'refresh', { value: refresh, enumerable: false, configurable: true })
+  return value as UsageAdapterResult
+}
+const refreshWindow = (
+  metricId: string,
+  status: UsageRefreshWindowResult['status'] = 'succeeded',
+  patch: Partial<UsageRefreshWindowResult> = {},
+): UsageRefreshWindowResult => ({ metricId, status, ...patch })
+const refreshSource = (
+  sourceId: string,
+  status: UsageRefreshSourceResult['status'],
+  windows: UsageRefreshWindowResult[],
+  patch: Partial<UsageRefreshSourceResult> = {},
+): UsageRefreshSourceResult => ({ sourceId, status, windows, ...patch })
+const refreshResult = (
+  sources: UsageRefreshResult['sources'],
+  patch: Partial<UsageRefreshResult> = {},
+): UsageRefreshResult => ({
+  status: 'partial',
+  requestId: 'request-1',
+  measurementId: 'measurement-1',
+  reportId: 'report-1',
+  sources,
+  ...patch,
+})
 const roots: string[] = [],
   services: UsageService[] = []
 function fixture() {
@@ -55,7 +89,7 @@ function fixture() {
       throw new AppError('io', 'Fixture input is missing.')
     }
     try {
-      return JSON.parse(text)
+      return adapterResult(JSON.parse(text))
     } catch {
       throw new AppError('protocol', 'Usage adapter must return one valid JSON response.')
     }
@@ -161,7 +195,7 @@ function plugin(f: ReturnType<typeof fixture>, minimumRefreshSeconds = 60) {
     }),
   )
   const host = new UsageAdapterHost()
-  const read = vi.spyOn(host, 'read').mockImplementation(async () => f.live())
+  const read = vi.spyOn(host, 'read').mockImplementation(async () => adapterResult(f.live()))
   const service = new UsageService({ ...f.deps, host })
   services.push(service)
   service.saveSettings({
@@ -275,7 +309,7 @@ describe('global usage service', () => {
     read.mockRejectedValueOnce(new AppError('network', 'Fixture failure'))
     await poll(service)
     f.advance(120_000)
-    read.mockResolvedValueOnce(document)
+    read.mockResolvedValueOnce(adapterResult(document))
     await poll(service)
     expect(service.read().connections[0].error).toBeNull()
     f.advance(60_000)
@@ -283,7 +317,7 @@ describe('global usage service', () => {
     await poll(service)
     expect(service.read().connections[0].error?.code).toBe('network')
     const calls = read.mock.calls.length
-    read.mockResolvedValue(document)
+    read.mockResolvedValue(adapterResult(document))
     f.advance(59_999)
     await poll(service)
     expect(read).toHaveBeenCalledTimes(calls)
@@ -351,7 +385,7 @@ describe('global usage service', () => {
     ])
     expect(read).toHaveBeenCalledTimes(1)
     f.advance(600_000)
-    read.mockImplementation(async () => f.live())
+    read.mockImplementation(async () => adapterResult(f.live()))
     expect((await service.refresh()).refresh?.read).toEqual(['account'])
     expect(service.read().connections[0].error).toBeNull()
     expect((await service.refresh()).refresh?.skipped[0].reason).toBe('interval')
@@ -371,7 +405,7 @@ describe('global usage service', () => {
     read.mockImplementation(async (_adapter, _config, id) => {
       const document = f.live()
       document.subscriptions[0].id = id
-      return document
+      return adapterResult(document)
     })
     expect((await service.refresh()).refresh).toEqual({
       read: ['second'],
@@ -501,10 +535,10 @@ describe('global usage service', () => {
     expect(restarted.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
     // A rename while a read is in flight keeps that read and shows its result under the new label.
     f.advance(300_000)
-    let finish: (value: unknown) => void = () => {}
+    let finish: (value: UsageAdapterResult) => void = () => {}
     read.mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
+        new Promise<UsageAdapterResult>((resolve) => {
           finish = resolve
         }),
     )
@@ -512,7 +546,7 @@ describe('global usage service', () => {
     expect(read).toHaveBeenCalledTimes(2)
     rename('Renamed in flight')
     expect(service.read().connections[0].refreshing).toBe(true)
-    finish(f.live(50))
+    finish(adapterResult(f.live(50)))
     await settle()
     const after = service.read().connections[0]
     expect(after.refreshing).toBe(false)
@@ -544,10 +578,10 @@ describe('global usage service', () => {
   it('reports a joined automatic read as read without starting a second flight', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
-    let finish: (value: unknown) => void = () => {}
+    let finish: (value: UsageAdapterResult) => void = () => {}
     read.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<UsageAdapterResult>((resolve) => {
           finish = resolve
         }),
     )
@@ -555,7 +589,7 @@ describe('global usage service', () => {
     const first = service.refresh(),
       second = service.refresh()
     expect(read).toHaveBeenCalledTimes(1)
-    finish(f.live())
+    finish(adapterResult(f.live()))
     for (const result of await Promise.all([first, second]))
       expect(result.refresh).toEqual({ read: ['account'], skipped: [] })
   })
@@ -564,10 +598,10 @@ describe('global usage service', () => {
       { service, read } = plugin(f)
     await service.refresh()
     f.advance(60_000)
-    let finish: (value: unknown) => void = () => {}
+    let finish: (value: UsageAdapterResult) => void = () => {}
     read.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<UsageAdapterResult>((resolve) => {
           finish = resolve
         }),
     )
@@ -576,7 +610,7 @@ describe('global usage service', () => {
       ...service.getSettings(),
       pin: { connectionId: 'account', metricId: 'week' },
     })
-    finish(f.live())
+    finish(adapterResult(f.live()))
     const result = await pending
     expect(result.refresh).toEqual({ read: ['account'], skipped: [] })
     expect(result.pin).toEqual({ connectionId: 'account', metricId: 'week' })
@@ -642,7 +676,7 @@ describe('global usage service', () => {
         })
       const document = f.live()
       document.subscriptions[0].id = 'healthy'
-      return Promise.resolve(document)
+      return Promise.resolve(adapterResult(document))
     })
     const original = service.getSettings()
     service.saveSettings({
@@ -783,11 +817,11 @@ describe('global usage service', () => {
   it('aborts an in-flight adapter process read when the switch turns off and drops its late result', async () => {
     const f = fixture()
     const { service, read } = plugin(f)
-    let finish: (v: unknown) => void = () => {}
+    let finish: (v: UsageAdapterResult) => void = () => {}
     let signal: AbortSignal | undefined
     read.mockImplementation(
       (_adapter, _config, _id, s) =>
-        new Promise((resolve) => {
+        new Promise<UsageAdapterResult>((resolve) => {
           signal = s
           finish = resolve
         }),
@@ -797,7 +831,7 @@ describe('global usage service', () => {
     expect(signal?.aborted).toBe(false)
     service.setEnabled(false)
     expect(signal?.aborted).toBe(true)
-    finish(JSON.parse(readFileSync(f.input, 'utf8')))
+    finish(adapterResult(JSON.parse(readFileSync(f.input, 'utf8'))))
     await pending
     const c = service.read().connections[0]
     expect(c.subscription).toBeNull()
@@ -831,7 +865,7 @@ describe('global usage service', () => {
     expect(first.observedAt).toBe('2026-10-20T12:00:00Z')
     expect(first.receivedAt).toBe('2026-10-20T13:05:00.000Z')
     const exported = JSON.parse(readFileSync(f.output, 'utf8'))
-    expect(exported.subscriptions[0].metrics[0]).toEqual(first)
+    expect(exported.subscriptions[0].metrics[0]).toMatchObject(first)
     expect(JSON.stringify(exported)).not.toContain('config')
     const restarted = new UsageService(f.deps)
     services.push(restarted)
@@ -926,11 +960,11 @@ describe('global usage service', () => {
         configSchema: [],
       }),
     )
-    let finish: (v: unknown) => void = () => {}
+    let finish: (v: UsageAdapterResult) => void = () => {}
     const host = new UsageAdapterHost()
     const read = vi.spyOn(host, 'read').mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<UsageAdapterResult>((resolve) => {
           finish = resolve
         }),
     )
@@ -944,7 +978,7 @@ describe('global usage service', () => {
       second = service.refresh()
     expect(read).toHaveBeenCalledTimes(1)
     service.saveSettings({ ...service.getSettings(), connections: [] })
-    finish(JSON.parse(readFileSync(f.input, 'utf8')))
+    finish(adapterResult(JSON.parse(readFileSync(f.input, 'utf8'))))
     const results = await Promise.all([first, second])
     for (const result of results) expect(result.refresh).toEqual({ read: [], skipped: [] })
     expect(service.read().connections).toEqual([])
@@ -1073,17 +1107,21 @@ describe('accounts settings flow (spec rules 21-28)', () => {
     const { service, read } = adapter(f, 'declared-provider')
     service.saveSettings({ ...f.settings, connections: [account('declared', 'typed')] })
     expect(service.getSettings().connections[0].providerId).toBe('declared-provider')
-    read.mockResolvedValue({
-      schemaVersion: 1,
-      subscriptions: [subscription('account', 'other-provider', 10)],
-    })
+    read.mockResolvedValue(
+      adapterResult({
+        schemaVersion: 1,
+        subscriptions: [subscription('account', 'other-provider', 10)],
+      }),
+    )
     service.setVisible(true)
     await service.refresh()
     expect(service.read().connections[0].error?.message).toContain('its provider')
-    read.mockResolvedValue({
-      schemaVersion: 1,
-      subscriptions: [subscription('account', 'declared-provider', 10)],
-    })
+    read.mockResolvedValue(
+      adapterResult({
+        schemaVersion: 1,
+        subscriptions: [subscription('account', 'declared-provider', 10)],
+      }),
+    )
     await service.test(service.getSettings().connections[0])
   })
   it('uses the adapter id without a declared provider and accepts any reported provider', async () => {
@@ -1091,10 +1129,12 @@ describe('accounts settings flow (spec rules 21-28)', () => {
     const { service, read } = adapter(f)
     service.saveSettings({ ...f.settings, connections: [account('declared')] })
     expect(service.getSettings().connections[0].providerId).toBe('declared')
-    read.mockResolvedValue({
-      schemaVersion: 1,
-      subscriptions: [subscription('account', 'reported', 20)],
-    })
+    read.mockResolvedValue(
+      adapterResult({
+        schemaVersion: 1,
+        subscriptions: [subscription('account', 'reported', 20)],
+      }),
+    )
     service.setVisible(true)
     await service.refresh()
     const source = service.read().connections[0]
@@ -1144,6 +1184,278 @@ describe('accounts settings flow (spec rules 21-28)', () => {
     openPath.mockResolvedValueOnce('Access denied')
     await expect(service.openAdaptersFolder()).rejects.toMatchObject({ code: 'io' })
     await expect(f.service.openAdaptersFolder()).rejects.toMatchObject({ code: 'not_found' })
+  })
+})
+
+describe('partial refresh merge and retry (PDH-13)', () => {
+  const doc = (metrics: Array<Record<string, unknown>>) => ({
+    schemaVersion: 1,
+    subscriptions: [
+      {
+        id: 'account',
+        providerId: 'fixture',
+        label: 'Producer label',
+        sourceKind: 'api',
+        status: 'available',
+        metrics,
+      },
+    ],
+  })
+  const metric = (id: string, usedPercent: number, observedAt: string) => ({
+    id,
+    label: id,
+    kind: 'window',
+    state: 'available',
+    observedAt,
+    usedPercent,
+    resetsAt: '2026-11-01T00:00:00Z',
+  })
+
+  it('merges succeeded windows and keeps a failed window with every date and the pin', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    const at0 = new Date(NOW).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(doc([metric('week', 40, at0), metric('month', 20, at0)])),
+    )
+    await service.refresh()
+    const before = service.read().connections[0].subscription?.metrics.find((m) => m.id === 'month')
+    if (!before) throw new Error('Expected a seeded metric')
+    service.saveSettings({
+      ...service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'month' },
+    })
+    f.advance(60_000)
+    const at1 = new Date(NOW + 60_000).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([metric('week', 55, at1)]),
+        refreshResult([
+          refreshSource('source', 'succeeded', [
+            refreshWindow('week'),
+            refreshWindow('month', 'failed', {
+              errorCode: 'network',
+              nextAllowedAt: new Date(NOW + 360_000).toISOString(),
+            }),
+          ]),
+        ]),
+      ),
+    )
+    const result = await service.refresh()
+    const source = result.connections[0]
+    expect(source.error).toBeNull()
+    expect(source.refreshResult).toMatchObject({ status: 'partial', requestId: 'request-1' })
+    const metrics = source.subscription?.metrics ?? []
+    const week = metrics.find((m) => m.id === 'week')
+    expect(week).toMatchObject({ usedPercent: 55, observedAt: at1 })
+    // The failed window keeps its original observation, receipt time and value.
+    expect(metrics.find((m) => m.id === 'month')).toEqual(before)
+    expect(source.subscription?.status).toBe('available')
+    expect(result.pin).toEqual({ connectionId: 'account', metricId: 'month' })
+  })
+
+  it('shows explicit unavailable without numbers when a failed window has no history', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([]),
+        refreshResult(
+          [
+            refreshSource('source', 'rate_limited', [
+              refreshWindow('month', 'rate_limited', {
+                errorCode: 'rate_limited',
+                nextAllowedAt: new Date(NOW + 600_000).toISOString(),
+              }),
+            ]),
+          ],
+          { status: 'failed', measurementId: undefined, reportId: undefined },
+        ),
+      ),
+    )
+    const result = await service.refresh()
+    const source = result.connections[0]
+    expect(source.error).toBeNull()
+    expect(source.refreshResult?.status).toBe('failed')
+    const month = source.subscription?.metrics.find((m) => m.id === 'month')
+    expect(month).toMatchObject({
+      id: 'month',
+      state: 'unavailable',
+      observedAt: null,
+      reason: 'rate_limited',
+    })
+    expect(month).not.toHaveProperty('usedPercent')
+    expect(source.subscription?.status).toBe('unavailable')
+  })
+
+  it('labels an unavailable window without history from its agent and window id', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([]),
+        refreshResult(
+          [
+            refreshSource('source', 'failed', [
+              refreshWindow('claude-weekly', 'failed', { errorCode: 'network' }),
+              refreshWindow('command-code-5h', 'unavailable', { errorCode: 'auth' }),
+              refreshWindow('month', 'unavailable'),
+            ]),
+          ],
+          { status: 'failed', measurementId: undefined, reportId: undefined },
+        ),
+      ),
+    )
+    const result = await service.refresh()
+    const metrics = result.connections[0].subscription?.metrics ?? []
+    expect(metrics.map((metric) => [metric.id, metric.label])).toEqual([
+      ['claude-weekly', 'Claude weekly'],
+      ['command-code-5h', 'Command Code 5h'],
+      ['month', 'month'],
+    ])
+    expect(metrics.every((metric) => metric.state === 'unavailable')).toBe(true)
+  })
+
+  it('refreshes only sources whose retry deadline passed and keeps the others', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    const at0 = new Date(NOW).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(doc([metric('claude-5h', 10, at0), metric('codex-weekly', 20, at0)])),
+    )
+    await service.refresh()
+    f.advance(60_000)
+    const at1 = new Date(NOW + 60_000).toISOString()
+    const deadline = new Date(NOW + 360_000).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([metric('codex-weekly', 25, at1)]),
+        refreshResult([
+          refreshSource(
+            'claude',
+            'rate_limited',
+            [
+              refreshWindow('claude-5h', 'rate_limited', {
+                errorCode: 'rate_limited',
+                nextAllowedAt: deadline,
+              }),
+            ],
+            { errorCode: 'rate_limited', nextAllowedAt: deadline },
+          ),
+          refreshSource('codex', 'succeeded', [refreshWindow('codex-weekly')]),
+        ]),
+      ),
+    )
+    const partial = await service.refresh()
+    expect(partial.connections[0].refreshResult?.status).toBe('partial')
+    expect(
+      partial.connections[0].subscription?.metrics.find((m) => m.id === 'claude-5h')?.usedPercent,
+    ).toBe(10)
+    // The account's 60-second minimum passed, but the claude source is still in backoff.
+    f.advance(60_000)
+    const at2 = new Date(NOW + 120_000).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([metric('codex-weekly', 30, at2)]),
+        refreshResult([refreshSource('codex', 'succeeded', [refreshWindow('codex-weekly')])], {
+          status: 'success',
+        }),
+      ),
+    )
+    const second = await service.refresh()
+    expect(read.mock.calls.at(-1)?.[5]).toEqual({ refreshSources: ['codex'] })
+    expect(second.connections[0].refreshResult?.status).toBe('partial')
+    expect(
+      second.connections[0].refreshResult?.sources.find((s) => s.sourceId === 'claude')
+        ?.nextAllowedAt,
+    ).toBe(deadline)
+    expect(
+      second.connections[0].subscription?.metrics.find((m) => m.id === 'claude-5h')?.usedPercent,
+    ).toBe(10)
+    // After the provider deadline both sources are selected again.
+    f.advance(240_000)
+    const at3 = new Date(NOW + 360_000).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([metric('claude-5h', 15, at3), metric('codex-weekly', 35, at3)]),
+        refreshResult(
+          [
+            refreshSource('claude', 'succeeded', [refreshWindow('claude-5h')]),
+            refreshSource('codex', 'succeeded', [refreshWindow('codex-weekly')]),
+          ],
+          { status: 'success' },
+        ),
+      ),
+    )
+    const third = await service.refresh()
+    expect(read.mock.calls.at(-1)?.[5]).toEqual({})
+    expect(third.connections[0].refreshResult?.status).toBe('success')
+    expect(
+      third.connections[0].subscription?.metrics.find((m) => m.id === 'claude-5h')?.usedPercent,
+    ).toBe(15)
+  })
+
+  it('persists the typed result and its per-source retry across a restart', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    const at0 = new Date(NOW).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(doc([metric('claude-5h', 10, at0), metric('codex-weekly', 20, at0)])),
+    )
+    await service.refresh()
+    f.advance(60_000)
+    const at1 = new Date(NOW + 60_000).toISOString()
+    const deadline = new Date(NOW + 360_000).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([metric('codex-weekly', 25, at1)]),
+        refreshResult([
+          refreshSource('claude', 'rate_limited', [refreshWindow('claude-5h', 'rate_limited')], {
+            nextAllowedAt: deadline,
+          }),
+          refreshSource('codex', 'succeeded', [refreshWindow('codex-weekly')]),
+        ]),
+      ),
+    )
+    await service.refresh()
+    const before = service.read().connections[0].refreshResult
+    const host = new UsageAdapterHost()
+    const restartedRead = vi
+      .spyOn(host, 'read')
+      .mockResolvedValue(adapterResult(doc([metric('codex-weekly', 30, at1)])))
+    const restarted = new UsageService({ ...f.deps, host })
+    services.push(restarted)
+    expect(restarted.read().connections[0].refreshResult).toEqual(before)
+    f.advance(60_000)
+    await restarted.refresh()
+    expect(restartedRead.mock.calls[0][5]).toEqual({ refreshSources: ['codex'] })
+  })
+
+  it('keeps the manual result across automatic polls and out of the export', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    const at0 = new Date(NOW).toISOString()
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([metric('week', 42, at0)]),
+        refreshResult([refreshSource('fixture', 'succeeded', [refreshWindow('week')])], {
+          status: 'success',
+        }),
+      ),
+    )
+    await service.refresh()
+    const before = service.read().connections[0].refreshResult
+    service.saveSettings({
+      ...service.getSettings(),
+      export: { enabled: true, path: f.output },
+    })
+    f.advance(60_000)
+    read.mockResolvedValueOnce(adapterResult(doc([metric('week', 42, at0)])))
+    await poll(service)
+    expect(service.read().connections[0].refreshResult).toEqual(before)
+    const exported = readFileSync(f.output, 'utf8')
+    expect(exported).not.toContain('refreshResult')
+    expect(exported).not.toContain('nextAllowedAt')
   })
 })
 
@@ -1197,7 +1509,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     f.advance(3_600_000)
     await poll(service)
     expect(read).toHaveBeenCalledTimes(6)
-    read.mockImplementation(async () => f.live(55))
+    read.mockImplementation(async () => adapterResult(f.live(55)))
     expect((await service.refresh()).refresh?.read).toEqual(['account'])
     expect(read).toHaveBeenCalledTimes(7)
     expect(service.read().connections[0].error).toBeNull()
@@ -1216,7 +1528,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
       f.advance(60_500)
       const stale = f.live(77)
       stale.subscriptions[0].metrics[0].observedAt = observedAt
-      read.mockResolvedValueOnce(stale)
+      read.mockResolvedValueOnce(adapterResult(stale))
       expect((await service.refresh()).refresh?.read).toEqual(['account'])
       expect(service.read().connections[0].error).toMatchObject({
         code: 'protocol',
@@ -1240,7 +1552,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
       observedAt: null,
       reason: 'not_reported',
     })
-    read.mockResolvedValueOnce(document)
+    read.mockResolvedValueOnce(adapterResult(document))
     await service.refresh()
     expect(service.read().connections[0].error).toBeNull()
     expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(77)
@@ -1355,28 +1667,30 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
       }),
     )
     const host = new UsageAdapterHost()
-    vi.spyOn(host, 'read').mockResolvedValue({
-      schemaVersion: 1,
-      subscriptions: [
-        {
-          id: 'hub-account',
-          providerId: 'hub',
-          label: 'Hub',
-          sourceKind: 'api',
-          status: 'available',
-          metrics: ['claude-5h', 'codex-weekly'].map((id) => ({
-            id,
-            label: id,
-            providerId: id.split('-')[0],
-            kind: 'window',
-            state: 'available',
-            observedAt: '2026-10-20T12:00:00Z',
-            usedPercent: 30,
-            resetsAt: '2026-10-25T00:00:00Z',
-          })),
-        },
-      ],
-    })
+    vi.spyOn(host, 'read').mockResolvedValue(
+      adapterResult({
+        schemaVersion: 1,
+        subscriptions: [
+          {
+            id: 'hub-account',
+            providerId: 'hub',
+            label: 'Hub',
+            sourceKind: 'api',
+            status: 'available',
+            metrics: ['claude-5h', 'codex-weekly'].map((id) => ({
+              id,
+              label: id,
+              providerId: id.split('-')[0],
+              kind: 'window',
+              state: 'available',
+              observedAt: '2026-10-20T12:00:00Z',
+              usedPercent: 30,
+              resetsAt: '2026-10-25T00:00:00Z',
+            })),
+          },
+        ],
+      }),
+    )
     const service = new UsageService({ ...f.deps, host, safeStorage })
     services.push(service)
     return { service, host }

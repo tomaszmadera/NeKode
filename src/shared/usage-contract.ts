@@ -121,6 +121,45 @@ export interface UsageSettings {
   pin: UsagePin | null
   export: { enabled: boolean; path: string | null; replaceExisting?: boolean }
 }
+export interface UsageRefreshSkip {
+  connectionId: string
+  until: string
+  reason: 'interval' | 'backoff'
+}
+/** Terminal result of one operation source, window or the whole refresh. */
+export type UsageRefreshSourceStatus =
+  | 'succeeded'
+  | 'failed'
+  | 'timed_out'
+  | 'unsupported'
+  | 'unavailable'
+  | 'rate_limited'
+  | 'stale_observation'
+export interface UsageRefreshWindowResult {
+  metricId: string
+  status: UsageRefreshSourceStatus
+  errorCode?: UsageErrorCode
+  /** Full UTC provider retry deadline; may be later than one day. */
+  nextAllowedAt?: string
+}
+export interface UsageRefreshSourceResult {
+  sourceId: string
+  status: UsageRefreshSourceStatus
+  errorCode?: UsageErrorCode
+  nextAllowedAt?: string
+  windows: UsageRefreshWindowResult[]
+}
+/**
+ * Typed `partial-refresh-v1` result of a manual refresh (PDH-13). A missing `refresh` field on an
+ * adapter response stays valid, so adapters without the capability keep the old transport.
+ */
+export interface UsageRefreshResult {
+  status: 'success' | 'partial' | 'failed'
+  sources: UsageRefreshSourceResult[]
+  requestId: string
+  measurementId?: string
+  reportId?: string
+}
 export interface UsageConnectionSnapshot {
   connection: Omit<UsageConnection, 'config'>
   subscription: UsageSubscription | null
@@ -128,11 +167,8 @@ export interface UsageConnectionSnapshot {
   error: UsageFailure | null
   /** Earliest time a manual refresh may start (spec L5), or null when it may start now. */
   nextRefreshAt: string | null
-}
-export interface UsageRefreshSkip {
-  connectionId: string
-  until: string
-  reason: 'interval' | 'backoff'
+  /** Last manual refresh outcome, kept across automatic polls and restarts. */
+  refreshResult?: UsageRefreshResult | null
 }
 export interface UsageSnapshot {
   connections: UsageConnectionSnapshot[]
@@ -301,6 +337,154 @@ export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocum
     }
   })
   return { schemaVersion: 1, subscriptions }
+}
+
+/**
+ * Status union of a final `partial-refresh-v1` response. `pending` and `running` are never final.
+ */
+export const USAGE_REFRESH_STATUSES: readonly UsageRefreshSourceStatus[] = [
+  'succeeded',
+  'failed',
+  'timed_out',
+  'unsupported',
+  'unavailable',
+  'rate_limited',
+  'stale_observation',
+]
+const USAGE_ERROR_CODES: readonly UsageErrorCode[] = [
+  'validation_error',
+  'not_found',
+  'protocol',
+  'timeout',
+  'auth',
+  'network',
+  'rate_limited',
+  'unsupported',
+  'config',
+  'io',
+]
+function refreshErrorCode(value: unknown): UsageErrorCode | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !USAGE_ERROR_CODES.includes(value as UsageErrorCode))
+    invalid('Invalid usage refresh error code.')
+  return value as UsageErrorCode
+}
+function refreshStatus(value: unknown): UsageRefreshSourceStatus {
+  if (
+    typeof value !== 'string' ||
+    !USAGE_REFRESH_STATUSES.includes(value as UsageRefreshSourceStatus)
+  )
+    invalid('Invalid usage refresh status.')
+  return value as UsageRefreshSourceStatus
+}
+/**
+ * Strict `partial-refresh-v1` result parser. It validates unknown keys, closed statuses, unique
+ * source and metric ids, metric membership in the document, completeness and UTC deadlines.
+ * Every metric in `document` must be a succeeded window, so a failed window cannot carry a value.
+ */
+export function parseUsageRefreshResult(
+  value: unknown,
+  document?: UsageDocument,
+  now = Date.now(),
+): UsageRefreshResult {
+  const result = usageObject(value)
+  only(result, ['status', 'sources', 'requestId', 'measurementId', 'reportId'])
+  if (!['success', 'partial', 'failed'].includes(result.status as string))
+    invalid('Invalid usage refresh outcome.')
+  const requestId = text(result.requestId)
+  const measurementId = result.measurementId === undefined ? undefined : text(result.measurementId)
+  const reportId = result.reportId === undefined ? undefined : text(result.reportId)
+  if (!Array.isArray(result.sources) || result.sources.length === 0 || result.sources.length > 50)
+    invalid('Invalid usage refresh sources.')
+  const documentMetrics =
+    document === undefined
+      ? null
+      : new Map(
+          document.subscriptions.flatMap((sub) => sub.metrics.map((metric) => [metric.id, metric])),
+        )
+  const sourceIds = new Set<string>()
+  const metricIds = new Set<string>()
+  let succeededSources = 0
+  let succeededWindows = 0
+  let failedParts = 0
+  const sources = result.sources.map((rawSource) => {
+    const source = usageObject(rawSource)
+    only(source, ['sourceId', 'status', 'errorCode', 'nextAllowedAt', 'windows'])
+    const sourceId = text(source.sourceId)
+    if (sourceIds.has(sourceId)) invalid('Duplicate usage refresh source id.')
+    sourceIds.add(sourceId)
+    const status = refreshStatus(source.status)
+    if (status === 'succeeded') succeededSources++
+    else failedParts++
+    if (!Array.isArray(source.windows) || source.windows.length > 50)
+      invalid('Invalid usage refresh windows.')
+    let sourceWindowSuccesses = 0
+    const windows = source.windows.map((rawWindow) => {
+      const window = usageObject(rawWindow)
+      only(window, ['metricId', 'status', 'errorCode', 'nextAllowedAt'])
+      const metricId = text(window.metricId)
+      if (metricIds.has(metricId)) invalid('Duplicate usage refresh metric id.')
+      metricIds.add(metricId)
+      const windowStatus = refreshStatus(window.status)
+      const metric = documentMetrics?.get(metricId)
+      if (windowStatus === 'succeeded') {
+        succeededWindows++
+        sourceWindowSuccesses++
+        if (documentMetrics) {
+          if (!metric) invalid('Usage refresh metric is missing from the usage document.')
+          if (metric.state === 'unavailable' || !metric.observedAt)
+            invalid('Usage refresh succeeded window has no live metric.')
+        }
+      } else {
+        failedParts++
+        // A failed window must not supply a numeric value for its metric.
+        if (metric) invalid('Usage refresh failed window carries a value.')
+      }
+      return {
+        metricId,
+        status: windowStatus,
+        ...(window.errorCode === undefined
+          ? {}
+          : { errorCode: refreshErrorCode(window.errorCode) }),
+        ...(window.nextAllowedAt === undefined
+          ? {}
+          : { nextAllowedAt: timestamp(window.nextAllowedAt, false, now) as string }),
+      }
+    })
+    if (sourceWindowSuccesses > 0 && status !== 'succeeded')
+      invalid('Usage refresh source status contradicts its windows.')
+    return {
+      sourceId,
+      status,
+      ...(source.errorCode === undefined ? {} : { errorCode: refreshErrorCode(source.errorCode) }),
+      ...(source.nextAllowedAt === undefined
+        ? {}
+        : { nextAllowedAt: timestamp(source.nextAllowedAt, false, now) as string }),
+      windows,
+    }
+  })
+  if (documentMetrics)
+    for (const metricId of documentMetrics.keys())
+      if (!metricIds.has(metricId)) invalid('Usage refresh result omits a document metric.')
+  const overall = result.status as UsageRefreshResult['status']
+  if (overall === 'success') {
+    if (succeededSources !== sources.length || succeededWindows === 0 || failedParts > 0)
+      invalid('Usage refresh success is incomplete.')
+    if (!measurementId || !reportId)
+      invalid('Usage refresh success requires measurement and report ids.')
+  } else if (overall === 'partial') {
+    if ((succeededSources === 0 && succeededWindows === 0) || failedParts === 0)
+      invalid('Usage refresh partial result is inconsistent.')
+  } else if (succeededSources > 0 || succeededWindows > 0) {
+    invalid('Usage refresh failure carries a succeeded result.')
+  }
+  return {
+    status: overall,
+    sources,
+    requestId,
+    ...(measurementId === undefined ? {} : { measurementId }),
+    ...(reportId === undefined ? {} : { reportId }),
+  }
 }
 
 export function parseUsageSettings(value: unknown): UsageSettings {

@@ -3,21 +3,30 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { AppError, isAppErrorCode } from '../../../shared/ipc-error'
 import {
+  parseUsageDocument,
+  parseUsageRefreshResult,
   USAGE_MAX_BYTES,
   USAGE_REMOVED_ADAPTER_IDS,
   type UsageAdapter,
   type UsageAdapterAction,
   type UsageDocument,
   type UsageErrorCode,
+  type UsageRefreshResult,
   usageObject,
 } from '../../../shared/usage-contract'
 
 /** Adapter protocol version (spec L1): version 2 requires the live `refresh` action. */
 export const USAGE_PROTOCOL_VERSION = 2
+/** Manual-refresh capability exchanged in `params.capabilities` (PDH-13 partial contract). */
+export const USAGE_PARTIAL_CAPABILITY = 'partial-refresh-v1'
 const UNSUPPORTED_PROTOCOL =
   'This adapter uses an unsupported protocol version. Update it to protocol version 2, which requires live refresh.'
 const INVALID_MANIFEST =
   'Invalid usage-adapter.json. Check protocol version 2 and required manifest fields.'
+export type UsageAdapterResult = UsageDocument & {
+  /** Non-enumerable so the parsed document keeps its strict schema shape. */
+  readonly refresh: UsageRefreshResult | null
+}
 
 /**
  * Spec L3: every available metric of a `refresh` response must be observed no earlier than the
@@ -267,8 +276,19 @@ export class UsageAdapterHost {
     connectionId: string,
     signal: AbortSignal,
     action: UsageAdapterAction = 'read',
-  ): Promise<unknown> {
+    options: { refreshSources?: string[] } = {},
+  ): Promise<UsageAdapterResult> {
     if (signal.aborted) throw new AppError('config', 'Usage request was cancelled.')
+    if (
+      options.refreshSources !== undefined &&
+      (!Array.isArray(options.refreshSources) ||
+        options.refreshSources.length === 0 ||
+        options.refreshSources.length > 20 ||
+        options.refreshSources.some(
+          (id) => typeof id !== 'string' || !id.trim() || id.length > 256 || id.includes('\0'),
+        ))
+    )
+      throw new AppError('validation_error', 'Invalid usage refresh source selection.')
     const child = spawn(adapter.invocation.command, adapter.invocation.args, {
       cwd: adapter.directory,
       env: this.childEnv(adapter),
@@ -316,7 +336,14 @@ export class UsageAdapterHost {
         protocolVersion: USAGE_PROTOCOL_VERSION,
         action,
         config,
-        params: { connectionId },
+        params: {
+          connectionId,
+          // The PDH adapter requires the capability before creating a quota operation.
+          ...(action === 'refresh' ? { capabilities: [USAGE_PARTIAL_CAPABILITY] } : {}),
+          ...(action === 'refresh' && options.refreshSources
+            ? { refreshSources: options.refreshSources }
+            : {}),
+        },
       }),
     )
     try {
@@ -330,7 +357,22 @@ export class UsageAdapterHost {
       }
       if (response.protocolVersion !== USAGE_PROTOCOL_VERSION)
         throw new AppError('protocol', 'Unsupported usage adapter version.')
-      if (response.ok === true && code === 0) return response.data
+      if (response.ok === true && code === 0) {
+        const document = parseUsageDocument(response.data, Date.now())
+        // A missing field is valid: adapters without `partial-refresh-v1` keep the old transport.
+        const refresh =
+          response.refresh === undefined
+            ? null
+            : parseUsageRefreshResult(response.refresh, document, Date.now())
+        // Non-enumerable: `parseUsageDocument` still accepts the object and JSON export of the
+        // document never carries attempt metadata.
+        Object.defineProperty(document, 'refresh', {
+          value: refresh,
+          enumerable: false,
+          configurable: true,
+        })
+        return document as UsageAdapterResult
+      }
       if (response.ok === false && code === 1) {
         const error = usageObject(response.error)
         if (
