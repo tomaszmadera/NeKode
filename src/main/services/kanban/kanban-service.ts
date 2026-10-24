@@ -7,6 +7,7 @@ import {
   type KanbanItemWriteResult,
   type KanbanPriority,
   type KanbanProjectConfig,
+  type KanbanSkillStatus,
   type KanbanUpdatePatch,
   LOCAL_FILE_ADAPTER_ID,
   LOCAL_FILE_ADAPTER_NAME,
@@ -23,6 +24,7 @@ import {
   normalizeItems,
   normalizeStates,
 } from './adapter-protocol'
+import { AgentSkillFile, buildAgentSkill } from './agent-skill-file'
 import { LocalTaskFile } from './local-task-file'
 
 // KanbanService (spec kanban-adapter-interface Behaviour 4–11): the single
@@ -45,6 +47,8 @@ const CHANNEL = {
   getItem: 'kanban:getItem',
   getComments: 'kanban:getComments',
   bindLocalFile: 'kanban:bindLocalFile',
+  skillStatus: 'kanban:skillStatus',
+  writeSkill: 'kanban:writeSkill',
 } as const
 
 /** Discovery entry of the built-in source; it has no config fields. */
@@ -82,6 +86,7 @@ export interface KanbanServiceDeps {
   safeStorage?: SafeStorageLike
   discoverAdapters?: (dir: string) => DiscoveryResult
   localFile?: LocalTaskFile
+  skillFile?: AgentSkillFile
 }
 
 export interface KanbanSetConfigInput {
@@ -138,6 +143,7 @@ export class KanbanService {
   readonly #safeStorage: SafeStorageLike | undefined
   readonly #discoverAdapters: (dir: string) => DiscoveryResult
   readonly #localFile: LocalTaskFile
+  readonly #skillFile: AgentSkillFile
   /**
    * Secrets entered while safeStorage cannot encrypt (Linux without a
    * keyring). They live only for this app session, keyed by project + field,
@@ -159,6 +165,7 @@ export class KanbanService {
     this.#safeStorage = deps.safeStorage
     this.#discoverAdapters = deps.discoverAdapters ?? discoverAdapters
     this.#localFile = deps.localFile ?? new LocalTaskFile({ projects: deps.projects })
+    this.#skillFile = deps.skillFile ?? new AgentSkillFile({ projects: deps.projects })
   }
 
   /** True when the project's stored binding is the built-in `local-file` source. */
@@ -291,6 +298,30 @@ export class KanbanService {
     await this.#localFile.ensure(projectId, CHANNEL.bindLocalFile)
     this.assertProject(projectId)
     this.#state.set(projectKanbanAdapterKey(projectId), LOCAL_FILE_ADAPTER_ID)
+  }
+
+  /** `Teach agents` dialog: whether the skill file exists (project-home spec Behaviour 11). */
+  async skillStatus(projectId: string): Promise<KanbanSkillStatus> {
+    this.assertProject(projectId)
+    return { exists: await this.#skillFile.exists(projectId, CHANNEL.skillStatus) }
+  }
+
+  /**
+   * `Teach agents` confirm (project-home spec Behaviour 11-12): writes the
+   * skill text for the bound source. It never runs the adapter, reads its
+   * config, or copies task items. An unbound project is rejected.
+   */
+  async writeSkill(projectId: string): Promise<void> {
+    this.assertProject(projectId)
+    const adapterId = this.#state.get(projectKanbanAdapterKey(projectId))
+    if (adapterId === null || adapterId.trim().length === 0) {
+      throw new AppError(
+        'validation_error',
+        'Connect a task source before teaching agents.',
+        CHANNEL.writeSkill,
+      )
+    }
+    await this.#skillFile.write(projectId, buildAgentSkill(adapterId), CHANNEL.writeSkill)
   }
 
   getConfig(projectId: string): KanbanProjectConfig {

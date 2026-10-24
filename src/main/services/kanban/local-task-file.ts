@@ -292,7 +292,7 @@ function resolveState(
   throw new AppError('validation_error', `The task list has no state named "${stateRef}".`, channel)
 }
 
-function errnoCode(error: unknown): string | undefined {
+export function errnoCode(error: unknown): string | undefined {
   return isRecord(error) && typeof error.code === 'string' ? error.code : undefined
 }
 
@@ -331,7 +331,7 @@ function stripTrailingSlash(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
-function isInside(root: string, target: string): boolean {
+export function isInside(root: string, target: string): boolean {
   const rootPrefix = stripTrailingSlash(root)
   const targetPrefix = stripTrailingSlash(target)
   return targetPrefix === rootPrefix || targetPrefix.startsWith(`${rootPrefix}/`)

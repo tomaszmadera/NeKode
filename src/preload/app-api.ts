@@ -28,6 +28,7 @@ import type {
   KanbanItemWriteResult,
   KanbanLaunchResult,
   KanbanProjectConfig,
+  KanbanSkillStatus,
   ProjectInfo,
   ShellInfo,
   TaskProgressAdapterList,
@@ -237,6 +238,9 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
       getComments: (projectId, ref) =>
         invoke<KanbanComment[]>(IPC_CHANNEL.kanbanGetComments, projectId, ref),
       bindLocalFile: (projectId) => invoke<void>(IPC_CHANNEL.kanbanBindLocalFile, projectId),
+      skillStatus: (projectId) =>
+        invoke<KanbanSkillStatus>(IPC_CHANNEL.kanbanSkillStatus, projectId),
+      writeSkill: (projectId) => invoke<void>(IPC_CHANNEL.kanbanWriteSkill, projectId),
       launchTask: (input) => invoke<KanbanLaunchResult>(IPC_CHANNEL.kanbanLaunchTask, input),
       handoffCandidates: (input) =>
         invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanHandoffCandidates, input),

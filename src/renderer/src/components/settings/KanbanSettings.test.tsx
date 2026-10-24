@@ -45,6 +45,9 @@ function appMock(
     setConfig?: ReturnType<typeof vi.fn>
     test?: ReturnType<typeof vi.fn>
     bindLocalFile?: ReturnType<typeof vi.fn>
+    skillStatus?: ReturnType<typeof vi.fn>
+    writeSkill?: ReturnType<typeof vi.fn>
+    agentProfilesGet?: ReturnType<typeof vi.fn>
     stateGet?: ReturnType<typeof vi.fn>
     stateSet?: ReturnType<typeof vi.fn>
     pickDirectory?: ReturnType<typeof vi.fn>
@@ -57,6 +60,8 @@ function appMock(
       setConfig: options.setConfig ?? vi.fn().mockResolvedValue(undefined),
       test: options.test ?? vi.fn().mockResolvedValue(undefined),
       bindLocalFile: options.bindLocalFile ?? vi.fn().mockResolvedValue(undefined),
+      skillStatus: options.skillStatus ?? vi.fn().mockResolvedValue({ exists: false }),
+      writeSkill: options.writeSkill ?? vi.fn().mockResolvedValue(undefined),
       listBoard: vi.fn(),
       createItem: vi.fn(),
       updateItem: vi.fn(),
@@ -67,6 +72,9 @@ function appMock(
     },
     dialogs: {
       pickDirectory: options.pickDirectory ?? vi.fn().mockResolvedValue(null),
+    },
+    agentProfiles: {
+      get: options.agentProfilesGet ?? vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }),
     },
   } as unknown as AppApi
 }
@@ -790,5 +798,246 @@ describe('KanbanSettings - Local file (project-home spec Behaviour 6-7, 10)', ()
         'The task file .nekode/tasks.json is not valid: it is not valid JSON.',
       ),
     )
+  })
+})
+
+describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', () => {
+  const LOCAL: KanbanAdapterInfo = { id: 'local-file', name: 'Local file', configSchema: [] }
+  const SKILL_PATH = '.agents/skills/nekode-tasks/SKILL.md'
+
+  function bound(adapterId: string) {
+    return vi.fn().mockResolvedValue({ adapterId, values: {}, secretKeys: [] })
+  }
+
+  function profiles(...names: string[]) {
+    return vi.fn().mockResolvedValue({
+      defaultId: null,
+      profiles: names.map((name, index) => ({
+        id: `profile-${index}`,
+        name,
+        executable: name.toLowerCase(),
+        args: [],
+      })),
+    })
+  }
+
+  it('is absent while no source is bound, even with a selected unsaved adapter', async () => {
+    const app = appMock({ adaptersList: vi.fn().mockResolvedValue([LOCAL, PLANE]) })
+    await renderLoaded(app)
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachAgents)).toBeNull()
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect), {
+      target: { value: 'plane' },
+    })
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachAgents)).toBeNull()
+  })
+
+  it('is present while a source is bound', async () => {
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL, PLANE]),
+      getConfig: bound('local-file'),
+    })
+    await renderLoaded(app)
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents).textContent).toBe('Teach agents')
+  })
+
+  it('names the file and lists the selected profiles; Cancel writes nothing', async () => {
+    const writeSkill = vi.fn().mockResolvedValue(undefined)
+    const skillStatus = vi.fn().mockResolvedValue({ exists: false })
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([PLANE]),
+      getConfig: bound('plane'),
+      writeSkill,
+      skillStatus,
+      agentProfilesGet: profiles('Claude', 'Grok'),
+    })
+    await renderLoaded(app)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
+    expect(skillStatus).toHaveBeenCalledWith('p1')
+    expect(app.agentProfiles.get).toHaveBeenCalledWith('p1')
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachFile).textContent).toBe(SKILL_PATH)
+    const items = screen.getByTestId(TEST_ID.settingsKanbanTeachProfiles).querySelectorAll('li')
+    expect(Array.from(items).map((item) => item.textContent)).toEqual(['Claude', 'Grok'])
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachNoProfiles)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachReplace)).toBeNull()
+    expect(dialog.textContent).not.toMatch(/\.claude|\.grok/)
+
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogCancel))
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    expect(writeSkill).not.toHaveBeenCalled()
+  })
+
+  it('says that no agent profile is selected and still offers the file', async () => {
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL]),
+      getConfig: bound('local-file'),
+    })
+    await renderLoaded(app)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachNoProfiles).textContent).toBe(
+      'No agent profile is selected for this project.',
+    )
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachFile).textContent).toBe(SKILL_PATH)
+    expect(screen.getByTestId(TEST_ID.confirmDialogConfirm)).toBeTruthy()
+  })
+
+  it('shows the replace copy when the file exists and Confirm writes it', async () => {
+    const writeSkill = vi.fn().mockResolvedValue(undefined)
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL]),
+      getConfig: bound('local-file'),
+      skillStatus: vi.fn().mockResolvedValue({ exists: true }),
+      writeSkill,
+      agentProfilesGet: profiles('Claude'),
+    })
+    await renderLoaded(app)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachReplace).textContent).toBe(
+      `This replaces ${SKILL_PATH}.`,
+    )
+    expect(writeSkill).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    expect(writeSkill).toHaveBeenCalledTimes(1)
+    expect(writeSkill).toHaveBeenCalledWith('p1')
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachDone).textContent).toBe(
+      `Wrote ${SKILL_PATH}.`,
+    )
+  })
+
+  it('shows a failed write inline and keeps the dialog open', async () => {
+    const writeSkill = vi
+      .fn()
+      .mockRejectedValueOnce({
+        nekodeAppError: true,
+        code: 'validation_error',
+        message: '.agents resolves outside the project folder.',
+      })
+      .mockResolvedValueOnce(undefined)
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([PLANE]),
+      getConfig: bound('plane'),
+      writeSkill,
+    })
+    await renderLoaded(app)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.settingsKanbanTeachError).textContent).toBe(
+        '.agents resolves outside the project folder.',
+      ),
+    )
+    expect(screen.getByTestId(TEST_ID.confirmDialog)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachDone)).toBeNull()
+    // A retry from the same dialog closes it on success.
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    expect(writeSkill).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores Cancel, Escape, and the backdrop while the write runs, and keeps focus inside', async () => {
+    let finish: (value?: unknown) => void = () => undefined
+    let fail: (reason: unknown) => void = () => undefined
+    const writeSkill = vi.fn(
+      () =>
+        new Promise((resolve, reject) => {
+          finish = resolve
+          fail = reject
+        }),
+    )
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL]),
+      getConfig: bound('local-file'),
+      writeSkill,
+    })
+    await renderLoaded(app)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
+    const confirm = screen.getByTestId(TEST_ID.confirmDialogConfirm)
+    expect(document.activeElement).toBe(confirm)
+    fireEvent.click(confirm)
+    await waitFor(() => expect(confirm.getAttribute('aria-disabled')).toBe('true'))
+    // The confirm keeps focus (no `disabled` attribute), so keys stay in the dialog.
+    expect(confirm.hasAttribute('disabled')).toBe(false)
+    expect(document.activeElement).toBe(confirm)
+
+    fireEvent.click(confirm)
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogCancel))
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
+    fireEvent.mouseDown(dialog.parentElement as Element)
+    expect(screen.getByTestId(TEST_ID.confirmDialog)).toBe(dialog)
+    expect(writeSkill).toHaveBeenCalledTimes(1)
+
+    fail({ nekodeAppError: true, code: 'unknown', message: `Could not write ${SKILL_PATH}.` })
+    await screen.findByTestId(TEST_ID.settingsKanbanTeachError)
+    expect(confirm.hasAttribute('aria-disabled')).toBe(false)
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    // After the write ends, Escape closes the dialog again.
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    finish()
+  })
+
+  it('returns focus to Teach agents on close even if focus dropped while the status loaded', async () => {
+    let answer: (value: { exists: boolean }) => void = () => undefined
+    const skillStatus = vi.fn(
+      () =>
+        new Promise<{ exists: boolean }>((resolve) => {
+          answer = resolve
+        }),
+    )
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL]),
+      getConfig: bound('local-file'),
+      skillStatus,
+    })
+    await renderLoaded(app)
+    const teach = screen.getByTestId(TEST_ID.settingsKanbanTeachAgents) as HTMLButtonElement
+    teach.focus()
+    fireEvent.click(teach)
+    await waitFor(() => expect(teach.disabled).toBe(true))
+    // Chromium moves focus off a button that becomes disabled; jsdom does
+    // not, so focus is dropped to the body through a removed element.
+    const stand = document.createElement('input')
+    document.body.append(stand)
+    stand.focus()
+    stand.remove()
+    expect(document.activeElement).toBe(document.body)
+    answer({ exists: false })
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogCancel))
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(teach))
+
+    // A successful write returns focus there too.
+    fireEvent.click(teach)
+    await waitFor(() => expect(skillStatus).toHaveBeenCalledTimes(2))
+    answer({ exists: false })
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(teach))
+  })
+
+  it('shows a failed status read inline in the section and opens no dialog', async () => {
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL]),
+      getConfig: bound('local-file'),
+      skillStatus: vi.fn().mockRejectedValue({
+        nekodeAppError: true,
+        code: 'unknown',
+        message: 'Could not resolve .agents: it exists but its link cannot be followed.',
+      }),
+    })
+    await renderLoaded(app)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Could not resolve .agents: it exists but its link cannot be followed.',
+    )
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    expect(app.kanban.writeSkill).not.toHaveBeenCalled()
   })
 })

@@ -267,6 +267,17 @@ export const LOCAL_TASK_FILE_PATH = '.nekode/tasks.json'
  */
 export const LOCAL_TASK_FILE_MISSING = 'local_task_file_missing'
 
+/**
+ * Project-relative path of the one skill file `Teach agents` writes
+ * (project-home spec Behaviour 11-12). No per-agent destinations.
+ */
+export const AGENT_SKILL_FILE_PATH = '.agents/skills/nekode-tasks/SKILL.md'
+
+/** Result of `kanban:skillStatus`: whether the skill file already exists. */
+export interface KanbanSkillStatus {
+  exists: boolean
+}
+
 export type KanbanConfigFieldType = 'string' | 'secret' | 'select' | 'boolean'
 
 export interface KanbanConfigField {
@@ -566,6 +577,8 @@ export const IPC_CHANNEL = {
   kanbanGetItem: 'kanban:getItem',
   kanbanGetComments: 'kanban:getComments',
   kanbanBindLocalFile: 'kanban:bindLocalFile',
+  kanbanSkillStatus: 'kanban:skillStatus',
+  kanbanWriteSkill: 'kanban:writeSkill',
   kanbanLaunchTask: 'kanban:launchTask',
   kanbanHandoffCandidates: 'kanban:handoffCandidates',
   kanbanHandoffAvailability: 'kanban:handoffAvailability',
@@ -1155,6 +1168,18 @@ export interface AppApi {
      * An existing file is left unchanged.
      */
     bindLocalFile(projectId: string): Promise<void>
+    /**
+     * `Teach agents` (project-home spec Behaviour 11): whether
+     * `.agents/skills/nekode-tasks/SKILL.md` exists under the project root.
+     * Read-only, with the same containment checks as the write.
+     */
+    skillStatus(projectId: string): Promise<KanbanSkillStatus>
+    /**
+     * Writes `.agents/skills/nekode-tasks/SKILL.md` after the confirm gesture.
+     * Main builds the text from the bound source; the renderer sends no
+     * content. Rejects while no source is bound.
+     */
+    writeSkill(projectId: string): Promise<void>
     /**
      * Starts one task chat. Main owns the profile, the prompt, and the
      * process. The same `attemptId` returns the same chat.

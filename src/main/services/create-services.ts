@@ -416,6 +416,8 @@ export function createServices(options: CreateServicesOptions): AppServices {
       updateItem: (projectId, ref, patch, revision) =>
         kanban.updateItem(projectId, ref, patch, revision),
       bindLocalFile: (projectId) => kanban.bindLocalFile(projectId),
+      skillStatus: (projectId) => kanban.skillStatus(projectId),
+      writeSkill: (projectId) => kanban.writeSkill(projectId),
       getItem: (projectId, ref) => kanban.getItem(projectId, ref),
       getComments: (projectId, ref) => kanban.getComments(projectId, ref),
       launchTask: (input) => taskLaunch.launch(input),

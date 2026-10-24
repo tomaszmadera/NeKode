@@ -1,11 +1,11 @@
 # Project home: Tasks
 
-Status: Not delivered.
+Status: Delivered (home tab, Tasks wording, the built-in `local-file` source, and `Teach agents` writing the one file `.agents/skills/nekode-tasks/SKILL.md`; no per-agent skill folders in this version).
 Path: `docs/features/project-home/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
-The shipped application still follows the kanban adapter spec until the stages of this contract land. This contract is the target.
+This contract describes the shipped behaviour, including `Teach agents` writing only the one skill file `.agents/skills/nekode-tasks/SKILL.md` and no per-agent skill folders.
 
 ## Goal
 
@@ -76,6 +76,7 @@ Renderer calls stay behind the existing trusted-sender guard. Writes accept only
 - `kanban:createItem` and `kanban:updateItem` for `local-file` accept that `revision` and return the updated item and the new `revision`.
 - `kanban:test` for `local-file` needs no config fields.
 - `kanban:bindLocalFile(projectId)` is the `Use a local task list` action. Its one argument is a non-empty registered project id; IPC validation rejects any other payload. Main creates `.nekode` under the stored project root if needed (never the root itself), then creates `.nekode/tasks.json` with the initial document exclusively, so an existing file, valid or not, is left unchanged. It then binds `local-file` and resolves with no value. A failure leaves the binding unchanged: `not_found` for an unknown project or a missing project folder, `validation_error` when `.nekode` or `tasks.json` resolves outside the project folder, `unknown` with the relative path for an IO failure or a link that cannot be resolved. While bound, a missing task file rejects reads and writes with `not_found` and `detail: "local_task_file_missing"`; the home tab offers `Use a local task list` only for that detail.
+- `kanban:skillStatus(projectId)` resolves `{ exists: boolean }` for `.agents/skills/nekode-tasks/SKILL.md`; the dialog uses it for the replace copy. `kanban:writeSkill(projectId)` is the confirmed `Teach agents` write and resolves with no value. Each takes one non-empty registered project id and nothing else; IPC validation rejects any other payload. The renderer sends no path and no text: main builds the skill text from the stored binding (`local-file` or any other id) and rejects an unbound project with `validation_error`. Main creates only the missing `.agents`, `.agents/skills`, and `.agents/skills/nekode-tasks` segments one at a time under the stored project root (never the root itself) and replaces the file by a temp file in the same directory plus a rename. Both channels reject with `not_found` for an unknown project or a missing project folder, `validation_error` when an existing segment or the file resolves outside the project folder, and `unknown` with the relative path for an IO failure or a link that cannot be resolved; a failed write leaves any previous file unchanged.
 - No new SQLite migration.
 
 ## Edge cases

@@ -1,5 +1,6 @@
 import type React from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {
   AppApi,
   KanbanAdapterInfo,
@@ -7,6 +8,7 @@ import type {
   KanbanProjectConfig,
 } from '../../../../shared/ipc-contract'
 import {
+  AGENT_SKILL_FILE_PATH,
   APP_STATE_KEY,
   LOCAL_FILE_ADAPTER_ID,
   LOCAL_TASK_FILE_PATH,
@@ -14,6 +16,7 @@ import {
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { ConfirmDialog } from '../layout/ConfirmDialog'
 
 // Kanban tab of the Project Settings modal (spec kanban-adapter-interface
 // Behaviour 7–8, 12–13). The adapter select lists the fresh discovery scan;
@@ -27,7 +30,10 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // The built-in `Local file` source (project-home spec Behaviour 7, 10) is the
 // first adapter entry: it has no fields, shows its relative path and Test
 // (which parses the file), and while no source is bound the section offers
-// `Use a local task list`.
+// `Use a local task list`. While a source is bound, `Teach agents` opens a
+// confirm dialog that names the one skill file main writes (project-home spec
+// Behaviour 11) and lists the project's selected agent profiles; only the
+// project id crosses the bridge, main builds the text.
 
 interface KanbanSettingsProps {
   app: AppApi
@@ -36,6 +42,12 @@ interface KanbanSettingsProps {
 }
 
 type TestState = 'idle' | 'running' | 'success' | 'error'
+
+/** Open `Teach agents` dialog: whether the file exists and the selected profile names. */
+interface TeachDialogState {
+  exists: boolean
+  profiles: { id: string; name: string }[]
+}
 
 /** Effective stored values as returned by getConfig (non-secret) or null. */
 type StoredValues = Record<string, string | null>
@@ -141,7 +153,26 @@ export function KanbanSettings({
   const [savedState, setSavedState] = useState<'idle' | 'saved'>('idle')
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState<string | null>(null)
+  const [teachDialog, setTeachDialog] = useState<TeachDialogState | null>(null)
+  const [teachWriting, setTeachWriting] = useState(false)
+  const [teachError, setTeachError] = useState<string | null>(null)
+  const [teachDone, setTeachDone] = useState(false)
+  // The opener is disabled while the status loads, so the dialog cannot rely
+  // on the element focused at its mount; focus returns here on close.
+  const teachButtonRef = useRef<HTMLButtonElement>(null)
+  const teachWasOpen = useRef(false)
   const guard = useMutationGuard()
+
+  useEffect(() => {
+    if (teachDialog !== null) {
+      teachWasOpen.current = true
+      return
+    }
+    if (!teachWasOpen.current) return
+    teachWasOpen.current = false
+    // Runs after the dialog's unmount cleanup, so this focus wins.
+    teachButtonRef.current?.focus()
+  }, [teachDialog])
 
   // One scan + config load on tab entry. The component mounts fresh each time
   // the tab is selected, so a plain mount effect is the entry hook (AC1: a
@@ -179,6 +210,7 @@ export function KanbanSettings({
       setFormError(null)
       setTestState('idle')
       setTestMessage(null)
+      setTeachDone(false)
     },
     [],
   )
@@ -327,6 +359,52 @@ export function KanbanSettings({
         )
       }
     })
+  }
+
+  /**
+   * `Teach agents` (project-home spec Behaviour 11): reads whether the skill
+   * file exists and the project's selected profiles, then opens the confirm
+   * dialog. Nothing is written until Confirm.
+   */
+  async function openTeachAgents(): Promise<void> {
+    if (projectId === null || persistedAdapterId === null) return
+    await guard.run(async () => {
+      setFormError(null)
+      setTeachDone(false)
+      try {
+        const [status, document] = await Promise.all([
+          app.kanban.skillStatus(projectId),
+          app.agentProfiles.get(projectId),
+        ])
+        setTeachError(null)
+        setTeachDialog({
+          exists: status.exists,
+          profiles: document.profiles.map((profile) => ({ id: profile.id, name: profile.name })),
+        })
+      } catch (cause) {
+        setFormError(
+          parseAppErrorPayload(cause)?.message ?? 'Could not prepare the agent skill file.',
+        )
+      }
+    })
+  }
+
+  /** Confirm: one write; a failure stays inline and keeps the dialog open (spec Errors). */
+  async function confirmTeachAgents(): Promise<void> {
+    if (projectId === null || teachWriting) return
+    setTeachWriting(true)
+    setTeachError(null)
+    try {
+      await app.kanban.writeSkill(projectId)
+      setTeachDialog(null)
+      setTeachDone(true)
+    } catch (cause) {
+      setTeachError(
+        parseAppErrorPayload(cause)?.message ?? `Could not write ${AGENT_SKILL_FILE_PATH}.`,
+      )
+    } finally {
+      setTeachWriting(false)
+    }
   }
 
   async function runTest(): Promise<void> {
@@ -590,6 +668,92 @@ export function KanbanSettings({
                   {testMessage}
                 </p>
               ) : null}
+              {persistedAdapterId !== null ? (
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    ref={teachButtonRef}
+                    type="button"
+                    disabled={guard.busy}
+                    className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
+                    data-testid={TEST_ID.settingsKanbanTeachAgents}
+                    onClick={() => {
+                      void openTeachAgents()
+                    }}
+                  >
+                    Teach agents
+                  </button>
+                  {teachDone ? (
+                    <span className="text-success" data-testid={TEST_ID.settingsKanbanTeachDone}>
+                      Wrote {AGENT_SKILL_FILE_PATH}.
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+              {/* Portaled to the body so the confirm sits above the Project
+                  Settings modal instead of inside its scrolling panel. */}
+              {teachDialog !== null
+                ? createPortal(
+                    <ConfirmDialog
+                      title="Teach agents"
+                      body="NeKode writes one project skill file that tells agents where this project's tasks live. It contains no tasks and no tracker settings."
+                      confirmLabel="Write skill file"
+                      confirmDisabled={teachWriting}
+                      onConfirm={() => {
+                        void confirmTeachAgents()
+                      }}
+                      onCancel={() => {
+                        if (teachWriting) return
+                        setTeachDialog(null)
+                        setTeachError(null)
+                      }}
+                    >
+                      <div className="mt-3 text-xs text-ink-secondary">
+                        <p>
+                          File:{' '}
+                          <code className="text-ink" data-testid={TEST_ID.settingsKanbanTeachFile}>
+                            {AGENT_SKILL_FILE_PATH}
+                          </code>
+                        </p>
+                        {teachDialog.exists ? (
+                          <p
+                            className="mt-2 text-warning"
+                            data-testid={TEST_ID.settingsKanbanTeachReplace}
+                          >
+                            This replaces {AGENT_SKILL_FILE_PATH}.
+                          </p>
+                        ) : null}
+                        <p className="mt-3">Agents that can read a project skill:</p>
+                        {teachDialog.profiles.length > 0 ? (
+                          <ul
+                            className="mt-1 list-disc pl-5 text-ink"
+                            data-testid={TEST_ID.settingsKanbanTeachProfiles}
+                          >
+                            {teachDialog.profiles.map((profile) => (
+                              <li key={profile.id}>{profile.name}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p
+                            className="mt-1 text-ink-muted"
+                            data-testid={TEST_ID.settingsKanbanTeachNoProfiles}
+                          >
+                            No agent profile is selected for this project.
+                          </p>
+                        )}
+                        {teachError !== null ? (
+                          <p
+                            role="alert"
+                            className="mt-3 text-error"
+                            data-testid={TEST_ID.settingsKanbanTeachError}
+                          >
+                            {teachError}
+                          </p>
+                        ) : null}
+                      </div>
+                    </ConfirmDialog>,
+                    document.body,
+                  )
+                : null}
             </>
           )}
           {/* Adapters directory (Behaviour 12): app-level, shown regardless of

@@ -189,6 +189,14 @@ export const TEST_ID = {
   settingsKanbanUseLocal: 'settings-kanban-use-local',
   /** Relative task-file path shown for `local-file` (spec project-home Behaviour 10). */
   settingsKanbanLocalPath: 'settings-kanban-local-path',
+  /** `Teach agents` while a source is bound, and its confirm dialog (spec project-home Behaviour 11). */
+  settingsKanbanTeachAgents: 'settings-kanban-teach-agents',
+  settingsKanbanTeachFile: 'settings-kanban-teach-file',
+  settingsKanbanTeachReplace: 'settings-kanban-teach-replace',
+  settingsKanbanTeachProfiles: 'settings-kanban-teach-profiles',
+  settingsKanbanTeachNoProfiles: 'settings-kanban-teach-no-profiles',
+  settingsKanbanTeachError: 'settings-kanban-teach-error',
+  settingsKanbanTeachDone: 'settings-kanban-teach-done',
   settingsKanbanSave: 'settings-kanban-save',
   settingsKanbanSaved: 'settings-kanban-saved',
   settingsKanbanTest: 'settings-kanban-test',

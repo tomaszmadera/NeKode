@@ -167,6 +167,72 @@ describe('Kanban tab shell', () => {
     expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
   })
 
+  it('Escape in the Teach agents dialog closes only that dialog, and not while the write runs', async () => {
+    let finish: (value?: unknown) => void = () => undefined
+    const writeSkill = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const base = kanbanAppMock()
+    const app = {
+      ...base,
+      kanban: {
+        ...base.kanban,
+        adaptersList: vi
+          .fn()
+          .mockResolvedValue([{ id: 'local-file', name: 'Local file', configSchema: [] }]),
+        getConfig: vi
+          .fn()
+          .mockResolvedValue({ adapterId: 'local-file', values: {}, secretKeys: [] }),
+        skillStatus: vi.fn().mockResolvedValue({ exists: false }),
+        writeSkill,
+      },
+      agentProfiles: { get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }) },
+    } as unknown as AppApi
+    const onClose = vi.fn()
+    render(
+      <ActionSettings
+        app={app}
+        actions={[] as ActionControl[]}
+        projectId="p1"
+        projectPath="D:/p"
+        autoSend={false}
+        onAutoSendChange={vi.fn()}
+        onRefresh={vi.fn().mockResolvedValue(undefined)}
+        initialTab="kanban"
+        onClose={onClose}
+      />,
+    )
+    fireEvent.click(await screen.findByTestId(TEST_ID.settingsKanbanTeachAgents))
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId(TEST_ID.settingsKanbanTeachAgents) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    )
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(writeSkill).toHaveBeenCalledTimes(1))
+    // Chromium drops focus from a `disabled` button (jsdom does not), which
+    // would send Escape to the Project Settings window listener.
+    expect(screen.getByTestId(TEST_ID.confirmDialogConfirm).hasAttribute('disabled')).toBe(false)
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
+    expect(screen.getByTestId(TEST_ID.confirmDialog)).toBe(dialog)
+    expect(onClose).not.toHaveBeenCalled()
+
+    finish()
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('opens on the requested tab when an initialTab is passed (board Configure)', async () => {
     const props = {
       app: kanbanAppMock(),
