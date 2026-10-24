@@ -75,6 +75,7 @@ Renderer calls stay behind the existing trusted-sender guard. Writes accept only
 - `kanban:listBoard` for `local-file` returns the normalized board plus the document `revision` the next write must echo. The revision travels with the existing board payload as `revision: number`. Process adapters omit it; the renderer sends a write revision only for `local-file`.
 - `kanban:createItem` and `kanban:updateItem` for `local-file` accept that `revision` and return the updated item and the new `revision`.
 - `kanban:test` for `local-file` needs no config fields.
+- `kanban:bindLocalFile(projectId)` is the `Use a local task list` action. Its one argument is a non-empty registered project id; IPC validation rejects any other payload. Main creates `.nekode` under the stored project root if needed (never the root itself), then creates `.nekode/tasks.json` with the initial document exclusively, so an existing file, valid or not, is left unchanged. It then binds `local-file` and resolves with no value. A failure leaves the binding unchanged: `not_found` for an unknown project or a missing project folder, `validation_error` when `.nekode` or `tasks.json` resolves outside the project folder, `unknown` with the relative path for an IO failure or a link that cannot be resolved. While bound, a missing task file rejects reads and writes with `not_found` and `detail: "local_task_file_missing"`; the home tab offers `Use a local task list` only for that detail.
 - No new SQLite migration.
 
 ## Edge cases

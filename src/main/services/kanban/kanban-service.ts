@@ -4,9 +4,12 @@ import {
   type KanbanBoard,
   type KanbanComment,
   type KanbanCreateInput,
+  type KanbanItemWriteResult,
   type KanbanPriority,
   type KanbanProjectConfig,
   type KanbanUpdatePatch,
+  LOCAL_FILE_ADAPTER_ID,
+  LOCAL_FILE_ADAPTER_NAME,
   projectKanbanAdapterKey,
   projectKanbanConfigKey,
   type WorkItem,
@@ -20,13 +23,16 @@ import {
   normalizeItems,
   normalizeStates,
 } from './adapter-protocol'
+import { LocalTaskFile } from './local-task-file'
 
 // KanbanService (spec kanban-adapter-interface Behaviour 4–11): the single
 // main-process facade behind the kanban:* channels. Binding and config live
 // in the flat app_state store under per-project keys; secret values are
 // write-only through getConfig. Every backend call goes through the adapter
 // host (one process per request); errors map to typed codes — never silent
-// fallbacks (spec Errors).
+// fallbacks (spec Errors). The built-in `local-file` source (project-home
+// spec Behaviour 7-10) is served in main by LocalTaskFile: it never reaches
+// discovery, the adapter host, or the stored adapter config and secrets.
 
 const CHANNEL = {
   adaptersList: 'kanban:adaptersList',
@@ -38,7 +44,15 @@ const CHANNEL = {
   updateItem: 'kanban:updateItem',
   getItem: 'kanban:getItem',
   getComments: 'kanban:getComments',
+  bindLocalFile: 'kanban:bindLocalFile',
 } as const
+
+/** Discovery entry of the built-in source; it has no config fields. */
+const LOCAL_FILE_ADAPTER_INFO: KanbanAdapterInfo = {
+  id: LOCAL_FILE_ADAPTER_ID,
+  name: LOCAL_FILE_ADAPTER_NAME,
+  configSchema: [],
+}
 
 /** Minimal project lookup (the ProjectService surface this service needs). */
 export interface KanbanProjectLookup {
@@ -67,6 +81,7 @@ export interface KanbanServiceDeps {
   host?: AdapterHost
   safeStorage?: SafeStorageLike
   discoverAdapters?: (dir: string) => DiscoveryResult
+  localFile?: LocalTaskFile
 }
 
 export interface KanbanSetConfigInput {
@@ -122,6 +137,7 @@ export class KanbanService {
   readonly #host: AdapterHost
   readonly #safeStorage: SafeStorageLike | undefined
   readonly #discoverAdapters: (dir: string) => DiscoveryResult
+  readonly #localFile: LocalTaskFile
   /**
    * Secrets entered while safeStorage cannot encrypt (Linux without a
    * keyring). They live only for this app session, keyed by project + field,
@@ -142,6 +158,13 @@ export class KanbanService {
     this.#host = deps.host ?? new AdapterHost()
     this.#safeStorage = deps.safeStorage
     this.#discoverAdapters = deps.discoverAdapters ?? discoverAdapters
+    this.#localFile = deps.localFile ?? new LocalTaskFile({ projects: deps.projects })
+  }
+
+  /** True when the project's stored binding is the built-in `local-file` source. */
+  private boundToLocalFile(projectId: string): boolean {
+    this.assertProject(projectId)
+    return this.#state.get(projectKanbanAdapterKey(projectId)) === LOCAL_FILE_ADAPTER_ID
   }
 
   /**
@@ -235,13 +258,39 @@ export class KanbanService {
     return stored
   }
 
-  /** Fresh one-level scan; warnings go to the main log, never to the UI. */
+  /**
+   * The built-in `local-file` source first, then a fresh one-level scan;
+   * warnings go to the main log, never to the UI. A discovered adapter that
+   * claims the built-in id is skipped: that id always means the local file.
+   */
   adaptersList(): KanbanAdapterInfo[] {
     const { adapters, warnings } = this.#discoverAdapters(this.#adaptersDir())
     for (const warning of warnings) {
       console.warn(`[kanban] ${warning}`)
     }
-    return adapters.map((adapter) => adapter.info)
+    const discovered: KanbanAdapterInfo[] = []
+    for (const adapter of adapters) {
+      if (adapter.info.id === LOCAL_FILE_ADAPTER_ID) {
+        console.warn(
+          `[kanban] Adapter in "${adapter.dir}" uses the reserved id "${LOCAL_FILE_ADAPTER_ID}"; skipped.`,
+        )
+        continue
+      }
+      discovered.push(adapter.info)
+    }
+    return [LOCAL_FILE_ADAPTER_INFO, ...discovered]
+  }
+
+  /**
+   * `Use a local task list` (project-home spec Behaviour 7): creates the task
+   * file only when it is absent, then binds `local-file`. A failed create
+   * leaves the binding unchanged.
+   */
+  async bindLocalFile(projectId: string): Promise<void> {
+    this.assertProject(projectId)
+    await this.#localFile.ensure(projectId, CHANNEL.bindLocalFile)
+    this.assertProject(projectId)
+    this.#state.set(projectKanbanAdapterKey(projectId), LOCAL_FILE_ADAPTER_ID)
   }
 
   getConfig(projectId: string): KanbanProjectConfig {
@@ -390,10 +439,18 @@ export class KanbanService {
   }
 
   async test(projectId: string, values?: Record<string, string>): Promise<void> {
+    if (this.boundToLocalFile(projectId)) {
+      // Test parses the file (project-home spec Behaviour 10); no config fields.
+      await this.#localFile.read(projectId, CHANNEL.test)
+      return
+    }
     await this.invoke(projectId, 'test', values, {})
   }
 
   async listBoard(projectId: string): Promise<KanbanBoard> {
+    if (this.boundToLocalFile(projectId)) {
+      return await this.#localFile.listBoard(projectId, CHANNEL.listBoard)
+    }
     const [states, items] = await Promise.all([
       this.invoke<unknown>(projectId, 'listStates', undefined, {}),
       this.invoke<unknown>(projectId, 'listItems', undefined, {}),
@@ -401,7 +458,15 @@ export class KanbanService {
     return { states: normalizeStates(states), items: normalizeItems(items) }
   }
 
-  async createItem(projectId: string, input: KanbanCreateInput): Promise<WorkItem> {
+  /** `revision` applies to `local-file` only; process adapters never receive it. */
+  async createItem(
+    projectId: string,
+    input: KanbanCreateInput,
+    revision?: number,
+  ): Promise<KanbanItemWriteResult> {
+    if (this.boundToLocalFile(projectId)) {
+      return await this.#localFile.createItem(projectId, input, revision, CHANNEL.createItem)
+    }
     const data = await this.invoke<unknown>(projectId, 'createItem', undefined, {
       title: input.title,
       ...(input.description !== undefined ? { description: input.description } : {}),
@@ -411,7 +476,12 @@ export class KanbanService {
     return normalizeItem(data, 'createItem data')
   }
 
-  async updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem> {
+  async updateItem(
+    projectId: string,
+    ref: string,
+    patch: KanbanUpdatePatch,
+    revision?: number,
+  ): Promise<KanbanItemWriteResult> {
     if (typeof ref !== 'string' || ref.trim().length === 0) {
       throw new AppError(
         'validation',
@@ -439,6 +509,9 @@ export class KanbanService {
         CHANNEL.updateItem,
       )
     }
+    if (this.boundToLocalFile(projectId)) {
+      return await this.#localFile.updateItem(projectId, ref, patch, revision, CHANNEL.updateItem)
+    }
     const data = await this.invoke<unknown>(projectId, 'updateItem', undefined, {
       ref,
       ...patchRecord,
@@ -455,6 +528,11 @@ export class KanbanService {
         CHANNEL.getItem,
       )
     }
+    if (this.boundToLocalFile(projectId)) {
+      // Task launch refetches the live item (Start and Resume stay the
+      // adapter spec's); for the local file that is the document on disk.
+      return await this.#localFile.getItem(projectId, ref, CHANNEL.getItem)
+    }
     const data = await this.invoke<unknown>(projectId, 'getItem', undefined, { ref })
     return normalizeItem(data, 'getItem data')
   }
@@ -468,11 +546,20 @@ export class KanbanService {
         CHANNEL.getComments,
       )
     }
+    if (this.boundToLocalFile(projectId)) {
+      // Local items have no comments; the item itself must still exist.
+      await this.#localFile.getItem(projectId, ref, CHANNEL.getComments)
+      return []
+    }
     const data = await this.invoke<unknown>(projectId, 'listComments', undefined, { ref })
     return normalizeComments(data, 'listComments data')
   }
 
-  /** Cascade cleanup on projects:remove (spec Behaviour 11). */
+  /**
+   * Cascade cleanup on projects:remove (spec Behaviour 11): the binding keys
+   * only. A `local-file` task document stays on disk (project-home spec
+   * Behaviour 9, AC9).
+   */
   cleanupProject(projectId: string): void {
     this.#state.delete(projectKanbanAdapterKey(projectId))
     this.#state.delete(projectKanbanConfigKey(projectId))
@@ -488,7 +575,7 @@ export class KanbanService {
 
   /** Manifest of the bound adapter; not_found names the missing id. */
   private schemaFor(adapterId: string | null) {
-    if (adapterId === null) {
+    if (adapterId === null || adapterId === LOCAL_FILE_ADAPTER_ID) {
       return []
     }
     const found = this.#discoverAdapters(this.#adaptersDir()).adapters.find(

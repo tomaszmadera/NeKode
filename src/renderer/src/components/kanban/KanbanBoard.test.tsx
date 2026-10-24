@@ -2755,3 +2755,105 @@ describe('kanban Start context menu (NEKODE-99)', () => {
     expect(onStartDraft.mock.calls[0]?.[0].ref).toBe('NK-2')
   })
 })
+
+describe('kanban board - local-file revision (project-home spec Behaviour 9, Data / API, Edge cases)', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  function localBoard(revision: number): KanbanBoardData {
+    return {
+      states: [
+        { id: 'backlog', name: 'Backlog', group: 'backlog', order: 0 },
+        { id: 'todo', name: 'Todo', group: 'unstarted', order: 1 },
+        { id: 'done', name: 'Done', group: 'completed', order: 3 },
+      ],
+      items: [{ ...item('T-1', 'Local task', 'backlog'), stateName: 'Backlog' }],
+      revision,
+    }
+  }
+
+  async function submitNewTask(title: string): Promise<void> {
+    fireEvent.click(await screen.findByRole('button', { name: /^New task$/ }))
+    const form = screen.getByRole('form', { name: 'New task' })
+    // Todo is the default status of a new task.
+    expect((within(form).getByLabelText('Status') as HTMLSelectElement).value).toBe('Todo')
+    fireEvent.change(within(form).getByLabelText('Title'), { target: { value: title } })
+    fireEvent.click(within(form).getByRole('button', { name: /^Create$/ }))
+  }
+
+  it('echoes the board revision on create, then the revision the write returned', async () => {
+    const listBoard = vi.fn().mockResolvedValue(localBoard(4))
+    const createItem = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...item('T-2', 'One', 'todo'),
+        stateName: 'Todo',
+        revision: 5,
+      })
+      .mockResolvedValueOnce({
+        ...item('T-3', 'Two', 'todo'),
+        stateName: 'Todo',
+        revision: 6,
+      })
+    const app = appWith(listBoard)
+    app.kanban.createItem = createItem
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+
+    await submitNewTask('One')
+    await screen.findByTestId(testIdFor.kanbanItem('T-2'))
+    await submitNewTask('Two')
+    await screen.findByTestId(testIdFor.kanbanItem('T-3'))
+    expect(createItem.mock.calls).toEqual([
+      ['p1', { title: 'One', stateRef: 'Todo' }, 4],
+      ['p1', { title: 'Two', stateRef: 'Todo' }, 5],
+    ])
+  })
+
+  it('echoes the revision on a status update', async () => {
+    const listBoard = vi.fn().mockResolvedValue(localBoard(2))
+    const updateItem = vi.fn().mockResolvedValue({
+      ...item('T-1', 'Local task', 'done'),
+      stateName: 'Done',
+      revision: 3,
+    })
+    const app = appWith(listBoard)
+    app.kanban.updateItem = updateItem
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('T-1')))
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    fireEvent.change(within(review).getByLabelText('Status'), { target: { value: 'Done' } })
+    await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(1))
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'T-1', { stateRef: 'Done' }, 2])
+  })
+
+  it('a conflict shows the error and refetches without merging', async () => {
+    const listBoard = vi
+      .fn()
+      .mockResolvedValueOnce(localBoard(1))
+      .mockResolvedValueOnce({
+        ...localBoard(2),
+        items: [
+          { ...item('T-1', 'Local task', 'backlog'), stateName: 'Backlog' },
+          { ...item('T-2', 'Written elsewhere', 'todo'), stateName: 'Todo' },
+        ],
+      })
+    const createItem = vi.fn().mockRejectedValue({
+      nekodeAppError: true,
+      code: 'conflict',
+      message: '.nekode/tasks.json changed since it was read. The list was reloaded; try again.',
+    })
+    const app = appWith(listBoard)
+    app.kanban.createItem = createItem
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+
+    await submitNewTask('Mine')
+    expect((await screen.findByRole('alert')).textContent).toContain('changed since it was read')
+    await screen.findByTestId(testIdFor.kanbanItem('T-2'))
+    expect(listBoard).toHaveBeenCalledTimes(2)
+    expect(createItem).toHaveBeenCalledTimes(1)
+    expect(createItem.mock.calls[0][2]).toBe(1)
+    // The draft is kept; the user decides whether to create it again.
+    expect(screen.getByRole('form', { name: 'New task' })).toBeTruthy()
+  })
+})

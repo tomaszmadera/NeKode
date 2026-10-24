@@ -1417,7 +1417,7 @@ Only show actions relevant to the current state.
 
 # 44. Kanban Navigation Animation
 
-Chat/files surface ↔ Kanban (via the left-navigation tile or the top tab):
+Chat/files surface ↔ Kanban (via the home tab or the project name):
 
 - smooth tab underline,
 - short crossfade,

@@ -177,7 +177,7 @@ export function AgentProfilesSettings({
               data-testid={TEST_ID.settingsAgentsEmpty}
               className="mt-3 text-xs text-ink-secondary"
             >
-              No agents selected for this project. Select an agent to use it in New Chat or Kanban.
+              No agents selected for this project. Select an agent to use it in New Chat or Tasks.
             </p>
           ) : null}
           <label className="mt-4 block text-xs">

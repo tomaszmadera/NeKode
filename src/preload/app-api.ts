@@ -25,6 +25,7 @@ import type {
   KanbanBoard,
   KanbanComment,
   KanbanHandoffAvailabilityResult,
+  KanbanItemWriteResult,
   KanbanLaunchResult,
   KanbanProjectConfig,
   ProjectInfo,
@@ -216,13 +217,26 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
         invoke<void>(IPC_CHANNEL.kanbanSetConfig, projectId, config),
       test: (projectId, values) => invoke<void>(IPC_CHANNEL.kanbanTest, projectId, values),
       listBoard: (projectId) => invoke<KanbanBoard>(IPC_CHANNEL.kanbanListBoard, projectId),
-      createItem: (projectId, input) =>
-        invoke<WorkItem>(IPC_CHANNEL.kanbanCreateItem, projectId, input),
-      updateItem: (projectId, ref, patch) =>
-        invoke<WorkItem>(IPC_CHANNEL.kanbanUpdateItem, projectId, ref, patch),
+      // The `local-file` revision is sent only when the caller has one, so a
+      // process-adapter write keeps its original arity.
+      createItem: (projectId, input, revision) =>
+        revision === undefined
+          ? invoke<KanbanItemWriteResult>(IPC_CHANNEL.kanbanCreateItem, projectId, input)
+          : invoke<KanbanItemWriteResult>(IPC_CHANNEL.kanbanCreateItem, projectId, input, revision),
+      updateItem: (projectId, ref, patch, revision) =>
+        revision === undefined
+          ? invoke<KanbanItemWriteResult>(IPC_CHANNEL.kanbanUpdateItem, projectId, ref, patch)
+          : invoke<KanbanItemWriteResult>(
+              IPC_CHANNEL.kanbanUpdateItem,
+              projectId,
+              ref,
+              patch,
+              revision,
+            ),
       getItem: (projectId, ref) => invoke<WorkItem>(IPC_CHANNEL.kanbanGetItem, projectId, ref),
       getComments: (projectId, ref) =>
         invoke<KanbanComment[]>(IPC_CHANNEL.kanbanGetComments, projectId, ref),
+      bindLocalFile: (projectId) => invoke<void>(IPC_CHANNEL.kanbanBindLocalFile, projectId),
       launchTask: (input) => invoke<KanbanLaunchResult>(IPC_CHANNEL.kanbanLaunchTask, input),
       handoffCandidates: (input) =>
         invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanHandoffCandidates, input),

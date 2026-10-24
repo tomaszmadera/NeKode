@@ -44,6 +44,7 @@ function appMock(
     getConfig?: ReturnType<typeof vi.fn>
     setConfig?: ReturnType<typeof vi.fn>
     test?: ReturnType<typeof vi.fn>
+    bindLocalFile?: ReturnType<typeof vi.fn>
     stateGet?: ReturnType<typeof vi.fn>
     stateSet?: ReturnType<typeof vi.fn>
     pickDirectory?: ReturnType<typeof vi.fn>
@@ -55,6 +56,7 @@ function appMock(
       getConfig: options.getConfig ?? vi.fn().mockResolvedValue(emptyConfig()),
       setConfig: options.setConfig ?? vi.fn().mockResolvedValue(undefined),
       test: options.test ?? vi.fn().mockResolvedValue(undefined),
+      bindLocalFile: options.bindLocalFile ?? vi.fn().mockResolvedValue(undefined),
       listBoard: vi.fn(),
       createItem: vi.fn(),
       updateItem: vi.fn(),
@@ -689,4 +691,104 @@ describe('KanbanSettings', () => {
       expect(retryButton.disabled).toBe(false)
     },
   )
+})
+
+describe('KanbanSettings - Local file (project-home spec Behaviour 6-7, 10)', () => {
+  const LOCAL: KanbanAdapterInfo = { id: 'local-file', name: 'Local file', configSchema: [] }
+
+  function localConfig(): KanbanProjectConfig {
+    return { adapterId: 'local-file', values: {}, secretKeys: [] }
+  }
+
+  it('offers Use a local task list while unbound; it binds, invalidates and shows the path', async () => {
+    const getConfig = vi.fn().mockResolvedValueOnce(emptyConfig()).mockResolvedValue(localConfig())
+    const bindLocalFile = vi.fn().mockResolvedValue(undefined)
+    const onInvalidate = vi.fn()
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL, PLANE]),
+      getConfig,
+      bindLocalFile,
+    })
+    render(<KanbanSettings app={app} projectId="p1" onInvalidate={onInvalidate} />)
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.settingsKanbanLoading)).toBeNull())
+    const select = screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect) as HTMLSelectElement
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+      '(none)',
+      'Local file',
+      'Plane · plane',
+    ])
+
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanUseLocal))
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.settingsKanbanLocalPath).textContent).toBe(
+        '.nekode/tasks.json',
+      ),
+    )
+    expect(bindLocalFile).toHaveBeenCalledWith('p1')
+    expect(onInvalidate).toHaveBeenCalledWith('p1')
+    expect(select.value).toBe('local-file')
+    // Bound now: the action is absent.
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanUseLocal)).toBeNull()
+  })
+
+  it('does not offer Use a local task list while a source is bound', async () => {
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL, PLANE]),
+      getConfig: vi.fn().mockResolvedValue({ adapterId: 'plane', values: {}, secretKeys: [] }),
+    })
+    await renderLoaded(app)
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanUseLocal)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanLocalPath)).toBeNull()
+  })
+
+  it('shows a failed Use a local task list inline and stays unbound', async () => {
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL]),
+      bindLocalFile: vi.fn().mockRejectedValue({
+        nekodeAppError: true,
+        code: 'validation_error',
+        message: '.nekode/tasks.json resolves outside the project folder.',
+      }),
+    })
+    await renderLoaded(app)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanUseLocal))
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '.nekode/tasks.json resolves outside the project folder.',
+    )
+    expect(screen.getByTestId(TEST_ID.settingsKanbanUseLocal)).toBeTruthy()
+  })
+
+  it('Test parses the file and reports it readable, or the typed error inline', async () => {
+    const test = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'validation_error',
+      message: 'The task file .nekode/tasks.json is not valid: it is not valid JSON.',
+    })
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL]),
+      getConfig: vi.fn().mockResolvedValue(localConfig()),
+      test,
+    })
+    await renderLoaded(app)
+    expect(screen.getByTestId(TEST_ID.settingsKanbanLocalPath).textContent).toBe(
+      '.nekode/tasks.json',
+    )
+    // The adapters-directory notice counts discovered adapters only.
+    expect(screen.getByTestId(TEST_ID.settingsKanbanEmpty)).toBeTruthy()
+    const testButton = screen.getByTestId(TEST_ID.settingsKanbanTest)
+    expect(testButton.textContent).toBe('Test')
+    fireEvent.click(testButton)
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.settingsKanbanTestResult).textContent).toBe(
+        'The task file is readable.',
+      ),
+    )
+    expect(test).toHaveBeenCalledWith('p1', {})
+    fireEvent.click(testButton)
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.settingsKanbanTestResult).textContent).toBe(
+        'The task file .nekode/tasks.json is not valid: it is not valid JSON.',
+      ),
+    )
+  })
 })

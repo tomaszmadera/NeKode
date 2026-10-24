@@ -412,8 +412,10 @@ export function createServices(options: CreateServicesOptions): AppServices {
       setConfig: (projectId, config) => kanban.setConfig(projectId, config),
       test: (projectId, values) => kanban.test(projectId, values),
       listBoard: (projectId) => kanban.listBoard(projectId),
-      createItem: (projectId, input) => kanban.createItem(projectId, input),
-      updateItem: (projectId, ref, patch) => kanban.updateItem(projectId, ref, patch),
+      createItem: (projectId, input, revision) => kanban.createItem(projectId, input, revision),
+      updateItem: (projectId, ref, patch, revision) =>
+        kanban.updateItem(projectId, ref, patch, revision),
+      bindLocalFile: (projectId) => kanban.bindLocalFile(projectId),
       getItem: (projectId, ref) => kanban.getItem(projectId, ref),
       getComments: (projectId, ref) => kanban.getComments(projectId, ref),
       launchTask: (input) => taskLaunch.launch(input),

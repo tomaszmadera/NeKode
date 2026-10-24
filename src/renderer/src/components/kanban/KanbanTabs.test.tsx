@@ -7,7 +7,11 @@ import type {
   ProjectInfo,
   WorkItem,
 } from '../../../../shared/ipc-contract'
-import { APP_STATE_KEY, projectKanbanAdapterKey } from '../../../../shared/ipc-contract'
+import {
+  APP_STATE_KEY,
+  LOCAL_TASK_FILE_MISSING,
+  projectKanbanAdapterKey,
+} from '../../../../shared/ipc-contract'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { createAppApiStub } from '../../test/app-api-stub'
@@ -496,11 +500,18 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const welcome = await screen.findByTestId(TEST_ID.projectHomeWelcome)
     expect(within(welcome).getByRole('heading', { name: 'No task list yet' })).toBeTruthy()
-    expect(within(welcome).getByRole('button', { name: 'Connect a tracker' })).toBeTruthy()
-    // Stage 1 boundary: no local-list action yet, and no copy that promises a file.
-    expect(within(welcome).queryByRole('button', { name: 'Use a local task list' })).toBeNull()
-    expect(welcome.textContent).not.toMatch(/file/i)
+    expect(welcome.textContent).toContain(
+      'Keep tasks in a file in this project, or connect a tracker.',
+    )
+    // Primary local action first, then the tracker action.
+    const buttons = within(welcome).getAllByRole('button')
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Use a local task list',
+      'Connect a tracker',
+    ])
     expect(welcome.textContent).not.toMatch(/kanban/i)
+    // Showing the welcome writes nothing.
+    expect(app.kanban.bindLocalFile).not.toHaveBeenCalled()
     // The home tab stays selected; the chat surface is hidden.
     expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
     expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
@@ -557,6 +568,17 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
       'Failed to load task sources.',
     )
     expect(app.kanban.listBoard).not.toHaveBeenCalled()
+
+    // The read recovers: a re-read (closing Project Settings) replaces the
+    // inline error with the welcome.
+    vi.mocked(app.state.get).mockResolvedValue(null)
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Project Settings' }))
+    await screen.findByRole('dialog', { name: 'Project Settings' })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await screen.findByTestId(TEST_ID.projectHomeWelcome)
+    expect(screen.queryByTestId(TEST_ID.projectHomeError)).toBeNull()
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
   })
 
   it('Connect a tracker opens Project Settings on the Tasks section of that project', async () => {
@@ -640,5 +662,150 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
     expect(isSelected(TEST_ID.tabTerminal)).toBe(false)
     expect(app.terminals.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  /** Binding store that `bindLocalFile` writes, like main does. */
+  function mockLocalBinding(initial: string | null): void {
+    let binding = initial
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === projectKanbanAdapterKey('p1') ? binding : null,
+    )
+    vi.mocked(app.kanban.bindLocalFile).mockImplementation(async () => {
+      binding = 'local-file'
+    })
+  }
+
+  const emptyLocalBoard: KanbanBoard = {
+    states: [
+      { id: 'backlog', name: 'Backlog', group: 'backlog', order: 0 },
+      { id: 'todo', name: 'Todo', group: 'unstarted', order: 1 },
+    ],
+    items: [],
+    revision: 1,
+  }
+
+  it('Use a local task list binds local-file and shows the empty list with New task', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockLocalBinding(null)
+    vi.mocked(app.kanban.listBoard).mockResolvedValue(emptyLocalBoard)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await screen.findByTestId(TEST_ID.projectHomeWelcome)
+    expect(app.kanban.listBoard).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId(TEST_ID.projectHomeUseLocal))
+
+    await screen.findByTestId(TEST_ID.kanbanList)
+    expect(app.kanban.bindLocalFile).toHaveBeenCalledWith('p1')
+    expect(app.kanban.bindLocalFile).toHaveBeenCalledTimes(1)
+    expect(app.kanban.listBoard).toHaveBeenCalledWith('p1')
+    expect(screen.queryByTestId(TEST_ID.projectHomeWelcome)).toBeNull()
+    expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
+    expect(await screen.findByRole('button', { name: 'New task' })).toBeTruthy()
+  })
+
+  it('a failed Use a local task list stays on the welcome with the error inline', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockBindings(app, [])
+    vi.mocked(app.kanban.bindLocalFile).mockRejectedValue({
+      nekodeAppError: true,
+      code: 'unknown',
+      message: 'Could not create .nekode/tasks.json.',
+    })
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.projectHomeUseLocal))
+    const error = await screen.findByTestId(TEST_ID.projectHomeUseLocalError)
+    expect(error.textContent).toBe('Could not create .nekode/tasks.json.')
+    expect(screen.getByTestId(TEST_ID.projectHomeWelcome)).toBeTruthy()
+    expect(app.kanban.listBoard).not.toHaveBeenCalled()
+  })
+
+  it('a local-file binding with a missing file shows the typed error and Use a local task list', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockLocalBinding('local-file')
+    vi.mocked(app.kanban.listBoard)
+      .mockRejectedValueOnce({
+        nekodeAppError: true,
+        code: 'not_found',
+        message:
+          'The task file .nekode/tasks.json was not found. Use a local task list to create it.',
+        detail: LOCAL_TASK_FILE_MISSING,
+      })
+      .mockResolvedValue(emptyLocalBoard)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    const error = await screen.findByTestId(TEST_ID.kanbanBoardError)
+    expect(error.textContent).toContain('.nekode/tasks.json was not found')
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardUseLocal))
+    await screen.findByTestId(TEST_ID.kanbanList)
+    expect(app.kanban.bindLocalFile).toHaveBeenCalledWith('p1')
+    expect(app.kanban.listBoard).toHaveBeenCalledTimes(2)
+    expect(screen.queryByTestId(TEST_ID.kanbanBoardUseLocal)).toBeNull()
+  })
+
+  it.each([
+    ['a missing project folder', 'The project folder was not found.'],
+    ['an unknown project', 'Project "p1" not found.'],
+  ])(
+    'a local-file binding with %s shows the typed error without Use a local task list',
+    async (_label, message) => {
+      vi.mocked(app.projects.list).mockResolvedValue([projectA])
+      mockLocalBinding('local-file')
+      vi.mocked(app.kanban.listBoard).mockRejectedValue({
+        nekodeAppError: true,
+        code: 'not_found',
+        message,
+      })
+
+      render(<App app={app} />)
+      fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+      const error = await screen.findByTestId(TEST_ID.kanbanBoardError)
+      expect(error.textContent).toBe(message)
+      // Creating the task file cannot fix this, so the action is not offered.
+      expect(screen.queryByTestId(TEST_ID.kanbanBoardUseLocal)).toBeNull()
+      expect(app.kanban.bindLocalFile).not.toHaveBeenCalled()
+    },
+  )
+
+  it('a bound process-adapter project still renders the existing list and offers no local action', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    mockBindings(app, ['p1'])
+    vi.mocked(app.kanban.listBoard)
+      .mockRejectedValueOnce({
+        nekodeAppError: true,
+        code: 'not_found',
+        message: 'Kanban adapter "plane" is not installed in the adapters directory.',
+      })
+      .mockResolvedValue(fixture)
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await screen.findByTestId(TEST_ID.kanbanBoardError)
+    // A missing process adapter is not a missing task file.
+    expect(screen.queryByTestId(TEST_ID.kanbanBoardUseLocal)).toBeNull()
+    // The toolbar Refresh stays disabled until the failed load reports done.
+    const refresh = screen.getByTestId(TEST_ID.kanbanBoardRefresh) as HTMLButtonElement
+    await waitFor(() => expect(refresh.disabled).toBe(false))
+    fireEvent.click(refresh)
+    await screen.findByTestId(TEST_ID.kanbanList)
+    expect(screen.getByText('First task')).toBeTruthy()
+    expect(screen.getByText('Second task')).toBeTruthy()
+    expect(app.kanban.bindLocalFile).not.toHaveBeenCalled()
   })
 })

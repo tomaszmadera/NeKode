@@ -181,6 +181,26 @@ function assertAdapterId(value: unknown, label: string): asserts value is string
   }
 }
 
+/** `local-file` document revision: absent, or a positive safe integer. */
+function assertOptionalRevision(
+  value: unknown,
+  label: string,
+): asserts value is number | undefined {
+  if (value === undefined) return
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    fail(label, 'must be a positive integer')
+  }
+}
+
+/** Arity with one optional trailing argument (the `local-file` revision). */
+function requireArgsWithOptional(payload: unknown[], count: number, channel: string): void {
+  if (payload.length !== count && payload.length !== count + 1) {
+    throw new ValidationError(
+      `${channel}: expected ${count} or ${count + 1} argument(s), got ${payload.length}`,
+    )
+  }
+}
+
 function assertOptionalKanbanValues(
   value: unknown,
   label: string,
@@ -905,28 +925,44 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     {
       channel: IPC_CHANNEL.kanbanCreateItem,
       parse: (payload) => {
-        requireArgs(payload, 2, IPC_CHANNEL.kanbanCreateItem)
+        requireArgsWithOptional(payload, 2, IPC_CHANNEL.kanbanCreateItem)
         assertString(payload[0], `${IPC_CHANNEL.kanbanCreateItem} arg[0]`)
         assertKanbanCreateInput(payload[1], `${IPC_CHANNEL.kanbanCreateItem} arg[1]`)
+        assertOptionalRevision(payload[2], `${IPC_CHANNEL.kanbanCreateItem} arg[2]`)
         return payload
       },
-      invoke: (args) => services.kanban.createItem(args[0] as string, args[1] as KanbanCreateInput),
+      invoke: (args) =>
+        args.length === 3
+          ? services.kanban.createItem(
+              args[0] as string,
+              args[1] as KanbanCreateInput,
+              args[2] as number | undefined,
+            )
+          : services.kanban.createItem(args[0] as string, args[1] as KanbanCreateInput),
     },
     {
       channel: IPC_CHANNEL.kanbanUpdateItem,
       parse: (payload) => {
-        requireArgs(payload, 3, IPC_CHANNEL.kanbanUpdateItem)
+        requireArgsWithOptional(payload, 3, IPC_CHANNEL.kanbanUpdateItem)
         assertString(payload[0], `${IPC_CHANNEL.kanbanUpdateItem} arg[0]`)
         assertString(payload[1], `${IPC_CHANNEL.kanbanUpdateItem} arg[1]`)
         assertKanbanUpdatePatch(payload[2], `${IPC_CHANNEL.kanbanUpdateItem} arg[2]`)
+        assertOptionalRevision(payload[3], `${IPC_CHANNEL.kanbanUpdateItem} arg[3]`)
         return payload
       },
       invoke: (args) =>
-        services.kanban.updateItem(
-          args[0] as string,
-          args[1] as string,
-          args[2] as KanbanUpdatePatch,
-        ),
+        args.length === 4
+          ? services.kanban.updateItem(
+              args[0] as string,
+              args[1] as string,
+              args[2] as KanbanUpdatePatch,
+              args[3] as number | undefined,
+            )
+          : services.kanban.updateItem(
+              args[0] as string,
+              args[1] as string,
+              args[2] as KanbanUpdatePatch,
+            ),
     },
     {
       channel: IPC_CHANNEL.kanbanGetItem,
@@ -953,6 +989,20 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         return payload
       },
       invoke: (args) => services.kanban.getComments(args[0] as string, args[1] as string),
+    },
+    // `Use a local task list` (project-home spec Behaviour 7): one registered
+    // project id; main resolves the fixed path under the stored root.
+    {
+      channel: IPC_CHANNEL.kanbanBindLocalFile,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.kanbanBindLocalFile)
+        assertString(payload[0], `${IPC_CHANNEL.kanbanBindLocalFile} arg[0]`)
+        if ((payload[0] as string).length === 0) {
+          fail(IPC_CHANNEL.kanbanBindLocalFile, 'requires a non-empty projectId')
+        }
+        return payload
+      },
+      invoke: (args) => services.kanban.bindLocalFile(args[0] as string),
     },
     {
       channel: IPC_CHANNEL.kanbanLaunchTask,

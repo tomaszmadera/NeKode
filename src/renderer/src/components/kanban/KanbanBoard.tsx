@@ -11,10 +11,12 @@ import type {
   KanbanUpdatePatch,
   WorkItem,
 } from '../../../../shared/ipc-contract'
+import { LOCAL_TASK_FILE_MISSING } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { KanbanSearch } from './KanbanSearch'
+import { UseLocalTaskListButton } from './ProjectHomeWelcome'
 
 // Kanban surface (spec kanban-adapter-interface Behaviour 14, AC14).
 // The only arrangement is a list: the items grouped under the state names, in
@@ -84,8 +86,13 @@ interface KanbanBoardProps {
   app: AppApi
   /** Active project; the board never renders without one. */
   projectId: string
-  /** Opens Project Settings on the Kanban tab (the not-configured state). */
+  /** Opens Project Settings on the Tasks section (the not-configured state). */
   onConfigure: () => void
+  /**
+   * Supplied for a `local-file` binding only: a missing task file offers
+   * `Use a local task list`, which creates it (project-home spec Edge cases).
+   */
+  onUseLocalTaskList?: () => Promise<void>
   /** Opens Project Settings on the tab that owns the handoff directory. */
   onConfigureHandoffs?: () => void
   /**
@@ -1143,6 +1150,7 @@ export function KanbanBoard({
   app,
   projectId,
   onConfigure,
+  onUseLocalTaskList,
   onConfigureHandoffs,
   onStart,
   onStartDraft,
@@ -1153,6 +1161,10 @@ export function KanbanBoard({
   const [phase, setPhase] = useState<KanbanBoardPhase>('loading')
   const [board, setBoard] = useState<KanbanBoardData>({ states: [], items: [] })
   const [error, setError] = useState<string | null>(null)
+  // The last load failed because the local task file is missing (`not_found`
+  // with the missing-file detail). An unknown project or a missing project
+  // folder is also `not_found`, but creating the file cannot fix it.
+  const [sourceMissing, setSourceMissing] = useState(false)
   const [reviewRef, setReviewRef] = useState<string | null>(null)
   const [copyMenu, setCopyMenu] = useState<{ item: WorkItem; x: number; y: number } | null>(null)
   const [startMenu, setStartMenu] = useState<{ item: WorkItem; x: number; y: number } | null>(null)
@@ -1208,6 +1220,10 @@ export function KanbanBoard({
   const retainedUpdates = useRef(new Map<number, WorkItem[]>())
   const reviewGeneration = useRef(0)
   const reviewBusy = useRef(false)
+  // `local-file` document revision from the latest board or write (project-home
+  // spec Data / API). Process adapters never report one, so it stays undefined
+  // and their writes carry no revision.
+  const revisionRef = useRef<number | undefined>(undefined)
   const boardRef = useRef(board)
   const projectRef = useRef(projectId)
   const shownReviewRef = useRef<string | null>(null)
@@ -1227,6 +1243,8 @@ export function KanbanBoard({
     loadRequest.current += 1
     retainedCreates.current.clear()
     retainedUpdates.current.clear()
+    revisionRef.current = undefined
+    setSourceMissing(false)
     setBoard({ states: [], items: [] })
     setPhase('loading')
     setReviewRef(null)
@@ -1416,6 +1434,8 @@ export function KanbanBoard({
       const next = await app.kanban.listBoard(projectId)
       if (requestGeneration !== generation.current) return
       hasSnapshot.current = true
+      revisionRef.current = next.revision
+      setSourceMissing(false)
       const retained = retainedCreates.current.get(requestId) ?? []
       retainedCreates.current.delete(requestId)
       const keptUpdates = retainedUpdates.current.get(requestId) ?? []
@@ -1445,9 +1465,11 @@ export function KanbanBoard({
         setCopyMenu(null)
         setStartMenu(null)
         setError(payload.message)
+        setSourceMissing(payload.code === 'not_found' && payload.detail === LOCAL_TASK_FILE_MISSING)
         setPhase(payload.code === 'validation' ? 'not-configured' : 'error')
         return
       }
+      setSourceMissing(false)
       setError(payload?.message ?? 'Failed to load tasks.')
       if (!hasSnapshot.current) setPhase('error')
     } finally {
@@ -1501,8 +1523,13 @@ export function KanbanBoard({
     setCreatingBusy(true)
     setCreateError(null)
     try {
-      const created = await app.kanban.createItem(sourceProject, input)
+      const writeRevision = revisionRef.current
+      const { revision, ...created } =
+        writeRevision === undefined
+          ? await app.kanban.createItem(sourceProject, input)
+          : await app.kanban.createItem(sourceProject, input, writeRevision)
       if (request !== createGeneration.current || sourceProject !== projectRef.current) return
+      if (revision !== undefined) revisionRef.current = revision
       setBoard((previous) => {
         const items = upsertWorkItem(previous.items, created)
         return items === previous.items ? previous : { ...previous, items }
@@ -1517,6 +1544,8 @@ export function KanbanBoard({
     } catch (cause) {
       if (request !== createGeneration.current || sourceProject !== projectRef.current) return
       setCreateError(createFailureMessage(cause))
+      // A stale `local-file` revision changed nothing: refetch, never merge.
+      if (parseAppErrorPayload(cause)?.code === 'conflict') void load()
     } finally {
       if (request === createGeneration.current) {
         createBusy.current = false
@@ -1556,8 +1585,13 @@ export function KanbanBoard({
       setPriorityChoice(write.priority)
     }
     try {
-      const updated = await app.kanban.updateItem(sourceProject, ref, patch)
+      const writeRevision = revisionRef.current
+      const { revision, ...updated } =
+        writeRevision === undefined
+          ? await app.kanban.updateItem(sourceProject, ref, patch)
+          : await app.kanban.updateItem(sourceProject, ref, patch, writeRevision)
       if (request !== reviewGeneration.current || sourceProject !== projectRef.current) return
+      if (revision !== undefined) revisionRef.current = revision
       setBoard((previous) => {
         const items = upsertWorkItem(previous.items, updated)
         return items === previous.items ? previous : { ...previous, items }
@@ -1578,6 +1612,8 @@ export function KanbanBoard({
       }
     } catch (cause) {
       if (request !== reviewGeneration.current || sourceProject !== projectRef.current) return
+      // A stale `local-file` revision changed nothing: refetch, never merge.
+      if (parseAppErrorPayload(cause)?.code === 'conflict') void load()
       if (shownReviewRef.current !== ref) return
       const message = updateFailureMessage(
         cause,
@@ -1864,6 +1900,16 @@ export function KanbanBoard({
         <p role="alert" className="text-[12.6px] text-error" data-testid={TEST_ID.kanbanBoardError}>
           {error}
         </p>
+      ) : null}
+      {phase === 'error' && sourceMissing && onUseLocalTaskList !== undefined ? (
+        <div className="mt-3 flex flex-col items-start text-[12.6px]">
+          <UseLocalTaskListButton
+            onUse={onUseLocalTaskList}
+            testId={TEST_ID.kanbanBoardUseLocal}
+            errorTestId={TEST_ID.projectHomeUseLocalError}
+            className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
+          />
+        </div>
       ) : null}
       {phase === 'empty' ? (
         <p className="text-[12.6px] text-ink-secondary" data-testid={TEST_ID.kanbanBoardEmpty}>

@@ -15,7 +15,12 @@ import type {
   TaskProgressSnapshot,
   WorkItem,
 } from '../../shared/ipc-contract'
-import { APP_STATE_KEY, projectColorKey, projectKanbanAdapterKey } from '../../shared/ipc-contract'
+import {
+  APP_STATE_KEY,
+  LOCAL_FILE_ADAPTER_ID,
+  projectColorKey,
+  projectKanbanAdapterKey,
+} from '../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../shared/ipc-error'
 import { ActionBar } from './components/actions/ActionBar'
 import { ActionSettings, type SettingsTabId } from './components/actions/ActionSettings'
@@ -504,6 +509,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // of the latest failed read (null after a successful one); the read covers
   // all projects in one batch and fails as a whole, so the error is global.
   const [kanbanProjectIds, setKanbanProjectIds] = useState<ReadonlySet<string>>(new Set())
+  // Bound projects whose source is the built-in `local-file` (project-home
+  // spec Edge cases: a missing task file offers `Use a local task list`).
+  const [localFileProjectIds, setLocalFileProjectIds] = useState<ReadonlySet<string>>(new Set())
   const [settledKanbanProjects, setSettledKanbanProjects] = useState<ReadonlySet<string>>(new Set())
   const [kanbanBindingsError, setKanbanBindingsError] = useState<string | null>(null)
   const kanbanBindingsGeneration = useRef(0)
@@ -615,13 +623,23 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     const requestGen = ++kanbanBindingsGeneration.current
     const targetProjects = projects
     try {
-      const ids = await Promise.all(
-        targetProjects.map(async (project) =>
-          (await app.state.get(projectKanbanAdapterKey(project.id))) ? project.id : null,
-        ),
+      const bindings = await Promise.all(
+        targetProjects.map(async (project) => ({
+          id: project.id,
+          adapterId: await app.state.get(projectKanbanAdapterKey(project.id)),
+        })),
       )
       if (requestGen !== kanbanBindingsGeneration.current) return
-      setKanbanProjectIds(new Set(ids.filter((id): id is string => id !== null)))
+      setKanbanProjectIds(
+        new Set(bindings.filter((binding) => binding.adapterId).map((binding) => binding.id)),
+      )
+      setLocalFileProjectIds(
+        new Set(
+          bindings
+            .filter((binding) => binding.adapterId === LOCAL_FILE_ADAPTER_ID)
+            .map((binding) => binding.id),
+        ),
+      )
       setSettledKanbanProjects(new Set(targetProjects.map((project) => project.id)))
       setKanbanBindingsError(null)
     } catch (error) {
@@ -635,6 +653,19 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   useEffect(() => {
     void refreshKanbanBindings()
   }, [refreshKanbanBindings])
+
+  // `Use a local task list` (project-home spec Behaviour 7): main creates the
+  // task file when absent and binds `local-file`; the binding re-read then
+  // switches the home tab to the list. A rejection reaches the caller, which
+  // shows it inline.
+  const handleUseLocalTaskList = useCallback(
+    async (projectId: string): Promise<void> => {
+      await app.kanban.bindLocalFile(projectId)
+      invalidateKanban(projectId)
+      await refreshKanbanBindings()
+    },
+    [app, invalidateKanban, refreshKanbanBindings],
+  )
 
   // Task progress observation (spec task-progress-adapters Behaviour 15): main
   // reads bound projects that are visible, meaning selected or expanded in the
@@ -2921,6 +2952,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                   tabProject !== null && activeTab.kind === 'kanban' ? tabProject.id : null
                 }
                 versions={kanbanVersions}
+                localFileProjectIds={localFileProjectIds}
+                onUseLocalTaskList={handleUseLocalTaskList}
                 onConfigure={handleOpenKanbanSettings}
                 onConfigureHandoffs={handleConfigureProjectHandoffs}
                 onStart={handleStartTask}
@@ -2928,8 +2961,11 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 onResume={handleResumeTask}
                 onToolbarControls={handleKanbanToolbarControls}
               />
-              {homeTabState === 'welcome' ? (
-                <ProjectHomeWelcome onConnectTracker={handleOpenKanbanSettings} />
+              {homeTabState === 'welcome' && tabProject !== null ? (
+                <ProjectHomeWelcome
+                  onUseLocalTaskList={() => handleUseLocalTaskList(tabProject.id)}
+                  onConnectTracker={handleOpenKanbanSettings}
+                />
               ) : homeTabState === 'error' && kanbanBindingsError !== null ? (
                 <ProjectHomeError message={kanbanBindingsError} />
               ) : homeTabState === 'loading' ? (

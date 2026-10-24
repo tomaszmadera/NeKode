@@ -6,7 +6,11 @@ import type {
   KanbanConfigField,
   KanbanProjectConfig,
 } from '../../../../shared/ipc-contract'
-import { APP_STATE_KEY } from '../../../../shared/ipc-contract'
+import {
+  APP_STATE_KEY,
+  LOCAL_FILE_ADAPTER_ID,
+  LOCAL_TASK_FILE_PATH,
+} from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
@@ -20,6 +24,10 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 // omitted (keep the stored secret) while an empty non-secret is sent as ''
 // (main clears it). Test connection invokes the adapter with the currently
 // entered values, unsaved, and renders its result inline — never a toast.
+// The built-in `Local file` source (project-home spec Behaviour 7, 10) is the
+// first adapter entry: it has no fields, shows its relative path and Test
+// (which parses the file), and while no source is bound the section offers
+// `Use a local task list`.
 
 interface KanbanSettingsProps {
   app: AppApi
@@ -210,6 +218,10 @@ export function KanbanSettings({
   // freshly selected or changed adapter is not yet testable (Behaviour 8). The
   // binding is made testable by the Save button — never by an implicit persist.
   const bindingSaved = adapterId !== null && adapterId === persistedAdapterId
+  const isLocalFile = adapterId === LOCAL_FILE_ADAPTER_ID
+  // The built-in entry is always listed; the empty notice is about the
+  // adapters directory only.
+  const discoveredCount = adapters.filter((adapter) => adapter.id !== LOCAL_FILE_ADAPTER_ID).length
 
   function selectAdapter(nextId: string): void {
     const next = nextId === '' ? null : nextId
@@ -287,6 +299,36 @@ export function KanbanSettings({
     })
   }
 
+  /**
+   * `Use a local task list` (project-home spec Behaviour 7): offered only while
+   * no source is bound. Main creates the file when absent and binds it.
+   */
+  async function startLocalTaskList(): Promise<void> {
+    if (projectId === null || persistedAdapterId !== null) return
+    await guard.run(async () => {
+      setFormError(null)
+      setSavedState('idle')
+      try {
+        await app.kanban.bindLocalFile(projectId)
+      } catch (cause) {
+        setFormError(
+          parseAppErrorPayload(cause)?.message ?? 'Could not create the local task list.',
+        )
+        return
+      }
+      onInvalidate?.(projectId)
+      setAdapterId(LOCAL_FILE_ADAPTER_ID)
+      setPersistedAdapterId(LOCAL_FILE_ADAPTER_ID)
+      try {
+        applyState(await fetchState())
+      } catch (cause) {
+        setFormError(
+          parseAppErrorPayload(cause)?.message ?? 'Failed to reload the task source settings.',
+        )
+      }
+    })
+  }
+
   async function runTest(): Promise<void> {
     // Guard the exact rule the button state expresses: never test against an
     // unsaved binding (the displayed adapter must equal the persisted one) and
@@ -299,7 +341,12 @@ export function KanbanSettings({
       setTestState('success')
     } catch (cause) {
       setTestState('error')
-      setTestMessage(parseAppErrorPayload(cause)?.message ?? 'The adapter connection test failed.')
+      setTestMessage(
+        parseAppErrorPayload(cause)?.message ??
+          (isLocalFile
+            ? 'The task file could not be read.'
+            : 'The adapter connection test failed.'),
+      )
     }
   }
 
@@ -422,7 +469,9 @@ export function KanbanSettings({
                   <option value="">(none)</option>
                   {adapters.map((adapter) => (
                     <option key={adapter.id} value={adapter.id}>
-                      {adapter.name} · {adapter.id}
+                      {adapter.id === LOCAL_FILE_ADAPTER_ID
+                        ? adapter.name
+                        : `${adapter.name} · ${adapter.id}`}
                     </option>
                   ))}
                   {missing ? (
@@ -430,7 +479,28 @@ export function KanbanSettings({
                   ) : null}
                 </select>
               </label>
-              {adapters.length === 0 ? (
+              {persistedAdapterId === null ? (
+                <button
+                  type="button"
+                  disabled={guard.busy}
+                  className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
+                  data-testid={TEST_ID.settingsKanbanUseLocal}
+                  onClick={() => {
+                    void startLocalTaskList()
+                  }}
+                >
+                  Use a local task list
+                </button>
+              ) : null}
+              {isLocalFile ? (
+                <p className="mt-2 text-ink-secondary">
+                  Task file:{' '}
+                  <code className="text-ink" data-testid={TEST_ID.settingsKanbanLocalPath}>
+                    {LOCAL_TASK_FILE_PATH}
+                  </code>
+                </p>
+              ) : null}
+              {discoveredCount === 0 ? (
                 <p className="mt-2 text-ink-muted" data-testid={TEST_ID.settingsKanbanEmpty}>
                   No adapters found in the adapters directory. Add an adapter folder containing an
                   adapter.json, then reopen this tab.
@@ -482,7 +552,7 @@ export function KanbanSettings({
                     void runTest()
                   }}
                 >
-                  Test connection
+                  {isLocalFile ? 'Test' : 'Test connection'}
                 </button>
                 {savedState === 'saved' ? (
                   <span className="text-success" data-testid={TEST_ID.settingsKanbanSaved}>
@@ -508,7 +578,7 @@ export function KanbanSettings({
                   className="mt-2 inline-block text-success"
                   data-testid={TEST_ID.settingsKanbanTestResult}
                 >
-                  Connection succeeded.
+                  {isLocalFile ? 'The task file is readable.' : 'Connection succeeded.'}
                 </span>
               ) : null}
               {testState === 'error' && testMessage !== null ? (

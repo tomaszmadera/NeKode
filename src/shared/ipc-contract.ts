@@ -237,7 +237,35 @@ export interface KanbanComment {
 export interface KanbanBoard {
   states: KanbanState[]
   items: WorkItem[]
+  /**
+   * Document revision of the built-in `local-file` source (project-home spec
+   * Data / API). The next create or update must echo it. Process adapters
+   * omit it.
+   */
+  revision?: number
 }
+
+/**
+ * Result of `kanban:createItem` and `kanban:updateItem`: the written item plus,
+ * for `local-file` only, the new document revision.
+ */
+export type KanbanItemWriteResult = WorkItem & { revision?: number }
+
+/**
+ * Built-in task source (project-home spec Behaviour 7-10): a JSON document at
+ * a fixed path under the project root, read and written by main. It is not
+ * a discovered process adapter and has no config fields.
+ */
+export const LOCAL_FILE_ADAPTER_ID = 'local-file'
+export const LOCAL_FILE_ADAPTER_NAME = 'Local file'
+/** Project-relative path of the `local-file` task document. */
+export const LOCAL_TASK_FILE_PATH = '.nekode/tasks.json'
+/**
+ * `detail` of the `not_found` error for a missing task file while bound
+ * (project-home spec Edge cases). Only this case offers `Use a local task
+ * list`; an unknown project or a missing project folder does not.
+ */
+export const LOCAL_TASK_FILE_MISSING = 'local_task_file_missing'
 
 export type KanbanConfigFieldType = 'string' | 'secret' | 'select' | 'boolean'
 
@@ -537,6 +565,7 @@ export const IPC_CHANNEL = {
   kanbanUpdateItem: 'kanban:updateItem',
   kanbanGetItem: 'kanban:getItem',
   kanbanGetComments: 'kanban:getComments',
+  kanbanBindLocalFile: 'kanban:bindLocalFile',
   kanbanLaunchTask: 'kanban:launchTask',
   kanbanHandoffCandidates: 'kanban:handoffCandidates',
   kanbanHandoffAvailability: 'kanban:handoffAvailability',
@@ -1095,14 +1124,37 @@ export interface AppApi {
     ): Promise<void>
     /** Invokes the adapter's `test` action; `values` falls back to stored config. */
     test(projectId: string, values?: Record<string, string>): Promise<void>
-    /** Normalized states + items of the bound adapter's backend. */
+    /**
+     * Normalized states + items of the bound source. For `local-file` the
+     * board also carries the document `revision`.
+     */
     listBoard(projectId: string): Promise<KanbanBoard>
-    createItem(projectId: string, input: KanbanCreateInput): Promise<WorkItem>
-    updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem>
+    /**
+     * `revision` is the `local-file` document revision last read; process
+     * adapters ignore it and the renderer omits it for them. A stale revision
+     * rejects with `conflict` and changes nothing.
+     */
+    createItem(
+      projectId: string,
+      input: KanbanCreateInput,
+      revision?: number,
+    ): Promise<KanbanItemWriteResult>
+    updateItem(
+      projectId: string,
+      ref: string,
+      patch: KanbanUpdatePatch,
+      revision?: number,
+    ): Promise<KanbanItemWriteResult>
     /** Live item via the adapter `getItem` action (`{ ref }`). */
     getItem(projectId: string, ref: string): Promise<WorkItem>
     /** Comments for one work item via the adapter `listComments` action (`{ ref }`). */
     getComments(projectId: string, ref: string): Promise<KanbanComment[]>
+    /**
+     * `Use a local task list` (project-home spec Behaviour 7): creates
+     * `.nekode/tasks.json` only when it is absent, then binds `local-file`.
+     * An existing file is left unchanged.
+     */
+    bindLocalFile(projectId: string): Promise<void>
     /**
      * Starts one task chat. Main owns the profile, the prompt, and the
      * process. The same `attemptId` returns the same chat.

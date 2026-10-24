@@ -108,6 +108,7 @@ function fakeServices(): AppServices {
       updateItem: vi.fn(() => Promise.resolve({} as never)),
       getItem: vi.fn(() => Promise.resolve({} as never)),
       getComments: vi.fn(() => Promise.resolve([])),
+      bindLocalFile: vi.fn(() => Promise.resolve()),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
       handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
       handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),

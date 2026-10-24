@@ -25,6 +25,27 @@ describe('typed error transport', () => {
     })
   })
 
+  it('carries an optional detail through the transport and the plain payload form', () => {
+    const original = new AppError('not_found', 'Missing file.', undefined, undefined, 'why')
+    const parsed = parseAppErrorPayload(toTransportError(original, 'kanban:listBoard'))
+    expect(parsed).toStrictEqual({
+      nekodeAppError: true,
+      code: 'not_found',
+      kind: 'not_found',
+      message: 'Missing file.',
+      channel: 'kanban:listBoard',
+      detail: 'why',
+    })
+    expect(parseAppErrorPayload(parsed)?.detail).toBe('why')
+    const without = parseAppErrorPayload(
+      toTransportError(new AppError('not_found', 'Missing.'), 'kanban:listBoard'),
+    )
+    expect(without !== null && 'detail' in without).toBe(false)
+    expect(
+      parseAppErrorPayload({ nekodeAppError: true, code: 'not_found', message: 'x', detail: 1 }),
+    ).not.toHaveProperty('detail')
+  })
+
   it('attaches the channel on AppError without one and keeps typed codes and kinds', () => {
     const transport = toTransportError(new AppError('not_found', 'Missing.'), 'chats:list')
     const parsed = parseAppErrorPayload(transport)

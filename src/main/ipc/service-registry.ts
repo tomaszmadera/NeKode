@@ -31,6 +31,7 @@ import type {
   KanbanHandoffAvailabilityInput,
   KanbanHandoffAvailabilityResult,
   KanbanHandoffCandidatesInput,
+  KanbanItemWriteResult,
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   KanbanProjectConfig,
@@ -198,8 +199,20 @@ export interface AppServices {
     test(projectId: string, values?: Record<string, string>): Promise<void>
     /** Normalized states + items of the bound adapter's backend. */
     listBoard(projectId: string): Promise<KanbanBoard>
-    createItem(projectId: string, input: KanbanCreateInput): Promise<WorkItem>
-    updateItem(projectId: string, ref: string, patch: KanbanUpdatePatch): Promise<WorkItem>
+    /** `revision` is the `local-file` document revision; process adapters ignore it. */
+    createItem(
+      projectId: string,
+      input: KanbanCreateInput,
+      revision?: number,
+    ): Promise<KanbanItemWriteResult>
+    updateItem(
+      projectId: string,
+      ref: string,
+      patch: KanbanUpdatePatch,
+      revision?: number,
+    ): Promise<KanbanItemWriteResult>
+    /** Creates `.nekode/tasks.json` when absent, then binds `local-file`. */
+    bindLocalFile(projectId: string): Promise<void>
     /** Adapter `getItem` `{ ref }`. Not the cached board. */
     getItem(projectId: string, ref: string): Promise<WorkItem>
     /** Comments for one work item via the adapter `listComments` action (`{ ref }`). */

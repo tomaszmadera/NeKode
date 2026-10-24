@@ -119,6 +119,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       updateItem: vi.fn(),
       getItem: vi.fn(),
       getComments: vi.fn().mockResolvedValue([]),
+      bindLocalFile: vi.fn().mockResolvedValue(undefined),
       launchTask: vi.fn(),
       handoffCandidates: vi.fn(),
       handoffAvailability: vi.fn(async () => ({
