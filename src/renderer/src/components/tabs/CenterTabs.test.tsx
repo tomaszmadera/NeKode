@@ -118,12 +118,13 @@ describe('tab strip — order and labels (spec Behaviour 1–3, AC1)', () => {
     const terminalTab = screen.getByTestId(TEST_ID.tabTerminal)
     expect(terminalTab.textContent).toBe('First chat')
     expect(terminalTab.getAttribute('data-selected')).toBe('true')
-    // Unbound project: a plain project-name label leads the strip, then the first tab.
-    const nameLabel = screen.getByTestId(TEST_ID.tabProjectName)
-    expect(nameLabel.textContent).toBe('DEMO')
-    expect(nameLabel.tagName).toBe('SPAN')
-    expect(strip.firstElementChild).toBe(nameLabel)
-    expect(nameLabel.nextElementSibling).toBe(terminalTab)
+    // Unbound project: the home tab leads the strip, then the chat tab
+    // (project-home spec Behaviour 1).
+    const homeTab = screen.getByTestId(TEST_ID.kanbanTab)
+    expect(homeTab.textContent).toBe('DEMO')
+    expect(homeTab.tagName).toBe('BUTTON')
+    expect(strip.firstElementChild).toBe(homeTab)
+    expect(homeTab.nextElementSibling).toBe(terminalTab)
 
     await enterFilesMode(app, 'p1')
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
@@ -402,6 +403,13 @@ describe('tab strip — per-project retention (spec Behaviour 5, AC4)', () => {
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     expect(tabIds()).toEqual(['tab-file-src/app.ts', 'tab-file-README.md'])
+    // The name click opens the home tab (project-home spec Behaviour 4); the
+    // file tabs stay open and selecting one shows its retained pane.
+    expect(screen.getByTestId(TEST_ID.kanbanTab).getAttribute('data-selected')).toBe('true')
+    expect(isTabSelected('README.md')).toBe(false)
+    fireEvent.click(
+      within(screen.getByTestId(testIdFor.tabFile('README.md'))).getByText('README.md'),
+    )
     expect(isTabSelected('README.md')).toBe(true)
     await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
     expect(screen.getByTestId(testIdFor.filePreviewPane('README.md')).textContent).toBe(

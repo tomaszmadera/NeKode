@@ -318,7 +318,7 @@ describe('kanban board — header (spec Behaviour 14, AC14)', () => {
     expect(screen.queryByRole('button', { name: 'Board view' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'List view' })).toBeNull()
 
-    const title = screen.getByRole('heading', { name: 'Kanban' })
+    const title = screen.getByRole('heading', { name: 'Tasks' })
     const refresh = screen.getByLabelText('Refresh')
     expect(refresh.tagName).toBe('BUTTON')
     expect(refresh.textContent).toBe('')
@@ -362,7 +362,12 @@ describe('kanban board — inline states (spec Behaviour 14, AC14)', () => {
     })
     const onConfigure = vi.fn()
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={onConfigure} />)
-    expect(await screen.findByTestId(TEST_ID.kanbanBoardUnconfigured)).toBeTruthy()
+    const unconfigured = await screen.findByTestId(TEST_ID.kanbanBoardUnconfigured)
+    // project-home spec Behaviour 6: Tasks wording, no Kanban in the setup copy.
+    expect(unconfigured.textContent).toContain(
+      'No task source is configured for this project. Connect one in Project Settings to see its tasks.',
+    )
+    expect(unconfigured.textContent).not.toMatch(/kanban/i)
     expect(screen.queryByTestId(TEST_ID.kanbanBoardError)).toBeNull()
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardConfigure))
     expect(onConfigure).toHaveBeenCalledTimes(1)
@@ -1604,7 +1609,7 @@ describe('kanban new task form', () => {
     expect(opener.firstElementChild?.tagName.toLowerCase()).toBe('svg')
     expect(opener.className).toContain('border-edge')
     expect(opener.className).toContain('bg-panel')
-    const headerBar = screen.getByRole('heading', { name: /^Kanban$/ }).parentElement
+    const headerBar = screen.getByRole('heading', { name: /^Tasks$/ }).parentElement
     expect(headerBar?.contains(opener)).toBe(true)
 
     fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
@@ -1622,7 +1627,7 @@ describe('kanban new task form', () => {
   it('defaults Status to the first Todo and keeps Create disabled until the title is non-empty', async () => {
     const createItem = renderReady(todoBoard())
     const form = await openForm()
-    const headerBar = screen.getByRole('heading', { name: /^Kanban$/ }).parentElement
+    const headerBar = screen.getByRole('heading', { name: /^Tasks$/ }).parentElement
     expect(headerBar?.contains(form)).toBe(false)
     expect(
       (headerBar?.compareDocumentPosition(form) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,

@@ -102,6 +102,12 @@ describe('KanbanSettings', () => {
     expect(app.state.set).toHaveBeenCalled()
     expect(invalidate.mock.calls).toEqual([['p1'], [null]])
   })
+  it('asks for a project in Tasks wording when none is selected (project-home Behaviour 6)', async () => {
+    render(<KanbanSettings app={appMock()} projectId={null} />)
+    expect(await screen.findByText('Select a project to connect a task source.')).toBeTruthy()
+    expect(screen.queryByText(/kanban/i)).toBeNull()
+  })
+
   it('shows the empty state and the default directory when no adapters are discovered', async () => {
     await renderLoaded(appMock())
     expect(screen.getByTestId(TEST_ID.settingsKanbanEmpty).textContent).toContain(

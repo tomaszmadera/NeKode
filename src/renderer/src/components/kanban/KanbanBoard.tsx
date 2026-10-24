@@ -1448,7 +1448,7 @@ export function KanbanBoard({
         setPhase(payload.code === 'validation' ? 'not-configured' : 'error')
         return
       }
-      setError(payload?.message ?? 'Failed to load the Kanban board.')
+      setError(payload?.message ?? 'Failed to load tasks.')
       if (!hasSnapshot.current) setPhase('error')
     } finally {
       if (requestGeneration === generation.current) {
@@ -1727,7 +1727,7 @@ export function KanbanBoard({
     >
       {onToolbarControls ? null : (
         <div className="sticky top-0 z-10 -mx-3 mb-3 flex shrink-0 items-center gap-2 bg-app px-3 py-2">
-          <h2 className="text-[14.7px] font-semibold text-ink">Kanban</h2>
+          <h2 className="text-[14.7px] font-semibold text-ink">Tasks</h2>
           {reviewItem !== null ? (
             <button
               type="button"
@@ -1847,8 +1847,8 @@ export function KanbanBoard({
       {phase === 'not-configured' ? (
         <div className="text-[12.6px]" data-testid={TEST_ID.kanbanBoardUnconfigured}>
           <p className="text-ink-secondary">
-            No Kanban adapter is configured for this project. Bind one in Project Settings to see
-            its board.
+            No task source is configured for this project. Connect one in Project Settings to see
+            its tasks.
           </p>
           <button
             type="button"

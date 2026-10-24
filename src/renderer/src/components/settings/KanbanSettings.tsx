@@ -190,7 +190,7 @@ export function KanbanSettings({
         if (alive) {
           setLoading(false)
           setLoadError(
-            parseAppErrorPayload(cause)?.message ?? 'Failed to load the Kanban settings.',
+            parseAppErrorPayload(cause)?.message ?? 'Failed to load the task source settings.',
           )
         }
       })
@@ -243,7 +243,7 @@ export function KanbanSettings({
           setSavedState('saved')
         } catch (cause) {
           setFormError(
-            parseAppErrorPayload(cause)?.message ?? 'Failed to save the Kanban settings.',
+            parseAppErrorPayload(cause)?.message ?? 'Failed to save the task source settings.',
           )
         }
         return
@@ -260,7 +260,9 @@ export function KanbanSettings({
         })
       } catch (cause) {
         // A failed setConfig leaves the binding unsaved (Test stays gated).
-        setFormError(parseAppErrorPayload(cause)?.message ?? 'Failed to save the Kanban settings.')
+        setFormError(
+          parseAppErrorPayload(cause)?.message ?? 'Failed to save the task source settings.',
+        )
         return
       }
       // setConfig resolved, so main holds this binding: mark it persisted/testable
@@ -279,7 +281,7 @@ export function KanbanSettings({
         // The binding is persisted; only the refresh failed. Surface it inline
         // without reverting the saved/persisted state.
         setFormError(
-          parseAppErrorPayload(cause)?.message ?? 'Failed to reload the Kanban settings.',
+          parseAppErrorPayload(cause)?.message ?? 'Failed to reload the task source settings.',
         )
       }
     })
@@ -405,7 +407,7 @@ export function KanbanSettings({
             </p>
           ) : null}
           {projectId === null ? (
-            <p className="mt-4 text-ink-secondary">Select a project to bind a Kanban adapter.</p>
+            <p className="mt-4 text-ink-secondary">Select a project to connect a task source.</p>
           ) : (
             <>
               <label className="mt-4 block" htmlFor="settings-kanban-adapter">

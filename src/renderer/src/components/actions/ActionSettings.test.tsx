@@ -138,7 +138,7 @@ describe('Kanban tab shell', () => {
     } as unknown as AppApi
   }
 
-  it('renders Kanban as its own tab and keeps the Configuration/Actions sections on theirs', async () => {
+  it('renders Tasks as its own tab and keeps the Configuration/Actions sections on theirs', async () => {
     const props = {
       app: kanbanAppMock(),
       actions: [] as ActionControl[],
@@ -151,7 +151,8 @@ describe('Kanban tab shell', () => {
     }
     render(<ActionSettings {...props} />)
     const kanbanTab = screen.getByTestId(TEST_ID.settingsKanbanTab)
-    expect(kanbanTab.textContent).toBe('Kanban')
+    // Visible section label is Tasks (project-home spec Behaviour 6).
+    expect(kanbanTab.textContent).toBe('Tasks')
     expect(kanbanTab.getAttribute('aria-selected')).toBe('false')
     // The Configuration section is not part of the Kanban tab.
     expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
@@ -185,7 +186,7 @@ describe('Kanban tab shell', () => {
     expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
   })
 
-  it('adds an Agents tab beside Shell, Actions, and Kanban', async () => {
+  it('adds an Agents tab beside Shell, Actions, and Tasks', async () => {
     const selectionGet = vi.fn().mockResolvedValue({ version: 1, selectedIds: [], defaultId: null })
     const app = {
       ...kanbanAppMock(),
@@ -211,7 +212,8 @@ describe('Kanban tab shell', () => {
     expect(agentsTab.getAttribute('aria-selected')).toBe('false')
     expect(screen.getByRole('tab', { name: 'Shell' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Actions & Configuration' })).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'Kanban' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Tasks' })).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: 'Kanban' })).toBeNull()
 
     fireEvent.click(agentsTab)
     expect(await screen.findByTestId(TEST_ID.settingsAgentsEmpty)).toBeTruthy()
@@ -224,7 +226,7 @@ describe('Kanban tab shell', () => {
     expect(screen.queryByTestId(TEST_ID.settingsAgentsPanel)).toBeNull()
   })
 
-  it('places the Task progress tab right after Kanban and renders its panel', async () => {
+  it('places the Task progress tab right after Tasks and renders its panel', async () => {
     const app = {
       ...kanbanAppMock(),
       taskProgress: {
@@ -247,7 +249,7 @@ describe('Kanban tab shell', () => {
       />,
     )
     const labels = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(labels.indexOf('Task progress')).toBe(labels.indexOf('Kanban') + 1)
+    expect(labels.indexOf('Task progress')).toBe(labels.indexOf('Tasks') + 1)
     fireEvent.click(screen.getByTestId(TEST_ID.settingsTaskProgressTab))
     expect(await screen.findByTestId(TEST_ID.settingsTaskProgressEmpty)).toBeTruthy()
     expect(app.taskProgress.getBinding).toHaveBeenCalledWith('p1')

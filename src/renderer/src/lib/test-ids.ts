@@ -8,10 +8,15 @@ export const TEST_ID = {
   leftNav: 'region-left',
   tabStrip: 'tab-strip',
   tabTerminal: 'tab-terminal',
-  /** Non-closable Kanban project-view tab (spec kanban-adapter-interface). */
+  /** Non-closable project home tab, first in the strip (spec project-home Behaviour 1). */
   kanbanTab: 'tab-kanban',
-  /** Non-interactive project-name label leading the strip when the project has no Kanban tab. */
-  tabProjectName: 'tab-project-name',
+  /** Home tab setup welcome of a project with no task source (spec project-home Behaviour 3). */
+  projectHomeWelcome: 'project-home-welcome',
+  projectHomeConnectTracker: 'project-home-connect-tracker',
+  /** Home tab while the binding read is still loading (spec project-home Edge cases). */
+  projectHomeLoading: 'project-home-loading',
+  /** Home tab when the binding read failed (spec project-home Errors). */
+  projectHomeError: 'project-home-error',
   tabNewChat: 'tab-new-chat',
   /** Project Settings gear button in the tab strip. */
   tabProjectSettings: 'tab-project-settings',
