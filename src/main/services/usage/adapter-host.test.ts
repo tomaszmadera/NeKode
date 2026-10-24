@@ -421,19 +421,12 @@ describe('bundled and user usage adapters', () => {
       join(tmpdir(), 'nekode-no-user-adapters'),
       bundledUsageAdapterDirectories(false, repo, ''),
     ).filter((a) => a.directory)
-    expect(listed.map((a) => a.id).sort()).toEqual([
-      'claude-code-usage',
-      'codex-app-server',
-      'elevenlabs-subscription',
-      'openrouter-credits',
-    ])
+    expect(listed.map((a) => a.id).sort()).toEqual(['claude-code-usage', 'codex-app-server'])
     expect(listed.every((a) => a.bundled && !a.error)).toBe(true)
     // Spec rules 22-23: every shipped service declares its provider and a picker summary.
     expect(listed.map((a) => [a.id, a.providerId, a.experimental ?? false]).sort()).toEqual([
       ['claude-code-usage', 'claude', true],
       ['codex-app-server', 'codex', true],
-      ['elevenlabs-subscription', 'elevenlabs', false],
-      ['openrouter-credits', 'openrouter', false],
     ])
     expect(listed.every((a) => a.summary)).toBe(true)
     const packaged = [

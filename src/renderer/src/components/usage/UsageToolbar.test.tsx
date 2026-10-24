@@ -74,6 +74,9 @@ describe('Usage panel', () => {
       const status = screen.getByRole('status')
       expect(status.textContent).toContain('Fixture account can refresh again in 42 s')
       expect(status.textContent).toContain(reason === 'backoff' ? 'backoff' : '60-second limit')
+      expect(status.textContent).toContain(
+        `Fixture account was skipped (${reason === 'backoff' ? 'provider backoff' : '60-second limit'}).`,
+      )
       expect(button.hasAttribute('disabled')).toBe(false)
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5000)
@@ -90,8 +93,63 @@ describe('Usage panel', () => {
       })
       expect(button.getAttribute('aria-description')).toContain('ready to refresh')
       expect(screen.getByRole('status').textContent).not.toContain('in 0 s')
+      expect(screen.getByRole('status').textContent).toContain(
+        'Fixture account is ready to refresh.',
+      )
+      expect(screen.getByRole('status').textContent).not.toContain('ready to refresh (')
     },
   )
+  it('uses the current automatic read deadline instead of the last skipped request deadline', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    const until = new Date(Date.now() + 42_000).toISOString()
+    s.connections[0].nextRefreshAt = until
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh).mockResolvedValue({
+      ...s,
+      refresh: { read: [], skipped: [{ connectionId: 'account', until, reason: 'interval' }] },
+    })
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh usage' }))
+    })
+    const current = structuredClone(s)
+    current.connections[0].nextRefreshAt = new Date(Date.now() + 65_000).toISOString()
+    vi.mocked(api.read).mockResolvedValue(current)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(42_000)
+    })
+    const button = screen.getByRole('button', { name: 'Refresh usage' })
+    expect(button.getAttribute('aria-description')).toContain('can refresh again in 23 s')
+    expect(screen.getByRole('status').textContent).toContain('can refresh again in 23 s')
+    expect(screen.getByRole('status').textContent).not.toContain('ready to refresh')
+    expect(api.refresh).toHaveBeenCalledTimes(1)
+  })
+  it('reports an automatic read in progress instead of readiness from a previous skipped click', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    const until = new Date(Date.now() - 1000).toISOString()
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh).mockResolvedValue({
+      ...s,
+      connections: [{ ...s.connections[0], refreshing: true }],
+      refresh: { read: [], skipped: [{ connectionId: 'account', until, reason: 'interval' }] },
+    })
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Usage quota' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh usage' }))
+    })
+    expect(screen.getByRole('status').textContent).toContain('Fixture account is refreshing.')
+    expect(screen.getByRole('status').textContent).not.toContain('ready to refresh')
+    expect(
+      screen.getByRole('button', { name: 'Refresh usage' }).getAttribute('aria-description'),
+    ).toBe('Fixture account is refreshing.')
+  })
   it('keeps pending feedback through polling then reports an unchanged successful read', async () => {
     vi.useFakeTimers()
     const api = createAppApiStub().usage,
@@ -125,9 +183,11 @@ describe('Usage panel', () => {
   it('reports mixed read and skipped outcomes without claiming that cached data is current', async () => {
     const api = createAppApiStub().usage,
       s = snapshot()
+    const until = new Date(Date.now() + 120_000).toISOString()
     s.connections.push({
       ...s.connections[0],
       connection: { ...s.connections[0].connection, id: 'other', label: 'Other' },
+      nextRefreshAt: until,
     })
     vi.mocked(api.read).mockResolvedValue(s)
     vi.mocked(api.refresh).mockResolvedValue({
@@ -137,7 +197,7 @@ describe('Usage panel', () => {
         skipped: [
           {
             connectionId: 'other',
-            until: new Date(Date.now() + 120_000).toISOString(),
+            until,
             reason: 'backoff',
           },
         ],

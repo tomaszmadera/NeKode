@@ -16,7 +16,7 @@ type View =
 
 /** Where an adapter comes from (spec rule 26). */
 function origin(adapter: UsageAdapter): string {
-  return adapter.bundled ? 'Shipped with NeKode' : 'Added by you'
+  return adapter.bundled ? 'Shipped' : 'Added by you'
 }
 
 function age(ms: number): string {
@@ -24,7 +24,14 @@ function age(ms: number): string {
   return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`
 }
 
-/** Textual account status for the list (spec rule 21). */
+function limitCount(c: UsageConnection, snapshot: UsageSnapshot | null): string {
+  const subscription = snapshot?.connections.find((s) => s.connection.id === c.id)?.subscription
+  if (!subscription) return 'No limits yet'
+  const count = subscription.metrics.length
+  return `${count} ${count === 1 ? 'limit' : 'limits'}`
+}
+
+/** Textual source status for the list (spec rule 21). */
 function status(c: UsageConnection, snapshot: UsageSnapshot | null, now: number): string {
   if (!c.enabled) return 'Disabled'
   const source = snapshot?.connections.find((s) => s.connection.id === c.id)
@@ -106,12 +113,13 @@ export function UsageSettings({
     return <p role={error ? 'alert' : 'status'}>{error ?? 'Loading usage settings...'}</p>
   const s = settings
   const usable = adapters.filter((a) => !a.error)
+  const byOrigin = [...adapters.filter((a) => a.bundled), ...adapters.filter((a) => !a.bundled)]
   const now = Date.now()
 
-  let accounts: React.JSX.Element
+  let sources: React.JSX.Element
   if (view.kind === 'edit') {
     const adapter = usable.find((a) => a.id === view.connection.adapterId)
-    accounts = (
+    sources = (
       <UsageAccountEditor
         app={app}
         adapter={adapter}
@@ -127,15 +135,15 @@ export function UsageSettings({
           setSettings(saved)
           setSnapshot(await app.usage.read())
           setView({ kind: 'list' })
-          setNotice(`Account saved: ${c.label}`)
+          setNotice(`Source saved: ${c.label}`)
           onSaved?.()
         }}
       />
     )
   } else if (view.kind === 'pick') {
-    accounts = (
-      <fieldset className="space-y-2" aria-label="Choose a service">
-        <legend>Choose the service that reports this account's limits.</legend>
+    sources = (
+      <fieldset className="space-y-2" aria-label="Choose an adapter">
+        <legend>Choose an adapter</legend>
         {usable.map((a) => (
           <button
             key={`${a.id}:${a.directory ?? ''}`}
@@ -157,8 +165,8 @@ export function UsageSettings({
             }
           >
             <span className="font-semibold">{a.name}</span>
+            <span className="ml-2 text-xs">{origin(a)}</span>
             {a.experimental ? <span className="ml-2 text-xs">Experimental</span> : null}
-            {a.directory && !a.bundled ? <span className="ml-2 text-xs">Added by you</span> : null}
             {a.summary ? <span className="block text-xs text-ink-muted">{a.summary}</span> : null}
           </button>
         ))}
@@ -168,10 +176,10 @@ export function UsageSettings({
       </fieldset>
     )
   } else {
-    accounts = (
+    sources = (
       <div className="space-y-2">
         {s.connections.length > 0 ? (
-          <ul className="space-y-2" aria-label="Accounts">
+          <ul className="space-y-2" aria-label="Sources">
             {s.connections.map((c) => (
               <li
                 key={c.id}
@@ -181,6 +189,7 @@ export function UsageSettings({
                 <span className="text-xs text-ink-secondary">
                   {adapters.find((a) => a.id === c.adapterId)?.name ?? c.adapterId}
                 </span>
+                <span className="text-xs text-ink-secondary">{limitCount(c, snapshot)}</span>
                 <span className="text-xs text-ink-muted">{status(c, snapshot, now)}</span>
                 <span className="ml-auto flex gap-2">
                   {removing === c.id ? (
@@ -192,7 +201,7 @@ export function UsageSettings({
                           void action(async () => {
                             await store(
                               { ...s, connections: s.connections.filter((x) => x.id !== c.id) },
-                              `Account removed: ${c.label}`,
+                              `Source removed: ${c.label}`,
                             )
                             setRemoving(null)
                           })
@@ -233,7 +242,7 @@ export function UsageSettings({
           className="rounded border border-edge px-3 py-1"
           onClick={() => setView({ kind: 'pick' })}
         >
-          Add account
+          Add source
         </button>
       </div>
     )
@@ -260,17 +269,17 @@ export function UsageSettings({
       </label>
       <p className="text-xs text-ink-muted">
         Off hides the title-bar button and stops every usage read, adapter process and export.
-        Accounts, the pin and cached values are kept.
+        Sources, the pin and cached values are kept.
       </p>
-      <section className="space-y-2" aria-labelledby="usage-accounts">
-        <h3 id="usage-accounts" className="font-semibold">
-          Accounts
+      <section className="space-y-2" aria-labelledby="usage-sources">
+        <h3 id="usage-sources" className="font-semibold">
+          Sources
         </h3>
         <p className="text-ink-secondary">
-          Add each subscription or API account you want to track. NeKode reads its limits from the
-          service you choose and shows them in the title bar.
+          Each source reads quota limits through an adapter and shows them in the title bar. One
+          source can report one account or, like a hub, several agents.
         </p>
-        {accounts}
+        {sources}
       </section>
       <section className="space-y-2 rounded border border-edge p-3" aria-labelledby="usage-export">
         <h3 id="usage-export" className="font-semibold">
@@ -300,6 +309,8 @@ export function UsageSettings({
         </label>
         <button
           type="button"
+          disabled={busy}
+          className="rounded border border-edge bg-button px-3 py-1 text-ink hover:bg-button-hover focus-visible:outline focus-visible:outline-info disabled:opacity-50"
           onClick={() =>
             void action(async () => {
               const path = await app.usage.pickFile(true)
@@ -332,10 +343,10 @@ export function UsageSettings({
         </button>
       </section>
       <details className="rounded border border-edge p-3">
-        <summary>Advanced</summary>
+        <summary>Adapters</summary>
         <div className="mt-2 space-y-2">
           <p className="text-xs text-ink-muted">
-            Adapters are trusted executables: enabling an account lets its adapter run with your
+            Adapters are trusted executables: enabling a source lets its adapter run with your
             permissions. To add your own adapter, put a folder with a usage-adapter.json manifest in
             the adapters folder; one with a shipped adapter's id replaces it. Reopen settings to
             list it.
@@ -348,11 +359,12 @@ export function UsageSettings({
             Open adapters folder
           </button>
           <ul className="space-y-2" aria-label="Usage adapters">
-            {adapters.map((a) => (
+            {byOrigin.map((a) => (
               <li key={`${a.id}:${a.directory ?? ''}`} className="text-xs">
                 <span className="font-semibold">{a.name}</span> ({a.id}). {origin(a)}.{' '}
                 {a.sourceKind}; {a.capabilities.join(', ')}. Executable: {a.invocation.command}{' '}
                 {a.invocation.args.join(' ')}
+                {a.directory ? <span className="block break-all">{a.directory}</span> : null}
                 {a.error ? <span className="block text-error">{a.error}</span> : null}
               </li>
             ))}

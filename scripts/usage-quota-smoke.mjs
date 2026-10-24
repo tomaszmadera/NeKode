@@ -86,7 +86,6 @@ function cdp(ws) {
     })
 }
 let child, browserSocket, pageSocket, inspectorSocket, call, mainCall, browserCall, fakeApi
-const PROVIDER_KEY = 'fixture-provider-key-not-a-real-secret'
 // Sanitized Claude Code sign-in in a scratch config directory (usage-quota spec L11-L12); the
 // user's real ~/.claude is never read.
 const CLAUDE_TOKEN = 'fixture-claude-access-token-not-real'
@@ -312,41 +311,29 @@ process.stdin.on('end', () => {
     configSchema: [{ key: 'path', label: 'Fixture input file', type: 'file', required: true }],
   }
   writeFileSync(join(adapterDir, 'usage-adapter.json'), JSON.stringify(manifest))
-  // Stage 3 provider adapters run unchanged against a local fake API (fixture data only). Only a
-  // loopback origin is accepted by their NEKODE_USAGE_TEST_BASE_URL seam.
+  // The Claude Code adapter runs unchanged against a local fake API (fixture data only).
+  // Only a loopback origin is accepted by its NEKODE_USAGE_TEST_BASE_URL seam.
   fakeApi = createHttpServer((request, response) => {
     providerRequests.push({
       method: request.method,
       path: request.url,
-      elevenlabsKey: request.headers['xi-api-key'] === PROVIDER_KEY,
-      bearerKey: request.headers.authorization === `Bearer ${PROVIDER_KEY}`,
       claudeToken:
         request.headers.authorization === `Bearer ${CLAUDE_TOKEN}` &&
         request.headers['anthropic-beta'] === 'oauth-2025-04-20',
     })
     const body =
-      request.url === '/v1/user/subscription'
+      request.url === '/api/oauth/usage'
         ? {
-            tier: 'fixture',
-            character_count: 25000,
-            character_limit: 100000,
-            next_character_count_reset_unix: Math.floor(now / 1000) + 10 * 86400,
-            billing_period: 'monthly_period',
+            five_hour: {
+              utilization: 37,
+              resets_at: new Date(now + 3_600_000).toISOString().replace('Z', '123+00:00'),
+            },
+            seven_day: {
+              utilization: 12,
+              resets_at: new Date(now + 3 * 86_400_000).toISOString().replace('Z', '+00:00'),
+            },
           }
-        : request.url === '/api/v1/credits'
-          ? { data: { total_credits: 10, total_usage: 12.5 } }
-          : request.url === '/api/oauth/usage'
-            ? {
-                five_hour: {
-                  utilization: 37,
-                  resets_at: new Date(now + 3_600_000).toISOString().replace('Z', '123+00:00'),
-                },
-                seven_day: {
-                  utilization: 12,
-                  resets_at: new Date(now + 3 * 86_400_000).toISOString().replace('Z', '+00:00'),
-                },
-              }
-            : null
+        : null
     response.writeHead(body ? 200 : 404, { 'content-type': 'application/json' })
     response.end(JSON.stringify(body ?? {}))
   })
@@ -364,8 +351,8 @@ process.stdin.on('end', () => {
   )
   const claudeCredentials = readFileSync(join(claudeConfig, '.credentials.json'), 'utf8')
   process.env.NEKODE_USAGE_TEST_BASE_URL = `http://127.0.0.1:${fakeApi.address().port}`
-  // The ElevenLabs and OpenRouter adapters are the shipped ones (usage-quota spec rule 17): the
-  // unpackaged app reads them from adapters/ and runs them on Electron in Node mode (rule 19).
+  // Claude Code is a shipped adapter (usage-quota spec rule 17): the unpackaged app reads it
+  // from adapters/ and runs it on Electron in Node mode (rule 19).
   await launch()
   await check(
     'Show usage quota is off at fresh install and hides the title-bar button',
@@ -599,67 +586,33 @@ process.stdin.on('end', () => {
     'window.app.usage.refresh().then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval")',
   )
   await check(
-    'OpenRouter adapter lists its Management key privilege explanation',
-    'window.app.usage.listAdapters().then(a=>a.find(x=>x.id==="openrouter-credits")?.description?.includes("Management key")===true&&!a.find(x=>x.id==="elevenlabs-subscription")?.error)',
-  )
-  await check(
-    'shipped Claude Code, Codex, ElevenLabs and OpenRouter adapters are listed without copying, on the NeKode runtime',
-    'window.app.usage.listAdapters().then(a=>["claude-code-usage","codex-app-server","elevenlabs-subscription","openrouter-credits"].every(id=>{const x=a.find(y=>y.id===id);return x&&x.bundled===true&&!x.error&&/electron|nekode/i.test(x.invocation.command)}))',
+    'shipped Claude Code and Codex adapters are listed without copying, on the NeKode runtime',
+    'window.app.usage.listAdapters().then(a=>["claude-code-usage","codex-app-server"].every(id=>{const x=a.find(y=>y.id===id);return x&&x.bundled===true&&!x.error&&/electron|nekode/i.test(x.invocation.command)}))',
   )
   const providers = await evaluate('window.app.usage.getSettings()')
-  providers.connections.push(
-    {
-      id: 'elevenlabs-fixture',
-      label: 'ElevenLabs (test data)',
-      providerId: 'elevenlabs',
-      adapterId: 'elevenlabs-subscription',
-      enabled: true,
-      config: { apiKey: PROVIDER_KEY },
-    },
-    {
-      id: 'openrouter-fixture',
-      label: 'OpenRouter (test data)',
-      providerId: 'openrouter',
-      adapterId: 'openrouter-credits',
-      enabled: true,
-      config: { apiKey: PROVIDER_KEY },
-    },
-    {
-      id: 'claude-fixture',
-      label: 'Claude Code (test data)',
-      providerId: 'claude',
-      adapterId: 'claude-code-usage',
-      enabled: true,
-      config: { configDirectory: claudeConfig },
-    },
-  )
+  providers.connections.push({
+    id: 'claude-fixture',
+    label: 'Claude Code (test data)',
+    providerId: 'claude',
+    adapterId: 'claude-code-usage',
+    enabled: true,
+    config: { configDirectory: claudeConfig },
+  })
   await evaluate(`window.app.usage.saveSettings(${JSON.stringify(providers)})`)
   await evaluate('window.app.usage.refresh()')
   // Claude Code (spec L13): both windows with periods; the 7-day window has a 7-day period.
   const claudeOk =
     '(s=>{const c=s.connections.find(x=>x.connection.id==="claude-fixture");const [f,w]=c?.subscription?.metrics??[];return c?.error===null&&f?.id==="five_hour"&&f.usedPercent===37&&f.resetsAt?.length===24&&w?.id==="seven_day"&&w.usedPercent===12&&Date.parse(w.resetsAt)-Date.parse(w.periodStart)===604800000})'
-  const providerValues =
-    'window.app.usage.read().then(s=>{const e=s.connections.find(c=>c.connection.id==="elevenlabs-fixture"),o=s.connections.find(c=>c.connection.id==="openrouter-fixture");const m=e?.subscription?.metrics[0],b=o?.subscription?.metrics[0];return e?.error===null&&o?.error===null&&m?.kind==="credits"&&m.used===25000&&m.limit===100000&&m.unit==="characters"&&b?.kind==="balance"&&b.amount===-2.5&&b.currency==="USD"&&' +
-    claudeOk +
-    '(s)})'
+  const providerValues = `window.app.usage.read().then(${claudeOk})`
   await waitFor(providerValues, 25000)
-  await check(
-    'ElevenLabs credits, negative OpenRouter USD balance and Claude Code windows load through the real adapters',
-    providerValues,
-  )
+  await check('Claude Code windows load through the real adapter', providerValues)
   assert.ok(
-    providerRequests.some((r) => r.path === '/v1/user/subscription' && r.elevenlabsKey) &&
-      providerRequests.some((r) => r.path === '/api/v1/credits' && r.bearerKey) &&
-      providerRequests.some((r) => r.path === '/api/oauth/usage' && r.claudeToken) &&
-      providerRequests.every(
-        (r) =>
-          r.method === 'GET' &&
-          ['/v1/user/subscription', '/api/v1/credits', '/api/oauth/usage'].includes(r.path),
-      ),
-    'provider adapters send only the documented GETs with the key in the header',
+    providerRequests.some((r) => r.path === '/api/oauth/usage' && r.claudeToken) &&
+      providerRequests.every((r) => r.method === 'GET' && r.path === '/api/oauth/usage'),
+    'Claude Code sends only the usage GET with its OAuth token and beta header',
   )
   report.assertions.push(
-    'provider adapters send only the documented metadata GETs with the key in the header',
+    'Claude Code sends only the usage GET with its OAuth token and beta header',
   )
   report.providerRequests = providerRequests.map(({ method, path }) => ({ method, path }))
   // Open the panel only when closed, then allow one renderer read interval (5 seconds).
@@ -667,7 +620,7 @@ process.stdin.on('end', () => {
     '(()=>{if(!document.querySelector(".usage-panel"))document.querySelector(".usage-trigger").click()})()',
   )
   const providerRows =
-    '(()=>{const t=document.querySelector(".usage-panel")?.textContent??"";return t.includes("25%")&&t.includes("USD -2.50")})()'
+    '(()=>{const t=document.querySelector(".usage-panel")?.textContent??"";return t.includes("37%")&&t.includes("12%")})()'
   await waitFor(providerRows, 10000)
   report.providerPanelText = await evaluate(
     'document.querySelector(".usage-panel")?.textContent?.slice(0,2000) ?? null',
@@ -675,24 +628,19 @@ process.stdin.on('end', () => {
   await check('panel shows the provider rows', providerRows)
   await shot('panel-providers')
   await evaluate(`document.querySelector('[aria-label="Close usage panel"]').click()`)
-  await check(
-    'settings expose only secret presence for provider keys',
-    `window.app.usage.getSettings().then(s=>{const t=JSON.stringify(s);return !t.includes(${JSON.stringify(PROVIDER_KEY)})&&s.connections.filter(c=>c.secretKeys?.includes("apiKey")).length===2})`,
-  )
   await close()
-  // Acceptance 13: the key is stored encrypted and absent from export, cache and the database.
-  const plaintext = Buffer.from(PROVIDER_KEY)
+  // Claude Code credentials must not enter export, cache or the database.
   const leaked = [output, join(profile, 'usage', 'observations.json')]
   for (const name of readdirSync(profile)) {
     const path = join(profile, name)
     if (/\.(db|sqlite|sqlite3)(-wal|-shm)?$/i.test(name)) leaked.push(path)
   }
   const found = leaked.filter((path) =>
-    [plaintext, Buffer.from(CLAUDE_TOKEN), Buffer.from(CLAUDE_REFRESH)].some((secret) =>
+    [Buffer.from(CLAUDE_TOKEN), Buffer.from(CLAUDE_REFRESH)].some((secret) =>
       readFileSync(path).includes(secret),
     ),
   )
-  assert.deepEqual(found, [], 'no plaintext provider key in export, cache or database files')
+  assert.deepEqual(found, [], 'no Claude Code tokens in export, cache or database files')
   assert.equal(
     readFileSync(join(claudeConfig, '.credentials.json'), 'utf8'),
     claudeCredentials,
@@ -700,7 +648,7 @@ process.stdin.on('end', () => {
   )
   report.assertions.push('Claude Code tokens absent and credentials file unchanged')
   report.assertions.push(
-    `no plaintext provider key in export, cache or database files (${leaked.length} files checked)`,
+    `no Claude Code tokens in export, cache or database files (${leaked.length} files checked)`,
   )
   const pids = readFileSync(pidFile, 'utf8').trim().split(/\s+/).map(Number)
   for (const pid of pids) {

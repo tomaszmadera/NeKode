@@ -21,10 +21,11 @@
     "build:unpack": "pnpm run build && electron-builder --dir --publish never",
     "build:win": "pnpm run build && electron-builder --win --publish never",
     "build:linux": "pnpm run build && electron-builder --linux --publish never",
-    "test": "vitest run",
+    "test": "node scripts/test.mjs",
+    "test:runner": "node --test scripts/test-runner.test.mjs",
     "test:adapters": "python -m unittest discover -s adapters/plane -p test_description_text.py",
     "test:watch": "vitest",
-    "verify": "pnpm run lint && pnpm run typecheck && pnpm run test"
+    "verify": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run test:runner"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

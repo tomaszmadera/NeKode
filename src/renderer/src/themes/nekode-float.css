@@ -341,6 +341,22 @@
   border-radius: 6px;
 }
 
+[data-theme="nekode-float"] .status-bar-terminal-toggle {
+  background: transparent;
+  color: #a3a9c2;
+  border-radius: 4px;
+}
+
+[data-theme="nekode-float"] .status-bar-terminal-toggle:hover {
+  background: var(--float-overlay-soft);
+  color: #ffffff;
+}
+
+[data-theme="nekode-float"] .status-bar-terminal-toggle[aria-pressed="true"] {
+  background: var(--float-overlay-edge);
+  color: #ffffff;
+}
+
 /* Primary actions: gradient pill with purple glow */
 [data-theme="nekode-float"] .artwork-primary-btn,
 [data-theme="nekode-float"] .artwork-welcome button {

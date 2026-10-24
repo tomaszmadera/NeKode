@@ -64,12 +64,7 @@ function errorActions(value: unknown): UsageAdapter['errorActions'] {
 }
 
 /** Usage adapters shipped with NeKode (spec rule 17); `adapters/<name>` in the repository. */
-export const BUNDLED_USAGE_ADAPTERS = [
-  'usage-claude',
-  'usage-codex',
-  'usage-elevenlabs',
-  'usage-openrouter',
-]
+export const BUNDLED_USAGE_ADAPTERS = ['usage-claude', 'usage-codex']
 
 /**
  * Shipped adapter directories: `<resources>/usage-adapters/<name>` in a packaged app (copied by

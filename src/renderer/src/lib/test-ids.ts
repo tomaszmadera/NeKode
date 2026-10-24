@@ -35,6 +35,8 @@ export const TEST_ID = {
   statusGitSync: 'status-git-sync',
   /** Quick theme switcher in the status bar. */
   statusThemeSwitcher: 'status-theme-switcher',
+  /** Toggle button for bottom terminal in the status bar. */
+  statusTerminalToggle: 'status-terminal-toggle',
   centerSurface: 'region-center-surface',
   rightRegion: 'region-right',
   bottomRegion: 'region-bottom',

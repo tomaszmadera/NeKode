@@ -9,6 +9,7 @@ import type {
 } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 import { BASE_THEME_ID, nextThemeId, THEMES, type ThemeId } from '../../lib/theme'
@@ -38,6 +39,10 @@ export interface StatusBarProps {
   onThemeChange?: (theme: ThemeId) => void
   /** Optional error callback for git sync failures (surfaced to workspace notice banner). */
   onError?: (message: string) => void
+  /** Whether the bottom panel (terminal) is currently open. */
+  bottomOpen?: boolean
+  /** Callback to toggle opening and closing the bottom terminal. */
+  onToggleBottom?: () => void
 }
 
 const NEWLINE = String.fromCharCode(10)
@@ -87,6 +92,8 @@ export function StatusBar({
   quickThemeSwitch = false,
   onThemeChange,
   onError,
+  bottomOpen = false,
+  onToggleBottom,
 }: StatusBarProps): React.JSX.Element {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
   const [syncingProjects, setSyncingProjects] = useState<ReadonlySet<string>>(() => new Set())
@@ -218,7 +225,42 @@ export function StatusBar({
       {quickThemeSwitch && onThemeChange && theme ? (
         <ThemeSwitchSection theme={theme} onThemeChange={onThemeChange} />
       ) : null}
+      {onToggleBottom ? (
+        <TerminalToggleSection
+          open={bottomOpen}
+          onToggle={onToggleBottom}
+          hasLeadingRightItem={Boolean(quickThemeSwitch && onThemeChange && theme)}
+        />
+      ) : null}
     </footer>
+  )
+}
+
+function TerminalToggleSection({
+  open,
+  onToggle,
+  hasLeadingRightItem,
+}: {
+  open: boolean
+  onToggle: () => void
+  hasLeadingRightItem: boolean
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'status-bar-terminal-toggle flex h-5 w-5 shrink-0 cursor-pointer select-none items-center justify-center rounded transition-colors focus-visible:outline focus-visible:outline-info',
+        !hasLeadingRightItem && 'ml-auto',
+        open ? 'bg-highlight text-ink' : 'text-ink-muted hover:bg-highlight hover:text-ink',
+      )}
+      data-testid={TEST_ID.statusTerminalToggle}
+      aria-label={open ? 'Close bottom terminal' : 'Open bottom terminal'}
+      aria-pressed={open}
+      title={open ? 'Close bottom terminal (Ctrl+`)' : 'Open bottom terminal (Ctrl+`)'}
+      onClick={onToggle}
+    >
+      <Icon.terminal size={13} aria-hidden />
+    </button>
   )
 }
 

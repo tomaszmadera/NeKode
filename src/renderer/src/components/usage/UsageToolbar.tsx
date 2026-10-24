@@ -89,11 +89,14 @@ export function UsageGraphic({
 function tooltip(source: UsageConnectionSnapshot, metric: UsageMetric, now: number): string {
   return `${source.connection.label}; ${metric.label}; ${value(metric)}; ${source.error?.message ?? usageFreshness(metric, now)}; observation ${metric.observedAt ?? 'unknown'}; collected ${metric.collectedAt ?? source.subscription?.collectedAt ?? 'unknown'}; source ${source.connection.adapterId}; reset ${metric.resetsAt ?? 'unknown'}. Pace compares elapsed allowance slices, not a provider restriction or prediction.`
 }
-function refreshWait(label: string, until: string | null, now: number): string {
+function refreshState(source: UsageConnectionSnapshot, now: number): string {
+  const label = source.connection.label
+  if (source.refreshing) return `${label} is refreshing`
+  const until = source.nextRefreshAt
   const seconds = until ? Math.ceil((Date.parse(until) - now) / 1000) : 0
   return seconds > 0 ? `${label} can refresh again in ${seconds} s` : `${label} is ready to refresh`
 }
-function refreshOutcome(snapshot: UsageSnapshot, now: number): string {
+function refreshOutcome(snapshot: UsageSnapshot, current: UsageSnapshot, now: number): string {
   const result = snapshot.refresh
   const failed = snapshot.connections.filter(
     (c) => result?.read.includes(c.connection.id) && c.error,
@@ -103,15 +106,18 @@ function refreshOutcome(snapshot: UsageSnapshot, now: number): string {
       ? `Usage refresh completed; ${failed} source(s) failed.`
       : 'Usage refreshed.'
     : snapshot.connections.length
-      ? 'No usage sources read.'
+      ? 'Last refresh request read no sources.'
       : 'No usage accounts enabled.'
   const skipped =
     result?.skipped.map((skip) => {
+      const source = current.connections.find((c) => c.connection.id === skip.connectionId)
       const label =
+        source?.connection.label ??
         snapshot.connections.find((c) => c.connection.id === skip.connectionId)?.connection.label ??
         skip.connectionId
       const reason = skip.reason === 'backoff' ? 'provider backoff' : '60-second limit'
-      return `${refreshWait(label, skip.until, now)} (${reason}).`
+      const skipped = `${label} was skipped (${reason}).`
+      return source ? `${skipped} ${refreshState(source, now)}.` : skipped
     }) ?? []
   return [summary, ...skipped].join(' ')
 }
@@ -221,9 +227,7 @@ export function UsageToolbar({
   const pinned = pinnedSource?.subscription?.metrics.find((m) => m.id === snapshot.pin?.metricId)
   const refreshing = manualPending || snapshot.connections.some((c) => c.refreshing)
   const refreshDescription = snapshot.connections.length
-    ? snapshot.connections
-        .map((c) => `${refreshWait(c.connection.label, c.nextRefreshAt, now)}.`)
-        .join(' ')
+    ? snapshot.connections.map((c) => `${refreshState(c, now)}.`).join(' ')
     : 'No usage accounts enabled.'
   async function refresh(): Promise<void> {
     if (manualFlight.current) return
@@ -354,7 +358,7 @@ export function UsageToolbar({
                     {manualPending
                       ? 'Refreshing usage...'
                       : manualResult
-                        ? refreshOutcome(manualResult, now)
+                        ? refreshOutcome(manualResult, snapshot, now)
                         : ''}
                   </p>
                 ) : null}

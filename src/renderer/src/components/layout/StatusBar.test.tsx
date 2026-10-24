@@ -453,3 +453,71 @@ describe('status bar — git sync (NEKODE-1)', () => {
     })
   })
 })
+
+describe('status bar — bottom terminal toggle', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('does not render bottom terminal toggle when onToggleBottom is omitted', () => {
+    render(<StatusBar app={app} project={projectA} />)
+    expect(screen.queryByTestId(TEST_ID.statusTerminalToggle)).toBeNull()
+  })
+
+  it('renders bottom terminal toggle button on the right with ml-auto when onToggleBottom is provided and quick theme switcher is disabled', () => {
+    render(<StatusBar app={app} project={projectA} onToggleBottom={vi.fn()} />)
+    const toggle = screen.getByTestId(TEST_ID.statusTerminalToggle)
+    expect(toggle).toBeTruthy()
+    expect(toggle.textContent).toBe('')
+    expect(toggle.className).toContain('ml-auto')
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.getAttribute('aria-label')).toBe('Open bottom terminal')
+    expect(toggle.getAttribute('title')).toBe('Open bottom terminal (Ctrl+`)')
+  })
+
+  it('renders bottom terminal toggle after quick theme switcher without ml-auto when quickThemeSwitch is enabled', () => {
+    render(
+      <StatusBar
+        app={app}
+        project={projectA}
+        theme="nekode-flat"
+        quickThemeSwitch={true}
+        onThemeChange={vi.fn()}
+        onToggleBottom={vi.fn()}
+      />,
+    )
+    const switcher = screen.getByTestId(TEST_ID.statusThemeSwitcher)
+    const toggle = screen.getByTestId(TEST_ID.statusTerminalToggle)
+    expect(switcher.className).toContain('ml-auto')
+    expect(toggle.className).not.toContain('ml-auto')
+  })
+
+  it('calls onToggleBottom when clicked', () => {
+    const onToggle = vi.fn()
+    render(<StatusBar app={app} project={projectA} onToggleBottom={onToggle} />)
+    const toggle = screen.getByTestId(TEST_ID.statusTerminalToggle)
+    fireEvent.click(toggle)
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('reflects open state when bottomOpen is true', () => {
+    render(<StatusBar app={app} project={projectA} bottomOpen={true} onToggleBottom={vi.fn()} />)
+    const toggle = screen.getByTestId(TEST_ID.statusTerminalToggle)
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(toggle.getAttribute('aria-label')).toBe('Close bottom terminal')
+    expect(toggle.getAttribute('title')).toBe('Close bottom terminal (Ctrl+`)')
+    expect(toggle.className).toContain('bg-highlight')
+  })
+
+  it('renders bottom terminal toggle on the right even when project is null', () => {
+    render(<StatusBar app={app} project={null} onToggleBottom={vi.fn()} />)
+    const toggle = screen.getByTestId(TEST_ID.statusTerminalToggle)
+    expect(toggle).toBeTruthy()
+    expect(toggle.className).toContain('ml-auto')
+  })
+})

@@ -21,10 +21,6 @@ extraResources:
     to: usage-adapters/usage-claude
   - from: adapters/usage-codex
     to: usage-adapters/usage-codex
-  - from: adapters/usage-elevenlabs
-    to: usage-adapters/usage-elevenlabs
-  - from: adapters/usage-openrouter
-    to: usage-adapters/usage-openrouter
 
 # Windows application icon (added 2026-10-01, user request): the branded cat
 # rasterized from src/renderer/src/assets/brand/cat-icon.svg, a rounded tile

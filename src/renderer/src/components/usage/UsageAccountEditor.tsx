@@ -10,7 +10,7 @@ import {
 
 const input = 'mt-1 w-full rounded border border-edge bg-app p-2'
 
-/** One account of one service (usage-quota spec rule 23). */
+/** One source with one adapter (usage-quota spec rule 23). */
 export function UsageAccountEditor({
   app,
   adapter,
@@ -60,7 +60,7 @@ export function UsageAccountEditor({
         <p role="alert" className="text-error">
           {USAGE_REMOVED_ADAPTER_IDS.includes(initial.adapterId)
             ? USAGE_REMOVED_ADAPTER_MESSAGE
-            : `The service of this account (${initial.adapterId}) is unavailable. Remove the account or restore its adapter.`}
+            : `The adapter of this source (${initial.adapterId}) is unavailable. Remove the source or restore its adapter.`}
         </p>
         <button type="button" onClick={onCancel}>
           Back
@@ -70,14 +70,14 @@ export function UsageAccountEditor({
   return (
     <form
       className="space-y-3 rounded border border-edge p-3"
-      aria-label={`${isNew ? 'New' : 'Edit'} ${adapter.name} account`}
+      aria-label={`${isNew ? 'New' : 'Edit'} ${adapter.name} source`}
       onSubmit={(e) => {
         e.preventDefault()
         void action(() => onSave(c))
       }}
     >
       <h3 className="font-semibold">
-        {isNew ? `New ${adapter.name} account` : `Edit ${c.label || adapter.name}`}
+        {isNew ? `New ${adapter.name} source` : `Edit ${c.label || adapter.name}`}
       </h3>
       <label className="block">
         Name
@@ -88,6 +88,10 @@ export function UsageAccountEditor({
           value={c.label}
           onChange={(e) => setC({ ...c, label: e.target.value })}
         />
+      </label>
+      <label className="block">
+        Adapter
+        <input className={input} value={adapter.name} readOnly />
       </label>
       {adapter.description ? (
         <p className="text-xs text-ink-secondary">{adapter.description}</p>
@@ -186,7 +190,7 @@ export function UsageAccountEditor({
         </button>
         {switchOn ? null : (
           <span id="usage-test-off" className="text-xs text-ink-muted">
-            Turn on Show usage quota to test accounts.
+            Turn on Show usage quota to test sources.
           </span>
         )}
         <button

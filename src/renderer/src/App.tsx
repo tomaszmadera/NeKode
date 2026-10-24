@@ -2413,6 +2413,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   showBottomRef.current = showBottomPanel
   hideBottomRef.current = hideBottomPanel
 
+  const handleToggleBottom = useCallback((): void => {
+    if (bottomOpenRef.current) {
+      hideBottomPanel()
+    } else {
+      showBottomPanel()
+    }
+  }, [hideBottomPanel, showBottomPanel])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.repeat || !isBottomPanelChord(event)) {
@@ -3099,6 +3107,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         quickThemeSwitch={quickThemeSwitchState.enabled}
         onThemeChange={handleThemeChange}
         onError={setNotice}
+        bottomOpen={bottomOpen}
+        onToggleBottom={handleToggleBottom}
       />
     </div>
   )

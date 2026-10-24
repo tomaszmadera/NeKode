@@ -2183,6 +2183,25 @@ describe('application shell', () => {
     expect(screen.getByTestId(TEST_ID.bottomResizeHandle)).toBeTruthy()
   })
 
+  it('toggles the bottom terminal panel via status bar toggle button', async () => {
+    render(<App app={app} />)
+    const toggle = screen.getByTestId(TEST_ID.statusTerminalToggle)
+    expect(toggle).toBeTruthy()
+    expect(getByTestIdString(TEST_ID.bottomRegion).style.display).toBe('none')
+
+    fireEvent.click(toggle)
+    await waitFor(() => {
+      expect(getByTestIdString(TEST_ID.bottomRegion).style.display).not.toBe('none')
+    })
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(toggle)
+    await waitFor(() => {
+      expect(getByTestIdString(TEST_ID.bottomRegion).style.display).toBe('none')
+    })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('keeps the region contract when projects.list rejects', async () => {
     // The preload bridge decodes a rejected invoke into a typed
     // AppErrorPayload; hydration must surface that typed error through the

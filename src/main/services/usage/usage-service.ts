@@ -97,7 +97,7 @@ function connectionRevisions(value: unknown): Record<string, string> {
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(revision),
     )
   )
-    throw new AppError('validation_error', 'Invalid usage connection revisions.')
+    throw new AppError('validation_error', 'Invalid usage source revisions.')
   return revisions as Record<string, string>
 }
 /** Equal adapter configurations regardless of key order. */
@@ -192,7 +192,7 @@ export class UsageService {
   }
   private runtimeFor(id: string): Runtime {
     const runtime = this.runtime.get(id)
-    if (!runtime) throw new Error('Usage connection runtime is missing.')
+    if (!runtime) throw new Error('Usage source runtime is missing.')
     return runtime
   }
   getEnabled(): boolean {
@@ -359,14 +359,14 @@ export class UsageService {
           if (!this.deps.safeStorage?.isEncryptionAvailable())
             throw new AppError(
               'config',
-              'Secret encryption is unavailable. Cannot save this account.',
+              'Secret encryption is unavailable. Cannot save this source.',
             )
           value = `encrypted:${this.deps.safeStorage.encryptString(value).toString('base64')}`
         }
         if (value !== undefined) config[f.key] = value
       }
       if (f.required && (value === undefined || value === ''))
-        throw new AppError('config', `Set ${f.label} before saving this account.`)
+        throw new AppError('config', `Set ${f.label} before saving this source.`)
       if (
         value !== undefined &&
         (f.type === 'boolean' ? typeof value !== 'boolean' : typeof value !== 'string')
@@ -419,15 +419,15 @@ export class UsageService {
   /** Why `pin` cannot target a metric under `next`, or null when it can. */
   private pinRefusal(pin: UsagePin, next: UsageSettings, invalidated: Set<string>): string | null {
     if (!next.connections.some((c) => c.id === pin.connectionId && c.enabled))
-      return 'Cannot pin this metric: its account is removed or disabled.'
+      return 'Cannot pin this metric: its source is removed or disabled.'
     if (invalidated.has(pin.connectionId))
-      return 'Cannot pin this metric: its account settings changed. Pin it after the next refresh.'
+      return 'Cannot pin this metric: its source settings changed. Pin it after the next refresh.'
     if (
       !this.runtime
         .get(pin.connectionId)
         ?.subscription?.metrics.some((m) => m.id === pin.metricId && m.state !== 'unavailable')
     )
-      return 'Cannot pin this metric: its account reports no value for it.'
+      return 'Cannot pin this metric: its source reports no value for it.'
     return null
   }
   saveSettings(raw: UsageSettings): UsageSettings {
@@ -566,7 +566,7 @@ export class UsageService {
       const value = config[f.key]
       if (typeof value === 'string' && value.startsWith('encrypted:')) {
         if (!this.deps.safeStorage?.isEncryptionAvailable())
-          throw new AppError('config', 'Secret encryption is unavailable. Reconfigure the account.')
+          throw new AppError('config', 'Secret encryption is unavailable. Reconfigure the source.')
         try {
           config[f.key] = this.deps.safeStorage.decryptString(
             Buffer.from(value.slice(10), 'base64'),
@@ -618,7 +618,7 @@ export class UsageService {
     )
       throw new AppError(
         'validation_error',
-        'Usage source must return one subscription for this account and its provider.',
+        'Usage source must return one subscription for this source and its provider.',
       )
     return {
       ...document.subscriptions[0],
@@ -629,7 +629,7 @@ export class UsageService {
   }
   async test(raw: UsageConnection): Promise<void> {
     // Rule 12: while off, even an explicit test reads no file and starts no process.
-    if (!this.enabled) throw new AppError('config', 'Turn on Show usage quota to test connections.')
+    if (!this.enabled) throw new AppError('config', 'Turn on Show usage quota to test sources.')
     const settings = parseUsageSettings({
       ...this.getSettings(),
       connections: [raw],

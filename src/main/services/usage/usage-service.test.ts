@@ -771,7 +771,7 @@ describe('global usage service', () => {
     services.push(service)
     await expect(service.test(f.settings.connections[0])).rejects.toMatchObject({
       code: 'config',
-      message: 'Turn on Show usage quota to test connections.',
+      message: 'Turn on Show usage quota to test sources.',
     })
     expect(f.hostRead).not.toHaveBeenCalled()
     service.setEnabled(true)

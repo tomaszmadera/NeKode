@@ -137,6 +137,13 @@ a future harness, not a condition for running the app.
 
 ## 4. Standard commands
 
+`pnpm run test <file>...` runs only the matching Vitest files. The form
+`pnpm run test -- <file>...` selects the same files; the test script removes the
+package manager's leading separator before passing filters to Vitest. Check the
+reported file and test counts to confirm the intended scope. `pnpm run test:runner`
+checks filter forwarding and failure exits in an isolated Vitest project and is
+included in `pnpm run verify`.
+
 - `pnpm install`: install dependencies (the `allowBuilds` policy).
 - `pnpm dev`: the app in development mode (Vite HMR + Electron watch).
 - `pnpm build`: build the app (`out/`).

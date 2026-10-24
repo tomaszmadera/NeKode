@@ -102,7 +102,7 @@ export interface UsageAdapter {
  */
 export const USAGE_REMOVED_ADAPTER_IDS: readonly string[] = ['usage-file', 'claude-code-snapshots']
 export const USAGE_REMOVED_ADAPTER_MESSAGE =
-  'This service is no longer available. Remove the account and add it again with a supported service.'
+  'This adapter is no longer available. Remove the source and add it again with a supported adapter.'
 export interface UsageConnection {
   id: string
   label: string
@@ -306,14 +306,13 @@ export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocum
 export function parseUsageSettings(value: unknown): UsageSettings {
   const s = usageObject(value)
   only(s, ['connections', 'pin', 'export'])
-  if (!Array.isArray(s.connections) || s.connections.length > 100)
-    invalid('Invalid usage connections.')
+  if (!Array.isArray(s.connections) || s.connections.length > 100) invalid('Invalid usage sources.')
   const ids = new Set<string>()
   const connections = s.connections.map((raw) => {
     const c = usageObject(raw)
     only(c, ['id', 'label', 'providerId', 'adapterId', 'enabled', 'config', 'secretKeys'])
     const id = text(c.id)
-    if (ids.has(id)) invalid('Duplicate usage connection.')
+    if (ids.has(id)) invalid('Duplicate usage source.')
     ids.add(id)
     if (typeof c.enabled !== 'boolean') invalid('Usage enabled must be boolean.')
     const config = usageObject(c.config)
