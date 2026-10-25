@@ -575,11 +575,11 @@ describe('global usage service', () => {
     // The aborted read never completed, so neither its interval nor its 60-second limit applies.
     expect(read).toHaveBeenCalledTimes(3)
   })
-  it('reports a joined automatic read as read without starting a second flight', async () => {
+  it('starts one refresh for clicks during an automatic read and reports both as read', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
     let finish: (value: UsageAdapterResult) => void = () => {}
-    read.mockImplementation(
+    read.mockImplementationOnce(
       () =>
         new Promise<UsageAdapterResult>((resolve) => {
           finish = resolve
@@ -592,6 +592,7 @@ describe('global usage service', () => {
     finish(adapterResult(f.live()))
     for (const result of await Promise.all([first, second]))
       expect(result.refresh).toEqual({ read: ['account'], skipped: [] })
+    expect(read.mock.calls.map((call) => call[4])).toEqual(['read', 'refresh'])
   })
   it('keeps the completed read outcome when a cached metric is pinned during refresh', async () => {
     const f = fixture(),
@@ -1460,37 +1461,74 @@ describe('partial refresh merge and retry (PDH-13)', () => {
 })
 
 describe('live refresh and removed passive sources (spec L1-L7)', () => {
-  it('sends read on schedule and refresh on a manual click 60 seconds after a read (LA2)', async () => {
+  it('sends read on schedule and refresh on a manual click right after it (LA2)', async () => {
     const f = fixture(),
       { service, read } = plugin(f, 300)
     await poll(service)
     expect(read).toHaveBeenCalledTimes(1)
     expect(read.mock.calls[0][4]).toBe('read')
-    f.advance(59_999)
-    expect((await service.refresh()).refresh).toEqual({
-      read: [],
-      skipped: [
-        {
-          connectionId: 'account',
-          until: new Date(NOW + 60_000).toISOString(),
-          reason: 'interval',
-        },
-      ],
-    })
-    expect(service.read().connections[0].nextRefreshAt).toBe(new Date(NOW + 60_000).toISOString())
-    f.advance(1)
+    // Spec L5: a scheduled read only reads stored data and never starts the manual limit.
+    expect(service.read().connections[0].nextRefreshAt).toBeNull()
+    f.advance(1000)
     expect((await service.refresh()).refresh).toEqual({ read: ['account'], skipped: [] })
     expect(read).toHaveBeenCalledTimes(2)
     expect(read.mock.calls[1][4]).toBe('refresh')
     expect(service.read().connections[0].error).toBeNull()
+    // The manual refresh starts its own 60-second limit.
+    const until = new Date(NOW + 61_000).toISOString()
+    expect(service.read().connections[0].nextRefreshAt).toBe(until)
+    f.advance(59_999)
+    expect((await service.refresh()).refresh).toEqual({
+      read: [],
+      skipped: [{ connectionId: 'account', until, reason: 'interval' }],
+    })
     // The next scheduled read is due the adapter minimum after the manual read started.
-    f.advance(299_999)
+    f.advance(240_000)
     await poll(service)
     expect(read).toHaveBeenCalledTimes(2)
     f.advance(1)
     await poll(service)
     expect(read).toHaveBeenCalledTimes(3)
     expect(read.mock.calls[2][4]).toBe('read')
+    // A scheduled read inside the manual limit leaves that limit unchanged.
+    expect(service.read().connections[0].nextRefreshAt).toBeNull()
+  })
+  it('starts a refresh after a scheduled read in flight instead of joining it (L5)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    let finish: () => void = () => {}
+    read.mockImplementationOnce(
+      () =>
+        new Promise<UsageAdapterResult>((resolve) => {
+          finish = () => resolve(adapterResult(f.live()))
+        }),
+    )
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(1)
+    const manual = service.refresh()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(read).toHaveBeenCalledTimes(1)
+    finish()
+    expect((await manual).refresh).toEqual({ read: ['account'], skipped: [] })
+    expect(read.mock.calls.map((call) => call[4])).toEqual(['read', 'refresh'])
+    expect(service.read().connections[0].nextRefreshAt).toBe(new Date(NOW + 60_000).toISOString())
+  })
+  it('ends a manual wait for an automatic read when the service shuts down', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    let finish: () => void = () => {}
+    read.mockImplementationOnce(
+      () =>
+        new Promise<UsageAdapterResult>((resolve) => {
+          finish = () => resolve(adapterResult(f.live()))
+        }),
+    )
+    await poll(service)
+    const manual = service.refresh()
+    service.shutdown()
+    finish()
+    expect((await manual).refresh).toEqual({ read: [], skipped: [] })
+    expect(read).toHaveBeenCalledTimes(1)
   })
   it('lets a manual refresh ignore growing backoff and suspension (LA2)', async () => {
     const f = fixture(),

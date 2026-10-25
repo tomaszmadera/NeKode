@@ -58,14 +58,19 @@ interface Runtime {
   refreshResult: UsageRefreshResult | null
   /** Next scheduled read (rules 12-13). */
   due: number
-  /** Start of the last read of either action; a manual refresh waits 60 s after it (spec L5). */
-  startedAt: number
+  /**
+   * Start of the last manual refresh; the next manual refresh waits 60 s after it (spec L5).
+   * Scheduled reads never set it, so they never block a manual refresh.
+   */
+  manualStartedAt: number
   /** Provider retry deadline of a `rate_limited` failure; a manual refresh honours it (L5). */
   retryUntil: number
   failures: number
   suspended: boolean
   controller?: AbortController
   flight?: Promise<void>
+  /** Action of the read in flight; a manual refresh joins only a `refresh`. */
+  flightAction?: UsageAdapterAction
 }
 export interface UsageServiceDeps {
   state: Storage
@@ -312,7 +317,7 @@ export class UsageService {
       refreshing: false,
       refreshResult: null,
       due: 0,
-      startedAt: 0,
+      manualStartedAt: 0,
       retryUntil: 0,
       failures: 0,
       suspended: false,
@@ -617,7 +622,8 @@ export class UsageService {
       // save aborts never completed, so only its provider retry deadline remains.
       if (changed && kept && !invalidated.has(c.id)) {
         r.retryUntil = kept.retryUntil
-        r.startedAt = kept.flight ? 0 : kept.startedAt
+        r.manualStartedAt =
+          kept.flight && kept.flightAction === 'refresh' ? 0 : kept.manualStartedAt
         r.due = kept.flight ? kept.retryUntil : Math.max(kept.due, kept.retryUntil)
       }
       if (r.subscription && r.subscription.label !== c.label)
@@ -728,7 +734,7 @@ export class UsageService {
   }
   /** Spec L5: earliest manual refresh start, and whether a provider retry deadline sets it. */
   private manualDeadline(r: Runtime): { until: number; reason: UsageRefreshSkip['reason'] } {
-    const interval = r.startedAt + MANUAL_REFRESH_MS
+    const interval = r.manualStartedAt + MANUAL_REFRESH_MS
     const sourceUntil = this.sourceBlockedUntil(r) ?? 0
     const provider = Math.max(r.retryUntil, sourceUntil)
     return provider >= interval && provider > 0
@@ -798,9 +804,17 @@ export class UsageService {
     explicit: boolean,
   ): Promise<'read' | UsageRefreshSkip | null> {
     const r = this.runtimeFor(c.id)
-    if (r.flight) {
-      await r.flight
-      return 'read'
+    // Spec L5: a manual refresh joins a refresh in flight. A scheduled read in flight only reads
+    // stored data, so a manual refresh waits for it and then starts its own refresh.
+    while (r.flight) {
+      if (!explicit || r.flightAction === 'refresh') {
+        await r.flight
+        return 'read'
+      }
+      const scheduled = r.flight
+      await scheduled
+      // An obsolete runtime or a flight not cleared (shutdown) ends the wait without a read.
+      if (this.stopped || this.runtime.get(c.id) !== r || r.flight === scheduled) return null
     }
     // Spec L7: an account of a removed source is never collected.
     if (this.stopped || removedSource(c)) return null
@@ -850,8 +864,9 @@ export class UsageService {
     } catch {
       /* Collection reports the actionable configuration failure. */
     }
-    r.startedAt = startedAt
+    if (explicit) r.manualStartedAt = startedAt
     r.due = startedAt + minimum
+    r.flightAction = explicit ? 'refresh' : 'read'
     r.flight = (async () => {
       try {
         const loaded = await this.load(
@@ -945,6 +960,7 @@ export class UsageService {
         if (revision === this.revision && this.runtime.get(c.id) === r) {
           r.refreshing = false
           r.flight = undefined
+          r.flightAction = undefined
           r.controller = undefined
         }
       }
