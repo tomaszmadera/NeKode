@@ -1029,7 +1029,7 @@ export interface AppApi {
   homeDir?: string
   appUpdate: {
     latest(): Promise<AppUpdateLatest>
-    /** Download and checksum the latest published Windows installer. */
+    /** Download and checksum the latest published Windows installer when it is newer. */
     download(): Promise<void>
     /** Start the checked installer with no arguments, then quit NeKode. */
     launch(): Promise<void>

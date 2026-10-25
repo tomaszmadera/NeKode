@@ -60,7 +60,7 @@ The public `tomaszmadera/NeKode` repository offers ready-to-download releases of
 - The Windows and Linux builds run in parallel. A release is created only when both builds succeeded.
 - The release gets: the Windows installer, the AppImage and `SHA256SUMS.txt` with the checksums of both files in the `sha256sum` format.
 - The release is created as a draft. The maintainer publishes it by hand after checking the files.
-- Release title: `NeKode <version>`. The notes contain the list of commits since the previous tag (without `chore: bump version` commits), grouped by conventional commit type, and a fixed block: the beta status, that an installed Windows build can update from App Settings, that Linux updates by replacing the AppImage, that there is no background updater, the SmartScreen warning for the unsigned installer, and a link to checksum verification.
+- Release title: `NeKode <version>`. The notes contain the list of commits since the previous tag (without `chore: bump version` commits), grouped by conventional commit type, and a fixed block: the beta status, that an installed Windows build can update from App Settings when a newer release is published, that Linux updates by replacing the AppImage, that there is no background updater, the SmartScreen warning for the unsigned installer, and a link to checksum verification.
 - The workflow does not overwrite an existing release or files with the same name.
 
 ### Documentation

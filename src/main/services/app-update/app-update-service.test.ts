@@ -240,10 +240,22 @@ describe('app update service', () => {
     expect(quit).not.toHaveBeenCalled()
   })
 
-  it('keeps a same-version reinstall and compares checksum hex case', async () => {
+  it('refuses a release that is not newer and does not start or quit', async () => {
+    for (const version of ['0.16.0', '0.17.0']) {
+      const { io, spawned, quit } = harness({ version })
+      const service = new AppUpdateService(io)
+      await expect(service.download()).rejects.toThrow('No newer release is published.')
+      await expect(service.launch()).rejects.toThrow('Download the installer before starting it.')
+      expect(spawned).toEqual([])
+      expect(quit).not.toHaveBeenCalled()
+    }
+  })
+
+  it('compares checksum hex case for a newer release', async () => {
     const bytes = installerBytes()
     const hash = createHash('sha256').update(bytes).digest('hex').toUpperCase()
     const { io, spawned } = harness({
+      version: '0.14.0',
       fetch: vi.fn(async (url: string) => {
         if (url === API) {
           return response(JSON.stringify({ tag_name: '0.15.0', draft: false, prerelease: false }))

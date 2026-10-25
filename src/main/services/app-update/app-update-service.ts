@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { isNewerRelease } from '../../../shared/app-version'
 import type { AppUpdateLatest } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import {
@@ -109,6 +110,9 @@ export class AppUpdateService {
     let written: string | null = null
     try {
       const tag = await this.readTag(controller.signal)
+      if (!isNewerRelease(tag, this.io.version)) {
+        throw new AppError('validation', 'No newer release is published.')
+      }
       const name = installerName(tag)
       const sums = await this.downloadText(
         releaseDownloadUrl(tag, 'SHA256SUMS.txt'),

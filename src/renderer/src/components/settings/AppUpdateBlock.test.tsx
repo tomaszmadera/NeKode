@@ -45,6 +45,61 @@ describe('AppUpdateBlock', () => {
     expect(screen.queryByText(/update available/i)).toBeNull()
   })
 
+  it('offers no update when the published release is not newer', async () => {
+    const app = appFor(
+      'win32',
+      vi.fn().mockResolvedValue({
+        canInstall: true,
+        version: '0.0.0-test',
+        error: null,
+      }),
+    )
+    render(<AppUpdateBlock app={app} />)
+    expect(await screen.findByText('Latest release 0.0.0-test')).toBeTruthy()
+    expect(screen.getByText('No newer release is published.')).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.appUpdateButton)).toBeNull()
+    expect(screen.queryByText(/SmartScreen/)).toBeNull()
+    expect(app.appUpdate.download).not.toHaveBeenCalled()
+  })
+
+  it('asks to save work and does not download or quit until the close is confirmed', async () => {
+    let releaseDownload: () => void = () => undefined
+    const app = appFor(
+      'win32',
+      vi.fn().mockResolvedValue({
+        canInstall: true,
+        version: '0.16.0',
+        error: null,
+      }),
+    )
+    app.appUpdate.download = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDownload = resolve
+        }),
+    )
+    render(<AppUpdateBlock app={app} />)
+    fireEvent.click(await screen.findByTestId(TEST_ID.appUpdateButton))
+    expect(
+      screen.getByText('Save your work first. NeKode closes only after you continue.'),
+    ).toBeTruthy()
+    expect(app.appUpdate.download).not.toHaveBeenCalled()
+    expect(app.appUpdate.launch).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText(/Save your work/)).toBeNull()
+    expect(app.appUpdate.download).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close and update' }))
+    expect(await screen.findByText('Downloading the installer...')).toBeTruthy()
+    expect(app.appUpdate.download).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Close and update' }))
+    expect(app.appUpdate.download).toHaveBeenCalledOnce()
+    releaseDownload()
+    expect(await screen.findByText('Starting the installer...')).toBeTruthy()
+    expect(app.appUpdate.launch).toHaveBeenCalledOnce()
+  })
+
   it('downloads, then starts the installer, and ignores a second click', async () => {
     let releaseDownload: () => void = () => undefined
     const app = appFor(
@@ -63,7 +118,8 @@ describe('AppUpdateBlock', () => {
     )
     render(<AppUpdateBlock app={app} />)
     expect(await screen.findByText('Latest release 0.16.0')).toBeTruthy()
-    const button = screen.getByTestId(TEST_ID.appUpdateButton)
+    fireEvent.click(screen.getByTestId(TEST_ID.appUpdateButton))
+    const button = screen.getByRole('button', { name: 'Close and update' })
     fireEvent.click(button)
     fireEvent.click(button)
     expect(await screen.findByText('Downloading the installer...')).toBeTruthy()
@@ -88,6 +144,7 @@ describe('AppUpdateBlock', () => {
       .mockRejectedValue({ message: 'The installer checksum does not match.' })
     render(<AppUpdateBlock app={app} />)
     fireEvent.click(await screen.findByTestId(TEST_ID.appUpdateButton))
+    fireEvent.click(screen.getByRole('button', { name: 'Close and update' }))
     expect(await screen.findByText('The installer checksum does not match.')).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.appUpdateButton).hasAttribute('disabled')).toBe(false)
     expect(app.appUpdate.launch).not.toHaveBeenCalled()

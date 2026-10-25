@@ -71,7 +71,7 @@ The AppImage needs FUSE 2, which Ubuntu 24.04 does not install by default. Insta
 
 ### Updating
 
-An installed Windows build can update from App Settings. Linux updates by replacing the AppImage from the latest release. There is no background updater. You can also download the new version and install it the same way: run the new installer on Windows, or replace the AppImage file on Linux.
+An installed Windows build can update from App Settings when a newer release is published. NeKode asks you to save your work before it closes. Linux updates by replacing the AppImage from the latest release. There is no background updater. You can also download the new version and install it the same way: run the new installer on Windows, or replace the AppImage file on Linux.
 
 ## Requirements
 

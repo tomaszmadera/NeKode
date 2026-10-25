@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { isNewerRelease } from '../../../../shared/app-version'
 import type { AppApi, AppUpdateLatest } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
 import { GroupBox, SectionLabel, SettingsGroup, secondaryClass } from './settings-ui'
@@ -21,7 +22,7 @@ export function AppUpdateBlock({ app }: AppUpdateBlockProps): React.JSX.Element 
   const [status, setStatus] = useState<AppUpdateLatest | null>(
     windows ? null : { canInstall: false, version: null, error: null },
   )
-  const [phase, setPhase] = useState<'idle' | 'downloading' | 'starting'>('idle')
+  const [phase, setPhase] = useState<'idle' | 'confirm' | 'downloading' | 'starting'>('idle')
   const phaseRef = useRef(phase)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -47,8 +48,21 @@ export function AppUpdateBlock({ app }: AppUpdateBlockProps): React.JSX.Element 
     }
   }, [app, windows])
 
-  async function onUpdate(): Promise<void> {
+  function onAsk(): void {
     if (phaseRef.current !== 'idle') return
+    phaseRef.current = 'confirm'
+    setPhase('confirm')
+    setActionError(null)
+  }
+
+  function onCancel(): void {
+    if (phaseRef.current !== 'confirm') return
+    phaseRef.current = 'idle'
+    setPhase('idle')
+  }
+
+  async function onUpdate(): Promise<void> {
+    if (phaseRef.current !== 'confirm') return
     phaseRef.current = 'downloading'
     setPhase('downloading')
     setActionError(null)
@@ -65,6 +79,14 @@ export function AppUpdateBlock({ app }: AppUpdateBlockProps): React.JSX.Element 
   }
 
   const canInstall = status?.canInstall === true
+  const published = status?.version ?? null
+  const newer =
+    canInstall &&
+    published !== null &&
+    status?.error == null &&
+    isNewerRelease(published, __APP_VERSION__)
+  const checkFailed = canInstall && status?.error != null
+  const offerUpdate = newer || checkFailed
 
   return (
     <div id="app-update" data-testid={TEST_ID.appUpdate}>
@@ -74,19 +96,27 @@ export function AppUpdateBlock({ app }: AppUpdateBlockProps): React.JSX.Element 
           <div className="flex items-center justify-between gap-6 px-4 py-3">
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="font-mono text-[13px] font-medium text-ink">v{__APP_VERSION__}</span>
-              {canInstall && status?.version !== null && status?.version !== undefined ? (
-                <span className="text-xs text-ink-muted">{`Latest release ${status.version}`}</span>
+              {canInstall && published !== null ? (
+                <span className="text-xs text-ink-muted">{`Latest release ${published}`}</span>
               ) : null}
               {status?.error !== null && status?.error !== undefined ? (
                 <span className="text-xs text-error">{status.error}</span>
               ) : null}
-              {canInstall ? (
+              {canInstall && published !== null && !newer && !checkFailed ? (
+                <span className="text-xs text-ink-muted">No newer release is published.</span>
+              ) : null}
+              {offerUpdate ? (
                 <span className="text-xs text-ink-muted">
                   Windows may show a SmartScreen warning because the installer is unsigned.
                 </span>
-              ) : status !== null ? (
+              ) : status !== null && !canInstall ? (
                 <span className="text-xs text-ink-muted">
                   Update from this screen is only for an installed Windows build.
+                </span>
+              ) : null}
+              {phase === 'confirm' ? (
+                <span className="text-xs text-ink-muted">
+                  Save your work first. NeKode closes only after you continue.
                 </span>
               ) : null}
               {phase === 'downloading' ? (
@@ -99,18 +129,36 @@ export function AppUpdateBlock({ app }: AppUpdateBlockProps): React.JSX.Element 
                 <span className="text-xs text-error">{actionError}</span>
               ) : null}
             </div>
-            {canInstall ? (
-              <button
-                type="button"
-                className={secondaryClass}
-                data-testid={TEST_ID.appUpdateButton}
-                disabled={phase !== 'idle'}
-                onClick={() => {
-                  void onUpdate()
-                }}
-              >
-                Update
-              </button>
+            {offerUpdate ? (
+              <div className="flex shrink-0 items-center gap-2">
+                {phase === 'idle' ? (
+                  <button
+                    type="button"
+                    className={secondaryClass}
+                    data-testid={TEST_ID.appUpdateButton}
+                    onClick={onAsk}
+                  >
+                    Update
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={secondaryClass}
+                    data-testid={TEST_ID.appUpdateButton}
+                    disabled={phase !== 'confirm'}
+                    onClick={() => {
+                      void onUpdate()
+                    }}
+                  >
+                    Close and update
+                  </button>
+                )}
+                {phase === 'confirm' ? (
+                  <button type="button" className={secondaryClass} onClick={onCancel}>
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </GroupBox>

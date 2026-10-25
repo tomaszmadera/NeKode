@@ -16,7 +16,7 @@ NeKode releases are GitHub Releases in `tomaszmadera/NeKode` with a Windows inst
 - A pushed tag and a published release are never moved or deleted. A faulty release or a failed tag is fixed by the next patch version, and the failed tag's number is skipped.
 - Only the maintainer pushes a release tag and publishes a draft.
 - There is no `CHANGELOG.md`. The GitHub Release notes are the canonical change history.
-- Releases are not code signed. An installed Windows build can update from App Settings. Linux updates by replacing the AppImage. There is no background updater.
+- Releases are not code signed. An installed Windows build can update from App Settings when a newer release is published. NeKode asks you to save your work before it closes. Linux updates by replacing the AppImage. There is no background updater.
 
 ## Release files
 
@@ -119,7 +119,7 @@ The tag push starts the release workflow. Follow it in the **Actions** tab under
 3. `Build (win)` and `Build (linux)`: start after both verifications pass, run in parallel, and upload the named binaries. A missing file is an error.
 4. `Create draft release`: runs only for a tag push and only when both builds succeeded. It refuses to overwrite an existing release for the tag, writes `SHA256SUMS.txt`, and creates a draft titled `NeKode <version>` with the three files. A suffixed version is marked as pre-release.
 
-The notes list the commits since the previous version tag, without `chore: bump version` commits, grouped by conventional commit type. A fixed block states the beta status, that an installed Windows build can update from App Settings, that Linux updates by replacing the AppImage, that there is no background updater, that Windows SmartScreen may warn about the unsigned installer, and links to `SHA256SUMS.txt` and to this document for [checksum verification](#verify-checksums).
+The notes list the commits since the previous version tag, without `chore: bump version` commits, grouped by conventional commit type. A fixed block states the beta status, that an installed Windows build can update from App Settings when a newer release is published, that Linux updates by replacing the AppImage, that there is no background updater, that Windows SmartScreen may warn about the unsigned installer, and links to `SHA256SUMS.txt` and to this document for [checksum verification](#verify-checksums).
 
 The workflow uses only `GITHUB_TOKEN`: `contents: read` for every job except the draft job, which has `contents: write`. It needs no other secrets. The required `verify` check on `main` is unchanged; the release workflow is separate from [CI](../development/ci.md).
 
