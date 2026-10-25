@@ -162,6 +162,11 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
 
   const services: AppServices = {
     usage: usageTestStub(),
+    appUpdate: {
+      latest: async () => ({ canInstall: false, version: null, error: null }),
+      download: async () => undefined,
+      launch: async () => undefined,
+    },
     dictation: fakeDictation(),
     actions: fakeActions(),
     projects: {
@@ -676,6 +681,11 @@ describe('registered ipc handlers', () => {
     ]
     const services: AppServices = {
       usage: usageTestStub(),
+      appUpdate: {
+        latest: async () => ({ canInstall: false, version: null, error: null }),
+        download: async () => undefined,
+        launch: async () => undefined,
+      },
       dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {
@@ -802,6 +812,11 @@ describe('registered ipc handlers', () => {
     ]
     const services: AppServices = {
       usage: usageTestStub(),
+      appUpdate: {
+        latest: async () => ({ canInstall: false, version: null, error: null }),
+        download: async () => undefined,
+        launch: async () => undefined,
+      },
       dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {
@@ -936,6 +951,11 @@ describe('registered ipc handlers', () => {
     })
     const services: AppServices = {
       usage: usageTestStub(),
+      appUpdate: {
+        latest: async () => ({ canInstall: false, version: null, error: null }),
+        download: async () => undefined,
+        launch: async () => undefined,
+      },
       dictation: fakeDictation(),
       actions: fakeActions(),
       projects: {

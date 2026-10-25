@@ -39,6 +39,19 @@ describe('preload app api', () => {
     expect(ipc.invocations).toEqual([])
   })
 
+  it('routes the app update calls with no arguments', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc).appUpdate
+    await api.latest()
+    await api.download()
+    await api.launch()
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.appUpdateLatest, args: [] },
+      { channel: IPC_CHANNEL.appUpdateDownload, args: [] },
+      { channel: IPC_CHANNEL.appUpdateLaunch, args: [] },
+    ])
+  })
+
   it('routes the typed global usage API with no project scope', async () => {
     const ipc = createIpcMock(),
       api = createAppApi(ipc).usage

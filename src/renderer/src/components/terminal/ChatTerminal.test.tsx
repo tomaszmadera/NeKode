@@ -35,6 +35,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
 
   const app: AppApi = {
     usage: createAppApiStub().usage,
+    appUpdate: createAppApiStub().appUpdate,
     dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),

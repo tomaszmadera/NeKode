@@ -679,6 +679,9 @@ function shellContextChannel(
 
 export function buildValidatedChannels(services: AppServices): ValidatedChannel[] {
   return [
+    serviceChannel(IPC_CHANNEL.appUpdateLatest, [], () => services.appUpdate.latest()),
+    serviceChannel(IPC_CHANNEL.appUpdateDownload, [], () => services.appUpdate.download()),
+    serviceChannel(IPC_CHANNEL.appUpdateLaunch, [], () => services.appUpdate.launch()),
     serviceChannel(IPC_CHANNEL.usageListAdapters, [], () => services.usage.listAdapters()),
     serviceChannel(IPC_CHANNEL.usageGetSettings, [], () => services.usage.getSettings()),
     serviceChannel(IPC_CHANNEL.usageRead, [], () => services.usage.read()),

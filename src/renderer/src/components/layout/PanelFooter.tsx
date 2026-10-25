@@ -12,7 +12,7 @@ const REPORT_ISSUE_URL = buildIssueReportUrl(
 
 // Shared by the projects navigation and Project Files panel.
 interface PanelFooterProps {
-  onOpenAppSettings: () => void
+  onOpenAppSettings: (options?: { scrollToUpdate?: boolean }) => void
   mascotVisible: boolean
   mascotError: string | null
   onToggleMascot: () => void
@@ -43,7 +43,9 @@ export function PanelFooter({
           data-testid={TEST_ID.appSettingsButton}
           aria-label="App Settings"
           title="App Settings"
-          onClick={onOpenAppSettings}
+          onClick={() => {
+            onOpenAppSettings()
+          }}
         >
           <Icon.settings size={16} aria-hidden />
         </button>
@@ -71,13 +73,16 @@ export function PanelFooter({
         >
           <Icon.bug size={16} aria-hidden />
         </a>
-        <span
-          className="ml-auto font-mono text-xs text-ink-muted select-none"
+        <button
+          type="button"
+          className="ml-auto cursor-pointer border-0 bg-transparent p-0 font-mono text-xs text-ink-muted select-none hover:text-ink focus-visible:outline focus-visible:outline-info"
           data-testid={TEST_ID.panelAppVersion}
           title={`NeKode v${__APP_VERSION__}`}
+          aria-label="Open app settings"
+          onClick={() => onOpenAppSettings({ scrollToUpdate: true })}
         >
           v{__APP_VERSION__}
-        </span>
+        </button>
       </div>
     </div>
   )

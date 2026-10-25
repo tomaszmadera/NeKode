@@ -520,6 +520,9 @@ export function relativeToProject(projectRoot: string, absolutePath: string): st
 // in the main process: chats:remove, projects:remove, and
 // TerminalService.terminateAll on app quit. Quit never goes through the renderer.
 export const IPC_CHANNEL = {
+  appUpdateLatest: 'appUpdate:latest',
+  appUpdateDownload: 'appUpdate:download',
+  appUpdateLaunch: 'appUpdate:launch',
   usageListAdapters: 'usage:listAdapters',
   usageGetSettings: 'usage:getSettings',
   usageSaveSettings: 'usage:saveSettings',
@@ -1003,6 +1006,15 @@ export function agentProfileFieldError(input: {
   return agentInteractiveArgsError(input.interactiveArgs)
 }
 
+export interface AppUpdateLatest {
+  /** True only for a packaged Windows build. */
+  canInstall: boolean
+  /** Latest published numeric version, or null when it is unknown. */
+  version: string | null
+  /** Short sentence when the release check failed. Null when the check did not fail. */
+  error: string | null
+}
+
 export interface AppApi {
   /**
    * Host platform (process.platform), set by the preload. Absent (older test
@@ -1015,6 +1027,13 @@ export interface AppApi {
    * shortening.
    */
   homeDir?: string
+  appUpdate: {
+    latest(): Promise<AppUpdateLatest>
+    /** Download and checksum the latest published Windows installer. */
+    download(): Promise<void>
+    /** Start the checked installer with no arguments, then quit NeKode. */
+    launch(): Promise<void>
+  }
   usage: import('./usage-contract').UsageApi
   dictation: {
     desktopSetup(): Promise<DesktopDictationSetup>

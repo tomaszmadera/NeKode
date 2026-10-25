@@ -242,6 +242,7 @@ function mergeFetchedChats(
 export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
   const desktopDictation = useDesktopDictation(app)
   const [appSettingsOpen, setAppSettingsOpen] = useState(false)
+  const [appSettingsUpdate, setAppSettingsUpdate] = useState(false)
   const [appSettingsUsage, setAppSettingsUsage] = useState(false)
   const [usageVersion, setUsageVersion] = useState(0)
   // Global `Show usage quota` switch (spec rule 1), off until main reports it on. A failed read
@@ -2664,6 +2665,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     [createBottomTab, persistBottomOpen],
   )
 
+  function openAppSettings(options?: { scrollToUpdate?: boolean }): void {
+    if (options?.scrollToUpdate === true) {
+      setAppSettingsUsage(false)
+      setAppSettingsAgents(false)
+    }
+    setAppSettingsUpdate(options?.scrollToUpdate === true)
+    setAppSettingsOpen(true)
+  }
+
   return (
     <div
       className="nk-app-shell flex h-screen w-screen flex-col overflow-hidden bg-app text-ink antialiased"
@@ -2742,7 +2752,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               notice={filesProject !== null ? null : notice}
             >
               <PanelFooter
-                onOpenAppSettings={() => setAppSettingsOpen(true)}
+                onOpenAppSettings={openAppSettings}
                 mascotVisible={mascotState.visible}
                 mascotError={mascotState.error}
                 onToggleMascot={handleToggleMascot}
@@ -2770,7 +2780,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                 notice={notice}
               >
                 <PanelFooter
-                  onOpenAppSettings={() => setAppSettingsOpen(true)}
+                  onOpenAppSettings={openAppSettings}
                   mascotVisible={mascotState.visible}
                   mascotError={mascotState.error}
                   onToggleMascot={handleToggleMascot}
@@ -3029,7 +3039,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       {appSettingsOpen ? (
         <AppSettings
           app={app}
-          initialTab={appSettingsUsage ? 'usage' : appSettingsAgents ? 'agents' : 'general'}
+          initialTab={
+            appSettingsUpdate
+              ? 'general'
+              : appSettingsUsage
+                ? 'usage'
+                : appSettingsAgents
+                  ? 'agents'
+                  : 'general'
+          }
+          scrollToUpdate={appSettingsUpdate}
           onUsageSaved={handleUsageSaved}
           dictationApi={app.dictation}
           desktopDictation={desktopDictation}
@@ -3062,6 +3081,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             setAppSettingsOpen(false)
             setAppSettingsUsage(false)
             setAppSettingsAgents(false)
+            setAppSettingsUpdate(false)
             setAgentLibraryRefreshKey((current) => current + 1)
           }}
         />

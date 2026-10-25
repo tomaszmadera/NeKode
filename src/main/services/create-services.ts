@@ -1,4 +1,5 @@
 import { statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '../../shared/bottom-tab-id'
 import {
@@ -17,6 +18,7 @@ import { ActionService } from './action-service'
 import { AgentChatLaunchService } from './agent-chat-launch-service'
 import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
 import { AppStateService } from './app-state-service'
+import { AppUpdateService, createAppUpdateIo } from './app-update/app-update-service'
 import { ChatService } from './chat-service'
 import { ElevenLabsAdapter } from './dictation/adapters/elevenlabs-adapter'
 import { LocalOpenAiAdapter } from './dictation/adapters/local-openai-adapter'
@@ -84,6 +86,14 @@ export interface CreateServicesOptions {
   safeStorage?: SafeStorageLike
   /** `app.isPackaged` (main/index.ts); gates development-only seams such as the usage test URL. */
   packaged?: boolean
+  /** `app.getVersion()`. The update user agent uses it. */
+  appVersion?: string
+  /** `app.getPath('temp')`. The checked installer is written here. */
+  tempDir?: string
+  /** `app.quit`. Called only after the installer process has started. */
+  quitApp?: () => void
+  /** Subscribe to `app` `before-quit` so an in-flight download stops. */
+  subscribeAppQuit?: (listener: () => void) => () => void
   /** Shipped usage adapter directories (`bundledUsageAdapterDirectories`, main/index.ts). */
   bundledUsageAdapterDirectories?: readonly string[]
 }
@@ -242,6 +252,16 @@ export function createServices(options: CreateServicesOptions): AppServices {
       chats.createNamed(projectId, name, IPC_CHANNEL.kanbanLaunchTask, identity),
     terminals: agentTerminals,
   })
+  const appUpdate = new AppUpdateService(
+    createAppUpdateIo({
+      packaged: options.packaged === true,
+      platform: process.platform,
+      version: options.appVersion ?? '0.0.0',
+      tempDir: options.tempDir ?? tmpdir(),
+      quit: options.quitApp ?? (() => undefined),
+      subscribeQuit: options.subscribeAppQuit ?? (() => () => undefined),
+    }),
+  )
   const actions = new ActionService({
     db,
     createChat: (projectId) => chats.create(projectId),
@@ -267,6 +287,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       shutdown: () => usage.shutdown(),
       pickFile: (output) => options.pickUsageFile?.(output) ?? Promise.resolve(null),
     },
+    appUpdate,
     dictation: {
       desktopSetup: () => desktopDictation.get(),
       desktopConfigure: (settings) => desktopDictation.set(settings),

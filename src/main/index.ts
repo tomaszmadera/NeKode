@@ -167,6 +167,17 @@ app
           userDataPath: app.getPath('userData'),
           safeStorage,
           packaged: app.isPackaged,
+          appVersion: app.getVersion(),
+          tempDir: app.getPath('temp'),
+          quitApp: () => {
+            app.quit()
+          },
+          subscribeAppQuit: (listener) => {
+            app.on('before-quit', listener)
+            return () => {
+              app.removeListener('before-quit', listener)
+            }
+          },
           bundledUsageAdapterDirectories: bundledUsageAdapterDirectories(
             app.isPackaged,
             app.getAppPath(),

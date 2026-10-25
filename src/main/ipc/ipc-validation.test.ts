@@ -23,6 +23,11 @@ const EMPTY_HANDOFF_AVAILABILITY = {
 function fakeServices(): AppServices {
   return {
     usage: usageTestStub(),
+    appUpdate: {
+      latest: async () => ({ canInstall: false, version: null, error: null }),
+      download: async () => undefined,
+      launch: async () => undefined,
+    },
     dictation: {
       desktopSetup: vi.fn(),
       desktopConfigure: vi.fn(),
@@ -203,6 +208,9 @@ describe('ipc payload validation', () => {
       IPC_CHANNEL.usageListAdapters,
       IPC_CHANNEL.usageGetEnabled,
       IPC_CHANNEL.usageOpenAdaptersFolder,
+      IPC_CHANNEL.appUpdateLatest,
+      IPC_CHANNEL.appUpdateDownload,
+      IPC_CHANNEL.appUpdateLaunch,
     ])
       expect(() => channel(name).parse(['extra'])).toThrow()
     expect(() => channel(IPC_CHANNEL.stateSet).parse(['usage.enabled', 'true'])).toThrow(

@@ -152,8 +152,12 @@ export const TEST_ID = {
   mascotToggle: 'mascot-toggle',
   /** Left-panel footer: opens a pre-filled GitHub issue (NEKODE-105). */
   reportIssueLink: 'report-issue-link',
-  /** Left-panel footer: displays current application version. */
+  /** Left-panel footer: displays current application version and opens App Settings. */
   panelAppVersion: 'panel-app-version',
+  /** App Settings General: quiet update block. */
+  appUpdate: 'app-update',
+  /** App Settings General: download and start the published Windows installer. */
+  appUpdateButton: 'app-update-button',
   settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
   /** App Settings: quick theme switcher in status bar toggle. */

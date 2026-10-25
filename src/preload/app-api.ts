@@ -83,6 +83,11 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
   return {
     platform,
     homeDir,
+    appUpdate: {
+      latest: () => invoke(IPC_CHANNEL.appUpdateLatest),
+      download: () => invoke(IPC_CHANNEL.appUpdateDownload),
+      launch: () => invoke(IPC_CHANNEL.appUpdateLaunch),
+    },
     usage: {
       listAdapters: () => invoke(IPC_CHANNEL.usageListAdapters),
       getSettings: () => invoke(IPC_CHANNEL.usageGetSettings),

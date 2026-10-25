@@ -12,6 +12,7 @@ import type {
   AgentProfileTemplate,
   AgentProjectSelection,
   AgentProjectSelectionInput,
+  AppUpdateLatest,
   ChatInfo,
   CreateDictionaryEntryInput,
   DictationDictionary,
@@ -73,6 +74,11 @@ export interface AppServices {
     | 'shutdown'
     | 'openAdaptersFolder'
   > & { pickFile(output: boolean): Promise<string | null> }
+  appUpdate: {
+    latest(): Promise<AppUpdateLatest>
+    download(): Promise<void>
+    launch(): Promise<void>
+  }
   dictation: {
     desktopSetup(): DesktopDictationSetup
     desktopConfigure(settings: DesktopDictationSettings): DesktopDictationSetup

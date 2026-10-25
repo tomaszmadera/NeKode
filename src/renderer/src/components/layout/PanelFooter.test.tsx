@@ -36,5 +36,25 @@ describe('PanelFooter', () => {
     const version = screen.getByTestId(TEST_ID.panelAppVersion)
     expect(version.textContent).toBe('v0.0.0-test')
     expect(version.getAttribute('title')).toBe('NeKode v0.0.0-test')
+    expect(version.className).toContain('hover:text-ink')
+    expect(version.className).toContain('cursor-pointer')
+    expect(version.className).not.toContain('hover:bg-')
+    expect(version.getAttribute('aria-label')).toBe('Open app settings')
+  })
+
+  it('opens app settings from the version without adding a visible control', () => {
+    const onOpenAppSettings = vi.fn()
+    render(
+      <PanelFooter
+        onOpenAppSettings={onOpenAppSettings}
+        mascotVisible={false}
+        mascotError={null}
+        onToggleMascot={vi.fn()}
+      />,
+    )
+    const version = screen.getByTestId(TEST_ID.panelAppVersion)
+    expect(version.textContent).toBe('v0.0.0-test')
+    version.click()
+    expect(onOpenAppSettings).toHaveBeenCalledWith({ scrollToUpdate: true })
   })
 })

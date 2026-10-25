@@ -59,6 +59,7 @@ function createAppMock(): AppMockBundle {
   const dataListenersByChat = new Map<string, Set<(data: string) => void>>()
   const app: AppApi = {
     usage: createAppApiStub().usage,
+    appUpdate: createAppApiStub().appUpdate,
     dictation: createDictationApiStub(),
     actions: {
       list: vi.fn().mockResolvedValue([]),

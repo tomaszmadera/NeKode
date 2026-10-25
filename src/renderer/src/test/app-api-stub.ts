@@ -8,6 +8,11 @@ import { createDictationApiStub } from './dictation-api-stub'
 
 export function createAppApiStub(): AppApi {
   return {
+    appUpdate: {
+      latest: vi.fn().mockResolvedValue({ canInstall: false, version: null, error: null }),
+      download: vi.fn().mockResolvedValue(undefined),
+      launch: vi.fn().mockResolvedValue(undefined),
+    },
     usage: {
       listAdapters: vi.fn().mockResolvedValue([]),
       getSettings: vi.fn().mockResolvedValue({

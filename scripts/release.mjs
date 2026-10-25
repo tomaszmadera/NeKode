@@ -116,7 +116,7 @@ export function releaseNotes({
     ...changes,
     '## Before installing',
     'NeKode is beta software.',
-    'There is no auto-updater. To update, download and install the new version manually.',
+    'An installed Windows build can update from App Settings. Linux updates by replacing the AppImage. There is no background updater.',
     'The Windows installer is unsigned, so Windows SmartScreen may show a warning.',
     `[Download SHA256SUMS.txt](${base}/releases/download/${version}/SHA256SUMS.txt) and [verify the checksums](${base}/blob/${version}/docs/operations/releases.md) before installing.`,
     '',

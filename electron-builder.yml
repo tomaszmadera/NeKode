@@ -45,6 +45,9 @@ win:
 nsis:
   shortcutName: NeKode
   uninstallDisplayName: NeKode ${version}
+  # The in-app update quits NeKode after starting this installer. The installer
+  # then starts the app. This is not a silent install.
+  runAfterFinish: true
 
 # Linux application icon (added 2026-10-20, NEKODE-13 Phase 1): 512x512 PNG
 # rasterized from the same cat-icon.svg master as icon.ico (ImageMagick,

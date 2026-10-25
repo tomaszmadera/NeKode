@@ -25,7 +25,7 @@ The public `tomaszmadera/NeKode` repository offers ready-to-download releases of
 
 ## Non-goals
 
-- An auto-updater and any update check in the app.
+- A background updater, an update check at startup, and any update prompt outside App Settings. The manual Windows update from App Settings is `docs/features/in-app-update/spec.md`.
 - Code signing (Windows Authenticode, Linux GPG).
 - macOS, ARM, deb, rpm, Snap and Flatpak packages, a portable Windows version.
 - Retroactive releases for existing tags (up to and including `0.14.19`).
@@ -60,12 +60,12 @@ The public `tomaszmadera/NeKode` repository offers ready-to-download releases of
 - The Windows and Linux builds run in parallel. A release is created only when both builds succeeded.
 - The release gets: the Windows installer, the AppImage and `SHA256SUMS.txt` with the checksums of both files in the `sha256sum` format.
 - The release is created as a draft. The maintainer publishes it by hand after checking the files.
-- Release title: `NeKode <version>`. The notes contain the list of commits since the previous tag (without `chore: bump version` commits), grouped by conventional commit type, and a fixed block: the beta status, no auto-updater (update by downloading the new version), the SmartScreen warning for the unsigned installer, and a link to checksum verification.
+- Release title: `NeKode <version>`. The notes contain the list of commits since the previous tag (without `chore: bump version` commits), grouped by conventional commit type, and a fixed block: the beta status, that an installed Windows build can update from App Settings, that Linux updates by replacing the AppImage, that there is no background updater, the SmartScreen warning for the unsigned installer, and a link to checksum verification.
 - The workflow does not overwrite an existing release or files with the same name.
 
 ### Documentation
 
-- `README.md` has a download section with a link to `releases/latest`, install instructions for both systems, manual updates, checksum verification and a description of the SmartScreen warning. The Status section stops claiming that there are no ready installers only once the first release is published.
+- `README.md` has a download section with a link to `releases/latest`, install instructions for both systems, the Windows update from App Settings, manual update by replacing the AppImage on Linux, checksum verification and a description of the SmartScreen warning. The Status section stops claiming that there are no ready installers only once the first release is published.
 - `docs/operations/releases.md` describes the release rules from this specification and the procedure: bump, tag, tag push, draft check, publication.
 
 ## Business rules
