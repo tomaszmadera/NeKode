@@ -42,10 +42,10 @@ describe('global agent library editor', () => {
   it('saves an explicit empty override and disabling it removes the override on the next edit', async () => {
     const app = harness([alpha])
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Alpha' }))
-    expect(screen.queryByLabelText('Interactive arguments')).toBeNull()
-    fireEvent.click(screen.getByLabelText('Override interactive arguments for New Chat'))
-    fireEvent.change(screen.getByLabelText('Interactive arguments'), { target: { value: '  ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.queryByLabelText('New Chat arguments')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Override arguments for New Chat'))
+    fireEvent.change(screen.getByLabelText('New Chat arguments'), { target: { value: '  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     await waitFor(() =>
       expect(app.agentProfiles.put).toHaveBeenCalledWith({
         id: alpha.id,
@@ -56,12 +56,11 @@ describe('global agent library editor', () => {
     )
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Alpha' }))
     expect(
-      (screen.getByLabelText('Override interactive arguments for New Chat') as HTMLInputElement)
-        .checked,
-    ).toBe(true)
-    expect((screen.getByLabelText('Interactive arguments') as HTMLInputElement).value).toBe('')
-    fireEvent.click(screen.getByLabelText('Override interactive arguments for New Chat'))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      screen.getByLabelText('Override arguments for New Chat').getAttribute('aria-checked'),
+    ).toBe('true')
+    expect((screen.getByLabelText('New Chat arguments') as HTMLInputElement).value).toBe('')
+    fireEvent.click(screen.getByLabelText('Override arguments for New Chat'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     await waitFor(() =>
       expect(app.agentProfiles.put).toHaveBeenLastCalledWith({
         id: alpha.id,
@@ -83,9 +82,9 @@ describe('global agent library editor', () => {
       ]
       const app = harness([{ ...alpha, interactiveArgs }])
       fireEvent.click(await screen.findByRole('button', { name: `${action} Alpha` }))
-      const text = (screen.getByLabelText('Interactive arguments') as HTMLInputElement).value
+      const text = (screen.getByLabelText('New Chat arguments') as HTMLInputElement).value
       expect(parseAgentArguments(text)).toEqual(interactiveArgs)
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
       await waitFor(() =>
         expect(app.agentProfiles.put).toHaveBeenCalledWith({
           id: action === 'Copy' ? null : alpha.id,
@@ -102,11 +101,11 @@ describe('global agent library editor', () => {
     async (value) => {
       const app = harness([alpha])
       fireEvent.click(await screen.findByRole('button', { name: 'Edit Alpha' }))
-      fireEvent.click(screen.getByLabelText('Override interactive arguments for New Chat'))
-      fireEvent.change(screen.getByLabelText('Interactive arguments'), { target: { value } })
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      fireEvent.click(screen.getByLabelText('Override arguments for New Chat'))
+      fireEvent.change(screen.getByLabelText('New Chat arguments'), { target: { value } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
       expect(screen.getByRole('alert').textContent).toBeTruthy()
-      expect((screen.getByLabelText('Interactive arguments') as HTMLInputElement).value).toBe(value)
+      expect((screen.getByLabelText('New Chat arguments') as HTMLInputElement).value).toBe(value)
       expect(app.agentProfiles.put).not.toHaveBeenCalled()
     },
   )
@@ -121,7 +120,7 @@ describe('global agent library editor', () => {
     fireEvent.change(screen.getByLabelText('Command'), {
       target: { value: 'agent --model "my model" "{prompt}"' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     await waitFor(() =>
       expect(app.agentProfiles.put).toHaveBeenCalledWith({
         id: null,
@@ -142,7 +141,7 @@ describe('global agent library editor', () => {
     expect((screen.getByLabelText('Command') as HTMLInputElement).value).toBe('claude "{prompt}"')
     expect(app.agentProfiles.put).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Claude work' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     await waitFor(() =>
       expect(app.agentProfiles.put).toHaveBeenCalledWith({
         id: null,
@@ -159,7 +158,7 @@ describe('global agent library editor', () => {
       serializeAgentCommand(alpha),
     )
     expect(app.agentProfiles.put).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     await waitFor(() =>
       expect(app.agentProfiles.put).toHaveBeenCalledWith({
         id: null,
@@ -171,7 +170,7 @@ describe('global agent library editor', () => {
     cleanup()
     const editApp = harness([alpha])
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Alpha' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     await waitFor(() =>
       expect(editApp.agentProfiles.put).toHaveBeenCalledWith({
         id: 'a',
@@ -188,7 +187,7 @@ describe('global agent library editor', () => {
     const app = harness([alpha])
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Alpha' }))
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'agent | echo' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     expect(screen.getByRole('alert').textContent).toContain('shell scripts are not supported')
     expect(app.agentProfiles.put).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'agent "{prompt}"' } })
@@ -198,7 +197,7 @@ describe('global agent library editor', () => {
       message: 'Cannot save.',
       channel: 'agentProfiles:put',
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     expect(await screen.findByText('Cannot save.')).toBeTruthy()
     expect((screen.getByLabelText('Command') as HTMLInputElement).value).toBe('agent "{prompt}"')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
@@ -221,7 +220,7 @@ describe('global agent library editor', () => {
     expect(command).not.toMatch(/[\r\n]/)
     expect(parseAgentCommand(command)).toEqual({ executable: legacy.executable, args: legacy.args })
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Renamed' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
     await waitFor(() => expect(app.agentProfiles.put).toHaveBeenCalled())
     expect(parseAgentCommand(vi.mocked(app.agentProfiles.put).mock.calls[0][0].command)).toEqual({
       executable: legacy.executable,

@@ -190,7 +190,7 @@ describe('app settings and themes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Usage' }))
     const toggle = await screen.findByRole('switch', { name: 'Show usage quota' })
-    expect((toggle as HTMLInputElement).checked).toBe(false)
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
     vi.mocked(app.usage.getEnabled).mockResolvedValue(true)
     fireEvent.click(toggle)
     await waitFor(() => expect(app.usage.setEnabled).toHaveBeenCalledWith(true))
@@ -308,10 +308,10 @@ describe('app settings and themes', () => {
     const row = await screen.findByTestId(testIdFor.projectSelect('p1'))
     expect(row.querySelector('span.truncate')?.textContent).toBe('DEMO')
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    const toggle = screen.getByRole('checkbox', {
+    const toggle = screen.getByRole('switch', {
       name: 'Uppercase project names in the tree',
-    }) as HTMLInputElement
-    expect(toggle.checked).toBe(true)
+    })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(toggle)
     expect(row.querySelector('span.truncate')?.textContent).toBe('Demo')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.projectNamesUppercase, '0')
@@ -327,7 +327,7 @@ describe('app settings and themes', () => {
       ).toBe('Demo'),
     )
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Uppercase project names in the tree' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Uppercase project names in the tree' }))
     expect(
       screen.getByTestId(testIdFor.projectSelect('p1')).querySelector('span.truncate')?.textContent,
     ).toBe('DEMO')
@@ -340,10 +340,10 @@ describe('app settings and themes', () => {
     const view = render(<App app={app} />)
     await screen.findByTestId(testIdFor.projectAvatar('p1'))
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    const toggle = screen.getByRole('checkbox', {
-      name: 'Show project icons',
-    }) as HTMLInputElement
-    expect(toggle.checked).toBe(true)
+    const toggle = screen.getByRole('switch', {
+      name: 'Project icons',
+    })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(toggle)
     expect(screen.queryByTestId(testIdFor.projectAvatar('p1'))).toBeNull()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.showProjectIcons, '0')
@@ -354,7 +354,7 @@ describe('app settings and themes', () => {
     render(<App app={app} />)
     await waitFor(() => expect(screen.queryByTestId(testIdFor.projectAvatar('p1'))).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Show project icons' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Project icons' }))
     expect(await screen.findByTestId(testIdFor.projectAvatar('p1'))).toBeTruthy()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.showProjectIcons, '1')
   })
@@ -511,11 +511,11 @@ describe('app settings and themes', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const toggle = within(dialog).getByTestId(TEST_ID.settingsQuickThemeSwitch)
-    expect((toggle as HTMLInputElement).checked).toBe(false)
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
 
     // Check the toggle
     fireEvent.click(toggle)
-    expect((toggle as HTMLInputElement).checked).toBe(true)
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
     expect(localStorage.getItem(QUICK_THEME_SWITCH_STORAGE_KEY)).toBe('1')
 
     // Close App Settings
@@ -545,6 +545,25 @@ describe('app settings and themes', () => {
     const switcher = screen.getByTestId(TEST_ID.statusThemeSwitcher)
     expect(switcher).toBeTruthy()
     expect(switcher.textContent).toContain('NeKode Float')
+  })
+
+  it('opens General from the version text and scrolls to the update block', () => {
+    const scroll = vi.fn()
+    const previous = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = scroll
+    try {
+      render(<App app={createAppApiStub()} />)
+      fireEvent.click(screen.getByTestId(TEST_ID.panelAppVersion))
+      expect(screen.getByRole('dialog', { name: 'App Settings' })).toBeTruthy()
+      expect(screen.getByTestId(TEST_ID.appUpdate)).toBeTruthy()
+      expect(scroll).toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+      scroll.mockClear()
+      fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+      expect(scroll).not.toHaveBeenCalled()
+    } finally {
+      HTMLElement.prototype.scrollIntoView = previous
+    }
   })
 
   it('Shortcuts tab documents the global and terminal chords, General keeps the controls', () => {
@@ -660,10 +679,10 @@ describe('app settings and themes', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
-    const checkbox = within(dialog).getByRole('checkbox', {
-      name: 'Use Ctrl+V to paste text in terminals',
-    }) as HTMLInputElement
-    expect(checkbox.checked).toBe(true)
+    const checkbox = within(dialog).getByRole('switch', {
+      name: 'Paste with Ctrl+V in terminals',
+    })
+    expect(checkbox.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(checkbox)
     expect(localStorage.getItem(TERMINAL_CTRL_V_PASTE_STORAGE_KEY)).toBe('0')
     act(() => {
@@ -675,10 +694,10 @@ describe('app settings and themes', () => {
 
     await renderTwoChats(app)
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    const restoredCheckbox = screen.getByRole('checkbox', {
-      name: 'Use Ctrl+V to paste text in terminals',
-    }) as HTMLInputElement
-    expect(restoredCheckbox.checked).toBe(false)
+    const restoredCheckbox = screen.getByRole('switch', {
+      name: 'Paste with Ctrl+V in terminals',
+    })
+    expect(restoredCheckbox.getAttribute('aria-checked')).toBe('false')
     const restoredTerminal = mockTerminalInstances.filter((terminal) => !terminal.disposed)[0]
     restoredTerminal.buffer.active.type = 'alternate'
     act(() => expect(pressCtrlV(restoredTerminal)).toBe(true))
@@ -691,21 +710,21 @@ describe('app settings and themes', () => {
     const app = createAppApiStub()
     const view = render(<App app={app} />)
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    expect(screen.queryByLabelText('Terminal text font')).toBeNull()
+    expect(screen.queryByLabelText('Text font')).toBeNull()
     fireEvent.click(screen.getByRole('tab', { name: 'Fonts' }))
-    fireEvent.change(screen.getByLabelText('Terminal text font'), {
+    fireEvent.change(screen.getByLabelText('Text font'), {
       target: { value: 'bad, serif' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply font families' }))
-    expect(screen.getByLabelText('Terminal text font').getAttribute('aria-invalid')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(screen.getByLabelText('Text font').getAttribute('aria-invalid')).toBe('true')
     expect(localStorage.getItem('nekode.terminal-font-families.v1')).toBeNull()
-    fireEvent.change(screen.getByLabelText('Terminal text font'), {
+    fireEvent.change(screen.getByLabelText('Text font'), {
       target: { value: 'Cascadia Mono' },
     })
-    fireEvent.change(screen.getByLabelText('Terminal icon font'), {
+    fireEvent.change(screen.getByLabelText('Icon font'), {
       target: { value: 'Custom Symbols' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply font families' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
     expect(JSON.parse(localStorage.getItem('nekode.terminal-font-families.v1') ?? 'null')).toEqual({
       text: 'Cascadia Mono',
       icons: 'Custom Symbols',
@@ -714,18 +733,14 @@ describe('app settings and themes', () => {
     render(<App app={app} />)
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Fonts' }))
-    expect((screen.getByLabelText('Terminal text font') as HTMLInputElement).value).toBe(
-      'Cascadia Mono',
-    )
-    expect((screen.getByLabelText('Terminal icon font') as HTMLInputElement).value).toBe(
-      'Custom Symbols',
-    )
-    fireEvent.change(screen.getByLabelText('Terminal font size'), { target: { value: '19' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Restore font defaults' }))
-    expect((screen.getByLabelText('Terminal text font') as HTMLInputElement).value).toBe(
+    expect((screen.getByLabelText('Text font') as HTMLInputElement).value).toBe('Cascadia Mono')
+    expect((screen.getByLabelText('Icon font') as HTMLInputElement).value).toBe('Custom Symbols')
+    fireEvent.click(screen.getByRole('button', { name: 'Larger' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restore defaults' }))
+    expect((screen.getByLabelText('Text font') as HTMLInputElement).value).toBe(
       'Recursive Mono Casual',
     )
-    expect((screen.getByLabelText('Terminal icon font') as HTMLInputElement).value).toBe(
+    expect((screen.getByLabelText('Icon font') as HTMLInputElement).value).toBe(
       'Symbols Nerd Font Mono',
     )
     expect(localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY)).toBe('15')
@@ -744,9 +759,9 @@ describe('app settings and themes', () => {
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     fireEvent.click(within(dialog).getByRole('tab', { name: 'Fonts' }))
     const select = within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize)
-    expect((select as HTMLSelectElement).value).toBe('15')
+    expect(select.getAttribute('data-value')).toBe('15')
 
-    fireEvent.change(select, { target: { value: '16' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Larger' }))
     expect(localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY)).toBe('16')
     // Both mounted views — the hidden one included — pick the size up live.
     expect(aliveFontSizeOptions()).toEqual([16, 16])
@@ -762,7 +777,7 @@ describe('app settings and themes', () => {
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     fireEvent.click(within(dialog).getByRole('tab', { name: 'Fonts' }))
     expect(
-      (within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize) as HTMLSelectElement).value,
+      within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize).getAttribute('data-value'),
     ).toBe('16')
     fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
     cleanup()
@@ -915,8 +930,8 @@ describe('app settings and themes', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
-    const checkbox = within(dialog).getByTestId(TEST_ID.settingsChatSwitch) as HTMLInputElement
-    expect(checkbox.checked).toBe(true)
+    const checkbox = within(dialog).getByTestId(TEST_ID.settingsChatSwitch)
+    expect(checkbox.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(checkbox)
     await waitFor(() =>
       expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.chatSwitchEnabled, '0'),
@@ -934,8 +949,8 @@ describe('app settings and themes', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
-    const checkbox = within(dialog).getByTestId(TEST_ID.settingsChatSwitch) as HTMLInputElement
-    expect(checkbox.checked).toBe(true)
+    const checkbox = within(dialog).getByTestId(TEST_ID.settingsChatSwitch)
+    expect(checkbox.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(checkbox)
     await waitFor(() =>
       expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.chatSwitchEnabled, '0'),
@@ -4032,10 +4047,8 @@ describe('chat attention badge (end to end through App)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
-    const badgeToggle = within(dialog).getByTestId(
-      TEST_ID.settingsAttentionBadge,
-    ) as HTMLInputElement
-    expect(badgeToggle.checked).toBe(true)
+    const badgeToggle = within(dialog).getByTestId(TEST_ID.settingsAttentionBadge)
+    expect(badgeToggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(badgeToggle)
     await waitFor(() =>
       expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.attentionBadgeEnabled, '0'),
@@ -4089,15 +4102,14 @@ describe('chat attention badge (end to end through App)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     expect(
-      (within(dialog).getByTestId(TEST_ID.settingsAttentionBadge) as HTMLInputElement).checked,
-    ).toBe(false)
+      within(dialog).getByTestId(TEST_ID.settingsAttentionBadge).getAttribute('aria-checked'),
+    ).toBe('false')
     expect(
-      (within(dialog).getByTestId(TEST_ID.settingsAttentionChime) as HTMLInputElement).checked,
-    ).toBe(false)
+      within(dialog).getByTestId(TEST_ID.settingsAttentionChime).getAttribute('aria-checked'),
+    ).toBe('false')
     expect(
-      (within(dialog).getByTestId(TEST_ID.settingsAttentionActiveChime) as HTMLInputElement)
-        .checked,
-    ).toBe(true)
+      within(dialog).getByTestId(TEST_ID.settingsAttentionActiveChime).getAttribute('aria-checked'),
+    ).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
 
     // Hidden chat: badge gated off AND chime gated off.

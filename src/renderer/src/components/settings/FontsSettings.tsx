@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
 import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -10,6 +12,18 @@ import {
   terminalFontStack,
 } from '../../lib/terminal-font'
 import { TEST_ID } from '../../lib/test-ids'
+import {
+  FieldRow,
+  focusRing,
+  GroupBox,
+  GroupFooter,
+  monoClass,
+  PageIntro,
+  primaryClass,
+  SectionLabel,
+  SettingsGroup,
+  secondaryClass,
+} from './settings-ui'
 
 interface FontsSettingsProps {
   families: TerminalFontFamilies
@@ -30,101 +44,161 @@ export function FontsSettings({
   const textValid = isTerminalFontFamily(text.trim())
   const iconsValid = isTerminalFontFamily(icons.trim())
   const preview = textValid && iconsValid ? { text: text.trim(), icons: icons.trim() } : families
-  const inputClass =
-    'mt-2 h-control w-full rounded-md border border-edge bg-app px-3 text-sm text-ink focus-visible:outline focus-visible:outline-info'
+  const sizeIndex = TERMINAL_FONT_SIZES.indexOf(size as (typeof TERMINAL_FONT_SIZES)[number])
+  const step = (direction: -1 | 1): void => {
+    const next = TERMINAL_FONT_SIZES[sizeIndex + direction]
+    if (isTerminalFontSize(next)) onSizeChange(next)
+  }
   return (
     <form
+      className="flex max-w-[660px] flex-col gap-7"
       onSubmit={(event) => {
         event.preventDefault()
         setValidation(true)
         if (textValid && iconsValid) onFamiliesChange({ text: text.trim(), icons: icons.trim() })
       }}
     >
-      <h3 className="text-sm font-semibold">Terminal fonts</h3>
-      <p id="font-family-help" className="mt-2 text-xs text-ink-muted">
+      <PageIntro
+        title="Fonts"
+        description="Terminal typography. Bundled fonts are the default; custom fonts must be installed on this computer."
+      />
+      <p id="font-family-help" className="sr-only">
         Defaults are bundled. Custom fonts must be installed on your computer. Enter one family name
         per field (up to 100 characters). Missing fonts fall back to bundled symbols, Consolas,
         Courier New and monospace.
       </p>
-      <label htmlFor="terminal-text-font" className="mt-4 block text-sm text-ink-secondary">
-        Terminal text font
-      </label>
-      <input
-        id="terminal-text-font"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        aria-describedby="font-family-help text-font-error"
-        aria-invalid={validation && !textValid}
-        className={inputClass}
-      />
-      <p id="text-font-error" className="text-xs text-error">
-        {validation && !textValid ? 'Enter a valid single font family name.' : null}
-      </p>
-      <label htmlFor="terminal-icon-font" className="mt-4 block text-sm text-ink-secondary">
-        Terminal icon font
-      </label>
-      <input
-        id="terminal-icon-font"
-        value={icons}
-        onChange={(event) => setIcons(event.target.value)}
-        aria-describedby="font-family-help icon-font-error"
-        aria-invalid={validation && !iconsValid}
-        className={inputClass}
-      />
-      <p id="icon-font-error" className="text-xs text-error">
-        {validation && !iconsValid ? 'Enter a valid single font family name.' : null}
-      </p>
-      <label htmlFor="app-terminal-font-size" className="mt-4 block text-sm text-ink-secondary">
-        Terminal font size
-      </label>
-      <select
-        id="app-terminal-font-size"
-        value={String(size)}
-        data-testid={TEST_ID.settingsTerminalFontSize}
-        onChange={(event) => {
-          const next = Number(event.target.value)
-          if (isTerminalFontSize(next)) onSizeChange(next)
-        }}
-        className={inputClass}
-      >
-        {TERMINAL_FONT_SIZES.map((option) => (
-          <option key={option} value={String(option)}>
-            {option === DEFAULT_TERMINAL_FONT_SIZE ? `${option} (default)` : option}
-          </option>
-        ))}
-      </select>
-      <section
-        className="mt-4 overflow-x-auto rounded-md border border-edge bg-terminal p-3 text-ink"
-        aria-label="Terminal font preview"
-        style={{ fontFamily: terminalFontStack(preview), fontSize: size }}
-      >
-        <p className="whitespace-pre">NeKode ~/project main 12:34</p>
-        <p className="whitespace-pre">{TERMINAL_ICON_PREVIEW} AaBb 0123456789</p>
-      </section>
-      <p className="mt-2 break-all text-xs text-ink-muted">
-        Applied: {families.text}; icons: {families.icons}
-      </p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="submit"
-          className="rounded-md bg-button px-3 py-2 text-sm focus-visible:outline focus-visible:outline-info"
-        >
-          Apply font families
-        </button>
-        <button
-          type="button"
-          className="rounded-md border border-edge px-3 py-2 text-sm focus-visible:outline focus-visible:outline-info"
-          onClick={() => {
-            setText(DEFAULT_TERMINAL_FONT_FAMILIES.text)
-            setIcons(DEFAULT_TERMINAL_FONT_FAMILIES.icons)
-            setValidation(false)
-            onFamiliesChange(DEFAULT_TERMINAL_FONT_FAMILIES)
-            onSizeChange(DEFAULT_TERMINAL_FONT_SIZE)
-          }}
-        >
-          Restore font defaults
-        </button>
-      </div>
+      <SettingsGroup label="Terminal fonts">
+        <SectionLabel title="Terminal" />
+        <GroupBox>
+          <FieldRow
+            label="Text font"
+            htmlFor="terminal-text-font"
+            description="One family name, up to 100 characters."
+          >
+            <span className="block">
+              <input
+                id="terminal-text-font"
+                value={text}
+                spellCheck={false}
+                onChange={(event) => setText(event.target.value)}
+                aria-describedby="font-family-help text-font-error"
+                aria-invalid={validation && !textValid}
+                className={cn(monoClass, validation && !textValid && 'border-error')}
+              />
+              <p id="text-font-error" className="mt-1 text-xs text-error">
+                {validation && !textValid ? 'Enter a valid single font family name.' : null}
+              </p>
+            </span>
+          </FieldRow>
+          <FieldRow
+            label="Icon font"
+            htmlFor="terminal-icon-font"
+            description="Nerd Font family for prompt glyphs and icons."
+            divided
+          >
+            <span className="block">
+              <input
+                id="terminal-icon-font"
+                value={icons}
+                spellCheck={false}
+                onChange={(event) => setIcons(event.target.value)}
+                aria-describedby="font-family-help icon-font-error"
+                aria-invalid={validation && !iconsValid}
+                className={cn(monoClass, validation && !iconsValid && 'border-error')}
+              />
+              <p id="icon-font-error" className="mt-1 text-xs text-error">
+                {validation && !iconsValid ? 'Enter a valid single font family name.' : null}
+              </p>
+            </span>
+          </FieldRow>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-6 border-t border-edge px-4 py-3">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span id="app-terminal-font-size" className="text-[13px] font-medium text-ink">
+                Font size
+              </span>
+              <span className="text-xs text-ink-muted">
+                {size === DEFAULT_TERMINAL_FONT_SIZE ? 'Default size.' : 'Default is 15 px.'}
+              </span>
+            </div>
+            <fieldset
+              aria-labelledby="app-terminal-font-size"
+              className="m-0 inline-flex min-w-0 items-center gap-0.5 rounded-[9px] border border-edge bg-field p-[3px]"
+            >
+              <button
+                type="button"
+                aria-label="Smaller"
+                disabled={sizeIndex <= 0}
+                onClick={() => step(-1)}
+                className={cn(
+                  'inline-flex h-9 w-9 items-center justify-center rounded-[6px] text-ink-secondary disabled:opacity-40',
+                  focusRing,
+                )}
+              >
+                <Icon.minus size={16} aria-hidden />
+              </button>
+              <span
+                data-testid={TEST_ID.settingsTerminalFontSize}
+                data-value={String(size)}
+                className="min-w-11 text-center font-mono text-[13px] text-project-title"
+              >
+                {size} px
+              </span>
+              <button
+                type="button"
+                aria-label="Larger"
+                disabled={sizeIndex < 0 || sizeIndex >= TERMINAL_FONT_SIZES.length - 1}
+                onClick={() => step(1)}
+                className={cn(
+                  'inline-flex h-9 w-9 items-center justify-center rounded-[6px] text-ink-secondary disabled:opacity-40',
+                  focusRing,
+                )}
+              >
+                <Icon.plus size={16} aria-hidden />
+              </button>
+            </fieldset>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-edge px-4 py-3.5">
+            <span className="text-xs font-semibold tracking-[0.08em] text-ink-muted uppercase">
+              Preview
+            </span>
+            <section
+              className="overflow-x-auto rounded-[8px] border border-edge bg-terminal px-4 py-3.5 text-ink"
+              aria-label="Terminal font preview"
+              style={{ fontFamily: terminalFontStack(preview), fontSize: size, lineHeight: 1.5 }}
+            >
+              <p className="whitespace-pre">NeKode ~/project main 12:34</p>
+              <p className="whitespace-pre">{TERMINAL_ICON_PREVIEW} AaBb 0123456789</p>
+            </section>
+            <span className="text-xs text-ink-muted">
+              Missing fonts fall back to bundled symbols, Consolas, Courier New and monospace.
+            </span>
+          </div>
+          <GroupFooter
+            status={
+              <span role="status">
+                Applied: {families.text}; icons: {families.icons}
+              </span>
+            }
+          >
+            <button
+              type="button"
+              className={secondaryClass}
+              onClick={() => {
+                setText(DEFAULT_TERMINAL_FONT_FAMILIES.text)
+                setIcons(DEFAULT_TERMINAL_FONT_FAMILIES.icons)
+                setValidation(false)
+                onFamiliesChange(DEFAULT_TERMINAL_FONT_FAMILIES)
+                onSizeChange(DEFAULT_TERMINAL_FONT_SIZE)
+              }}
+            >
+              Restore defaults
+            </button>
+            <button type="submit" className={primaryClass}>
+              Apply
+            </button>
+          </GroupFooter>
+        </GroupBox>
+      </SettingsGroup>
     </form>
   )
 }

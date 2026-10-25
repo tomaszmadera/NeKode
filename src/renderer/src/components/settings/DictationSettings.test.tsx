@@ -140,10 +140,8 @@ describe('DictationSettings', () => {
       cloudUploadEnabled: false,
     })
     render(<DictationSettings api={api} />)
-    const permission = (await screen.findByTestId(
-      'dictation-config-cloudUploadEnabled',
-    )) as HTMLInputElement
-    expect(permission.checked).toBe(false)
+    const permission = await screen.findByTestId('dictation-config-cloudUploadEnabled')
+    expect(permission.getAttribute('aria-checked')).toBe('false')
     expect(screen.getByText(manifest.description).textContent).toContain('600 minutes')
     expect(screen.getByText(manifest.description).textContent).toContain(
       'audio and vocabulary hints',
@@ -264,6 +262,12 @@ describe('DictationSettings', () => {
     expect(screen.getByTestId('secret-preview-apiKey').textContent).toBe('••••••••9abc')
     expect(screen.queryByTestId('secret-input-apiKey')).toBeNull()
 
+    fireEvent.click(screen.getByTestId('secret-update-apiKey'))
+    expect(screen.getByTestId('secret-input-apiKey')).toBeTruthy()
+    expect(screen.queryByTestId('secret-preview-apiKey')).toBeNull()
+    fireEvent.click(screen.getByTestId('secret-cancel-apiKey'))
+    expect(screen.getByTestId('secret-preview-apiKey').textContent).toBe('••••••••9abc')
+
     // Test Clear secret
     fireEvent.click(screen.getByTestId('secret-clear-apiKey'))
 
@@ -350,6 +354,9 @@ describe('DictationSettings', () => {
 
     await screen.findByTestId('dictation-test-error')
     expect(screen.getByTestId('dictation-test-error').textContent).toContain('Invalid API key')
+    expect(screen.queryByTestId('dictation-test-success')).toBeNull()
+    expect(screen.getByTestId('secret-input-apiKey').getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByTestId('secret-input-apiKey').className).toContain('border-error')
   })
 
   it('discovers models for providers with capabilities.modelDiscovery and updates selection', async () => {

@@ -46,6 +46,14 @@
   /* Selection accent: narrow left stripe on the selected project's container
      (NEKODE-3, design doc 14). */
   --color-accent: rgb(139 147 248);
+  /* Settings dialog surfaces. Roles follow the settings reference: dialog,
+     recessed field, grouped card, selected row, ink on accent, switch knob. */
+  --color-dialog: #151823;
+  --color-field: #12141d;
+  --color-group: #1a1d29;
+  --color-selected: #262b3f;
+  --color-on-accent: #0f1119;
+  --color-switch-knob: #ffffff;
 
   /* Structure: panel borders, control outlines and hairline separators. The divider is the
      inset separator between connected buttons (design doc 5, 11.4). */

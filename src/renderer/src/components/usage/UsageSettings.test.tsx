@@ -104,10 +104,10 @@ async function pick(name: RegExp) {
 describe('Usage settings', () => {
   it('applies the Show usage quota switch immediately', async () => {
     const app = setup(STORED, false)
-    const toggle = (await screen.findByRole('switch', {
+    const toggle = await screen.findByRole('switch', {
       name: 'Show usage quota',
-    })) as HTMLInputElement
-    expect(toggle.checked).toBe(false)
+    })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
     await act(async () => {
       fireEvent.click(toggle)
     })
@@ -281,7 +281,7 @@ describe('Usage settings', () => {
   })
   it('saves export settings separately and keeps accounts unchanged', async () => {
     const app = setup()
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Write the file' }))
+    fireEvent.click(await screen.findByRole('switch', { name: 'Write usage to a JSON file' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Usage export output file' }), {
       target: { value: 'C:/data/export.json' },
     })
@@ -295,9 +295,8 @@ describe('Usage settings', () => {
   })
   it('shows adapter origin, executable and errors under Adapters and opens the folder', async () => {
     const app = setup()
-    const summary = await screen.findByText('Adapters', { selector: 'summary' })
-    expect((summary.parentElement as HTMLDetailsElement).open).toBe(false)
-    fireEvent.click(summary)
+    const summary = await screen.findByRole('button', { name: 'Adapters' })
+    expect(summary.getAttribute('aria-expanded')).toBe('true')
     const adapters = await screen.findByRole('list', { name: 'Usage adapters' })
     const rows = within(adapters).getAllByRole('listitem')
     expect(rows[0].textContent).toContain('Shipped')

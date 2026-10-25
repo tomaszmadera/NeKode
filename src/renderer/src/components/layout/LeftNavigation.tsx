@@ -206,7 +206,7 @@ export function SessionRowItem({
         className={cn(
           'nk-chat-row flex h-control w-full items-center gap-2 rounded-md pl-5 pr-5 text-left text-sm transition-colors duration-fast ease-standard border-0',
           isChatSelected
-            ? 'bg-[#262B3F] text-white'
+            ? 'bg-selected text-project-title'
             : cn(
                 'bg-transparent text-chat-title hover:bg-row-hover group-hover:bg-row-hover',
                 isRevealed && 'bg-row-hover',

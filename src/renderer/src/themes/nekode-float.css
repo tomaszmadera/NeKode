@@ -48,6 +48,12 @@
   --color-chat-title: rgb(167 173 198);
   /* Selection accent: vibrant pastel violet #B9A6FF */
   --color-accent: rgb(185 166 255);
+  --color-dialog: rgb(18 22 40);
+  --color-field: rgb(11 14 26);
+  --color-group: rgb(28 34 58);
+  --color-selected: rgb(33 38 60);
+  --color-on-accent: #141018;
+  --color-switch-knob: #ffffff;
 
   /* Structure: panel borders, control outlines and hairline separators */
   --color-edge: rgb(42 47 74);
@@ -387,7 +393,8 @@
   color: #e2e5f1;
 }
 
-[data-theme="nekode-float"] .nk-chat-row[data-selected="true"] {
+[data-theme="nekode-float"] .nk-chat-row[data-selected="true"],
+[data-theme="nekode-float"] .nk-settings-nav[aria-current="page"] {
   background-color: var(--float-overlay-hover);
   color: var(--float-ink-strong);
 }

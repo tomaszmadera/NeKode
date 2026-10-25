@@ -7,6 +7,21 @@ import type {
   UsageConnection,
   UsageSnapshot,
 } from '../../../../shared/usage-contract'
+import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
+import {
+  GroupBox,
+  GroupFooter,
+  monoClass,
+  PageIntro,
+  primaryClass,
+  quietClass,
+  SectionLabel,
+  SettingsGroup,
+  SettingsSwitch,
+  StackedRow,
+  secondaryClass,
+} from '../settings/settings-ui'
 import { UsageAccountEditor } from './UsageAccountEditor'
 
 type View =
@@ -62,7 +77,8 @@ export function UsageSettings({
     [exportDraft, setExportDraft] = useState<Settings['export'] | null>(null)
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
-    [notice, setNotice] = useState<string | null>(null)
+    [notice, setNotice] = useState<string | null>(null),
+    [adaptersOpen, setAdaptersOpen] = useState(true)
   useEffect(() => {
     let alive = true
     void Promise.all([
@@ -116,7 +132,7 @@ export function UsageSettings({
   const byOrigin = [...adapters.filter((a) => a.bundled), ...adapters.filter((a) => !a.bundled)]
   const now = Date.now()
 
-  let sources: React.JSX.Element
+  let sources: React.JSX.Element | null
   if (view.kind === 'edit') {
     const adapter = usable.find((a) => a.id === view.connection.adapterId)
     sources = (
@@ -176,27 +192,52 @@ export function UsageSettings({
       </fieldset>
     )
   } else {
-    sources = (
-      <div className="space-y-2">
-        {s.connections.length > 0 ? (
-          <ul className="space-y-2" aria-label="Sources">
-            {s.connections.map((c) => (
+    sources =
+      s.connections.length > 0 ? (
+        <ul
+          className="overflow-hidden rounded-[10px] border border-edge bg-group"
+          aria-label="Sources"
+        >
+          {s.connections.map((c) => {
+            const sourceStatus = status(c, snapshot, now)
+            const fresh = sourceStatus.startsWith('Last reading')
+            return (
               <li
                 key={c.id}
-                className="flex flex-wrap items-center gap-3 rounded border border-edge p-2"
+                className="flex items-center gap-3 border-t border-edge px-4 py-3 first:border-t-0"
               >
-                <span className="font-semibold">{c.label}</span>
-                <span className="text-xs text-ink-secondary">
-                  {adapters.find((a) => a.id === c.adapterId)?.name ?? c.adapterId}
+                <span
+                  aria-hidden
+                  className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-button font-mono text-[10px] font-bold text-ink"
+                >
+                  {c.label.slice(0, 1).toUpperCase()}
                 </span>
-                <span className="text-xs text-ink-secondary">{limitCount(c, snapshot)}</span>
-                <span className="text-xs text-ink-muted">{status(c, snapshot, now)}</span>
-                <span className="ml-auto flex gap-2">
+                <span
+                  aria-hidden
+                  className={cn(
+                    'h-2 w-2 shrink-0 rounded-full',
+                    fresh
+                      ? 'bg-success'
+                      : sourceStatus === 'No reading yet' || sourceStatus === 'Disabled'
+                        ? 'bg-ink-muted'
+                        : 'bg-error',
+                  )}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-medium text-ink">{c.label}</span>
+                  <span className="block text-xs text-ink-secondary">
+                    {adapters.find((a) => a.id === c.adapterId)?.name ?? c.adapterId}
+                  </span>
+                  <span className="text-xs text-ink-secondary">{limitCount(c, snapshot)}</span>
+                  <span className="ml-2 text-xs text-ink-muted">{sourceStatus}</span>
+                </span>
+                <span className="flex gap-1">
                   {removing === c.id ? (
                     <>
                       <button
                         type="button"
                         disabled={busy}
+                        className={cn(quietClass, 'text-error')}
                         onClick={() =>
                           void action(async () => {
                             await store(
@@ -209,7 +250,11 @@ export function UsageSettings({
                       >
                         Confirm remove {c.label}
                       </button>
-                      <button type="button" onClick={() => setRemoving(null)}>
+                      <button
+                        type="button"
+                        className={quietClass}
+                        onClick={() => setRemoving(null)}
+                      >
                         Keep
                       </button>
                     </>
@@ -218,159 +263,214 @@ export function UsageSettings({
                       <button
                         type="button"
                         aria-label={`Edit ${c.label}`}
+                        className={quietClass}
                         onClick={() => setView({ kind: 'edit', isNew: false, connection: c })}
                       >
+                        <Icon.edit size={13} aria-hidden />
                         Edit
                       </button>
                       <button
                         type="button"
                         aria-label={`Remove ${c.label}`}
+                        className={cn(quietClass, 'text-error')}
                         onClick={() => setRemoving(c.id)}
                       >
+                        <Icon.trash size={13} aria-hidden />
                         Remove
                       </button>
                     </>
                   )}
                 </span>
               </li>
-            ))}
-          </ul>
-        ) : null}
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded border border-edge px-3 py-1"
-          onClick={() => setView({ kind: 'pick' })}
-        >
-          Add source
-        </button>
-      </div>
-    )
+            )
+          })}
+        </ul>
+      ) : null
   }
 
+  const writeOn = exportDraft.enabled
   return (
-    <div className="space-y-4 text-sm">
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-checked={enabled}
-          checked={enabled}
-          disabled={busy}
-          onChange={(e) => {
-            const next = e.target.checked
-            void action(async () => {
-              setEnabled(await app.usage.setEnabled(next))
-              onSaved?.()
-            })
-          }}
-        />
-        Show usage quota
-      </label>
-      <p className="text-xs text-ink-muted">
-        Off hides the title-bar button and stops every usage read, adapter process and export.
-        Sources, the pin and cached values are kept.
-      </p>
-      <section className="space-y-2" aria-labelledby="usage-sources">
-        <h3 id="usage-sources" className="font-semibold">
-          Sources
-        </h3>
-        <p className="text-ink-secondary">
+    <div className="flex max-w-[660px] flex-col gap-7 text-sm">
+      <PageIntro
+        title="Usage"
+        description="Quota in the title bar, the sources that feed it, and an optional JSON export."
+      />
+      <SettingsGroup label="Quota">
+        <GroupBox>
+          <SettingsSwitch
+            id="usage-show-quota"
+            label="Show usage quota"
+            description="Off hides the title-bar button and stops every usage read, adapter process and export. Sources, the pin and cached values are kept."
+            checked={enabled}
+            disabled={busy}
+            onChange={(next) => {
+              void action(async () => {
+                setEnabled(await app.usage.setEnabled(next))
+                onSaved?.()
+              })
+            }}
+          />
+        </GroupBox>
+      </SettingsGroup>
+      <section className="flex flex-col gap-2.5" aria-labelledby="usage-sources">
+        <div className="flex items-center gap-3">
+          <h3
+            id="usage-sources"
+            className="m-0 flex-1 text-xs font-semibold tracking-[0.08em] text-ink-muted uppercase"
+          >
+            Sources
+          </h3>
+          {view.kind === 'list' ? (
+            <button
+              type="button"
+              disabled={busy}
+              className={cn(secondaryClass, 'gap-1.5')}
+              onClick={() => setView({ kind: 'pick' })}
+            >
+              <Icon.plus size={14} aria-hidden />
+              Add source
+            </button>
+          ) : null}
+        </div>
+        <p className="text-[13px] text-ink-muted">
           Each source reads quota limits through an adapter and shows them in the title bar. One
           source can report one account or, like a hub, several agents.
         </p>
         {sources}
       </section>
-      <section className="space-y-2 rounded border border-edge p-3" aria-labelledby="usage-export">
-        <h3 id="usage-export" className="font-semibold">
-          Write usage to a JSON file
-        </h3>
-        <p className="text-xs text-ink-muted">
+      <SettingsGroup label="JSON export">
+        <SectionLabel title="JSON export" />
+        <p id="usage-export" className="text-xs text-ink-muted">
           Other programs on this computer, such as dashboards or sync scripts, can read this file.
           It contains no secrets. Use a separate file from every input. Turning this off keeps the
           last file.
         </p>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={exportDraft.enabled}
-            onChange={(e) => setExportDraft({ ...exportDraft, enabled: e.target.checked })}
+        <GroupBox>
+          <SettingsSwitch
+            id="usage-export-write"
+            label="Write usage to a JSON file"
+            checked={writeOn}
+            disabled={busy}
+            onChange={(next) => setExportDraft({ ...exportDraft, enabled: next })}
           />
-          Write the file
-        </label>
-        <label className="block">
-          Output file
-          <input
-            aria-label="Usage export output file"
-            className="mt-1 w-full rounded border border-edge bg-app p-2"
-            value={exportDraft.path ?? ''}
-            onChange={(e) => setExportDraft({ ...exportDraft, path: e.target.value || null })}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded border border-edge bg-button px-3 py-1 text-ink hover:bg-button-hover focus-visible:outline focus-visible:outline-info disabled:opacity-50"
-          onClick={() =>
-            void action(async () => {
-              const path = await app.usage.pickFile(true)
-              if (path) setExportDraft({ ...exportDraft, path })
-            })
-          }
-        >
-          Choose output file
-        </button>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
+          <StackedRow label="Output file" htmlFor="usage-export-path" divided dimmed={!writeOn}>
+            <div className="flex gap-2">
+              <input
+                id="usage-export-path"
+                aria-label="Usage export output file"
+                disabled={!writeOn}
+                className={monoClass}
+                value={exportDraft.path ?? ''}
+                onChange={(e) => setExportDraft({ ...exportDraft, path: e.target.value || null })}
+              />
+              <button
+                type="button"
+                disabled={busy}
+                aria-label="Choose output file"
+                className={secondaryClass}
+                onClick={() =>
+                  void action(async () => {
+                    const path = await app.usage.pickFile(true)
+                    if (path) setExportDraft({ ...exportDraft, path })
+                  })
+                }
+              >
+                Choose
+              </button>
+            </div>
+          </StackedRow>
+          <SettingsSwitch
+            id="usage-export-replace"
+            label="Replace an existing file at the selected output"
             checked={exportDraft.replaceExisting === true}
-            onChange={(e) => setExportDraft({ ...exportDraft, replaceExisting: e.target.checked })}
+            disabled={!writeOn || busy}
+            divided
+            onChange={(next) => setExportDraft({ ...exportDraft, replaceExisting: next })}
           />
-          Replace an existing file at the selected output
-        </label>
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded border border-edge bg-highlight px-3 py-1"
-          onClick={() =>
-            void action(async () => {
-              const saved = await store({ ...s, export: exportDraft }, 'Export settings saved.')
-              setExportDraft(saved.export)
-            })
-          }
-        >
-          Save export settings
-        </button>
-      </section>
-      <details className="rounded border border-edge p-3">
-        <summary>Adapters</summary>
-        <div className="mt-2 space-y-2">
-          <p className="text-xs text-ink-muted">
-            Adapters are trusted executables: enabling a source lets its adapter run with your
-            permissions. To add your own adapter, put a folder with a usage-adapter.json manifest in
-            the adapters folder; one with a shipped adapter's id replaces it. Reopen settings to
-            list it.
-          </p>
+          <GroupFooter>
+            <button
+              type="button"
+              disabled={busy}
+              aria-label="Save export settings"
+              className={primaryClass}
+              onClick={() =>
+                void action(async () => {
+                  const saved = await store({ ...s, export: exportDraft }, 'Export settings saved.')
+                  setExportDraft(saved.export)
+                })
+              }
+            >
+              Save
+            </button>
+          </GroupFooter>
+        </GroupBox>
+      </SettingsGroup>
+      <section className="flex flex-col gap-2.5" aria-label="Adapters">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-expanded={adaptersOpen}
+            className="inline-flex h-8 flex-1 items-center gap-2 text-left"
+            onClick={() => setAdaptersOpen((open) => !open)}
+          >
+            <Icon.chevronRight
+              size={14}
+              aria-hidden
+              className={cn(
+                'shrink-0 text-ink-muted transition-transform',
+                adaptersOpen && 'rotate-90',
+              )}
+            />
+            <span className="text-xs font-semibold tracking-[0.08em] text-ink-muted uppercase">
+              Adapters
+            </span>
+          </button>
           <button
             type="button"
             disabled={busy}
+            aria-label="Open adapters folder"
+            className={cn(secondaryClass, 'gap-1.5')}
             onClick={() => void action(() => app.usage.openAdaptersFolder())}
           >
-            Open adapters folder
+            <Icon.directory size={14} aria-hidden />
+            Open folder
           </button>
-          <ul className="space-y-2" aria-label="Usage adapters">
-            {byOrigin.map((a) => (
-              <li key={`${a.id}:${a.directory ?? ''}`} className="text-xs">
-                <span className="font-semibold">{a.name}</span> ({a.id}). {origin(a)}.{' '}
-                {a.sourceKind}; {a.capabilities.join(', ')}. Executable: {a.invocation.command}{' '}
-                {a.invocation.args.join(' ')}
-                {a.directory ? <span className="block break-all">{a.directory}</span> : null}
-                {a.error ? <span className="block text-error">{a.error}</span> : null}
-              </li>
-            ))}
-          </ul>
         </div>
-      </details>
+        {adaptersOpen ? (
+          <GroupBox>
+            <p className="px-4 py-3 text-xs text-ink-muted">
+              Adapters are trusted executables: enabling a source lets its adapter run with your
+              permissions. To add your own adapter, put a folder with a usage-adapter.json manifest
+              in the adapters folder; one with a shipped adapter's id replaces it. Reopen settings
+              to list it.
+            </p>
+            <ul className="border-t border-edge" aria-label="Usage adapters">
+              {byOrigin.map((a) => (
+                <li
+                  key={`${a.id}:${a.directory ?? ''}`}
+                  className="flex flex-col gap-1.5 border-t border-edge px-4 py-3 text-xs first:border-t-0"
+                >
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-[13px] font-medium text-ink">{a.name}</span>
+                    <span className="rounded-[5px] border border-edge bg-button px-1.5 font-mono text-[11px]">
+                      {a.id}
+                    </span>
+                    <span>{origin(a)}</span>
+                  </span>
+                  <span>
+                    {a.sourceKind}; {a.capabilities.join(', ')}
+                  </span>
+                  <span className="break-all font-mono">
+                    Executable: {a.invocation.command} {a.invocation.args.join(' ')}
+                  </span>
+                  {a.directory ? <span className="block break-all">{a.directory}</span> : null}
+                  {a.error ? <span className="block text-error">{a.error}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </GroupBox>
+        ) : null}
+      </section>
       {error ? (
         <p role="alert" className="text-error">
           {error}

@@ -7,6 +7,9 @@ import type {
   UpdateDictionaryEntryInput,
 } from '../../../../shared/dictation-contract'
 import type { AppApi, ProjectInfo } from '../../../../shared/ipc-contract'
+import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
+import { focusRing, GroupBox, SwitchControl, secondaryClass } from './settings-ui'
 
 export interface DictationDictionaryErrorEntry {
   readonly kind: DictationDictionaryError
@@ -300,14 +303,14 @@ export function DictationDictionary({
   return (
     <section
       aria-labelledby="dictation-dictionary-title"
-      className="space-y-4 border-t border-edge pt-4 text-sm text-ink-secondary"
+      className="flex flex-col gap-2.5 text-sm text-ink-secondary"
       data-testid="dictation-dictionary"
     >
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
         <h3
           id="dictation-dictionary-title"
           aria-label="Dictionary (OpenWhispr)"
-          className="font-semibold text-ink"
+          className="m-0 flex-1 text-xs font-semibold tracking-[0.08em] text-ink-muted uppercase"
         >
           Dictionary
         </h3>
@@ -315,9 +318,10 @@ export function DictationDictionary({
           type="button"
           data-testid="dictation-dictionary-add-button"
           onClick={handleOpenAdd}
-          className="rounded bg-button px-3 py-1 text-xs font-medium text-ink hover:bg-button-hover"
+          className={cn(secondaryClass, 'gap-1.5')}
         >
-          Add Term
+          <Icon.plus size={14} aria-hidden />
+          Add term
         </button>
       </div>
 
@@ -326,256 +330,278 @@ export function DictationDictionary({
         precedence over matching Global terms.
       </p>
 
-      {/* Scope Tabs: Global vs Project */}
-      <div className="flex items-center gap-4 border-b border-edge pb-2">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            data-testid="dictation-dictionary-tab-global"
-            className={`rounded px-3 py-1 text-xs font-medium ${
-              activeTab === 'global'
-                ? 'bg-highlight font-semibold text-ink'
-                : 'text-ink-secondary hover:text-ink'
-            }`}
-            onClick={() => setActiveTab('global')}
+      <GroupBox>
+        <div className="flex items-center gap-3 px-4 py-2.5">
+          <fieldset
+            aria-label="Dictionary scope"
+            className="m-0 inline-flex min-w-0 gap-0.5 rounded-[9px] border border-edge bg-field p-[3px]"
           >
-            Global
-          </button>
-          <button
-            type="button"
-            data-testid="dictation-dictionary-tab-project"
-            className={`rounded px-3 py-1 text-xs font-medium ${
-              activeTab === 'project'
-                ? 'bg-highlight font-semibold text-ink'
-                : 'text-ink-secondary hover:text-ink'
-            }`}
-            onClick={() => setActiveTab('project')}
-          >
-            Project
-          </button>
-        </div>
-
-        {/* Project Selector when on Project tab */}
-        {activeTab === 'project' && projects.length > 0 ? (
-          <div className="flex items-center gap-2">
-            <label htmlFor="dictation-dictionary-project-select" className="text-xs text-ink-muted">
-              Project:
-            </label>
-            <select
-              id="dictation-dictionary-project-select"
-              data-testid="dictation-dictionary-project-select"
-              value={selectedProjectId ?? ''}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="rounded border border-edge bg-highlight px-2 py-0.5 text-xs text-ink"
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          data-testid="dictation-dictionary-refresh"
-          disabled={loading}
-          onClick={() => setRefreshTrigger((val) => val + 1)}
-          className="ml-auto rounded border border-edge px-2.5 py-0.5 text-xs hover:bg-highlight disabled:opacity-50"
-        >
-          Refresh dictionary
-        </button>
-      </div>
-
-      {/* Add / Edit Form Modal / Box */}
-      {isFormOpen ? (
-        <form
-          onSubmit={handleSaveForm}
-          data-testid="dictation-dictionary-form"
-          className="space-y-3 rounded-md border border-edge bg-highlight/40 p-3"
-        >
-          <h4 className="text-xs font-semibold text-ink">
-            {editingId ? 'Edit Dictionary Term' : 'Add Dictionary Term'}
-          </h4>
-
-          {formError ? (
-            <div role="alert" className="text-xs text-error">
-              {formError}
-            </div>
-          ) : null}
-
-          <div className="space-y-2">
-            <div>
-              <label htmlFor="dictation-form-term" className="block text-xs font-medium text-ink">
-                Term <span className="text-error">*</span>
-              </label>
-              <input
-                id="dictation-form-term"
-                type="text"
-                data-testid="dictation-dictionary-term-input"
-                value={formTerm}
-                onChange={(e) => setFormTerm(e.target.value)}
-                placeholder="e.g. Kubernetes, Vitest, NeKode"
-                className="w-full rounded border border-edge bg-highlight px-2.5 py-1 text-xs text-ink"
-                required
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="dictation-form-aliases"
-                className="block text-xs font-medium text-ink"
-              >
-                Phonetic Aliases (comma-separated)
-              </label>
-              <input
-                id="dictation-form-aliases"
-                type="text"
-                data-testid="dictation-dictionary-aliases-input"
-                value={formAliases}
-                onChange={(e) => setFormAliases(e.target.value)}
-                placeholder="e.g. k8s, kube, coober-netties"
-                className="w-full rounded border border-edge bg-highlight px-2.5 py-1 text-xs text-ink"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="dictation-form-description"
-                className="block text-xs font-medium text-ink"
-              >
-                Description (optional)
-              </label>
-              <input
-                id="dictation-form-description"
-                type="text"
-                data-testid="dictation-dictionary-desc-input"
-                value={formDescription}
-                onChange={(e) => setFormDescription(e.target.value)}
-                placeholder="Brief explanation or domain note"
-                className="w-full rounded border border-edge bg-highlight px-2.5 py-1 text-xs text-ink"
-              />
-            </div>
-
-            {!editingId ? (
-              <div className="flex items-center gap-3">
-                <div>
-                  <label
-                    htmlFor="dictation-form-scope"
-                    className="block text-xs font-medium text-ink"
-                  >
-                    Scope
-                  </label>
-                  <select
-                    id="dictation-form-scope"
-                    data-testid="dictation-dictionary-scope-select"
-                    value={formScope}
-                    onChange={(e) => setFormScope(e.target.value as 'global' | 'project')}
-                    className="rounded border border-edge bg-highlight px-2 py-1 text-xs text-ink"
-                  >
-                    <option value="global">Global</option>
-                    <option value="project">Project</option>
-                  </select>
-                </div>
-
-                {formScope === 'project' && projects.length > 0 ? (
-                  <div>
-                    <label
-                      htmlFor="dictation-form-project"
-                      className="block text-xs font-medium text-ink"
-                    >
-                      Project
-                    </label>
-                    <select
-                      id="dictation-form-project"
-                      data-testid="dictation-dictionary-form-project"
-                      value={formProjectId ?? selectedProjectId ?? ''}
-                      onChange={(e) => setFormProjectId(e.target.value)}
-                      className="rounded border border-edge bg-highlight px-2 py-1 text-xs text-ink"
-                    >
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex items-center gap-2 pt-1">
             <button
-              type="submit"
-              data-testid="dictation-dictionary-save-button"
-              disabled={formSaving}
-              className="rounded bg-button px-3 py-1 text-xs font-medium text-ink hover:bg-button-hover disabled:opacity-50"
+              type="button"
+              data-testid="dictation-dictionary-tab-global"
+              aria-pressed={activeTab === 'global'}
+              className={cn(
+                'h-8 rounded-[6px] px-3 text-[13px]',
+                focusRing,
+                activeTab === 'global'
+                  ? 'bg-selected font-medium text-project-title'
+                  : 'text-ink-secondary',
+              )}
+              onClick={() => setActiveTab('global')}
             >
-              {formSaving ? 'Saving...' : editingId ? 'Save Changes' : 'Add Term'}
+              Global
             </button>
             <button
               type="button"
-              data-testid="dictation-dictionary-cancel-button"
-              onClick={() => setIsFormOpen(false)}
-              className="rounded border border-edge px-3 py-1 text-xs text-ink-secondary hover:bg-highlight"
+              data-testid="dictation-dictionary-tab-project"
+              aria-pressed={activeTab === 'project'}
+              className={cn(
+                'h-8 rounded-[6px] px-3 text-[13px]',
+                focusRing,
+                activeTab === 'project'
+                  ? 'bg-selected font-medium text-project-title'
+                  : 'text-ink-secondary',
+              )}
+              onClick={() => setActiveTab('project')}
             >
-              Cancel
+              Project
             </button>
-          </div>
-        </form>
-      ) : null}
+          </fieldset>
 
-      {/* Status & Messages */}
-      <div aria-live="polite">
-        {loading ? (
-          <p className="text-xs text-ink-muted">Loading dictionary...</p>
-        ) : loadFailed ? (
-          <p
-            role="alert"
-            data-error-kind="load-failed"
-            data-error-code="load-failed"
-            className="text-xs text-error"
+          {/* Project Selector when on Project tab */}
+          {activeTab === 'project' && projects.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="dictation-dictionary-project-select"
+                className="text-xs text-ink-muted"
+              >
+                Project:
+              </label>
+              <select
+                id="dictation-dictionary-project-select"
+                data-testid="dictation-dictionary-project-select"
+                value={selectedProjectId ?? ''}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="rounded border border-edge bg-highlight px-2 py-0.5 text-xs text-ink"
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          <span className="ml-auto font-mono text-xs text-ink-muted">
+            {!loading && !loadFailed && !legacyError
+              ? `${filteredEntries.length} ${filteredEntries.length === 1 ? 'entry' : 'entries'}`
+              : null}
+          </span>
+          <button
+            type="button"
+            data-testid="dictation-dictionary-refresh"
+            aria-label="Refresh dictionary"
+            title="Refresh dictionary"
+            disabled={loading}
+            onClick={() => setRefreshTrigger((val) => val + 1)}
+            className={cn(
+              'inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-ink-secondary hover:bg-highlight hover:text-ink disabled:opacity-50',
+              focusRing,
+            )}
           >
-            The dictionary could not load. Refresh to try again.
-          </p>
-        ) : legacyError ? (
-          <p
-            role="alert"
-            data-error-kind={DICTATION_DICTIONARY_ERROR_TABLE[legacyError].kind}
-            data-error-code={DICTATION_DICTIONARY_ERROR_TABLE[legacyError].code}
-            className="text-xs text-error"
+            <Icon.retry size={15} aria-hidden />
+          </button>
+        </div>
+
+        {/* Add / Edit Form Modal / Box */}
+        {isFormOpen ? (
+          <form
+            onSubmit={handleSaveForm}
+            data-testid="dictation-dictionary-form"
+            className="space-y-3 rounded-md border border-edge bg-highlight/40 p-3"
           >
-            {DICTATION_DICTIONARY_ERROR_TABLE[legacyError].message}
-          </p>
-        ) : (
-          <div className="space-y-2">
-            <p className="text-xs text-ink-muted">
-              {filteredEntries.length} {filteredEntries.length === 1 ? 'entry' : 'entries'}
+            <h4 className="text-xs font-semibold text-ink">
+              {editingId ? 'Edit Dictionary Term' : 'Add Dictionary Term'}
+            </h4>
+
+            {formError ? (
+              <div role="alert" className="text-xs text-error">
+                {formError}
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <div>
+                <label htmlFor="dictation-form-term" className="block text-xs font-medium text-ink">
+                  Term
+                </label>
+                <input
+                  id="dictation-form-term"
+                  type="text"
+                  data-testid="dictation-dictionary-term-input"
+                  value={formTerm}
+                  onChange={(e) => setFormTerm(e.target.value)}
+                  placeholder="e.g. Kubernetes, Vitest, NeKode"
+                  className="w-full rounded border border-edge bg-highlight px-2.5 py-1 text-xs text-ink"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="dictation-form-aliases"
+                  className="block text-xs font-medium text-ink"
+                >
+                  Phonetic Aliases (comma-separated)
+                </label>
+                <input
+                  id="dictation-form-aliases"
+                  type="text"
+                  data-testid="dictation-dictionary-aliases-input"
+                  value={formAliases}
+                  onChange={(e) => setFormAliases(e.target.value)}
+                  placeholder="e.g. k8s, kube, coober-netties"
+                  className="w-full rounded border border-edge bg-highlight px-2.5 py-1 text-xs text-ink"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="dictation-form-description"
+                  className="block text-xs font-medium text-ink"
+                >
+                  Description (optional)
+                </label>
+                <input
+                  id="dictation-form-description"
+                  type="text"
+                  data-testid="dictation-dictionary-desc-input"
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  placeholder="Brief explanation or domain note"
+                  className="w-full rounded border border-edge bg-highlight px-2.5 py-1 text-xs text-ink"
+                />
+              </div>
+
+              {!editingId ? (
+                <div className="flex items-center gap-3">
+                  <div>
+                    <label
+                      htmlFor="dictation-form-scope"
+                      className="block text-xs font-medium text-ink"
+                    >
+                      Scope
+                    </label>
+                    <select
+                      id="dictation-form-scope"
+                      data-testid="dictation-dictionary-scope-select"
+                      value={formScope}
+                      onChange={(e) => setFormScope(e.target.value as 'global' | 'project')}
+                      className="rounded border border-edge bg-highlight px-2 py-1 text-xs text-ink"
+                    >
+                      <option value="global">Global</option>
+                      <option value="project">Project</option>
+                    </select>
+                  </div>
+
+                  {formScope === 'project' && projects.length > 0 ? (
+                    <div>
+                      <label
+                        htmlFor="dictation-form-project"
+                        className="block text-xs font-medium text-ink"
+                      >
+                        Project
+                      </label>
+                      <select
+                        id="dictation-form-project"
+                        data-testid="dictation-dictionary-form-project"
+                        value={formProjectId ?? selectedProjectId ?? ''}
+                        onChange={(e) => setFormProjectId(e.target.value)}
+                        className="rounded border border-edge bg-highlight px-2 py-1 text-xs text-ink"
+                      >
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="submit"
+                data-testid="dictation-dictionary-save-button"
+                disabled={formSaving}
+                className="rounded bg-button px-3 py-1 text-xs font-medium text-ink hover:bg-button-hover disabled:opacity-50"
+              >
+                {formSaving ? 'Saving...' : editingId ? 'Save Changes' : 'Add Term'}
+              </button>
+              <button
+                type="button"
+                data-testid="dictation-dictionary-cancel-button"
+                onClick={() => setIsFormOpen(false)}
+                className="rounded border border-edge px-3 py-1 text-xs text-ink-secondary hover:bg-highlight"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {/* Status & Messages */}
+        <div aria-live="polite">
+          {loading ? (
+            <p className="text-xs text-ink-muted">Loading dictionary...</p>
+          ) : loadFailed ? (
+            <p
+              role="alert"
+              data-error-kind="load-failed"
+              data-error-code="load-failed"
+              className="text-xs text-error"
+            >
+              The dictionary could not load. Refresh to try again.
             </p>
-
-            {filteredEntries.length === 0 ? (
-              <p data-testid="dictation-dictionary-empty" className="py-2 text-xs text-ink-muted">
-                No dictionary entries in this scope.
-              </p>
-            ) : (
-              <ul className="max-h-60 space-y-1.5 overflow-auto rounded border border-edge p-2">
-                {filteredEntries.map((entry) => (
-                  <li
-                    key={entry.id}
-                    data-testid={`dictation-entry-${entry.id}`}
-                    className="flex items-start justify-between rounded bg-highlight/30 p-2 text-xs"
+          ) : legacyError ? (
+            <p
+              role="alert"
+              data-error-kind={DICTATION_DICTIONARY_ERROR_TABLE[legacyError].kind}
+              data-error-code={DICTATION_DICTIONARY_ERROR_TABLE[legacyError].code}
+              className="text-xs text-error"
+            >
+              {DICTATION_DICTIONARY_ERROR_TABLE[legacyError].message}
+            </p>
+          ) : (
+            <div>
+              {filteredEntries.length === 0 ? (
+                <div className="flex flex-col items-center gap-1.5 border-t border-edge px-4 py-7 text-center">
+                  <Icon.book size={22} aria-hidden className="text-ink-muted" />
+                  <p
+                    data-testid="dictation-dictionary-empty"
+                    className="text-[13px] text-ink-secondary"
                   >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="checkbox"
-                            data-testid={`dictation-toggle-${entry.id}`}
+                    No dictionary entries in this scope.
+                  </p>
+                </div>
+              ) : (
+                <ul className="max-h-60 overflow-auto border-t border-edge">
+                  {filteredEntries.map((entry) => (
+                    <li
+                      key={entry.id}
+                      data-testid={`dictation-entry-${entry.id}`}
+                      className="flex items-start justify-between gap-3 border-t border-edge px-4 py-3 text-xs first:border-t-0"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <SwitchControl
                             checked={entry.enabled}
+                            label={`Enable ${entry.term}`}
+                            testId={`dictation-toggle-${entry.id}`}
                             onChange={() => handleToggle(entry)}
-                            className="rounded border-edge"
                           />
                           <span
                             data-testid={`dictation-term-${entry.id}`}
@@ -583,56 +609,62 @@ export function DictationDictionary({
                           >
                             {entry.term}
                           </span>
-                        </label>
-                        <span className="rounded bg-highlight px-1.5 py-0.2 text-[10px] text-ink-muted uppercase">
-                          {entry.scope}
-                        </span>
+                          <span className="rounded bg-highlight px-1.5 py-0.2 text-[10px] text-ink-muted uppercase">
+                            {entry.scope}
+                          </span>
+                        </div>
+
+                        {entry.aliases && entry.aliases.length > 0 ? (
+                          <div
+                            data-testid={`dictation-aliases-${entry.id}`}
+                            className="pl-5 text-ink-muted"
+                          >
+                            Aliases: {entry.aliases.join(', ')}
+                          </div>
+                        ) : null}
+
+                        {entry.description ? (
+                          <div
+                            data-testid={`dictation-desc-${entry.id}`}
+                            className="pl-5 text-ink-secondary"
+                          >
+                            {entry.description}
+                          </div>
+                        ) : null}
                       </div>
 
-                      {entry.aliases && entry.aliases.length > 0 ? (
-                        <div
-                          data-testid={`dictation-aliases-${entry.id}`}
-                          className="pl-5 text-ink-muted"
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          data-testid={`dictation-edit-${entry.id}`}
+                          onClick={() => handleOpenEdit(entry)}
+                          className={cn(
+                            'inline-flex h-8 items-center rounded-[6px] px-2 text-xs text-ink hover:bg-highlight',
+                            focusRing,
+                          )}
                         >
-                          Aliases: {entry.aliases.join(', ')}
-                        </div>
-                      ) : null}
-
-                      {entry.description ? (
-                        <div
-                          data-testid={`dictation-desc-${entry.id}`}
-                          className="pl-5 text-ink-secondary"
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`dictation-delete-${entry.id}`}
+                          onClick={() => handleDelete(entry.id)}
+                          className={cn(
+                            'inline-flex h-8 items-center rounded-[6px] px-2 text-xs text-error hover:bg-highlight',
+                            focusRing,
+                          )}
                         >
-                          {entry.description}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        data-testid={`dictation-edit-${entry.id}`}
-                        onClick={() => handleOpenEdit(entry)}
-                        className="rounded border border-edge px-2 py-0.5 text-[11px] text-ink hover:bg-highlight"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        data-testid={`dictation-delete-${entry.id}`}
-                        onClick={() => handleDelete(entry.id)}
-                        className="rounded border border-edge px-2 py-0.5 text-[11px] text-error hover:bg-highlight"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      </GroupBox>
     </section>
   )
 }

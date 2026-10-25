@@ -6,7 +6,23 @@ import type {
   SttProviderSummary,
 } from '../../../../shared/dictation-contract'
 import type { AppApi } from '../../../../shared/ipc-contract'
+import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
 import { DesktopDictationSettings } from './DesktopDictationSettings'
+import {
+  FieldRow,
+  GroupBox,
+  GroupFooter,
+  monoClass,
+  primaryClass,
+  SectionLabel,
+  SettingsGroup,
+  SettingsSelect,
+  SettingsSwitch,
+  StackedRow,
+  secondaryClass,
+  textClass,
+} from './settings-ui'
 
 /** Select value of the OpenWhispr desktop shortcut method. It is not an STT
     adapter: choosing it turns desktop dictation on, choosing an adapter turns
@@ -196,6 +212,7 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
     setSaving(true)
     setError(null)
     setSaveStatus(null)
+    setTestResult(null)
 
     const payload: Record<string, unknown> = { ...config }
     for (const field of activeProvider?.configSchema ?? []) {
@@ -229,6 +246,7 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
     if (!activeProviderId) return
     setTestingConnection(true)
     setTestResult(null)
+    setSaveStatus(null)
 
     const currentConfig: Record<string, unknown> = { ...config }
     for (const [key, val] of Object.entries(secretInputs)) {
@@ -308,6 +326,27 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
     }
   }
 
+  const connectionFailed = testResult !== null && !testResult.ok
+  const connectionStatus = testResult ? (
+    <span
+      data-testid="dictation-test-feedback"
+      role={testResult.ok ? 'status' : 'alert'}
+      className={testResult.ok ? 'text-success' : 'text-error'}
+    >
+      {testResult.ok ? (
+        <span data-testid="dictation-test-success">
+          {testResult.message || 'Connected successfully'}
+        </span>
+      ) : (
+        <span data-testid="dictation-test-error">{testResult.message || 'Connection failed'}</span>
+      )}
+    </span>
+  ) : saveStatus ? (
+    <span data-testid="dictation-save-status" role="status" className="text-success">
+      {saveStatus}
+    </span>
+  ) : null
+
   if (loading) {
     return (
       <div data-testid="dictation-settings-loading" className="text-sm text-ink-secondary">
@@ -317,123 +356,136 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
   }
 
   return (
-    <div data-testid="dictation-settings" className="space-y-6 text-sm text-ink-secondary">
+    <div
+      data-testid="dictation-settings"
+      className="flex flex-col gap-7 text-sm text-ink-secondary"
+    >
       {error ? (
         <div
           role="alert"
-          className="rounded border border-error/40 bg-error/10 p-2 text-xs text-error"
+          className="rounded-[8px] border border-error/40 bg-error/10 p-2 text-xs text-error"
         >
           {error}
         </div>
       ) : null}
 
-      {/* Provider Selection */}
-      <section className="space-y-2">
-        <label htmlFor="dictation-provider-select" className="block font-semibold text-ink">
-          Speech-to-Text Provider
-        </label>
-        <div className="flex items-center gap-3">
-          <select
-            id="dictation-provider-select"
-            data-testid="dictation-provider-select"
-            value={desktopSelected ? DESKTOP_SHORTCUT_METHOD : activeProviderId}
-            disabled={desktopDictation?.saving === true}
-            onChange={(e) => void handleMethodChange(e.target.value)}
-            className="rounded border border-edge bg-highlight px-3 py-1.5 text-sm text-ink"
-          >
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-            {desktopSelectable ? (
-              <option value={DESKTOP_SHORTCUT_METHOD}>
-                OpenWhispr desktop shortcut (Ctrl + Super)
-              </option>
-            ) : null}
-          </select>
+      <SettingsGroup label="Provider">
+        <SectionLabel title="Provider" />
+        <GroupBox>
+          <FieldRow label="Speech-to-text provider" htmlFor="dictation-provider-select">
+            <SettingsSelect
+              id="dictation-provider-select"
+              testId="dictation-provider-select"
+              value={desktopSelected ? DESKTOP_SHORTCUT_METHOD : activeProviderId}
+              disabled={desktopDictation?.saving === true}
+              onChange={(value) => void handleMethodChange(value)}
+            >
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+              {desktopSelectable ? (
+                <option value={DESKTOP_SHORTCUT_METHOD}>
+                  OpenWhispr desktop shortcut (Ctrl + Super)
+                </option>
+              ) : null}
+            </SettingsSelect>
+          </FieldRow>
           {activeProvider?.description ? (
-            <span className="text-xs text-ink-muted">{activeProvider.description}</span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-edge px-4 py-2.5 text-xs text-ink-muted">
+              <span className="inline-flex items-center gap-1.5 text-ink-secondary">
+                <Icon.info size={13} aria-hidden />
+                Beta limits
+              </span>
+              <span>{activeProvider.description}</span>
+            </div>
           ) : null}
-        </div>
+        </GroupBox>
         {desktopDictation?.control.error ? (
           <p role="alert" data-testid="dictation-method-error" className="text-xs text-error">
             {desktopDictation.control.error}
           </p>
         ) : null}
-      </section>
+      </SettingsGroup>
 
-      {/* Schema-Driven Dynamic Configuration Form */}
       {activeProvider && activeProvider.configSchema.length > 0 ? (
-        <section className="space-y-4 rounded-md border border-edge p-4">
-          <h4 className="font-semibold text-ink">Provider Configuration ({activeProvider.name})</h4>
-
-          <div className="space-y-3">
-            {activeProvider.configSchema.map((field) => {
+        <SettingsGroup label="Connection">
+          <SectionLabel title="Connection" />
+          <h4 className="sr-only">Provider Configuration ({activeProvider.name})</h4>
+          <GroupBox>
+            {activeProvider.configSchema.map((field, index) => {
               const val = config[field.key]
               const isSecret = field.type === 'secret'
               const secretMeta = isSecret && isSecretMetadata(val) ? val : null
               const isConfiguredSecret = Boolean(secretMeta?.configured)
               const isEditing = Boolean(editingSecrets[field.key])
+              const fieldId = `config-field-${field.key}`
+              const divided = index > 0
 
-              return (
-                <div key={field.key} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label
-                      htmlFor={`config-field-${field.key}`}
-                      className="text-xs font-medium text-ink"
-                    >
-                      {field.label}
-                      {field.required ? <span className="ml-0.5 text-error">*</span> : null}
-                    </label>
-                    {field.description ? (
-                      <span className="text-xs text-ink-muted">{field.description}</span>
+              if (field.type === 'boolean') {
+                const checked = Boolean(val ?? field.defaultValue ?? false)
+                return (
+                  <div key={field.key}>
+                    <SettingsSwitch
+                      id={`dictation-label-${field.key}`}
+                      label={field.label}
+                      description={field.description}
+                      checked={checked}
+                      divided={divided}
+                      testId={`dictation-config-${field.key}`}
+                      onChange={(next) => handleFieldChange(field.key, next)}
+                    />
+                    {((field.key === 'enableNativeEdit' && val) ?? field.defaultValue) ? (
+                      <div
+                        role="note"
+                        data-testid="elevenlabs-surcharge-warning"
+                        className="border-t border-edge px-4 py-3 text-xs text-warning"
+                      >
+                        Notice: Enabling native transcript editing adds an explicit +30% API cost
+                        surcharge to ElevenLabs usage.
+                      </div>
                     ) : null}
                   </div>
+                )
+              }
 
-                  {/* Render based on field type */}
-                  {field.type === 'boolean' ? (
-                    <div className="space-y-1">
-                      <label className="flex items-center gap-2">
-                        <input
-                          id={`config-field-${field.key}`}
-                          type="checkbox"
-                          data-testid={`dictation-config-${field.key}`}
-                          checked={Boolean(val ?? field.defaultValue ?? false)}
-                          onChange={(e) => handleFieldChange(field.key, e.target.checked)}
-                          className="rounded border-edge"
-                        />
-                        <span className="text-xs text-ink-secondary">{field.label}</span>
-                      </label>
-                      {/* ElevenLabs native editing +30% surcharge disclosure (AC-003) */}
-                      {((field.key === 'enableNativeEdit' && val) ?? field.defaultValue) ? (
-                        <div
-                          role="note"
-                          data-testid="elevenlabs-surcharge-warning"
-                          className="rounded border border-warning/30 bg-warning/10 p-2 text-xs text-warning"
-                        >
-                          Notice: Enabling native transcript editing adds an explicit +30% API cost
-                          surcharge to ElevenLabs usage.
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : field.type === 'select' ? (
-                    <select
-                      id={`config-field-${field.key}`}
-                      data-testid={`dictation-config-${field.key}`}
+              if (field.type === 'select') {
+                return (
+                  <FieldRow
+                    key={field.key}
+                    label={field.label}
+                    htmlFor={fieldId}
+                    description={field.description}
+                    divided={divided}
+                  >
+                    <SettingsSelect
+                      id={fieldId}
+                      testId={`dictation-config-${field.key}`}
                       value={(val as string) ?? (field.defaultValue as string) ?? ''}
-                      onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                      className="w-full rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
+                      onChange={(value) => handleFieldChange(field.key, value)}
                     >
                       {field.options?.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
                         </option>
                       ))}
-                    </select>
-                  ) : field.type === 'number' ? (
+                    </SettingsSelect>
+                  </FieldRow>
+                )
+              }
+
+              if (field.type === 'number') {
+                return (
+                  <FieldRow
+                    key={field.key}
+                    label={field.label}
+                    htmlFor={fieldId}
+                    description={field.description}
+                    divided={divided}
+                  >
                     <input
-                      id={`config-field-${field.key}`}
+                      id={fieldId}
                       type="number"
                       data-testid={`dictation-config-${field.key}`}
                       value={
@@ -445,237 +497,226 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
                       }
                       placeholder={field.placeholder}
                       onChange={(e) => handleFieldChange(field.key, Number(e.target.value))}
-                      className="w-full rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
+                      className={textClass}
                     />
-                  ) : isSecret ? (
-                    <div className="flex items-center gap-2">
-                      {isConfiguredSecret && !isEditing ? (
-                        <>
-                          <span
-                            data-testid={`secret-preview-${field.key}`}
-                            className="font-mono text-xs text-ink"
-                          >
-                            ••••••••{secretMeta?.lastFour}
-                          </span>
-                          <button
-                            type="button"
-                            data-testid={`secret-update-${field.key}`}
-                            onClick={() => startEditingSecret(field.key)}
-                            className="rounded border border-edge px-2 py-0.5 text-xs hover:bg-highlight"
-                          >
-                            Change
-                          </button>
-                          <button
-                            type="button"
-                            data-testid={`secret-clear-${field.key}`}
-                            onClick={() => handleClearSecret(field.key)}
-                            className="rounded border border-edge px-2 py-0.5 text-xs text-error hover:bg-highlight"
-                          >
-                            Clear
-                          </button>
-                        </>
+                  </FieldRow>
+                )
+              }
+
+              if (isSecret) {
+                const showInput = !isConfiguredSecret || isEditing
+                return (
+                  <div
+                    key={field.key}
+                    className={cn(
+                      'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-6 px-4 py-3',
+                      divided && 'border-t border-edge',
+                    )}
+                  >
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      {showInput ? (
+                        <label htmlFor={fieldId} className="text-[13px] font-medium text-ink">
+                          {field.label}
+                        </label>
                       ) : (
-                        <>
-                          <input
-                            id={`config-field-${field.key}`}
-                            type="password"
-                            data-testid={`secret-input-${field.key}`}
-                            value={secretInputs[field.key] ?? ''}
-                            placeholder={field.placeholder || 'Enter secret key'}
-                            onChange={(e) =>
-                              setSecretInputs((prev) => ({ ...prev, [field.key]: e.target.value }))
-                            }
-                            className="flex-1 rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
-                          />
-                          {isEditing ? (
-                            <button
-                              type="button"
-                              data-testid={`secret-cancel-${field.key}`}
-                              onClick={() => cancelEditingSecret(field.key)}
-                              className="rounded border border-edge px-2 py-0.5 text-xs hover:bg-highlight"
-                            >
-                              Cancel
-                            </button>
-                          ) : null}
-                        </>
+                        <span className="text-[13px] font-medium text-ink">{field.label}</span>
                       )}
+                      {field.description ? (
+                        <span className="text-xs text-ink-muted">{field.description}</span>
+                      ) : null}
                     </div>
-                  ) : (
-                    // text or url
-                    <div className="space-y-1">
-                      {/* Model discovery dropdown if this is the model field and discovery is supported */}
-                      {field.key === 'model' && activeProvider.capabilities.modelDiscovery ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            id={`config-field-${field.key}`}
-                            type="text"
-                            data-testid={`dictation-config-${field.key}`}
-                            value={(val as string) ?? (field.defaultValue as string) ?? ''}
-                            placeholder={field.placeholder}
-                            onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                            className="flex-1 rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
-                          />
+                    {showInput ? (
+                      <span className="flex w-[280px] items-center gap-1.5">
+                        <input
+                          id={fieldId}
+                          type="password"
+                          data-testid={`secret-input-${field.key}`}
+                          value={secretInputs[field.key] ?? ''}
+                          placeholder={field.placeholder || 'Enter secret key'}
+                          aria-invalid={connectionFailed || undefined}
+                          onChange={(e) =>
+                            setSecretInputs((prev) => ({ ...prev, [field.key]: e.target.value }))
+                          }
+                          className={cn(monoClass, connectionFailed && 'border-error')}
+                        />
+                        {isEditing ? (
                           <button
                             type="button"
-                            data-testid="dictation-refresh-models"
-                            disabled={discoveringModels}
-                            onClick={handleDiscoverModels}
-                            className="rounded border border-edge px-2 py-1 text-xs hover:bg-highlight disabled:opacity-50"
+                            data-testid={`secret-cancel-${field.key}`}
+                            onClick={() => cancelEditingSecret(field.key)}
+                            className={secondaryClass}
                           >
-                            {discoveringModels ? 'Discovering...' : 'Discover Models'}
+                            Cancel
                           </button>
-                        </div>
-                      ) : (
+                        ) : null}
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          data-testid={`secret-preview-${field.key}`}
+                          className={cn(
+                            'mr-1.5 font-mono text-[13px] tracking-wide text-ink-secondary',
+                            connectionFailed && 'rounded-[8px] border border-error px-2 py-1',
+                          )}
+                        >
+                          ••••••••{secretMeta?.lastFour}
+                        </span>
+                        <button
+                          type="button"
+                          data-testid={`secret-update-${field.key}`}
+                          onClick={() => startEditingSecret(field.key)}
+                          className={secondaryClass}
+                        >
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`secret-clear-${field.key}`}
+                          onClick={() => handleClearSecret(field.key)}
+                          className={cn(secondaryClass, 'text-error')}
+                        >
+                          Clear
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                )
+              }
+
+              return (
+                <FieldRow
+                  key={field.key}
+                  label={field.label}
+                  htmlFor={fieldId}
+                  description={field.description}
+                  divided={divided}
+                >
+                  <div className="flex flex-col gap-2">
+                    {field.key === 'model' && activeProvider.capabilities.modelDiscovery ? (
+                      <div className="flex items-center gap-2">
                         <input
-                          id={`config-field-${field.key}`}
-                          type={field.type === 'url' ? 'url' : 'text'}
+                          id={fieldId}
+                          type="text"
                           data-testid={`dictation-config-${field.key}`}
                           value={(val as string) ?? (field.defaultValue as string) ?? ''}
                           placeholder={field.placeholder}
                           onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                          className="w-full rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
+                          className={textClass}
                         />
-                      )}
-
-                      {/* Discovered models dropdown */}
-                      {field.key === 'model' && discoveredModels.length > 0 ? (
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="text-xs text-ink-muted">Discovered:</span>
-                          <select
-                            data-testid="dictation-discovered-models-select"
-                            value={(val as string) ?? ''}
-                            onChange={(e) => handleFieldChange('model', e.target.value)}
-                            className="flex-1 rounded border border-edge bg-highlight px-2 py-1 text-xs text-ink"
-                          >
-                            <option value="">Select a discovered model...</option>
-                            {discoveredModels.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name || m.id}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
+                        <button
+                          type="button"
+                          data-testid="dictation-refresh-models"
+                          disabled={discoveringModels}
+                          onClick={handleDiscoverModels}
+                          className={secondaryClass}
+                        >
+                          {discoveringModels ? 'Discovering...' : 'Discover Models'}
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        id={fieldId}
+                        type={field.type === 'url' ? 'url' : 'text'}
+                        data-testid={`dictation-config-${field.key}`}
+                        value={(val as string) ?? (field.defaultValue as string) ?? ''}
+                        placeholder={field.placeholder}
+                        onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                        className={textClass}
+                      />
+                    )}
+                    {field.key === 'model' && discoveredModels.length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-ink-muted">Discovered:</span>
+                        <SettingsSelect
+                          id={`dictation-discovered-${field.key}`}
+                          testId="dictation-discovered-models-select"
+                          value={(val as string) ?? ''}
+                          onChange={(value) => handleFieldChange('model', value)}
+                        >
+                          <option value="">Select a discovered model...</option>
+                          {discoveredModels.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name || m.id}
+                            </option>
+                          ))}
+                        </SettingsSelect>
+                      </div>
+                    ) : null}
+                  </div>
+                </FieldRow>
               )
             })}
-          </div>
-
-          {/* Form Actions: Save & Test Connection */}
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <button
-              type="button"
-              data-testid="dictation-save-config"
-              disabled={saving}
-              onClick={handleSaveConfig}
-              className="rounded bg-button px-3 py-1 text-xs font-medium text-ink hover:bg-button-hover disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save Configuration'}
-            </button>
-
-            {/* Non-consuming Test Connection (AC-005) */}
-            <button
-              type="button"
-              data-testid="dictation-test-connection"
-              disabled={testingConnection || saving}
-              onClick={handleTestConnection}
-              className="rounded border border-edge px-3 py-1 text-xs hover:bg-highlight disabled:opacity-50"
-            >
-              {testingConnection ? 'Testing...' : 'Test Connection'}
-            </button>
-
-            {saveStatus ? (
-              <span data-testid="dictation-save-status" className="text-xs text-success">
-                {saveStatus}
-              </span>
-            ) : null}
-
-            {testResult ? (
-              <div
-                data-testid="dictation-test-feedback"
-                role={testResult.ok ? 'status' : 'alert'}
-                className={`text-xs ${testResult.ok ? 'text-success' : 'text-error'}`}
+            <GroupFooter status={connectionStatus}>
+              <button
+                type="button"
+                data-testid="dictation-test-connection"
+                disabled={testingConnection || saving}
+                onClick={() => void handleTestConnection()}
+                className={secondaryClass}
               >
-                {testResult.ok ? (
-                  <span data-testid="dictation-test-success">
-                    ✓ {testResult.message || 'Connected successfully'}
-                  </span>
-                ) : (
-                  <span data-testid="dictation-test-error">
-                    ✕ {testResult.message || 'Connection failed'}
-                  </span>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </section>
+                {testingConnection ? 'Testing...' : 'Test connection'}
+              </button>
+              <button
+                type="button"
+                data-testid="dictation-save-config"
+                disabled={saving}
+                onClick={() => void handleSaveConfig()}
+                className={primaryClass}
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </GroupFooter>
+          </GroupBox>
+        </SettingsGroup>
       ) : null}
 
-      {/* Post-Processing Pipeline Settings (in-app STT takes only) */}
       {desktopSelected ? null : (
-        <section className="space-y-4 rounded-md border border-edge p-4">
-          <div>
-            <h4 className="font-semibold text-ink">Post-Processing Pipeline</h4>
-            <p className="text-xs text-ink-muted">
-              Format, punctuate, and clean up transcripts with deterministic safety guardrails.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {/* Mode Select */}
-            <div className="space-y-1">
-              <label
-                htmlFor="dictation-post-processing-mode"
-                className="text-xs font-medium text-ink"
-              >
-                Post-Processing Mode
-              </label>
-              <select
+        <SettingsGroup label="Post-processing">
+          <SectionLabel title="Post-processing" />
+          <GroupBox>
+            <FieldRow
+              label="Mode"
+              htmlFor="dictation-post-processing-mode"
+              description="Format, punctuate, and clean up transcripts with deterministic safety guardrails."
+            >
+              <SettingsSelect
                 id="dictation-post-processing-mode"
-                data-testid="dictation-post-processing-mode"
+                testId="dictation-post-processing-mode"
                 value={ppMode}
-                onChange={(e) => setPpMode(e.target.value as DictationPostProcessingMode)}
-                className="w-full rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
+                onChange={(value) => setPpMode(value as DictationPostProcessingMode)}
               >
                 <option value="disabled">Disabled</option>
                 <option value="provider_native">Provider Native (ElevenLabs Scribe v2)</option>
                 <option value="external_llm">External LLM (OpenRouter)</option>
-              </select>
-            </div>
-
-            {/* Level Select */}
-            <div className="space-y-1">
-              <label
+              </SettingsSelect>
+            </FieldRow>
+            <div className={ppMode === 'disabled' ? 'opacity-50' : undefined}>
+              <FieldRow
+                label="Correction level"
                 htmlFor="dictation-post-processing-level"
-                className="text-xs font-medium text-ink"
+                description={
+                  ppMode === 'disabled'
+                    ? 'Turn post-processing on to choose a level.'
+                    : 'How much the transcript may be changed.'
+                }
+                divided
               >
-                Correction Level
-              </label>
-              <select
-                id="dictation-post-processing-level"
-                data-testid="dictation-post-processing-level"
-                value={ppLevel}
-                onChange={(e) => setPpLevel(e.target.value as DictationPostProcessingLevel)}
-                className="w-full rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
-              >
-                <option value="light">Light (Punctuation & Glossary)</option>
-                <option value="medium">Medium (Light + Remove Filler Words & Grammar)</option>
-                <option value="full">Full (Clarity & Phrasing While Preserving Details)</option>
-              </select>
+                <SettingsSelect
+                  id="dictation-post-processing-level"
+                  testId="dictation-post-processing-level"
+                  value={ppLevel}
+                  disabled={ppMode === 'disabled'}
+                  onChange={(value) => setPpLevel(value as DictationPostProcessingLevel)}
+                >
+                  <option value="light">Light (Punctuation & Glossary)</option>
+                  <option value="medium">Medium (Light + Remove Filler Words & Grammar)</option>
+                  <option value="full">Full (Clarity & Phrasing While Preserving Details)</option>
+                </SettingsSelect>
+              </FieldRow>
             </div>
-
-            {/* When external_llm: model input/dropdown and secret input for OpenRouter API key */}
             {ppMode === 'external_llm' ? (
-              <div className="space-y-3 rounded border border-edge/60 bg-highlight/30 p-3">
-                <div className="space-y-1">
-                  <label
-                    htmlFor="dictation-post-processing-model"
-                    className="text-xs font-medium text-ink"
-                  >
-                    LLM Model Identifier
-                  </label>
+              <div className="flex flex-col border-t border-edge">
+                <StackedRow label="LLM Model Identifier" htmlFor="dictation-post-processing-model">
                   <input
                     id="dictation-post-processing-model"
                     type="text"
@@ -683,99 +724,109 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
                     value={ppModel}
                     onChange={(e) => setPpModel(e.target.value)}
                     placeholder="openai/gpt-4o-mini"
-                    className="w-full rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
+                    className={textClass}
                   />
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-xs font-medium text-ink">OpenRouter API Key (Secret)</span>
-                  <div className="flex items-center gap-2">
-                    {postProcessing?.hasApiKey && !editingPpKey ? (
-                      <>
-                        <span
-                          data-testid="pp-secret-preview"
-                          className="font-mono text-xs text-ink"
-                        >
-                          ••••••••••••
-                        </span>
+                </StackedRow>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-6 border-t border-edge px-4 py-3">
+                  <span className="text-[13px] font-medium text-ink">OpenRouter API Key</span>
+                  {postProcessing?.hasApiKey && !editingPpKey ? (
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        data-testid="pp-secret-preview"
+                        className="font-mono text-[13px] text-ink"
+                      >
+                        ••••••••••••
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="pp-secret-update"
+                        onClick={() => setEditingPpKey(true)}
+                        className={secondaryClass}
+                      >
+                        Change
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="pp-secret-clear"
+                        onClick={() => void handleClearPpKey()}
+                        className={cn(secondaryClass, 'text-error')}
+                      >
+                        Clear
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="flex w-[280px] items-center gap-1.5">
+                      <input
+                        id="dictation-pp-secret-input"
+                        type="password"
+                        data-testid="pp-secret-input"
+                        value={ppKeyInput}
+                        onChange={(e) => setPpKeyInput(e.target.value)}
+                        placeholder="sk-or-v1-..."
+                        className={monoClass}
+                      />
+                      {editingPpKey ? (
                         <button
                           type="button"
-                          data-testid="pp-secret-update"
-                          onClick={() => setEditingPpKey(true)}
-                          className="rounded border border-edge px-2 py-0.5 text-xs hover:bg-highlight"
+                          data-testid="pp-secret-cancel"
+                          onClick={() => {
+                            setEditingPpKey(false)
+                            setPpKeyInput('')
+                          }}
+                          className={secondaryClass}
                         >
-                          Change
+                          Cancel
                         </button>
-                        <button
-                          type="button"
-                          data-testid="pp-secret-clear"
-                          onClick={handleClearPpKey}
-                          className="rounded border border-edge px-2 py-0.5 text-xs text-error hover:bg-highlight"
-                        >
-                          Clear
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <input
-                          id="dictation-pp-secret-input"
-                          type="password"
-                          data-testid="pp-secret-input"
-                          value={ppKeyInput}
-                          onChange={(e) => setPpKeyInput(e.target.value)}
-                          placeholder="sk-or-v1-..."
-                          className="flex-1 rounded border border-edge bg-highlight px-3 py-1 text-xs text-ink"
-                        />
-                        {editingPpKey ? (
-                          <button
-                            type="button"
-                            data-testid="pp-secret-cancel"
-                            onClick={() => {
-                              setEditingPpKey(false)
-                              setPpKeyInput('')
-                            }}
-                            className="rounded border border-edge px-2 py-0.5 text-xs hover:bg-highlight"
-                          >
-                            Cancel
-                          </button>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
+                      ) : null}
+                    </span>
+                  )}
                 </div>
               </div>
             ) : null}
-
-            <div className="flex items-center gap-3 pt-1">
+            <GroupFooter
+              status={
+                ppSaveStatus ? (
+                  <span
+                    data-testid="dictation-pp-save-status"
+                    role="status"
+                    className="text-success"
+                  >
+                    {ppSaveStatus}
+                  </span>
+                ) : (
+                  <span>Applies to new transcriptions.</span>
+                )
+              }
+            >
               <button
                 type="button"
                 data-testid="dictation-post-processing-save"
                 disabled={savingPp}
-                onClick={handleSavePostProcessing}
-                className="rounded bg-button px-3 py-1 text-xs font-medium text-ink hover:bg-button-hover disabled:opacity-50"
+                onClick={() => void handleSavePostProcessing()}
+                className={primaryClass}
               >
-                {savingPp ? 'Saving...' : 'Save Post-Processing'}
+                {savingPp ? 'Saving...' : 'Save'}
               </button>
-              {ppSaveStatus ? (
-                <span data-testid="dictation-pp-save-status" className="text-xs text-success">
-                  {ppSaveStatus}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </section>
+            </GroupFooter>
+          </GroupBox>
+        </SettingsGroup>
       )}
 
-      {/* OpenWhispr desktop shortcut method (AC-014) */}
       {desktopSelected && desktopDictation ? (
-        <section className="space-y-3 rounded-md border border-edge p-4">
-          <h4 className="font-semibold text-ink">OpenWhispr Desktop Shortcut (V1 Mode)</h4>
-          <DesktopDictationSettings
-            setup={desktopDictation.setup}
-            saving={desktopDictation.saving || desktopDictation.control.busy}
-            onChange={desktopDictation.configure}
-          />
-        </section>
+        <SettingsGroup label="OpenWhispr Desktop Shortcut (V1 Mode)">
+          <h4 className="text-[13px] font-medium text-ink">
+            OpenWhispr Desktop Shortcut (V1 Mode)
+          </h4>
+          <GroupBox>
+            <div className="px-4 py-3">
+              <DesktopDictationSettings
+                setup={desktopDictation.setup}
+                saving={desktopDictation.saving || desktopDictation.control.busy}
+                onChange={desktopDictation.configure}
+              />
+            </div>
+          </GroupBox>
+        </SettingsGroup>
       ) : null}
     </div>
   )

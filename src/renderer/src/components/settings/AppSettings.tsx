@@ -2,20 +2,36 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { AppApi } from '../../../../shared/ipc-contract'
 import type { AttentionSettings } from '../../lib/attention-settings'
-import { Icon } from '../../lib/icons'
+import { cn } from '../../lib/cn'
+import { Icon, type LucideIcon } from '../../lib/icons'
 import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID } from '../../lib/test-ids'
 import { isThemeId, THEME_IDS, THEMES, type ThemeId } from '../../lib/theme'
 import { UsageSettings } from '../usage/UsageSettings'
+import { AppUpdateBlock } from './AppUpdateBlock'
 import { DictationDictionary } from './DictationDictionary'
 import { DictationSettings } from './DictationSettings'
 import { FontsSettings } from './FontsSettings'
 import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
+import {
+  FieldRow,
+  focusRing,
+  GroupBox,
+  NavIcon,
+  PageIntro,
+  SectionLabel,
+  SettingsGroup,
+  SettingsSelect,
+  SettingsSwitch,
+  ShortcutKeys,
+} from './settings-ui'
 
 interface AppSettingsProps {
   onUsageSaved?: () => void
   app: AppApi
   initialTab?: SettingsTab
+  /** When the version control opened settings, bring the update block into view. */
+  scrollToUpdate?: boolean
   dictationApi: AppApi['dictation']
   desktopDictation: ReturnType<typeof import('../../hooks/useDesktopDictation').useDesktopDictation>
   theme: ThemeId
@@ -43,13 +59,13 @@ interface AppSettingsProps {
 }
 
 type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation' | 'agents' | 'usage'
-const SETTINGS_TABS: SettingsTab[] = [
-  'general',
-  'fonts',
-  'shortcuts',
-  'dictation',
-  'agents',
-  'usage',
+const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }> = [
+  { id: 'general', label: 'General', icon: Icon.sliders },
+  { id: 'fonts', label: 'Fonts', icon: Icon.type },
+  { id: 'shortcuts', label: 'Shortcuts', icon: Icon.keyboard },
+  { id: 'dictation', label: 'Dictation', icon: Icon.dictation },
+  { id: 'agents', label: 'Agents', icon: Icon.agent },
+  { id: 'usage', label: 'Usage', icon: Icon.gauge },
 ]
 function tabId(tab: SettingsTab): string {
   return tab === 'agents' ? 'app-settings-tab-agents' : `settings-tab-${tab}`
@@ -58,9 +74,9 @@ function panelId(tab: SettingsTab): string {
   return tab === 'agents' ? 'app-settings-panel-agents' : `settings-panel-${tab}`
 }
 
-// One row per app shortcut. Keys render in <kbd>-style cells; keep each
-// description in sync with the behavior actually implemented (App-level chords,
-// terminal chords) — this table is the product's shortcut documentation.
+// One row per app shortcut. Keys render as chips; keep each description in
+// sync with the behavior actually implemented (App-level chords, terminal
+// chords). This list is the product's shortcut documentation.
 const SHORTCUT_SECTIONS: Array<{ heading: string; rows: Array<[string, string]> }> = [
   {
     heading: 'Global',
@@ -88,6 +104,7 @@ export function AppSettings({
   onUsageSaved,
   app,
   initialTab = 'general',
+  scrollToUpdate = false,
   dictationApi,
   desktopDictation,
   theme,
@@ -114,6 +131,7 @@ export function AppSettings({
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab)
   const selectRef = useRef<HTMLSelectElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
+  const pageLabel = SETTINGS_TABS.find((tab) => tab.id === activeTab)?.label ?? 'General'
 
   useEffect(() => {
     const previousFocus = document.activeElement
@@ -128,6 +146,11 @@ export function AppSettings({
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!scrollToUpdate) return
+    document.getElementById('app-update')?.scrollIntoView({ block: 'nearest' })
+  }, [scrollToUpdate])
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLElement>): void {
     const { key } = event
@@ -156,7 +179,7 @@ export function AppSettings({
     <>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the backdrop hosts the dismiss gesture (mouse down outside the dialog); the dialog's controls are real buttons and inputs and it closes on Escape. */}
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
         role="presentation"
         onMouseDown={(event) => {
           // Backdrop dismiss: only a pointer-down on the dimmed area itself
@@ -174,88 +197,98 @@ export function AppSettings({
           aria-modal="true"
           aria-labelledby="app-settings-title"
           onKeyDown={handleKeyDown}
-          className="flex h-[min(42rem,90dvh)] w-[min(56rem,94vw)] flex-col overflow-hidden rounded-lg border border-edge bg-panel p-4 shadow-xl sm:p-5"
+          className="flex h-[min(660px,calc(100%-48px))] w-[min(920px,calc(100%-48px))] flex-col overflow-hidden rounded-[12px] border border-edge bg-dialog shadow-xl"
         >
-          <div className="flex items-center justify-between">
-            <h2 id="app-settings-title" className="text-base font-semibold">
+          <header className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-edge pr-2.5 pl-5">
+            <Icon.settings size={16} aria-hidden className="shrink-0 text-ink-secondary" />
+            <h2 id="app-settings-title" className="sr-only">
               App Settings
             </h2>
+            <span className="text-[15px] font-semibold text-project-title">Settings</span>
+            <Icon.chevronRight size={12} aria-hidden className="shrink-0 text-ink-muted" />
+            <span className="min-w-0 flex-1 truncate text-[15px] text-ink-secondary">
+              {pageLabel}
+            </span>
             <button
               type="button"
               aria-label="Close app settings"
               title="Close app settings"
-              className="flex h-8 w-8 items-center justify-center rounded-md text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline focus-visible:outline-info"
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-[8px] text-ink-secondary hover:bg-highlight hover:text-ink',
+                focusRing,
+              )}
               onClick={onClose}
             >
               <Icon.close size={16} aria-hidden />
             </button>
-          </div>
-          <div className="mt-4 flex min-h-0 flex-1 gap-3 sm:gap-5">
+          </header>
+          <div className="flex min-h-0 flex-1">
             <div
               role="tablist"
               aria-label="Settings sections"
               aria-orientation="vertical"
-              className="flex w-24 shrink-0 flex-col gap-1 border-r border-edge pr-3 sm:w-36"
+              className="flex w-[200px] shrink-0 flex-col gap-0.5 border-r border-edge bg-field px-2.5 py-3"
             >
-              {SETTINGS_TABS.map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  id={tabId(tab)}
-                  aria-controls={panelId(tab)}
-                  aria-selected={activeTab === tab}
-                  tabIndex={activeTab === tab ? 0 : -1}
-                  data-testid={
-                    tab === 'general'
-                      ? TEST_ID.settingsGeneralTab
-                      : tab === 'shortcuts'
-                        ? TEST_ID.settingsShortcutsTab
-                        : undefined
-                  }
-                  className={`rounded-md border border-edge px-3 py-2 text-left text-sm focus-visible:outline focus-visible:outline-info ${activeTab === tab ? 'bg-highlight text-ink' : 'text-ink-secondary'}`}
-                  onClick={() => setActiveTab(tab)}
-                  onKeyDown={(event) => {
-                    const tabs = SETTINGS_TABS
-                    const index = tabs.indexOf(tab)
-                    const { key } = event
-                    const next =
-                      key === 'ArrowDown'
-                        ? tabs[(index + 1) % tabs.length]
-                        : key === 'ArrowUp'
-                          ? tabs[(index + tabs.length - 1) % tabs.length]
-                          : key === 'Home'
-                            ? tabs[0]
-                            : key === 'End'
-                              ? tabs[tabs.length - 1]
-                              : null
-                    if (next !== null) {
-                      event.preventDefault()
-                      setActiveTab(next)
-                      document.getElementById(tabId(next))?.focus()
+              {SETTINGS_TABS.map((tab) => {
+                const selected = activeTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    id={tabId(tab.id)}
+                    aria-controls={panelId(tab.id)}
+                    aria-selected={selected}
+                    aria-current={selected ? 'page' : undefined}
+                    tabIndex={selected ? 0 : -1}
+                    data-testid={
+                      tab.id === 'general'
+                        ? TEST_ID.settingsGeneralTab
+                        : tab.id === 'shortcuts'
+                          ? TEST_ID.settingsShortcutsTab
+                          : undefined
                     }
-                  }}
-                >
-                  {tab === 'general'
-                    ? 'General'
-                    : tab === 'fonts'
-                      ? 'Fonts'
-                      : tab === 'dictation'
-                        ? 'Dictation'
-                        : tab === 'agents'
-                          ? 'Agents'
-                          : tab === 'usage'
-                            ? 'Usage'
-                            : 'Shortcuts'}
-                </button>
-              ))}
+                    className={cn(
+                      'nk-settings-nav flex h-9 w-full items-center gap-2.5 rounded-[8px] border-0 px-2.5 text-left text-[13px]',
+                      focusRing,
+                      selected
+                        ? 'bg-selected font-medium text-project-title'
+                        : 'bg-transparent text-ink-secondary',
+                    )}
+                    onClick={() => setActiveTab(tab.id)}
+                    onKeyDown={(event) => {
+                      const index = SETTINGS_TABS.findIndex((entry) => entry.id === tab.id)
+                      const { key } = event
+                      const nextIndex =
+                        key === 'ArrowDown'
+                          ? (index + 1) % SETTINGS_TABS.length
+                          : key === 'ArrowUp'
+                            ? (index + SETTINGS_TABS.length - 1) % SETTINGS_TABS.length
+                            : key === 'Home'
+                              ? 0
+                              : key === 'End'
+                                ? SETTINGS_TABS.length - 1
+                                : null
+                      if (nextIndex !== null) {
+                        event.preventDefault()
+                        const next = SETTINGS_TABS[nextIndex].id
+                        setActiveTab(next)
+                        document.getElementById(tabId(next))?.focus()
+                      }
+                    }}
+                  >
+                    <NavIcon icon={tab.icon} />
+                    {tab.label}
+                  </button>
+                )
+              })}
             </div>
-            {SETTINGS_TABS.filter((tab) => tab !== activeTab).map((tab) => (
+            {SETTINGS_TABS.filter((tab) => tab.id !== activeTab).map((tab) => (
               <div
-                key={tab}
+                key={tab.id}
                 role="tabpanel"
-                id={panelId(tab)}
-                aria-labelledby={tabId(tab)}
+                id={panelId(tab.id)}
+                aria-labelledby={tabId(tab.id)}
                 hidden
               />
             ))}
@@ -263,157 +296,116 @@ export function AppSettings({
               role="tabpanel"
               id={panelId(activeTab)}
               aria-labelledby={tabId(activeTab)}
-              className="min-w-0 flex-1 overflow-y-auto pr-1"
+              className="min-w-0 flex-1 overflow-y-auto px-7 pt-6 pb-8"
             >
               {activeTab === 'general' ? (
-                <div>
-                  <label htmlFor="app-theme" className="mt-4 block text-sm text-ink-secondary">
-                    Theme
-                  </label>
-                  <select
-                    ref={selectRef}
-                    id="app-theme"
-                    value={theme}
-                    onChange={(event) => {
-                      if (isThemeId(event.target.value)) onThemeChange(event.target.value)
-                    }}
-                    className="mt-2 h-control w-full rounded-md border border-edge bg-app px-3 text-sm text-ink focus-visible:outline focus-visible:outline-info"
-                  >
-                    {THEME_IDS.map((id) => (
-                      <option key={id} value={id}>
-                        {THEMES[id].label}
-                      </option>
-                    ))}
-                  </select>
-                  <label
-                    htmlFor="app-quick-theme-switch"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-quick-theme-switch"
-                      type="checkbox"
-                      checked={quickThemeSwitch}
-                      data-testid={TEST_ID.settingsQuickThemeSwitch}
-                      onChange={(event) => onQuickThemeSwitchChange(event.target.checked)}
-                    />
-                    Show quick theme switcher in status bar
-                  </label>
-                  <label
-                    htmlFor="app-project-names-uppercase"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-project-names-uppercase"
-                      type="checkbox"
-                      checked={projectNamesUppercase}
-                      onChange={(event) => onProjectNamesUppercaseChange(event.target.checked)}
-                    />
-                    Uppercase project names in the tree
-                  </label>
-                  <label
-                    htmlFor="app-show-project-icons"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-show-project-icons"
-                      type="checkbox"
-                      checked={showProjectIcons}
-                      data-testid={TEST_ID.settingsShowProjectIcons}
-                      onChange={(event) => onShowProjectIconsChange(event.target.checked)}
-                    />
-                    Show project icons
-                  </label>
-                  <label
-                    htmlFor="app-chat-switch"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-chat-switch"
-                      type="checkbox"
-                      checked={chatSwitch}
-                      data-testid={TEST_ID.settingsChatSwitch}
-                      onChange={(event) => {
-                        onChatSwitchChange(event.target.checked)
-                      }}
-                    />
-                    Switch chats with Ctrl+Tab
-                  </label>
-                  <label
-                    htmlFor="app-terminal-ctrl-v-paste"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-terminal-ctrl-v-paste"
-                      type="checkbox"
-                      checked={terminalCtrlVPaste}
-                      onChange={(event) => onTerminalCtrlVPasteChange(event.target.checked)}
-                      aria-describedby="app-terminal-ctrl-v-paste-help"
-                    />
-                    Use Ctrl+V to paste text in terminals
-                  </label>
-                  <p id="app-terminal-ctrl-v-paste-help" className="mt-1 text-xs text-ink-muted">
-                    When off, full-screen programs handle Ctrl+V. Ctrl+Shift+V always pastes text.
-                  </p>
-                  <label
-                    htmlFor="app-attention-badge"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-attention-badge"
-                      type="checkbox"
-                      checked={attentionSettings.badge}
-                      data-testid={TEST_ID.settingsAttentionBadge}
-                      onChange={(event) => {
-                        onAttentionSettingChange('badge', event.target.checked)
-                      }}
-                    />
-                    Show attention badges on chat rows
-                  </label>
-                  <label
-                    htmlFor="app-attention-active-indicator"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-attention-active-indicator"
-                      type="checkbox"
-                      checked={attentionSettings.activeIndicator}
-                      data-testid={TEST_ID.settingsAttentionActiveIndicator}
-                      onChange={(event) => {
-                        onAttentionSettingChange('activeIndicator', event.target.checked)
-                      }}
-                    />
-                    Show an attention indicator on the active chat's row
-                  </label>
-                  <label
-                    htmlFor="app-attention-chime"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-attention-chime"
-                      type="checkbox"
-                      checked={attentionSettings.chime}
-                      data-testid={TEST_ID.settingsAttentionChime}
-                      onChange={(event) => {
-                        onAttentionSettingChange('chime', event.target.checked)
-                      }}
-                    />
-                    Play a chime when a background chat needs attention
-                  </label>
-                  <label
-                    htmlFor="app-attention-active-chime"
-                    className="mt-3 flex items-center gap-2 text-sm text-ink-secondary"
-                  >
-                    <input
-                      id="app-attention-active-chime"
-                      type="checkbox"
-                      checked={attentionSettings.activeChime}
-                      data-testid={TEST_ID.settingsAttentionActiveChime}
-                      onChange={(event) => {
-                        onAttentionSettingChange('activeChime', event.target.checked)
-                      }}
-                    />
-                    Play a chime when the active chat needs attention
-                  </label>
+                <div className="flex max-w-[660px] flex-col gap-7">
+                  <PageIntro title="General" description="Look and behaviour of the whole app." />
+                  <SettingsGroup label="Appearance">
+                    <SectionLabel title="Appearance" />
+                    <GroupBox>
+                      <FieldRow
+                        label="Theme"
+                        htmlFor="app-theme"
+                        description="Colours for the whole app."
+                      >
+                        <SettingsSelect
+                          id="app-theme"
+                          value={theme}
+                          selectRef={selectRef}
+                          onChange={(value) => {
+                            if (isThemeId(value)) onThemeChange(value)
+                          }}
+                        >
+                          {THEME_IDS.map((id) => (
+                            <option key={id} value={id}>
+                              {THEMES[id].label}
+                            </option>
+                          ))}
+                        </SettingsSelect>
+                      </FieldRow>
+                      <SettingsSwitch
+                        id="app-quick-theme-switch"
+                        label="Quick theme switcher in the status bar"
+                        checked={quickThemeSwitch}
+                        divided
+                        testId={TEST_ID.settingsQuickThemeSwitch}
+                        onChange={onQuickThemeSwitchChange}
+                      />
+                      <SettingsSwitch
+                        id="app-project-names-uppercase"
+                        label="Uppercase project names in the tree"
+                        checked={projectNamesUppercase}
+                        divided
+                        onChange={onProjectNamesUppercaseChange}
+                      />
+                      <SettingsSwitch
+                        id="app-show-project-icons"
+                        label="Project icons"
+                        checked={showProjectIcons}
+                        divided
+                        testId={TEST_ID.settingsShowProjectIcons}
+                        onChange={onShowProjectIconsChange}
+                      />
+                    </GroupBox>
+                  </SettingsGroup>
+                  <SettingsGroup label="Keyboard">
+                    <SectionLabel title="Keyboard" />
+                    <GroupBox>
+                      <SettingsSwitch
+                        id="app-chat-switch"
+                        label="Switch chats with Ctrl+Tab"
+                        checked={chatSwitch}
+                        testId={TEST_ID.settingsChatSwitch}
+                        onChange={onChatSwitchChange}
+                      />
+                      <SettingsSwitch
+                        id="app-terminal-ctrl-v-paste"
+                        label="Paste with Ctrl+V in terminals"
+                        description="When off, full-screen programs handle Ctrl+V. Ctrl+Shift+V always pastes text."
+                        checked={terminalCtrlVPaste}
+                        divided
+                        onChange={onTerminalCtrlVPasteChange}
+                      />
+                    </GroupBox>
+                  </SettingsGroup>
+                  <SettingsGroup label="Attention">
+                    <SectionLabel title="Attention" />
+                    <GroupBox>
+                      <SettingsSwitch
+                        id="app-attention-badge"
+                        label="Attention badges on chat rows"
+                        checked={attentionSettings.badge}
+                        testId={TEST_ID.settingsAttentionBadge}
+                        onChange={(next) => onAttentionSettingChange('badge', next)}
+                      />
+                      <SettingsSwitch
+                        id="app-attention-active-indicator"
+                        label="Attention indicator on the active chat's row"
+                        checked={attentionSettings.activeIndicator}
+                        divided
+                        testId={TEST_ID.settingsAttentionActiveIndicator}
+                        onChange={(next) => onAttentionSettingChange('activeIndicator', next)}
+                      />
+                      <SettingsSwitch
+                        id="app-attention-chime"
+                        label="Chime when a background chat needs attention"
+                        checked={attentionSettings.chime}
+                        divided
+                        testId={TEST_ID.settingsAttentionChime}
+                        onChange={(next) => onAttentionSettingChange('chime', next)}
+                      />
+                      <SettingsSwitch
+                        id="app-attention-active-chime"
+                        label="Chime when the active chat needs attention"
+                        checked={attentionSettings.activeChime}
+                        divided
+                        testId={TEST_ID.settingsAttentionActiveChime}
+                        onChange={(next) => onAttentionSettingChange('activeChime', next)}
+                      />
+                    </GroupBox>
+                  </SettingsGroup>
+                  <AppUpdateBlock app={app} />
                 </div>
               ) : activeTab === 'usage' ? (
                 <UsageSettings app={app} onSaved={onUsageSaved} />
@@ -427,37 +419,48 @@ export function AppSettings({
                   onSizeChange={onTerminalFontSizeChange}
                 />
               ) : activeTab === 'dictation' ? (
-                <div className="mt-4 space-y-6">
+                <div className="flex max-w-[660px] flex-col gap-7">
+                  <PageIntro
+                    title="Dictation"
+                    description="Speech-to-text for session input. Recordings go to the provider you choose below."
+                  />
                   <DictationSettings api={dictationApi} desktopDictation={desktopDictation} />
                   <DictationDictionary api={dictationApi} app={app} />
                 </div>
               ) : (
-                <div data-testid={TEST_ID.settingsShortcutsTable} className="mt-4 space-y-4">
+                <div
+                  data-testid={TEST_ID.settingsShortcutsTable}
+                  className="flex max-w-[660px] flex-col gap-7"
+                >
+                  <PageIntro
+                    title="Shortcuts"
+                    description="Built-in keyboard shortcuts. How Ctrl+V behaves in full-screen programs is set in General."
+                  />
                   {SHORTCUT_SECTIONS.map((section) => (
-                    <div key={section.heading}>
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                        {section.heading}
-                      </h3>
-                      <table className="mt-2 w-full text-sm">
-                        <tbody>
-                          {section.rows.map(([keys, description]) => (
-                            <tr key={keys} className="align-baseline">
-                              <td className="w-2/5 whitespace-nowrap pr-3 font-mono text-xs text-ink">
-                                {keys}
-                              </td>
-                              <td className="text-ink-secondary">{description}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <SettingsGroup key={section.heading} label={section.heading}>
+                      <SectionLabel title={section.heading} />
+                      <GroupBox>
+                        {section.rows.map(([keys, description], index) => (
+                          <div
+                            key={keys}
+                            className={cn(
+                              'grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-6 px-4 py-2',
+                              index > 0 && 'border-t border-edge',
+                            )}
+                          >
+                            <span className="text-[13px] text-ink">{description}</span>
+                            <ShortcutKeys chord={keys} />
+                          </div>
+                        ))}
+                      </GroupBox>
+                    </SettingsGroup>
                   ))}
                 </div>
               )}
             </div>
           </div>
           {(error ?? desktopDictation.control.error) ? (
-            <p role="alert" className="mt-3 text-xs text-error">
+            <p role="alert" className="shrink-0 border-t border-edge px-7 py-2 text-xs text-error">
               {error ?? desktopDictation.control.error}
             </p>
           ) : null}

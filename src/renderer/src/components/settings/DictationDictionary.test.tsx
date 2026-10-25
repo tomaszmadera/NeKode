@@ -50,7 +50,7 @@ describe('DictationDictionary (Modernized CRUD)', () => {
     expect(screen.getByText('1 entry')).toBeTruthy()
     expect(screen.getByText('Aliases: k8s, kube')).toBeTruthy()
     expect(screen.getByText('Container orchestration')).toBeTruthy()
-    expect(screen.getByRole('checkbox', { checked: true })).toBeTruthy()
+    expect(screen.getByRole('switch', { checked: true })).toBeTruthy()
   })
 
   it('displays empty message when no terms exist in the selected scope', async () => {
@@ -97,7 +97,7 @@ describe('DictationDictionary (Modernized CRUD)', () => {
 
     await screen.findByText('Kubernetes')
     const toggle = screen.getByTestId(`dictation-toggle-${sampleGlobalEntry.id}`)
-    expect((toggle as HTMLInputElement).checked).toBe(true)
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
 
     fireEvent.click(toggle)
 
