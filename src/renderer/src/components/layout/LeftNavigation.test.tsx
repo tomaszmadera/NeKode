@@ -127,9 +127,9 @@ describe('LeftNavigation session status indicators', () => {
     expect(dot1.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80
     expect(row1.getAttribute('title')).toBe('Chat 1: running')
     expect(row1.getAttribute('aria-label')).toBe('Chat 1, running, now')
-    // Active session styling: #262B3F bg and white text
-    expect(row1.className).toContain('bg-[#262B3F]')
-    expect(row1.className).toContain('text-white')
+    // Active session styling: selected-row and project-title theme tokens
+    expect(row1.className).toContain('bg-selected')
+    expect(row1.className).toContain('text-project-title')
 
     // Waiting session (t2)
     const row2 = screen.getByTestId(testIdFor.chatRow('t2'))
