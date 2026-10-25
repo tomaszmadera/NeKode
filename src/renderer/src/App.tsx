@@ -97,6 +97,7 @@ import {
 } from './lib/attention-settings'
 import type { ChatAttention } from './lib/chat-attention'
 import { isNewChatChord } from './lib/new-chat-chord'
+import { getProjectColor } from './lib/project-avatar'
 import { writeSubmitLine } from './lib/pty-submit'
 import { sessionTaskProgress } from './lib/task-progress'
 import {
@@ -3101,6 +3102,19 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             actionSettingsProjectId === null
               ? null
               : (projects.find((project) => project.id === actionSettingsProjectId)?.path ?? null)
+          }
+          projectName={
+            actionSettingsProjectId === null
+              ? null
+              : (projects.find((project) => project.id === actionSettingsProjectId)?.name ?? null)
+          }
+          projectColor={
+            actionSettingsProjectId === null
+              ? null
+              : getProjectColor(
+                  { id: actionSettingsProjectId },
+                  projectColors[actionSettingsProjectId],
+                )
           }
           autoSend={autoSendHandoff}
           onAutoSendChange={handleAutoSendChange}

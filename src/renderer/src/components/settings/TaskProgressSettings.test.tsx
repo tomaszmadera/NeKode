@@ -155,7 +155,7 @@ describe('TaskProgressSettings', () => {
     expect(field('path').value).toBe('a.json')
     expect((field('mode') as unknown as HTMLSelectElement).value).toBe('fast')
     expect(field('archived').checked).toBe(false)
-    expect(screen.getByText('Snapshot file').parentElement?.textContent).toContain('*')
+    expect(screen.getByText('Snapshot file').parentElement?.textContent).toContain('required')
   })
 
   it('shows the stored binding values', async () => {

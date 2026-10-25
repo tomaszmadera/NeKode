@@ -9,7 +9,21 @@ import type {
 } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
+import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import {
+  FieldRow,
+  GroupBox,
+  GroupFooter,
+  monoClass,
+  PageIntro,
+  primaryClass,
+  RequiredMark,
+  SectionLabel,
+  SettingsGroup,
+  SettingsSelect,
+  secondaryClass,
+} from './settings-ui'
 
 // Task progress tab of Project Settings (spec task-progress-adapters Behaviour
 // 7-10). The adapter list is a fresh scan of the one fixed adapters directory
@@ -258,54 +272,65 @@ export function TaskProgressSettings({
     setCopySources(null)
   }
 
+  function fieldLabel(field: TaskProgressConfigField): React.JSX.Element {
+    return (
+      <>
+        <span>{field.label}</span>
+        {field.required ? <RequiredMark /> : null}
+      </>
+    )
+  }
+
   function renderField(field: TaskProgressConfigField): React.JSX.Element {
     const value = values[field.key] ?? ''
     const testId = testIdFor.taskProgressField(field.key)
     if (field.type === 'boolean') {
       return (
-        <label key={field.key} className="flex items-center gap-2">
+        <label
+          key={field.key}
+          className="flex items-center gap-2 border-t border-edge px-4 py-3 text-[13px] font-medium text-ink"
+        >
           <input
             type="checkbox"
+            className="h-4 w-4"
             checked={value === 'true'}
             data-testid={testId}
             onChange={(event) => updateValue(field.key, event.target.checked ? 'true' : 'false')}
           />
           <span>{field.label}</span>
-          {field.required ? <span aria-hidden="true"> *</span> : null}
+          {field.required ? <RequiredMark /> : null}
         </label>
       )
     }
     return (
-      <label key={field.key} className="block" htmlFor={testId}>
-        <span>{field.label}</span>
-        {field.required ? <span aria-hidden="true"> *</span> : null}
+      <FieldRow key={field.key} label={fieldLabel(field)} htmlFor={testId} divided>
         {field.type === 'select' ? (
-          <select
+          <SettingsSelect
             id={testId}
-            className="mt-1 block w-full rounded-sm bg-highlight p-1"
             value={value}
-            data-testid={testId}
+            testId={testId}
             required={field.required}
-            onChange={(event) => updateValue(field.key, event.target.value)}
+            onChange={(next) => updateValue(field.key, next)}
           >
             {(field.options ?? []).map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
             ))}
-          </select>
+          </SettingsSelect>
         ) : (
           <input
             id={testId}
             type="text"
-            className="mt-1 block w-full rounded-sm bg-highlight p-1"
+            className={monoClass}
             value={value}
+            spellCheck={false}
             data-testid={testId}
             required={field.required}
             onChange={(event) => updateValue(field.key, event.target.value)}
           />
         )}
-      </label>
+      </FieldRow>
     )
   }
 
@@ -407,152 +432,198 @@ export function TaskProgressSettings({
     }
     return (
       <section
-        className="mt-4 grid gap-1 text-ink-secondary"
+        className="flex flex-col gap-2.5"
         aria-label="Last read"
         data-testid={TEST_ID.settingsTaskProgressReadState}
       >
-        <h3 className="text-ink">Last read</h3>
-        {body}
+        <SectionLabel title="Last read" />
+        <GroupBox>
+          <div className="flex items-start gap-2.5 px-4 py-3 text-[13px] text-ink-secondary">
+            <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-edge" />
+            <div className="flex min-w-0 flex-col gap-1">{body}</div>
+          </div>
+        </GroupBox>
       </section>
     )
   }
 
   return (
-    <div data-testid={TEST_ID.settingsTaskProgressPanel} className="text-xs">
+    <div
+      data-testid={TEST_ID.settingsTaskProgressPanel}
+      className="flex max-w-[660px] flex-col gap-7"
+    >
+      <PageIntro
+        title="Task progress"
+        description="Phase and step progress shown on agent sessions."
+      />
       {loading ? (
         <p
-          className="mt-4 text-ink-secondary"
+          className="text-[13px] text-ink-secondary"
           role="status"
           data-testid={TEST_ID.settingsTaskProgressLoading}
         >
           Loading adapters...
         </p>
       ) : loadError !== null ? (
-        <p role="alert" className="mt-4 text-error">
+        <p role="alert" className="text-[13px] text-error">
           {loadError}
         </p>
       ) : projectId === null ? (
-        <p className="mt-4 text-ink-secondary">Select a project to bind a task progress adapter.</p>
+        <p className="text-[13px] text-ink-secondary">
+          Select a project to bind a task progress adapter.
+        </p>
       ) : (
         <>
-          <label className="mt-4 block" htmlFor="settings-task-progress-adapter">
-            Adapter
-            <select
-              id="settings-task-progress-adapter"
-              className="mt-1 block w-full rounded-sm bg-highlight p-1"
-              value={adapterId ?? ''}
-              data-testid={TEST_ID.settingsTaskProgressAdapterSelect}
-              onChange={(event) => selectAdapter(event.target.value, storedConfig)}
-            >
-              <option value="">None</option>
-              {adapters.map((adapter) => (
-                <option key={adapter.id} value={adapter.id}>
-                  {adapter.name} · {adapter.id}
-                </option>
-              ))}
-              {missing ? <option value={adapterId as string}>{adapterId} (missing)</option> : null}
-            </select>
-          </label>
-          {adapters.length === 0 ? (
-            <p className="mt-2 text-ink-muted" data-testid={TEST_ID.settingsTaskProgressEmpty}>
-              No task progress adapters are installed. Copy an adapter folder with its adapter.json
-              into the task-progress-adapters folder of the NeKode application data directory, then
-              reopen this tab. The protocol and install commands are described in
-              adapters/task-progress-example/README.md.
+          <SettingsGroup label="Progress adapter">
+            <SectionLabel title="Adapter" />
+            <GroupBox>
+              <FieldRow
+                label="Progress adapter"
+                htmlFor="settings-task-progress-adapter"
+                description="Reads progress from the agent harness."
+              >
+                <SettingsSelect
+                  id="settings-task-progress-adapter"
+                  value={adapterId ?? ''}
+                  testId={TEST_ID.settingsTaskProgressAdapterSelect}
+                  onChange={(next) => selectAdapter(next, storedConfig)}
+                >
+                  <option value="">None</option>
+                  {adapters.map((adapter) => (
+                    <option key={adapter.id} value={adapter.id}>
+                      {adapter.name} · {adapter.id}
+                    </option>
+                  ))}
+                  {missing ? (
+                    <option value={adapterId as string}>{adapterId} (missing)</option>
+                  ) : null}
+                </SettingsSelect>
+              </FieldRow>
+              {adapters.length === 0 ? (
+                <div
+                  className="flex flex-col items-center gap-1.5 border-t border-edge px-6 py-6 text-center"
+                  data-testid={TEST_ID.settingsTaskProgressEmpty}
+                >
+                  <Icon.package size={22} aria-hidden className="text-ink-muted" />
+                  <span className="text-[13px] text-ink-secondary">
+                    No progress adapters installed
+                  </span>
+                  <p className="max-w-[460px] text-xs leading-normal text-ink-muted">
+                    No task progress adapters are installed. Copy an adapter folder with its{' '}
+                    <code className="font-mono text-ink-secondary">adapter.json</code> into the{' '}
+                    <code className="font-mono text-ink-secondary">task-progress-adapters</code>{' '}
+                    folder of the NeKode application data directory, then reopen this tab. The
+                    protocol and install commands are described in{' '}
+                    <code className="font-mono text-ink-secondary">
+                      adapters/task-progress-example/README.md
+                    </code>
+                    .
+                  </p>
+                </div>
+              ) : null}
+              {warnings.length > 0 ? (
+                <div
+                  className="border-t border-edge px-4 py-3 text-xs text-warning"
+                  data-testid={TEST_ID.settingsTaskProgressWarnings}
+                >
+                  <p>Skipped adapter folders:</p>
+                  <ul className="list-disc pl-4">
+                    {warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {missing ? (
+                <p
+                  className="border-t border-edge px-4 py-3 text-xs text-error"
+                  data-testid={TEST_ID.settingsTaskProgressAdapterMissing}
+                >
+                  The selected adapter "{adapterId}" is not installed. Install it again, or choose
+                  another adapter or None.
+                </p>
+              ) : null}
+              {schema.map((field) => renderField(field))}
+              {copiedFrom !== null ? (
+                <p
+                  className="border-t border-edge px-4 py-2 text-xs text-ink-secondary"
+                  role="status"
+                  data-testid={TEST_ID.settingsTaskProgressCopyNotice}
+                >
+                  Copied from {copiedFrom}. Save to apply it to this project.
+                </p>
+              ) : null}
+              {formError !== null ? (
+                <p
+                  role="alert"
+                  className="border-t border-edge px-4 py-2 text-xs text-error"
+                  data-testid={TEST_ID.settingsTaskProgressFormError}
+                >
+                  {formError}
+                </p>
+              ) : null}
+              <GroupFooter
+                status={
+                  <button
+                    type="button"
+                    className={secondaryClass}
+                    data-testid={TEST_ID.settingsTaskProgressCopy}
+                    onClick={() => {
+                      void loadCopySources()
+                    }}
+                  >
+                    Copy from project
+                  </button>
+                }
+              >
+                <button
+                  type="button"
+                  disabled={adapterId === null || missing || testState.kind === 'running'}
+                  className={secondaryClass}
+                  data-testid={TEST_ID.settingsTaskProgressTest}
+                  onClick={() => {
+                    void runTest()
+                  }}
+                >
+                  Test
+                </button>
+                <button
+                  type="button"
+                  disabled={guard.busy}
+                  className={primaryClass}
+                  data-testid={TEST_ID.settingsTaskProgressSave}
+                  onClick={() => {
+                    void save()
+                  }}
+                >
+                  Save
+                </button>
+              </GroupFooter>
+            </GroupBox>
+          </SettingsGroup>
+          {saved ? (
+            <p className="text-xs text-success" data-testid={TEST_ID.settingsTaskProgressSaved}>
+              Saved
             </p>
           ) : null}
-          {warnings.length > 0 ? (
-            <div className="mt-2 text-warning" data-testid={TEST_ID.settingsTaskProgressWarnings}>
-              <p>Skipped adapter folders:</p>
-              <ul className="list-disc pl-4">
-                {warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {missing ? (
-            <p className="mt-2 text-error" data-testid={TEST_ID.settingsTaskProgressAdapterMissing}>
-              The selected adapter "{adapterId}" is not installed. Install it again, or choose
-              another adapter or None.
-            </p>
-          ) : null}
-          {schema.length > 0 ? (
-            <div className="mt-3 grid gap-2">{schema.map((field) => renderField(field))}</div>
-          ) : null}
-          {copiedFrom !== null ? (
-            <p
-              className="mt-2 text-ink-secondary"
-              role="status"
-              data-testid={TEST_ID.settingsTaskProgressCopyNotice}
-            >
-              Copied from {copiedFrom}. Save to apply it to this project.
-            </p>
-          ) : null}
-          {formError !== null ? (
-            <p
-              role="alert"
-              className="mt-2 text-error"
-              data-testid={TEST_ID.settingsTaskProgressFormError}
-            >
-              {formError}
-            </p>
-          ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={guard.busy}
-              className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
-              data-testid={TEST_ID.settingsTaskProgressSave}
-              onClick={() => {
-                void save()
-              }}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              disabled={adapterId === null || missing || testState.kind === 'running'}
-              className="h-control rounded-md px-4 text-ink-secondary hover:bg-highlight hover:text-ink disabled:opacity-50"
-              data-testid={TEST_ID.settingsTaskProgressTest}
-              onClick={() => {
-                void runTest()
-              }}
-            >
-              Test
-            </button>
-            <button
-              type="button"
-              className="h-control rounded-md px-4 text-ink-secondary hover:bg-highlight hover:text-ink"
-              data-testid={TEST_ID.settingsTaskProgressCopy}
-              onClick={() => {
-                void loadCopySources()
-              }}
-            >
-              Copy from project
-            </button>
-            {saved ? (
-              <span className="text-success" data-testid={TEST_ID.settingsTaskProgressSaved}>
-                Saved
-              </span>
-            ) : null}
-          </div>
           {copyError !== null ? (
-            <p role="alert" className="mt-2 text-error">
+            <p role="alert" className="text-xs text-error">
               {copyError}
             </p>
           ) : null}
           {copySources !== null ? (
-            <div className="mt-2" data-testid={TEST_ID.settingsTaskProgressCopyList}>
+            <div data-testid={TEST_ID.settingsTaskProgressCopyList}>
               {copySources.length === 0 ? (
-                <p className="text-ink-muted">No other project has a task progress adapter.</p>
+                <p className="text-xs text-ink-muted">
+                  No other project has a task progress adapter.
+                </p>
               ) : (
                 <ul className="grid gap-1">
                   {copySources.map((source) => (
                     <li key={source.projectId}>
                       <button
                         type="button"
-                        className="rounded-md px-2 py-1 text-left text-ink hover:bg-highlight"
+                        className="rounded-md px-2 py-1 text-left text-[13px] text-ink hover:bg-highlight"
                         data-testid={testIdFor.taskProgressCopySource(source.projectId)}
                         onClick={() => copyFrom(source)}
                       >

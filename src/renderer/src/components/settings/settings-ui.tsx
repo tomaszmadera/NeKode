@@ -95,7 +95,7 @@ export function FieldRow({
   divided: split = false,
   children,
 }: {
-  label: string
+  label: React.ReactNode
   htmlFor?: string
   description?: string
   divided?: boolean
@@ -210,6 +210,20 @@ export function SettingsSwitch({
   )
 }
 
+/** Muted "· required" after a field label. Replaces a red asterisk. */
+export function RequiredMark(): React.JSX.Element {
+  return <span className="font-normal text-ink-muted"> · required</span>
+}
+
+export function InfoStrip({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="flex items-start gap-2.5 border-t border-edge px-4 py-2.5 text-xs leading-normal text-ink-muted">
+      <Icon.info size={13} aria-hidden className="mt-0.5 shrink-0 text-ink-secondary" />
+      <span>{children}</span>
+    </div>
+  )
+}
+
 export function StackedRow({
   label,
   htmlFor,
@@ -218,7 +232,7 @@ export function StackedRow({
   dimmed = false,
   children,
 }: {
-  label: string
+  label: React.ReactNode
   htmlFor: string
   help?: React.ReactNode
   divided?: boolean
@@ -266,6 +280,7 @@ export function SettingsSelect({
   disabled = false,
   testId,
   invalid = false,
+  required = false,
   selectRef,
   onChange,
   children,
@@ -275,6 +290,7 @@ export function SettingsSelect({
   disabled?: boolean
   testId?: string
   invalid?: boolean
+  required?: boolean
   selectRef?: React.Ref<HTMLSelectElement>
   onChange: (value: string) => void
   children: React.ReactNode
@@ -286,6 +302,7 @@ export function SettingsSelect({
         id={id}
         value={value}
         disabled={disabled}
+        required={required}
         data-testid={testId}
         aria-invalid={invalid || undefined}
         onChange={(event) => onChange(event.target.value)}
@@ -304,6 +321,102 @@ export function SettingsSelect({
 
 export function NavIcon({ icon: Glyph }: { icon: LucideIcon }): React.JSX.Element {
   return <Glyph size={16} aria-hidden className="shrink-0" />
+}
+
+/**
+ * Saved-secret control. `masked` set shows the mask with Change and Clear.
+ * `masked` null shows the password field, and Cancel when `onCancel` is set.
+ */
+export function MaskedKeyControl({
+  masked,
+  value,
+  inputId,
+  placeholder,
+  invalid = false,
+  onValueChange,
+  onEdit,
+  onClear,
+  onCancel,
+  previewTestId,
+  inputTestId,
+  editTestId,
+  clearTestId,
+  cancelTestId,
+  tone = 'mask',
+}: {
+  masked: string | null
+  value: string
+  inputId?: string
+  placeholder?: string
+  invalid?: boolean
+  onValueChange: (value: string) => void
+  onEdit: () => void
+  onClear?: () => void
+  onCancel?: () => void
+  previewTestId?: string
+  inputTestId?: string
+  editTestId?: string
+  clearTestId?: string
+  cancelTestId?: string
+  tone?: 'mask' | 'stored'
+}): React.JSX.Element {
+  if (masked !== null) {
+    return (
+      <span className="flex items-center gap-1.5">
+        <span
+          data-testid={previewTestId}
+          className={cn(
+            'mr-1.5 inline-flex items-center gap-1.5 text-[13px]',
+            tone === 'stored'
+              ? 'font-medium text-success'
+              : 'font-mono tracking-wide text-ink-secondary',
+            invalid && 'rounded-[8px] border border-error px-2 py-1',
+          )}
+        >
+          {tone === 'stored' ? <Icon.checkSmall size={13} aria-hidden /> : null}
+          {masked}
+        </span>
+        <button type="button" data-testid={editTestId} onClick={onEdit} className={secondaryClass}>
+          Change
+        </button>
+        {onClear ? (
+          <button
+            type="button"
+            data-testid={clearTestId}
+            onClick={onClear}
+            className={cn(secondaryClass, 'text-error')}
+          >
+            Clear
+          </button>
+        ) : null}
+      </span>
+    )
+  }
+  return (
+    <span className="flex w-[280px] items-center gap-1.5">
+      <input
+        id={inputId}
+        type="password"
+        data-testid={inputTestId}
+        value={value}
+        placeholder={placeholder}
+        aria-invalid={invalid || undefined}
+        autoComplete="off"
+        onChange={(event) => onValueChange(event.target.value)}
+        className={cn(monoClass, invalid && 'border-error')}
+      />
+      {onCancel ? (
+        <button
+          type="button"
+          data-testid={cancelTestId}
+          onClick={onCancel}
+          className={secondaryClass}
+        >
+          Cancel
+        </button>
+      ) : null}
+    </span>
+  )
 }
 
 /** Renders a chord such as `Ctrl+V / Ctrl+Shift+V` as key chips joined by "or". */

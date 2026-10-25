@@ -13,7 +13,7 @@ import {
   FieldRow,
   GroupBox,
   GroupFooter,
-  monoClass,
+  MaskedKeyControl,
   primaryClass,
   SectionLabel,
   SettingsGroup,
@@ -525,60 +525,24 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
                         <span className="text-xs text-ink-muted">{field.description}</span>
                       ) : null}
                     </div>
-                    {showInput ? (
-                      <span className="flex w-[280px] items-center gap-1.5">
-                        <input
-                          id={fieldId}
-                          type="password"
-                          data-testid={`secret-input-${field.key}`}
-                          value={secretInputs[field.key] ?? ''}
-                          placeholder={field.placeholder || 'Enter secret key'}
-                          aria-invalid={connectionFailed || undefined}
-                          onChange={(e) =>
-                            setSecretInputs((prev) => ({ ...prev, [field.key]: e.target.value }))
-                          }
-                          className={cn(monoClass, connectionFailed && 'border-error')}
-                        />
-                        {isEditing ? (
-                          <button
-                            type="button"
-                            data-testid={`secret-cancel-${field.key}`}
-                            onClick={() => cancelEditingSecret(field.key)}
-                            className={secondaryClass}
-                          >
-                            Cancel
-                          </button>
-                        ) : null}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1.5">
-                        <span
-                          data-testid={`secret-preview-${field.key}`}
-                          className={cn(
-                            'mr-1.5 font-mono text-[13px] tracking-wide text-ink-secondary',
-                            connectionFailed && 'rounded-[8px] border border-error px-2 py-1',
-                          )}
-                        >
-                          ••••••••{secretMeta?.lastFour}
-                        </span>
-                        <button
-                          type="button"
-                          data-testid={`secret-update-${field.key}`}
-                          onClick={() => startEditingSecret(field.key)}
-                          className={secondaryClass}
-                        >
-                          Change
-                        </button>
-                        <button
-                          type="button"
-                          data-testid={`secret-clear-${field.key}`}
-                          onClick={() => handleClearSecret(field.key)}
-                          className={cn(secondaryClass, 'text-error')}
-                        >
-                          Clear
-                        </button>
-                      </span>
-                    )}
+                    <MaskedKeyControl
+                      masked={showInput ? null : `••••••••${secretMeta?.lastFour ?? ''}`}
+                      value={secretInputs[field.key] ?? ''}
+                      inputId={fieldId}
+                      placeholder={field.placeholder || 'Enter secret key'}
+                      invalid={connectionFailed}
+                      onValueChange={(next) =>
+                        setSecretInputs((prev) => ({ ...prev, [field.key]: next }))
+                      }
+                      onEdit={() => startEditingSecret(field.key)}
+                      onClear={() => handleClearSecret(field.key)}
+                      onCancel={isEditing ? () => cancelEditingSecret(field.key) : undefined}
+                      previewTestId={`secret-preview-${field.key}`}
+                      inputTestId={`secret-input-${field.key}`}
+                      editTestId={`secret-update-${field.key}`}
+                      clearTestId={`secret-clear-${field.key}`}
+                      cancelTestId={`secret-cancel-${field.key}`}
+                    />
                   </div>
                 )
               }
@@ -729,57 +693,28 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
                 </StackedRow>
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-6 border-t border-edge px-4 py-3">
                   <span className="text-[13px] font-medium text-ink">OpenRouter API Key</span>
-                  {postProcessing?.hasApiKey && !editingPpKey ? (
-                    <span className="flex items-center gap-1.5">
-                      <span
-                        data-testid="pp-secret-preview"
-                        className="font-mono text-[13px] text-ink"
-                      >
-                        ••••••••••••
-                      </span>
-                      <button
-                        type="button"
-                        data-testid="pp-secret-update"
-                        onClick={() => setEditingPpKey(true)}
-                        className={secondaryClass}
-                      >
-                        Change
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="pp-secret-clear"
-                        onClick={() => void handleClearPpKey()}
-                        className={cn(secondaryClass, 'text-error')}
-                      >
-                        Clear
-                      </button>
-                    </span>
-                  ) : (
-                    <span className="flex w-[280px] items-center gap-1.5">
-                      <input
-                        id="dictation-pp-secret-input"
-                        type="password"
-                        data-testid="pp-secret-input"
-                        value={ppKeyInput}
-                        onChange={(e) => setPpKeyInput(e.target.value)}
-                        placeholder="sk-or-v1-..."
-                        className={monoClass}
-                      />
-                      {editingPpKey ? (
-                        <button
-                          type="button"
-                          data-testid="pp-secret-cancel"
-                          onClick={() => {
+                  <MaskedKeyControl
+                    masked={postProcessing?.hasApiKey && !editingPpKey ? '••••••••••••' : null}
+                    value={ppKeyInput}
+                    inputId="dictation-pp-secret-input"
+                    placeholder="sk-or-v1-..."
+                    onValueChange={setPpKeyInput}
+                    onEdit={() => setEditingPpKey(true)}
+                    onClear={() => void handleClearPpKey()}
+                    onCancel={
+                      editingPpKey
+                        ? () => {
                             setEditingPpKey(false)
                             setPpKeyInput('')
-                          }}
-                          className={secondaryClass}
-                        >
-                          Cancel
-                        </button>
-                      ) : null}
-                    </span>
-                  )}
+                          }
+                        : undefined
+                    }
+                    previewTestId="pp-secret-preview"
+                    inputTestId="pp-secret-input"
+                    editTestId="pp-secret-update"
+                    clearTestId="pp-secret-clear"
+                    cancelTestId="pp-secret-cancel"
+                  />
                 </div>
               </div>
             ) : null}

@@ -5,9 +5,22 @@ import { projectColorKey, projectShellKey } from '../../../../shared/ipc-contrac
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { cn } from '../../lib/cn'
-import { Icon } from '../../lib/icons'
 import { PROJECT_COLOR_PALETTE } from '../../lib/project-avatar'
 import { TEST_ID } from '../../lib/test-ids'
+import {
+  FieldRow,
+  GroupBox,
+  GroupFooter,
+  InfoStrip,
+  monoClass,
+  PageIntro,
+  primaryClass,
+  SectionLabel,
+  SettingsGroup,
+  SettingsSelect,
+  StackedRow,
+  secondaryClass,
+} from './settings-ui'
 
 // Shell tab of the Project Settings modal (spec project-shell-selection).
 // Entering the tab runs exactly one detection (Behaviour 1): a visible
@@ -148,11 +161,16 @@ export function ShellTab({
     })
   }
 
+  const colorNames = ['Violet', 'Blue', 'Salmon', 'Green', 'Yellow', 'Pink', 'Teal']
+  const shellNote =
+    'Applies to chats and bottom terminals created after the change. A shell that is later uninstalled falls back to the default for Local projects. WSL uses its distribution default for old host choices; an unavailable Linux shell shows an error.'
+
   return (
-    <div data-testid={TEST_ID.settingsShellTab}>
+    <div className="flex max-w-[660px] flex-col gap-7">
+      <PageIntro title="Shell" description="Terminal setup and colour for this project." />
       {detecting ? (
         <p
-          className="mt-4 flex items-center gap-2 text-xs text-ink-secondary"
+          className="flex items-center gap-2 text-xs text-ink-secondary"
           data-testid={TEST_ID.settingsShellDetecting}
           role="status"
         >
@@ -165,149 +183,192 @@ export function ShellTab({
       ) : (
         <>
           {detectError ? (
-            <p role="alert" className="mt-4 text-xs text-error">
+            <p role="alert" className="text-xs text-error">
               {detectError}
             </p>
           ) : null}
-          {projectId !== null ? (
-            <div className="mt-4">
-              <label htmlFor="settings-shell-select" className="block text-sm text-ink-secondary">
-                Shell for new terminals in this project
-              </label>
-              <div className="mt-2 flex items-center gap-2">
-                <select
-                  ref={selectRef}
-                  id="settings-shell-select"
-                  value={selected}
-                  data-testid={TEST_ID.settingsShellSelect}
-                  onChange={(event) => {
-                    setSelected(event.target.value)
-                    setSaveState('idle')
-                  }}
-                  className="h-control min-w-0 flex-1 rounded-md border border-edge bg-app px-3 text-sm text-ink focus-visible:outline focus-visible:outline-info"
+          <SettingsGroup label="Shell">
+            <SectionLabel title="Shell" />
+            <GroupBox>
+              {projectId !== null ? (
+                <FieldRow
+                  label="Shell for new terminals"
+                  htmlFor="settings-shell-select"
+                  description="Applies to chats and bottom terminals created after the change."
                 >
-                  {shells.map((shell) => (
-                    <option key={shell.id} value={shell.id}>
-                      {shell.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  aria-label="Save shell choice"
-                  data-testid={TEST_ID.settingsShellSave}
-                  disabled={guard.busy || selected === savedChoice}
-                  className="h-control shrink-0 rounded-md bg-button px-4 text-sm text-ink hover:bg-button-hover disabled:opacity-50"
-                  onClick={() => {
-                    void save()
-                  }}
-                >
-                  Save
-                </button>
-                {saveState === 'saved' ? (
-                  <span className="text-xs text-success" data-testid={TEST_ID.settingsShellSaved}>
-                    Saved
-                  </span>
-                ) : null}
-              </div>
-              {saveError ? (
-                <p role="alert" className="mt-2 text-xs text-error">
-                  {saveError}
+                  <SettingsSelect
+                    id="settings-shell-select"
+                    value={selected}
+                    selectRef={selectRef}
+                    testId={TEST_ID.settingsShellSelect}
+                    onChange={(value) => {
+                      setSelected(value)
+                      setSaveState('idle')
+                    }}
+                  >
+                    {shells.map((shell) => (
+                      <option key={shell.id} value={shell.id}>
+                        {shell.label}
+                      </option>
+                    ))}
+                  </SettingsSelect>
+                </FieldRow>
+              ) : null}
+              <InfoStrip>{shellNote}</InfoStrip>
+              <StackedRow
+                label="Add a shell by absolute path"
+                htmlFor="settings-shell-custom"
+                divided
+              >
+                <span className="flex gap-2">
+                  <input
+                    id="settings-shell-custom"
+                    value={customPath}
+                    placeholder={
+                      shells[0]?.label.includes('WSL:')
+                        ? '/bin/bash'
+                        : app.platform === undefined || app.platform === 'win32'
+                          ? 'C:\\tools\\nu.exe'
+                          : '/usr/bin/fish'
+                    }
+                    spellCheck={false}
+                    data-testid={TEST_ID.settingsShellCustomInput}
+                    onChange={(event) => {
+                      setCustomPath(event.target.value)
+                      setCustomError(null)
+                    }}
+                    className={cn(monoClass, 'min-w-0 flex-1')}
+                  />
+                  <button
+                    type="button"
+                    data-testid={TEST_ID.settingsShellCustomAdd}
+                    disabled={guard.busy || customPath.trim().length === 0}
+                    className={secondaryClass}
+                    onClick={() => {
+                      void addCustom()
+                    }}
+                  >
+                    Add
+                  </button>
+                </span>
+                <span>The shell is added to the list above.</span>
+              </StackedRow>
+              {customError ? (
+                <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
+                  {customError}
                 </p>
               ) : null}
-              <p className="mt-1 text-xs text-ink-muted">
-                Applies to chats and bottom terminals created after the change. A shell that is
-                later uninstalled falls back to the default for Local projects. WSL uses its
-                distribution default for old host choices; an unavailable Linux shell shows an
-                error.
-              </p>
-            </div>
-          ) : null}
-          {projectId !== null ? (
-            <div
-              className="mt-4 border-t border-edge pt-3"
-              data-testid={TEST_ID.settingsProjectColorSection}
-            >
-              <span className="block text-sm text-ink-secondary">Project color</span>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  data-testid="project-color-auto"
-                  className={cn(
-                    'flex h-7 items-center rounded-md border px-2.5 text-xs transition-colors',
-                    !savedColor
-                      ? 'border-accent bg-highlight text-ink font-medium'
-                      : 'border-edge bg-panel text-ink-secondary hover:bg-highlight hover:text-ink',
-                  )}
-                  onClick={() => void handleColorSelect('')}
+              {projectId !== null ? (
+                <GroupFooter
+                  status={
+                    saveState === 'saved' ? (
+                      <span className="text-success" data-testid={TEST_ID.settingsShellSaved}>
+                        Saved
+                      </span>
+                    ) : saveError ? (
+                      <span role="alert" className="text-error">
+                        {saveError}
+                      </span>
+                    ) : null
+                  }
                 >
-                  Auto
-                </button>
-                {PROJECT_COLOR_PALETTE.map((color) => {
-                  const isSelected = savedColor === color
-                  return (
-                    <button
-                      key={color}
-                      type="button"
-                      data-testid={`project-color-${color}`}
-                      aria-label={`Project color ${color}`}
-                      title={color}
-                      className={cn(
-                        'flex h-7 w-7 items-center justify-center rounded-md border transition-transform hover:scale-105',
-                        isSelected ? 'border-accent ring-2 ring-accent/40' : 'border-edge',
-                      )}
-                      style={{ backgroundColor: color }}
-                      onClick={() => void handleColorSelect(color)}
-                    >
-                      {isSelected ? (
-                        <Icon.check size={14} className="text-app" aria-hidden />
-                      ) : null}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+                  <button
+                    type="button"
+                    aria-label="Save shell choice"
+                    data-testid={TEST_ID.settingsShellSave}
+                    disabled={guard.busy || selected === savedChoice}
+                    className={primaryClass}
+                    onClick={() => {
+                      void save()
+                    }}
+                  >
+                    Save
+                  </button>
+                </GroupFooter>
+              ) : null}
+            </GroupBox>
+          </SettingsGroup>
+          {projectId !== null ? (
+            <SettingsGroup label="Appearance">
+              <SectionLabel title="Appearance" />
+              <GroupBox>
+                <div
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-6 px-4 py-3"
+                  data-testid={TEST_ID.settingsProjectColorSection}
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span id="settings-project-color" className="text-[13px] font-medium text-ink">
+                      Project colour
+                    </span>
+                    <span className="text-xs text-ink-muted">
+                      Icon and highlight colour. Auto picks one from the project order.
+                    </span>
+                  </div>
+                  <span
+                    role="radiogroup"
+                    aria-labelledby="settings-project-color"
+                    className="flex items-center gap-2"
+                  >
+                    <label className="inline-flex cursor-pointer">
+                      <input
+                        type="radio"
+                        name="settings-project-color"
+                        className="peer sr-only"
+                        checked={!savedColor}
+                        data-testid="project-color-auto"
+                        onChange={() => void handleColorSelect('')}
+                      />
+                      <span
+                        className={cn(
+                          'flex h-7 items-center rounded-[7px] border border-edge px-2.5 text-xs font-semibold peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent',
+                          !savedColor
+                            ? 'bg-selected text-project-title'
+                            : 'bg-transparent text-ink-secondary',
+                        )}
+                        style={
+                          !savedColor
+                            ? {
+                                boxShadow:
+                                  '0 0 0 2px var(--color-dialog), 0 0 0 4px var(--color-ink)',
+                              }
+                            : undefined
+                        }
+                      >
+                        Auto
+                      </span>
+                    </label>
+                    {PROJECT_COLOR_PALETTE.map((color, index) => {
+                      const isSelected = savedColor === color
+                      const name = colorNames[index] ?? color
+                      return (
+                        <label key={color} title={name} className="inline-flex cursor-pointer">
+                          <input
+                            type="radio"
+                            name="settings-project-color"
+                            className="peer sr-only"
+                            checked={isSelected}
+                            data-testid={`project-color-${color}`}
+                            aria-label={name}
+                            onChange={() => void handleColorSelect(color)}
+                          />
+                          <span
+                            aria-hidden
+                            className="h-7 w-7 rounded-[7px] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
+                            style={{
+                              backgroundColor: color,
+                              boxShadow: isSelected
+                                ? '0 0 0 2px var(--color-dialog), 0 0 0 4px var(--color-ink)'
+                                : undefined,
+                            }}
+                          />
+                        </label>
+                      )
+                    })}
+                  </span>
+                </div>
+              </GroupBox>
+            </SettingsGroup>
           ) : null}
-          <div className="mt-4 border-t border-edge pt-3">
-            <label htmlFor="settings-shell-custom" className="block text-sm text-ink-secondary">
-              Add a shell by absolute path
-            </label>
-            <div className="mt-2 flex gap-2">
-              <input
-                id="settings-shell-custom"
-                value={customPath}
-                placeholder={
-                  shells[0]?.label.includes('WSL:')
-                    ? '/bin/bash'
-                    : app.platform === undefined || app.platform === 'win32'
-                      ? 'C:\\tools\\nu.exe'
-                      : '/usr/bin/fish'
-                }
-                data-testid={TEST_ID.settingsShellCustomInput}
-                onChange={(event) => {
-                  setCustomPath(event.target.value)
-                  setCustomError(null)
-                }}
-                className="min-w-0 flex-1 rounded-sm bg-highlight p-1 text-sm text-ink"
-              />
-              <button
-                type="button"
-                data-testid={TEST_ID.settingsShellCustomAdd}
-                disabled={guard.busy || customPath.trim().length === 0}
-                className="h-control shrink-0 rounded-md bg-button px-3 text-xs text-ink hover:bg-button-hover disabled:opacity-50"
-                onClick={() => {
-                  void addCustom()
-                }}
-              >
-                Add
-              </button>
-            </div>
-            {customError ? (
-              <p role="alert" className="mt-2 text-xs text-error">
-                {customError}
-              </p>
-            ) : null}
-          </div>
         </>
       )}
     </div>

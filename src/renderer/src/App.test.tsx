@@ -1407,8 +1407,8 @@ describe('action row and settings', () => {
     // Actions & Configuration.
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
 
-    const autoSend = screen.getByTestId(TEST_ID.settingsAutoSend) as HTMLInputElement
-    expect(autoSend.checked).toBe(false)
+    const autoSend = screen.getByTestId(TEST_ID.settingsAutoSend)
+    expect(autoSend.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(autoSend)
     await waitFor(() =>
       expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.autoSendHandoffResume, '1'),
@@ -1976,7 +1976,7 @@ describe('action row and settings', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     const select = screen.getByTestId(TEST_ID.settingsActionIconSelect)
     // Null icon ("none") is the default; the emoji input stays hidden.
     expect((select as HTMLSelectElement).value).toBe('none')
@@ -1989,7 +1989,7 @@ describe('action row and settings', () => {
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm build' } })
     vi.mocked(app.actions.create).mockResolvedValue({ ...buildAction, icon: 'build' })
     vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, icon: 'build' }])
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() =>
       expect(app.actions.create).toHaveBeenCalledWith(expect.objectContaining({ icon: 'build' })),
     )
@@ -2019,14 +2019,14 @@ describe('action row and settings', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     expect(screen.getByRole('alert').textContent).toContain('Title and command')
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Build' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm build' } })
     vi.mocked(app.actions.create).mockResolvedValue(buildAction)
     vi.mocked(app.actions.list).mockResolvedValue([buildAction])
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() =>
       expect(app.actions.create).toHaveBeenCalledWith(
         expect.objectContaining({ title: 'Build', command: 'pnpm build' }),
@@ -2041,8 +2041,8 @@ describe('action row and settings', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
-    const runIn = screen.getByLabelText('Run In') as HTMLSelectElement
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
+    const runIn = screen.getByLabelText('Run in') as HTMLSelectElement
     expect([...runIn.options].map((option) => option.value)).toEqual([
       'background',
       'new-terminal',
@@ -2060,7 +2060,7 @@ describe('action row and settings', () => {
     vi.mocked(app.actions.list).mockResolvedValue([
       { ...buildAction, title: 'Tests', command: 'pnpm test', runMode: 'bottom-terminal' },
     ])
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() =>
       expect(app.actions.create).toHaveBeenCalledWith(
         expect.objectContaining({ runMode: 'bottom-terminal' }),
@@ -2081,7 +2081,7 @@ describe('action row and settings', () => {
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Test' } })
     vi.mocked(app.actions.update).mockResolvedValue({ ...buildAction, title: 'Test' })
     vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, title: 'Test' }])
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Test' })).toBeTruthy())
     vi.mocked(app.actions.delete).mockResolvedValue(undefined)
     vi.mocked(app.actions.list).mockResolvedValue([])
@@ -2103,10 +2103,10 @@ describe('action row and settings', () => {
     expect(goneRow).toBeTruthy()
     fireEvent.click(within(goneRow as HTMLElement).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(within(screen.getByRole('dialog')).queryByText('Gone')).toBeNull())
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Next' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm next' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() =>
       expect(app.actions.create).toHaveBeenCalledWith(expect.objectContaining({ sortOrder: 2 })),
     )

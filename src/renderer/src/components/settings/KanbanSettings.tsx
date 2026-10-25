@@ -16,6 +16,21 @@ import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ConfirmDialog } from '../layout/ConfirmDialog'
+import {
+  FieldRow,
+  GroupBox,
+  GroupFooter,
+  InfoStrip,
+  MaskedKeyControl,
+  monoClass,
+  PageIntro,
+  primaryClass,
+  RequiredMark,
+  SectionLabel,
+  SettingsGroup,
+  SettingsSelect,
+  secondaryClass,
+} from './settings-ui'
 
 // Kanban tab of the Project Settings modal (spec kanban-adapter-interface
 // Behaviour 7–8, 12–13). The adapter select lists the fresh discovery scan;
@@ -155,6 +170,9 @@ export function KanbanSettings({
   const [teachWriting, setTeachWriting] = useState(false)
   const [teachError, setTeachError] = useState<string | null>(null)
   const [teachDone, setTeachDone] = useState(false)
+  // A stored secret stays masked until Change. There is no clear: an empty
+  // secret is omitted on save and main keeps the stored value.
+  const [editingSecrets, setEditingSecrets] = useState<ReadonlySet<string>>(new Set())
   // The opener is disabled while the status loads, so the dialog cannot rely
   // on the element focused at its mount; focus returns here on close.
   const teachButtonRef = useRef<HTMLButtonElement>(null)
@@ -201,6 +219,7 @@ export function KanbanSettings({
       setTestState('idle')
       setTestMessage(null)
       setTeachDone(false)
+      setEditingSecrets(new Set())
     },
     [],
   )
@@ -252,6 +271,7 @@ export function KanbanSettings({
     setFormError(null)
     setTestState('idle')
     setTestMessage(null)
+    setEditingSecrets(new Set())
     const nextSchema =
       next === null ? [] : (adapters.find((adapter) => adapter.id === next)?.configSchema ?? [])
     setValues(initialValues(storedValues, nextSchema))
@@ -418,70 +438,134 @@ export function KanbanSettings({
     }
   }
 
-  function renderField(field: KanbanConfigField): React.JSX.Element {
+  function beginSecretEdit(key: string): void {
+    setEditingSecrets((current) => {
+      const next = new Set(current)
+      next.add(key)
+      return next
+    })
+  }
+
+  function cancelSecretEdit(key: string): void {
+    setEditingSecrets((current) => {
+      const next = new Set(current)
+      next.delete(key)
+      return next
+    })
+    updateValue(key, '')
+  }
+
+  function fieldLabel(field: KanbanConfigField): React.JSX.Element {
+    return (
+      <>
+        <span>{field.label}</span>
+        {field.required ? <RequiredMark /> : null}
+      </>
+    )
+  }
+
+  function renderField(field: KanbanConfigField, divided: boolean): React.JSX.Element {
     const value = values[field.key] ?? ''
     const testId = testIdFor.kanbanField(field.key)
     if (field.type === 'boolean') {
       return (
-        <label key={field.key} className="flex items-center gap-2">
+        <label
+          key={field.key}
+          className="flex items-center gap-2 border-t border-edge px-4 py-3 text-[13px] font-medium text-ink"
+        >
           <input
             type="checkbox"
+            className="h-4 w-4"
             checked={value === 'true'}
             data-testid={testId}
             onChange={(event) => updateValue(field.key, event.target.checked ? 'true' : 'false')}
           />
-          {field.label}
+          <span>{field.label}</span>
+          {field.required ? <RequiredMark /> : null}
         </label>
       )
     }
-    return (
-      <label key={field.key} className="block" htmlFor={testId}>
-        {field.label}
-        {field.required ? <span aria-hidden="true"> *</span> : null}
-        {field.type === 'select' ? (
-          <select
-            id={testId}
-            className="mt-1 block w-full rounded-sm bg-highlight p-1"
+    if (field.type === 'secret') {
+      const masked = secretKeys.has(field.key) && !editingSecrets.has(field.key)
+      return (
+        <FieldRow
+          key={field.key}
+          label={fieldLabel(field)}
+          htmlFor={masked ? undefined : testId}
+          description="Stored securely on this computer."
+          divided={divided}
+        >
+          <MaskedKeyControl
+            masked={masked ? 'Stored' : null}
+            tone="stored"
             value={value}
-            data-testid={testId}
-            onChange={(event) => updateValue(field.key, event.target.value)}
+            inputId={testId}
+            onValueChange={(next) => updateValue(field.key, next)}
+            onEdit={() => beginSecretEdit(field.key)}
+            onCancel={editingSecrets.has(field.key) ? () => cancelSecretEdit(field.key) : undefined}
+            previewTestId={testIdFor.kanbanSecretStored(field.key)}
+            inputTestId={testId}
+          />
+        </FieldRow>
+      )
+    }
+    return (
+      <FieldRow key={field.key} label={fieldLabel(field)} htmlFor={testId} divided={divided}>
+        {field.type === 'select' ? (
+          <SettingsSelect
+            id={testId}
+            value={value}
+            testId={testId}
+            onChange={(next) => updateValue(field.key, next)}
           >
             {(field.options ?? []).map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
             ))}
-          </select>
+          </SettingsSelect>
         ) : (
-          <div className="mt-1 flex items-center gap-2">
-            <input
-              id={testId}
-              type={field.type === 'secret' ? 'password' : 'text'}
-              className="min-w-0 flex-1 rounded-sm bg-highlight p-1"
-              value={value}
-              placeholder={field.type === 'secret' && secretKeys.has(field.key) ? '••••••' : ''}
-              data-testid={testId}
-              onChange={(event) => updateValue(field.key, event.target.value)}
-            />
-            {field.type === 'secret' && secretKeys.has(field.key) ? (
-              <span
-                className="shrink-0 text-success"
-                data-testid={testIdFor.kanbanSecretStored(field.key)}
-              >
-                stored
-              </span>
-            ) : null}
-          </div>
+          <input
+            id={testId}
+            type="text"
+            className={monoClass}
+            value={value}
+            spellCheck={false}
+            data-testid={testId}
+            onChange={(event) => updateValue(field.key, event.target.value)}
+          />
         )}
-      </label>
+      </FieldRow>
     )
   }
 
+  const testStatus =
+    testState === 'running' ? (
+      <span className="text-ink-secondary" data-testid={TEST_ID.settingsKanbanTestResult}>
+        Testing…
+      </span>
+    ) : testState === 'success' ? (
+      <span className="text-success" data-testid={TEST_ID.settingsKanbanTestResult}>
+        {isLocalFile ? 'The task file is readable.' : 'Connection succeeded.'}
+      </span>
+    ) : testState === 'error' && testMessage !== null ? (
+      <span role="alert" className="text-error" data-testid={TEST_ID.settingsKanbanTestResult}>
+        {testMessage}
+      </span>
+    ) : savedState === 'saved' ? (
+      <span className="text-success" data-testid={TEST_ID.settingsKanbanSaved}>
+        Saved
+      </span>
+    ) : (
+      <span role="status">Not tested yet</span>
+    )
+
   return (
-    <div data-testid={TEST_ID.settingsKanbanPanel} className="text-xs">
+    <div data-testid={TEST_ID.settingsKanbanPanel} className="flex max-w-[660px] flex-col gap-7">
+      <PageIntro title="Tasks" description="The tracker this project's board reads tasks from." />
       {loading ? (
         <p
-          className="mt-4 text-ink-secondary"
+          className="text-[13px] text-ink-secondary"
           data-testid={TEST_ID.settingsKanbanLoading}
           role="status"
         >
@@ -490,168 +574,169 @@ export function KanbanSettings({
       ) : (
         <>
           {loadError ? (
-            <p role="alert" className="mt-4 text-error">
+            <p role="alert" className="text-[13px] text-error">
               {loadError}
             </p>
           ) : null}
           {projectId === null ? (
-            <p className="mt-4 text-ink-secondary">Select a project to connect a task source.</p>
+            <p className="text-[13px] text-ink-secondary">
+              Select a project to connect a task source.
+            </p>
           ) : (
             <>
-              <label className="mt-4 block" htmlFor="settings-kanban-adapter">
-                Adapter
-                <select
-                  id="settings-kanban-adapter"
-                  className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                  value={adapterId ?? ''}
-                  data-testid={TEST_ID.settingsKanbanAdapterSelect}
-                  onChange={(event) => selectAdapter(event.target.value)}
-                >
-                  <option value="">(none)</option>
-                  {adapters.map((adapter) => (
-                    <option key={adapter.id} value={adapter.id}>
-                      {adapter.id === LOCAL_FILE_ADAPTER_ID
-                        ? adapter.name
-                        : `${adapter.name} · ${adapter.id}`}
-                    </option>
-                  ))}
-                  {missing ? (
-                    <option value={adapterId as string}>{adapterId} (missing)</option>
-                  ) : null}
-                </select>
-              </label>
-              {persistedAdapterId === null ? (
-                <button
-                  type="button"
-                  disabled={guard.busy}
-                  className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
-                  data-testid={TEST_ID.settingsKanbanUseLocal}
-                  onClick={() => {
-                    void startLocalTaskList()
-                  }}
-                >
-                  Use a local task list
-                </button>
-              ) : null}
-              {isLocalFile ? (
-                <p className="mt-2 text-ink-secondary">
-                  Task file:{' '}
-                  <code className="text-ink" data-testid={TEST_ID.settingsKanbanLocalPath}>
-                    {LOCAL_TASK_FILE_PATH}
-                  </code>
-                </p>
-              ) : null}
-              {discoveredCount === 0 ? (
-                <p className="mt-2 text-ink-muted" data-testid={TEST_ID.settingsKanbanEmpty}>
-                  No task adapters are installed. Copy an adapter folder with its adapter.json into
-                  the kanban-adapters folder of the NeKode application data directory, then reopen
-                  this tab.
-                </p>
-              ) : null}
-              {missing ? (
-                <p className="mt-2 text-error" data-testid={TEST_ID.settingsKanbanAdapterMissing}>
-                  The selected adapter “{adapterId}” is not installed in the adapters directory.
-                  Requests through it will fail until it is restored; you can clear or re-bind here.
-                </p>
-              ) : null}
-              {schema.length > 0 ? (
-                <div className="mt-3 grid gap-2">{schema.map((field) => renderField(field))}</div>
-              ) : null}
-              {sessionOnlySecrets && schema.some((field) => field.type === 'secret') ? (
-                <p
-                  role="status"
-                  className="mt-2 text-warning"
-                  data-testid={TEST_ID.settingsKanbanSecretSessionOnly}
-                >
-                  No system keyring is available, so secrets are kept only until NeKode closes and
-                  are never saved in plain text. Install and unlock a keyring (for example
-                  gnome-keyring with libsecret) to keep them across restarts.
-                </p>
-              ) : null}
-              {formError ? (
-                <p role="alert" className="mt-2 text-error">
-                  {formError}
-                </p>
-              ) : null}
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={guard.busy}
-                  className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
-                  data-testid={TEST_ID.settingsKanbanSave}
-                  onClick={() => {
-                    void save()
-                  }}
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  className="h-control rounded-md px-4 text-ink-secondary hover:bg-highlight hover:text-ink disabled:opacity-50"
-                  data-testid={TEST_ID.settingsKanbanTest}
-                  disabled={!bindingSaved || testState === 'running' || guard.busy}
-                  onClick={() => {
-                    void runTest()
-                  }}
-                >
-                  {isLocalFile ? 'Test' : 'Test connection'}
-                </button>
-                {savedState === 'saved' ? (
-                  <span className="text-success" data-testid={TEST_ID.settingsKanbanSaved}>
-                    Saved
-                  </span>
-                ) : null}
-              </div>
-              {adapterId !== null && !bindingSaved ? (
-                <p className="mt-2 text-ink-secondary" data-testid={TEST_ID.settingsKanbanTestHint}>
-                  Save the adapter binding before testing the connection.
-                </p>
-              ) : null}
-              {testState === 'running' ? (
-                <span
-                  className="mt-2 inline-block text-ink-secondary"
-                  data-testid={TEST_ID.settingsKanbanTestResult}
-                >
-                  Testing…
-                </span>
-              ) : null}
-              {testState === 'success' ? (
-                <span
-                  className="mt-2 inline-block text-success"
-                  data-testid={TEST_ID.settingsKanbanTestResult}
-                >
-                  {isLocalFile ? 'The task file is readable.' : 'Connection succeeded.'}
-                </span>
-              ) : null}
-              {testState === 'error' && testMessage !== null ? (
-                <p
-                  role="alert"
-                  className="mt-2 text-error"
-                  data-testid={TEST_ID.settingsKanbanTestResult}
-                >
-                  {testMessage}
-                </p>
-              ) : null}
-              {persistedAdapterId !== null ? (
-                <div className="mt-3 flex items-center gap-2">
-                  <button
-                    ref={teachButtonRef}
-                    type="button"
-                    disabled={guard.busy}
-                    className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
-                    data-testid={TEST_ID.settingsKanbanTeachAgents}
-                    onClick={() => {
-                      void openTeachAgents()
-                    }}
+              <SettingsGroup label="Tracker">
+                <SectionLabel title="Tracker" />
+                <GroupBox>
+                  <FieldRow
+                    label="Adapter"
+                    htmlFor="settings-kanban-adapter"
+                    description="Task tracker integration."
                   >
-                    Teach agents
-                  </button>
-                  {teachDone ? (
-                    <span className="text-success" data-testid={TEST_ID.settingsKanbanTeachDone}>
-                      Wrote {AGENT_SKILL_FILE_PATH}.
-                    </span>
+                    <SettingsSelect
+                      id="settings-kanban-adapter"
+                      value={adapterId ?? ''}
+                      testId={TEST_ID.settingsKanbanAdapterSelect}
+                      onChange={selectAdapter}
+                    >
+                      <option value="">(none)</option>
+                      {adapters.map((adapter) => (
+                        <option key={adapter.id} value={adapter.id}>
+                          {adapter.id === LOCAL_FILE_ADAPTER_ID
+                            ? adapter.name
+                            : `${adapter.name} · ${adapter.id}`}
+                        </option>
+                      ))}
+                      {missing ? (
+                        <option value={adapterId as string}>{adapterId} (missing)</option>
+                      ) : null}
+                    </SettingsSelect>
+                  </FieldRow>
+                  {isLocalFile ? (
+                    <InfoStrip>
+                      Task file:{' '}
+                      <code
+                        className="font-mono text-ink-secondary"
+                        data-testid={TEST_ID.settingsKanbanLocalPath}
+                      >
+                        {LOCAL_TASK_FILE_PATH}
+                      </code>
+                    </InfoStrip>
                   ) : null}
-                </div>
+                  {schema.map((field) => renderField(field, true))}
+                  {discoveredCount === 0 ? (
+                    <p
+                      className="border-t border-edge px-4 py-3 text-xs text-ink-muted"
+                      data-testid={TEST_ID.settingsKanbanEmpty}
+                    >
+                      No task adapters are installed. Copy an adapter folder with its adapter.json
+                      into the kanban-adapters folder of the NeKode application data directory, then
+                      reopen this tab.
+                    </p>
+                  ) : null}
+                  {missing ? (
+                    <p
+                      className="border-t border-edge px-4 py-3 text-xs text-error"
+                      data-testid={TEST_ID.settingsKanbanAdapterMissing}
+                    >
+                      The selected adapter “{adapterId}” is not installed in the adapters directory.
+                      Requests through it will fail until it is restored; you can clear or re-bind
+                      here.
+                    </p>
+                  ) : null}
+                  {sessionOnlySecrets && schema.some((field) => field.type === 'secret') ? (
+                    <p
+                      role="status"
+                      className="border-t border-edge px-4 py-3 text-xs text-warning"
+                      data-testid={TEST_ID.settingsKanbanSecretSessionOnly}
+                    >
+                      No system keyring is available, so secrets are kept only until NeKode closes
+                      and are never saved in plain text. Install and unlock a keyring (for example
+                      gnome-keyring with libsecret) to keep them across restarts.
+                    </p>
+                  ) : null}
+                  {formError ? (
+                    <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
+                      {formError}
+                    </p>
+                  ) : null}
+                  {adapterId !== null && !bindingSaved ? (
+                    <p
+                      className="border-t border-edge px-4 py-2 text-xs text-ink-secondary"
+                      data-testid={TEST_ID.settingsKanbanTestHint}
+                    >
+                      Save the adapter binding before testing the connection.
+                    </p>
+                  ) : null}
+                  <GroupFooter status={testStatus}>
+                    {persistedAdapterId === null ? (
+                      <button
+                        type="button"
+                        disabled={guard.busy}
+                        className={secondaryClass}
+                        data-testid={TEST_ID.settingsKanbanUseLocal}
+                        onClick={() => {
+                          void startLocalTaskList()
+                        }}
+                      >
+                        Use a local task list
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={secondaryClass}
+                      data-testid={TEST_ID.settingsKanbanTest}
+                      disabled={!bindingSaved || testState === 'running' || guard.busy}
+                      onClick={() => {
+                        void runTest()
+                      }}
+                    >
+                      {isLocalFile ? 'Test' : 'Test connection'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={guard.busy}
+                      className={primaryClass}
+                      data-testid={TEST_ID.settingsKanbanSave}
+                      onClick={() => {
+                        void save()
+                      }}
+                    >
+                      Save
+                    </button>
+                  </GroupFooter>
+                </GroupBox>
+              </SettingsGroup>
+              {persistedAdapterId !== null ? (
+                <SettingsGroup label="Agents">
+                  <SectionLabel title="Agents" />
+                  <GroupBox>
+                    <div className="flex items-center gap-6 px-4 py-3">
+                      <span className="min-w-0 flex-1 text-[13px] font-medium text-ink">
+                        Teach agents how to use this tracker
+                      </span>
+                      <button
+                        ref={teachButtonRef}
+                        type="button"
+                        disabled={guard.busy}
+                        className={secondaryClass}
+                        data-testid={TEST_ID.settingsKanbanTeachAgents}
+                        onClick={() => {
+                          void openTeachAgents()
+                        }}
+                      >
+                        Teach agents
+                      </button>
+                    </div>
+                    {teachDone ? (
+                      <p
+                        className="border-t border-edge px-4 py-2 text-xs text-success"
+                        data-testid={TEST_ID.settingsKanbanTeachDone}
+                      >
+                        Wrote {AGENT_SKILL_FILE_PATH}.
+                      </p>
+                    ) : null}
+                  </GroupBox>
+                </SettingsGroup>
               ) : null}
               {/* Portaled to the body so the confirm sits above the Project
                   Settings modal instead of inside its scrolling panel. */}

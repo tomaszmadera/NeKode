@@ -132,10 +132,9 @@ describe('KanbanSettings', () => {
     expect((screen.getByTestId(testIdFor.kanbanField('workspace')) as HTMLInputElement).value).toBe(
       'acme',
     )
-    const secret = screen.getByTestId(testIdFor.kanbanField('api_key')) as HTMLInputElement
-    expect(secret.type).toBe('password')
-    expect(secret.value).toBe('')
-    expect(screen.getByTestId(testIdFor.kanbanSecretStored('api_key')).textContent).toBe('stored')
+    expect(screen.queryByTestId(testIdFor.kanbanField('api_key'))).toBeNull()
+    expect(screen.getByTestId(testIdFor.kanbanSecretStored('api_key')).textContent).toBe('Stored')
+    expect(screen.getByRole('button', { name: 'Change' })).toBeTruthy()
     expect((screen.getByTestId(testIdFor.kanbanField('group')) as HTMLSelectElement).value).toBe(
       'todo',
     )
@@ -190,6 +189,7 @@ describe('KanbanSettings', () => {
     expect('api_key' in first.values).toBe(false)
 
     // A typed secret is sent once, then dropped from the form after save.
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }))
     fireEvent.change(screen.getByTestId(testIdFor.kanbanField('api_key')), {
       target: { value: 'super-secret-token' },
     })
@@ -206,11 +206,8 @@ describe('KanbanSettings', () => {
         },
       }),
     )
-    await waitFor(() =>
-      expect((screen.getByTestId(testIdFor.kanbanField('api_key')) as HTMLInputElement).value).toBe(
-        '',
-      ),
-    )
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.kanbanField('api_key'))).toBeNull())
+    expect(screen.getByTestId(testIdFor.kanbanSecretStored('api_key')).textContent).toBe('Stored')
     expect(document.body.textContent ?? '').not.toContain('super-secret-token')
     for (const input of Array.from(document.body.querySelectorAll('input'))) {
       expect(input.value).not.toContain('super-secret-token')

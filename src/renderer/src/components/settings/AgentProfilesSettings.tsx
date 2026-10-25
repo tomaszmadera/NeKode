@@ -8,7 +8,20 @@ import type {
 } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
+import { cn } from '../../lib/cn'
+import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
+import {
+  FieldRow,
+  GroupBox,
+  GroupFooter,
+  PageIntro,
+  primaryClass,
+  SectionLabel,
+  SettingsGroup,
+  SettingsSelect,
+  secondaryClass,
+} from './settings-ui'
 
 interface AgentProfilesSettingsProps {
   app: AppApi
@@ -104,125 +117,155 @@ export function AgentProfilesSettings({
     )
   }
 
+  const selectedCount = selection.selectedIds.length
+  const totalCount = library.profiles.length
+
   return (
-    <div data-testid={TEST_ID.settingsAgentsPanel}>
-      <h3 className="border-b border-edge pb-2 text-sm font-semibold">Agents</h3>
-      <p className="mt-3 text-xs text-ink-secondary">
-        Choose the global agents available in this project. No agents are selected automatically.
-      </p>
-      <button
-        type="button"
-        className="mt-3 h-control rounded-md bg-button px-4 text-sm hover:bg-button-hover"
-        onClick={onManageAgents}
-      >
-        Manage agents
-      </button>
+    <div data-testid={TEST_ID.settingsAgentsPanel} className="flex max-w-[660px] flex-col gap-7">
+      <PageIntro
+        title="Agents"
+        description="Global agents available in this project. None are selected automatically."
+      />
       {error !== null ? (
-        <p
-          role="alert"
-          data-testid={TEST_ID.settingsAgentsError}
-          className="mt-3 text-xs text-error"
-        >
+        <p role="alert" data-testid={TEST_ID.settingsAgentsError} className="text-xs text-error">
           {error}
         </p>
       ) : null}
       {projectId === null ? (
-        <p className="mt-3 text-xs text-ink-secondary">Select a project to choose agents.</p>
+        <p className="text-[13px] text-ink-secondary">Select a project to choose agents.</p>
       ) : loading ? (
-        <p className="mt-3 text-xs text-ink-secondary">Loading agent profiles...</p>
+        <p className="text-[13px] text-ink-secondary">Loading agent profiles...</p>
       ) : loadedFor === projectId ? (
-        <>
-          {library.profiles.length === 0 ? (
-            <p
-              data-testid={TEST_ID.settingsAgentsEmpty}
-              className="mt-3 text-xs text-ink-secondary"
-            >
-              No global agents. Use Manage agents to add one.
-            </p>
-          ) : (
-            <div className="mt-3 space-y-3">
-              {library.profiles.map((profile) => (
-                <label key={profile.id} className="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    aria-label={`Enable ${profile.name}: ${serializeAgentCommand(profile)}`}
-                    checked={selection.selectedIds.includes(profile.id)}
-                    disabled={guard.busy}
-                    onChange={(event) => {
-                      const checked = event.target.checked
-                      setSelection((current) => ({
-                        selectedIds: checked
-                          ? [...current.selectedIds, profile.id]
-                          : current.selectedIds.filter((id) => id !== profile.id),
-                        defaultId:
-                          !checked && current.defaultId === profile.id ? null : current.defaultId,
-                      }))
-                    }}
-                  />
-                  <span className="min-w-0">
-                    <span className="font-semibold">{profile.name}</span>
-                    <code className="mt-1 block break-all text-ink-secondary">
-                      {serializeAgentCommand(profile)}
-                    </code>
-                    {profile.originProjectName ? (
-                      <span className="text-ink-muted">From {profile.originProjectName}</span>
+        <SettingsGroup label="Available agents">
+          <SectionLabel
+            title={`Available · ${selectedCount} of ${totalCount}`}
+            action={
+              <button
+                type="button"
+                className={cn(secondaryClass, 'h-8 gap-1.5')}
+                onClick={onManageAgents}
+              >
+                Manage agents
+                <Icon.external size={13} aria-hidden />
+              </button>
+            }
+          />
+          <GroupBox>
+            {library.profiles.length === 0 ? (
+              <p
+                data-testid={TEST_ID.settingsAgentsEmpty}
+                className="px-4 py-3 text-[13px] text-ink-secondary"
+              >
+                No global agents. Use Manage agents to add one.
+              </p>
+            ) : (
+              library.profiles.map((profile) => {
+                const command = serializeAgentCommand(profile)
+                const enabled = selection.selectedIds.includes(profile.id)
+                return (
+                  <label
+                    key={profile.id}
+                    className="flex cursor-pointer items-center gap-3 border-t border-edge px-4 py-3 first:border-t-0"
+                  >
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      aria-label={`Enable ${profile.name}: ${command}`}
+                      checked={enabled}
+                      disabled={guard.busy}
+                      onChange={(event) => {
+                        const checked = event.target.checked
+                        setSelection((current) => ({
+                          selectedIds: checked
+                            ? [...current.selectedIds, profile.id]
+                            : current.selectedIds.filter((id) => id !== profile.id),
+                          defaultId:
+                            !checked && current.defaultId === profile.id ? null : current.defaultId,
+                        }))
+                      }}
+                    />
+                    <span
+                      aria-hidden
+                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-edge bg-field peer-checked:border-accent peer-checked:bg-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
+                    >
+                      {enabled ? <Icon.checkSmall size={12} className="text-on-accent" /> : null}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate text-[13px] font-semibold text-project-title">
+                        {profile.name}
+                      </span>
+                      <code title={command} className="truncate font-mono text-xs text-ink-muted">
+                        {command}
+                      </code>
+                      {profile.originProjectName ? (
+                        <span className="text-xs text-ink-muted">
+                          From {profile.originProjectName}
+                        </span>
+                      ) : null}
+                    </span>
+                    {selection.defaultId === profile.id ? (
+                      <span className="shrink-0 rounded-full bg-highlight px-2 py-px text-[11px] font-medium text-accent">
+                        Default
+                      </span>
                     ) : null}
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-          {library.profiles.length > 0 && selection.selectedIds.length === 0 ? (
-            <p
-              data-testid={TEST_ID.settingsAgentsEmpty}
-              className="mt-3 text-xs text-ink-secondary"
+                  </label>
+                )
+              })
+            )}
+            {library.profiles.length > 0 && selection.selectedIds.length === 0 ? (
+              <p
+                data-testid={TEST_ID.settingsAgentsEmpty}
+                className="border-t border-edge px-4 py-3 text-[13px] text-ink-secondary"
+              >
+                No agents selected for this project. Select an agent to use it in New Chat or Tasks.
+              </p>
+            ) : null}
+            <FieldRow
+              label="Default agent"
+              htmlFor="settings-agents-default"
+              description="Used for New Chat and Tasks."
+              divided
             >
-              No agents selected for this project. Select an agent to use it in New Chat or Tasks.
-            </p>
-          ) : null}
-          <label className="mt-4 block text-xs">
-            Default agent
-            <select
-              data-testid={TEST_ID.settingsAgentsDefault}
-              className="mt-1 block w-full rounded-sm bg-highlight p-2"
-              value={selection.defaultId ?? ''}
-              disabled={guard.busy}
-              onChange={(event) =>
-                setSelection({ ...selection, defaultId: event.target.value || null })
-              }
-            >
-              <option value="">None (choose at launch)</option>
-              {library.profiles
-                .filter((profile) => selection.selectedIds.includes(profile.id))
-                .map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name} - {serializeAgentCommand(profile)}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              disabled={guard.busy}
-              onClick={() => void save()}
-              className="h-control rounded-md bg-button px-4 text-sm hover:bg-button-hover"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              disabled={guard.busy}
-              onClick={() => {
-                setSelection(saved)
-                setError(null)
-              }}
-              className="h-control rounded-md border border-edge px-4 text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        </>
+              <SettingsSelect
+                id="settings-agents-default"
+                value={selection.defaultId ?? ''}
+                disabled={guard.busy}
+                testId={TEST_ID.settingsAgentsDefault}
+                onChange={(value) => setSelection({ ...selection, defaultId: value || null })}
+              >
+                <option value="">None (choose at launch)</option>
+                {library.profiles
+                  .filter((profile) => selection.selectedIds.includes(profile.id))
+                  .map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+              </SettingsSelect>
+            </FieldRow>
+            <GroupFooter>
+              <button
+                type="button"
+                disabled={guard.busy}
+                onClick={() => {
+                  setSelection(saved)
+                  setError(null)
+                }}
+                className={secondaryClass}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={guard.busy}
+                onClick={() => void save()}
+                className={primaryClass}
+              >
+                Save
+              </button>
+            </GroupFooter>
+          </GroupBox>
+        </SettingsGroup>
       ) : null}
     </div>
   )

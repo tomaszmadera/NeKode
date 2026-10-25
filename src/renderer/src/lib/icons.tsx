@@ -5,6 +5,7 @@
 // control. Sizes per design doc 10: compact controls 14, status 13-14,
 // inline micro controls 12.
 import {
+  Activity,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -72,6 +73,7 @@ import {
 } from 'lucide-react'
 
 export const Icon = {
+  activity: Activity,
   agent: Bot,
   arrowRight: ArrowRight,
   back: ArrowLeft,

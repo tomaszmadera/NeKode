@@ -11,7 +11,7 @@ import { ActionSettings } from './ActionSettings'
 
 afterEach(cleanup)
 
-const PS_LABEL = 'Run with powershell -NoProfile -ExecutionPolicy Bypass -File'
+const PS_LABEL = 'Run as a PowerShell script'
 
 // Minimal shell surface for the Shell tab (the default tab runs one detection
 // on entry, spec project-shell-selection): these tests exercise the Actions
@@ -49,14 +49,14 @@ describe('PowerShell action option', () => {
     // The modal opens on the Shell tab; the action form lives on the
     // Actions & Configuration tab.
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Example' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: command } })
-    fireEvent.change(screen.getByLabelText('Run In'), { target: { value: 'background' } })
+    fireEvent.change(screen.getByLabelText('Run in'), { target: { value: 'background' } })
     fireEvent.click(screen.getByLabelText(PS_LABEL))
     // Checkbox state is read by role/label, never by DOM position.
-    expect((screen.getByLabelText(PS_LABEL) as HTMLInputElement).checked).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByLabelText(PS_LABEL).getAttribute('aria-checked') === 'true').toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
     const saved = create.mock.calls[0][0] as ActionInput
     expect(saved.runMode).toBe('background')
@@ -69,20 +69,20 @@ describe('PowerShell action option', () => {
     expect(screen.getByText(command)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     expect((screen.getByLabelText('Command') as HTMLInputElement).value).toBe(command)
-    expect((screen.getByLabelText(PS_LABEL) as HTMLInputElement).checked).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByLabelText(PS_LABEL).getAttribute('aria-checked') === 'true').toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() => expect(update).toHaveBeenCalledWith('a1', saved))
     await waitFor(() => expect(screen.queryByLabelText('Command')).toBeNull())
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     fireEvent.click(screen.getByLabelText(PS_LABEL))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() =>
       expect(update).toHaveBeenLastCalledWith('a1', expect.objectContaining({ command })),
     )
     await waitFor(() => expect(screen.queryByLabelText('Command')).toBeNull())
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
-    expect((screen.getByLabelText(PS_LABEL) as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
+    expect(screen.getByLabelText(PS_LABEL).getAttribute('aria-checked') === 'true').toBe(false)
   })
 
   it.each([['background'], ['new-terminal'], ['bottom-terminal']] as const)(
@@ -106,11 +106,11 @@ describe('PowerShell action option', () => {
         />,
       )
       fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-      fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Example' } })
       fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm build' } })
-      fireEvent.change(screen.getByLabelText('Run In'), { target: { value: runMode } })
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      fireEvent.change(screen.getByLabelText('Run in'), { target: { value: runMode } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
       await waitFor(() => expect(create).toHaveBeenCalledOnce())
       expect((create.mock.calls[0][0] as ActionInput).runMode).toBe(runMode)
     },
@@ -281,7 +281,7 @@ describe('Kanban tab shell', () => {
     expect(agentsTab.textContent).toBe('Agents')
     expect(agentsTab.getAttribute('aria-selected')).toBe('false')
     expect(screen.getByRole('tab', { name: 'Shell' })).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'Actions & Configuration' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Actions' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Tasks' })).toBeTruthy()
     expect(screen.queryByRole('tab', { name: 'Kanban' })).toBeNull()
 
@@ -379,10 +379,10 @@ describe('action save error handling and duplicate prevention', () => {
       onClose: vi.fn(),
     }
     render(<ActionSettings {...props} initialTab="actions" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'My Action' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'echo hello' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
 
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
     // Mutation succeeded: form must be cleared so user cannot submit a duplicate
@@ -391,10 +391,10 @@ describe('action save error handling and duplicate prevention', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Failed to refresh actions.')
 
     // Clicking Add Action creates a fresh form without duplicate submission
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Second Action' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'echo second' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Second Action' }))
   })
@@ -417,7 +417,7 @@ describe('custom emoji icon selection', () => {
       onClose: vi.fn(),
     }
     const view = render(<ActionSettings {...props} initialTab="actions" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Emoji Action' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'echo emoji' } })
 
@@ -436,7 +436,7 @@ describe('custom emoji icon selection', () => {
     expect((iconSelect as HTMLSelectElement).value).toBe('custom')
 
     // Saving creates action with emoji icon
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ icon: '🚀' }))
 
@@ -469,7 +469,7 @@ describe('custom emoji icon selection', () => {
 
     // Changing emoji to a new one
     fireEvent.change(editEmojiInput, { target: { value: '⚡' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() =>
       expect(update).toHaveBeenCalledWith('a1', expect.objectContaining({ icon: '⚡' })),
     )
@@ -491,18 +491,18 @@ describe('custom emoji icon selection', () => {
     render(<ActionSettings {...props} initialTab="actions" />)
 
     // Case 1: Custom emoji selected but left blank saves icon: null
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Blank Emoji Action' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'echo 1' } })
     fireEvent.change(screen.getByTestId(TEST_ID.settingsActionIconSelect), {
       target: { value: 'custom' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ icon: null }))
 
     // Case 2: Custom emoji with whitespace is trimmed
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Trimmed Emoji Action' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'echo 2' } })
     fireEvent.change(screen.getByTestId(TEST_ID.settingsActionIconSelect), {
@@ -511,12 +511,12 @@ describe('custom emoji icon selection', () => {
     fireEvent.change(screen.getByTestId(TEST_ID.settingsActionIconEmoji), {
       target: { value: '  🚀  ' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ icon: '🚀' }))
 
     // Case 3: Changing from custom back to none hides input and saves icon: null
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Reset To None Action' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'echo 3' } })
     fireEvent.change(screen.getByTestId(TEST_ID.settingsActionIconSelect), {
@@ -527,7 +527,7 @@ describe('custom emoji icon selection', () => {
       target: { value: 'none' },
     })
     expect(screen.queryByTestId(TEST_ID.settingsActionIconEmoji)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
     await waitFor(() => expect(create).toHaveBeenCalledTimes(3))
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ icon: null }))
   })
@@ -582,11 +582,11 @@ describe('mutation in-flight guards and duplicate prevention', () => {
     )
     const app = { ...shellAppMock(), actions: { create } } as unknown as AppApi
     render(<ActionSettings {...guardProps(app)} initialTab="actions" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Guarded Action' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'echo 1' } })
     return {
-      button: screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      button: screen.getByRole('button', { name: 'Save action' }) as HTMLButtonElement,
       call: create,
       complete: async () => {
         resolveCreate({ id: 'a1' })
@@ -599,10 +599,10 @@ describe('mutation in-flight guards and duplicate prevention', () => {
           code: 'internal',
           message: 'Backend error',
         })
-        fireEvent.click(screen.getByRole('button', { name: 'Add Action' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
         fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Guarded Action 2' } })
         fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'echo 2' } })
-        return screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement
+        return screen.getByRole('button', { name: 'Save action' }) as HTMLButtonElement
       },
       errorMessage: 'Backend error',
     }

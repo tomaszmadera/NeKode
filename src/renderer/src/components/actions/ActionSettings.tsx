@@ -4,11 +4,36 @@ import type { ActionControl, ActionInput, AppApi } from '../../../../shared/ipc-
 import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
-import { ACTION_ICON_NAMES, ACTION_NONE, actionIconGlyph } from '../../lib/icons'
+import { cn } from '../../lib/cn'
+import {
+  ACTION_ICON_NAMES,
+  ACTION_NONE,
+  actionIconGlyph,
+  Icon,
+  type LucideIcon,
+} from '../../lib/icons'
+import { getProjectInitials } from '../../lib/project-avatar'
 import { TEST_ID } from '../../lib/test-ids'
 import { AgentProfilesSettings } from '../settings/AgentProfilesSettings'
 import { KanbanSettings } from '../settings/KanbanSettings'
+import { type SettingsNavItem, SettingsShell } from '../settings/SettingsShell'
 import { ShellTab } from '../settings/ShellTab'
+import {
+  FieldRow,
+  GroupBox,
+  GroupFooter,
+  monoClass,
+  PageIntro,
+  primaryClass,
+  quietClass,
+  SectionLabel,
+  SettingsGroup,
+  SettingsSelect,
+  SettingsSwitch,
+  StackedRow,
+  secondaryClass,
+  textClass,
+} from '../settings/settings-ui'
 import { TaskProgressSettings } from '../settings/TaskProgressSettings'
 
 interface Props {
@@ -31,21 +56,23 @@ interface Props {
   onKanbanInvalidate?: (projectId: string | null) => void
   onManageAgents?: () => void
   onProjectColorChange?: (projectId: string, color: string | null) => void
+  /** Shown in the header so the open project stays obvious. */
+  projectName?: string | null
+  /** Resolved avatar colour (custom or the automatic palette colour). */
+  projectColor?: string | null
   libraryRefreshKey?: number
   suspended?: boolean
 }
 
 export type SettingsTabId = 'shell' | 'actions' | 'kanban' | 'taskProgress' | 'agents'
 
-const SETTINGS_TABS = ['shell', 'actions', 'kanban', 'taskProgress', 'agents'] as const
-
-const TAB_LABEL: Record<SettingsTabId, string> = {
-  shell: 'Shell',
-  actions: 'Actions & Configuration',
-  kanban: 'Tasks',
-  taskProgress: 'Task progress',
-  agents: 'Agents',
-}
+const PROJECT_TABS: Array<{ id: SettingsTabId; label: string; icon: LucideIcon }> = [
+  { id: 'shell', label: 'Shell', icon: Icon.terminal },
+  { id: 'actions', label: 'Actions', icon: Icon.run },
+  { id: 'kanban', label: 'Tasks', icon: Icon.kanban },
+  { id: 'taskProgress', label: 'Task progress', icon: Icon.activity },
+  { id: 'agents', label: 'Agents', icon: Icon.agent },
+]
 
 const TAB_TEST_ID: Record<SettingsTabId, string> = {
   shell: TEST_ID.settingsShellTab,
@@ -124,6 +151,8 @@ export function ActionSettings({
   onKanbanInvalidate,
   onManageAgents,
   onProjectColorChange,
+  projectName = null,
+  projectColor = null,
   libraryRefreshKey,
   suspended = false,
 }: Props): React.JSX.Element {
@@ -290,409 +319,415 @@ export function ActionSettings({
     })
   }
 
-  // Escape closes the dialog from anywhere: the trigger button keeps focus
-  // when the dialog opens, so a dialog-level onKeyDown would never see the
-  // key (same window-level idiom as the context menus).
-  useEffect(() => {
-    if (suspended) return
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [onClose, suspended])
+  const navItems: SettingsNavItem[] = PROJECT_TABS.map((tab) => ({
+    id: tab.id,
+    label: tab.label,
+    icon: tab.icon,
+    testId: TAB_TEST_ID[tab.id],
+    tabDomId: `settings-tab-${tab.id}`,
+    panelDomId: `settings-panel-${tab.id}`,
+  }))
+  const pageLabel = PROJECT_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Shell'
+  const initials = projectName ? getProjectInitials(projectName) : ''
 
   return (
-    <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the backdrop hosts the dismiss gesture (mouse down outside the dialog); the dialog's controls are real buttons and inputs and it closes on Escape. */}
-      <div
-        hidden={suspended}
-        style={suspended ? { display: 'none' } : undefined}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-        role="presentation"
-        onMouseDown={(event) => {
-          // Backdrop dismiss: only a pointer-down on the dimmed area itself
-          // closes. mousedown (not click) survives a text-selection drag that
-          // releases outside the dialog; the target check keeps pointer-downs
-          // inside the dialog from closing it.
-          if (event.target === event.currentTarget) {
-            onClose()
+    <SettingsShell
+      ariaLabel="Project Settings"
+      leading={
+        <span
+          aria-hidden
+          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-button font-mono text-[10px] font-bold text-ink-secondary"
+          style={
+            projectColor ? { color: projectColor, backgroundColor: `${projectColor}2e` } : undefined
           }
-        }}
-      >
-        <section
-          role="dialog"
-          aria-modal="true"
-          aria-label="Project Settings"
-          className="flex h-[min(42rem,90dvh)] w-[min(56rem,94vw)] flex-col overflow-hidden rounded-lg border border-edge bg-panel p-4 shadow-xl sm:p-5"
         >
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold">Project Settings</h2>
-            <button
-              type="button"
-              aria-label="Close settings"
-              className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
-              onClick={onClose}
-            >
-              Close
-            </button>
-          </div>
-          {/* Same shell as App Settings (user decision 2026-10-04): fixed dialog
-              size, vertical tab column on the left, only the content pane
-              scrolls. Tab test IDs stay on the tab buttons. */}
-          <div className="mt-4 flex min-h-0 flex-1 gap-3 sm:gap-5">
-            <div
-              role="tablist"
-              aria-label="Settings sections"
-              aria-orientation="vertical"
-              className="flex w-24 shrink-0 flex-col gap-1 border-r border-edge pr-3 sm:w-36"
-            >
-              {SETTINGS_TABS.map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  id={`settings-tab-${tab}`}
-                  aria-controls={`settings-panel-${tab}`}
-                  aria-selected={activeTab === tab}
-                  data-testid={TAB_TEST_ID[tab]}
-                  className={`rounded-md border border-edge px-3 py-2 text-left text-sm ${activeTab === tab ? 'bg-highlight text-ink' : 'text-ink-secondary'}`}
-                  onClick={() => setActiveTab(tab)}
-                >
-                  {TAB_LABEL[tab]}
-                </button>
-              ))}
-            </div>
-            {SETTINGS_TABS.filter((tab) => tab !== activeTab).map((tab) => (
-              <div
-                key={tab}
-                role="tabpanel"
-                id={`settings-panel-${tab}`}
-                aria-labelledby={`settings-tab-${tab}`}
-                hidden
-              />
-            ))}
-            <div
-              role="tabpanel"
-              id={`settings-panel-${activeTab}`}
-              aria-labelledby={`settings-tab-${activeTab}`}
-              className="min-w-0 flex-1 overflow-y-auto pr-1"
-            >
-              {activeTab === 'shell' ? (
-                <ShellTab
-                  app={app}
-                  projectId={projectId}
-                  onProjectColorChange={onProjectColorChange}
-                />
-              ) : activeTab === 'kanban' ? (
-                <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
-              ) : activeTab === 'taskProgress' ? (
-                <TaskProgressSettings app={app} projectId={projectId} />
-              ) : activeTab === 'agents' ? (
-                <AgentProfilesSettings
-                  app={app}
-                  projectId={projectId}
-                  onManageAgents={onManageAgents}
-                  libraryRefreshKey={libraryRefreshKey}
-                />
-              ) : (
-                <>
-                  {/* Configuration (spec handoff-resume-flow Behaviour 6): auto-send is
-            application-global; the handoff directory is per project. */}
-                  <div className="mt-4 text-xs" data-testid={TEST_ID.settingsConfigSection}>
-                    <h3 className="border-b border-edge pb-2 text-sm font-semibold">
-                      Configuration
-                    </h3>
-                    <label className="mt-2 flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={autoSend}
-                        data-testid={TEST_ID.settingsAutoSend}
-                        onChange={(event) => {
-                          onAutoSendChange(event.target.checked)
-                        }}
-                      />
-                      Auto-send after Handoff/Resume
-                    </label>
+          {initials}
+        </span>
+      }
+      title={projectName ?? 'Project'}
+      titleNote="project settings"
+      pageLabel={pageLabel}
+      closeLabel="Close settings"
+      items={navItems}
+      activeId={activeTab}
+      onSelect={(id) => setActiveTab(id as SettingsTabId)}
+      onClose={onClose}
+      suspended={suspended}
+      keyboard="window"
+    >
+      {activeTab === 'shell' ? (
+        <ShellTab app={app} projectId={projectId} onProjectColorChange={onProjectColorChange} />
+      ) : activeTab === 'kanban' ? (
+        <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
+      ) : activeTab === 'taskProgress' ? (
+        <TaskProgressSettings app={app} projectId={projectId} />
+      ) : activeTab === 'agents' ? (
+        <AgentProfilesSettings
+          app={app}
+          projectId={projectId}
+          onManageAgents={onManageAgents}
+          libraryRefreshKey={libraryRefreshKey}
+        />
+      ) : (
+        <div className="flex max-w-[660px] flex-col gap-7">
+          <PageIntro
+            title="Actions"
+            description="Handoff settings and the command buttons in this project's toolbar."
+          />
+          {form === null ? (
+            <>
+              <SettingsGroup label="Handoff">
+                <SectionLabel title="Handoff" />
+                <GroupBox>
+                  <div data-testid={TEST_ID.settingsConfigSection}>
+                    <SettingsSwitch
+                      id="settings-auto-send"
+                      label="Auto-send after Handoff and Resume"
+                      description="Sends the handoff prompt without waiting for Enter."
+                      checked={autoSend}
+                      testId={TEST_ID.settingsAutoSend}
+                      onChange={onAutoSendChange}
+                    />
                     {projectId !== null ? (
-                      <div className="mt-2">
-                        <label>
-                          Handoff directory (relative to the project root, or absolute)
-                          <div className="mt-1 flex gap-2">
-                            <input
-                              className="min-w-0 flex-1 rounded-sm bg-highlight p-1"
-                              value={handoffDir}
-                              placeholder="e.g. .agents/handoffs"
-                              data-testid={TEST_ID.settingsHandoffDir}
-                              onChange={(event) => {
-                                setHandoffDir(event.target.value)
-                                setHandoffDirSaved(false)
-                              }}
-                            />
-                            <button
-                              type="button"
-                              disabled={guard.busy}
-                              className="h-control shrink-0 rounded-md bg-button px-3 text-ink hover:bg-button-hover disabled:opacity-50"
-                              data-testid={TEST_ID.settingsHandoffDirBrowse}
-                              onClick={() => {
-                                void browseHandoffDir()
-                              }}
-                            >
-                              Browse
-                            </button>
-                          </div>
-                        </label>
-                        <div className="mt-2 flex items-center gap-2">
+                      <StackedRow
+                        label="Handoff directory"
+                        htmlFor="settings-handoff-dir"
+                        help="Relative to the project root, or absolute."
+                        divided
+                      >
+                        <span className="flex gap-2">
+                          <input
+                            id="settings-handoff-dir"
+                            className={cn(monoClass, 'min-w-0 flex-1')}
+                            value={handoffDir}
+                            placeholder=".agents/handoffs"
+                            spellCheck={false}
+                            data-testid={TEST_ID.settingsHandoffDir}
+                            onChange={(event) => {
+                              setHandoffDir(event.target.value)
+                              setHandoffDirSaved(false)
+                            }}
+                          />
                           <button
                             type="button"
-                            aria-label="Save handoff directory"
                             disabled={guard.busy}
-                            className="h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover disabled:opacity-50"
-                            data-testid={TEST_ID.settingsHandoffDirSave}
+                            className={secondaryClass}
+                            data-testid={TEST_ID.settingsHandoffDirBrowse}
                             onClick={() => {
-                              void saveHandoffDir()
+                              void browseHandoffDir()
                             }}
                           >
-                            Save
+                            Browse
                           </button>
-                          {handoffDirSaved ? (
+                        </span>
+                      </StackedRow>
+                    ) : null}
+                    {configError ? (
+                      <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
+                        {configError}
+                      </p>
+                    ) : null}
+                    {projectId !== null ? (
+                      <GroupFooter
+                        status={
+                          handoffDirSaved ? (
                             <span
                               className="text-success"
                               data-testid={TEST_ID.settingsHandoffDirSaved}
                             >
                               Saved
                             </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-                    {configError ? (
-                      <p role="alert" className="mt-2 text-error">
-                        {configError}
-                      </p>
-                    ) : null}
-                  </div>
-                  <h3 className="mt-4 border-b border-edge pb-2 text-sm font-semibold">Actions</h3>
-                  <ul className="mt-2 space-y-2">
-                    {visible.map((action) => (
-                      <li
-                        key={action.id}
-                        className="flex items-center gap-2 rounded border border-edge px-2 py-1 text-xs"
+                          ) : null
+                        }
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium">{action.title}</div>
-                          <div
-                            className="truncate text-ink-secondary"
-                            title={actionCommand(action.command).command}
-                          >
-                            {actionCommand(action.command).command}
-                          </div>
-                          <div className="text-ink-muted">
-                            {action.runMode === 'background'
-                              ? 'Background'
-                              : action.runMode === 'bottom-terminal'
-                                ? 'Bottom terminal'
-                                : 'New terminal'}{' '}
-                            · {action.scope}
-                          </div>
-                        </div>
                         <button
                           type="button"
-                          className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
-                          onClick={() => edit(action)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
+                          aria-label="Save handoff directory"
                           disabled={guard.busy}
-                          className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-error/10 hover:text-error disabled:opacity-50"
+                          className={primaryClass}
+                          data-testid={TEST_ID.settingsHandoffDirSave}
                           onClick={() => {
-                            void remove(action.id)
+                            void saveHandoffDir()
                           }}
-                        >
-                          Delete
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    className="mt-3 h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover"
-                    onClick={() => {
-                      setEditingId(null)
-                      setForm(emptyInput(projectId, nextSortOrder(actions)))
-                      setRunWithPowerShell(false)
-                      setError(null)
-                    }}
-                  >
-                    Add Action
-                  </button>
-                  {form !== null ? (
-                    <form
-                      className="mt-4 grid gap-3 text-xs"
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        void save()
-                      }}
-                    >
-                      <h4 className="font-semibold">{editingId ? 'Edit Action' : 'Add Action'}</h4>
-                      <label>
-                        Scope
-                        <select
-                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                          value={form.scope}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              scope: event.target.value as ActionInput['scope'],
-                              projectId: event.target.value === 'global' ? null : projectId,
-                            })
-                          }
-                        >
-                          <option value="project" disabled={projectId === null}>
-                            Project
-                          </option>
-                          <option value="global">Global</option>
-                        </select>
-                      </label>
-                      <label>
-                        Title
-                        <input
-                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                          value={form.title}
-                          onChange={(event) => setForm({ ...form, title: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        Icon
-                        <select
-                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                          value={iconModeOf(form.icon)}
-                          data-testid={TEST_ID.settingsActionIconSelect}
-                          onChange={(event) => {
-                            const value = event.target.value
-                            setForm({
-                              ...form,
-                              icon: value === ACTION_NONE ? null : value === 'custom' ? '' : value,
-                            })
-                          }}
-                        >
-                          {ICON_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      {iconModeOf(form.icon) === 'custom' ? (
-                        <label>
-                          Icon emoji
-                          <input
-                            className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                            value={form.icon ?? ''}
-                            placeholder="e.g. 🚀"
-                            data-testid={TEST_ID.settingsActionIconEmoji}
-                            onChange={(event) => setForm({ ...form, icon: event.target.value })}
-                          />
-                        </label>
-                      ) : null}
-                      <p className="text-ink-muted">
-                        Icon: pick a preset Lucide glyph, or choose Custom and paste any emoji.
-                        Leave None for no icon.
-                      </p>
-                      <label>
-                        Command
-                        <input
-                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                          value={form.command}
-                          onChange={(event) => setForm({ ...form, command: event.target.value })}
-                        />
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={runWithPowerShell}
-                          onChange={(event) => setRunWithPowerShell(event.target.checked)}
-                        />
-                        Run with{' '}
-                        <code className="min-w-0 rounded-sm bg-highlight px-1 font-mono">
-                          {POWERSHELL_PREFIX.trim()}
-                        </code>
-                      </label>
-                      <label>
-                        Working Directory (project root by default)
-                        <input
-                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                          value={form.cwd ?? ''}
-                          onChange={(event) =>
-                            setForm({ ...form, cwd: event.target.value || null })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Run In
-                        <select
-                          className="mt-1 block w-full rounded-sm bg-highlight p-1"
-                          value={form.runMode}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              runMode: event.target.value as ActionInput['runMode'],
-                            })
-                          }
-                        >
-                          <option value="background">Background</option>
-                          <option value="new-terminal">New terminal</option>
-                          <option value="bottom-terminal">Bottom terminal</option>
-                        </select>
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={form.confirm}
-                          onChange={(event) => setForm({ ...form, confirm: event.target.checked })}
-                        />
-                        Ask for confirmation
-                      </label>
-                      {error ? (
-                        <p role="alert" className="text-error">
-                          {error}
-                        </p>
-                      ) : null}
-                      <div className="flex gap-2">
-                        <button
-                          type="submit"
-                          disabled={guard.busy}
-                          className="h-control rounded-md bg-button px-4 text-xs text-ink hover:bg-button-hover disabled:opacity-50"
                         >
                           Save
                         </button>
-                        <button
-                          type="button"
-                          className="h-control rounded-md px-4 text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
-                          onClick={() => {
-                            setForm(null)
-                            setError(null)
-                          }}
+                      </GroupFooter>
+                    ) : null}
+                  </div>
+                </GroupBox>
+              </SettingsGroup>
+              <SettingsGroup label="Toolbar actions">
+                <SectionLabel
+                  title={`Toolbar actions · ${visible.length}`}
+                  action={
+                    <button
+                      type="button"
+                      className={secondaryClass}
+                      onClick={() => {
+                        setEditingId(null)
+                        setForm(emptyInput(projectId, nextSortOrder(actions)))
+                        setRunWithPowerShell(false)
+                        setError(null)
+                      }}
+                    >
+                      <Icon.plus size={14} aria-hidden />
+                      Add action
+                    </button>
+                  }
+                />
+                <GroupBox>
+                  <ul>
+                    {visible.map((action, index) => {
+                      const decoded = actionCommand(action.command)
+                      const Glyph = actionIconGlyph(action.icon)
+                      const mode =
+                        action.runMode === 'background'
+                          ? 'Background'
+                          : action.runMode === 'bottom-terminal'
+                            ? 'Bottom terminal'
+                            : 'New terminal'
+                      return (
+                        <li
+                          key={action.id}
+                          className={cn(
+                            'flex items-center gap-3 px-4 py-3',
+                            index > 0 && 'border-t border-edge',
+                          )}
                         >
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  ) : error ? (
-                    <p role="alert" className="mt-2 text-xs text-error">
+                          <span
+                            aria-hidden
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-button text-ink-secondary"
+                          >
+                            {Glyph ? (
+                              <Glyph size={14} />
+                            ) : action.icon ? (
+                              <span className="text-sm">{action.icon}</span>
+                            ) : (
+                              <Icon.run size={14} />
+                            )}
+                          </span>
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="truncate text-[13px] font-semibold text-project-title">
+                              {action.title}
+                            </span>
+                            <code
+                              title={action.command}
+                              className="truncate font-mono text-xs text-ink-secondary"
+                            >
+                              {decoded.command}
+                            </code>
+                            <span className="text-[11px] text-ink-muted">
+                              {mode} · {action.scope}
+                            </span>
+                          </span>
+                          <button type="button" className={quietClass} onClick={() => edit(action)}>
+                            <Icon.edit size={13} aria-hidden />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={guard.busy}
+                            className={cn(quietClass, 'text-error')}
+                            onClick={() => {
+                              void remove(action.id)
+                            }}
+                          >
+                            <Icon.trash size={13} aria-hidden />
+                            Delete
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </GroupBox>
+              </SettingsGroup>
+              {error ? (
+                <p role="alert" className="text-xs text-error">
+                  {error}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <SettingsGroup label={editingId ? 'Edit action' : 'New action'}>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-label="Back to actions"
+                  title="Back to actions"
+                  className={quietClass}
+                  onClick={() => {
+                    setForm(null)
+                    setError(null)
+                  }}
+                >
+                  <Icon.back size={15} aria-hidden />
+                </button>
+                <h3 className="m-0 text-xs font-semibold tracking-[0.08em] text-ink-muted uppercase">
+                  {editingId ? 'Edit action' : 'New action'}
+                </h3>
+              </div>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void save()
+                }}
+              >
+                <GroupBox>
+                  <FieldRow
+                    label="Title"
+                    htmlFor="settings-action-title"
+                    description="Label of the toolbar button."
+                  >
+                    <input
+                      id="settings-action-title"
+                      className={textClass}
+                      value={form.title}
+                      onChange={(event) => setForm({ ...form, title: event.target.value })}
+                    />
+                  </FieldRow>
+                  <FieldRow
+                    label="Icon"
+                    htmlFor="settings-action-icon"
+                    description="A Lucide glyph, or Custom to paste any emoji."
+                    divided
+                  >
+                    <SettingsSelect
+                      id="settings-action-icon"
+                      value={iconModeOf(form.icon)}
+                      testId={TEST_ID.settingsActionIconSelect}
+                      onChange={(value) => {
+                        setForm({
+                          ...form,
+                          icon: value === ACTION_NONE ? null : value === 'custom' ? '' : value,
+                        })
+                      }}
+                    >
+                      {ICON_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </SettingsSelect>
+                  </FieldRow>
+                  {iconModeOf(form.icon) === 'custom' ? (
+                    <FieldRow label="Icon emoji" htmlFor="settings-action-emoji" divided>
+                      <input
+                        id="settings-action-emoji"
+                        className={textClass}
+                        value={form.icon ?? ''}
+                        placeholder="e.g. 🚀"
+                        data-testid={TEST_ID.settingsActionIconEmoji}
+                        onChange={(event) => setForm({ ...form, icon: event.target.value })}
+                      />
+                    </FieldRow>
+                  ) : null}
+                  <FieldRow
+                    label="Scope"
+                    htmlFor="settings-action-scope"
+                    description="Where this action is available."
+                    divided
+                  >
+                    <SettingsSelect
+                      id="settings-action-scope"
+                      value={form.scope}
+                      onChange={(value) =>
+                        setForm({
+                          ...form,
+                          scope: value as ActionInput['scope'],
+                          projectId: value === 'global' ? null : projectId,
+                        })
+                      }
+                    >
+                      <option value="project" disabled={projectId === null}>
+                        Project
+                      </option>
+                      <option value="global">Global</option>
+                    </SettingsSelect>
+                  </FieldRow>
+                  <StackedRow label="Command" htmlFor="settings-action-command" divided>
+                    <input
+                      id="settings-action-command"
+                      className={monoClass}
+                      value={form.command}
+                      spellCheck={false}
+                      onChange={(event) => setForm({ ...form, command: event.target.value })}
+                    />
+                  </StackedRow>
+                  <SettingsSwitch
+                    id="action-powershell"
+                    label="Run as a PowerShell script"
+                    description={`Wraps the command in ${POWERSHELL_PREFIX.trim()}`}
+                    checked={runWithPowerShell}
+                    divided
+                    onChange={setRunWithPowerShell}
+                  />
+                  <FieldRow
+                    label="Working directory"
+                    htmlFor="settings-action-cwd"
+                    description="Project root when empty."
+                    divided
+                  >
+                    <input
+                      id="settings-action-cwd"
+                      className={monoClass}
+                      value={form.cwd ?? ''}
+                      placeholder="Project root"
+                      spellCheck={false}
+                      onChange={(event) => setForm({ ...form, cwd: event.target.value || null })}
+                    />
+                  </FieldRow>
+                  <FieldRow
+                    label="Run in"
+                    htmlFor="settings-action-run"
+                    description="Background, a new terminal, or the bottom terminal."
+                    divided
+                  >
+                    <SettingsSelect
+                      id="settings-action-run"
+                      value={form.runMode}
+                      onChange={(value) =>
+                        setForm({ ...form, runMode: value as ActionInput['runMode'] })
+                      }
+                    >
+                      <option value="background">Background</option>
+                      <option value="new-terminal">New terminal</option>
+                      <option value="bottom-terminal">Bottom terminal</option>
+                    </SettingsSelect>
+                  </FieldRow>
+                  <SettingsSwitch
+                    id="action-confirm"
+                    label="Ask for confirmation"
+                    checked={form.confirm}
+                    divided
+                    onChange={(next) => setForm({ ...form, confirm: next })}
+                  />
+                  {error ? (
+                    <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
                       {error}
                     </p>
                   ) : null}
-                </>
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
-    </>
+                  <GroupFooter>
+                    <button
+                      type="button"
+                      className={secondaryClass}
+                      onClick={() => {
+                        setForm(null)
+                        setError(null)
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" disabled={guard.busy} className={primaryClass}>
+                      Save action
+                    </button>
+                  </GroupFooter>
+                </GroupBox>
+              </form>
+            </SettingsGroup>
+          )}
+        </div>
+      )}
+    </SettingsShell>
   )
 }
