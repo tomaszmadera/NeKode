@@ -42,6 +42,10 @@ export interface DictationResult {
   chatId: string
   outcome: 'success' | 'no-speech' | 'failed' | 'cancelled'
   text: string
+  rawText?: string
+  editedText?: string
+  providerId?: string
+  modelId?: string
   warning: string | null
   error: DictationError | null
   retryable: boolean
@@ -59,6 +63,10 @@ export function isDictationResult(value: unknown): value is DictationResult {
     typeof value.chatId === 'string' &&
     ['success', 'no-speech', 'failed', 'cancelled'].includes(value.outcome as string) &&
     typeof value.text === 'string' &&
+    (value.rawText === undefined || typeof value.rawText === 'string') &&
+    (value.editedText === undefined || typeof value.editedText === 'string') &&
+    (value.providerId === undefined || typeof value.providerId === 'string') &&
+    (value.modelId === undefined || typeof value.modelId === 'string') &&
     (value.warning === null || typeof value.warning === 'string') &&
     (value.error === null ||
       [
@@ -75,6 +83,94 @@ export function isDictationResult(value: unknown): value is DictationResult {
       ].includes(value.error as string)) &&
     typeof value.retryable === 'boolean'
   )
+}
+
+// Provider architecture types (NEKODE-21)
+export interface SttProviderCapabilities {
+  keyterms: boolean
+  nativeEditing: boolean
+  languageSelection: boolean
+  modelDiscovery: boolean
+  timestamps: boolean
+}
+
+export type ConfigFieldType = 'text' | 'secret' | 'select' | 'boolean' | 'number' | 'url'
+
+export interface ConfigFieldSchema {
+  key: string
+  label: string
+  type: ConfigFieldType
+  required: boolean
+  defaultValue?: string | boolean | number
+  options?: Array<{ label: string; value: string }>
+  description?: string
+  placeholder?: string
+}
+
+export interface SttProviderManifest {
+  id: string
+  name: string
+  description: string
+  version: string
+  protocolVersion?: number
+  capabilities: SttProviderCapabilities
+  configSchema: ConfigFieldSchema[]
+}
+
+export interface SttProviderSummary {
+  id: string
+  name: string
+  description: string
+  version: string
+  capabilities: SttProviderCapabilities
+  configSchema: ConfigFieldSchema[]
+  configured: boolean
+}
+
+export interface DictationDictionaryEntry {
+  id: string
+  term: string
+  aliases: string[]
+  description: string | null
+  scope: 'global' | 'project'
+  projectId: string | null
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateDictionaryEntryInput {
+  id?: string
+  term: string
+  aliases?: string[]
+  description?: string | null
+  scope: 'global' | 'project'
+  projectId?: string | null
+  enabled?: boolean
+}
+
+export interface UpdateDictionaryEntryInput {
+  term?: string
+  aliases?: string[]
+  description?: string | null
+  enabled?: boolean
+}
+
+export type DictationPostProcessingMode = 'disabled' | 'provider_native' | 'external_llm'
+export type DictationPostProcessingLevel = 'light' | 'medium' | 'full'
+
+export interface DictationPostProcessingSettings {
+  mode: DictationPostProcessingMode
+  level: DictationPostProcessingLevel
+  model?: string
+  hasApiKey: boolean
+}
+
+export interface SetPostProcessingSettingsInput {
+  mode: string
+  level: string
+  model?: string
+  apiKey?: string
 }
 
 // About 17 minutes of PCM, bounded before IPC allocation reaches filesystem work.

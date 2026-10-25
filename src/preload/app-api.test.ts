@@ -221,6 +221,56 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.dictationSetSettings, args: [settings] },
     ])
   })
+  it('routes the provider, dictionary and post-processing dictation methods', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.dictation.providersList()
+    await api.dictation.providersTestConnection('elevenlabs', { apiKey: 'xi-123' })
+    await api.dictation.providersDiscoverModels('openrouter')
+    await api.dictation.providersGetConfig('openrouter')
+    await api.dictation.providersSetConfig('openrouter', { model: 'm1' })
+    await api.dictation.getActiveProvider()
+    await api.dictation.setActiveProvider('elevenlabs')
+    await api.dictation.dictionaryList('p1')
+    await api.dictation.dictionaryAdd({ term: 'Vitest', scope: 'global' })
+    await api.dictation.dictionaryUpdate('d1', { term: 'Vitest 2' })
+    await api.dictation.dictionaryDelete('d1')
+    await api.dictation.dictionaryToggle('d1', false)
+    await api.dictation.postProcessingGetSettings()
+    await api.dictation.postProcessingSetSettings({ mode: 'disabled', level: 'light' })
+
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.dictationProvidersList, args: [] },
+      {
+        channel: IPC_CHANNEL.dictationProvidersTestConnection,
+        args: ['elevenlabs', { apiKey: 'xi-123' }],
+      },
+      { channel: IPC_CHANNEL.dictationProvidersDiscoverModels, args: ['openrouter'] },
+      { channel: IPC_CHANNEL.dictationProvidersGetConfig, args: ['openrouter'] },
+      {
+        channel: IPC_CHANNEL.dictationProvidersSetConfig,
+        args: ['openrouter', { model: 'm1' }],
+      },
+      { channel: IPC_CHANNEL.dictationGetActiveProvider, args: [] },
+      { channel: IPC_CHANNEL.dictationSetActiveProvider, args: ['elevenlabs'] },
+      { channel: IPC_CHANNEL.dictationDictionaryList, args: ['p1'] },
+      {
+        channel: IPC_CHANNEL.dictationDictionaryAdd,
+        args: [{ term: 'Vitest', scope: 'global' }],
+      },
+      {
+        channel: IPC_CHANNEL.dictationDictionaryUpdate,
+        args: ['d1', { term: 'Vitest 2' }],
+      },
+      { channel: IPC_CHANNEL.dictationDictionaryDelete, args: ['d1'] },
+      { channel: IPC_CHANNEL.dictationDictionaryToggle, args: ['d1', false] },
+      { channel: IPC_CHANNEL.dictationPostProcessingGetSettings, args: [] },
+      {
+        channel: IPC_CHANNEL.dictationPostProcessingSetSettings,
+        args: [{ mode: 'disabled', level: 'light' }],
+      },
+    ])
+  })
   it('forwards WSL registration data and project shell context unchanged', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)

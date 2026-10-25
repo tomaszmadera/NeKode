@@ -10,21 +10,12 @@ export function DesktopDictationSettings({
 }: {
   setup: DesktopDictationSetup
   saving: boolean
-  onChange: (settings: Settings) => Promise<void>
+  onChange: (settings: Settings) => Promise<unknown>
 }) {
   return (
+    // Selecting this method happens in the Dictation method select; this
+    // panel only holds the shortcut confirmation and ownership notes.
     <div className="mt-4 space-y-3 text-sm text-ink-secondary">
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={setup.settings.enabled}
-          disabled={!setup.supported || saving}
-          onChange={(event) => {
-            void onChange({ enabled: event.target.checked, confirmed: false })
-          }}
-        />
-        Enable desktop dictation
-      </label>
       {!setup.supported ? <p>Desktop dictation requires Windows.</p> : null}
       <p>Supported shortcut: Ctrl + Super (Windows key). Activation: Tap only.</p>
       <label className="flex items-start gap-2">

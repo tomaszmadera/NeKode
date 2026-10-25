@@ -19,7 +19,7 @@ import { themeColor } from '../lib/theme-color'
 import { isBottomPanelChord } from './bottom-panel-chord'
 import { chatSwitchDirection } from './chat-switch-chord'
 import { type CursorLine, decideCtrlDAction } from './ctrl-d-gate'
-import { type PromptInjection, PromptInput } from './PromptInput'
+import { type PromptInjection, PromptInput, type UnifiedDictationControl } from './PromptInput'
 import { TerminalContextMenu } from './TerminalContextMenu'
 
 interface Clipboard {
@@ -42,6 +42,9 @@ function navigatorClipboard(): Clipboard | null {
 
 interface ChatTerminalProps {
   dictation?: import('../../hooks/useDesktopDictation').DesktopDictationControl
+  /** Workspace-owned dictation control, shared by every chat prompt so a
+      tab switch or close never disposes an in-flight transcription. */
+  dictationControl?: UnifiedDictationControl
   app: AppApi
   chatId: string
   /** Project directory; becomes the PTY cwd on first attach. */
@@ -144,6 +147,7 @@ function isWindowsHost(app: AppApi): boolean {
 export function ChatTerminal({
   app,
   dictation,
+  dictationControl,
   chatId,
   cwd,
   visible,
@@ -730,6 +734,8 @@ export function ChatTerminal({
           </div>
           <PromptInput
             dictation={dictation}
+            dictationControl={dictationControl}
+            chatId={chatId}
             onSubmit={(line) => sendRef.current?.(line)}
             injected={injected}
             onInjected={onInjected}

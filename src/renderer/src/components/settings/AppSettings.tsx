@@ -7,8 +7,8 @@ import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID } from '../../lib/test-ids'
 import { isThemeId, THEME_IDS, THEMES, type ThemeId } from '../../lib/theme'
 import { UsageSettings } from '../usage/UsageSettings'
-import { DesktopDictationSettings } from './DesktopDictationSettings'
 import { DictationDictionary } from './DictationDictionary'
+import { DictationSettings } from './DictationSettings'
 import { FontsSettings } from './FontsSettings'
 import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
 
@@ -427,14 +427,10 @@ export function AppSettings({
                   onSizeChange={onTerminalFontSizeChange}
                 />
               ) : activeTab === 'dictation' ? (
-                <>
-                  <DesktopDictationSettings
-                    setup={desktopDictation.setup}
-                    saving={desktopDictation.saving || desktopDictation.control.busy}
-                    onChange={desktopDictation.configure}
-                  />
-                  <DictationDictionary api={dictationApi} />
-                </>
+                <div className="mt-4 space-y-6">
+                  <DictationSettings api={dictationApi} desktopDictation={desktopDictation} />
+                  <DictationDictionary api={dictationApi} app={app} />
+                </div>
               ) : (
                 <div data-testid={TEST_ID.settingsShortcutsTable} className="mt-4 space-y-4">
                   {SHORTCUT_SECTIONS.map((section) => (

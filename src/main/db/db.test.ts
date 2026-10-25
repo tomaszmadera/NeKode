@@ -45,8 +45,8 @@ describe('migration 6 (chat launch identity)', () => {
         '[PS7] Old profile',
         '2026-10-18T00:00:00Z',
       )
-      expect(runMigrations(db)).toBe(6)
-      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(7)
+      expect(runMigrations(db)).toBe(7)
       expect(db.prepare('SELECT name, task_ref, agent_name FROM chats').get()).toEqual({
         name: '[PS7] Old profile',
         task_ref: null,
@@ -60,7 +60,7 @@ describe('migration 6 (chat launch identity)', () => {
     }
     const reopened = openDatabase(path)
     try {
-      expect(runMigrations(reopened)).toBe(6)
+      expect(runMigrations(reopened)).toBe(7)
       expect(
         reopened.prepare('SELECT name, task_ref, agent_name FROM chats WHERE id = ?').get('agent'),
       ).toEqual({
@@ -93,8 +93,8 @@ describe('runMigrations', () => {
   it('creates the schema once and is idempotent', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(6)
-      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(7)
+      expect(runMigrations(db)).toBe(7)
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as Array<{ name: string }>
@@ -102,6 +102,7 @@ describe('runMigrations', () => {
         'actions',
         'app_state',
         'chats',
+        'dictation_dictionary',
         'projects',
         'schema_migrations',
       ])
@@ -232,7 +233,7 @@ describe('migration 2 (tasks -> chats)', () => {
   it('carries rows over to chats without status and drops the tasks table', () => {
     const db = createLegacyDb()
     try {
-      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(7)
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -241,6 +242,7 @@ describe('migration 2 (tasks -> chats)', () => {
         'actions',
         'app_state',
         'chats',
+        'dictation_dictionary',
         'projects',
         'schema_migrations',
       ])
@@ -313,7 +315,7 @@ describe('migration 2 (tasks -> chats)', () => {
       const applied = db
         .prepare('SELECT version FROM schema_migrations ORDER BY version')
         .all() as Array<{ version: number }>
-      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6])
+      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7])
     } finally {
       db.close()
     }
@@ -369,7 +371,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
   it('accepts bottom-terminal on an empty database and keeps the schema', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(7)
       db.prepare(
         'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
       ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
@@ -383,7 +385,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
           .run(),
       ).not.toThrow()
       // Idempotent: a second run re-applies nothing.
-      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(7)
     } finally {
       db.close()
     }
@@ -392,7 +394,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
   it('lets populated databases accept bottom-terminal and keeps old rows byte-for-byte', () => {
     const db = createLegacyDbAtV4()
     try {
-      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(7)
       expect(() =>
         db
           .prepare(
@@ -507,7 +509,7 @@ describe('migration 3 (chat name unique index dropped)', () => {
   it('drops the unique index: duplicate chat names within a project are allowed', () => {
     const db = createLegacyDbAtV2()
     try {
-      expect(runMigrations(db)).toBe(6)
+      expect(runMigrations(db)).toBe(7)
       expect(() =>
         db
           .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
@@ -560,6 +562,276 @@ describe('migration 3 (chat name unique index dropped)', () => {
       expect((db.prepare('SELECT COUNT(*) AS c FROM chats').get() as { c: number }).c).toBe(0)
     } finally {
       db.close()
+    }
+  })
+})
+
+describe('migration 7 (dictation dictionary)', () => {
+  it('creates the dictation_dictionary table with expected schema and indexes', () => {
+    const db = openDatabase(':memory:')
+    try {
+      expect(runMigrations(db)).toBe(7)
+      expect(runMigrations(db)).toBe(7)
+
+      const columns = db.prepare('PRAGMA table_info(dictation_dictionary)').all() as Array<{
+        name: string
+        type: string
+        notnull: number
+        dflt_value: string | null
+        pk: number
+      }>
+
+      expect(
+        columns.map((c) => ({ name: c.name, type: c.type, notnull: c.notnull, pk: c.pk })),
+      ).toEqual([
+        { name: 'id', type: 'TEXT', notnull: 0, pk: 1 },
+        { name: 'term', type: 'TEXT', notnull: 1, pk: 0 },
+        { name: 'aliases', type: 'TEXT', notnull: 1, pk: 0 },
+        { name: 'description', type: 'TEXT', notnull: 0, pk: 0 },
+        { name: 'scope', type: 'TEXT', notnull: 1, pk: 0 },
+        { name: 'project_id', type: 'TEXT', notnull: 0, pk: 0 },
+        { name: 'enabled', type: 'INTEGER', notnull: 1, pk: 0 },
+        { name: 'created_at', type: 'TEXT', notnull: 1, pk: 0 },
+        { name: 'updated_at', type: 'TEXT', notnull: 1, pk: 0 },
+      ])
+
+      const indexes = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dictation_dictionary' AND name NOT LIKE 'sqlite_autoindex%' ORDER BY name",
+        )
+        .all() as Array<{ name: string }>
+
+      expect(indexes.map((idx) => idx.name)).toEqual([
+        'idx_dictation_dictionary_lookup',
+        'uq_dictation_dictionary_global',
+        'uq_dictation_dictionary_project',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('enforces check constraints on scope, enabled, and project_id relationship', () => {
+    const db = openDatabase(':memory:')
+    try {
+      runMigrations(db)
+      db.prepare(
+        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+
+      const now = '2026-10-25T10:00:00Z'
+
+      // Valid global entry
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+             VALUES ('g1', 'Kubernetes', 'global', NULL, ?, ?)`,
+          )
+          .run(now, now),
+      ).not.toThrow()
+
+      // Invalid: global entry with project_id
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+             VALUES ('g2', 'Docker', 'global', 'p1', ?, ?)`,
+          )
+          .run(now, now),
+      ).toThrow(/CHECK/i)
+
+      // Invalid: project entry with NULL project_id
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+             VALUES ('p-invalid', 'Docker', 'project', NULL, ?, ?)`,
+          )
+          .run(now, now),
+      ).toThrow(/CHECK/i)
+
+      // Invalid: scope not 'global' or 'project'
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+             VALUES ('bad-scope', 'Docker', 'workspace', NULL, ?, ?)`,
+          )
+          .run(now, now),
+      ).toThrow(/CHECK/i)
+
+      // Invalid: enabled not 0 or 1
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, enabled, created_at, updated_at)
+             VALUES ('bad-enabled', 'Docker', 'global', NULL, 2, ?, ?)`,
+          )
+          .run(now, now),
+      ).toThrow(/CHECK/i)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('enforces uniqueness for global terms and project terms case-insensitively', () => {
+    const db = openDatabase(':memory:')
+    try {
+      runMigrations(db)
+      db.prepare(
+        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+      db.prepare(
+        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('p2', 'demo2', 'D:/code/demo2', null, '2026-01-01T00:00:00Z')
+
+      const now = '2026-10-25T10:00:00Z'
+
+      // Global term
+      db.prepare(
+        `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+         VALUES ('g1', 'Docker', 'global', NULL, ?, ?)`,
+      ).run(now, now)
+
+      // Duplicate global term (case-insensitive) should throw
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+             VALUES ('g2', 'docker', 'global', NULL, ?, ?)`,
+          )
+          .run(now, now),
+      ).toThrow(/UNIQUE/i)
+
+      // Same term in project scope is allowed (overrides global)
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+             VALUES ('p1-docker', 'Docker', 'project', 'p1', ?, ?)`,
+          )
+          .run(now, now),
+      ).not.toThrow()
+
+      // Duplicate in same project (case-insensitive) should throw
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+             VALUES ('p1-docker-dup', 'dOcKeR', 'project', 'p1', ?, ?)`,
+          )
+          .run(now, now),
+      ).toThrow(/UNIQUE/i)
+
+      // Same term in a different project is allowed
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+             VALUES ('p2-docker', 'docker', 'project', 'p2', ?, ?)`,
+          )
+          .run(now, now),
+      ).not.toThrow()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('cascades deletion of project dictionary entries when a project is removed', () => {
+    const db = openDatabase(':memory:')
+    try {
+      runMigrations(db)
+      db.prepare(
+        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+      db.prepare(
+        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('p2', 'demo2', 'D:/code/demo2', null, '2026-01-01T00:00:00Z')
+
+      const now = '2026-10-25T10:00:00Z'
+
+      // Global entry
+      db.prepare(
+        `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+         VALUES ('g1', 'Kubernetes', 'global', NULL, ?, ?)`,
+      ).run(now, now)
+
+      // p1 entry
+      db.prepare(
+        `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+         VALUES ('p1-1', 'Docker', 'project', 'p1', ?, ?)`,
+      ).run(now, now)
+
+      // p2 entry
+      db.prepare(
+        `INSERT INTO dictation_dictionary (id, term, scope, project_id, created_at, updated_at)
+         VALUES ('p2-1', 'Vitest', 'project', 'p2', ?, ?)`,
+      ).run(now, now)
+
+      expect(
+        (db.prepare('SELECT COUNT(*) AS c FROM dictation_dictionary').get() as { c: number }).c,
+      ).toBe(3)
+
+      // Delete project p1
+      db.prepare('DELETE FROM projects WHERE id = ?').run('p1')
+
+      const remaining = db
+        .prepare('SELECT id, term, scope, project_id FROM dictation_dictionary ORDER BY id')
+        .all() as Array<{ id: string; term: string; scope: string; project_id: string | null }>
+
+      expect(remaining).toEqual([
+        { id: 'g1', term: 'Kubernetes', scope: 'global', project_id: null },
+        { id: 'p2-1', term: 'Vitest', scope: 'project', project_id: 'p2' },
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('migrates an existing v6 database cleanly and round-trips across reopen', () => {
+    const path = tempDbPath()
+    const db = openDatabase(path)
+    try {
+      // Migrate up to 6
+      runMigrations(
+        db,
+        MIGRATIONS.filter((m) => m.version <= 6),
+      )
+      db.prepare(
+        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+
+      // Now run migration 7
+      expect(runMigrations(db)).toBe(7)
+
+      const now = '2026-10-25T10:00:00Z'
+      db.prepare(
+        `INSERT INTO dictation_dictionary (id, term, aliases, description, scope, project_id, enabled, created_at, updated_at)
+         VALUES ('d1', 'React', '["riakt"]', 'UI framework', 'global', NULL, 1, ?, ?)`,
+      ).run(now, now)
+    } finally {
+      db.close()
+    }
+
+    const reopened = openDatabase(path)
+    try {
+      expect(runMigrations(reopened)).toBe(7)
+      const entry = reopened
+        .prepare('SELECT * FROM dictation_dictionary WHERE id = ?')
+        .get('d1') as Record<string, unknown>
+
+      expect(entry).toMatchObject({
+        id: 'd1',
+        term: 'React',
+        aliases: '["riakt"]',
+        description: 'UI framework',
+        scope: 'global',
+        project_id: null,
+        enabled: 1,
+      })
+    } finally {
+      reopened.close()
     }
   })
 })

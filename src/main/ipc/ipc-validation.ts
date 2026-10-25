@@ -6,9 +6,12 @@ import {
   isDesktopDictationSettings,
 } from '../../shared/desktop-dictation-contract'
 import {
+  type CreateDictionaryEntryInput,
   type DictationSettings,
   isDictationSettings,
   isDictationWav,
+  type SetPostProcessingSettingsInput,
+  type UpdateDictionaryEntryInput,
 } from '../../shared/dictation-contract'
 import type {
   ActionInput,
@@ -209,6 +212,99 @@ function assertOptionalKanbanValues(
     return
   }
   assertKanbanValues(value, label)
+}
+
+function assertObject(value: unknown, label: string): asserts value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(label, 'must be an object')
+  }
+}
+
+function assertCreateDictionaryEntry(
+  value: unknown,
+  label: string,
+): asserts value is CreateDictionaryEntryInput {
+  assertObject(value, label)
+  if (typeof value.term !== 'string' || value.term.trim().length === 0) {
+    fail(`${label}.term`, 'must be a non-empty string')
+  }
+  if (value.scope !== 'global' && value.scope !== 'project') {
+    fail(`${label}.scope`, "must be 'global' or 'project'")
+  }
+  if (value.scope === 'project') {
+    if (typeof value.projectId !== 'string' || value.projectId.trim().length === 0) {
+      fail(`${label}.projectId`, 'must be a non-empty string for project scope')
+    }
+  } else if (value.projectId !== undefined && value.projectId !== null) {
+    fail(`${label}.projectId`, 'must not be set for global scope')
+  }
+  if (value.aliases !== undefined) {
+    if (!Array.isArray(value.aliases) || !value.aliases.every((a) => typeof a === 'string')) {
+      fail(`${label}.aliases`, 'must be an array of strings')
+    }
+  }
+  if (
+    value.description !== undefined &&
+    value.description !== null &&
+    typeof value.description !== 'string'
+  ) {
+    fail(`${label}.description`, 'must be a string or null')
+  }
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
+    fail(`${label}.enabled`, 'must be a boolean')
+  }
+}
+
+function assertUpdateDictionaryEntry(
+  value: unknown,
+  label: string,
+): asserts value is UpdateDictionaryEntryInput {
+  assertObject(value, label)
+  if (
+    value.term !== undefined &&
+    (typeof value.term !== 'string' || value.term.trim().length === 0)
+  ) {
+    fail(`${label}.term`, 'must be a non-empty string')
+  }
+  if (
+    value.aliases !== undefined &&
+    (!Array.isArray(value.aliases) || !value.aliases.every((a) => typeof a === 'string'))
+  ) {
+    fail(`${label}.aliases`, 'must be an array of strings')
+  }
+  if (
+    value.description !== undefined &&
+    value.description !== null &&
+    typeof value.description !== 'string'
+  ) {
+    fail(`${label}.description`, 'must be a string or null')
+  }
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
+    fail(`${label}.enabled`, 'must be a boolean')
+  }
+}
+
+function assertPostProcessingSettings(
+  value: unknown,
+  label: string,
+): asserts value is SetPostProcessingSettingsInput {
+  assertObject(value, label)
+  if (
+    value.mode !== 'disabled' &&
+    value.mode !== 'provider_native' &&
+    value.mode !== 'external_llm'
+  ) {
+    fail(`${label}.mode`, "must be 'disabled', 'provider_native', or 'external_llm'")
+  }
+  if (value.level !== 'light' && value.level !== 'medium' && value.level !== 'full') {
+    fail(`${label}.level`, "must be 'light', 'medium', or 'full'")
+  }
+  if (value.model !== undefined && typeof value.model !== 'string') {
+    fail(`${label}.model`, 'must be a string')
+  }
+  if (value.apiKey !== undefined && typeof value.apiKey !== 'string') {
+    fail(`${label}.apiKey`, 'must be a string')
+  }
 }
 
 const AGENT_PROFILE_PUT_KEYS = ['id', 'name', 'command']
@@ -652,9 +748,162 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       services.dictation.refreshModels(),
     ),
     serviceChannel(IPC_CHANNEL.dictationGetSettings, [], () => services.dictation.getSettings()),
-    serviceChannel(IPC_CHANNEL.dictationDictionaryList, [], () =>
-      services.dictation.dictionaryList(),
+    {
+      channel: IPC_CHANNEL.dictationDictionaryList,
+      parse: (payload) => {
+        requireArgsWithOptional(payload, 0, IPC_CHANNEL.dictationDictionaryList)
+        if (payload.length === 1 && payload[0] !== undefined) {
+          assertString(payload[0], 'dictation:dictionaryList projectId')
+        }
+        return payload
+      },
+      invoke: (args) =>
+        args.length > 0
+          ? services.dictation.dictionaryList(args[0] as string)
+          : services.dictation.dictionaryList(),
+    },
+    serviceChannel(IPC_CHANNEL.dictationProvidersList, [], () =>
+      services.dictation.providersList(),
     ),
+    {
+      channel: IPC_CHANNEL.dictationProvidersTestConnection,
+      parse: (payload) => {
+        requireArgsWithOptional(payload, 1, IPC_CHANNEL.dictationProvidersTestConnection)
+        assertString(payload[0], 'dictation:providersTestConnection providerId')
+        if (!(payload[0] as string).trim())
+          fail(IPC_CHANNEL.dictationProvidersTestConnection, 'requires a providerId')
+        if (payload.length === 2 && payload[1] !== undefined) {
+          assertObject(payload[1], 'dictation:providersTestConnection config')
+        }
+        return payload
+      },
+      invoke: (args) =>
+        services.dictation.providersTestConnection(
+          args[0] as string,
+          args[1] as Record<string, unknown> | undefined,
+        ),
+    },
+    {
+      channel: IPC_CHANNEL.dictationProvidersDiscoverModels,
+      parse: (payload) => {
+        requireArgsWithOptional(payload, 1, IPC_CHANNEL.dictationProvidersDiscoverModels)
+        assertString(payload[0], 'dictation:providersDiscoverModels providerId')
+        if (!(payload[0] as string).trim())
+          fail(IPC_CHANNEL.dictationProvidersDiscoverModels, 'requires a providerId')
+        if (payload.length === 2 && payload[1] !== undefined) {
+          assertObject(payload[1], 'dictation:providersDiscoverModels config')
+        }
+        return payload
+      },
+      invoke: (args) =>
+        services.dictation.providersDiscoverModels(
+          args[0] as string,
+          args[1] as Record<string, unknown> | undefined,
+        ),
+    },
+    {
+      channel: IPC_CHANNEL.dictationProvidersGetConfig,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.dictationProvidersGetConfig)
+        assertString(payload[0], 'dictation:providersGetConfig providerId')
+        if (!(payload[0] as string).trim())
+          fail(IPC_CHANNEL.dictationProvidersGetConfig, 'requires a providerId')
+        return payload
+      },
+      invoke: (args) => services.dictation.providersGetConfig(args[0] as string),
+    },
+    {
+      channel: IPC_CHANNEL.dictationProvidersSetConfig,
+      parse: (payload) => {
+        requireArgs(payload, 2, IPC_CHANNEL.dictationProvidersSetConfig)
+        assertString(payload[0], 'dictation:providersSetConfig providerId')
+        if (!(payload[0] as string).trim())
+          fail(IPC_CHANNEL.dictationProvidersSetConfig, 'requires a providerId')
+        assertObject(payload[1], 'dictation:providersSetConfig config')
+        return payload
+      },
+      invoke: (args) =>
+        services.dictation.providersSetConfig(
+          args[0] as string,
+          args[1] as Record<string, unknown>,
+        ),
+    },
+    serviceChannel(IPC_CHANNEL.dictationGetActiveProvider, [], () =>
+      services.dictation.getActiveProvider(),
+    ),
+    {
+      channel: IPC_CHANNEL.dictationSetActiveProvider,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.dictationSetActiveProvider)
+        assertString(payload[0], 'dictation:setActiveProvider providerId')
+        if (!(payload[0] as string).trim())
+          fail(IPC_CHANNEL.dictationSetActiveProvider, 'requires a providerId')
+        return payload
+      },
+      invoke: (args) => services.dictation.setActiveProvider(args[0] as string),
+    },
+    {
+      channel: IPC_CHANNEL.dictationDictionaryAdd,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.dictationDictionaryAdd)
+        assertCreateDictionaryEntry(payload[0], IPC_CHANNEL.dictationDictionaryAdd)
+        return payload
+      },
+      invoke: (args) => services.dictation.dictionaryAdd(args[0] as CreateDictionaryEntryInput),
+    },
+    {
+      channel: IPC_CHANNEL.dictationDictionaryUpdate,
+      parse: (payload) => {
+        requireArgs(payload, 2, IPC_CHANNEL.dictationDictionaryUpdate)
+        assertString(payload[0], 'dictation:dictionaryUpdate id')
+        if (!(payload[0] as string).trim())
+          fail(IPC_CHANNEL.dictationDictionaryUpdate, 'requires an id')
+        assertUpdateDictionaryEntry(payload[1], IPC_CHANNEL.dictationDictionaryUpdate)
+        return payload
+      },
+      invoke: (args) =>
+        services.dictation.dictionaryUpdate(
+          args[0] as string,
+          args[1] as UpdateDictionaryEntryInput,
+        ),
+    },
+    {
+      channel: IPC_CHANNEL.dictationDictionaryDelete,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.dictationDictionaryDelete)
+        assertString(payload[0], 'dictation:dictionaryDelete id')
+        if (!(payload[0] as string).trim())
+          fail(IPC_CHANNEL.dictationDictionaryDelete, 'requires an id')
+        return payload
+      },
+      invoke: (args) => services.dictation.dictionaryDelete(args[0] as string),
+    },
+    {
+      channel: IPC_CHANNEL.dictationDictionaryToggle,
+      parse: (payload) => {
+        requireArgs(payload, 2, IPC_CHANNEL.dictationDictionaryToggle)
+        assertString(payload[0], 'dictation:dictionaryToggle id')
+        if (!(payload[0] as string).trim())
+          fail(IPC_CHANNEL.dictationDictionaryToggle, 'requires an id')
+        if (typeof payload[1] !== 'boolean')
+          fail(IPC_CHANNEL.dictationDictionaryToggle, 'enabled must be a boolean')
+        return payload
+      },
+      invoke: (args) => services.dictation.dictionaryToggle(args[0] as string, args[1] as boolean),
+    },
+    serviceChannel(IPC_CHANNEL.dictationPostProcessingGetSettings, [], () =>
+      services.dictation.postProcessingGetSettings(),
+    ),
+    {
+      channel: IPC_CHANNEL.dictationPostProcessingSetSettings,
+      parse: (payload) => {
+        requireArgs(payload, 1, IPC_CHANNEL.dictationPostProcessingSetSettings)
+        assertPostProcessingSettings(payload[0], IPC_CHANNEL.dictationPostProcessingSetSettings)
+        return payload
+      },
+      invoke: (args) =>
+        services.dictation.postProcessingSetSettings(args[0] as SetPostProcessingSettingsInput),
+    },
     {
       channel: IPC_CHANNEL.dictationStart,
       parse: (payload) => {

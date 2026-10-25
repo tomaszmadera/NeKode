@@ -12,9 +12,9 @@ describe('desktop dictation settings', () => {
     )
     const confirm = screen.getByRole('checkbox', { name: /I confirm/ })
     expect((confirm as HTMLInputElement).disabled).toBe(true)
+    // Selecting the method lives in the Dictation method select (AC-014).
+    expect(screen.queryByRole('checkbox', { name: 'Enable desktop dictation' })).toBeNull()
     expect(onChange).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable desktop dictation' }))
-    expect(onChange).toHaveBeenCalledExactlyOnceWith({ enabled: true, confirmed: false })
     view.rerender(
       <DesktopDictationSettings
         setup={{ ...setup, settings: { enabled: true, confirmed: false } }}
@@ -35,9 +35,9 @@ describe('desktop dictation settings', () => {
         onChange={onChange}
       />,
     )
-    expect(
-      (screen.getByRole('checkbox', { name: 'Enable desktop dictation' }) as HTMLInputElement)
-        .disabled,
-    ).toBe(true)
+    expect((screen.getByRole('checkbox', { name: /I confirm/ }) as HTMLInputElement).disabled).toBe(
+      true,
+    )
+    expect(screen.getByText('Desktop dictation requires Windows.')).toBeTruthy()
   })
 })

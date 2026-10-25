@@ -184,4 +184,104 @@ describe('renderer dictation controller', () => {
     expect(h.states.at(-1)?.result?.text).toBe('hello')
     h.controller.dispose()
   })
+  it('serializes duplicate in-flight start and stop requests (AC-012)', async () => {
+    const h = harness()
+    let resolveStart!: (val: { sessionId: string; error: null }) => void
+    ;(h.api.start as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStart = resolve
+        }),
+    )
+    const p1 = h.controller.start('chat')
+    const p2 = h.controller.start('chat')
+    expect(h.api.start).toHaveBeenCalledTimes(1)
+    resolveStart({ sessionId: 'session-1', error: null })
+    await Promise.all([p1, p2])
+    expect(h.states.at(-1)?.state).toBe('recording')
+
+    let resolveTake!: (val: { wav: ArrayBuffer; noSpeech: boolean }) => void
+    h.recording.stop.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTake = resolve
+        }),
+    )
+    const s1 = h.controller.stop()
+    const s2 = h.controller.stop()
+    expect(h.recording.stop).toHaveBeenCalledTimes(1)
+    resolveTake({
+      wav: encodeWav([new Float32Array(8000).fill(0.2)], 16000).wav,
+      noSpeech: false,
+    })
+    await Promise.all([s1, s2])
+    expect(h.api.audio).toHaveBeenCalledTimes(1)
+    h.controller.dispose()
+  })
+  it('stores transcript in orphaned drawer state when active chat is switched during transcription (AC-013)', async () => {
+    const h = harness()
+    await h.controller.start('chat-1')
+    await h.controller.stop()
+    expect(h.states.at(-1)?.state).toBe('transcribing')
+
+    // Active chat switches to chat-2 before backend returns result
+    h.controller.setActiveChatId('chat-2')
+
+    // Result arrives for chat-1
+    h.emit({ chatId: 'chat-1', text: 'Important dictation' })
+
+    // Target loss protection asserts result is not injected to chat-2
+    expect(h.states.at(-1)?.result).toBeNull()
+    expect(h.states.at(-1)?.orphanedTranscripts).toHaveLength(1)
+    expect(h.states.at(-1)?.orphanedTranscripts?.[0].chatId).toBe('chat-1')
+    expect(h.states.at(-1)?.orphanedTranscripts?.[0].text).toBe('Important dictation')
+
+    // Consuming orphaned transcript for chat-1 retrieves and clears it
+    const recovered = h.controller.consumeOrphaned('chat-1')
+    expect(recovered?.text).toBe('Important dictation')
+    expect(h.states.at(-1)?.orphanedTranscripts).toBeUndefined()
+
+    h.controller.dispose()
+  })
+  it('stores transcript in orphaned drawer state when target is unmounted during transcription (AC-013)', async () => {
+    const h = harness()
+    await h.controller.start('chat-1')
+    await h.controller.stop()
+    expect(h.states.at(-1)?.state).toBe('transcribing')
+
+    // Target prompt input unmounted
+    h.controller.setTargetMounted(false)
+
+    h.emit({ chatId: 'chat-1', text: 'Unmounted prompt text' })
+    expect(h.states.at(-1)?.result).toBeNull()
+    expect(h.states.at(-1)?.orphanedTranscripts).toHaveLength(1)
+
+    // Dismissing removes from drawer
+    h.controller.dismissOrphaned('session')
+    expect(h.states.at(-1)?.orphanedTranscripts).toBeUndefined()
+
+    h.controller.dispose()
+  })
+  it('transitions to post_processing state when indicated', async () => {
+    const h = harness()
+    await h.controller.start('chat')
+    h.controller.setPostProcessing()
+    expect(h.states.at(-1)?.state).toBe('post_processing')
+    h.controller.dispose()
+  })
+  it('preserves rawText and editedText on transcription results for comparison (AC-010)', async () => {
+    const h = harness()
+    await h.controller.start('chat')
+    await h.controller.stop()
+    h.emit({
+      text: 'Formatted text.',
+      rawText: 'formatted text',
+      editedText: 'Formatted text.',
+    })
+    const lastResult = h.states.at(-1)?.result
+    expect(lastResult?.text).toBe('Formatted text.')
+    expect(lastResult?.rawText).toBe('formatted text')
+    expect(lastResult?.editedText).toBe('Formatted text.')
+    h.controller.dispose()
+  })
 })

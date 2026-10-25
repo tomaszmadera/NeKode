@@ -7,6 +7,11 @@ import type { AppApi } from '../../../shared/ipc-contract'
 import { parseAppErrorPayload } from '../../../shared/ipc-error'
 
 export interface DesktopDictationControl {
+  /** Whether the OpenWhispr desktop shortcut is the selected dictation
+      method (exactly one method is selected in Settings; AC-014). Null while
+      the stored choice is unknown (loading, or a load or save failed): the
+      prompt then fails closed instead of recording with an STT adapter. */
+  selected?: boolean | null
   disabledReason: string | null
   busy: boolean
   error: string | null
@@ -53,25 +58,29 @@ export function useDesktopDictation(app: AppApi) {
     : !setup.supported
       ? 'Desktop dictation requires Windows.'
       : !setup.settings.enabled
-        ? 'Enable desktop dictation in Settings.'
+        ? 'Select the OpenWhispr desktop shortcut in Settings.'
         : !setup.settings.confirmed
           ? 'Confirm OpenWhispr Ctrl + Super / Tap in Settings.'
           : null
 
-  async function configure(settings: DesktopDictationSettings): Promise<void> {
-    if (savePending.current || pending.current) return
+  /** Resolves true once the settings are saved; false when skipped or failed
+      (the failure is reported through `control.error`). */
+  async function configure(settings: DesktopDictationSettings): Promise<boolean> {
+    if (savePending.current || pending.current) return false
     savePending.current = true
     setSaving(true)
     setError(null)
     try {
       setSetup(await app.dictation.desktopConfigure(settings))
       setReady(true)
+      return true
     } catch (reason) {
       setReady(false)
       setError(
         parseAppErrorPayload(reason)?.message ??
           'Desktop dictation settings could not save. Try again.',
       )
+      return false
     } finally {
       savePending.current = false
       setSaving(false)
@@ -101,6 +110,7 @@ export function useDesktopDictation(app: AppApi) {
     saving,
     configure,
     control: {
+      selected: ready ? setup.supported && setup.settings.enabled : null,
       disabledReason: saving ? 'Saving desktop dictation settings.' : disabledReason,
       busy,
       error,

@@ -13,7 +13,10 @@ import type {
   AgentProjectSelection,
   AgentProjectSelectionInput,
   ChatInfo,
+  CreateDictionaryEntryInput,
   DictationDictionary,
+  DictationDictionaryEntry,
+  DictationPostProcessingSettings,
   DictationResult,
   DictationSettings,
   DictationStart,
@@ -39,12 +42,14 @@ import type {
   KanbanUpdatePatch,
   ProjectInfo,
   ShellInfo,
+  SttProviderSummary,
   TaskProgressAdapterList,
   TaskProgressBinding,
   TaskProgressChangedEvent,
   TaskProgressSnapshot,
   TaskProgressTestResult,
   Unsubscribe,
+  UpdateDictionaryEntryInput,
   WorkItem,
 } from '../../shared/ipc-contract'
 
@@ -75,7 +80,12 @@ export interface AppServices {
     status(): DictationStatusSnapshot
     testConnection(): Promise<DictationStatusSnapshot>
     refreshModels(): Promise<DictationStatusSnapshot>
-    dictionaryList(): Promise<DictationDictionary>
+    dictionaryList(
+      projectId?: string,
+    ):
+      | Promise<DictationDictionaryEntry[] | DictationDictionary>
+      | DictationDictionaryEntry[]
+      | DictationDictionary
     getSettings(): DictationSettings
     setSettings(settings: DictationSettings): DictationSettings
     start(chatId: string, retrySessionId: string | null): DictationStart
@@ -83,6 +93,43 @@ export interface AppServices {
     cancel(sessionId: string): void
     onResult(callback: (result: DictationResult) => void): Unsubscribe
     shutdown(): void
+
+    providersList(): Promise<SttProviderSummary[]> | SttProviderSummary[]
+    providersTestConnection(
+      providerId: string,
+      config?: Record<string, unknown>,
+    ): Promise<{ ok: boolean; message: string }>
+    providersDiscoverModels(
+      providerId: string,
+      config?: Record<string, unknown>,
+    ): Promise<Array<{ id: string; name: string }>>
+    providersGetConfig(
+      providerId: string,
+    ): Promise<Record<string, unknown>> | Record<string, unknown>
+    providersSetConfig(providerId: string, config: Record<string, unknown>): Promise<void> | void
+    getActiveProvider(): Promise<string> | string
+    setActiveProvider(providerId: string): Promise<void> | void
+    dictionaryAdd(
+      entry: CreateDictionaryEntryInput,
+    ): Promise<DictationDictionaryEntry> | DictationDictionaryEntry
+    dictionaryUpdate(
+      id: string,
+      updates: UpdateDictionaryEntryInput,
+    ): Promise<DictationDictionaryEntry> | DictationDictionaryEntry
+    dictionaryDelete(id: string): Promise<void> | void
+    dictionaryToggle(
+      id: string,
+      enabled: boolean,
+    ): Promise<DictationDictionaryEntry> | DictationDictionaryEntry
+    postProcessingGetSettings():
+      | Promise<DictationPostProcessingSettings>
+      | DictationPostProcessingSettings
+    postProcessingSetSettings(settings: {
+      mode: string
+      level: string
+      model?: string
+      apiKey?: string
+    }): Promise<void> | void
   }
   actions: {
     list(): ActionControl[]

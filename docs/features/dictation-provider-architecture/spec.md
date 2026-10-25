@@ -220,7 +220,7 @@ export interface SttProviderAdapter {
 | **AC-011** | **Secret encryption at rest** | API keys are encrypted with `safeStorage` and stored with `enc:v1:` prefix. Renderer never receives plaintext secrets. Inability to encrypt blocks saving with an explicit error. |
 | **AC-012** | **Dictation button state & workflow** | The Dictation button reflects provider readiness. Clicking toggles recording, transcribing, and caret insertion. Pressing Esc cancels capture and aborts in-flight network requests. Duplicate clicks while in-flight are serialized. |
 | **AC-013** | **Target loss protection** | If the active chat tab is switched or closed during transcription, the transcript is saved in a session notification drawer and not inserted into an unrelated prompt. |
-| **AC-014** | **OpenWhispr compatibility** | Existing desktop shortcut bypass (`Ctrl+Super` / Tap) and local bridge routes remain functional as selectable provider options. |
+| **AC-014** | **OpenWhispr compatibility** | Existing desktop shortcut bypass (`Ctrl+Super` / Tap) and local bridge routes remain functional as selectable provider options. Exactly one dictation method is active: the Settings provider select lists every STT adapter plus the OpenWhispr desktop shortcut. Choosing the shortcut turns desktop dictation on; choosing an adapter turns it off. The prompt Dictation button sends the shortcut only while the shortcut is the selected method (disabled until its setup is confirmed) and records in-app otherwise. Decided by the user on 2026-10-25. |
 
 ---
 

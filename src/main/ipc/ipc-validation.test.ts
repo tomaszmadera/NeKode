@@ -38,6 +38,19 @@ function fakeServices(): AppServices {
       cancel: vi.fn(),
       onResult: vi.fn(() => () => undefined),
       shutdown: vi.fn(),
+      providersList: vi.fn(),
+      providersTestConnection: vi.fn(),
+      providersDiscoverModels: vi.fn(),
+      providersGetConfig: vi.fn(),
+      providersSetConfig: vi.fn(),
+      getActiveProvider: vi.fn(),
+      setActiveProvider: vi.fn(),
+      dictionaryAdd: vi.fn(),
+      dictionaryUpdate: vi.fn(),
+      dictionaryDelete: vi.fn(),
+      dictionaryToggle: vi.fn(),
+      postProcessingGetSettings: vi.fn(),
+      postProcessingSetSettings: vi.fn(),
     },
     actions: {
       list: vi.fn(() => []),
@@ -274,7 +287,6 @@ describe('ipc payload validation', () => {
     IPC_CHANNEL.dictationStatus,
     IPC_CHANNEL.dictationTestConnection,
     IPC_CHANNEL.dictationRefreshModels,
-    IPC_CHANNEL.dictationDictionaryList,
     IPC_CHANNEL.dictationGetSettings,
   ])('rejects all arguments to %s before service routing', (name) => {
     const services = fakeServices()
@@ -286,9 +298,150 @@ describe('ipc payload validation', () => {
       | 'status'
       | 'testConnection'
       | 'refreshModels'
-      | 'dictionaryList'
       | 'getSettings'
     expect(services.dictation[method]).toHaveBeenCalledExactlyOnceWith()
+  })
+  it('strictly validates dictation provider, dictionary and post-processing channels', () => {
+    const services = fakeServices()
+    const channels = new Map(
+      buildValidatedChannels(services).map((entry) => [entry.channel, entry]),
+    )
+
+    // dictationDictionaryList (0 or 1 arg)
+    const dictList = channels.get(IPC_CHANNEL.dictationDictionaryList)
+    if (!dictList) throw new Error('Missing dictationDictionaryList')
+    expect(() => dictList.parse([123])).toThrow(ValidationError)
+    expect(() => dictList.parse(['p1', 'extra'])).toThrow(ValidationError)
+    dictList.invoke(dictList.parse([]))
+    expect(services.dictation.dictionaryList).toHaveBeenCalledExactlyOnceWith()
+    dictList.invoke(dictList.parse(['proj-1']))
+    expect(services.dictation.dictionaryList).toHaveBeenCalledWith('proj-1')
+
+    // dictationProvidersList
+    const provList = channels.get(IPC_CHANNEL.dictationProvidersList)
+    if (!provList) throw new Error('Missing dictationProvidersList')
+    expect(() => provList.parse(['extra'])).toThrow(ValidationError)
+    provList.invoke(provList.parse([]))
+    expect(services.dictation.providersList).toHaveBeenCalledOnce()
+
+    // dictationProvidersTestConnection
+    const testConn = channels.get(IPC_CHANNEL.dictationProvidersTestConnection)
+    if (!testConn) throw new Error('Missing dictationProvidersTestConnection')
+    expect(() => testConn.parse([])).toThrow(ValidationError)
+    expect(() => testConn.parse([''])).toThrow(ValidationError)
+    expect(() => testConn.parse(['elevenlabs', 'invalid'])).toThrow(ValidationError)
+    expect(() => testConn.parse(['elevenlabs', {}, 'extra'])).toThrow(ValidationError)
+    testConn.invoke(testConn.parse(['elevenlabs']))
+    expect(services.dictation.providersTestConnection).toHaveBeenCalledWith('elevenlabs', undefined)
+    testConn.invoke(testConn.parse(['elevenlabs', { apiKey: 'k' }]))
+    expect(services.dictation.providersTestConnection).toHaveBeenCalledWith('elevenlabs', {
+      apiKey: 'k',
+    })
+
+    // dictationProvidersDiscoverModels
+    const discModels = channels.get(IPC_CHANNEL.dictationProvidersDiscoverModels)
+    if (!discModels) throw new Error('Missing dictationProvidersDiscoverModels')
+    expect(() => discModels.parse([])).toThrow(ValidationError)
+    expect(() => discModels.parse([''])).toThrow(ValidationError)
+    expect(() => discModels.parse(['openrouter', 'invalid'])).toThrow(ValidationError)
+    discModels.invoke(discModels.parse(['openrouter']))
+    expect(services.dictation.providersDiscoverModels).toHaveBeenCalledWith('openrouter', undefined)
+
+    // dictationProvidersGetConfig
+    const getConfig = channels.get(IPC_CHANNEL.dictationProvidersGetConfig)
+    if (!getConfig) throw new Error('Missing dictationProvidersGetConfig')
+    expect(() => getConfig.parse([])).toThrow(ValidationError)
+    expect(() => getConfig.parse([''])).toThrow(ValidationError)
+    expect(() => getConfig.parse(['p', 'extra'])).toThrow(ValidationError)
+    getConfig.invoke(getConfig.parse(['openrouter']))
+    expect(services.dictation.providersGetConfig).toHaveBeenCalledWith('openrouter')
+
+    // dictationProvidersSetConfig
+    const setConfig = channels.get(IPC_CHANNEL.dictationProvidersSetConfig)
+    if (!setConfig) throw new Error('Missing dictationProvidersSetConfig')
+    expect(() => setConfig.parse([])).toThrow(ValidationError)
+    expect(() => setConfig.parse(['openrouter'])).toThrow(ValidationError)
+    expect(() => setConfig.parse(['', {}])).toThrow(ValidationError)
+    expect(() => setConfig.parse(['openrouter', 'bad'])).toThrow(ValidationError)
+    setConfig.invoke(setConfig.parse(['openrouter', { model: 'm' }]))
+    expect(services.dictation.providersSetConfig).toHaveBeenCalledWith('openrouter', { model: 'm' })
+
+    // dictationGetActiveProvider
+    const getActive = channels.get(IPC_CHANNEL.dictationGetActiveProvider)
+    if (!getActive) throw new Error('Missing dictationGetActiveProvider')
+    expect(() => getActive.parse(['extra'])).toThrow(ValidationError)
+    getActive.invoke(getActive.parse([]))
+    expect(services.dictation.getActiveProvider).toHaveBeenCalledOnce()
+
+    // dictationSetActiveProvider
+    const setActive = channels.get(IPC_CHANNEL.dictationSetActiveProvider)
+    if (!setActive) throw new Error('Missing dictationSetActiveProvider')
+    expect(() => setActive.parse([])).toThrow(ValidationError)
+    expect(() => setActive.parse([''])).toThrow(ValidationError)
+    expect(() => setActive.parse(['elevenlabs', 'extra'])).toThrow(ValidationError)
+    setActive.invoke(setActive.parse(['elevenlabs']))
+    expect(services.dictation.setActiveProvider).toHaveBeenCalledWith('elevenlabs')
+
+    // dictationDictionaryAdd
+    const dictAdd = channels.get(IPC_CHANNEL.dictationDictionaryAdd)
+    if (!dictAdd) throw new Error('Missing dictationDictionaryAdd')
+    expect(() => dictAdd.parse([])).toThrow(ValidationError)
+    expect(() => dictAdd.parse([{ term: '' }])).toThrow(ValidationError)
+    expect(() => dictAdd.parse([{ term: 'v', scope: 'invalid' }])).toThrow(ValidationError)
+    expect(() => dictAdd.parse([{ term: 'v', scope: 'project' }])).toThrow(ValidationError)
+    expect(() => dictAdd.parse([{ term: 'v', scope: 'global', projectId: 'p1' }])).toThrow(
+      ValidationError,
+    )
+    expect(() => dictAdd.parse([{ term: 'v', scope: 'global', aliases: 'bad' }])).toThrow(
+      ValidationError,
+    )
+    const validEntry = { term: 'Vitest', scope: 'global' as const }
+    dictAdd.invoke(dictAdd.parse([validEntry]))
+    expect(services.dictation.dictionaryAdd).toHaveBeenCalledWith(validEntry)
+
+    // dictationDictionaryUpdate
+    const dictUpdate = channels.get(IPC_CHANNEL.dictationDictionaryUpdate)
+    if (!dictUpdate) throw new Error('Missing dictationDictionaryUpdate')
+    expect(() => dictUpdate.parse([])).toThrow(ValidationError)
+    expect(() => dictUpdate.parse(['id-1'])).toThrow(ValidationError)
+    expect(() => dictUpdate.parse(['', {}])).toThrow(ValidationError)
+    expect(() => dictUpdate.parse(['id-1', 'bad'])).toThrow(ValidationError)
+    dictUpdate.invoke(dictUpdate.parse(['id-1', { term: 'new-term' }]))
+    expect(services.dictation.dictionaryUpdate).toHaveBeenCalledWith('id-1', { term: 'new-term' })
+
+    // dictationDictionaryDelete
+    const dictDel = channels.get(IPC_CHANNEL.dictationDictionaryDelete)
+    if (!dictDel) throw new Error('Missing dictationDictionaryDelete')
+    expect(() => dictDel.parse([])).toThrow(ValidationError)
+    expect(() => dictDel.parse([''])).toThrow(ValidationError)
+    dictDel.invoke(dictDel.parse(['id-1']))
+    expect(services.dictation.dictionaryDelete).toHaveBeenCalledWith('id-1')
+
+    // dictationDictionaryToggle
+    const dictToggle = channels.get(IPC_CHANNEL.dictationDictionaryToggle)
+    if (!dictToggle) throw new Error('Missing dictationDictionaryToggle')
+    expect(() => dictToggle.parse([])).toThrow(ValidationError)
+    expect(() => dictToggle.parse(['id-1'])).toThrow(ValidationError)
+    expect(() => dictToggle.parse(['id-1', 'not-bool'])).toThrow(ValidationError)
+    dictToggle.invoke(dictToggle.parse(['id-1', true]))
+    expect(services.dictation.dictionaryToggle).toHaveBeenCalledWith('id-1', true)
+
+    // dictationPostProcessingGetSettings
+    const ppGet = channels.get(IPC_CHANNEL.dictationPostProcessingGetSettings)
+    if (!ppGet) throw new Error('Missing dictationPostProcessingGetSettings')
+    expect(() => ppGet.parse(['extra'])).toThrow(ValidationError)
+    ppGet.invoke(ppGet.parse([]))
+    expect(services.dictation.postProcessingGetSettings).toHaveBeenCalledOnce()
+
+    // dictationPostProcessingSetSettings
+    const ppSet = channels.get(IPC_CHANNEL.dictationPostProcessingSetSettings)
+    if (!ppSet) throw new Error('Missing dictationPostProcessingSetSettings')
+    expect(() => ppSet.parse([])).toThrow(ValidationError)
+    expect(() => ppSet.parse([{ mode: 'bad', level: 'light' }])).toThrow(ValidationError)
+    expect(() => ppSet.parse([{ mode: 'disabled', level: 'bad' }])).toThrow(ValidationError)
+    const validPp = { mode: 'external_llm', level: 'medium', model: 'gpt-4o', apiKey: 'sk-1' }
+    ppSet.invoke(ppSet.parse([validPp]))
+    expect(services.dictation.postProcessingSetSettings).toHaveBeenCalledWith(validPp)
   })
   it('strictly validates settings and exact arity before routing', () => {
     const services = fakeServices()

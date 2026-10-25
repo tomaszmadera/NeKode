@@ -70,6 +70,19 @@ function fakeDictation(): AppServices['dictation'] {
     cancel: vi.fn(),
     onResult: vi.fn(() => () => undefined),
     shutdown: vi.fn(),
+    providersList: vi.fn(),
+    providersTestConnection: vi.fn(),
+    providersDiscoverModels: vi.fn(),
+    providersGetConfig: vi.fn(),
+    providersSetConfig: vi.fn(),
+    getActiveProvider: vi.fn(),
+    setActiveProvider: vi.fn(),
+    dictionaryAdd: vi.fn(),
+    dictionaryUpdate: vi.fn(),
+    dictionaryDelete: vi.fn(),
+    dictionaryToggle: vi.fn(),
+    postProcessingGetSettings: vi.fn(),
+    postProcessingSetSettings: vi.fn(),
   }
 }
 
@@ -367,6 +380,43 @@ describe('registered ipc handlers', () => {
       IPC_CHANNEL.dictationSetSettings,
       [{ enabled: true, language: 'pl', model: 'default', timeoutSeconds: 30 }],
     ],
+    ['providersList', IPC_CHANNEL.dictationProvidersList, []],
+    [
+      'providersTestConnection',
+      IPC_CHANNEL.dictationProvidersTestConnection,
+      ['elevenlabs', { apiKey: 'xi-123' }],
+    ],
+    [
+      'providersDiscoverModels',
+      IPC_CHANNEL.dictationProvidersDiscoverModels,
+      ['elevenlabs', { apiKey: 'xi-123' }],
+    ],
+    ['providersGetConfig', IPC_CHANNEL.dictationProvidersGetConfig, ['elevenlabs']],
+    [
+      'providersSetConfig',
+      IPC_CHANNEL.dictationProvidersSetConfig,
+      ['elevenlabs', { apiKey: 'xi-123' }],
+    ],
+    ['getActiveProvider', IPC_CHANNEL.dictationGetActiveProvider, []],
+    ['setActiveProvider', IPC_CHANNEL.dictationSetActiveProvider, ['elevenlabs']],
+    [
+      'dictionaryAdd',
+      IPC_CHANNEL.dictationDictionaryAdd,
+      [{ term: 'NeKode', scope: 'global' as const }],
+    ],
+    [
+      'dictionaryUpdate',
+      IPC_CHANNEL.dictationDictionaryUpdate,
+      ['entry-1', { term: 'NeKode-updated' }],
+    ],
+    ['dictionaryDelete', IPC_CHANNEL.dictationDictionaryDelete, ['entry-1']],
+    ['dictionaryToggle', IPC_CHANNEL.dictationDictionaryToggle, ['entry-1', false]],
+    ['postProcessingGetSettings', IPC_CHANNEL.dictationPostProcessingGetSettings, []],
+    [
+      'postProcessingSetSettings',
+      IPC_CHANNEL.dictationPostProcessingSetSettings,
+      [{ mode: 'disabled' as const, level: 'medium' as const }],
+    ],
   ] as const)('routes and sender-guards dictation %s', (method, channel, payload) => {
     const { invoke, services } = createHarness()
     expect(() => invoke(channel, [...payload], 'https://untrusted.example/')).toThrow(
@@ -381,7 +431,7 @@ describe('registered ipc handlers', () => {
     expect(() =>
       invoke(IPC_CHANNEL.dictationDictionaryList, [], 'file:///renderer/index.html', false),
     ).toThrow('Rejected untrusted IPC sender.')
-    expect(() => invoke(IPC_CHANNEL.dictationDictionaryList, ['cursor-or-token'])).toThrow()
+    expect(() => invoke(IPC_CHANNEL.dictationDictionaryList, [123])).toThrow()
     expect(services.dictation.dictionaryList).not.toHaveBeenCalled()
     invoke(IPC_CHANNEL.dictationDictionaryList, [])
     expect(services.dictation.dictionaryList).toHaveBeenCalledOnce()

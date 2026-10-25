@@ -1,6 +1,7 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
+import { useDictation } from '../../hooks/useDictation'
 import type { AttentionSettings } from '../../lib/attention-settings'
 import { createChatActivity } from '../../lib/chat-activity'
 import {
@@ -161,6 +162,21 @@ export function ChatWorkspace({
   retryingLaunchChatId = null,
 }: ChatWorkspaceProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Record<string, SessionRecord>>({})
+  // One dictation controller for every chat prompt (AC-013): closing or
+  // switching a chat tab must not dispose an in-flight transcription. A
+  // result for a chat that is no longer selected becomes a recovered
+  // transcript shown in the selected chat's prompt.
+  const dictationControl = useDictation({
+    api: app.dictation,
+    chatId: selectedChatId ?? undefined,
+  })
+  const dictationControlRef = useRef(dictationControl)
+  dictationControlRef.current = dictationControl
+  const dictationTargetMounted = selectedChatId !== null && sessions[selectedChatId] !== undefined
+  useEffect(() => {
+    dictationControlRef.current.setActiveChatId(selectedChatId)
+    dictationControlRef.current.setTargetMounted(dictationTargetMounted)
+  }, [selectedChatId, dictationTargetMounted])
   const onActivityChangeRef = useRef(onActivityChange)
   onActivityChangeRef.current = onActivityChange
   const [activity] = useState(() =>
@@ -497,6 +513,7 @@ export function ChatWorkspace({
             >
               <ChatTerminal
                 dictation={dictation}
+                dictationControl={dictationControl}
                 app={app}
                 chatId={chatId}
                 cwd={record.cwd}

@@ -1,6 +1,7 @@
 import type { RenderResult } from '@testing-library/react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import type { DictationResult } from '../../../../shared/dictation-contract'
 import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { DEFAULT_ATTENTION_SETTINGS } from '../../lib/attention-settings'
@@ -24,6 +25,17 @@ vi.mock('@xterm/addon-fit', () => import('../../test/fit-addon-mock'))
 // gating only; the real Web Audio path has no jsdom AudioContext (its guard
 // behavior is covered in chime.test.ts).
 vi.mock('../../lib/chime', () => ({ playAttentionChime: vi.fn() }))
+// jsdom has no microphone: the workspace-owned dictation controller records
+// through this stub take.
+vi.mock('../../lib/dictation/recorder', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/dictation/recorder')>()),
+  microphoneRecorder: {
+    start: vi.fn(async () => ({
+      discard: vi.fn(),
+      stop: vi.fn(async () => ({ wav: new ArrayBuffer(8), noSpeech: false })),
+    })),
+  },
+}))
 
 const projectA: ProjectInfo = {
   id: 'p1',
@@ -926,5 +938,96 @@ describe('ChatWorkspace recent terminal output', () => {
     act(() => vi.advanceTimersByTime(250))
     expect(publish).toHaveBeenCalledTimes(4)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('ChatWorkspace dictation (AC-013)', () => {
+  beforeEach(() => {
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+
+  afterEach(cleanup)
+
+  /** Records and submits one take from chat t1, leaving it in transcription. */
+  async function dictateInChatOne(bundle: AppMockBundle) {
+    let emitResult!: (result: DictationResult) => void
+    vi.mocked(bundle.app.dictation.onResult).mockImplementation((callback) => {
+      emitResult = callback
+      return () => undefined
+    })
+    vi.mocked(bundle.app.dictation.start).mockResolvedValue({ sessionId: 's1', error: null })
+    vi.mocked(bundle.app.dictation.audio).mockResolvedValue(undefined)
+    vi.mocked(bundle.app.dictation.cancel).mockResolvedValue(undefined)
+    const view = render(
+      <ChatWorkspace {...workspaceProps(bundle, { chatId: 't1', selectionNonce: 1 })} />,
+    )
+    await waitFor(() => expect(bundle.app.terminals.create).toHaveBeenCalledTimes(1))
+    const button = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
+      TEST_ID.terminalPromptDictation,
+    )
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    await waitFor(() => expect(button.textContent).toContain('Recording'))
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    await waitFor(() => expect(bundle.app.dictation.audio).toHaveBeenCalledOnce())
+    const result: DictationResult = {
+      sessionId: 's1',
+      chatId: 't1',
+      outcome: 'success',
+      text: 'git status',
+      warning: null,
+      error: null,
+      retryable: false,
+    }
+    return { view, emit: () => act(() => emitResult(result)) }
+  }
+
+  function promptOf(chatId: string): HTMLTextAreaElement {
+    return within(screen.getByTestId(testIdFor.terminalView(chatId))).getByTestId(
+      TEST_ID.terminalPromptInput,
+    ) as HTMLTextAreaElement
+  }
+
+  it('keeps a take across a chat switch and offers it in the visible prompt', async () => {
+    const bundle = createAppMock()
+    const { view, emit } = await dictateInChatOne(bundle)
+
+    view.rerender(
+      <ChatWorkspace {...workspaceProps(bundle, { chatId: 't2', selectionNonce: 2 })} />,
+    )
+    await waitFor(() => expect(bundle.app.terminals.create).toHaveBeenCalledTimes(2))
+    emit()
+
+    expect(bundle.app.dictation.cancel).not.toHaveBeenCalled()
+    expect(promptOf('t1').value).toBe('')
+    const visible = within(screen.getByTestId(testIdFor.terminalView('t2')))
+    fireEvent.click(visible.getByTestId('insert-orphaned-transcript'))
+    expect(promptOf('t2').value).toBe('git status')
+    expect(screen.queryByTestId('orphaned-transcript-banner')).toBeNull()
+  })
+
+  it('does not abort an in-flight take when its chat tab closes', async () => {
+    const bundle = createAppMock()
+    const { view, emit } = await dictateInChatOne(bundle)
+
+    view.rerender(
+      <ChatWorkspace
+        {...workspaceProps(bundle, {
+          chatId: 't2',
+          selectionNonce: 2,
+          chatsByProject: { p1: [chatTwo] },
+        })}
+      />,
+    )
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.terminalView('t1'))).toBeNull())
+    emit()
+
+    expect(bundle.app.dictation.cancel).not.toHaveBeenCalled()
+    const visible = within(screen.getByTestId(testIdFor.terminalView('t2')))
+    expect(visible.getByTestId('orphaned-transcript-banner').textContent).toContain('git status')
   })
 })

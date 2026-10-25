@@ -5,8 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DictationResult } from '../../../shared/dictation-contract'
+import type { AppStateService } from '../app-state-service'
+import type { SttProviderAdapter } from './adapters/adapter-contract'
 import { DictationService } from './dictation-service'
+import type { DictationDictionaryService } from './dictionary/dictation-dictionary-service'
 import type { OpenWhisprClient, TranscriptionResponse } from './openwhispr-client'
+import { PostProcessor } from './post-processing/post-processor'
+import { ProviderRegistry } from './registry/provider-registry'
+import type { SafeStorageLike } from './security/dictation-secrets'
 
 const directories: string[] = []
 afterEach(() => {
@@ -292,5 +298,400 @@ describe('dictation sessions', () => {
     service.shutdown()
     expect(result).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'cancelled' }))
     expect(service.start('chat', null).sessionId).toBeNull()
+  })
+})
+
+describe('dictation provider architecture orchestration', () => {
+  const fakeSafeStorage: SafeStorageLike = {
+    isEncryptionAvailable: () => true,
+    encryptString: (plainText: string) => Buffer.from(`enc_${plainText}`),
+    decryptString: (encrypted: Buffer) => {
+      const str = encrypted.toString('utf-8')
+      return str.startsWith('enc_') ? str.slice(4) : str
+    },
+  }
+
+  function createTestHarness(customRoot?: string) {
+    const directory = customRoot ?? mkdtempSync(join(tmpdir(), 'nekode-dictation-test-'))
+    directories.push(directory)
+
+    const store = new Map<string, string>()
+    const state: AppStateService = {
+      get: (k: string) => store.get(k) ?? null,
+      set: (k: string, v: string) => {
+        store.set(k, v)
+      },
+      delete: (k: string) => {
+        store.delete(k)
+      },
+    } as unknown as AppStateService
+
+    const registry = new ProviderRegistry()
+
+    const mockAdapter: SttProviderAdapter = {
+      manifest: {
+        id: 'elevenlabs',
+        name: 'ElevenLabs Scribe v2',
+        description: 'Mock ElevenLabs adapter',
+        version: '1.0.0',
+        capabilities: {
+          keyterms: true,
+          nativeEditing: true,
+          languageSelection: true,
+          modelDiscovery: true,
+          timestamps: false,
+        },
+        configSchema: [
+          { key: 'apiKey', label: 'API Key', type: 'secret', required: true },
+          { key: 'language', label: 'Language', type: 'text', required: false, defaultValue: 'pl' },
+          { key: 'nativeEditPrompt', label: 'Prompt', type: 'text', required: false },
+        ],
+      },
+      testConnection: vi.fn(async () => ({ ok: true, message: 'Connected' })),
+      discoverModels: vi.fn(async () => [{ id: 'scribe_v2', name: 'Scribe v2' }]),
+      transcribe: vi.fn(async (_req) => ({
+        text: 'hello world from scribe',
+        rawText: 'hello world from scribe',
+        providerId: 'elevenlabs',
+        modelId: 'scribe_v2',
+      })),
+    }
+    registry.register(mockAdapter)
+
+    const dictService = {
+      getEffectiveDictionary: vi.fn((projectId?: string) => ({
+        terms: projectId === 'proj-alpha' ? ['NeKode', 'ElevenLabs'] : ['GlobalTerm'],
+        aliases: ['nk'],
+      })),
+      list: vi.fn((_filter?: { projectId?: string }) => [
+        {
+          id: 'dict-1',
+          term: 'NeKode',
+          aliases: ['nk'],
+          description: null,
+          scope: 'global' as const,
+          projectId: null,
+          enabled: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+      ]),
+      add: vi.fn((entry) => ({
+        id: 'new-id',
+        ...entry,
+        aliases: [],
+        description: null,
+        enabled: true,
+        createdAt: '',
+        updatedAt: '',
+      })),
+      update: vi.fn((id, _updates) => ({
+        id,
+        term: 'updated',
+        aliases: [],
+        description: null,
+        scope: 'global' as const,
+        projectId: null,
+        enabled: true,
+        createdAt: '',
+        updatedAt: '',
+      })),
+      delete: vi.fn(),
+      toggle: vi.fn((id, enabled) => ({
+        id,
+        term: 'NeKode',
+        aliases: [],
+        description: null,
+        scope: 'global' as const,
+        projectId: null,
+        enabled,
+        createdAt: '',
+        updatedAt: '',
+      })),
+    } as unknown as DictationDictionaryService
+
+    const postProcessor = new PostProcessor()
+
+    const service = new DictationService({
+      registry,
+      dictionaryService: dictService,
+      postProcessor,
+      state,
+      safeStorage: fakeSafeStorage,
+      resolveChatProjectId: (chatId) => (chatId === 'chat-project' ? 'proj-alpha' : null),
+      root: directory,
+    })
+
+    const results: DictationResult[] = []
+    service.onResult((r) => results.push(r))
+
+    return { service, registry, mockAdapter, dictService, state, store, results, directory }
+  }
+
+  it('manages provider configs with secret encryption at rest and masked metadata in renderer reads', async () => {
+    const h = createTestHarness()
+
+    // Initially not configured because apiKey is required
+    const listInitial = h.service.providersList()
+    expect(listInitial).toEqual([expect.objectContaining({ id: 'elevenlabs', configured: false })])
+
+    // Save config with plaintext secret
+    h.service.providersSetConfig('elevenlabs', { apiKey: 'xi-secret-key-42', language: 'en' })
+
+    // Raw state in SQLite store must be encrypted with enc:v1:
+    const rawState = h.state.get('dictation.providerConfig:elevenlabs')
+    expect(rawState).toBeDefined()
+    const parsed = JSON.parse(rawState as string)
+    expect(parsed.apiKey).toMatch(/^enc:v1:/)
+    expect(parsed.apiKey).not.toContain('xi-secret-key-42')
+    expect(parsed.language).toBe('en')
+
+    // providersGetConfig returns masked metadata for secret, never plaintext
+    const configForRenderer = h.service.providersGetConfig('elevenlabs')
+    expect(configForRenderer.apiKey).toEqual({
+      configured: true,
+      lastFour: 'y-42',
+      valid: true,
+    })
+    expect(configForRenderer.language).toBe('en')
+
+    // providersList now marks provider as configured
+    const listConfigured = h.service.providersList()
+    expect(listConfigured[0].configured).toBe(true)
+
+    // Updating non-secret field preserves existing encrypted secret
+    h.service.providersSetConfig('elevenlabs', { language: 'pl' })
+    const configAfterUpdate = h.service.providersGetConfig('elevenlabs')
+    expect(configAfterUpdate.language).toBe('pl')
+    expect(configAfterUpdate.apiKey).toEqual({
+      configured: true,
+      lastFour: 'y-42',
+      valid: true,
+    })
+
+    // Active provider management
+    expect(h.service.getActiveProvider()).toBe('elevenlabs')
+    h.service.setActiveProvider('elevenlabs')
+    expect(() => h.service.setActiveProvider('non-existent')).toThrow('not found')
+  })
+
+  it('orchestrates transcription with active provider, passing decrypted secrets and dictionary keyterms', async () => {
+    const h = createTestHarness()
+    h.service.providersSetConfig('elevenlabs', { apiKey: 'my-api-key' })
+
+    const start = h.service.start('chat-project', null)
+    expect(start.sessionId).toBeDefined()
+
+    await h.service.audio(start.sessionId as string, wav())
+
+    expect(h.mockAdapter.transcribe).toHaveBeenCalledOnce()
+    const [request, config] = vi.mocked(h.mockAdapter.transcribe).mock.calls[0]
+    expect(request.keyterms).toEqual(['NeKode', 'ElevenLabs'])
+    expect(config.apiKey).toBe('my-api-key')
+
+    expect(h.results).toHaveLength(1)
+    expect(h.results[0]).toMatchObject({
+      outcome: 'success',
+      text: 'hello world from scribe',
+      rawText: 'hello world from scribe',
+      providerId: 'elevenlabs',
+      modelId: 'scribe_v2',
+    })
+  })
+
+  it('runs post-processing pipeline and diff validator fallback on violation', async () => {
+    const h = createTestHarness()
+    h.service.providersSetConfig('elevenlabs', { apiKey: 'my-api-key' })
+
+    // Enable native post-processing
+    h.service.postProcessingSetSettings({ mode: 'provider_native', level: 'light' })
+
+    // Adapter returns editedText that invalidly alters numbers (DiffValidator violation)
+    vi.spyOn(h.mockAdapter, 'transcribe').mockResolvedValueOnce({
+      text: 'Deploy 5 instances now',
+      rawText: 'Deploy 3 instances now',
+      editedText: 'Deploy 5 instances now',
+      providerId: 'elevenlabs',
+      modelId: 'scribe_v2',
+    })
+
+    const start = h.service.start('chat-alpha', null)
+    await h.service.audio(start.sessionId as string, wav())
+
+    expect(h.results).toHaveLength(1)
+    // Diff validator must reject the edit and fall back to rawText with warning
+    expect(h.results[0]).toMatchObject({
+      outcome: 'success',
+      text: 'Deploy 3 instances now',
+      rawText: 'Deploy 3 instances now',
+      warning: 'post-processing-rejected',
+    })
+  })
+
+  it('aborts in-flight transcription signal on cancellation', async () => {
+    const h = createTestHarness()
+    h.service.providersSetConfig('elevenlabs', { apiKey: 'my-api-key' })
+
+    let abortObserved = false
+    vi.spyOn(h.mockAdapter, 'transcribe').mockImplementation(async (req) => {
+      req.signal?.addEventListener('abort', () => {
+        abortObserved = true
+      })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      return {
+        text: 'done',
+        rawText: 'done',
+        providerId: 'elevenlabs',
+      }
+    })
+
+    const start = h.service.start('chat-alpha', null)
+    const audioPromise = h.service.audio(start.sessionId as string, wav())
+    h.service.cancel(start.sessionId as string)
+    await audioPromise
+
+    expect(abortObserved).toBe(true)
+    expect(h.results).toHaveLength(1)
+    expect(h.results[0].outcome).toBe('cancelled')
+  })
+
+  it('delegates dictionary CRUD operations and post-processing settings', async () => {
+    const h = createTestHarness()
+
+    h.service.dictionaryList('p1')
+    expect(h.dictService.list).toHaveBeenCalledWith({ projectId: 'p1' })
+
+    h.service.dictionaryAdd({ term: 'Vitest', scope: 'global' })
+    expect(h.dictService.add).toHaveBeenCalledWith({ term: 'Vitest', scope: 'global' })
+
+    h.service.dictionaryUpdate('id-1', { term: 'Vitest2' })
+    expect(h.dictService.update).toHaveBeenCalledWith('id-1', { term: 'Vitest2' })
+
+    h.service.dictionaryDelete('id-1')
+    expect(h.dictService.delete).toHaveBeenCalledWith('id-1')
+
+    h.service.dictionaryToggle('id-1', false)
+    expect(h.dictService.toggle).toHaveBeenCalledWith('id-1', false)
+
+    // Post processing settings
+    h.service.postProcessingSetSettings({
+      mode: 'external_llm',
+      level: 'medium',
+      model: 'anthropic/claude-3.5-haiku',
+      apiKey: 'sk-or-test-key',
+    })
+    const pp = h.service.postProcessingGetSettings()
+    expect(pp).toEqual({
+      mode: 'external_llm',
+      level: 'medium',
+      model: 'anthropic/claude-3.5-haiku',
+      hasApiKey: true,
+    })
+  })
+
+  it('controls nativeEditInstruction based on post-processing mode and provider capability', async () => {
+    const h = createTestHarness()
+    h.service.providersSetConfig('elevenlabs', { apiKey: 'my-api-key' })
+
+    // Case 1: mode is 'disabled' -> nativeEditInstruction must be empty string '' (suppressing fallback)
+    h.service.postProcessingSetSettings({ mode: 'disabled', level: 'medium' })
+    const start1 = h.service.start('chat-alpha', null)
+    await h.service.audio(start1.sessionId as string, wav())
+    expect(h.mockAdapter.transcribe).toHaveBeenCalled()
+    expect(vi.mocked(h.mockAdapter.transcribe).mock.calls.at(-1)?.[0].nativeEditInstruction).toBe(
+      '',
+    )
+
+    // Case 2: mode is 'provider_native' with no custom prompt -> defaults to 'Format and punctuate transcript.'
+    h.service.postProcessingSetSettings({ mode: 'provider_native', level: 'medium' })
+    const start2 = h.service.start('chat-alpha', null)
+    await h.service.audio(start2.sessionId as string, wav())
+    expect(vi.mocked(h.mockAdapter.transcribe).mock.calls.at(-1)?.[0].nativeEditInstruction).toBe(
+      'Format and punctuate transcript.',
+    )
+
+    // Case 3: mode is 'provider_native' with custom prompt -> uses custom prompt
+    h.service.providersSetConfig('elevenlabs', {
+      apiKey: 'my-api-key',
+      nativeEditPrompt: 'Custom prompt instructions.',
+    })
+    const start3 = h.service.start('chat-alpha', null)
+    await h.service.audio(start3.sessionId as string, wav())
+    expect(vi.mocked(h.mockAdapter.transcribe).mock.calls.at(-1)?.[0].nativeEditInstruction).toBe(
+      'Custom prompt instructions.',
+    )
+  })
+
+  it('providersGetConfig constructs a fresh object filtering out undeclared or obsolete stored state keys', () => {
+    const h = createTestHarness()
+    h.store.set(
+      'dictation.providerConfig:elevenlabs',
+      JSON.stringify({
+        apiKey: 'enc:v1:fake_cipher',
+        language: 'en',
+        obsoleteField: 'old_value',
+        undeclaredSecret: 'leak_candidate',
+      }),
+    )
+
+    const result = h.service.providersGetConfig('elevenlabs')
+    expect(result).toHaveProperty('apiKey')
+    expect(result).toHaveProperty('language', 'en')
+    expect(result).not.toHaveProperty('obsoleteField')
+    expect(result).not.toHaveProperty('undeclaredSecret')
+    expect(Object.keys(result)).toEqual(['apiKey', 'language'])
+  })
+
+  it.each([
+    ['HTTP 401 Unauthorized', '401 Unauthorized'],
+    ['403 Forbidden', 'Request failed with status code 403'],
+    ['Unauthorized', 'Unauthorized API call'],
+  ])('maps %s errors to auth-failed', async (_label, errorMsg) => {
+    const h = createTestHarness()
+    h.service.providersSetConfig('elevenlabs', { apiKey: 'my-api-key' })
+    vi.spyOn(h.mockAdapter, 'transcribe').mockRejectedValueOnce(new Error(errorMsg))
+
+    const start = h.service.start('chat-alpha', null)
+    await h.service.audio(start.sessionId as string, wav())
+
+    expect(h.results).toHaveLength(1)
+    expect(h.results[0]).toMatchObject({
+      outcome: 'failed',
+      error: 'auth-failed',
+    })
+  })
+
+  it.each(['401', '403'])(
+    'yields recording-failure and not auth-failed when filesystem write fails on path containing %s',
+    async (code) => {
+      const customRoot = mkdtempSync(join(tmpdir(), `nekode-dictation-test-${code}-`))
+      const h = createTestHarness(customRoot)
+      rmSync(h.directory, { recursive: true, force: true })
+
+      const start = h.service.start('chat-alpha', null)
+      await h.service.audio(start.sessionId as string, wav())
+
+      expect(h.results).toHaveLength(1)
+      expect(h.results[0]).toMatchObject({
+        outcome: 'failed',
+        error: 'recording-failure',
+      })
+      expect(h.results[0].error).not.toBe('auth-failed')
+    },
+  )
+
+  it('does not map non-auth error messages containing 401 or 403 as substrings to auth-failed', async () => {
+    const h = createTestHarness()
+    h.service.providersSetConfig('elevenlabs', { apiKey: 'my-api-key' })
+    vi.spyOn(h.mockAdapter, 'transcribe').mockRejectedValueOnce(
+      new Error('Connection failed on port 4010 with error code 4030'),
+    )
+
+    const start = h.service.start('chat-alpha', null)
+    await h.service.audio(start.sessionId as string, wav())
+
+    expect(h.results).toHaveLength(1)
+    expect(h.results[0].error).toBe('recording-failure')
+    expect(h.results[0].error).not.toBe('auth-failed')
   })
 })

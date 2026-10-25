@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { TEST_ID } from '../../lib/test-ids'
 import { PromptInput } from './PromptInput'
 
 afterEach(cleanup)
@@ -85,12 +86,10 @@ describe('desktop dictation prompt', () => {
       true,
     )
     view.rerender(<PromptInput onSubmit={vi.fn()} dictation={{ ...dictation, busy: true }} />)
-    expect((screen.getByRole('button', { name: 'Dictation' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-    expect(screen.getByRole('button', { name: 'Dictation' }).textContent).toContain(
-      'Sending shortcut',
-    )
+    const busyButton = screen.getByRole('button', {
+      name: 'Sending shortcut...',
+    }) as HTMLButtonElement
+    expect(busyButton.disabled).toBe(true)
     // Not wired at all (no control provided): the control renders disabled.
     view.rerender(<PromptInput onSubmit={vi.fn()} />)
     expect((screen.getByRole('button', { name: 'Dictation' }) as HTMLButtonElement).disabled).toBe(
@@ -165,5 +164,476 @@ describe('prompt draft injection nonce tracking', () => {
     )
     expect(input.value).toBe('new draft')
     expect(onInjected).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('unified dictation prompt workflow', () => {
+  function createUnifiedDictationStub(
+    overrides: Partial<import('./PromptInput').UnifiedDictationControl> = {},
+  ): import('./PromptInput').UnifiedDictationControl {
+    return {
+      state: 'idle',
+      isRecording: false,
+      isTranscribing: false,
+      isBusy: false,
+      durationSeconds: 0,
+      error: null,
+      warning: null,
+      result: null,
+      rawText: null,
+      text: null,
+      hasModifiedTranscript: false,
+      reverted: false,
+      orphanedTranscripts: [],
+      start: vi.fn(async () => {}),
+      stop: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      reset: vi.fn(),
+      revertToRaw: vi.fn(),
+      restoreEdited: vi.fn(),
+      dismissOrphaned: vi.fn(),
+      consumeOrphaned: vi.fn(),
+      ...overrides,
+    }
+  }
+
+  it('reflects idle, recording, and transcribing states on the dictation button', async () => {
+    const dictation = createUnifiedDictationStub()
+    const view = render(
+      <PromptInput onSubmit={vi.fn()} dictationControl={dictation} chatId="chat-1" />,
+    )
+
+    // Idle
+    const button = screen.getByRole('button', { name: 'Dictation' })
+    expect(button.textContent).toContain('Dictation')
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(dictation.start).toHaveBeenCalledWith('chat-1')
+
+    // Recording
+    view.rerender(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={createUnifiedDictationStub({
+          ...dictation,
+          state: 'recording',
+          isRecording: true,
+          isBusy: true,
+          durationSeconds: 3,
+        })}
+        chatId="chat-1"
+      />,
+    )
+    // The visible label is the accessible name, so the state is announced.
+    expect(screen.getByRole('button', { name: 'Recording (3s)...' })).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(TEST_ID.terminalPromptDictation))
+    })
+    expect(dictation.stop).toHaveBeenCalled()
+
+    // Transcribing
+    view.rerender(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={createUnifiedDictationStub({
+          ...dictation,
+          state: 'transcribing',
+          isTranscribing: true,
+          isBusy: true,
+        })}
+        chatId="chat-1"
+      />,
+    )
+    const transcribingButton = screen.getByRole('button', {
+      name: 'Transcribing...',
+    }) as HTMLButtonElement
+    expect(transcribingButton.textContent).toContain('Transcribing...')
+    expect(transcribingButton.disabled).toBe(true)
+  })
+
+  it('cancels active recording when Esc key is pressed (AC-012)', async () => {
+    const cancel = vi.fn(async () => {})
+    const onSubmit = vi.fn()
+    const dictation = createUnifiedDictationStub({
+      state: 'recording',
+      isRecording: true,
+      isBusy: true,
+      cancel,
+    })
+
+    render(<PromptInput onSubmit={onSubmit} dictationControl={dictation} chatId="chat-1" />)
+    const textarea = screen.getByRole('textbox')
+
+    fireEvent.keyDown(textarea, { key: 'Escape' })
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('inserts transcription text into prompt on successful result', async () => {
+    const dictation = createUnifiedDictationStub()
+    const view = render(
+      <PromptInput onSubmit={vi.fn()} dictationControl={dictation} chatId="chat-1" />,
+    )
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+
+    view.rerender(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={createUnifiedDictationStub({
+          result: {
+            sessionId: 'sess-1',
+            chatId: 'chat-1',
+            outcome: 'success',
+            text: 'npm test',
+            warning: null,
+            error: null,
+            retryable: false,
+          },
+        })}
+        chatId="chat-1"
+      />,
+    )
+    expect(textarea.value).toBe('npm test')
+
+    // Appending when input is already populated
+    view.rerender(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={createUnifiedDictationStub({
+          result: {
+            sessionId: 'sess-2',
+            chatId: 'chat-1',
+            outcome: 'success',
+            text: '--watch',
+            warning: null,
+            error: null,
+            retryable: false,
+          },
+        })}
+        chatId="chat-1"
+      />,
+    )
+    expect(textarea.value).toBe('npm test --watch')
+  })
+
+  it('renders RawTranscriptBanner when post-processing modified transcript and reverts/restores (AC-010)', async () => {
+    const revertToRaw = vi.fn()
+    const restoreEdited = vi.fn()
+    const dictation = createUnifiedDictationStub({
+      hasModifiedTranscript: true,
+      rawText: 'npm test watch',
+      text: 'npm test --watch',
+      revertToRaw,
+      restoreEdited,
+      result: {
+        sessionId: 'sess-raw',
+        chatId: 'chat-1',
+        outcome: 'success',
+        text: 'npm test --watch',
+        rawText: 'npm test watch',
+        warning: null,
+        error: null,
+        retryable: false,
+      },
+    })
+
+    const view = render(
+      <PromptInput onSubmit={vi.fn()} dictationControl={dictation} chatId="chat-1" />,
+    )
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('npm test --watch')
+
+    const banner = screen.getByTestId('raw-transcript-banner')
+    expect(banner.textContent).toContain('npm test watch')
+
+    // Click revert to raw
+    fireEvent.click(screen.getByTestId('revert-to-raw-transcript'))
+    expect(textarea.value).toBe('npm test watch')
+    expect(revertToRaw).toHaveBeenCalledOnce()
+
+    // Banner now offers restore formatted
+    view.rerender(<PromptInput onSubmit={vi.fn()} dictationControl={dictation} chatId="chat-1" />)
+    const restoreButton = screen.getByTestId('restore-edited-transcript')
+    fireEvent.click(restoreButton)
+    expect(textarea.value).toBe('npm test --watch')
+    expect(restoreEdited).toHaveBeenCalledOnce()
+
+    // Dismiss banner
+    fireEvent.click(screen.getByTestId('dismiss-transcript-banner'))
+    expect(screen.queryByTestId('raw-transcript-banner')).toBeNull()
+  })
+
+  it('displays actionable error alert on failure', () => {
+    const dictation = createUnifiedDictationStub({
+      error: 'Microphone permission denied',
+    })
+    render(<PromptInput onSubmit={vi.fn()} dictationControl={dictation} />)
+    expect(screen.getByRole('alert').textContent).toContain('Microphone permission denied')
+  })
+
+  it('displays warning alert when post-processing is rejected (AC-009)', () => {
+    const dictation = createUnifiedDictationStub({
+      warning: 'post-processing-rejected',
+    })
+    render(<PromptInput onSubmit={vi.fn()} dictationControl={dictation} />)
+    expect(screen.getByRole('status').textContent).toContain(
+      'Safety guardrails preserved original transcript.',
+    )
+  })
+
+  it('renders OrphanedTranscriptBanner and inserts recovered transcript (AC-013)', () => {
+    const dismissOrphaned = vi.fn()
+    const dictation = createUnifiedDictationStub({
+      orphanedTranscripts: [
+        {
+          sessionId: 'orphaned-1',
+          chatId: 'chat-background',
+          outcome: 'success',
+          text: 'git push origin main',
+          warning: null,
+          error: null,
+          retryable: false,
+        },
+      ],
+      dismissOrphaned,
+    })
+
+    render(<PromptInput onSubmit={vi.fn()} dictationControl={dictation} chatId="chat-active" />)
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+
+    expect(screen.getByTestId('orphaned-transcript-banner')).toBeTruthy()
+    expect(screen.getByTestId('orphaned-transcript-banner').textContent).toContain(
+      'chat-background',
+    )
+
+    fireEvent.click(screen.getByTestId('insert-orphaned-transcript'))
+    expect(textarea.value).toBe('git push origin main')
+    expect(dismissOrphaned).toHaveBeenCalledWith('orphaned-1')
+  })
+
+  it('cancels in-flight transcription on Esc, also from the Dictation button (AC-012)', () => {
+    const cancel = vi.fn(async () => {})
+    render(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={createUnifiedDictationStub({
+          state: 'transcribing',
+          isTranscribing: true,
+          isBusy: true,
+          cancel,
+        })}
+        chatId="chat-1"
+      />,
+    )
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+    fireEvent.keyDown(screen.getByTestId(TEST_ID.terminalPromptDictation), { key: 'Escape' })
+    expect(cancel).toHaveBeenCalledTimes(2)
+  })
+
+  it('moves focus to the prompt when dictation starts so Esc stays reachable', async () => {
+    render(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={createUnifiedDictationStub()}
+        chatId="chat-1"
+      />,
+    )
+    const button = screen.getByTestId(TEST_ID.terminalPromptDictation)
+    button.focus()
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(document.activeElement).toBe(screen.getByRole('textbox'))
+  })
+
+  it('ignores a result addressed to another chat prompt', () => {
+    const view = render(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={createUnifiedDictationStub()}
+        chatId="chat-1"
+      />,
+    )
+    view.rerender(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={createUnifiedDictationStub({
+          result: {
+            sessionId: 'sess-other',
+            chatId: 'chat-2',
+            outcome: 'success',
+            text: 'not mine',
+            warning: null,
+            error: null,
+            retryable: false,
+          },
+        })}
+        chatId="chat-1"
+      />,
+    )
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('reverts only the last dictated take and keeps text typed around it (AC-010)', () => {
+    const control = createUnifiedDictationStub({
+      result: {
+        sessionId: 'sess-edit',
+        chatId: 'chat-1',
+        outcome: 'success',
+        text: 'run tests',
+        rawText: 'ran tests',
+        warning: null,
+        error: null,
+        retryable: false,
+      },
+    })
+    render(<PromptInput onSubmit={vi.fn()} dictationControl={control} chatId="chat-1" />)
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('run tests')
+
+    fireEvent.change(textarea, { target: { value: 'run tests then run tests now' } })
+    fireEvent.click(screen.getByTestId('revert-to-raw-transcript'))
+    expect(textarea.value).toBe('run tests then ran tests now')
+
+    fireEvent.change(textarea, { target: { value: 'typed by hand' } })
+    fireEvent.click(screen.getByTestId('restore-edited-transcript'))
+    expect(textarea.value).toBe('typed by hand')
+  })
+
+  it('uses the OpenWhispr desktop shortcut when it is the selected method (AC-014)', async () => {
+    const activate = vi.fn(async () => {})
+    const control = createUnifiedDictationStub()
+    render(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictation={{ selected: true, disabledReason: null, busy: false, error: null, activate }}
+        dictationControl={control}
+        chatId="chat-1"
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(TEST_ID.terminalPromptDictation))
+    })
+    expect(activate).toHaveBeenCalledOnce()
+    expect(control.start).not.toHaveBeenCalled()
+  })
+
+  it('uses the unified control when an STT adapter is the selected method', async () => {
+    const activate = vi.fn(async () => {})
+    const control = createUnifiedDictationStub()
+    render(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictation={{
+          selected: false,
+          disabledReason: 'Select the OpenWhispr desktop shortcut in Settings.',
+          busy: false,
+          error: null,
+          activate,
+        }}
+        dictationControl={control}
+        chatId="chat-1"
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(TEST_ID.terminalPromptDictation))
+    })
+    expect(control.start).toHaveBeenCalledWith('chat-1')
+    expect(activate).not.toHaveBeenCalled()
+  })
+
+  it('does not insert a shared take again when the prompt remounts (session retry)', () => {
+    const inserted = new Set<string>()
+    const control = createUnifiedDictationStub({
+      markInserted: (id) => inserted.add(id),
+      isInserted: (id) => inserted.has(id),
+      result: {
+        sessionId: 'sess-once',
+        chatId: 'chat-1',
+        outcome: 'success',
+        text: 'npm run build',
+        warning: null,
+        error: null,
+        retryable: false,
+      },
+    })
+    const first = render(
+      <PromptInput onSubmit={vi.fn()} dictationControl={control} chatId="chat-1" />,
+    )
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('npm run build')
+    first.unmount()
+
+    render(<PromptInput onSubmit={vi.fn()} dictationControl={control} chatId="chat-1" />)
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it("shows a take's error only in the prompt of the chat that recorded it", () => {
+    const control = createUnifiedDictationStub({
+      error: 'Microphone permission denied',
+      result: {
+        sessionId: 'sess-fail',
+        chatId: 'chat-1',
+        outcome: 'failed',
+        text: '',
+        warning: null,
+        error: 'microphone-unavailable',
+        retryable: false,
+      },
+    })
+    const view = render(
+      <PromptInput onSubmit={vi.fn()} dictationControl={control} chatId="chat-2" />,
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+    view.rerender(<PromptInput onSubmit={vi.fn()} dictationControl={control} chatId="chat-1" />)
+    expect(screen.getByRole('alert').textContent).toContain('Microphone permission denied')
+  })
+
+  it('keeps the shortcut method disabled until it is confirmed instead of recording in-app', () => {
+    const control = createUnifiedDictationStub()
+    render(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictation={{
+          selected: true,
+          disabledReason: 'Confirm OpenWhispr Ctrl + Super / Tap in Settings.',
+          busy: false,
+          error: null,
+          activate: vi.fn(async () => {}),
+        }}
+        dictationControl={control}
+        chatId="chat-1"
+      />,
+    )
+    const button = screen.getByTestId(TEST_ID.terminalPromptDictation) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(button.title).toContain('Confirm OpenWhispr')
+  })
+
+  it('fails closed while the selected method is unknown instead of recording in-app', async () => {
+    const control = createUnifiedDictationStub()
+    render(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictation={{
+          selected: null,
+          disabledReason: 'Loading desktop dictation settings.',
+          busy: false,
+          error: null,
+          activate: vi.fn(async () => {}),
+        }}
+        dictationControl={control}
+        chatId="chat-1"
+      />,
+    )
+    const button = screen.getByTestId(TEST_ID.terminalPromptDictation) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(control.start).not.toHaveBeenCalled()
   })
 })

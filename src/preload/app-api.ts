@@ -1,10 +1,12 @@
 import type { DesktopDictationSetup } from '../shared/desktop-dictation-contract'
 import {
-  type DictationDictionary,
+  type DictationDictionaryEntry,
+  type DictationPostProcessingSettings,
   type DictationSettings,
   type DictationStart,
   type DictationStatusSnapshot,
   isDictationResult,
+  type SttProviderSummary,
 } from '../shared/dictation-contract'
 import type {
   ActionControl,
@@ -101,7 +103,11 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
       status: () => invoke<DictationStatusSnapshot>(IPC_CHANNEL.dictationStatus),
       testConnection: () => invoke<DictationStatusSnapshot>(IPC_CHANNEL.dictationTestConnection),
       refreshModels: () => invoke<DictationStatusSnapshot>(IPC_CHANNEL.dictationRefreshModels),
-      dictionaryList: () => invoke<DictationDictionary>(IPC_CHANNEL.dictationDictionaryList),
+      dictionaryList: (projectId?: string) =>
+        invoke<DictationDictionaryEntry[]>(
+          IPC_CHANNEL.dictationDictionaryList,
+          ...(projectId !== undefined ? [projectId] : []),
+        ),
       getSettings: () => invoke<DictationSettings>(IPC_CHANNEL.dictationGetSettings),
       setSettings: (settings) =>
         invoke<DictationSettings>(IPC_CHANNEL.dictationSetSettings, settings),
@@ -116,6 +122,36 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
         ipc.on(IPC_CHANNEL.dictationResult, listener)
         return () => ipc.off(IPC_CHANNEL.dictationResult, listener)
       },
+
+      providersList: () => invoke<SttProviderSummary[]>(IPC_CHANNEL.dictationProvidersList),
+      providersTestConnection: (providerId, config) =>
+        invoke<{ ok: boolean; message: string }>(
+          IPC_CHANNEL.dictationProvidersTestConnection,
+          ...(config !== undefined ? [providerId, config] : [providerId]),
+        ),
+      providersDiscoverModels: (providerId, config) =>
+        invoke<Array<{ id: string; name: string }>>(
+          IPC_CHANNEL.dictationProvidersDiscoverModels,
+          ...(config !== undefined ? [providerId, config] : [providerId]),
+        ),
+      providersGetConfig: (providerId) =>
+        invoke<Record<string, unknown>>(IPC_CHANNEL.dictationProvidersGetConfig, providerId),
+      providersSetConfig: (providerId, config) =>
+        invoke<void>(IPC_CHANNEL.dictationProvidersSetConfig, providerId, config),
+      getActiveProvider: () => invoke<string>(IPC_CHANNEL.dictationGetActiveProvider),
+      setActiveProvider: (providerId) =>
+        invoke<void>(IPC_CHANNEL.dictationSetActiveProvider, providerId),
+      dictionaryAdd: (entry) =>
+        invoke<DictationDictionaryEntry>(IPC_CHANNEL.dictationDictionaryAdd, entry),
+      dictionaryUpdate: (id, updates) =>
+        invoke<DictationDictionaryEntry>(IPC_CHANNEL.dictationDictionaryUpdate, id, updates),
+      dictionaryDelete: (id) => invoke<void>(IPC_CHANNEL.dictationDictionaryDelete, id),
+      dictionaryToggle: (id, enabled) =>
+        invoke<DictationDictionaryEntry>(IPC_CHANNEL.dictationDictionaryToggle, id, enabled),
+      postProcessingGetSettings: () =>
+        invoke<DictationPostProcessingSettings>(IPC_CHANNEL.dictationPostProcessingGetSettings),
+      postProcessingSetSettings: (settings) =>
+        invoke<void>(IPC_CHANNEL.dictationPostProcessingSetSettings, settings),
     },
     actions: {
       list: () => invoke<ActionControl[]>(IPC_CHANNEL.actionsList),

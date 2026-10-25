@@ -1,21 +1,38 @@
 import type { DesktopDictationSettings, DesktopDictationSetup } from './desktop-dictation-contract'
 import type {
+  CreateDictionaryEntryInput,
   DictationDictionary,
+  DictationDictionaryEntry,
+  DictationPostProcessingSettings,
   DictationResult,
   DictationSettings,
   DictationStart,
   DictationStatusSnapshot,
+  SttProviderSummary,
+  UpdateDictionaryEntryInput,
 } from './dictation-contract'
 
 export type {
+  ConfigFieldSchema,
+  ConfigFieldType,
+  CreateDictionaryEntryInput,
   DictationConnectionState,
   DictationDictionary,
+  DictationDictionaryEntry,
   DictationModelSelection,
+  DictationPostProcessingLevel,
+  DictationPostProcessingMode,
+  DictationPostProcessingSettings,
   DictationResult,
   DictationSettings,
   DictationStart,
   DictationStatusSnapshot,
   LocalTranscribeModel,
+  SetPostProcessingSettingsInput,
+  SttProviderCapabilities,
+  SttProviderManifest,
+  SttProviderSummary,
+  UpdateDictionaryEntryInput,
 } from './dictation-contract'
 
 // Typed IPC contract shared by main, preload and renderer (SDD §6, §44).
@@ -520,6 +537,19 @@ export const IPC_CHANNEL = {
   dictationTestConnection: 'dictation:testConnection',
   dictationRefreshModels: 'dictation:refreshModels',
   dictationDictionaryList: 'dictation:dictionaryList',
+  dictationDictionaryAdd: 'dictation:dictionaryAdd',
+  dictationDictionaryUpdate: 'dictation:dictionaryUpdate',
+  dictationDictionaryDelete: 'dictation:dictionaryDelete',
+  dictationDictionaryToggle: 'dictation:dictionaryToggle',
+  dictationProvidersList: 'dictation:providersList',
+  dictationProvidersTestConnection: 'dictation:providersTestConnection',
+  dictationProvidersDiscoverModels: 'dictation:providersDiscoverModels',
+  dictationProvidersGetConfig: 'dictation:providersGetConfig',
+  dictationProvidersSetConfig: 'dictation:providersSetConfig',
+  dictationGetActiveProvider: 'dictation:getActiveProvider',
+  dictationSetActiveProvider: 'dictation:setActiveProvider',
+  dictationPostProcessingGetSettings: 'dictation:postProcessingGetSettings',
+  dictationPostProcessingSetSettings: 'dictation:postProcessingSetSettings',
   dictationGetSettings: 'dictation:getSettings',
   dictationSetSettings: 'dictation:setSettings',
   dictationStart: 'dictation:start',
@@ -606,6 +636,11 @@ export const APP_STATE_KEY = {
   dictationLanguage: 'dictation.language',
   dictationModel: 'dictation.model',
   dictationTimeoutSeconds: 'dictation.timeoutSeconds',
+  dictationActiveProvider: 'dictation.activeProvider',
+  dictationPostProcessingMode: 'dictation.postProcessing.mode',
+  dictationPostProcessingLevel: 'dictation.postProcessing.level',
+  dictationPostProcessingModel: 'dictation.postProcessing.model',
+  dictationPostProcessingApiKey: 'dictation.postProcessing.apiKey',
   /** JSON containing state and checkedAt only. Historical, not startup readiness. */
   dictationStatus: 'dictation.status',
   selectedProjectId: 'selection.projectId',
@@ -684,7 +719,9 @@ export function isSecretStateKey(key: string): boolean {
   return (
     key.startsWith('usage.') ||
     key === 'project.kanbanConfig' ||
-    key.startsWith('project.kanbanConfig:')
+    key.startsWith('project.kanbanConfig:') ||
+    key.startsWith('dictation.providerConfig:') ||
+    key === APP_STATE_KEY.dictationPostProcessingApiKey
   )
 }
 
@@ -695,6 +732,10 @@ export function isSecretStateKey(key: string): boolean {
  */
 export function projectShellKey(projectId: string): string {
   return `project.shell:${projectId}`
+}
+
+export function dictationProviderConfigKey(providerId: string): string {
+  return `dictation.providerConfig:${providerId}`
 }
 
 /**
@@ -982,13 +1023,41 @@ export interface AppApi {
     status(): Promise<DictationStatusSnapshot>
     testConnection(): Promise<DictationStatusSnapshot>
     refreshModels(): Promise<DictationStatusSnapshot>
-    dictionaryList(): Promise<DictationDictionary>
+    dictionaryList(projectId?: string): Promise<DictationDictionaryEntry[] | DictationDictionary>
     getSettings(): Promise<DictationSettings>
     setSettings(settings: DictationSettings): Promise<DictationSettings>
     start(chatId: string, retrySessionId: string | null): Promise<DictationStart>
     audio(sessionId: string, wav: ArrayBuffer): Promise<void>
     cancel(sessionId: string): Promise<void>
     onResult(callback: (result: DictationResult) => void): Unsubscribe
+
+    providersList(): Promise<SttProviderSummary[]>
+    providersTestConnection(
+      providerId: string,
+      config?: Record<string, unknown>,
+    ): Promise<{ ok: boolean; message: string }>
+    providersDiscoverModels(
+      providerId: string,
+      config?: Record<string, unknown>,
+    ): Promise<Array<{ id: string; name: string }>>
+    providersGetConfig(providerId: string): Promise<Record<string, unknown>>
+    providersSetConfig(providerId: string, config: Record<string, unknown>): Promise<void>
+    getActiveProvider(): Promise<string>
+    setActiveProvider(providerId: string): Promise<void>
+    dictionaryAdd(entry: CreateDictionaryEntryInput): Promise<DictationDictionaryEntry>
+    dictionaryUpdate(
+      id: string,
+      updates: UpdateDictionaryEntryInput,
+    ): Promise<DictationDictionaryEntry>
+    dictionaryDelete(id: string): Promise<void>
+    dictionaryToggle(id: string, enabled: boolean): Promise<DictationDictionaryEntry>
+    postProcessingGetSettings(): Promise<DictationPostProcessingSettings>
+    postProcessingSetSettings(settings: {
+      mode: string
+      level: string
+      model?: string
+      apiKey?: string
+    }): Promise<void>
   }
   projects: {
     list(): Promise<ProjectInfo[]>

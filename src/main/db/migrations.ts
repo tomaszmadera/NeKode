@@ -160,6 +160,29 @@ export const MIGRATIONS: readonly Migration[] = [
       `)
     },
   },
+  {
+    version: 7,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE dictation_dictionary (
+          id TEXT PRIMARY KEY,
+          term TEXT NOT NULL COLLATE NOCASE,
+          aliases TEXT NOT NULL DEFAULT '[]',
+          description TEXT,
+          scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
+          project_id TEXT REFERENCES projects (id) ON DELETE CASCADE,
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          CHECK ((scope = 'global' AND project_id IS NULL) OR (scope = 'project' AND project_id IS NOT NULL))
+        );
+
+        CREATE UNIQUE INDEX uq_dictation_dictionary_global ON dictation_dictionary(term) WHERE scope = 'global';
+        CREATE UNIQUE INDEX uq_dictation_dictionary_project ON dictation_dictionary(project_id, term) WHERE scope = 'project';
+        CREATE INDEX idx_dictation_dictionary_lookup ON dictation_dictionary(scope, project_id, enabled);
+      `)
+    },
+  },
 ]
 
 export function assertValidMigrations(migrations: readonly Migration[]): void {

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
-import { APP_STATE_KEY } from '../../shared/ipc-contract'
+import { APP_STATE_KEY, isSecretStateKey } from '../../shared/ipc-contract'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import { AppStateService } from './app-state-service'
@@ -139,5 +139,13 @@ describe('AppStateService.getSelectedProject', () => {
 
     expect(state.getSelectedProject()).toBeNull()
     expect(state.get(APP_STATE_KEY.selectedProjectId)).toBeNull()
+  })
+
+  it('marks dictation provider configs and post-processing API key as secret state keys', () => {
+    expect(isSecretStateKey('dictation.providerConfig:elevenlabs')).toBe(true)
+    expect(isSecretStateKey('dictation.providerConfig:')).toBe(true)
+    expect(isSecretStateKey(APP_STATE_KEY.dictationPostProcessingApiKey)).toBe(true)
+    expect(isSecretStateKey('dictation.providerConfig')).toBe(false)
+    expect(isSecretStateKey(APP_STATE_KEY.dictationActiveProvider)).toBe(false)
   })
 })

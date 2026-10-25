@@ -18,9 +18,16 @@ import { AgentChatLaunchService } from './agent-chat-launch-service'
 import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
 import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
+import { ElevenLabsAdapter } from './dictation/adapters/elevenlabs-adapter'
+import { LocalOpenAiAdapter } from './dictation/adapters/local-openai-adapter'
+import { OpenRouterAdapter } from './dictation/adapters/openrouter-adapter'
+import { OpenWhisprAdapter } from './dictation/adapters/openwhispr-adapter'
 import { DesktopDictation } from './dictation/desktop-dictation'
 import { DictationService } from './dictation/dictation-service'
+import { DictationDictionaryService } from './dictation/dictionary/dictation-dictionary-service'
 import { OpenWhisprClient } from './dictation/openwhispr-client'
+import { PostProcessor } from './dictation/post-processing/post-processor'
+import { ProviderRegistry } from './dictation/registry/provider-registry'
 import { FilesService } from './files/files-service'
 import { GitService } from './git/git-service'
 import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
@@ -105,7 +112,6 @@ export function createServices(options: CreateServicesOptions): AppServices {
         )),
   )
   const dictation = new OpenWhisprClient({ state })
-  const dictationSessions = new DictationService(dictation)
   // Shell selection (spec project-shell-selection): one service owns
   // detection, resolution and labels. Custom paths persist app-level in
   // shells.custom; per-project choices live under project.shell:<id>.
@@ -138,6 +144,25 @@ export function createServices(options: CreateServicesOptions): AppServices {
     // settings list and the bottom-tab text.
     chatNameForProject: (projectId) =>
       shells.chatLabel(state.get(projectShellKey(projectId)), projects.get(projectId)?.path),
+  })
+
+  const dictationRegistry = new ProviderRegistry()
+  dictationRegistry.register(new OpenWhisprAdapter(dictation))
+  dictationRegistry.register(new ElevenLabsAdapter())
+  dictationRegistry.register(new OpenRouterAdapter())
+  dictationRegistry.register(new LocalOpenAiAdapter())
+
+  const dictationDictionaryService = new DictationDictionaryService({ db })
+  const postProcessor = new PostProcessor()
+
+  const dictationSessions = new DictationService({
+    client: dictation,
+    registry: dictationRegistry,
+    dictionaryService: dictationDictionaryService,
+    postProcessor,
+    state,
+    safeStorage: options.safeStorage,
+    resolveChatProjectId: (chatId) => chats.get(chatId)?.projectId ?? null,
   })
   const terminals = new TerminalService({ createPty: createNodePty })
   const git = new GitService({ projects })
@@ -247,7 +272,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       status: () => dictation.status(),
       testConnection: () => dictation.testConnection(),
       refreshModels: () => dictation.refreshModels(),
-      dictionaryList: () => dictation.dictionaryList(),
+      dictionaryList: (projectId?: string) => dictationSessions.dictionaryList(projectId),
       getSettings: () => dictation.getSettings(),
       setSettings: (settings) => {
         const result = dictation.setSettings(settings)
@@ -259,6 +284,24 @@ export function createServices(options: CreateServicesOptions): AppServices {
       cancel: (sessionId) => dictationSessions.cancel(sessionId),
       onResult: (callback) => dictationSessions.onResult(callback),
       shutdown: () => dictationSessions.shutdown(),
+
+      providersList: () => dictationSessions.providersList(),
+      providersTestConnection: (providerId, config) =>
+        dictationSessions.providersTestConnection(providerId, config),
+      providersDiscoverModels: (providerId, config) =>
+        dictationSessions.providersDiscoverModels(providerId, config),
+      providersGetConfig: (providerId) => dictationSessions.providersGetConfig(providerId),
+      providersSetConfig: (providerId, config) =>
+        dictationSessions.providersSetConfig(providerId, config),
+      getActiveProvider: () => dictationSessions.getActiveProvider(),
+      setActiveProvider: (providerId) => dictationSessions.setActiveProvider(providerId),
+      dictionaryAdd: (entry) => dictationSessions.dictionaryAdd(entry),
+      dictionaryUpdate: (id, updates) => dictationSessions.dictionaryUpdate(id, updates),
+      dictionaryDelete: (id) => dictationSessions.dictionaryDelete(id),
+      dictionaryToggle: (id, enabled) => dictationSessions.dictionaryToggle(id, enabled),
+      postProcessingGetSettings: () => dictationSessions.postProcessingGetSettings(),
+      postProcessingSetSettings: (settings) =>
+        dictationSessions.postProcessingSetSettings(settings),
     },
     actions: {
       list: () => actions.list(),

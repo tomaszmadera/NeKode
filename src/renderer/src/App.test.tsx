@@ -20,6 +20,7 @@ import {
 } from '../../shared/ipc-contract'
 import { AppError } from '../../shared/ipc-error'
 import { App, TEST_ID, testIdFor } from './App'
+import { DESKTOP_SHORTCUT_METHOD } from './components/settings/DictationSettings'
 import { playAttentionChime } from './lib/chime'
 import { TERMINAL_FONT_SIZE_STORAGE_KEY } from './lib/terminal-font'
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
@@ -273,9 +274,11 @@ describe('app settings and themes', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Dictation' }))
     await screen.findByRole('heading', { name: 'Dictionary (OpenWhispr)' })
     await waitFor(() => expect(app.dictation.dictionaryList).toHaveBeenCalledOnce())
-    // Enable/confirm are journey setup only; the gating itself is asserted in
+    // Select/confirm are journey setup only; the gating itself is asserted in
     // DesktopDictationSettings.test.tsx and useDesktopDictation.test.tsx.
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable desktop dictation' }))
+    fireEvent.change(await screen.findByTestId('dictation-provider-select'), {
+      target: { value: DESKTOP_SHORTCUT_METHOD },
+    })
     await act(async () => {})
     fireEvent.click(screen.getByRole('checkbox', { name: /I confirm/ }))
     await act(async () => {})
@@ -294,8 +297,9 @@ describe('app settings and themes', () => {
     expect(app.dictation.desktopActivate).toHaveBeenCalledOnce()
     expect(app.terminals.write).not.toHaveBeenCalled()
     expect(app.dictation.start).not.toHaveBeenCalled()
+    // The workspace dictation controller subscribes to results passively;
+    // the desktop shortcut path must never start an in-app take.
     expect(app.dictation.audio).not.toHaveBeenCalled()
-    expect(app.dictation.onResult).not.toHaveBeenCalled()
   })
   it('defaults project names to uppercase and persists the original-case preference', async () => {
     const app = createAppApiStub()

@@ -10,10 +10,21 @@ function transportError(error: unknown): DictationError {
   return 'unreachable'
 }
 
+export type DictationState =
+  | 'idle'
+  | 'preparing'
+  | 'recording'
+  | 'transcribing'
+  | 'post_processing'
+  | 'error'
+  | 'cancelled'
+
 export interface DictationView {
-  state: 'idle' | 'preparing' | 'recording' | 'transcribing'
+  state: DictationState
   chatId: string | null
   result: DictationResult | null
+  orphanedTranscripts?: DictationResult[]
+  durationSeconds?: number
 }
 
 interface Active {
@@ -29,6 +40,13 @@ export class DictationController {
   private pending: DictationResult | null = null
   private readonly unsubscribe: () => void
   private disposed = false
+  private starting = false
+  private stopping = false
+  private activeChatId: string | null = null
+  private targetMounted = true
+  private orphanedTranscripts: DictationResult[] = []
+  private timer: ReturnType<typeof setInterval> | null = null
+  private recordingStartTime = 0
   private view: DictationView = { state: 'idle', chatId: null, result: null }
 
   constructor(
@@ -48,7 +66,8 @@ export class DictationController {
   }
 
   async start(chatId: string, retrySessionId: string | null = null): Promise<void> {
-    if (this.active || this.disposed) return
+    if (this.starting || this.stopping || this.active || this.disposed) return
+    this.starting = true
     const active: Active = { id: null, chatId, abort: new AbortController(), recorder: null }
     this.active = active
     this.update({ state: 'preparing', result: null })
@@ -85,7 +104,9 @@ export class DictationController {
         active.recorder.discard()
         return
       }
-      this.update({ state: 'recording', result: null })
+      this.recordingStartTime = Date.now()
+      this.startTimer()
+      this.update({ state: 'recording', result: null, durationSeconds: 0 })
     } catch (error) {
       if (this.active === active)
         await this.fail(
@@ -96,12 +117,23 @@ export class DictationController {
               ? 'microphone-unavailable'
               : transportError(error),
         )
+    } finally {
+      this.starting = false
     }
   }
 
   async stop(): Promise<void> {
     const active = this.active
-    if (!active?.id || !active.recorder || this.view.state !== 'recording') return
+    if (
+      this.stopping ||
+      this.starting ||
+      !active?.id ||
+      !active.recorder ||
+      this.view.state !== 'recording'
+    )
+      return
+    this.stopping = true
+    this.stopTimer()
     this.update({ state: 'preparing', result: null })
     let take: { wav: ArrayBuffer; noSpeech: boolean }
     try {
@@ -109,11 +141,16 @@ export class DictationController {
       active.recorder = null
     } catch {
       active.recorder = null
+      this.stopping = false
       if (this.active === active) await this.fail(active, 'recording-failure')
       return
     }
-    if (this.active !== active) return
+    if (this.active !== active) {
+      this.stopping = false
+      return
+    }
     if (take.noSpeech) {
+      this.stopping = false
       this.finish(this.result(active, 'no-speech'))
       await this.api.cancel(active.id).catch(() => undefined)
       return
@@ -123,10 +160,15 @@ export class DictationController {
       await this.api.audio(active.id, take.wav)
     } catch (error) {
       if (this.active === active) await this.fail(active, transportError(error))
+    } finally {
+      this.stopping = false
     }
   }
 
   async cancel(): Promise<void> {
+    this.stopTimer()
+    this.starting = false
+    this.stopping = false
     const active = this.active
     if (active) {
       this.finish(this.result(active, 'cancelled'))
@@ -137,10 +179,63 @@ export class DictationController {
     }
   }
 
+  setActiveChatId(chatId: string | null): void {
+    this.activeChatId = chatId
+  }
+
+  setTargetMounted(mounted: boolean): void {
+    this.targetMounted = mounted
+  }
+
+  dismissOrphaned(sessionId: string): void {
+    this.orphanedTranscripts = this.orphanedTranscripts.filter((t) => t.sessionId !== sessionId)
+    this.update({ state: this.view.state, result: this.view.result })
+  }
+
+  consumeOrphaned(chatId: string): DictationResult | null {
+    const index = this.orphanedTranscripts.findIndex((t) => t.chatId === chatId)
+    if (index === -1) return null
+    const [found] = this.orphanedTranscripts.splice(index, 1)
+    this.update({ state: this.view.state, result: this.view.result })
+    return found
+  }
+
+  setPostProcessing(): void {
+    if (this.active) {
+      this.update({ state: 'post_processing', result: null })
+    }
+  }
+
+  reset(): void {
+    this.stopTimer()
+    this.update({ state: 'idle', result: null })
+  }
+
   dispose(): void {
     this.disposed = true
+    this.stopTimer()
     this.unsubscribe()
     void this.cancel()
+  }
+
+  private startTimer(): void {
+    this.stopTimer()
+    this.timer = setInterval(() => {
+      if (this.view.state === 'recording' && !this.disposed) {
+        const durationSeconds = Math.max(
+          0,
+          Math.floor((Date.now() - this.recordingStartTime) / 1000),
+        )
+        this.update({ state: 'recording', result: null, durationSeconds })
+      }
+    }, 1000)
+  }
+
+  private stopTimer(): void {
+    if (this.timer !== null) {
+      clearInterval(this.timer)
+      this.timer = null
+    }
   }
 
   private async fail(active: Active, error: DictationError): Promise<void> {
@@ -164,13 +259,43 @@ export class DictationController {
     const active = this.active
     this.active = null
     this.pending = null
+    this.stopTimer()
+    this.starting = false
+    this.stopping = false
     active?.abort.abort()
     active?.recorder?.discard()
-    this.update({ state: 'idle', result })
+
+    // Target loss protection (AC-013):
+    const targetLost =
+      result.outcome === 'success' &&
+      result.text.length > 0 &&
+      ((this.activeChatId !== null && this.activeChatId !== result.chatId) || !this.targetMounted)
+
+    if (targetLost) {
+      this.orphanedTranscripts.push(result)
+      this.update({ state: 'idle', result: null })
+      return
+    }
+
+    let state: DictationState = 'idle'
+    if (result.outcome === 'failed') state = 'error'
+    else if (result.outcome === 'cancelled') state = 'cancelled'
+    this.update({ state, result })
   }
 
   private update(view: Omit<DictationView, 'chatId'>): void {
-    this.view = { ...view, chatId: this.active?.chatId ?? null }
+    const next: DictationView = {
+      state: view.state,
+      chatId: this.active?.chatId ?? null,
+      result: view.result,
+    }
+    if (view.durationSeconds !== undefined && view.state === 'recording') {
+      next.durationSeconds = view.durationSeconds
+    }
+    if (this.orphanedTranscripts.length > 0) {
+      next.orphanedTranscripts = [...this.orphanedTranscripts]
+    }
+    this.view = next
     if (!this.disposed) this.changed(this.view)
   }
 }
