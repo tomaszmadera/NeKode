@@ -6,6 +6,7 @@ import {
   type DictationState,
   type DictationView,
 } from '../lib/dictation/controller'
+import { dictationErrorMessage } from '../lib/dictation/error-message'
 import { type DictationRecorder, microphoneRecorder } from '../lib/dictation/recorder'
 
 export interface UseDictationOptions {
@@ -106,7 +107,11 @@ export function useDictation(options?: UseDictationOptions): UseDictationReturn 
   const isTranscribing = view.state === 'transcribing' || view.state === 'post_processing'
   const isBusy = view.state === 'preparing' || isRecording || isTranscribing
 
-  const error = view.result?.error ?? (view.state === 'error' ? 'Dictation error occurred.' : null)
+  const error = view.result?.error
+    ? dictationErrorMessage(view.result.error, view.result.providerId)
+    : view.state === 'error'
+      ? 'Dictation error occurred.'
+      : null
 
   const warning = view.result?.warning ?? null
 

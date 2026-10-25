@@ -1,6 +1,7 @@
 import type {
   ConfigFieldSchema,
   ConfigFieldType,
+  DictationError,
   SttProviderCapabilities,
   SttProviderManifest,
 } from '../../../../shared/dictation-contract'
@@ -49,6 +50,10 @@ export interface DiscoveredModel {
 export interface SttProviderAdapter {
   readonly manifest: SttProviderManifest
   readonly protocolVersion?: number
+  /** Validate a configuration patch before any persistence (never receives masked secrets). */
+  validateConfig?(config: Record<string, unknown>): void
+  /** Local eligibility only; never performs a network request. */
+  readinessError?(config: Record<string, unknown>): DictationError | null
   testConnection(config: Record<string, unknown>): Promise<ConnectionTestResult>
   discoverModels?(config: Record<string, unknown>): Promise<DiscoveredModel[]>
   transcribe(

@@ -1,6 +1,8 @@
 # OpenWhispr dictation integration: functional specification
 
-Status: Delivered for desktop V1 (implementation issue NEKODE-22); the public Cloud API remains deferred to the optional backlog item NEKODE-37.
+Status: Delivered for desktop V1 (implementation issue NEKODE-22). The separate direct Cloud API contract is approved under NEKODE-37.
+
+The direct Cloud API contract is [OpenWhispr Cloud API dictation](../openwhispr-cloud-api/spec.md). Desktop and retained local-mode requirements remain below.
 Path: `docs/features/openwhispr-dictation/spec.md`.
 
 This file is the behavioral contract for the OpenWhispr dictation feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.

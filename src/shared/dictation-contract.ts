@@ -36,6 +36,16 @@ export type DictationError =
   | 'recording-failure'
   | 'microphone-unavailable'
   | 'disabled'
+  | 'cloud-consent-required'
+  | 'plan-required'
+  | 'forbidden'
+  | 'audio-rejected'
+  | 'audio-too-large'
+  | 'concurrency-limit'
+  | 'quota-exceeded'
+  | 'rate-limited'
+  | 'service-unavailable'
+  | 'provider-failure'
 
 export interface DictationResult {
   sessionId: string
@@ -80,6 +90,16 @@ export function isDictationResult(value: unknown): value is DictationResult {
         'recording-failure',
         'microphone-unavailable',
         'disabled',
+        'cloud-consent-required',
+        'plan-required',
+        'forbidden',
+        'audio-rejected',
+        'audio-too-large',
+        'concurrency-limit',
+        'quota-exceeded',
+        'rate-limited',
+        'service-unavailable',
+        'provider-failure',
       ].includes(value.error as string)) &&
     typeof value.retryable === 'boolean'
   )

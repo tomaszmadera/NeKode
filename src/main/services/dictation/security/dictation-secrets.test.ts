@@ -24,6 +24,27 @@ function fakeSafeStorage(available = true): SafeStorageLike {
 }
 
 describe('dictation-secrets', () => {
+  it('never forwards secret-bearing keychain errors through IPC', () => {
+    const storage = fakeSafeStorage()
+    storage.encryptString = () => {
+      throw new Error('private owk_live_key')
+    }
+    storage.decryptString = () => {
+      throw new Error('private owk_live_key')
+    }
+    for (const operation of [
+      () => encryptSecret('owk_live_key', storage),
+      () => decryptSecret('enc:v1:dGVzdA==', storage),
+    ]) {
+      expect(operation).toThrow(/safeStorage/)
+      try {
+        operation()
+      } catch (error) {
+        expect((error as Error).message).not.toContain('private')
+        expect((error as Error).message).not.toContain('owk_live_key')
+      }
+    }
+  })
   describe('encryptSecret', () => {
     it('encrypts secret with enc:v1: prefix when safeStorage is available', () => {
       const storage = fakeSafeStorage(true)

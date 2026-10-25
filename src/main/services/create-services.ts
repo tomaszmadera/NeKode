@@ -22,6 +22,7 @@ import { ElevenLabsAdapter } from './dictation/adapters/elevenlabs-adapter'
 import { LocalOpenAiAdapter } from './dictation/adapters/local-openai-adapter'
 import { OpenRouterAdapter } from './dictation/adapters/openrouter-adapter'
 import { OpenWhisprAdapter } from './dictation/adapters/openwhispr-adapter'
+import { OpenWhisprCloudAdapter } from './dictation/adapters/openwhispr-cloud-adapter'
 import { DesktopDictation } from './dictation/desktop-dictation'
 import { DictationService } from './dictation/dictation-service'
 import { DictationDictionaryService } from './dictation/dictionary/dictation-dictionary-service'
@@ -148,6 +149,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
 
   const dictationRegistry = new ProviderRegistry()
   dictationRegistry.register(new OpenWhisprAdapter(dictation))
+  dictationRegistry.register(new OpenWhisprCloudAdapter())
   dictationRegistry.register(new ElevenLabsAdapter())
   dictationRegistry.register(new OpenRouterAdapter())
   dictationRegistry.register(new LocalOpenAiAdapter())

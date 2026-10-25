@@ -17,6 +17,7 @@ import { isDictationWav } from '../../../shared/dictation-contract'
 import { APP_STATE_KEY, dictationProviderConfigKey } from '../../../shared/ipc-contract'
 import { AppError } from '../../../shared/ipc-error'
 import type { AppStateService } from '../app-state-service'
+import { DictationProviderError } from './adapters/dictation-provider-error'
 import { OpenWhisprAdapter } from './adapters/openwhispr-adapter'
 import type { DictationDictionaryService } from './dictionary/dictation-dictionary-service'
 import type { OpenWhisprClient } from './openwhispr-client'
@@ -33,6 +34,7 @@ import {
 interface Session {
   id: string
   chatId: string
+  providerId: string
   state: 'recording' | 'transcribing'
   settings: DictationSettings
   abort: AbortController
@@ -224,13 +226,18 @@ export class DictationService {
       for (const field of manifest.configSchema) {
         if (field.required) {
           const val = stored[field.key]
-          if (val === undefined || val === null || val === '') {
+          if (
+            val === undefined ||
+            val === null ||
+            val === '' ||
+            (field.type === 'boolean' && val !== true)
+          ) {
             configured = false
             break
           }
           if (field.type === 'secret') {
             const meta = maskSecretMetadata(val as string, this.safeStorage)
-            if (!meta.configured) {
+            if (!meta.configured || !meta.valid) {
               configured = false
               break
             }
@@ -277,6 +284,7 @@ export class DictationService {
     if (!adapter) {
       throw new AppError('not_found', `STT provider '${providerId}' not found.`)
     }
+    adapter.validateConfig?.(newConfig)
     const raw = this.state.get(dictationProviderConfigKey(providerId))
     const existing: Record<string, unknown> = raw ? JSON.parse(raw) : {}
     for (const field of adapter.manifest.configSchema) {
@@ -455,17 +463,43 @@ export class DictationService {
 
   start(chatId: string, retrySessionId: string | null): DictationStart {
     if (this.closed || this.active) return { sessionId: null, error: null }
-    const activeProviderId = this.getActiveProvider()
-    if (!this.registry.has(activeProviderId)) {
+    const previous =
+      retrySessionId !== null &&
+      this.retry?.id === retrySessionId &&
+      this.retry.chatId === chatId &&
+      !this.retry.retried
+        ? this.retry
+        : null
+    if (retrySessionId !== null && !previous)
+      throw new AppError('validation', 'This dictation take cannot be retried.')
+    const activeProviderId = previous?.providerId ?? this.getActiveProvider()
+    const adapter = this.registry.get(activeProviderId)
+    if (!adapter) {
       return { sessionId: null, error: 'no-model' }
     }
-    const settings = this.client?.getSettings() ?? {
+    const settings: DictationSettings = (activeProviderId === 'openwhispr'
+      ? this.client?.getSettings()
+      : undefined) ?? {
       enabled: true,
       language: 'default',
       model: 'default',
       timeoutSeconds: 30,
     }
-    if (!settings.enabled) return { sessionId: null, error: 'disabled' }
+    if (activeProviderId === 'openwhispr' && !settings.enabled)
+      return { sessionId: null, error: 'disabled' }
+
+    if (adapter.readinessError) {
+      let config: Record<string, unknown>
+      try {
+        config = this.getDecryptedConfig(activeProviderId)
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'validation')
+          return { sessionId: null, error: 'auth-failed' }
+        throw error
+      }
+      const error = adapter.readinessError(config)
+      if (error) return { sessionId: null, error }
+    }
 
     if (activeProviderId === 'openwhispr' && this.client) {
       const state = this.client.status().state
@@ -476,15 +510,6 @@ export class DictationService {
         }
     }
 
-    const previous =
-      retrySessionId !== null &&
-      this.retry?.id === retrySessionId &&
-      this.retry.chatId === chatId &&
-      !this.retry.retried
-        ? this.retry
-        : null
-    if (retrySessionId !== null && !previous)
-      throw new AppError('validation', 'This dictation take cannot be retried.')
     this.retry = null
 
     let warning: string | null = null
@@ -503,6 +528,7 @@ export class DictationService {
     const session: Session = {
       id: randomUUID(),
       chatId,
+      providerId: activeProviderId,
       state: 'recording',
       settings: previous?.settings ?? settings,
       abort: new AbortController(),
@@ -528,7 +554,7 @@ export class DictationService {
     session.state = 'transcribing'
     session.wav = wav.slice(0)
     let result: DictationResult = this.result(session, 'failed', 'recording-failure')
-    const activeProviderId = this.getActiveProvider()
+    const activeProviderId = session.providerId
     result.providerId = activeProviderId
     const adapter = this.registry.get(activeProviderId)
 
@@ -554,7 +580,11 @@ export class DictationService {
       const effectiveDict = this.dictionaryService.getEffectiveDictionary(
         chatProjectId ?? undefined,
       )
-      const keyterms = adapter.manifest.capabilities.keyterms ? effectiveDict.terms : undefined
+      const keyterms = adapter.manifest.capabilities.keyterms
+        ? activeProviderId === 'openwhispr-cloud'
+          ? [...effectiveDict.terms, ...effectiveDict.aliases]
+          : effectiveDict.terms
+        : undefined
 
       const ppSettings = this.postProcessingGetSettings()
       let nativeEditInstruction: string | undefined
@@ -655,6 +685,12 @@ export class DictationService {
 
       if (session.abort.signal.aborted || errMessage.includes('cancelled')) {
         result = this.result(session, 'cancelled')
+      } else if (error instanceof DictationProviderError) {
+        result = this.result(session, 'failed', error.error)
+        if (error.error === 'timeout' && !session.retried) {
+          result.retryable = true
+          this.retry = session
+        }
       } else if (
         (error instanceof AppError && error.code === 'timeout') ||
         matchedError === 'timeout'
@@ -693,7 +729,7 @@ export class DictationService {
       cleaned ? 'cancelled' : 'failed',
       cleaned ? null : 'recording-failure',
     )
-    result.providerId = this.getActiveProvider()
+    result.providerId = session.providerId
     this.emit(result)
   }
 

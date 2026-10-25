@@ -37,11 +37,8 @@ export function encryptSecret(plainText: string, safeStorage?: SafeStorageLike):
   try {
     const buffer = safeStorage.encryptString(plainText)
     return `${ENCRYPTED_SECRET_PREFIX}${buffer.toString('base64')}`
-  } catch (error) {
-    throw new AppError(
-      'validation',
-      `Failed to encrypt secret: ${error instanceof Error ? error.message : 'encryption error'}`,
-    )
+  } catch {
+    throw new AppError('validation', 'Failed to encrypt secret with the OS keychain (safeStorage).')
   }
 }
 
@@ -70,11 +67,8 @@ export function decryptSecret(cipherText: string, safeStorage?: SafeStorageLike)
     const base64Data = cipherText.slice(ENCRYPTED_SECRET_PREFIX.length)
     const buffer = Buffer.from(base64Data, 'base64')
     return safeStorage.decryptString(buffer)
-  } catch (error) {
-    throw new AppError(
-      'validation',
-      `Failed to decrypt secret: ${error instanceof Error ? error.message : 'decryption error'}`,
-    )
+  } catch {
+    throw new AppError('validation', 'Failed to decrypt secret with the OS keychain (safeStorage).')
   }
 }
 

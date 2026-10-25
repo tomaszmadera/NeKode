@@ -25,7 +25,7 @@ The architecture features:
 
 - **NEKODE-22 baseline**: Desktop OpenWhispr V1 shipped in 0.13.3 (`docs/features/openwhispr-dictation/spec.md`). That specialization focused prompt inputs and dispatched `Ctrl+Super` / Tap to an external OpenWhispr app. It also established the local bridge foundation in `src/main/services/dictation/openwhispr-client.ts`.
 - **NEKODE-21 scope**: Replaces the single-provider constraint with a generic provider registry. Dictation recording is unified in NeKode's prompt input via renderer AudioWorklet capture, streaming/submitting WAV audio to the active provider in the main process, transcribing, post-processing, and inserting into the originating prompt.
-- **NEKODE-37 boundary**: Dedicated official OpenWhispr public Cloud API integration remains a separate optional backlog card.
+- **NEKODE-37 boundary**: The dedicated official OpenWhispr public Cloud API integration is governed by [OpenWhispr Cloud API dictation](../openwhispr-cloud-api/spec.md), approved separately on 2026-10-25.
 - **Foundations**: `mvp-core-shell` (chat prompt lifecycle), typed IPC + sender-guard conventions (`src/shared/ipc-contract.ts`), `app_state` + SQLite persistence (`src/main/db/migrations.ts`), NeKode Design System.
 
 ---

@@ -198,6 +198,9 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
     setSaveStatus(null)
 
     const payload: Record<string, unknown> = { ...config }
+    for (const field of activeProvider?.configSchema ?? []) {
+      if (field.type === 'secret') delete payload[field.key]
+    }
     // Attach newly entered secrets
     for (const [key, val] of Object.entries(secretInputs)) {
       if (val.trim().length > 0) {

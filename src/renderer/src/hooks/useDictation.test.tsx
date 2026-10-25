@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { DictationResult } from '../../../shared/dictation-contract'
+import { type DictationResult, isDictationResult } from '../../../shared/dictation-contract'
 import type { AppApi } from '../../../shared/ipc-contract'
 import { encodeWav } from '../lib/dictation/wav'
 import { useDictation } from './useDictation'
@@ -203,4 +203,46 @@ describe('useDictation hook', () => {
     expect(result.current.state).toBe('error')
     expect(result.current.error).toBe('microphone-unavailable')
   })
+
+  it.each([
+    ['cloud-consent-required', 'Settings'],
+    ['plan-required', 'Pro or Business'],
+    ['forbidden', 'scope'],
+    ['audio-rejected', 'new take'],
+    ['audio-too-large', 'shorter take'],
+    ['concurrency-limit', 'Wait'],
+    ['quota-exceeded', 'renewal'],
+    ['rate-limited', 'Wait'],
+    ['service-unavailable', 'later'],
+    ['provider-failure', 'later'],
+    ['auth-failed', 'Settings'],
+    ['malformed-response', 'invalid response'],
+    ['timeout', 'timed out'],
+    ['unreachable', 'connection'],
+  ] as const)(
+    'accepts and presents actionable Cloud %s results, settling busy state',
+    async (error, message) => {
+      const { api, recorder, emit } = createMockHarness()
+      const { result } = renderHook(() => useDictation({ api, recorder, chatId: 'chat-1' }))
+      await act(async () => {
+        await result.current.start()
+        await result.current.stop()
+      })
+      const failure: DictationResult = {
+        sessionId: 'session-123',
+        chatId: 'chat-1',
+        outcome: 'failed',
+        text: '',
+        warning: null,
+        error,
+        retryable: false,
+        providerId: 'openwhispr-cloud',
+      }
+      expect(isDictationResult(failure)).toBe(true)
+      act(() => emit(failure))
+      expect(result.current.isBusy).toBe(false)
+      expect(result.current.state).toBe('error')
+      expect(result.current.error).toContain(message)
+    },
+  )
 })

@@ -90,9 +90,106 @@ const defaultPpSettings: DictationPostProcessingSettings = {
   hasApiKey: false,
 }
 
+const mockCloudSummary: SttProviderSummary = {
+  id: 'openwhispr-cloud',
+  name: 'OpenWhispr Cloud (beta)',
+  version: '1.0.0',
+  configured: false,
+  description:
+    'Sends audio and vocabulary hints to OpenWhispr Cloud. Requires Pro or Business. Beta limits: 4 MB per file, 600 minutes per calendar month, one transcription per key.',
+  capabilities: {
+    keyterms: true,
+    nativeEditing: false,
+    languageSelection: true,
+    modelDiscovery: false,
+    timestamps: false,
+  },
+  configSchema: [
+    { key: 'apiKey', label: 'Personal API key', type: 'secret', required: true },
+    {
+      key: 'language',
+      label: 'Language',
+      type: 'select',
+      required: false,
+      defaultValue: 'pl',
+      options: [
+        { label: 'Polish', value: 'pl' },
+        { label: 'Automatic', value: 'auto' },
+      ],
+    },
+    {
+      key: 'cloudUploadEnabled',
+      label: 'Allow sending recordings and vocabulary hints to OpenWhispr Cloud',
+      type: 'boolean',
+      required: true,
+      defaultValue: false,
+    },
+  ],
+}
+
 afterEach(cleanup)
 
 describe('DictationSettings', () => {
+  it('shows Cloud disclosure, initially unchecked permission, and saves permission separately from its key', async () => {
+    const api = createDictationApiStub()
+    const manifest = mockCloudSummary
+    vi.mocked(api.providersList).mockResolvedValue([{ ...manifest, configured: false }])
+    vi.mocked(api.getActiveProvider).mockResolvedValue(manifest.id)
+    vi.mocked(api.providersGetConfig).mockResolvedValue({
+      language: 'pl',
+      cloudUploadEnabled: false,
+    })
+    render(<DictationSettings api={api} />)
+    const permission = (await screen.findByTestId(
+      'dictation-config-cloudUploadEnabled',
+    )) as HTMLInputElement
+    expect(permission.checked).toBe(false)
+    expect(screen.getByText(manifest.description).textContent).toContain('600 minutes')
+    expect(screen.getByText(manifest.description).textContent).toContain(
+      'audio and vocabulary hints',
+    )
+    expect(screen.queryByTestId('dictation-config-model')).toBeNull()
+    expect(screen.queryByTestId('dictation-config-baseUrl')).toBeNull()
+    expect(screen.queryByTestId('dictation-refresh-models')).toBeNull()
+    expect(screen.queryByTestId('dictation-config-enableNativeEdit')).toBeNull()
+    fireEvent.change(screen.getByTestId('secret-input-apiKey'), {
+      target: { value: 'owk_live_test_fixture' },
+    })
+    fireEvent.click(screen.getByTestId('dictation-save-config'))
+    await waitFor(() =>
+      expect(api.providersSetConfig).toHaveBeenCalledWith(manifest.id, {
+        language: 'pl',
+        cloudUploadEnabled: false,
+        apiKey: 'owk_live_test_fixture',
+      }),
+    )
+    await waitFor(() =>
+      expect((screen.getByTestId('secret-input-apiKey') as HTMLInputElement).value).toBe(''),
+    )
+    vi.mocked(api.providersGetConfig).mockResolvedValue({
+      language: 'pl',
+      cloudUploadEnabled: true,
+      apiKey: { configured: true, valid: true, lastFour: 'ture' },
+    })
+    fireEvent.click(permission)
+    fireEvent.click(screen.getByTestId('dictation-save-config'))
+    await waitFor(() =>
+      expect(api.providersSetConfig).toHaveBeenLastCalledWith(manifest.id, {
+        language: 'pl',
+        cloudUploadEnabled: true,
+      }),
+    )
+    await screen.findByTestId('secret-preview-apiKey')
+    fireEvent.change(screen.getByTestId('dictation-config-language'), { target: { value: 'auto' } })
+    fireEvent.click(screen.getByTestId('dictation-save-config'))
+    await waitFor(() =>
+      expect(api.providersSetConfig).toHaveBeenLastCalledWith(manifest.id, {
+        language: 'auto',
+        cloudUploadEnabled: true,
+      }),
+    )
+    expect(document.body.textContent).not.toContain('owk_live_test_fixture')
+  })
   it('loads providers list and displays active provider schema fields', async () => {
     const api = createDictationApiStub()
     vi.mocked(api.providersList).mockResolvedValue([mockElevenLabsSummary, mockOpenRouterSummary])

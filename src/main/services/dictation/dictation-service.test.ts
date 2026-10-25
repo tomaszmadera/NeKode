@@ -7,9 +7,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DictationResult } from '../../../shared/dictation-contract'
 import type { AppStateService } from '../app-state-service'
 import type { SttProviderAdapter } from './adapters/adapter-contract'
+import { DictationProviderError } from './adapters/dictation-provider-error'
+import { OpenRouterAdapter } from './adapters/openrouter-adapter'
+import { OpenWhisprAdapter } from './adapters/openwhispr-adapter'
+import { OpenWhisprCloudAdapter } from './adapters/openwhispr-cloud-adapter'
 import { DictationService } from './dictation-service'
 import type { DictationDictionaryService } from './dictionary/dictation-dictionary-service'
-import type { OpenWhisprClient, TranscriptionResponse } from './openwhispr-client'
+import { OpenWhisprClient, type TranscriptionResponse } from './openwhispr-client'
 import { PostProcessor } from './post-processing/post-processor'
 import { ProviderRegistry } from './registry/provider-registry'
 import type { SafeStorageLike } from './security/dictation-secrets'
@@ -311,7 +315,7 @@ describe('dictation provider architecture orchestration', () => {
     },
   }
 
-  function createTestHarness(customRoot?: string) {
+  function createTestHarness(customRoot?: string, localEnabled?: boolean) {
     const directory = customRoot ?? mkdtempSync(join(tmpdir(), 'nekode-dictation-test-'))
     directories.push(directory)
 
@@ -327,6 +331,7 @@ describe('dictation provider architecture orchestration', () => {
     } as unknown as AppStateService
 
     const registry = new ProviderRegistry()
+    if (localEnabled !== undefined) state.set('dictation.enabled', JSON.stringify(localEnabled))
 
     const mockAdapter: SttProviderAdapter = {
       manifest: {
@@ -412,7 +417,9 @@ describe('dictation provider architecture orchestration', () => {
 
     const postProcessor = new PostProcessor()
 
+    const client = localEnabled === undefined ? undefined : new OpenWhisprClient({ state })
     const service = new DictationService({
+      client,
       registry,
       dictionaryService: dictService,
       postProcessor,
@@ -425,8 +432,258 @@ describe('dictation provider architecture orchestration', () => {
     const results: DictationResult[] = []
     service.onResult((r) => results.push(r))
 
-    return { service, registry, mockAdapter, dictService, state, store, results, directory }
+    return { service, registry, mockAdapter, dictService, state, store, results, directory, client }
   }
+
+  it('starts configured ElevenLabs with an injected local client whose settings are disabled', async () => {
+    const h = createTestHarness(undefined, false)
+    h.service.providersSetConfig('elevenlabs', { apiKey: 'test-elevenlabs-key' })
+    const started = h.service.start('chat-project', null)
+    expect(started.error).toBeNull()
+    expect(started.sessionId).toEqual(expect.any(String))
+    await h.service.audio(started.sessionId as string, wav())
+    expect(h.mockAdapter.transcribe).toHaveBeenCalledOnce()
+    expect(h.results[0]).toMatchObject({ outcome: 'success', providerId: 'elevenlabs' })
+  })
+
+  function cloudHarness() {
+    const h = createTestHarness(undefined, false)
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ data: { text: 'NeKode nk' } })))
+    const adapter = new OpenWhisprCloudAdapter({ fetch })
+    h.registry.register(adapter)
+    h.service.setActiveProvider('openwhispr-cloud')
+    return { ...h, fetch, adapter }
+  }
+
+  const cloudConfig = { apiKey: 'owk_live_fixture_key', cloudUploadEnabled: true }
+
+  it('starts Cloud with invalid retained local settings and sends effective terms and aliases to the original chat', async () => {
+    const h = cloudHarness()
+    h.store.set('dictation.model', 'invalid-local-json')
+    h.service.providersSetConfig('openwhispr-cloud', cloudConfig)
+    const start = h.service.start('chat-project', null)
+    expect(start.error).toBeNull()
+    await h.service.audio(start.sessionId as string, wav())
+    const form = h.fetch.mock.calls[0][1]?.body as FormData
+    expect(form.get('prompt')).toBe('NeKode, ElevenLabs, nk')
+    expect(h.results).toHaveLength(1)
+    expect(h.results[0]).toMatchObject({
+      chatId: 'chat-project',
+      outcome: 'success',
+      text: 'NeKode nk',
+      rawText: 'NeKode nk',
+      providerId: 'openwhispr-cloud',
+    })
+  })
+
+  it('starts OpenRouter without consulting invalid local settings', async () => {
+    const h = createTestHarness(undefined, false)
+    h.store.set('dictation.model', 'invalid-local-json')
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ text: 'router text' })))
+    h.registry.register(new OpenRouterAdapter({ fetch }))
+    h.service.setActiveProvider('openrouter')
+    h.service.providersSetConfig('openrouter', { apiKey: 'fixture-router-key' })
+    const start = h.service.start('chat-project', null)
+    expect(start.error).toBeNull()
+    await h.service.audio(start.sessionId as string, wav())
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(h.results[0]).toMatchObject({ outcome: 'success', providerId: 'openrouter' })
+  })
+
+  it('requires a key and permission before Cloud recording, and rechecks revocation before upload', async () => {
+    const h = cloudHarness()
+    expect(h.service.providersGetConfig('openwhispr-cloud').cloudUploadEnabled).toBe(false)
+    expect(h.service.start('chat-project', null)).toMatchObject({
+      sessionId: null,
+      error: 'auth-failed',
+    })
+    h.service.providersSetConfig('openwhispr-cloud', { apiKey: cloudConfig.apiKey })
+    expect(h.service.providersList().find((p) => p.id === 'openwhispr-cloud')?.configured).toBe(
+      false,
+    )
+    expect(h.service.start('chat-project', null)).toMatchObject({
+      sessionId: null,
+      error: 'cloud-consent-required',
+    })
+    h.service.providersSetConfig('openwhispr-cloud', { cloudUploadEnabled: true })
+    expect(h.service.providersList().find((p) => p.id === 'openwhispr-cloud')?.configured).toBe(
+      true,
+    )
+    const start = h.service.start('chat-project', null)
+    expect(start.error).toBeNull()
+    h.service.providersSetConfig('openwhispr-cloud', { cloudUploadEnabled: false })
+    await h.service.audio(start.sessionId as string, wav())
+    expect(h.fetch).not.toHaveBeenCalled()
+    expect(h.results[0]).toMatchObject({ outcome: 'failed', error: 'cloud-consent-required' })
+    expect(recordings(h.directory)).toEqual([])
+  })
+
+  it.each([
+    { apiKey: 'owk_workspace_key', cloudUploadEnabled: true },
+    { apiKey: 'owk_live_fixture_key', language: 'invalid' },
+    { apiKey: 'owk_live_fixture_key', cloudUploadEnabled: 'true' },
+    { apiKey: 'owk_live_fixture_key', baseUrl: 'https://untrusted.example' },
+    { apiKey: 'enc:v1:injected' },
+  ])('rejects invalid Cloud patches without partially changing configuration', (patch) => {
+    const h = cloudHarness()
+    h.service.providersSetConfig('openwhispr-cloud', cloudConfig)
+    const before = h.state.get('dictation.providerConfig:openwhispr-cloud')
+    expect(() => h.service.providersSetConfig('openwhispr-cloud', patch)).toThrow(
+      'Invalid OpenWhispr Cloud configuration',
+    )
+    expect(h.state.get('dictation.providerConfig:openwhispr-cloud')).toBe(before)
+    expect(h.fetch).not.toHaveBeenCalled()
+  })
+
+  it('keeps Cloud credentials encrypted, masks reads and rejects unavailable encryption before saving', () => {
+    const h = cloudHarness()
+    const available = vi.spyOn(fakeSafeStorage, 'isEncryptionAvailable').mockReturnValue(false)
+    try {
+      expect(() => h.service.providersSetConfig('openwhispr-cloud', cloudConfig)).toThrow(
+        'Cannot encrypt',
+      )
+      expect(h.state.get('dictation.providerConfig:openwhispr-cloud')).toBeNull()
+    } finally {
+      available.mockRestore()
+    }
+    h.service.providersSetConfig('openwhispr-cloud', cloudConfig)
+    const stored = JSON.parse(h.state.get('dictation.providerConfig:openwhispr-cloud') as string)
+    expect(stored.apiKey).toMatch(/^enc:v1:/)
+    expect(stored.apiKey).not.toContain(cloudConfig.apiKey)
+    expect(h.service.providersGetConfig('openwhispr-cloud').apiKey).toEqual({
+      configured: true,
+      valid: true,
+      lastFour: '_key',
+    })
+    expect(JSON.stringify(h.service.providersList())).not.toContain(cloudConfig.apiKey)
+  })
+
+  it('never redirects a take to Cloud when Settings changes during recording', async () => {
+    const h = cloudHarness()
+    h.service.providersSetConfig('openwhispr-cloud', cloudConfig)
+    h.service.setActiveProvider('elevenlabs')
+    const start = h.service.start('chat-project', null)
+    h.service.setActiveProvider('openwhispr-cloud')
+    await h.service.audio(start.sessionId as string, wav())
+    expect(h.mockAdapter.transcribe).toHaveBeenCalledOnce()
+    expect(h.fetch).not.toHaveBeenCalled()
+    expect(h.results[0].providerId).toBe('elevenlabs')
+  })
+
+  it('keeps a local recording local after switching Settings to Cloud', async () => {
+    const h = createTestHarness(undefined, true)
+    const client = h.client as OpenWhisprClient
+    vi.spyOn(client, 'status').mockReturnValue({
+      state: 'operational',
+      checkedAt: null,
+      models: [],
+      staleModelSelection: false,
+      error: null,
+    })
+    const local = vi
+      .spyOn(client, 'transcribe')
+      .mockResolvedValue({ text: 'local text', warning: null, error: null })
+    h.registry.register(new OpenWhisprAdapter(client))
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    h.registry.register(new OpenWhisprCloudAdapter({ fetch }))
+    h.service.providersSetConfig('openwhispr-cloud', cloudConfig)
+    h.service.setActiveProvider('openwhispr')
+    const first = h.service.start('chat-project', null)
+    h.service.setActiveProvider('openwhispr-cloud')
+    await h.service.audio(first.sessionId as string, wav())
+    expect(local).toHaveBeenCalledOnce()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(h.results[0]).toMatchObject({
+      outcome: 'success',
+      text: 'local text',
+      providerId: 'openwhispr',
+    })
+  })
+
+  it('retries with the original Cloud provider and preserves at-most-once delivery', async () => {
+    const h = cloudHarness()
+    h.service.providersSetConfig('openwhispr-cloud', cloudConfig)
+    const transcribe = vi
+      .spyOn(h.adapter, 'transcribe')
+      .mockRejectedValueOnce(new DictationProviderError('timeout'))
+    const first = h.service.start('chat-project', null)
+    await h.service.audio(first.sessionId as string, wav())
+    expect(h.results[0]).toMatchObject({ error: 'timeout', retryable: true })
+    h.service.setActiveProvider('elevenlabs')
+    const retry = h.service.start('chat-project', first.sessionId)
+    await vi.waitFor(() => expect(h.results).toHaveLength(2))
+    await h.service.audio(retry.sessionId as string, wav())
+    expect(transcribe).toHaveBeenCalledTimes(2)
+    expect(h.mockAdapter.transcribe).not.toHaveBeenCalled()
+    expect(h.results[1]).toMatchObject({
+      outcome: 'success',
+      chatId: 'chat-project',
+      providerId: 'openwhispr-cloud',
+    })
+  })
+
+  it('ignores cancelled late Cloud results and duplicate audio events without post-processing or redelivery', async () => {
+    const h = cloudHarness()
+    h.service.providersSetConfig('openwhispr-cloud', cloudConfig)
+    h.service.postProcessingSetSettings({ mode: 'external_llm', level: 'light' })
+    let resolve!: (value: Response) => void
+    h.fetch.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    const first = h.service.start('chat-project', null)
+    const pending = h.service.audio(first.sessionId as string, wav())
+    await h.service.audio(first.sessionId as string, wav())
+    expect(h.fetch).toHaveBeenCalledOnce()
+    h.service.setActiveProvider('elevenlabs')
+    h.service.cancel(first.sessionId as string)
+    resolve(new Response(JSON.stringify({ data: { text: 'late private text' } })))
+    await pending
+    expect(h.results).toHaveLength(1)
+    expect(h.results[0]).toMatchObject({
+      outcome: 'cancelled',
+      text: '',
+      providerId: 'openwhispr-cloud',
+      chatId: 'chat-project',
+    })
+    expect(recordings(h.directory)).toEqual([])
+    expect(h.service.start('chat-next', null).sessionId).toEqual(expect.any(String))
+  })
+
+  it.each([
+    ['plan_required', 403, 'plan-required'],
+    ['forbidden', 403, 'forbidden'],
+    ['validation_error', 400, 'audio-rejected'],
+    ['payload_too_large', 413, 'audio-too-large'],
+    ['concurrency_limit', 409, 'concurrency-limit'],
+    ['quota_exceeded', 429, 'quota-exceeded'],
+    ['rate_limited', 429, 'rate-limited'],
+    ['service_unavailable', 503, 'service-unavailable'],
+  ] as const)('settles %s with a typed safe result', async (code, status, error) => {
+    const h = cloudHarness()
+    h.service.providersSetConfig('openwhispr-cloud', cloudConfig)
+    h.fetch.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code, message: `private ${cloudConfig.apiKey}` } }), {
+        status,
+      }),
+    )
+    await h.service.audio(h.service.start('chat-project', null).sessionId as string, wav())
+    expect(h.results[0]).toMatchObject({
+      outcome: 'failed',
+      error,
+      retryable: false,
+      providerId: 'openwhispr-cloud',
+    })
+    expect(JSON.stringify(h.results)).not.toContain('private')
+    expect(h.service.start('chat-project', null).sessionId).toEqual(expect.any(String))
+    expect(h.fetch).toHaveBeenCalledOnce()
+  })
 
   it('manages provider configs with secret encryption at rest and masked metadata in renderer reads', async () => {
     const h = createTestHarness()
