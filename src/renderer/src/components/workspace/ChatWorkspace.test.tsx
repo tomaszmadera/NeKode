@@ -1,4 +1,4 @@
-import type { DictationResult } from '@shared/dictation-contract'
+import type { DictationResult } from '@shared/contracts/dictation-contract'
 import type { AppApi, ChatInfo, ProjectInfo } from '@shared/ipc-contract'
 import { emptyGitWorktree } from '@shared/ipc-contract'
 import type { RenderResult } from '@testing-library/react'

@@ -3,7 +3,7 @@ import {
   type DictationConnectionState,
   type DictationSettings,
   isDictationSettings,
-} from '@shared/dictation-contract'
+} from '@shared/contracts/dictation-contract'
 import { APP_STATE_KEY } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 

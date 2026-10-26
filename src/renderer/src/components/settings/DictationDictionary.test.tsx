@@ -1,4 +1,7 @@
-import type { DictationDictionaryEntry, DictationDictionaryError } from '@shared/dictation-contract'
+import type {
+  DictationDictionaryEntry,
+  DictationDictionaryError,
+} from '@shared/contracts/dictation-contract'
 import type { ProjectInfo } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

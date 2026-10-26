@@ -1,4 +1,4 @@
-import type { UsageSnapshot } from '@shared/usage-contract'
+import type { UsageSnapshot } from '@shared/contracts/usage-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

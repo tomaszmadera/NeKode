@@ -4,7 +4,7 @@ import type {
   DictationDictionaryError,
   DictationDictionary as LegacyDictionary,
   UpdateDictionaryEntryInput,
-} from '@shared/dictation-contract'
+} from '@shared/contracts/dictation-contract'
 import type { AppApi, ProjectInfo } from '@shared/ipc-contract'
 import { useEffect, useState } from 'react'
 import { cn } from '../../lib/cn'

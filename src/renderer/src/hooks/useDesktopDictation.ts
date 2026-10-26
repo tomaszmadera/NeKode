@@ -1,7 +1,7 @@
 import type {
   DesktopDictationSettings,
   DesktopDictationSetup,
-} from '@shared/desktop-dictation-contract'
+} from '@shared/contracts/desktop-dictation-contract'
 import type { AppApi } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import { useEffect, useRef, useState } from 'react'

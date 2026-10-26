@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { DictationModelSelection, DictationSettings } from '@shared/dictation-contract'
+import type {
+  DictationModelSelection,
+  DictationSettings,
+} from '@shared/contracts/dictation-contract'
 import { AppError } from '@shared/ipc-error'
 import type { OpenWhisprClient } from '../openwhispr-client'
 import {

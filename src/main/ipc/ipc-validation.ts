@@ -4,7 +4,7 @@ import { isBottomTabId } from '@shared/bottom-tab-id'
 import {
   type DesktopDictationSettings,
   isDesktopDictationSettings,
-} from '@shared/desktop-dictation-contract'
+} from '@shared/contracts/desktop-dictation-contract'
 import {
   type CreateDictionaryEntryInput,
   type DictationSettings,
@@ -12,7 +12,8 @@ import {
   isDictationWav,
   type SetPostProcessingSettingsInput,
   type UpdateDictionaryEntryInput,
-} from '@shared/dictation-contract'
+} from '@shared/contracts/dictation-contract'
+import { parseUsageSettings, type UsageConnection } from '@shared/contracts/usage-contract'
 import type {
   ActionInput,
   AgentProfilePut,
@@ -31,7 +32,6 @@ import {
   KANBAN_PRIORITIES,
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { parseUsageSettings, type UsageConnection } from '@shared/usage-contract'
 import { wslProjectPath } from '@shared/wsl-path'
 import type { AppServices } from './service-registry'
 

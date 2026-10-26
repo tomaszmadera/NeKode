@@ -1,4 +1,4 @@
-import type { DictationResult } from '@shared/dictation-contract'
+import type { DictationResult } from '@shared/contracts/dictation-contract'
 import type { AppApi } from '@shared/ipc-contract'
 import { describe, expect, it, vi } from 'vitest'
 import { DictationController, type DictationView } from './controller'

@@ -1,11 +1,11 @@
-import type { AppApi } from '@shared/ipc-contract'
-import { formatErrorMessage } from '@shared/ipc-error'
 import {
   USAGE_REMOVED_ADAPTER_IDS,
   USAGE_REMOVED_ADAPTER_MESSAGE,
   type UsageAdapter,
   type UsageConnection,
-} from '@shared/usage-contract'
+} from '@shared/contracts/usage-contract'
+import type { AppApi } from '@shared/ipc-contract'
+import { formatErrorMessage } from '@shared/ipc-error'
 import { useState } from 'react'
 
 const input = 'mt-1 w-full rounded border border-edge bg-app p-2'

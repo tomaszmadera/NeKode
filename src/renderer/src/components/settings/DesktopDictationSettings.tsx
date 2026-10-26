@@ -1,7 +1,7 @@
 import type {
   DesktopDictationSetup,
   DesktopDictationSettings as Settings,
-} from '@shared/desktop-dictation-contract'
+} from '@shared/contracts/desktop-dictation-contract'
 
 export function DesktopDictationSettings({
   setup,

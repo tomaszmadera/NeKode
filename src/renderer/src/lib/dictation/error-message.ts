@@ -1,4 +1,4 @@
-import type { DictationError } from '@shared/dictation-contract'
+import type { DictationError } from '@shared/contracts/dictation-contract'
 
 const cloudMessages: Partial<Record<DictationError, string>> = {
   'auth-failed': "Check the selected dictation provider's API key in Settings.",

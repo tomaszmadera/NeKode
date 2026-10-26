@@ -3,7 +3,7 @@ import type {
   CreateDictionaryEntryInput,
   DictationDictionaryEntry,
   UpdateDictionaryEntryInput,
-} from '@shared/dictation-contract'
+} from '@shared/contracts/dictation-contract'
 import { AppError } from '@shared/ipc-error'
 import type Database from 'better-sqlite3'
 import { wrapSqliteError } from '../../project-service'

@@ -1,4 +1,4 @@
-import { MAX_DICTATION_AUDIO_BYTES } from '@shared/dictation-contract'
+import { MAX_DICTATION_AUDIO_BYTES } from '@shared/contracts/dictation-contract'
 
 export interface RecordedTake {
   wav: ArrayBuffer

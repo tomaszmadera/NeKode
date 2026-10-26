@@ -1,7 +1,7 @@
 import type {
   DesktopDictationSettings,
   DesktopDictationSetup,
-} from '@shared/desktop-dictation-contract'
+} from '@shared/contracts/desktop-dictation-contract'
 import type {
   ActionControl,
   ActionExecution,

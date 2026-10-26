@@ -1,4 +1,4 @@
-import { type DictationResult, isDictationResult } from '@shared/dictation-contract'
+import { type DictationResult, isDictationResult } from '@shared/contracts/dictation-contract'
 import type { AppApi } from '@shared/ipc-contract'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

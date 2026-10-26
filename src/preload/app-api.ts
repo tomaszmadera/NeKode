@@ -1,4 +1,4 @@
-import type { DesktopDictationSetup } from '@shared/desktop-dictation-contract'
+import type { DesktopDictationSetup } from '@shared/contracts/desktop-dictation-contract'
 import {
   type DictationDictionaryEntry,
   type DictationPostProcessingSettings,
@@ -7,7 +7,7 @@ import {
   type DictationStatusSnapshot,
   isDictationResult,
   type SttProviderSummary,
-} from '@shared/dictation-contract'
+} from '@shared/contracts/dictation-contract'
 import type {
   ActionControl,
   ActionExecution,

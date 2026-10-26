@@ -1,4 +1,4 @@
-import type { DictationError } from '@shared/dictation-contract'
+import type { DictationError } from '@shared/contracts/dictation-contract'
 import { AppError } from '@shared/ipc-error'
 import {
   type ConnectionTestResult,

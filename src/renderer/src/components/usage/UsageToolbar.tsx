@@ -1,4 +1,3 @@
-import { formatErrorMessage } from '@shared/ipc-error'
 import type {
   UsageApi,
   UsageConnectionSnapshot,
@@ -8,8 +7,9 @@ import type {
   UsageRefreshSourceStatus,
   UsageRefreshWindowResult,
   UsageSnapshot,
-} from '@shared/usage-contract'
-import { usageFreshness, usagePercent, usageSlices } from '@shared/usage-contract'
+} from '@shared/contracts/usage-contract'
+import { usageFreshness, usagePercent, usageSlices } from '@shared/contracts/usage-contract'
+import { formatErrorMessage } from '@shared/ipc-error'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './usage.css'

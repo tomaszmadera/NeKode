@@ -8,8 +8,8 @@ import type {
   DictationSettings,
   DictationStatusSnapshot,
   LocalTranscribeModel,
-} from '@shared/dictation-contract'
-import { isDictationSettings } from '@shared/dictation-contract'
+} from '@shared/contracts/dictation-contract'
+import { isDictationSettings } from '@shared/contracts/dictation-contract'
 import { AppError } from '@shared/ipc-error'
 import { DictationSettingsStore, type DictationStateStore } from './dictation-settings'
 

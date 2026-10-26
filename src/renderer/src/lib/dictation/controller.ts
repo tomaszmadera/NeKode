@@ -1,4 +1,4 @@
-import type { DictationError, DictationResult } from '@shared/dictation-contract'
+import type { DictationError, DictationResult } from '@shared/contracts/dictation-contract'
 import type { AppApi } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import { type DictationRecorder, type Recording, RecordingFailure } from './recorder'

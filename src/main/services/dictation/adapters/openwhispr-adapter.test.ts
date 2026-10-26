@@ -1,5 +1,8 @@
 import { existsSync } from 'node:fs'
-import type { DictationSettings, DictationStatusSnapshot } from '@shared/dictation-contract'
+import type {
+  DictationSettings,
+  DictationStatusSnapshot,
+} from '@shared/contracts/dictation-contract'
 import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
 import type { OpenWhisprClient } from '../openwhispr-client'

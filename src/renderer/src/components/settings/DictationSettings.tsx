@@ -3,7 +3,7 @@ import type {
   DictationPostProcessingMode,
   DictationPostProcessingSettings,
   SttProviderSummary,
-} from '@shared/dictation-contract'
+} from '@shared/contracts/dictation-contract'
 import type { AppApi } from '@shared/ipc-contract'
 import { useEffect, useState } from 'react'
 import { cn } from '../../lib/cn'

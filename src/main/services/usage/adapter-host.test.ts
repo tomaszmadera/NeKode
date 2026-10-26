@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import type { UsageAdapter, UsageDocument, UsageMetric } from '@shared/usage-contract'
+import type { UsageAdapter, UsageDocument, UsageMetric } from '@shared/contracts/usage-contract'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertLiveRefresh,

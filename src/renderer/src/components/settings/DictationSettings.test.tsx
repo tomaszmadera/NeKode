@@ -1,7 +1,7 @@
 import type {
   DictationPostProcessingSettings,
   SttProviderSummary,
-} from '@shared/dictation-contract'
+} from '@shared/contracts/dictation-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDictationApiStub } from '../../test/dictation-api-stub'
