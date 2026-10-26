@@ -1006,6 +1006,9 @@ describe('ChatWorkspace dictation (AC-013)', () => {
     expect(bundle.app.dictation.cancel).not.toHaveBeenCalled()
     expect(promptOf('t1').value).toBe('')
     const visible = within(screen.getByTestId(testIdFor.terminalView('t2')))
+    expect(visible.getByTestId('orphaned-transcript-banner').textContent).toContain(
+      'Recovered transcript for First chat in Demo',
+    )
     fireEvent.click(visible.getByTestId('insert-orphaned-transcript'))
     expect(promptOf('t2').value).toBe('git status')
     expect(screen.queryByTestId('orphaned-transcript-banner')).toBeNull()

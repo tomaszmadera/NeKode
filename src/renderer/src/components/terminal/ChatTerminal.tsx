@@ -45,6 +45,8 @@ interface ChatTerminalProps {
   /** Workspace-owned dictation control, shared by every chat prompt so a
       tab switch or close never disposes an in-flight transcription. */
   dictationControl?: UnifiedDictationControl
+  /** Names a recovered transcript's chat on the prompt banner. */
+  chatLabel?: (chatId: string) => string
   app: AppApi
   chatId: string
   /** Project directory; becomes the PTY cwd on first attach. */
@@ -148,6 +150,7 @@ export function ChatTerminal({
   app,
   dictation,
   dictationControl,
+  chatLabel,
   chatId,
   cwd,
   visible,
@@ -736,6 +739,7 @@ export function ChatTerminal({
             dictation={dictation}
             dictationControl={dictationControl}
             chatId={chatId}
+            chatLabel={chatLabel}
             onSubmit={(line) => sendRef.current?.(line)}
             injected={injected}
             onInjected={onInjected}

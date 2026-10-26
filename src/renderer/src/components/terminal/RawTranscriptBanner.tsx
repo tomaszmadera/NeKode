@@ -71,12 +71,15 @@ export function RawTranscriptBanner({
 
 export interface OrphanedTranscriptBannerProps {
   transcript: DictationResult
+  /** Chat name, with the project when it is known. Falls back to the chat id. */
+  label: string
   onInsert: () => void
   onDismiss: () => void
 }
 
 export function OrphanedTranscriptBanner({
   transcript,
+  label,
   onInsert,
   onDismiss,
 }: OrphanedTranscriptBannerProps): React.JSX.Element {
@@ -87,9 +90,7 @@ export function OrphanedTranscriptBanner({
       className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md border border-info/40 bg-panel px-3 py-1.5 text-xs text-ink"
     >
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-semibold text-ink-bright">
-          Recovered transcript for {transcript.chatId}
-        </span>
+        <span className="font-semibold text-ink-bright">Recovered transcript for {label}</span>
         <span className="truncate font-mono text-[11px] text-ink-muted" title={transcript.text}>
           &quot;{transcript.text}&quot;
         </span>

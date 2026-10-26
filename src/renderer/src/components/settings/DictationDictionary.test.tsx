@@ -219,6 +219,23 @@ describe('DictationDictionary (Modernized CRUD)', () => {
     expect(screen.queryByText('Kubernetes')).toBeNull()
   })
 
+  it('shows a delete-failure alert and keeps the entry', async () => {
+    const api = createDictationApiStub()
+    vi.mocked(api.dictionaryList).mockResolvedValue([sampleGlobalEntry])
+    vi.mocked(api.dictionaryDelete).mockRejectedValue(new Error('private transport error'))
+
+    render(<DictationDictionary api={api} />)
+    await screen.findByText('Kubernetes')
+    fireEvent.click(screen.getByTestId(`dictation-delete-${sampleGlobalEntry.id}`))
+
+    const alert = await screen.findByTestId('dictation-dictionary-delete-error')
+    expect(alert.getAttribute('role')).toBe('alert')
+    expect(alert.textContent).toContain('could not be deleted')
+    expect(screen.getByText('Kubernetes')).toBeTruthy()
+    expect(screen.queryByText('The dictionary could not load. Refresh to try again.')).toBeNull()
+    expect(screen.queryByText(/private transport/)).toBeNull()
+  })
+
   it('cancels add/edit form without calling API', async () => {
     const api = createDictationApiStub()
     vi.mocked(api.dictionaryList).mockResolvedValue([])

@@ -50,6 +50,8 @@ export interface PromptInputProps {
   dictation?: DesktopDictationControl
   dictationControl?: UnifiedDictationControl
   chatId?: string
+  /** Names a recovered transcript's chat. An empty result falls back to the id. */
+  chatLabel?: (chatId: string) => string
   /** Forces the OpenWhispr desktop shortcut path. By default it is used
       when it is the dictation method selected in Settings (AC-014). */
   useDesktopBypass?: boolean
@@ -71,6 +73,7 @@ export function PromptInput({
   dictation,
   dictationControl,
   chatId,
+  chatLabel,
   useDesktopBypass,
 }: PromptInputProps): React.JSX.Element {
   const [value, setValue] = useState('')
@@ -362,14 +365,18 @@ export function PromptInput({
           onDismiss={() => setShowRawBanner(false)}
         />
       ) : null}
-      {dictationControl?.orphanedTranscripts?.map((orphaned) => (
-        <OrphanedTranscriptBanner
-          key={orphaned.sessionId}
-          transcript={orphaned}
-          onInsert={() => handleInsertOrphaned(orphaned)}
-          onDismiss={() => dictationControl.dismissOrphaned?.(orphaned.sessionId)}
-        />
-      ))}
+      {dictationControl?.orphanedTranscripts?.map((orphaned) => {
+        const named = chatLabel?.(orphaned.chatId)?.trim()
+        return (
+          <OrphanedTranscriptBanner
+            key={orphaned.sessionId}
+            transcript={orphaned}
+            label={named && named.length > 0 ? named : orphaned.chatId}
+            onInsert={() => handleInsertOrphaned(orphaned)}
+            onDismiss={() => dictationControl.dismissOrphaned?.(orphaned.sessionId)}
+          />
+        )
+      })}
       {(focusError ?? activeError) ? (
         <p role="alert" className="w-full text-xs text-error">
           {focusError ?? activeError}

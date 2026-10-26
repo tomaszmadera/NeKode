@@ -81,6 +81,7 @@ export function DictationDictionary({
   const [entries, setEntries] = useState<DictationDictionaryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [legacyError, setLegacyError] = useState<DictationDictionaryError | null>(null)
   const [activeTab, setActiveTab] = useState<'global' | 'project'>('global')
   const [projects, setProjects] = useState<ProjectInfo[]>(externalProjects ?? [])
@@ -134,6 +135,7 @@ export function DictationDictionary({
     let disposed = false
     setLoading(true)
     setLoadFailed(false)
+    setDeleteError(null)
     setLegacyError(null)
 
     const queryProjectId =
@@ -244,11 +246,12 @@ export function DictationDictionary({
 
   // Delete entry
   async function handleDelete(id: string) {
+    setDeleteError(null)
     try {
       await api.dictionaryDelete(id)
       setEntries((prev) => prev.filter((e) => e.id !== id))
     } catch {
-      setLoadFailed(true)
+      setDeleteError('The dictionary entry could not be deleted. Try again.')
     }
   }
 
@@ -554,6 +557,15 @@ export function DictationDictionary({
         ) : null}
 
         {/* Status & Messages */}
+        {deleteError ? (
+          <p
+            role="alert"
+            data-testid="dictation-dictionary-delete-error"
+            className="border-t border-edge px-4 py-2 text-xs text-error"
+          >
+            {deleteError}
+          </p>
+        ) : null}
         <div aria-live="polite">
           {loading ? (
             <p className="text-xs text-ink-muted">Loading dictionary...</p>

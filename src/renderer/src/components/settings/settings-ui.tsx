@@ -279,6 +279,7 @@ export function SettingsSelect({
   value,
   disabled = false,
   testId,
+  ariaLabel,
   invalid = false,
   required = false,
   selectRef,
@@ -289,6 +290,7 @@ export function SettingsSelect({
   value: string
   disabled?: boolean
   testId?: string
+  ariaLabel?: string
   invalid?: boolean
   required?: boolean
   selectRef?: React.Ref<HTMLSelectElement>
@@ -304,6 +306,7 @@ export function SettingsSelect({
         disabled={disabled}
         required={required}
         data-testid={testId}
+        aria-label={ariaLabel}
         aria-invalid={invalid || undefined}
         onChange={(event) => onChange(event.target.value)}
         className={cn(selectClass, 'disabled:opacity-50', invalid && 'border-error')}
@@ -331,6 +334,7 @@ export function MaskedKeyControl({
   masked,
   value,
   inputId,
+  ariaLabel,
   placeholder,
   invalid = false,
   onValueChange,
@@ -347,6 +351,7 @@ export function MaskedKeyControl({
   masked: string | null
   value: string
   inputId?: string
+  ariaLabel?: string
   placeholder?: string
   invalid?: boolean
   onValueChange: (value: string) => void
@@ -400,6 +405,7 @@ export function MaskedKeyControl({
         data-testid={inputTestId}
         value={value}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         aria-invalid={invalid || undefined}
         autoComplete="off"
         onChange={(event) => onValueChange(event.target.value)}

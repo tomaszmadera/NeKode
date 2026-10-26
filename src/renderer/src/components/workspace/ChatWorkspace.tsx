@@ -32,6 +32,23 @@ import { WelcomeSurface } from './WelcomeSurface'
 // the database and to continue on the next chat. There is no "session ended"
 // state in this slice; only spawn failures surface an overlay (with Retry).
 
+/** Name shown on a recovered dictation transcript. A removed chat keeps its id. */
+function recoveredTranscriptLabel(
+  chatId: string,
+  chatsByProject: Record<string, ChatInfo[]>,
+  projects: readonly ProjectInfo[],
+): string {
+  for (const [projectId, chats] of Object.entries(chatsByProject)) {
+    const chat = chats.find((item) => item.id === chatId)
+    if (chat === undefined) continue
+    const name = chat.name.trim()
+    if (name.length === 0) return chatId
+    const projectName = projects.find((project) => project.id === projectId)?.name.trim() ?? ''
+    return projectName.length > 0 ? `${name} in ${projectName}` : name
+  }
+  return chatId
+}
+
 interface SessionRecord {
   /** Bumped when a failed session is replaced by a fresh one (remount key). */
   generation: number
@@ -514,6 +531,7 @@ export function ChatWorkspace({
               <ChatTerminal
                 dictation={dictation}
                 dictationControl={dictationControl}
+                chatLabel={(id) => recoveredTranscriptLabel(id, chatsByProject, projects)}
                 app={app}
                 chatId={chatId}
                 cwd={record.cwd}

@@ -500,9 +500,21 @@ describe('global usage service', () => {
     f.advance(300_000)
     await poll(service)
     expect(read).toHaveBeenCalledTimes(4)
-    // A changed source resets every deadline and reads at once.
+    // A changed source resets every deadline and reads at once (rule 23: replace the account).
     f.advance(10_000)
-    save({ adapterId: 'source', config: { path: f.input } })
+    service.saveSettings({
+      ...service.getSettings(),
+      connections: [
+        {
+          id: 'replaced-account',
+          label: 'Replaced account',
+          providerId: 'fixture',
+          adapterId: 'source',
+          enabled: true,
+          config: { path: f.input },
+        },
+      ],
+    })
     await settle()
     expect(read).toHaveBeenCalledTimes(5)
   })
@@ -1172,6 +1184,31 @@ describe('accounts settings flow (spec rules 21-28)', () => {
       ),
     })
     expect(edited.connections[0].providerId).toBe('declared-provider')
+  })
+  it('rejects changing the adapter of a saved source (rule 23)', async () => {
+    const f = fixture()
+    const { service } = adapter(f, 'declared-provider')
+    plugin(f)
+    service.saveSettings({ ...f.settings, connections: [account('declared')] })
+    expect(service.getSettings().connections[0].adapterId).toBe('declared')
+
+    expect(() =>
+      service.saveSettings({
+        ...f.settings,
+        connections: [{ ...account('fixture'), id: 'account' }],
+      }),
+    ).toThrow(
+      new AppError(
+        'validation_error',
+        'The adapter of a saved source cannot change. Remove the source and add another.',
+      ),
+    )
+    expect(service.getSettings().connections[0].adapterId).toBe('declared')
+
+    await expect(service.test({ ...account('fixture'), id: 'account' })).rejects.toMatchObject({
+      code: 'validation_error',
+      message: 'The adapter of a saved source cannot change. Remove the source and add another.',
+    })
   })
   it('creates and opens the user adapters folder', async () => {
     const f = fixture()

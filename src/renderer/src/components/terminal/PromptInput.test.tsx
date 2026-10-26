@@ -415,6 +415,35 @@ describe('unified dictation prompt workflow', () => {
     expect(dismissOrphaned).toHaveBeenCalledWith('orphaned-1')
   })
 
+  it('shows the chat name on a recovered transcript when the chat is known', () => {
+    const dictation = createUnifiedDictationStub({
+      orphanedTranscripts: [
+        {
+          sessionId: 'orphaned-1',
+          chatId: 'chat-background',
+          outcome: 'success',
+          text: 'git push origin main',
+          warning: null,
+          error: null,
+          retryable: false,
+        },
+      ],
+    })
+
+    render(
+      <PromptInput
+        onSubmit={vi.fn()}
+        dictationControl={dictation}
+        chatId="chat-active"
+        chatLabel={(id) => (id === 'chat-background' ? 'Deploy in NeKode' : id)}
+      />,
+    )
+
+    const banner = screen.getByTestId('orphaned-transcript-banner')
+    expect(banner.textContent).toContain('Recovered transcript for Deploy in NeKode')
+    expect(banner.textContent).not.toContain('chat-background')
+  })
+
   it('cancels in-flight transcription on Esc, also from the Dictation button (AC-012)', () => {
     const cancel = vi.fn(async () => {})
     render(

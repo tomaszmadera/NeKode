@@ -248,12 +248,7 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
     setTestResult(null)
     setSaveStatus(null)
 
-    const currentConfig: Record<string, unknown> = { ...config }
-    for (const [key, val] of Object.entries(secretInputs)) {
-      if (val.trim().length > 0) {
-        currentConfig[key] = val
-      }
-    }
+    const currentConfig = configWithUnsavedSecrets()
 
     try {
       const result = await api.providersTestConnection(activeProviderId, currentConfig)
@@ -273,7 +268,7 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
     if (!activeProviderId) return
     setDiscoveringModels(true)
     try {
-      const models = await api.providersDiscoverModels(activeProviderId, config)
+      const models = await api.providersDiscoverModels(activeProviderId, configWithUnsavedSecrets())
       setDiscoveredModels(models)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to discover models.')
@@ -326,6 +321,16 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
     }
   }
 
+  function configWithUnsavedSecrets(): Record<string, unknown> {
+    const currentConfig: Record<string, unknown> = { ...config }
+    for (const [key, val] of Object.entries(secretInputs)) {
+      if (val.trim().length > 0) {
+        currentConfig[key] = val
+      }
+    }
+    return currentConfig
+  }
+
   const connectionFailed = testResult !== null && !testResult.ok
   const connectionStatus = testResult ? (
     <span
@@ -347,10 +352,20 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
     </span>
   ) : null
 
+  const methodError = desktopDictation?.control.error ? (
+    <p role="alert" data-testid="dictation-method-error" className="text-xs text-error">
+      {desktopDictation.control.error}
+    </p>
+  ) : null
+
   if (loading) {
     return (
-      <div data-testid="dictation-settings-loading" className="text-sm text-ink-secondary">
-        Loading dictation providers...
+      <div
+        data-testid="dictation-settings-loading"
+        className="flex flex-col gap-2 text-sm text-ink-secondary"
+      >
+        <span>Loading dictation providers...</span>
+        {methodError}
       </div>
     )
   }
@@ -377,7 +392,9 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
               id="dictation-provider-select"
               testId="dictation-provider-select"
               value={desktopSelected ? DESKTOP_SHORTCUT_METHOD : activeProviderId}
-              disabled={desktopDictation?.saving === true}
+              disabled={
+                desktopDictation?.saving === true || desktopDictation?.control.busy === true
+              }
               onChange={(value) => void handleMethodChange(value)}
             >
               {providers.map((p) => (
@@ -402,11 +419,7 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
             </div>
           ) : null}
         </GroupBox>
-        {desktopDictation?.control.error ? (
-          <p role="alert" data-testid="dictation-method-error" className="text-xs text-error">
-            {desktopDictation.control.error}
-          </p>
-        ) : null}
+        {methodError}
       </SettingsGroup>
 
       {activeProvider && activeProvider.configSchema.length > 0 ? (
@@ -594,6 +607,7 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
                         <SettingsSelect
                           id={`dictation-discovered-${field.key}`}
                           testId="dictation-discovered-models-select"
+                          ariaLabel="Discovered models"
                           value={(val as string) ?? ''}
                           onChange={(value) => handleFieldChange('model', value)}
                         >
@@ -697,6 +711,7 @@ export function DictationSettings({ api, desktopDictation }: DictationSettingsPr
                     masked={postProcessing?.hasApiKey && !editingPpKey ? '••••••••••••' : null}
                     value={ppKeyInput}
                     inputId="dictation-pp-secret-input"
+                    ariaLabel="OpenRouter API Key"
                     placeholder="sk-or-v1-..."
                     onValueChange={setPpKeyInput}
                     onEdit={() => setEditingPpKey(true)}

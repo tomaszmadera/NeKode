@@ -530,4 +530,68 @@ describe('DictationSettings', () => {
       Array.from(select.options).some((option) => option.value === DESKTOP_SHORTCUT_METHOD),
     ).toBe(false)
   })
+
+  it('disables the method list while the desktop shortcut is being sent', async () => {
+    const api = mockElevenLabsApi()
+    const desktop = desktopDictationStub(true)
+    desktop.control.busy = true
+    render(<DictationSettings api={api} desktopDictation={desktop} />)
+
+    const select = (await screen.findByTestId('dictation-provider-select')) as HTMLSelectElement
+    expect(select.disabled).toBe(true)
+  })
+
+  it('discovers models with an unsaved secret typed in the form', async () => {
+    const api = createDictationApiStub()
+    vi.mocked(api.providersList).mockResolvedValue([mockOpenRouterSummary])
+    vi.mocked(api.getActiveProvider).mockResolvedValue('openrouter')
+    vi.mocked(api.providersGetConfig).mockResolvedValue({
+      model: 'openai/whisper-large-v3-turbo',
+    })
+    vi.mocked(api.postProcessingGetSettings).mockResolvedValue(defaultPpSettings)
+    vi.mocked(api.providersDiscoverModels).mockResolvedValue([])
+
+    render(<DictationSettings api={api} />)
+    fireEvent.change(await screen.findByTestId('secret-input-apiKey'), {
+      target: { value: 'sk-unsaved' },
+    })
+    fireEvent.click(screen.getByTestId('dictation-refresh-models'))
+
+    await waitFor(() => {
+      expect(api.providersDiscoverModels).toHaveBeenCalledWith(
+        'openrouter',
+        expect.objectContaining({
+          apiKey: 'sk-unsaved',
+          model: 'openai/whisper-large-v3-turbo',
+        }),
+      )
+    })
+  })
+
+  it('names the discovered model list and the post-processing API key field', async () => {
+    const api = createDictationApiStub()
+    vi.mocked(api.providersList).mockResolvedValue([mockOpenRouterSummary])
+    vi.mocked(api.getActiveProvider).mockResolvedValue('openrouter')
+    vi.mocked(api.providersGetConfig).mockResolvedValue({
+      model: 'openai/whisper-large-v3-turbo',
+    })
+    vi.mocked(api.postProcessingGetSettings).mockResolvedValue({
+      mode: 'external_llm',
+      level: 'light',
+      model: 'openai/gpt-4o-mini',
+      hasApiKey: false,
+    })
+    vi.mocked(api.providersDiscoverModels).mockResolvedValue([
+      { id: 'openai/whisper-large-v3-turbo', name: 'Whisper Large v3 Turbo' },
+    ])
+
+    render(<DictationSettings api={api} />)
+    fireEvent.click(await screen.findByTestId('dictation-refresh-models'))
+
+    const discovered = await screen.findByTestId('dictation-discovered-models-select')
+    expect(discovered.getAttribute('aria-label')).toBe('Discovered models')
+    expect(screen.getByTestId('pp-secret-input').getAttribute('aria-label')).toBe(
+      'OpenRouter API Key',
+    )
+  })
 })

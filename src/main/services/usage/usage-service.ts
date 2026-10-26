@@ -459,9 +459,12 @@ export class UsageService {
     }
   }
   private prepare(c: UsageConnection): UsageConnection {
-    const previous = this.settings.connections.find(
-      (p) => p.id === c.id && p.adapterId === c.adapterId,
-    )
+    const previous = this.settings.connections.find((p) => p.id === c.id)
+    if (previous && previous.adapterId !== c.adapterId)
+      throw new AppError(
+        'validation_error',
+        'The adapter of a saved source cannot change. Remove the source and add another.',
+      )
     if (removedSource(c)) {
       // Spec L7: a stored account of a removed source keeps its configuration and provider until
       // the user removes it; no new account of such a service can be added.

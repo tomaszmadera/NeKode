@@ -177,7 +177,7 @@ export function AppSettings({
       onClose={onClose}
       keyboard="dialog"
       dialogRef={dialogRef}
-      error={error ?? desktopDictation.control.error}
+      error={error ?? (activeTab === 'dictation' ? null : desktopDictation.control.error)}
     >
       {activeTab === 'general' ? (
         <div className="flex max-w-[660px] flex-col gap-7">
