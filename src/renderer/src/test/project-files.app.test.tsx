@@ -7,11 +7,11 @@ import type {
 } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { App } from '../../App'
-import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { createAppApiStub } from '../../test/app-api-stub'
-import { resetMockFitAddons } from '../../test/fit-addon-mock'
-import { resetMockTerminals } from '../../test/xterm-mock'
+import { App } from '../App'
+import { TEST_ID, testIdFor } from '../lib/test-ids'
+import { createAppApiStub } from './app-api-stub'
+import { resetMockFitAddons } from './fit-addon-mock'
+import { resetMockTerminals } from './xterm-mock'
 
 // Project Files view tests (spec Required tests — renderer): the "Files"
 // action enters the mode and the row click does not; the context menu holds
@@ -25,9 +25,9 @@ import { resetMockTerminals } from '../../test/xterm-mock'
 // Monaco preview wrapper is mocked so the tests assert the data handed to
 // the read-only editor (content, language), not monaco internals.
 
-vi.mock('@xterm/xterm', () => import('../../test/xterm-mock'))
-vi.mock('@xterm/addon-fit', () => import('../../test/fit-addon-mock'))
-vi.mock('./MonacoPreview', () => ({
+vi.mock('@xterm/xterm', () => import('./xterm-mock'))
+vi.mock('@xterm/addon-fit', () => import('./fit-addon-mock'))
+vi.mock('../components/files/MonacoPreview', () => ({
   MonacoPreview: ({ content, language }: { content: string; language: string | null }) => (
     <pre data-testid="file-preview-monaco" data-language={language ?? 'plaintext'}>
       {content}

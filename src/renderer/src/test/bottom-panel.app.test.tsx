@@ -2,14 +2,14 @@ import type { ChatInfo, ProjectInfo } from '@shared/ipc-contract'
 import { APP_STATE_KEY, type AppApi } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { App, TEST_ID, testIdFor } from './App'
-import { createAppApiStub as appApiStub } from './test/app-api-stub'
-import { resetMockFitAddons } from './test/fit-addon-mock'
-import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
+import { App, TEST_ID, testIdFor } from '../App'
+import { createAppApiStub as appApiStub } from './app-api-stub'
+import { resetMockFitAddons } from './fit-addon-mock'
+import { mockTerminalInstances, resetMockTerminals } from './xterm-mock'
 
-vi.mock('@xterm/xterm', () => import('./test/xterm-mock'))
-vi.mock('@xterm/addon-fit', () => import('./test/fit-addon-mock'))
-vi.mock('./components/files/MonacoPreview', () => ({
+vi.mock('@xterm/xterm', () => import('./xterm-mock'))
+vi.mock('@xterm/addon-fit', () => import('./fit-addon-mock'))
+vi.mock('../components/files/MonacoPreview', () => ({
   MonacoPreview: ({ content, language }: { content: string; language: string | null }) => (
     <pre data-testid="file-preview-monaco" data-language={language ?? 'plaintext'}>
       {content}

@@ -1,25 +1,32 @@
-import type { AppApi, ChatInfo, FileEntry, ProjectInfo } from '@shared/ipc-contract'
-import { APP_STATE_KEY, projectKanbanAdapterKey } from '@shared/ipc-contract'
+import type { AppApi, ProjectInfo } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { App } from '../../App'
+import type React from 'react'
+import { createRef, useState } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { createAppApiStub } from '../../test/app-api-stub'
-import { resetMockFitAddons } from '../../test/fit-addon-mock'
-import { resetMockTerminals } from '../../test/xterm-mock'
+import { CenterTabs, type CenterTabsProps, type HomeTabState, homeTabStateFor } from './CenterTabs'
+import {
+  activateTab,
+  closeFileTab,
+  emptyTabsSession,
+  KANBAN_TAB,
+  openFileTab,
+  type ProjectTabsSession,
+  TERMINAL_TAB,
+} from './tabs-session'
 
-// Tab strip + file tabs + status-bar wiring (center-layout-tabs-actions spec
-// Behaviour 1–8, AC1–AC4): tab order and switching, file tab open/focus/close
-// with the previously-active fallback, per-project tab retention across
-// project switches (per-session UI state), the `+ New chat` passthrough and
-// terminal-session survival across tab switches (hidden views).
+// CenterTabs component (center-layout-tabs-actions spec Behaviour 1-8, AC1,
+// AC4; project-home spec Behaviour 1-2): the tab strip order and labels, the
+// close fallback, the file-tab context menu and middle click, and which tab
+// view is visible. The tab session state lives with the caller; the harness
+// below holds it with the same reducers App uses. Cases that need the left
+// panel, project switches or App dialogs live in
+// src/renderer/src/test/center-tabs.app.test.tsx.
 //
-// xterm.js is mocked at the module boundary (jsdom has no canvas) and the
-// Monaco preview wrapper is mocked so the tests assert the data handed to
-// the read-only editor, not monaco internals.
+// The Monaco preview wrapper is mocked so the previews render their content
+// without monaco internals.
 
-vi.mock('@xterm/xterm', () => import('../../test/xterm-mock'))
-vi.mock('@xterm/addon-fit', () => import('../../test/fit-addon-mock'))
 vi.mock('../files/MonacoPreview', () => ({
   MonacoPreview: ({ content, language }: { content: string; language: string | null }) => (
     <pre data-testid="file-preview-monaco" data-language={language ?? 'plaintext'}>
@@ -34,41 +41,73 @@ const projectA: ProjectInfo = {
   path: 'D:/code/demo',
   runtimeLabel: 'Node 24',
 }
-const projectB: ProjectInfo = {
-  id: 'p2',
-  name: 'Other',
-  path: 'D:/code/other',
-  runtimeLabel: null,
+
+/** A session with the files opened in order (the last one active). */
+function sessionWith(paths: readonly string[]): ProjectTabsSession {
+  return paths.reduce(openFileTab, emptyTabsSession())
 }
-const chatOne: ChatInfo = { id: 't1', projectId: 'p1', name: 'First chat' }
-const _chatTwo: ChatInfo = { id: 't2', projectId: 'p1', name: 'Second chat' }
-const chatOther: ChatInfo = { id: 't8', projectId: 'p2', name: 'Other chat' }
 
-const rootEntries: FileEntry[] = [
-  { name: 'src', relativePath: 'src', kind: 'directory' },
-  { name: 'README.md', relativePath: 'README.md', kind: 'file' },
-  { name: 'notes.txt', relativePath: 'notes.txt', kind: 'file' },
-]
-const srcEntries: FileEntry[] = [
-  { name: 'nested', relativePath: 'src/nested', kind: 'directory' },
-  { name: 'app.ts', relativePath: 'src/app.ts', kind: 'file' },
-]
-const otherRootEntries: FileEntry[] = [
-  { name: 'docs', relativePath: 'docs', kind: 'directory' },
-  { name: 'other.md', relativePath: 'other.md', kind: 'file' },
-]
+type HarnessOptions = Partial<Omit<CenterTabsProps, 'session'>> & {
+  session?: ProjectTabsSession
+}
 
-/** One level per call, per project (the real service contract). */
-function mockListings(app: AppApi): void {
-  vi.mocked(app.files.list).mockImplementation(async (projectId, relativePath) => {
-    if (projectId === 'p2') {
-      return relativePath === null ? otherRootEntries : []
-    }
-    if (relativePath === null) {
-      return rootEntries
-    }
-    return relativePath === 'src' ? srcEntries : []
-  })
+interface Rendered {
+  app: AppApi
+  props: CenterTabsProps
+}
+
+/** Holds the tab session with App's reducers and renders CenterTabs. */
+function Harness({
+  initial,
+  props,
+}: {
+  initial: ProjectTabsSession
+  props: CenterTabsProps
+}): React.JSX.Element {
+  const [session, setSession] = useState(initial)
+  return (
+    <CenterTabs
+      {...props}
+      session={session}
+      onSelectTab={(tab) => {
+        props.onSelectTab(tab)
+        setSession((current) => activateTab(current, tab))
+      }}
+      onCloseFile={(relativePath) => {
+        props.onCloseFile(relativePath)
+        setSession((current) => closeFileTab(current, relativePath))
+      }}
+    />
+  )
+}
+
+function renderCenterTabs(options: HarnessOptions = {}): Rendered {
+  const { session = emptyTabsSession(), ...overrides } = options
+  const app = overrides.app ?? createAppApiStub()
+  const props: CenterTabsProps = {
+    app,
+    floating: false,
+    project: projectA,
+    projectNamesUppercase: true,
+    chatName: 'First chat',
+    session,
+    homeTabState: 'none',
+    bindingsError: null,
+    markdownViewByKey: {},
+    surfaceRef: createRef<HTMLElement>(),
+    actionRow: <div data-testid="harness-action-row" />,
+    chatSurface: <div data-testid="harness-chat-surface" />,
+    renderKanban: vi.fn(() => null),
+    onSelectTab: vi.fn(),
+    onCloseFile: vi.fn(),
+    onOpenSettings: vi.fn(),
+    onUseLocalTaskList: vi.fn(() => Promise.resolve()),
+    onConnectTracker: vi.fn(),
+    onOpenExternalError: vi.fn(),
+    ...overrides,
+  }
+  render(<Harness initial={session} props={props} />)
+  return { app, props }
 }
 
 function tabIds(): string[] {
@@ -87,52 +126,26 @@ function paneDisplay(relativePath: string): string {
   return screen.getByTestId(testIdFor.filePreviewPane(relativePath)).style.display
 }
 
-async function enterFilesMode(app: AppApi, projectId: string): Promise<void> {
-  fireEvent.click(await screen.findByTestId(testIdFor.projectFiles(projectId)))
-  await screen.findByTestId(TEST_ID.fileTree)
-  expect(app.files.list).toHaveBeenCalled()
-}
+afterEach(() => {
+  cleanup()
+})
 
-describe('tab strip — order and labels (spec Behaviour 1–3, AC1)', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-    resetMockTerminals()
-    resetMockFitAddons()
-  })
-  afterEach(() => {
-    cleanup()
-  })
-
-  it('terminal-chat tab first (chat name), file tabs in open order, + New chat at the right end', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
+describe('tab strip - order and labels (spec Behaviour 1-3, AC1)', () => {
+  it('home tab first, then the terminal-chat tab, file tabs in session order, Project Settings at the right end', () => {
+    renderCenterTabs({ session: sessionWith(['README.md', 'notes.txt', 'src/app.ts']) })
 
     const strip = screen.getByTestId(TEST_ID.tabStrip)
     const terminalTab = screen.getByTestId(TEST_ID.tabTerminal)
     expect(terminalTab.textContent).toBe('First chat')
-    expect(terminalTab.getAttribute('data-selected')).toBe('true')
-    // Unbound project: the home tab leads the strip, then the chat tab
-    // (project-home spec Behaviour 1).
     const homeTab = screen.getByTestId(TEST_ID.kanbanTab)
     expect(homeTab.textContent).toBe('DEMO')
     expect(homeTab.tagName).toBe('BUTTON')
     expect(strip.firstElementChild).toBe(homeTab)
     expect(homeTab.nextElementSibling).toBe(terminalTab)
+    expect(terminalTab.nextElementSibling).toBe(screen.getByTestId(testIdFor.tabFile('README.md')))
+    // Non-closable home tab.
+    expect(within(homeTab).queryByRole('button', { name: /Close/ })).toBeNull()
 
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
-
-    // File tabs follow the terminal-chat tab in open order (AC1).
     expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-notes.txt', 'tab-file-src/app.ts'])
     // Labels = file names; tooltips = the path relative to the project root.
     const appTab = screen.getByTestId(testIdFor.tabFile('src/app.ts'))
@@ -141,61 +154,60 @@ describe('tab strip — order and labels (spec Behaviour 1–3, AC1)', () => {
     // The terminal-chat tab is never closable; file tabs carry a close control.
     expect(within(terminalTab).queryByRole('button', { name: /Close/ })).toBeNull()
     expect(screen.getByTestId(testIdFor.tabFileClose('README.md'))).toBeTruthy()
-    // Project Settings sits at the right end of the strip.
     expect(strip.lastElementChild?.getAttribute('data-testid')).toBe(TEST_ID.tabProjectSettings)
     // No breadcrumb and no "Files" view label are rendered (tab model).
     expect(screen.queryByText('Select a file to preview')).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.actionRowSlot)).toBeTruthy()
   })
 
-  it('clicking a file opens its tab; clicking again focuses it without duplicates or reordering', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockListings(app)
+  it('keeps the project name casing when uppercase names are off and shortens a long name', () => {
+    renderCenterTabs({
+      project: { ...projectA, name: 'Very long project name' },
+      projectNamesUppercase: false,
+    })
+    const homeTab = screen.getByTestId(TEST_ID.kanbanTab)
+    expect(homeTab.textContent).toBe('Very long…')
+    expect(homeTab.getAttribute('title')).toBe('Tasks: Very long project name')
+  })
 
-    render(<App app={app} />)
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
+  it('renders no home tab and no file views without a project', () => {
+    renderCenterTabs({ project: null, chatName: null, session: sessionWith(['README.md']) })
+    expect(screen.queryByTestId(TEST_ID.kanbanTab)).toBeNull()
+    expect(screen.queryByTestId(testIdFor.filePreviewPane('README.md'))).toBeNull()
+    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('Chat')
+  })
 
-    // Focus an earlier tab via its tree entry: one tab, order preserved.
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('README.md')))
+  it('selecting tabs moves the selection and the visible view without reordering', async () => {
+    const { props } = renderCenterTabs({
+      session: sessionWith(['README.md', 'notes.txt', 'src/app.ts']),
+    })
+    expect(isTabSelected('src/app.ts')).toBe(true)
+    await waitFor(() => expect(paneDisplay('src/app.ts')).toBe('flex'))
+
+    fireEvent.click(
+      within(screen.getByTestId(testIdFor.tabFile('README.md'))).getByText('README.md'),
+    )
+    expect(props.onSelectTab).toHaveBeenLastCalledWith({ kind: 'file', path: 'README.md' })
     expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-notes.txt', 'tab-file-src/app.ts'])
     expect(isTabSelected('README.md')).toBe(true)
     expect(isTabSelected('src/app.ts')).toBe(false)
-    // The focused tab drives the main surface (read-only preview).
     await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
     expect(paneDisplay('src/app.ts')).toBe('none')
   })
+
+  it('the Project Settings control calls onOpenSettings', () => {
+    const { props } = renderCenterTabs()
+    fireEvent.click(screen.getByTestId(TEST_ID.tabProjectSettings))
+    expect(props.onOpenSettings).toHaveBeenCalledTimes(1)
+  })
 })
 
-describe('tab strip — closing (spec Behaviour 4, AC4)', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-    resetMockTerminals()
-    resetMockFitAddons()
-  })
-  afterEach(() => {
-    cleanup()
-  })
-
+describe('tab strip - closing (spec Behaviour 4, AC4)', () => {
   it('closing the active tab selects the previously active tab; the last close falls back to the terminal tab', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
+    const { props } = renderCenterTabs({ session: sessionWith(['README.md', 'notes.txt']) })
 
     // Active = notes.txt, previously active = README.md.
     fireEvent.click(screen.getByTestId(testIdFor.tabFileClose('notes.txt')))
+    expect(props.onCloseFile).toHaveBeenCalledWith('notes.txt')
     expect(tabIds()).toEqual(['tab-file-README.md'])
     expect(isTabSelected('README.md')).toBe(true)
 
@@ -209,15 +221,7 @@ describe('tab strip — closing (spec Behaviour 4, AC4)', () => {
   })
 
   it('closing a non-active tab keeps the selection and never closes with confirmation', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockListings(app)
-
-    render(<App app={app} />)
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
+    renderCenterTabs({ session: sessionWith(['README.md', 'notes.txt', 'src/app.ts']) })
 
     // Active = src/app.ts; closing notes.txt (inactive) keeps it active and
     // keeps open order of the surviving tabs (no dialog, no prompt).
@@ -228,18 +232,7 @@ describe('tab strip — closing (spec Behaviour 4, AC4)', () => {
   })
 })
 
-describe('tab strip — file-tab context menu and middle click (spec Behaviour 20–21)', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-    resetMockTerminals()
-    resetMockFitAddons()
-  })
-  afterEach(() => {
-    cleanup()
-  })
-
+describe('tab strip - file-tab context menu and middle click (spec Behaviour 20-21)', () => {
   /** jsdom has no clipboard: stub writeText and return the spy. */
   function stubClipboard(): { writeText: ReturnType<typeof vi.fn> } {
     const writeText = vi.fn(() => Promise.resolve())
@@ -255,18 +248,13 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
     fireEvent(element, new MouseEvent('auxclick', { button: 1, bubbles: true }))
   }
 
-  async function openTwoTabs(): Promise<void> {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockListings(app)
-    render(<App app={app} />)
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
+  function openTwoTabs(): void {
+    renderCenterTabs({ session: sessionWith(['README.md', 'notes.txt']) })
   }
 
   it('right click opens the context menu; Copy Relative Path copies and closes it', async () => {
     const clipboard = stubClipboard()
-    await openTwoTabs()
+    openTwoTabs()
     fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')))
     expect(screen.getByTestId(TEST_ID.tabContextMenu)).toBeTruthy()
     // The right click never changes the selection (active stays notes.txt).
@@ -282,7 +270,7 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
   it('renders the menu outside the drag-region tab strip, as a no-drag overlay', async () => {
     // A window drag region swallows clicks in Electron, so the menu must not
     // live inside the strip (regression: the menu items could not be clicked).
-    await openTwoTabs()
+    openTwoTabs()
     fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('README.md')))
     const overlay = await screen.findByTestId(TEST_ID.tabContextMenuOverlay)
     expect(overlay.classList.contains('no-drag')).toBe(true)
@@ -292,9 +280,7 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
 
   it('Copy Absolute Path copies the project root joined with the relative path', async () => {
     const clipboard = stubClipboard()
-    await openTwoTabs()
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
+    renderCenterTabs({ session: sessionWith(['README.md', 'notes.txt', 'src/app.ts']) })
     fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('src/app.ts')))
     fireEvent.click(await screen.findByTestId(TEST_ID.tabContextCopyAbsolute))
     await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('D:/code/demo/src/app.ts'))
@@ -302,7 +288,7 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
   })
 
   it('Escape dismisses the menu without closing; the Close Tab item runs the close flow', async () => {
-    await openTwoTabs()
+    openTwoTabs()
     fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')))
     await screen.findByTestId(TEST_ID.tabContextMenu)
     fireEvent.keyDown(window, { key: 'Escape' })
@@ -316,7 +302,7 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
   })
 
   it('clamps context menu coordinates when opened near viewport edges', async () => {
-    await openTwoTabs()
+    openTwoTabs()
     const originalInnerWidth = window.innerWidth
     const originalInnerHeight = window.innerHeight
     try {
@@ -340,8 +326,8 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
     }
   })
 
-  it('middle click closes the tab without changing the selection', async () => {
-    await openTwoTabs()
+  it('middle click closes the tab without changing the selection', () => {
+    openTwoTabs()
     // Active = notes.txt; middle click closes the inactive README.md.
     middleClick(screen.getByTestId(testIdFor.tabFile('README.md')))
     expect(tabIds()).toEqual(['tab-file-notes.txt'])
@@ -352,8 +338,8 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
     expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
   })
 
-  it('middle click on the close control never closes; left click still closes', async () => {
-    await openTwoTabs()
+  it('middle click on the close control never closes; left click still closes', () => {
+    openTwoTabs()
     middleClick(screen.getByTestId(testIdFor.tabFileClose('notes.txt')))
     expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-notes.txt'])
     fireEvent.click(screen.getByTestId(testIdFor.tabFileClose('notes.txt')))
@@ -361,421 +347,131 @@ describe('tab strip — file-tab context menu and middle click (spec Behaviour 2
   })
 })
 
-describe('tab strip — per-project retention (spec Behaviour 5, AC4)', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-    resetMockTerminals()
-    resetMockFitAddons()
+describe('tab views - one view per tab, inactive views stay mounted (spec Behaviour 6-7, AC2)', () => {
+  it('renders the action row between the strip and the focusable main surface', () => {
+    const surfaceRef = createRef<HTMLElement>()
+    renderCenterTabs({ surfaceRef })
+    const surface = screen.getByTestId(TEST_ID.centerSurface)
+    expect(surfaceRef.current).toBe(surface)
+    expect(surface.tagName).toBe('MAIN')
+    expect(surface.tabIndex).toBe(-1)
+    const actionRow = screen.getByTestId('harness-action-row')
+    expect(actionRow.nextElementSibling).toBe(surface)
+    expect(screen.getByTestId(TEST_ID.tabStrip).contains(actionRow)).toBe(false)
   })
-  afterEach(() => {
-    cleanup()
+
+  it('keeps the chat surface mounted and hidden while a file tab is active', async () => {
+    renderCenterTabs({ session: sessionWith(['README.md']) })
+    const chatSurface = screen.getByTestId('harness-chat-surface')
+    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).contains(chatSurface)).toBe(true)
+    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
+    await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
+
+    fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
+    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex')
+    expect(paneDisplay('README.md')).toBe('none')
+    // Same node: the session host was never remounted.
+    expect(screen.getByTestId('harness-chat-surface')).toBe(chatSurface)
   })
 
-  it('each project keeps its own tabs, order and active tab across project switches', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
+  it('previews each open file with its project and the stored markdown view', async () => {
+    const app = createAppApiStub()
     vi.mocked(app.files.read).mockImplementation(async (projectId, relativePath) => ({
       kind: 'text' as const,
       content: `${projectId}:${relativePath}`,
       language: null,
     }))
-
-    render(<App app={app} />)
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src')))
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('src/app.ts')))
-    fireEvent.click(screen.getByTestId(testIdFor.fileEntry('README.md')))
-    await screen.findByTestId(testIdFor.filePreviewPane('README.md'))
-
-    // A second project opens its own tab set (its own Files mode round-trip).
-    fireEvent.click(screen.getByTestId(TEST_ID.filesBackButton))
-    await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
-    await enterFilesMode(app, 'p2')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('other.md')))
-    await screen.findByTestId(testIdFor.filePreviewPane('other.md'))
-    expect(tabIds()).toEqual(['tab-file-other.md'])
-
-    // Back to the first project: its own tabs, order and active tab return.
-    fireEvent.click(screen.getByTestId(TEST_ID.filesBackButton))
-    await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    expect(tabIds()).toEqual(['tab-file-src/app.ts', 'tab-file-README.md'])
-    // The name click opens the home tab (project-home spec Behaviour 4); the
-    // file tabs stay open and selecting one shows its retained pane.
-    expect(screen.getByTestId(TEST_ID.kanbanTab).getAttribute('data-selected')).toBe('true')
-    expect(isTabSelected('README.md')).toBe(false)
-    fireEvent.click(
-      within(screen.getByTestId(testIdFor.tabFile('README.md'))).getByText('README.md'),
+    renderCenterTabs({ app, session: sessionWith(['README.md', 'notes.txt']) })
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.filePreviewPane('notes.txt')).textContent).toBe(
+        'p1:notes.txt',
+      ),
     )
-    expect(isTabSelected('README.md')).toBe(true)
-    await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-    expect(screen.getByTestId(testIdFor.filePreviewPane('README.md')).textContent).toBe(
-      'p1:README.md',
-    )
-    // The other project's tab is not part of this strip.
-    expect(screen.queryByTestId(testIdFor.tabFile('other.md'))).toBeNull()
+    expect(app.files.read).toHaveBeenCalledWith('p1', 'README.md')
+    expect(app.files.read).toHaveBeenCalledWith('p1', 'notes.txt')
   })
 
-  it('tabs are per-session UI state: nothing is persisted to the app state store', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    mockListings(app)
+  it('hands renderKanban the project only while the home tab is active', () => {
+    const renderKanban = vi.fn((activeProjectId: string | null) => (
+      <div data-testid="harness-kanban" data-active={activeProjectId ?? 'none'} />
+    ))
+    renderCenterTabs({ renderKanban, session: sessionWith(['README.md']) })
+    expect(screen.getByTestId('harness-kanban').getAttribute('data-active')).toBe('none')
 
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    await screen.findByTestId(testIdFor.filePreviewPane('README.md'))
-    // Selection keys are persisted; open tabs never are (Non-goals) — neither
-    // under a tabs-prefixed key nor smuggled as a call VALUE under an
-    // unrelated key (that regression shape must not survive this fixture).
-    await waitFor(() => expect(app.state.set).toHaveBeenCalled())
-    const writes = vi
-      .mocked(app.state.set)
-      .mock.calls.map((call) => [String(call[0]), String(call[1])] as const)
-    expect(writes.map(([key]) => key)).toContain(APP_STATE_KEY.selectedProjectId)
-    for (const [key, value] of writes) {
-      expect(key.startsWith('tabs')).toBe(false)
-      expect(key).not.toContain('README.md')
-      expect(value).not.toContain('README.md')
-    }
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanTab))
+    expect(renderKanban).toHaveBeenLastCalledWith('p1')
+    expect(screen.getByTestId('harness-kanban').getAttribute('data-active')).toBe('p1')
+    expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
+    expect(paneDisplay('README.md')).toBe('none')
+    // The kanban host sits inside the main surface, after the chat host.
+    expect(
+      screen.getByTestId(TEST_ID.centerSurface).contains(screen.getByTestId('harness-kanban')),
+    ).toBe(true)
+  })
+
+  it('no Files | Kanban center-surface strip remains in the DOM', () => {
+    renderCenterTabs({
+      session: { ...emptyTabsSession(), active: KANBAN_TAB },
+      homeTabState: 'list',
+    })
+    expect(screen.queryByTestId('project-surface-tabs')).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Project view' })).toBeNull()
+    const centerSurface = screen.getByTestId(TEST_ID.centerSurface)
+    expect(within(centerSurface).queryByRole('button', { name: 'Files' })).toBeNull()
+    expect(within(centerSurface).queryByRole('button', { name: 'Kanban' })).toBeNull()
   })
 })
 
-describe('tab strip — terminal tab, + New chat and session survival (spec Behaviour 2, 6, 8)', () => {
-  let app: AppApi
+describe('project home tab contents (project-home spec Behaviour 2, Edge cases)', () => {
+  const homeSession: ProjectTabsSession = { ...emptyTabsSession(), active: KANBAN_TAB }
 
-  beforeEach(() => {
-    app = createAppApiStub()
-    resetMockTerminals()
-    resetMockFitAddons()
+  it('the welcome offers a local task list for the tab-strip project and Connect a tracker', async () => {
+    const { props } = renderCenterTabs({ session: homeSession, homeTabState: 'welcome' })
+    const welcome = screen.getByTestId(TEST_ID.projectHomeWelcome)
+    expect(welcome).toBeTruthy()
+    fireEvent.click(within(welcome).getByTestId(TEST_ID.projectHomeUseLocal))
+    await waitFor(() => expect(props.onUseLocalTaskList).toHaveBeenCalledWith('p1'))
+    fireEvent.click(within(welcome).getByTestId(TEST_ID.projectHomeConnectTracker))
+    expect(props.onConnectTracker).toHaveBeenCalledTimes(1)
   })
-  afterEach(() => {
-    cleanup()
-  })
-
-  it('Project Settings button in the tab strip opens the settings dialog', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-
-    fireEvent.click(screen.getByTestId(TEST_ID.tabProjectSettings))
-    expect(await screen.findByRole('dialog', { name: 'Project Settings' })).toBeTruthy()
-  })
-
-  it('terminal sessions survive file-tab round-trips (hidden views, no respawn)', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
-    const workspace = screen.getByTestId(TEST_ID.chatWorkspace)
-
-    // A file tab hides the chat surface but keeps the session host mounted.
-    await enterFilesMode(app, 'p1')
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-    await waitFor(() =>
-      expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none'),
-    )
-    expect(screen.getByTestId(TEST_ID.chatWorkspace)).toBe(workspace)
-    expect(app.terminals.create).toHaveBeenCalledTimes(1)
-
-    // Back to the terminal-chat tab: same session, same scrollback (AC2).
-    fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
-    await waitFor(() =>
-      expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
-    )
-    expect(screen.getByTestId(TEST_ID.chatWorkspace)).toBe(workspace)
-    expect(app.terminals.create).toHaveBeenCalledTimes(1)
-  })
-
-  it('entering and leaving Project Files keeps the tab strip and the active tab unchanged (AC11)', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
-
-    await enterFilesMode(app, 'p1')
-    expect(screen.getByTestId(TEST_ID.tabStrip)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
-
-    fireEvent.click(screen.getByTestId(TEST_ID.filesBackButton))
-    await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
-    expect(screen.getByTestId(TEST_ID.tabStrip)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
-  })
-})
-
-describe('Files mode in left panel acts as an independent sidebar', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-    resetMockTerminals()
-    resetMockFitAddons()
-  })
-  afterEach(() => {
-    cleanup()
-  })
-
-  it('Files mode of an unselected project row keeps the active project and chat in the center surface', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
-    vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
-      projectId === 'p1' ? [chatOne] : [],
-    )
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
-    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
-
-    // Files action on the unselected project row:
-    // the left panel shows p2's tree, while the center surface stays on p1's chat.
-    await enterFilesMode(app, 'p2')
-
-    // The center surface remains on p1's active chat with its live terminal.
-    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
-    expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('block')
-    expect(screen.queryByTestId(TEST_ID.startNewChatState)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
-    // Status bar remains on p1.
-    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
-    expect(screen.getByTestId(TEST_ID.statusProjectPath).textContent).toBe('D:/code/demo')
-
-    // Leaving Files mode: file tree closes, p1 remains active as before.
-    fireEvent.click(screen.getByTestId(TEST_ID.filesBackButton))
-    await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
-    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
-    expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('block')
-    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
-    expect(app.terminals.create).toHaveBeenCalledTimes(1)
-  })
-
-  it('opening a file from the unselected project tree activates that project and shows its preview', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
-    vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
-      projectId === 'p1' ? [chatOne] : [],
-    )
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await enterFilesMode(app, 'p2')
-
-    // Center surface is still on p1.
-    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
-    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
-
-    // Selecting a file from p2's tree activates p2 and opens its tab in the center.
-    fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('other.md')))
-    await screen.findByTestId(testIdFor.filePreviewPane('other.md'))
-    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Other')
-  })
-
-  it('the normal case is unchanged: Files mode of the selected project keeps its active chat', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockListings(app)
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
-    await enterFilesMode(app, 'p1')
-
-    expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
-    expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
-    await waitFor(() =>
-      expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('block'),
-    )
-    expect(screen.queryByTestId(TEST_ID.startNewChatState)).toBeNull()
-    expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
-  })
-})
-
-describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Behaviour 14)', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-    resetMockTerminals()
-    resetMockFitAddons()
-    // The tab-strip project is bound to a Kanban adapter so its tab exists.
-    vi.mocked(app.state.get).mockImplementation(async (key) =>
-      key === projectKanbanAdapterKey('p1') ? 'plane' : null,
-    )
-  })
-  afterEach(() => {
-    cleanup()
-  })
-
-  // Regression: the board is a tab in the strip, not a center-surface view
-  // switch. Selecting a file or chat tab must return to that surface, and the
-  // Kanban tab must show the board meanwhile.
 
   it.each([
-    [
-      'selecting a file tab while the board is up returns to its preview',
-      async () => {
-        vi.mocked(app.projects.list).mockResolvedValue([projectA])
-        vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-        mockListings(app)
+    ['loading', null, 'loading'],
+    ['error', 'Database is locked.', 'error'],
+    ['list', null, 'none'],
+    ['none', null, 'none'],
+  ] as Array<[HomeTabState, string | null, 'loading' | 'error' | 'none']>)(
+    'home tab state %s renders its own surface only',
+    (homeTabState, bindingsError, expected) => {
+      renderCenterTabs({ session: homeSession, homeTabState, bindingsError })
+      expect(screen.queryByTestId(TEST_ID.projectHomeWelcome)).toBeNull()
+      expect(screen.queryByTestId(TEST_ID.projectHomeLoading) !== null).toBe(expected === 'loading')
+      const error = screen.queryByTestId(TEST_ID.projectHomeError)
+      expect(error?.textContent ?? null).toBe(expected === 'error' ? 'Database is locked.' : null)
+    },
+  )
+})
 
-        render(<App app={app} />)
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-        fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-        await enterFilesMode(app, 'p1')
-        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-        fireEvent.click(screen.getByTestId(testIdFor.fileEntry('notes.txt')))
-        await waitFor(() => expect(paneDisplay('notes.txt')).toBe('flex'))
+describe('homeTabStateFor', () => {
+  const base = {
+    project: projectA,
+    active: KANBAN_TAB,
+    bound: false,
+    bindingsError: null,
+    settled: false,
+  }
 
-        // Board up: the active file tab's preview is hidden. The Kanban tab sits
-        // first, before the chat and file tabs.
-        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-        await screen.findByTestId(TEST_ID.kanbanBoard)
-        expect(paneDisplay('notes.txt')).toBe('none')
-        const strip = screen.getByTestId(TEST_ID.tabStrip)
-        expect(strip.firstElementChild).toBe(screen.getByTestId(TEST_ID.kanbanTab))
-        expect(screen.getByTestId(TEST_ID.kanbanTab).nextElementSibling).toBe(
-          screen.getByTestId(TEST_ID.tabTerminal),
-        )
-        expect(screen.getByTestId(TEST_ID.tabTerminal).nextElementSibling).toBe(
-          screen.getByTestId(testIdFor.tabFile('README.md')),
-        )
-      },
-      async () => {
-        // Clicking the file tab is a "show me this file" gesture: the preview
-        // returns, never a hidden strip change. The file tab's testid is the
-        // container; the select control is its inner button.
-        const readmeTab = screen.getByTestId(testIdFor.tabFile('README.md'))
-        fireEvent.click(within(readmeTab).getByRole('button', { name: 'README.md' }))
-      },
-      async () => {
-        expect(isTabSelected('README.md')).toBe(true)
-        await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-      },
-    ],
-    [
-      'the chat tab selected while the board is up returns to the terminal',
-      async () => {
-        vi.mocked(app.projects.list).mockResolvedValue([projectA])
-        vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-        mockListings(app)
-
-        render(<App app={app} />)
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-        fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-        await enterFilesMode(app, 'p1')
-        await waitFor(() =>
-          expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
-        )
-
-        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-        await screen.findByTestId(TEST_ID.kanbanBoard)
-        expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
-      },
-      async () => {
-        fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
-      },
-      async () => {
-        await waitFor(() =>
-          expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
-        )
-      },
-    ],
-    [
-      'selecting a chat row while the board is up shows its terminal',
-      async () => {
-        vi.mocked(app.projects.list).mockResolvedValue([projectA])
-        vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-
-        render(<App app={app} />)
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-        await screen.findByTestId(TEST_ID.kanbanBoard)
-      },
-      async () => {
-        // A chat row (left navigation) must make its terminal show.
-        fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-      },
-      async () => {
-        await waitFor(() =>
-          expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('flex'),
-        )
-        await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
-      },
-    ],
-    [
-      'opening a file from the tree while the board is up shows the preview',
-      async () => {
-        vi.mocked(app.projects.list).mockResolvedValue([projectA])
-        mockListings(app)
-
-        render(<App app={app} />)
-        await enterFilesMode(app, 'p1')
-        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-        await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-
-        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-        await screen.findByTestId(TEST_ID.kanbanBoard)
-        expect(paneDisplay('README.md')).toBe('none')
-      },
-      async () => {
-        // A tree click while the board is up opens a fresh preview and returns
-        // to its surface, never a hidden strip change.
-        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('notes.txt')))
-      },
-      async () => {
-        await waitFor(() => expect(paneDisplay('notes.txt')).toBe('flex'))
-      },
-    ],
-    [
-      'the Files affordance stays a Files gesture while the board is up',
-      async () => {
-        vi.mocked(app.projects.list).mockResolvedValue([projectA])
-        vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-        mockListings(app)
-
-        render(<App app={app} />)
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-        fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-        await screen.findByTestId(TEST_ID.kanbanBoard)
-      },
-      async () => {
-        // Entering Project Files shows the tree; opening a file from it returns
-        // to that file's preview (the board never stays over a Files gesture).
-        fireEvent.click(await screen.findByTestId(testIdFor.projectFiles('p1')))
-        await screen.findByTestId(TEST_ID.fileTree)
-        fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
-      },
-      async () => {
-        await waitFor(() => expect(paneDisplay('README.md')).toBe('flex'))
-      },
-    ],
-  ] as Array<[string, () => Promise<void>, () => Promise<void>, () => Promise<void>]>)(
+  it.each([
+    ['no project', { ...base, project: null }, 'none'],
+    ['another tab active', { ...base, active: TERMINAL_TAB }, 'none'],
+    ['bound project', { ...base, bound: true, bindingsError: 'x' }, 'list'],
+    ['failed binding read', { ...base, bindingsError: 'x', settled: true }, 'error'],
+    ['settled unbound project', { ...base, settled: true }, 'welcome'],
+    ['unsettled unbound project', base, 'loading'],
+  ] as Array<[string, Parameters<typeof homeTabStateFor>[0], HomeTabState]>)(
     '%s',
-    async (_title, setup, gesture, outcome) => {
-      await setup()
-      await gesture()
-      await outcome()
-      // The shared wiring rule: the gesture's own surface shows and the board
-      // is hidden behind its tab, never left over the surface.
-      expect(screen.getByTestId(TEST_ID.kanbanBoard).parentElement?.style.display).toBe('none')
+    (_title, input, expected) => {
+      expect(homeTabStateFor(input)).toBe(expected)
     },
   )
 })

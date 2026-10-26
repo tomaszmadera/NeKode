@@ -6,11 +6,11 @@ import {
 } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { App } from '../../App'
-import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { createAppApiStub } from '../../test/app-api-stub'
-import { resetMockFitAddons } from '../../test/fit-addon-mock'
-import { resetMockTerminals } from '../../test/xterm-mock'
+import { App } from '../App'
+import { TEST_ID, testIdFor } from '../lib/test-ids'
+import { createAppApiStub } from './app-api-stub'
+import { resetMockFitAddons } from './fit-addon-mock'
+import { resetMockTerminals } from './xterm-mock'
 
 // Project home tab (project-home spec Behaviour 1-5, AC1-4; replaces the
 // kanban-adapter-interface Behaviour 14 entry-point rule): every selected
@@ -21,9 +21,9 @@ import { resetMockTerminals } from '../../test/xterm-mock'
 // tab. Selecting the chat tab or a file tab returns to that surface. No
 // center-surface `Files | Kanban` view-switch strip exists.
 
-vi.mock('@xterm/xterm', () => import('../../test/xterm-mock'))
-vi.mock('@xterm/addon-fit', () => import('../../test/fit-addon-mock'))
-vi.mock('../files/MonacoPreview', () => ({
+vi.mock('@xterm/xterm', () => import('./xterm-mock'))
+vi.mock('@xterm/addon-fit', () => import('./fit-addon-mock'))
+vi.mock('../components/files/MonacoPreview', () => ({
   MonacoPreview: ({ content, language }: { content: string; language: string | null }) => (
     <pre data-testid="file-preview-monaco" data-language={language ?? 'plaintext'}>
       {content}

@@ -1,31 +1,21 @@
-import type { AppApi } from '@shared/ipc-contract'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import type React from 'react'
 import { useState } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { App, TEST_ID } from '../App'
-import { createAppApiStub as appApiStub } from '../test/app-api-stub'
-import { BOTTOM_REGION_SIZE, useResizableRegion } from './useResizableRegion'
+import { afterEach, describe, expect, it } from 'vitest'
+import { BOTTOM_REGION_SIZE, LEFT_REGION_SIZE, useResizableRegion } from './useResizableRegion'
 
-// App renders the chat workspace (xterm) in Stage 3; keep jsdom free of the
-// real xterm canvas here as well.
-vi.mock('@xterm/xterm', () => import('../test/xterm-mock'))
-vi.mock('@xterm/addon-fit', () => import('../test/fit-addon-mock'))
+// The hook is exercised through minimal harness components with the same
+// controlled wiring App uses (x axis: the left region, y axis: the bottom
+// region). App's own binding of the left region to the hook is covered in
+// App.test.tsx ('resizes the left region by dragging through the App shell').
 
 // jsdom (v30) ships a PointerEvent constructor but no
 // Element.setPointerCapture; the hook guards the latter, the tests
 // exercise the former.
 
-function createAppApiStub(): AppApi {
-  // Divergences from the shared factory: projects.add resolves undefined and
-  // chats.create stays unresolved here.
-  const stub = appApiStub()
-  return {
-    ...stub,
-    projects: { ...stub.projects, add: vi.fn().mockResolvedValue(undefined) },
-    chats: { ...stub.chats, create: vi.fn() },
-  }
-}
+const LEFT_REGION = 'harness-left-region'
+const LEFT_HANDLE = 'harness-left-handle'
+
 function firePointer(
   element: Element,
   type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
@@ -47,13 +37,7 @@ function firePointer(
   })
 }
 
-describe('useResizableRegion (via App shell)', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-  })
-
+describe('useResizableRegion', () => {
   afterEach(() => {
     cleanup()
   })
@@ -65,11 +49,11 @@ describe('useResizableRegion (via App shell)', () => {
   }
 
   it('resizes the left region by dragging (pointerdown → move → up)', () => {
-    render(<App app={app} />)
-    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    render(<XAxisHarness />)
+    const leftNav = screen.getByTestId(LEFT_REGION)
     expect((leftNav as HTMLElement).style.width).toBe('280px')
 
-    const handle = getHandle(TEST_ID.leftResizeHandle)
+    const handle = getHandle(LEFT_HANDLE)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 350 })
     firePointer(handle, 'pointerup', { clientX: 350 })
@@ -117,9 +101,9 @@ describe('useResizableRegion (via App shell)', () => {
   })
 
   it('ignores non-primary and non-left-button pointerdown (multi-touch/button guard)', () => {
-    render(<App app={app} />)
-    const leftNav = screen.getByTestId(TEST_ID.leftNav)
-    const handle = getHandle(TEST_ID.leftResizeHandle)
+    render(<XAxisHarness />)
+    const leftNav = screen.getByTestId(LEFT_REGION)
+    const handle = getHandle(LEFT_HANDLE)
 
     firePointer(handle, 'pointerdown', { clientX: 280 }, { isPrimary: false })
     firePointer(handle, 'pointermove', { clientX: 400 })
@@ -131,9 +115,9 @@ describe('useResizableRegion (via App shell)', () => {
   })
 
   it('a second (multi-touch) pointerdown ends the first drag instead of stacking', () => {
-    render(<App app={app} />)
-    const leftNav = screen.getByTestId(TEST_ID.leftNav)
-    const handle = getHandle(TEST_ID.leftResizeHandle)
+    render(<XAxisHarness />)
+    const leftNav = screen.getByTestId(LEFT_REGION)
+    const handle = getHandle(LEFT_HANDLE)
 
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 320 })
@@ -146,16 +130,16 @@ describe('useResizableRegion (via App shell)', () => {
   })
 
   it('ignores pointermove before pointerdown', () => {
-    render(<App app={app} />)
-    const leftNav = screen.getByTestId(TEST_ID.leftNav)
-    firePointer(getHandle(TEST_ID.leftResizeHandle), 'pointermove', { clientX: 400 })
+    render(<XAxisHarness />)
+    const leftNav = screen.getByTestId(LEFT_REGION)
+    firePointer(getHandle(LEFT_HANDLE), 'pointermove', { clientX: 400 })
     expect((leftNav as HTMLElement).style.width).toBe('280px')
   })
 
   it('ends the drag on pointercancel (subsequent moves do not resize)', () => {
-    render(<App app={app} />)
-    const leftNav = screen.getByTestId(TEST_ID.leftNav)
-    const handle = getHandle(TEST_ID.leftResizeHandle)
+    render(<XAxisHarness />)
+    const leftNav = screen.getByTestId(LEFT_REGION)
+    const handle = getHandle(LEFT_HANDLE)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 320 })
     expect((leftNav as HTMLElement).style.width).toBe('320px')
@@ -167,9 +151,9 @@ describe('useResizableRegion (via App shell)', () => {
   })
 
   it('ends the drag on lostpointercapture', () => {
-    render(<App app={app} />)
-    const leftNav = screen.getByTestId(TEST_ID.leftNav)
-    const handle = getHandle(TEST_ID.leftResizeHandle)
+    render(<XAxisHarness />)
+    const leftNav = screen.getByTestId(LEFT_REGION)
+    const handle = getHandle(LEFT_HANDLE)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 330 })
     expect((leftNav as HTMLElement).style.width).toBe('330px')
@@ -181,9 +165,9 @@ describe('useResizableRegion (via App shell)', () => {
   })
 
   it('stops dragging after pointerup (no resize on later moves)', () => {
-    render(<App app={app} />)
-    const leftNav = screen.getByTestId(TEST_ID.leftNav)
-    const handle = getHandle(TEST_ID.leftResizeHandle)
+    render(<XAxisHarness />)
+    const leftNav = screen.getByTestId(LEFT_REGION)
+    const handle = getHandle(LEFT_HANDLE)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 300 })
     firePointer(handle, 'pointerup', { clientX: 300 })
@@ -194,9 +178,28 @@ describe('useResizableRegion (via App shell)', () => {
   })
 })
 
-// App hides the bottom region in Stage 2, so the y-axis behaviour
-// (clientY measured against window.innerHeight) is exercised through a
-// minimal harness with the same controlled wiring App uses.
+// The x-axis behaviour (clientX against the drag start) drives the left
+// region, starting at its default width (280px).
+function XAxisHarness(): React.JSX.Element {
+  const [size, setSize] = useState(LEFT_REGION_SIZE.default)
+  const leftRegion = useResizableRegion({
+    axis: 'x',
+    minSize: LEFT_REGION_SIZE.min,
+    maxSize: LEFT_REGION_SIZE.max,
+    size,
+    onSizeChange: setSize,
+    onResizeEnd: () => undefined,
+  })
+
+  return (
+    <div data-testid={LEFT_REGION} style={{ width: size }}>
+      <div data-testid={LEFT_HANDLE} onPointerDown={leftRegion.startResize} />
+    </div>
+  )
+}
+
+// The y-axis behaviour (clientY measured against window.innerHeight) drives
+// the bottom region.
 function YAxisHarness({
   onResizeEnd = () => undefined,
 }: {

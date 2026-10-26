@@ -3279,6 +3279,19 @@ describe('project and chat data flow', () => {
     expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('280px')
   })
 
+  it('resizes the left region by dragging through the App shell', () => {
+    render(<App app={app} />)
+    const leftNav = screen.getByTestId(TEST_ID.leftNav)
+    expect((leftNav as HTMLElement).style.width).toBe('280px')
+
+    const handle = screen.getByTestId(TEST_ID.leftResizeHandle)
+    firePointer(handle, 'pointerdown', { clientX: 280 })
+    firePointer(handle, 'pointermove', { clientX: 350 })
+    firePointer(handle, 'pointerup', { clientX: 350 })
+
+    expect((leftNav as HTMLElement).style.width).toBe('350px')
+  })
+
   it('persists the left region width when the resize ends', () => {
     render(<App app={app} />)
     const handle = screen.getByTestId(TEST_ID.leftResizeHandle)

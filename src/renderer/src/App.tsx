@@ -25,7 +25,6 @@ import { flushSync } from 'react-dom'
 import { ActionBar } from './components/actions/ActionBar'
 import { ActionSettings, type SettingsTabId } from './components/actions/ActionSettings'
 import { HandoffPicker } from './components/actions/HandoffPicker'
-import { FilePreview } from './components/files/FilePreview'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './components/files/files-types'
 import {
   DEFAULT_MARKDOWN_VIEW,
@@ -38,11 +37,6 @@ import { applyDirectoryRefresh } from './components/files/tree-refresh'
 import type { HeldLaunch } from './components/kanban/held-launch'
 import type { KanbanToolbarControls } from './components/kanban/KanbanBoard'
 import { KanbanSessions } from './components/kanban/KanbanSessions'
-import {
-  ProjectHomeError,
-  ProjectHomeLoading,
-  ProjectHomeWelcome,
-} from './components/kanban/ProjectHomeWelcome'
 import { TaskResumeModal } from './components/kanban/TaskResumeModal'
 import { TaskStartModal } from './components/kanban/TaskStartModal'
 import { AddProject } from './components/layout/AddProject'
@@ -53,7 +47,8 @@ import { LeftPanelTrack } from './components/layout/LeftPanelTrack'
 import { PanelFooter } from './components/layout/PanelFooter'
 import { StatusBar } from './components/layout/StatusBar'
 import { AppSettings } from './components/settings/AppSettings'
-import { absoluteFilePath, TabStrip } from './components/tabs/TabStrip'
+import { CenterTabs, homeTabStateFor } from './components/tabs/CenterTabs'
+import { absoluteFilePath } from './components/tabs/TabStrip'
 import {
   activateTab,
   closeFileTab,
@@ -2579,23 +2574,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     tabProject !== null && activeTab.kind === 'file' && isMarkdownPath(activeTab.path)
       ? { projectId: tabProject.id, path: activeTab.path }
       : null
-  // Home tab contents (project-home spec Behaviour 2, Edge cases): a bound
-  // project shows its task list; an unbound one keeps the home tab selected
-  // and shows the setup welcome once the binding read settles (a loading line
-  // until then). A failed binding read shows its error instead of the loading
-  // line or a possibly stale welcome. No adapter never redirects to the chat
-  // tab.
-  const homeTabActive = tabProject !== null && activeTab.kind === 'kanban'
-  const homeTabBound = tabProject !== null && kanbanProjectIds.has(tabProject.id)
-  const homeTabState: 'none' | 'list' | 'error' | 'loading' | 'welcome' = !homeTabActive
-    ? 'none'
-    : homeTabBound
-      ? 'list'
-      : kanbanBindingsError !== null
-        ? 'error'
-        : tabProject !== null && settledKanbanProjects.has(tabProject.id)
-          ? 'welcome'
-          : 'loading'
+  // Home tab contents (project-home spec Behaviour 2, Edge cases): see
+  // homeTabStateFor.
+  const homeTabState = homeTabStateFor({
+    project: tabProject,
+    active: activeTab,
+    bound: tabProject !== null && kanbanProjectIds.has(tabProject.id),
+    bindingsError: kanbanBindingsError,
+    settled: tabProject !== null && settledKanbanProjects.has(tabProject.id),
+  })
   // The terminal-chat tab shows the active chat's name when the active project
   // has a chat selected.
   const activeChat =
@@ -2790,47 +2777,28 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
             ) : null
           }
         />
-        <div className="nk-center-column relative z-10 flex min-w-0 flex-1 flex-col bg-app">
-          {/* Center column (spec Behaviour 1): tab strip, reserved action-row
-              slot, main surface. No window-top band and no context header.
-              Raised above the left-panel slot. The sliding track's transform
-              would otherwise paint that track over this column, so the panel
-              emerges from under the middle panel. */}
-          <TabStrip
-            floating={floatingTheme}
-            chatName={activeChat?.name ?? null}
-            projectName={
-              tabProject === null
-                ? null
-                : projectNamesUppercase
-                  ? tabProject.name.toUpperCase()
-                  : tabProject.name
-            }
-            openFiles={tabsSession.openFiles}
-            projectRoot={tabProject?.path ?? null}
-            active={activeTab}
-            onSelectTab={handleSelectTab}
-            onCloseFile={handleCloseFileTab}
-            onSettings={() => {
-              setActionSettingsProjectId(tabProjectId)
-              setActionSettingsTab('shell')
-              setActionSettingsOpen(true)
-            }}
-          />
-          {/* Floating theme: the content below the tab strip sits in a
-              rounded frame (user decision 2026-10-04) that keeps the tabs
-              outside but attached: no top margin, so the tabs sit directly
-              on the frame's top edge; attached themes render this block
-              flush. The top-left corner stays square: the first tab (the
-              terminal-chat tab) sits on it, and a rounded corner would open
-              a gap under the tab's left edge (user decision 2026-10-04). */}
-          <div
-            className={
-              floatingTheme
-                ? 'nk-content-frame mx-2 mb-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg rounded-tl-none border border-edge'
-                : 'flex min-h-0 flex-1 flex-col'
-            }
-          >
+        <CenterTabs
+          app={app}
+          floating={floatingTheme}
+          project={tabProject}
+          projectNamesUppercase={projectNamesUppercase}
+          chatName={activeChat?.name ?? null}
+          session={tabsSession}
+          homeTabState={homeTabState}
+          bindingsError={kanbanBindingsError}
+          markdownViewByKey={markdownViewByKey}
+          surfaceRef={centerSurfaceRef}
+          onSelectTab={handleSelectTab}
+          onCloseFile={handleCloseFileTab}
+          onOpenSettings={() => {
+            setActionSettingsProjectId(tabProjectId)
+            setActionSettingsTab('shell')
+            setActionSettingsOpen(true)
+          }}
+          onUseLocalTaskList={handleUseLocalTaskList}
+          onConnectTracker={handleOpenKanbanSettings}
+          onOpenExternalError={handleFilesOpenExternalError}
+          actionRow={
             <ActionBar
               app={app}
               actions={actions}
@@ -2873,118 +2841,62 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
                     }
               }
             />
-            <main
-              ref={centerSurfaceRef}
-              tabIndex={-1}
-              className="flex min-h-0 flex-1 flex-col outline-none"
-              data-testid={TEST_ID.centerSurface}
-            >
-              {/* Every open file tab owns its preview view (hidden while another
-                tab is active): per-tab loading/fallback/error state survives
-                tab switches and never touches the other tabs (Behaviour 6–7). */}
-              {tabProject !== null
-                ? tabsSession.openFiles.map((path) => (
-                    <div
-                      key={path}
-                      className="flex min-h-0 flex-1 flex-col"
-                      style={{
-                        display:
-                          activeTab.kind === 'file' && activeTab.path === path ? 'flex' : 'none',
-                      }}
-                      data-testid={testIdFor.filePreviewPane(path)}
-                    >
-                      <FilePreview
-                        app={app}
-                        projectId={tabProject.id}
-                        relativePath={path}
-                        markdownView={
-                          markdownViewByKey[markdownViewKey(tabProject.id, path)] ??
-                          DEFAULT_MARKDOWN_VIEW
-                        }
-                        onOpenExternalError={handleFilesOpenExternalError}
-                      />
-                    </div>
-                  ))
-                : null}
-              {/* Chat sessions stay mounted (hidden) while a file tab is active:
-                PTY processes and xterm scrollback survive tab switches and
-                mode round-trips (spec Behaviour 6 / AC2, AC11). In the
-                Files-mode divergence no active chat belongs to the tab-strip
-                project: the surface shows the Behaviour 2 empty state, never
-                another project's terminal. */}
-              <div
-                className="flex min-h-0 flex-1 flex-col"
-                style={{
-                  display: activeTab.kind === 'terminal' ? 'flex' : 'none',
-                }}
-                data-testid={TEST_ID.chatSurfaceHost}
-              >
-                <ChatWorkspace
-                  dictation={desktopDictation.control}
-                  app={app}
-                  projects={projects}
-                  chatsByProject={chatsByProject}
-                  chatsLoaded={
-                    selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
-                  }
-                  selectedProjectId={selectedProjectId}
-                  selectedChatId={selectedChatId}
-                  selectionNonce={selectionNonce}
-                  attention={chatAttention}
-                  onActivityChange={setChatActivity}
-                  onAttentionChange={setChatAttention}
-                  attentionSettings={attentionSettings}
-                  terminalCwds={terminalCwds}
-                  terminalFontSize={terminalFontSize}
-                  terminalFontFamilies={terminalFontState.families}
-                  terminalCtrlVPaste={terminalPasteState.enabled}
-                  onSessionStatus={handleSessionStatus}
-                  onSessionReady={handleSessionReady}
-                  onChatClosed={handleChatClosed}
-                  onStartNewChat={handleStartNewChat}
-                  onAddProject={handleAddProject}
-                  promptInjection={promptInjection}
-                  onPromptInjected={handlePromptInjected}
-                  heldLaunches={heldLaunches}
-                  onRetryHeldLaunch={handleRetryHeldLaunch}
-                  retryingLaunchChatId={retryingLaunchChatId}
-                />
-              </div>
-              <KanbanSessions
-                app={app}
-                projectIds={
-                  new Set(
-                    projects
-                      .filter((project) => kanbanProjectIds.has(project.id))
-                      .map((project) => project.id),
-                  )
-                }
-                activeProjectId={
-                  tabProject !== null && activeTab.kind === 'kanban' ? tabProject.id : null
-                }
-                versions={kanbanVersions}
-                localFileProjectIds={localFileProjectIds}
-                onUseLocalTaskList={handleUseLocalTaskList}
-                onConfigure={handleOpenKanbanSettings}
-                onConfigureHandoffs={handleConfigureProjectHandoffs}
-                onStart={handleStartTask}
-                onStartDraft={handleStartTaskDraft}
-                onResume={handleResumeTask}
-                onToolbarControls={handleKanbanToolbarControls}
-              />
-              {homeTabState === 'welcome' && tabProject !== null ? (
-                <ProjectHomeWelcome
-                  onUseLocalTaskList={() => handleUseLocalTaskList(tabProject.id)}
-                  onConnectTracker={handleOpenKanbanSettings}
-                />
-              ) : homeTabState === 'error' && kanbanBindingsError !== null ? (
-                <ProjectHomeError message={kanbanBindingsError} />
-              ) : homeTabState === 'loading' ? (
-                <ProjectHomeLoading />
-              ) : null}
-            </main>
-          </div>
-        </div>
+          }
+          chatSurface={
+            <ChatWorkspace
+              dictation={desktopDictation.control}
+              app={app}
+              projects={projects}
+              chatsByProject={chatsByProject}
+              chatsLoaded={
+                selectedProjectId !== null && loadedChatProjectIds.has(selectedProjectId)
+              }
+              selectedProjectId={selectedProjectId}
+              selectedChatId={selectedChatId}
+              selectionNonce={selectionNonce}
+              attention={chatAttention}
+              onActivityChange={setChatActivity}
+              onAttentionChange={setChatAttention}
+              attentionSettings={attentionSettings}
+              terminalCwds={terminalCwds}
+              terminalFontSize={terminalFontSize}
+              terminalFontFamilies={terminalFontState.families}
+              terminalCtrlVPaste={terminalPasteState.enabled}
+              onSessionStatus={handleSessionStatus}
+              onSessionReady={handleSessionReady}
+              onChatClosed={handleChatClosed}
+              onStartNewChat={handleStartNewChat}
+              onAddProject={handleAddProject}
+              promptInjection={promptInjection}
+              onPromptInjected={handlePromptInjected}
+              heldLaunches={heldLaunches}
+              onRetryHeldLaunch={handleRetryHeldLaunch}
+              retryingLaunchChatId={retryingLaunchChatId}
+            />
+          }
+          renderKanban={(activeKanbanProjectId) => (
+            <KanbanSessions
+              app={app}
+              projectIds={
+                new Set(
+                  projects
+                    .filter((project) => kanbanProjectIds.has(project.id))
+                    .map((project) => project.id),
+                )
+              }
+              activeProjectId={activeKanbanProjectId}
+              versions={kanbanVersions}
+              localFileProjectIds={localFileProjectIds}
+              onUseLocalTaskList={handleUseLocalTaskList}
+              onConfigure={handleOpenKanbanSettings}
+              onConfigureHandoffs={handleConfigureProjectHandoffs}
+              onStart={handleStartTask}
+              onStartDraft={handleStartTaskDraft}
+              onResume={handleResumeTask}
+              onToolbarControls={handleKanbanToolbarControls}
+            />
+          )}
+        />
         {/* Right region is a real five-region sibling (SDD §7), hidden by default. */}
         <div data-testid={TEST_ID.rightRegion} style={{ display: 'none' }}>
           Right Panel
