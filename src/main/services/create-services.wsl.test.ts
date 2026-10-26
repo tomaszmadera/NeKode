@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { accessSync, statSync } from 'node:fs'
+import { APP_STATE_KEY, projectShellKey, projectWslShellsKey } from '@shared/ipc-contract'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { APP_STATE_KEY, projectShellKey, projectWslShellsKey } from '../../shared/ipc-contract'
 import { isWindowsHost } from '../test-support/host-path'
 import { createServices } from './create-services'
 import { HandoffMatcherService } from './handoffs/handoff-matcher-service'

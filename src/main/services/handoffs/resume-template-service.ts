@@ -1,7 +1,7 @@
 import { open } from 'node:fs/promises'
 import { join } from 'node:path'
-import { relativeToProject } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+import { relativeToProject } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 
 const MAX_SETTINGS_BYTES = 64 * 1024
 const PLACEHOLDER = '{handoffPath}'

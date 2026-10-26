@@ -1,6 +1,6 @@
+import type { SessionTaskProgress } from '@shared/ipc-contract'
 import type React from 'react'
 import { useState } from 'react'
-import type { SessionTaskProgress } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
 
 interface TaskProgressButtonProps {

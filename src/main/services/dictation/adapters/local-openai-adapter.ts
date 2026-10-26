@@ -1,4 +1,4 @@
-import { AppError } from '../../../../shared/ipc-error'
+import { AppError } from '@shared/ipc-error'
 import {
   type ConnectionTestResult,
   type DiscoveredModel,

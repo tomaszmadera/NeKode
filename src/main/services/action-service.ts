@@ -2,16 +2,11 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
+import { createBottomTabId } from '@shared/bottom-tab-id'
+import type { ActionControl, ActionExecution, ActionInput, ChatInfo } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { parseWslPath } from '@shared/wsl-path'
 import type Database from 'better-sqlite3'
-import { createBottomTabId } from '../../shared/bottom-tab-id'
-import type {
-  ActionControl,
-  ActionExecution,
-  ActionInput,
-  ChatInfo,
-} from '../../shared/ipc-contract'
-import { AppError } from '../../shared/ipc-error'
-import { parseWslPath } from '../../shared/wsl-path'
 import { wrapSqliteError } from './project-service'
 
 interface ActionRow {

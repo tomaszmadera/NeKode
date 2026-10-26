@@ -4,7 +4,7 @@ import type {
   DictationError,
   SttProviderCapabilities,
   SttProviderManifest,
-} from '../../../../shared/dictation-contract'
+} from '@shared/dictation-contract'
 
 export const STT_ADAPTER_PROTOCOL_VERSION = 1
 

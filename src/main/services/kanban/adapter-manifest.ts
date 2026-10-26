@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { KanbanAdapterInfo, KanbanConfigField } from '../../../shared/ipc-contract'
+import type { KanbanAdapterInfo, KanbanConfigField } from '@shared/ipc-contract'
 
 // Adapter manifest parsing and directory discovery (spec kanban-adapter-
 // interface Behaviour 1–2). One subdirectory level; a valid `adapter.json`

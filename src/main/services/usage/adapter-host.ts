@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { AppError, isAppErrorCode } from '../../../shared/ipc-error'
+import { AppError, isAppErrorCode } from '@shared/ipc-error'
 import {
   parseUsageDocument,
   parseUsageRefreshResult,
@@ -13,7 +13,7 @@ import {
   type UsageErrorCode,
   type UsageRefreshResult,
   usageObject,
-} from '../../../shared/usage-contract'
+} from '@shared/usage-contract'
 
 /** Adapter protocol version (spec L1): version 2 requires the live `refresh` action. */
 export const USAGE_PROTOCOL_VERSION = 2

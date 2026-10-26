@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentProfile,
   HandoffCandidatesResult,
@@ -10,8 +9,9 @@ import type {
   KanbanResumeLaunchInput,
   KanbanStartLaunchInput,
   WorkItem,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openDatabase } from '../../db/connection'
 import { runMigrations } from '../../db/migrations'
 import { isWindowsHost } from '../../test-support/host-path'

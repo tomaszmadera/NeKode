@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, isAbsolute, join, parse, resolve } from 'node:path'
-import { AppError } from '../../../shared/ipc-error'
+import { AppError } from '@shared/ipc-error'
 import {
   parseUsageDocument,
   parseUsageRefreshResult,
@@ -37,7 +37,7 @@ import {
   type UsageSnapshot,
   type UsageSubscription,
   usageObject,
-} from '../../../shared/usage-contract'
+} from '@shared/usage-contract'
 import { assertLiveRefresh, discoverUsageAdapters, UsageAdapterHost } from './adapter-host'
 
 interface Storage {

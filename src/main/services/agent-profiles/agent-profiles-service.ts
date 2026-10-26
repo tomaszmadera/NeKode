@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { parseAgentCommand } from '../../../shared/agent-command'
+import { parseAgentCommand } from '@shared/agent-command'
 import type {
   AgentProfile,
   AgentProfilePut,
@@ -7,14 +7,14 @@ import type {
   AgentProfilesLibrary,
   AgentProjectSelection,
   AgentProjectSelectionInput,
-} from '../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 import {
   AGENT_PROFILES_LIBRARY_KEY,
   agentProfileFieldError,
   projectAgentProfilesKey,
   projectAgentSelectionKey,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { agentProfileTemplates } from './agent-profile-templates'
 
 export interface AgentProfilesProjectLookup {

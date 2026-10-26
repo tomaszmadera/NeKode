@@ -11,8 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AppError } from '../../../shared/ipc-error'
+import { AppError } from '@shared/ipc-error'
 import {
   USAGE_REMOVED_ADAPTER_MESSAGE,
   USAGE_STATE_KEY,
@@ -21,7 +20,8 @@ import {
   type UsageRefreshSourceResult,
   type UsageRefreshWindowResult,
   type UsageSettings,
-} from '../../../shared/usage-contract'
+} from '@shared/usage-contract'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UsageAdapterHost, type UsageAdapterResult } from './adapter-host'
 import { UsageService } from './usage-service'
 

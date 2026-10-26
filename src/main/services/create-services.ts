@@ -1,16 +1,16 @@
 import { statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { bottomTabProjectId, isBottomTabId } from '../../shared/bottom-tab-id'
+import { bottomTabProjectId, isBottomTabId } from '@shared/bottom-tab-id'
 import {
   APP_STATE_KEY,
   IPC_CHANNEL,
   projectHandoffDirKey,
   projectShellKey,
   projectWslShellsKey,
-} from '../../shared/ipc-contract'
-import { AppError } from '../../shared/ipc-error'
-import { parseWslPath } from '../../shared/wsl-path'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { parseWslPath } from '@shared/wsl-path'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import type { AppServices } from '../ipc/service-registry'

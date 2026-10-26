@@ -1,7 +1,7 @@
 import type {
   DesktopDictationSettings,
   DesktopDictationSetup,
-} from '../../shared/desktop-dictation-contract'
+} from '@shared/desktop-dictation-contract'
 import type {
   ActionControl,
   ActionExecution,
@@ -52,7 +52,7 @@ import type {
   Unsubscribe,
   UpdateDictionaryEntryInput,
   WorkItem,
-} from '../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 
 // Real service registry (Stage 2: persistence; Stage 3: terminals + git;
 // Stage 4: the chat entity). Terminal data/exit events are pushed to the

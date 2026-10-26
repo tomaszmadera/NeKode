@@ -1,5 +1,5 @@
+import type { GitFileStatuses } from '@shared/ipc-contract'
 import { describe, expect, it } from 'vitest'
-import type { GitFileStatuses } from '../../../../shared/ipc-contract'
 import { buildStatusIndex, decorationFor } from './git-decoration'
 
 // NEKODE-31 (spec Behaviour 16-19): the pure decoration logic behind the file

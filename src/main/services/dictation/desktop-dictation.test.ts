@@ -1,5 +1,5 @@
+import { APP_STATE_KEY } from '@shared/ipc-contract'
 import { describe, expect, it, vi } from 'vitest'
-import { APP_STATE_KEY } from '../../../shared/ipc-contract'
 import { DesktopDictation } from './desktop-dictation'
 
 function harness(platform: NodeJS.Platform = 'win32') {

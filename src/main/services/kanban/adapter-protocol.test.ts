@@ -1,5 +1,5 @@
+import { KANBAN_PRIORITIES, KANBAN_STATE_GROUPS } from '@shared/ipc-contract'
 import { describe, expect, it } from 'vitest'
-import { KANBAN_PRIORITIES, KANBAN_STATE_GROUPS } from '../../../shared/ipc-contract'
 import { AdapterHostError } from './adapter-host'
 import {
   ADAPTER_ACTIONS,

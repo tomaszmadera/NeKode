@@ -1,11 +1,7 @@
+import type { AppApi, KanbanBoard as KanbanBoardData, ProjectInfo } from '@shared/ipc-contract'
+import { projectKanbanAdapterKey } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type {
-  AppApi,
-  KanbanBoard as KanbanBoardData,
-  ProjectInfo,
-} from '../../../shared/ipc-contract'
-import { projectKanbanAdapterKey } from '../../../shared/ipc-contract'
 import { App, TEST_ID, testIdFor } from '../App'
 import { createAppApiStub } from './app-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'

@@ -1,7 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { AppError } from '../../../shared/ipc-error'
+import { AppError } from '@shared/ipc-error'
 
 export function desktopHelperPath(
   packaged: boolean,

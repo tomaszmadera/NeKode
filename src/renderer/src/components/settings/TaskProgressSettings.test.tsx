@@ -1,5 +1,3 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
   ProjectInfo,
@@ -8,7 +6,9 @@ import type {
   TaskProgressChangedEvent,
   TaskProgressItem,
   TaskProgressSnapshot,
-} from '../../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { TaskProgressSettings } from './TaskProgressSettings'
 

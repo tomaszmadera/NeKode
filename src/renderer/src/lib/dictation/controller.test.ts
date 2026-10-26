@@ -1,6 +1,6 @@
+import type { DictationResult } from '@shared/dictation-contract'
+import type { AppApi } from '@shared/ipc-contract'
 import { describe, expect, it, vi } from 'vitest'
-import type { DictationResult } from '../../../../shared/dictation-contract'
-import type { AppApi } from '../../../../shared/ipc-contract'
 import { DictationController, type DictationView } from './controller'
 import { encodeWav } from './wav'
 

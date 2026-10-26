@@ -1,12 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
   ChatInfo,
   FileEntry,
   GitFileStatuses,
   ProjectInfo,
-} from '../../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { createAppApiStub } from '../../test/app-api-stub'

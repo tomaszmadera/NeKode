@@ -1,6 +1,6 @@
+import type { KanbanState, WorkItem } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
-import type { KanbanState, WorkItem } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
 import type { AdapterInvocation } from './adapter-host'
 import { AdapterError, AdapterHostError, type AdapterRequest } from './adapter-host'
 import type { DiscoveredAdapter } from './adapter-manifest'

@@ -7,7 +7,7 @@ import type {
   TaskProgressErrorCode,
   TaskProgressItem,
   TaskProgressSnapshot,
-} from '../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 import type { TaskProgressWatchEntry, ValidatedTaskProgressSnapshot } from './snapshot'
 
 // Snapshot refresh per observed project (spec task-progress-adapters Behaviour

@@ -1,8 +1,8 @@
+import type { ActionControl, ActionInput, AppApi } from '@shared/ipc-contract'
+import { projectHandoffDirKey, relativeToProject } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useEffect, useState } from 'react'
-import type { ActionControl, ActionInput, AppApi } from '../../../../shared/ipc-contract'
-import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { cn } from '../../lib/cn'
 import {

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
+import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
-import { AppError } from '../../../shared/ipc-error'
 import { type AppUpdateIo, AppUpdateService } from './app-update-service'
 import { type DetachedChild, startDetached } from './start-detached'
 

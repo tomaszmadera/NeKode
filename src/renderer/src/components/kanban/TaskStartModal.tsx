@@ -1,13 +1,13 @@
-import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
 import type {
   AgentProfile,
   AppApi,
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   WorkItem,
-} from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import type React from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 
 interface TaskStartModalProps {

@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { formatErrorMessage } from '../../../../shared/ipc-error'
+import { formatErrorMessage } from '@shared/ipc-error'
 import type {
   UsageApi,
   UsageConnectionSnapshot,
@@ -10,8 +8,10 @@ import type {
   UsageRefreshSourceStatus,
   UsageRefreshWindowResult,
   UsageSnapshot,
-} from '../../../../shared/usage-contract'
-import { usageFreshness, usagePercent, usageSlices } from '../../../../shared/usage-contract'
+} from '@shared/usage-contract'
+import { usageFreshness, usagePercent, usageSlices } from '@shared/usage-contract'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import './usage.css'
 
 const EMPTY: UsageSnapshot = { connections: [], pin: null, cacheError: null, exportError: null }

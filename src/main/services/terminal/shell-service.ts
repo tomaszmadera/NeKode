@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
 import { accessSync, constants, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, isAbsolute, posix } from 'node:path'
-import type { ShellChoice, ShellInfo } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
-import { parseWslPath } from '../../../shared/wsl-path'
+import type { ShellChoice, ShellInfo } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { parseWslPath } from '@shared/wsl-path'
 import { runWsl, type WslRun } from './wsl'
 
 // ShellService (spec project-shell-selection): detection of installed shells,

@@ -9,15 +9,26 @@ import { defineConfig } from 'electron-vite'
 
 const appVersion: string = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version
 
+// Path aliases; keep in sync with tsconfig.node.json, tsconfig.web.json, and
+// vitest.config.ts. The renderer gets no @main alias and main/preload get no
+// @renderer alias, so cross-process imports fail to resolve.
+const sharedAlias = { '@shared': resolve('src/shared') }
+const nodeAlias = { ...sharedAlias, '@main': resolve('src/main') }
+
 export default defineConfig({
-  main: {},
-  preload: {},
+  main: {
+    resolve: { alias: nodeAlias },
+  },
+  preload: {
+    resolve: { alias: nodeAlias },
+  },
   renderer: {
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
     },
     resolve: {
       alias: {
+        ...sharedAlias,
         '@renderer': resolve('src/renderer/src'),
       },
     },

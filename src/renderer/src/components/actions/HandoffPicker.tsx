@@ -1,8 +1,8 @@
+import type { AppApi, HandoffEntry } from '@shared/ipc-contract'
+import { projectHandoffDirKey, relativeToProject } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { AppApi, HandoffEntry } from '../../../../shared/ipc-contract'
-import { projectHandoffDirKey, relativeToProject } from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { TEST_ID } from '../../lib/test-ids'
 
 // Resume handoff picker (spec handoff-resume-flow Behaviour 4-5): the list

@@ -1,6 +1,6 @@
+import type { ProjectInfo } from '@shared/ipc-contract'
+import { APP_STATE_KEY } from '@shared/ipc-contract'
 import type Database from 'better-sqlite3'
-import type { ProjectInfo } from '../../shared/ipc-contract'
-import { APP_STATE_KEY } from '../../shared/ipc-contract'
 
 // AppStateService: flat key–value store (spec Data/API) plus cleanup of
 // selection keys that point at removed projects/chats (spec Edge cases:

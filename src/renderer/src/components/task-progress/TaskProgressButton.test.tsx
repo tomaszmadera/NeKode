@@ -1,6 +1,6 @@
+import type { SessionTaskProgress } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { SessionTaskProgress } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
 import { TaskProgressButton } from './TaskProgressButton'
 

@@ -1,5 +1,3 @@
-import type React from 'react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type {
   AgentProfile,
   AgentProfilesDocument,
@@ -7,8 +5,10 @@ import type {
   ProjectInfo,
   SessionStatus,
   SessionTaskProgress,
-} from '../../../../shared/ipc-contract'
-import { parseWslPath } from '../../../../shared/wsl-path'
+} from '@shared/ipc-contract'
+import { parseWslPath } from '@shared/wsl-path'
+import type React from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'

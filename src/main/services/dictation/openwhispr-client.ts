@@ -8,9 +8,9 @@ import type {
   DictationSettings,
   DictationStatusSnapshot,
   LocalTranscribeModel,
-} from '../../../shared/dictation-contract'
-import { isDictationSettings } from '../../../shared/dictation-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/dictation-contract'
+import { isDictationSettings } from '@shared/dictation-contract'
+import { AppError } from '@shared/ipc-error'
 import { DictationSettingsStore, type DictationStateStore } from './dictation-settings'
 
 interface BridgeConfig {

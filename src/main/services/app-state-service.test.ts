@@ -1,6 +1,6 @@
+import { APP_STATE_KEY, isSecretStateKey } from '@shared/ipc-contract'
 import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
-import { APP_STATE_KEY, isSecretStateKey } from '../../shared/ipc-contract'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import { AppStateService } from './app-state-service'

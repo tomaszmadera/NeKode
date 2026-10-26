@@ -1,8 +1,8 @@
 import { statSync } from 'node:fs'
 import { basename } from 'node:path'
-import { bottomTabProjectId, isBottomTabId } from '../../../shared/bottom-tab-id'
-import type { Unsubscribe } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+import { bottomTabProjectId, isBottomTabId } from '@shared/bottom-tab-id'
+import type { Unsubscribe } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { prepareWslTerminal, validateWslExecutable } from './wsl'
 
 // Chat terminal sessions (spec Data/API, SDD §17): one PTY process per chat,

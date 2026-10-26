@@ -1,6 +1,6 @@
+import type { FileEntry, GitFileStatuses } from '@shared/ipc-contract'
 import type React from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import type { FileEntry, GitFileStatuses } from '../../../../shared/ipc-contract'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'

@@ -1,8 +1,8 @@
+import type { AppApi, ProjectInfo } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import { wslProjectPath } from '@shared/wsl-path'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { AppApi, ProjectInfo } from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
-import { wslProjectPath } from '../../../../shared/wsl-path'
 
 interface Props {
   app: AppApi

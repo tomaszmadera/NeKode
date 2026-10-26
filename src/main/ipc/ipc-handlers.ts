@@ -1,5 +1,4 @@
-import { dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron'
-import type { DictationResult } from '../../shared/dictation-contract'
+import type { DictationResult } from '@shared/dictation-contract'
 import {
   APP_STATE_KEY,
   IPC_CHANNEL,
@@ -8,8 +7,9 @@ import {
   projectShellKey,
   projectWslShellsKey,
   type TaskProgressChangedEvent,
-} from '../../shared/ipc-contract'
-import { AppError, type AppErrorPayload, toTransportError } from '../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError, type AppErrorPayload, toTransportError } from '@shared/ipc-error'
+import { dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import { type InvokeSenderInfo, isTrustedSender } from '../security/sender-guard'
 import { buildValidatedChannels, type ValidatedChannel } from './ipc-validation'
 import type { AppServices } from './service-registry'

@@ -1,5 +1,5 @@
+import { isSafeExternalUrl } from '@shared/safe-url'
 import { describe, expect, it } from 'vitest'
-import { isSafeExternalUrl } from '../../../shared/safe-url'
 import { buildIssueReportUrl, ISSUE_REPORT_BASE_URL, platformFromUserAgent } from './issue-report'
 
 describe('platformFromUserAgent', () => {

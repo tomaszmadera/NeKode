@@ -1,4 +1,4 @@
-import type { KanbanLaunchTaskInput } from '../../../../shared/ipc-contract'
+import type { KanbanLaunchTaskInput } from '@shared/ipc-contract'
 
 /** A Start whose chat exists and whose argv was not delivered. */
 export interface HeldLaunch {

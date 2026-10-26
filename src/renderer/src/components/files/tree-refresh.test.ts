@@ -1,5 +1,5 @@
+import type { FileEntry } from '@shared/ipc-contract'
 import { describe, expect, it } from 'vitest'
-import type { FileEntry } from '../../../../shared/ipc-contract'
 import { emptyProjectFilesSession, type ProjectFilesSession } from './files-types'
 import { applyDirectoryRefresh, type DirectoryRefreshResult } from './tree-refresh'
 

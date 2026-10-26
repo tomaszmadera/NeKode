@@ -7,7 +7,7 @@ import type {
   TaskProgressPhase,
   TaskProgressRecordState,
   TaskProgressTaskState,
-} from '../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 import { TaskProgressAdapterError } from './adapter-host'
 
 // Validation of the `snapshot` response (spec task-progress-adapters Data /

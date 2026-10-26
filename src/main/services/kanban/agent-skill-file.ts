@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { promises as nodeFs } from 'node:fs'
-import { AGENT_SKILL_FILE_PATH, LOCAL_FILE_ADAPTER_ID } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+import { AGENT_SKILL_FILE_PATH, LOCAL_FILE_ADAPTER_ID } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { joinProjectPath } from '../project-path'
 import { errnoCode, isInside } from './local-task-file'
 

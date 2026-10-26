@@ -1,4 +1,4 @@
-import type { FileEntry, GitFileStatuses } from '../../../../shared/ipc-contract'
+import type { FileEntry, GitFileStatuses } from '@shared/ipc-contract'
 
 // Per-project file-tree session state (spec Behaviour 14): expansion state
 // and the last selected file live for the app session only — never in the

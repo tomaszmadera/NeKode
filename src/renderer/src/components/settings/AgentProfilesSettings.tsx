@@ -1,12 +1,8 @@
+import { serializeAgentCommand } from '@shared/agent-command'
+import type { AgentProfilesLibrary, AgentProjectSelectionInput, AppApi } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { serializeAgentCommand } from '../../../../shared/agent-command'
-import type {
-  AgentProfilesLibrary,
-  AgentProjectSelectionInput,
-  AppApi,
-} from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'

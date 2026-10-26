@@ -1,11 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   parseAgentArguments,
   parseAgentCommand,
   serializeAgentCommand,
-} from '../../../../shared/agent-command'
-import type { AgentProfile } from '../../../../shared/ipc-contract'
+} from '@shared/agent-command'
+import type { AgentProfile } from '@shared/ipc-contract'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
 

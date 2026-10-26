@@ -1,8 +1,8 @@
+import { createBottomTabId } from '@shared/bottom-tab-id'
+import { emptyGitWorktree, IPC_CHANNEL } from '@shared/ipc-contract'
+import { APP_ERROR_MARKER, AppError } from '@shared/ipc-error'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
-import { createBottomTabId } from '../../shared/bottom-tab-id'
-import { emptyGitWorktree, IPC_CHANNEL } from '../../shared/ipc-contract'
-import { APP_ERROR_MARKER, AppError } from '../../shared/ipc-error'
 import {
   type PtyFactory,
   type PtyProcessLike,

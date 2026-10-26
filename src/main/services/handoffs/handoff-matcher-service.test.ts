@@ -1,5 +1,5 @@
+import { projectHandoffDirKey, projectKanbanAdapterKey } from '@shared/ipc-contract'
 import { describe, expect, it } from 'vitest'
-import { projectHandoffDirKey, projectKanbanAdapterKey } from '../../../shared/ipc-contract'
 import { hostPath } from '../../test-support/host-path'
 import {
   filenameMatchesRef,

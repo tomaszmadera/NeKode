@@ -1,5 +1,5 @@
+import type { AppApi, DictationDictionaryEntry } from '@shared/ipc-contract'
 import { vi } from 'vitest'
-import type { AppApi, DictationDictionaryEntry } from '../../../shared/ipc-contract'
 
 const dummyEntry: DictationDictionaryEntry = {
   id: 'd1',

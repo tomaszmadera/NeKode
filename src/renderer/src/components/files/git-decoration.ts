@@ -1,4 +1,4 @@
-import type { GitFileStatuses, GitFileStatusKind } from '../../../../shared/ipc-contract'
+import type { GitFileStatuses, GitFileStatusKind } from '@shared/ipc-contract'
 
 // Pure decoration logic for the file tree (spec project-files-view Behaviour
 // 16-19): which status a tree entry shows and how it is drawn. Kept free of

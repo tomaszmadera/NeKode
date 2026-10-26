@@ -1,5 +1,3 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ActionControl,
   AgentProfile,
@@ -10,15 +8,17 @@ import type {
   ProjectInfo,
   TaskProgressChangedEvent,
   TaskProgressSnapshot,
-} from '../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 import {
   APP_STATE_KEY,
   type AppApi,
   emptyGitWorktree,
   projectHandoffDirKey,
   projectKanbanAdapterKey,
-} from '../../shared/ipc-contract'
-import { AppError } from '../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App, TEST_ID, testIdFor } from './App'
 import { DESKTOP_SHORTCUT_METHOD } from './components/settings/DictationSettings'
 import { playAttentionChime } from './lib/chime'

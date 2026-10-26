@@ -1,4 +1,4 @@
-import type { DesktopDictationSetup } from '../shared/desktop-dictation-contract'
+import type { DesktopDictationSetup } from '@shared/desktop-dictation-contract'
 import {
   type DictationDictionaryEntry,
   type DictationPostProcessingSettings,
@@ -7,7 +7,7 @@ import {
   type DictationStatusSnapshot,
   isDictationResult,
   type SttProviderSummary,
-} from '../shared/dictation-contract'
+} from '@shared/dictation-contract'
 import type {
   ActionControl,
   ActionExecution,
@@ -39,9 +39,9 @@ import type {
   TaskProgressTestResult,
   Unsubscribe,
   WorkItem,
-} from '../shared/ipc-contract'
-import { IPC_CHANNEL, isTaskProgressChangedEvent } from '../shared/ipc-contract'
-import { parseAppErrorPayload } from '../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { IPC_CHANNEL, isTaskProgressChangedEvent } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
 import type { IpcRendererLike } from './bridge-types'
 
 // Structural subset of Electron's IpcRenderer so the bridge can be unit-tested

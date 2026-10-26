@@ -1,5 +1,5 @@
+import { APP_STATE_KEY } from '@shared/ipc-contract'
 import { describe, expect, it, vi } from 'vitest'
-import { APP_STATE_KEY } from '../../../shared/ipc-contract'
 import { DictationSettingsStore } from './dictation-settings'
 
 function store(initial: Record<string, string> = {}) {

@@ -1,10 +1,10 @@
 import type {
   DesktopDictationSettings,
   DesktopDictationSetup,
-} from '../../../shared/desktop-dictation-contract'
-import { isDesktopDictationSettings } from '../../../shared/desktop-dictation-contract'
-import { APP_STATE_KEY } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/desktop-dictation-contract'
+import { isDesktopDictationSettings } from '@shared/desktop-dictation-contract'
+import { APP_STATE_KEY } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import type { DictationStateStore } from './dictation-settings'
 
 export class DesktopDictation {

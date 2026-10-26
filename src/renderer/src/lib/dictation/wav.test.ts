@@ -1,5 +1,5 @@
+import { MAX_DICTATION_AUDIO_BYTES } from '@shared/dictation-contract'
 import { describe, expect, it } from 'vitest'
-import { MAX_DICTATION_AUDIO_BYTES } from '../../../../shared/dictation-contract'
 import { encodeWav } from './wav'
 
 describe('dictation WAV', () => {

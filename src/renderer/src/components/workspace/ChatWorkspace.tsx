@@ -1,6 +1,6 @@
+import type { AppApi, ChatInfo, ProjectInfo } from '@shared/ipc-contract'
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppApi, ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { useDictation } from '../../hooks/useDictation'
 import type { AttentionSettings } from '../../lib/attention-settings'
 import { createChatActivity } from '../../lib/chat-activity'

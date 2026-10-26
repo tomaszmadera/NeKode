@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
 import type {
   DictationPostProcessingLevel,
   DictationPostProcessingMode,
   DictationPostProcessingSettings,
   SttProviderSummary,
-} from '../../../../shared/dictation-contract'
-import type { AppApi } from '../../../../shared/ipc-contract'
+} from '@shared/dictation-contract'
+import type { AppApi } from '@shared/ipc-contract'
+import { useEffect, useState } from 'react'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { DesktopDictationSettings } from './DesktopDictationSettings'

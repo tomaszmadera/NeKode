@@ -2,8 +2,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { parseUsageDocument, type UsageAdapter } from '@shared/usage-contract'
 import { afterEach, describe, expect, it } from 'vitest'
-import { parseUsageDocument, type UsageAdapter } from '../../../shared/usage-contract'
 import { assertLiveRefresh, UsageAdapterHost } from './adapter-host'
 
 const adapterDirectory = resolve(__dirname, '../../../../adapters/usage-codex')

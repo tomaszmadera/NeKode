@@ -1,5 +1,5 @@
+import { APP_STATE_KEY } from '@shared/ipc-contract'
 import { describe, expect, it, vi } from 'vitest'
-import { APP_STATE_KEY } from '../../../shared/ipc-contract'
 import { OpenWhisprClient, parseBridgeConfig } from './openwhispr-client'
 
 const TOKEN = 'private-test-token'

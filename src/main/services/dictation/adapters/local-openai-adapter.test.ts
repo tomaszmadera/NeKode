@@ -1,5 +1,5 @@
+import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
-import { AppError } from '../../../../shared/ipc-error'
 import { LocalOpenAiAdapter } from './local-openai-adapter'
 
 function createFakeAudioWav(): ArrayBuffer {

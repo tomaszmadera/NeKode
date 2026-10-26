@@ -1,6 +1,6 @@
+import type { AppApi } from '@shared/ipc-contract'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { AppApi } from '../../../../shared/ipc-contract'
 import type { AttentionSettings } from '../../lib/attention-settings'
 import { cn } from '../../lib/cn'
 import { Icon, type LucideIcon } from '../../lib/icons'

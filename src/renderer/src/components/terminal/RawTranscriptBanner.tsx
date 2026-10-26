@@ -1,5 +1,5 @@
+import type { DictationResult } from '@shared/dictation-contract'
 import type React from 'react'
-import type { DictationResult } from '../../../../shared/dictation-contract'
 
 export interface RawTranscriptBannerProps {
   rawText: string

@@ -12,10 +12,10 @@ import type {
   DictationStart,
   SttProviderSummary,
   UpdateDictionaryEntryInput,
-} from '../../../shared/dictation-contract'
-import { isDictationWav } from '../../../shared/dictation-contract'
-import { APP_STATE_KEY, dictationProviderConfigKey } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/dictation-contract'
+import { isDictationWav } from '@shared/dictation-contract'
+import { APP_STATE_KEY, dictationProviderConfigKey } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import type { AppStateService } from '../app-state-service'
 import { DictationProviderError } from './adapters/dictation-provider-error'
 import { OpenWhisprAdapter } from './adapters/openwhispr-adapter'

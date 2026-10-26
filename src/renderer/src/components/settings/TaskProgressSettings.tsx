@@ -1,13 +1,13 @@
-import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
 import type {
   AppApi,
   TaskProgressAdapterInfo,
   TaskProgressConfigField,
   TaskProgressSnapshot,
   TaskProgressTestResult,
-} from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import type React from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'

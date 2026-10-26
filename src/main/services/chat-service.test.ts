@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AppError, type AppErrorCode } from '@shared/ipc-error'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AppError, type AppErrorCode } from '../../shared/ipc-error'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import { ChatService } from './chat-service'

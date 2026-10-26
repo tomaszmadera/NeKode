@@ -1,10 +1,10 @@
-import type { AgentProfilesDocument, ChatInfo, ChatLaunchIdentity } from '../../shared/ipc-contract'
+import type { AgentProfilesDocument, ChatInfo, ChatLaunchIdentity } from '@shared/ipc-contract'
 import {
   AGENT_PROMPT_PLACEHOLDER,
   agentInteractiveArgsError,
   IPC_CHANNEL,
-} from '../../shared/ipc-contract'
-import { AppError } from '../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { agentDisplayName } from './agent-identity'
 import type { ShellSpec } from './terminal/terminal-service'
 

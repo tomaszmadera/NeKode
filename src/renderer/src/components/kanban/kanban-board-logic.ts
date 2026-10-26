@@ -1,8 +1,4 @@
-import type {
-  KanbanBoard as KanbanBoardData,
-  KanbanPriority,
-  WorkItem,
-} from '../../../../shared/ipc-contract'
+import type { KanbanBoard as KanbanBoardData, KanbanPriority, WorkItem } from '@shared/ipc-contract'
 
 /** One rendered column: a state with the items that belong to it. */
 export interface KanbanColumn {

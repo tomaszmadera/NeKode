@@ -1,5 +1,5 @@
+import type { ChatInfo, TaskProgressItem, TaskProgressSnapshot } from '@shared/ipc-contract'
 import { describe, expect, it } from 'vitest'
-import type { ChatInfo, TaskProgressItem, TaskProgressSnapshot } from '../../../shared/ipc-contract'
 import { sessionTaskProgress } from './task-progress'
 
 function task(overrides: Partial<TaskProgressItem> = {}): TaskProgressItem {

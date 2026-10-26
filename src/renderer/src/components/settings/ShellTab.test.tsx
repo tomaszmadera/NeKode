@@ -1,6 +1,6 @@
+import type { AppApi } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AppApi } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
 import { ShellTab } from './ShellTab'
 

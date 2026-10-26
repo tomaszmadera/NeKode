@@ -1,5 +1,5 @@
+import { homeDirFromEnv } from '@shared/home-path'
 import { contextBridge, ipcRenderer } from 'electron'
-import { homeDirFromEnv } from '../shared/home-path'
 import { createAppApi } from './app-api'
 
 // The sandboxed preload has process.env; the home directory is only used to

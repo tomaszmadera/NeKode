@@ -1,4 +1,4 @@
-import type { FileEntry, GitFileStatuses } from '../../../../shared/ipc-contract'
+import type { FileEntry, GitFileStatuses } from '@shared/ipc-contract'
 import type { ProjectFilesSession } from './files-types'
 
 // Applies one manual Refresh (spec Behaviour 25) to the cached tree.

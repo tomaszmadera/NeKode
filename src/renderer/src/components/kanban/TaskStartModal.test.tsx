@@ -1,8 +1,8 @@
+import type { AppApi, KanbanLaunchResult, WorkItem } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type React from 'react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AppApi, KanbanLaunchResult, WorkItem } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { TaskStartModal } from './TaskStartModal'
 

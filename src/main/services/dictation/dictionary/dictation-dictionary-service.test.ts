@@ -1,6 +1,6 @@
+import { AppError } from '@shared/ipc-error'
 import type Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { AppError } from '../../../../shared/ipc-error'
 import { openDatabase } from '../../../db/connection'
 import { runMigrations } from '../../../db/migrations'
 import { DictationDictionaryService } from './dictation-dictionary-service'

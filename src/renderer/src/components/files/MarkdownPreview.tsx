@@ -1,7 +1,7 @@
+import { isSafeExternalUrl } from '@shared/safe-url'
 import type React from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { isSafeExternalUrl } from '../../../../shared/safe-url'
 import { TEST_ID } from '../../lib/test-ids'
 import { MermaidDiagram } from './MermaidDiagram'
 import { mermaidSourceFromPre } from './mermaid-block'

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import type { ChatInfo, ChatLaunchIdentity } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import type Database from 'better-sqlite3'
-import type { ChatInfo, ChatLaunchIdentity } from '../../shared/ipc-contract'
-import { AppError } from '../../shared/ipc-error'
 import { shellDisplayName } from './terminal/terminal-service'
 
 // ChatService: chat list/create/remove scoped to a project (spec Business

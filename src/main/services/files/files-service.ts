@@ -1,7 +1,7 @@
 import { promises as nodeFs } from 'node:fs'
 import { posix, win32 } from 'node:path'
-import type { FileEntry, FilePreview } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+import type { FileEntry, FilePreview } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { joinProjectPath } from '../project-path'
 
 // Project file listing and read-only preview classification (spec Data/API,

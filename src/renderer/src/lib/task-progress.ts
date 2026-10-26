@@ -3,7 +3,7 @@ import type {
   SessionTaskProgress,
   TaskProgressItem,
   TaskProgressSnapshot,
-} from '../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 
 function matchTask(tasks: TaskProgressItem[], candidate: string): TaskProgressItem | undefined {
   const token = candidate.toLowerCase()

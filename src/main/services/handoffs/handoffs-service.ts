@@ -1,7 +1,7 @@
 import { promises as nodeFs } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import type { HandoffEntry } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+import type { HandoffEntry } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { joinProjectPath } from '../project-path'
 
 // Handoff directory listing (spec handoff-resume-flow Data/API). Read-only:

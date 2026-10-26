@@ -1,5 +1,5 @@
+import type { DictationError } from '@shared/dictation-contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { DictationError } from '../../../../shared/dictation-contract'
 import { DictationProviderError } from './dictation-provider-error'
 import { OPENWHISPR_CLOUD_MAX_BYTES, OpenWhisprCloudAdapter } from './openwhispr-cloud-adapter'
 

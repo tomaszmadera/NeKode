@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { parseAgentCommand } from '@shared/agent-command'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { parseAgentCommand } from '../../../shared/agent-command'
 import { agentProfileTemplates } from './agent-profile-templates'
 
 const roots: string[] = []

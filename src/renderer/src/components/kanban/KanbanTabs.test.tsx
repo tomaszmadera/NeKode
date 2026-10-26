@@ -1,17 +1,11 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type {
-  AppApi,
-  ChatInfo,
-  KanbanBoard,
-  ProjectInfo,
-  WorkItem,
-} from '../../../../shared/ipc-contract'
+import type { AppApi, ChatInfo, KanbanBoard, ProjectInfo, WorkItem } from '@shared/ipc-contract'
 import {
   APP_STATE_KEY,
   LOCAL_TASK_FILE_MISSING,
   projectKanbanAdapterKey,
-} from '../../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../../App'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { createAppApiStub } from '../../test/app-api-stub'

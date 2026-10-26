@@ -5,7 +5,7 @@ import {
   type KanbanState,
   type KanbanStateGroup,
   type WorkItem,
-} from '../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 
 // Response normalization (spec kanban-adapter-interface Business rules).
 // The wire shapes are adapter-produced JSON; anything outside the normalized

@@ -1,21 +1,21 @@
-import type React from 'react'
-import { useEffect, useState } from 'react'
 import {
   AGENT_COMMAND_HELP,
   parseAgentArguments,
   parseAgentCommand,
   serializeAgentArguments,
   serializeAgentCommand,
-} from '../../../../shared/agent-command'
+} from '@shared/agent-command'
 import type {
   AgentProfile,
   AgentProfilePut,
   AgentProfilesLibrary,
   AgentProfileTemplate,
   AppApi,
-} from '../../../../shared/ipc-contract'
-import { agentProfileFieldError } from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { agentProfileFieldError } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import type React from 'react'
+import { useEffect, useState } from 'react'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'

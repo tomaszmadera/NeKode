@@ -1,12 +1,12 @@
-import type React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ActionControl,
   ActionExecution,
   AppApi,
   SessionTaskProgress,
-} from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import type React from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn'
 import { actionIconGlyph, Icon, type LucideIcon } from '../../lib/icons'
 import { writeSubmitLine } from '../../lib/pty-submit'

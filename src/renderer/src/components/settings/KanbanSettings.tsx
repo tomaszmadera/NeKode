@@ -1,18 +1,18 @@
-import type React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import type {
   AppApi,
   KanbanAdapterInfo,
   KanbanConfigField,
   KanbanProjectConfig,
-} from '../../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 import {
   AGENT_SKILL_FILE_PATH,
   LOCAL_FILE_ADAPTER_ID,
   LOCAL_TASK_FILE_PATH,
-} from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import type React from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ConfirmDialog } from '../layout/ConfirmDialog'

@@ -1,5 +1,5 @@
+import { emptyGitWorktree } from '@shared/ipc-contract'
 import { describe, expect, it, vi } from 'vitest'
-import { emptyGitWorktree } from '../../../shared/ipc-contract'
 import type { GitStatusRunner } from './git-service'
 import { GitService, parseGitFileStatuses, parseGitStatus } from './git-service'
 

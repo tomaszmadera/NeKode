@@ -1,6 +1,6 @@
+import { IPC_CHANNEL, LOCAL_TASK_FILE_MISSING } from '@shared/ipc-contract'
+import { AppError, serializeAppError } from '@shared/ipc-error'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { IPC_CHANNEL, LOCAL_TASK_FILE_MISSING } from '../shared/ipc-contract'
-import { AppError, serializeAppError } from '../shared/ipc-error'
 import { createAppApi } from './app-api'
 
 function createIpcMock() {

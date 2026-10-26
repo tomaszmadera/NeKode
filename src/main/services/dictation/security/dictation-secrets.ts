@@ -1,4 +1,4 @@
-import { AppError } from '../../../../shared/ipc-error'
+import { AppError } from '@shared/ipc-error'
 
 export interface SafeStorageLike {
   isEncryptionAvailable(): boolean

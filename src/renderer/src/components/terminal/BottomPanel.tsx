@@ -1,5 +1,5 @@
+import type { AppApi } from '@shared/ipc-contract'
 import type React from 'react'
-import type { AppApi } from '../../../../shared/ipc-contract'
 import { BOTTOM_REGION_SIZE } from '../../hooks/useResizableRegion'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'

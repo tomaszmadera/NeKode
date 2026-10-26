@@ -1,7 +1,7 @@
+import type { UsageSnapshot } from '@shared/usage-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { UsageSnapshot } from '../../../../shared/usage-contract'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { UsageToolbar } from './UsageToolbar'
 

@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   projectTaskProgressAdapterKey,
   projectTaskProgressConfigKey,
   type TaskProgressAdapterInfo,
   type TaskProgressChangedEvent,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   TaskProgressAdapterError,
   TaskProgressCancelledError,

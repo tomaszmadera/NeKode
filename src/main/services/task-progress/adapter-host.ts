@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import type { TaskProgressEnvironment, TaskProgressErrorCode } from '../../../shared/ipc-contract'
+import type { TaskProgressEnvironment, TaskProgressErrorCode } from '@shared/ipc-contract'
 import { killTree } from '../kanban/adapter-host'
 
 // Task progress adapter host (spec task-progress-adapters Behaviour 3-6). One

@@ -4,7 +4,7 @@ import type {
   TaskProgressAdapterInfo,
   TaskProgressConfigField,
   TaskProgressEnvironment,
-} from '../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 
 // Task progress manifest parsing and discovery (spec task-progress-adapters
 // Behaviour 1-2). One subdirectory level of the fixed adapters directory; a

@@ -1,14 +1,14 @@
-import type Database from 'better-sqlite3'
-import { afterEach, describe, expect, it } from 'vitest'
-import { serializeAgentCommand } from '../../../shared/agent-command'
-import type { AgentProfilePut } from '../../../shared/ipc-contract'
+import { serializeAgentCommand } from '@shared/agent-command'
+import type { AgentProfilePut } from '@shared/ipc-contract'
 import {
   AGENT_PROFILES_LIBRARY_KEY,
   projectAgentProfilesKey,
   projectAgentSelectionKey,
   projectHandoffDirKey,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import type Database from 'better-sqlite3'
+import { afterEach, describe, expect, it } from 'vitest'
 import { openDatabase } from '../../db/connection'
 import { runMigrations } from '../../db/migrations'
 import { AppStateService } from '../app-state-service'

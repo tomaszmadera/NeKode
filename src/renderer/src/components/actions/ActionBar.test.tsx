@@ -1,6 +1,6 @@
+import type { ActionControl, AppApi } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ActionControl, AppApi } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
 import { ActionBar } from './ActionBar'

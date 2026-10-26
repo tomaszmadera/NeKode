@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { TaskProgressErrorCode } from '@shared/ipc-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { TaskProgressErrorCode } from '../../../shared/ipc-contract'
 import {
   TASK_PROGRESS_MAX_STDOUT_BYTES,
   TASK_PROGRESS_TIMEOUT_MS,

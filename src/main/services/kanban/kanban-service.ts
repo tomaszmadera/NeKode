@@ -14,8 +14,8 @@ import {
   projectKanbanAdapterKey,
   projectKanbanConfigKey,
   type WorkItem,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { AdapterHost, toAppError } from './adapter-host'
 import { type DiscoveredAdapter, type DiscoveryResult, discoverAdapters } from './adapter-manifest'
 import {

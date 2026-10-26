@@ -1,5 +1,5 @@
+import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
-import { AppError } from '../../../../shared/ipc-error'
 import { ElevenLabsAdapter } from './elevenlabs-adapter'
 
 function createFakeAudioWav(): ArrayBuffer {

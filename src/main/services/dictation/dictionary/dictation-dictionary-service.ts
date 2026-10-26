@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import type Database from 'better-sqlite3'
 import type {
   CreateDictionaryEntryInput,
   DictationDictionaryEntry,
   UpdateDictionaryEntryInput,
-} from '../../../../shared/dictation-contract'
-import { AppError } from '../../../../shared/ipc-error'
+} from '@shared/dictation-contract'
+import { AppError } from '@shared/ipc-error'
+import type Database from 'better-sqlite3'
 import { wrapSqliteError } from '../../project-service'
 
 export type { DictationDictionaryEntry }

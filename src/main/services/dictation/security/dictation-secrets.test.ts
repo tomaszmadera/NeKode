@@ -1,5 +1,5 @@
+import { AppError } from '@shared/ipc-error'
 import { describe, expect, it } from 'vitest'
-import { AppError } from '../../../../shared/ipc-error'
 import {
   decryptSecret,
   ENCRYPTED_SECRET_PREFIX,

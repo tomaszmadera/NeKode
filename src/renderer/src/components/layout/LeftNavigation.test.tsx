@@ -1,6 +1,6 @@
+import type { ChatInfo, ProjectInfo } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ChatInfo, ProjectInfo } from '../../../../shared/ipc-contract'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { LeftNavigation } from './LeftNavigation'
 

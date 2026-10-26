@@ -7,9 +7,9 @@ import type {
   KanbanHandoffAvailabilityInput,
   KanbanHandoffAvailabilityResult,
   KanbanHandoffCandidatesInput,
-} from '../../../shared/ipc-contract'
-import { projectHandoffDirKey, relativeToProject } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { projectHandoffDirKey, relativeToProject } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { joinProjectPath } from '../project-path'
 
 // Handoff match (kanban task launch amendment, stage 4; NEKODE-30 stage 2). A

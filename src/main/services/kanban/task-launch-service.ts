@@ -9,9 +9,9 @@ import type {
   KanbanLaunchTaskInput,
   KanbanResumeLaunchInput,
   WorkItem,
-} from '../../../shared/ipc-contract'
-import { AGENT_PROMPT_PLACEHOLDER } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AGENT_PROMPT_PLACEHOLDER } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { agentArgs } from '../agent-chat-launch-service'
 import { agentDisplayName } from '../agent-identity'
 import type { ShellSpec } from '../terminal/terminal-service'

@@ -2,8 +2,9 @@
 // board grouping, defensive storage parsing, sort ordering, and concurrent
 // IPC promise race-ordering reconciliation run without rendering the component.
 // Test names are kept as-is so their spec/regression references survive.
+
+import type { KanbanBoard as KanbanBoardData, WorkItem } from '@shared/ipc-contract'
 import { describe, expect, it } from 'vitest'
-import type { KanbanBoard as KanbanBoardData, WorkItem } from '../../../../shared/ipc-contract'
 import { kanbanBoardFixture, kanbanWorkItem } from '../../test/kanban-fixtures'
 import {
   boardColumns,

@@ -1,7 +1,4 @@
-import type React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
-import { createBottomTabId } from '../../shared/bottom-tab-id'
+import { createBottomTabId } from '@shared/bottom-tab-id'
 import type {
   ActionControl,
   ActionExecution,
@@ -14,14 +11,17 @@ import type {
   SessionTaskProgress,
   TaskProgressSnapshot,
   WorkItem,
-} from '../../shared/ipc-contract'
+} from '@shared/ipc-contract'
 import {
   APP_STATE_KEY,
   LOCAL_FILE_ADAPTER_ID,
   projectColorKey,
   projectKanbanAdapterKey,
-} from '../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import type React from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { ActionBar } from './components/actions/ActionBar'
 import { ActionSettings, type SettingsTabId } from './components/actions/ActionSettings'
 import { HandoffPicker } from './components/actions/HandoffPicker'

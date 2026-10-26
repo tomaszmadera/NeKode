@@ -1,9 +1,9 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   DictationPostProcessingSettings,
   SttProviderSummary,
-} from '../../../../shared/dictation-contract'
+} from '@shared/dictation-contract'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDictationApiStub } from '../../test/dictation-api-stub'
 import { DESKTOP_SHORTCUT_METHOD, DictationSettings } from './DictationSettings'
 

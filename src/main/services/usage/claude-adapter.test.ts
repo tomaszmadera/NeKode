@@ -5,8 +5,8 @@ import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { parseUsageDocument, type UsageAdapter, usageSlices } from '@shared/usage-contract'
 import { afterEach, describe, expect, it } from 'vitest'
-import { parseUsageDocument, type UsageAdapter, usageSlices } from '../../../shared/usage-contract'
 import {
   assertLiveRefresh,
   bundledUsageAdapterDirectories,

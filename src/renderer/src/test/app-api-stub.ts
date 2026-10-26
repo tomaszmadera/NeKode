@@ -2,8 +2,9 @@
 // with neutral values; per-file differences are explicit overrides spread
 // after the factory call in each test file (Stage 2 W16). One definition so
 // the copies that used to live in eight test files cannot drift.
+
+import { type AppApi, emptyGitWorktree, relativeToProject } from '@shared/ipc-contract'
 import { vi } from 'vitest'
-import { type AppApi, emptyGitWorktree, relativeToProject } from '../../../shared/ipc-contract'
 import { createDictationApiStub } from './dictation-api-stub'
 
 export function createAppApiStub(): AppApi {

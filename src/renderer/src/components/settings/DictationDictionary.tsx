@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
 import type {
   CreateDictionaryEntryInput,
   DictationDictionaryEntry,
   DictationDictionaryError,
   DictationDictionary as LegacyDictionary,
   UpdateDictionaryEntryInput,
-} from '../../../../shared/dictation-contract'
-import type { AppApi, ProjectInfo } from '../../../../shared/ipc-contract'
+} from '@shared/dictation-contract'
+import type { AppApi, ProjectInfo } from '@shared/ipc-contract'
+import { useEffect, useState } from 'react'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { focusRing, GroupBox, SwitchControl, secondaryClass } from './settings-ui'

@@ -2,9 +2,9 @@ import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { isNewerRelease } from '../../../shared/app-version'
-import type { AppUpdateLatest } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+import { isNewerRelease } from '@shared/app-version'
+import type { AppUpdateLatest } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import {
   checksumFor,
   installerName,

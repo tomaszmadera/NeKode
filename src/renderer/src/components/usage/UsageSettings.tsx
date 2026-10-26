@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
-import type { AppApi } from '../../../../shared/ipc-contract'
-import { formatErrorMessage } from '../../../../shared/ipc-error'
+import type { AppApi } from '@shared/ipc-contract'
+import { formatErrorMessage } from '@shared/ipc-error'
 import type {
   UsageSettings as Settings,
   UsageAdapter,
   UsageConnection,
   UsageSnapshot,
-} from '../../../../shared/usage-contract'
+} from '@shared/usage-contract'
+import { useEffect, useState } from 'react'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import {

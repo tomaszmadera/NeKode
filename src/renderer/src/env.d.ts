@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { AppApi } from '../../shared/ipc-contract'
+import type { AppApi } from '@shared/ipc-contract'
 
 declare global {
   /** package.json version, injected at build time (electron.vite and vitest configs). */

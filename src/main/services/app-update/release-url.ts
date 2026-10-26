@@ -1,4 +1,4 @@
-import { AppError } from '../../../shared/ipc-error'
+import { AppError } from '@shared/ipc-error'
 
 export const UPDATE_OWNER = 'tomaszmadera'
 export const UPDATE_REPO = 'NeKode'

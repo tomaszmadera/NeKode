@@ -1,5 +1,3 @@
-import type React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AppApi,
   HandoffRejection,
@@ -10,9 +8,11 @@ import type {
   KanbanState,
   KanbanUpdatePatch,
   WorkItem,
-} from '../../../../shared/ipc-contract'
-import { LOCAL_TASK_FILE_MISSING } from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { LOCAL_TASK_FILE_MISSING } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import type React from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { KanbanSearch } from './KanbanSearch'

@@ -1,10 +1,10 @@
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   TaskProgressChangedEvent,
   TaskProgressErrorCode,
   TaskProgressSnapshot,
-} from '../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ValidatedTaskProgressSnapshot } from './snapshot'
 import {
   type TaskProgressReadOutcome,

@@ -1,6 +1,6 @@
+import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { TEST_ID } from '../../lib/test-ids'
 
 // Setup welcome of the project home tab (project-home spec Behaviour 2-3, 7):

@@ -1,7 +1,3 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type React from 'react'
-import { useState } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
   HandoffCandidatesResult,
@@ -9,7 +5,11 @@ import type {
   HandoffRejection,
   KanbanLaunchResult,
   WorkItem,
-} from '../../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type React from 'react'
+import { useState } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { TaskResumeModal } from './TaskResumeModal'
 

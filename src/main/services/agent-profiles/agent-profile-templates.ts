@@ -1,5 +1,5 @@
-import { serializeAgentCommand } from '../../../shared/agent-command'
-import type { AgentProfileTemplate } from '../../../shared/ipc-contract'
+import { serializeAgentCommand } from '@shared/agent-command'
+import type { AgentProfileTemplate } from '@shared/ipc-contract'
 
 const PRESETS = [
   { id: 'codex', name: 'Codex CLI', args: ['{prompt}'] },

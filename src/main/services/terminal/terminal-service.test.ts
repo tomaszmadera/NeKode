@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
+import { createBottomTabId } from '@shared/bottom-tab-id'
+import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
-import { createBottomTabId } from '../../../shared/bottom-tab-id'
-import { AppError } from '../../../shared/ipc-error'
 import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-service'
 import {
   CLOSED_BOTTOM_TAB_TTL_MS,

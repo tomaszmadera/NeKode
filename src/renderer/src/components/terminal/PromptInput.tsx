@@ -1,6 +1,6 @@
+import type { DictationResult } from '@shared/dictation-contract'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { DictationResult } from '../../../../shared/dictation-contract'
 import type { DesktopDictationControl } from '../../hooks/useDesktopDictation'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'

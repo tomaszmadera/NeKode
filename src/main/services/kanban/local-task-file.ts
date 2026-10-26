@@ -13,8 +13,8 @@ import {
   LOCAL_TASK_FILE_MISSING,
   LOCAL_TASK_FILE_PATH,
   type WorkItem,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { joinProjectPath } from '../project-path'
 
 // Built-in `local-file` task source (project-home spec Behaviour 7-9, 12,

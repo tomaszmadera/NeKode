@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { basename, isAbsolute } from 'node:path'
+import type { ProjectInfo } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { parseWslPath, wslProjectPath } from '@shared/wsl-path'
 import type Database from 'better-sqlite3'
-import type { ProjectInfo } from '../../shared/ipc-contract'
-import { AppError } from '../../shared/ipc-error'
-import { parseWslPath, wslProjectPath } from '../../shared/wsl-path'
 
 // ProjectService: project CRUD on top of the projects table.
 // All rule validation happens here (spec Business rules / Edge cases);

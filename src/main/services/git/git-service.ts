@@ -5,9 +5,9 @@ import {
   type GitFileStatusKind,
   type GitStatus,
   type GitWorktreeStatus,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
-import { parseWslPath } from '../../../shared/wsl-path'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { parseWslPath } from '@shared/wsl-path'
 
 // Read-only git status for the status bar (UX-UI §14–16) and, since
 // NEKODE-31, the per-path map behind the file-tree decoration (spec

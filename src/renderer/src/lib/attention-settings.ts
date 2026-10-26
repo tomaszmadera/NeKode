@@ -3,7 +3,7 @@
 // or any value other than '0' means enabled — every toggle defaults on and
 // only an explicit turn-off persists '0'.
 
-import { APP_STATE_KEY } from '../../../shared/ipc-contract'
+import { APP_STATE_KEY } from '@shared/ipc-contract'
 
 export interface AttentionSettings {
   /** Amber badge on unselected chats' rows. */

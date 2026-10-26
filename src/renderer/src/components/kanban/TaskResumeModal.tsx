@@ -1,5 +1,3 @@
-import type React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AgentProfile,
   AppApi,
@@ -9,8 +7,10 @@ import type {
   KanbanLaunchTaskInput,
   KanbanResumeLaunchInput,
   WorkItem,
-} from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
+} from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import type React from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 
 interface TaskResumeModalProps {

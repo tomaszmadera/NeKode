@@ -1,6 +1,6 @@
+import type { AgentProfile, AgentProjectSelection, AppApi } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentProfile, AgentProjectSelection, AppApi } from '../../../../shared/ipc-contract'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { AgentProfilesSettings } from './AgentProfilesSettings'
 

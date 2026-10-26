@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { AppError } from '../../../shared/ipc-error'
-import { parseWslPath, type WslLocation, wslProjectPath } from '../../../shared/wsl-path'
+import { AppError } from '@shared/ipc-error'
+import { parseWslPath, type WslLocation, wslProjectPath } from '@shared/wsl-path'
 import type { ShellSpec } from './shell-service'
 
 export type WslRun = (distribution: string, args: string[]) => string

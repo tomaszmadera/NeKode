@@ -1,6 +1,6 @@
+import type { DictationResult } from '@shared/dictation-contract'
+import type { AppApi } from '@shared/ipc-contract'
 import { useEffect, useRef, useState } from 'react'
-import type { DictationResult } from '../../../shared/dictation-contract'
-import type { AppApi } from '../../../shared/ipc-contract'
 import {
   DictationController,
   type DictationState,

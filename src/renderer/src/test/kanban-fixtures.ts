@@ -1,7 +1,7 @@
 // Shared Kanban board fixtures for the board's test files (KanbanBoard.test.tsx
 // renders the component; kanban-board-logic.test.ts covers the pure helpers).
 // One definition so the two files cannot drift.
-import type { KanbanBoard as KanbanBoardData, WorkItem } from '../../../shared/ipc-contract'
+import type { KanbanBoard as KanbanBoardData, WorkItem } from '@shared/ipc-contract'
 
 /** A minimal work item; the id is derived from the ref so tests read naturally. */
 export function kanbanWorkItem(ref: string, title: string, stateId: string): WorkItem {

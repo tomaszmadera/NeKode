@@ -1,5 +1,5 @@
+import { AppError } from '@shared/ipc-error'
 import { describe, expect, it } from 'vitest'
-import { AppError } from '../../../../shared/ipc-error'
 import {
   STT_ADAPTER_PROTOCOL_VERSION,
   type SttProviderAdapter,

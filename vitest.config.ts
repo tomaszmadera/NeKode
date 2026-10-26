@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { defineConfig } from 'vitest/config'
 
 // Vitest 5: environmentMatchGlobs was removed in Vitest 4; per-environment
@@ -7,6 +8,14 @@ export default defineConfig({
   // Mirrors the renderer define in electron.vite.config.ts.
   define: {
     __APP_VERSION__: JSON.stringify('0.0.0-test'),
+  },
+  // Mirrors the resolve.alias entries in electron.vite.config.ts.
+  resolve: {
+    alias: {
+      '@shared': resolve('src/shared'),
+      '@main': resolve('src/main'),
+      '@renderer': resolve('src/renderer/src'),
+    },
   },
   test: {
     // Renderer tests assert PTY writes synchronously, so the split-write

@@ -1,14 +1,9 @@
+import { shortenHomePath } from '@shared/home-path'
+import type { AppApi, GitStatus, GitWorktreeStatus, ProjectInfo } from '@shared/ipc-contract'
+import { emptyGitWorktree } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useEffect, useState } from 'react'
-import { shortenHomePath } from '../../../../shared/home-path'
-import type {
-  AppApi,
-  GitStatus,
-  GitWorktreeStatus,
-  ProjectInfo,
-} from '../../../../shared/ipc-contract'
-import { emptyGitWorktree } from '../../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../../shared/ipc-error'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'

@@ -1,6 +1,6 @@
+import { emptyGitWorktree, IPC_CHANNEL } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
-import { emptyGitWorktree, IPC_CHANNEL } from '../../shared/ipc-contract'
-import { AppError } from '../../shared/ipc-error'
 import { hostPath } from '../test-support/host-path'
 import { buildValidatedChannels, ValidationError } from './ipc-validation'
 import type { AppServices } from './service-registry'

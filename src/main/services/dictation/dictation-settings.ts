@@ -3,9 +3,9 @@ import {
   type DictationConnectionState,
   type DictationSettings,
   isDictationSettings,
-} from '../../../shared/dictation-contract'
-import { APP_STATE_KEY } from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
+} from '@shared/dictation-contract'
+import { APP_STATE_KEY } from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
 
 export interface DictationStateStore {
   get(key: string): string | null

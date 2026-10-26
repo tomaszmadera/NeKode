@@ -1,11 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
   KanbanAdapterInfo,
   KanbanConfigField,
   KanbanProjectConfig,
-} from '../../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { KanbanSettings } from './KanbanSettings'
 

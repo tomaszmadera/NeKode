@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
 import type {
   DesktopDictationSettings,
   DesktopDictationSetup,
-} from '../../../shared/desktop-dictation-contract'
-import type { AppApi } from '../../../shared/ipc-contract'
-import { parseAppErrorPayload } from '../../../shared/ipc-error'
+} from '@shared/desktop-dictation-contract'
+import type { AppApi } from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
+import { useEffect, useRef, useState } from 'react'
 
 export interface DesktopDictationControl {
   /** Whether the OpenWhispr desktop shortcut is the selected dictation

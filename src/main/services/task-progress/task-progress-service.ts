@@ -8,9 +8,9 @@ import {
   type TaskProgressError,
   type TaskProgressSnapshot,
   type TaskProgressTestResult,
-} from '../../../shared/ipc-contract'
-import { AppError } from '../../../shared/ipc-error'
-import { parseWslPath } from '../../../shared/wsl-path'
+} from '@shared/ipc-contract'
+import { AppError } from '@shared/ipc-error'
+import { parseWslPath } from '@shared/wsl-path'
 import {
   type TaskProgressAction,
   TaskProgressAdapterError,

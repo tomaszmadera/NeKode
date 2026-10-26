@@ -1,12 +1,7 @@
+import type { AppApi, GitStatus, GitWorktreeStatus, ProjectInfo } from '@shared/ipc-contract'
+import { emptyGitWorktree } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type {
-  AppApi,
-  GitStatus,
-  GitWorktreeStatus,
-  ProjectInfo,
-} from '../../../../shared/ipc-contract'
-import { emptyGitWorktree } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
 import { createAppApiStub as appApiStub } from '../../test/app-api-stub'
 import {

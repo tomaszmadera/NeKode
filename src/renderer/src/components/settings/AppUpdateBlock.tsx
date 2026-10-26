@@ -1,7 +1,7 @@
+import { isNewerRelease } from '@shared/app-version'
+import type { AppApi, AppUpdateLatest } from '@shared/ipc-contract'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { isNewerRelease } from '../../../../shared/app-version'
-import type { AppApi, AppUpdateLatest } from '../../../../shared/ipc-contract'
 import { TEST_ID } from '../../lib/test-ids'
 import { GroupBox, SectionLabel, SettingsGroup, secondaryClass } from './settings-ui'
 

@@ -1,7 +1,7 @@
+import { type DictationResult, isDictationResult } from '@shared/dictation-contract'
+import type { AppApi } from '@shared/ipc-contract'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { type DictationResult, isDictationResult } from '../../../shared/dictation-contract'
-import type { AppApi } from '../../../shared/ipc-contract'
 import { encodeWav } from '../lib/dictation/wav'
 import { useDictation } from './useDictation'
 

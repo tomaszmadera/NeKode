@@ -1,12 +1,12 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AppApi,
   KanbanBoard as KanbanBoardData,
   KanbanComment,
   KanbanHandoffAvailabilityResult,
   WorkItem,
-} from '../../../../shared/ipc-contract'
+} from '@shared/ipc-contract'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
 import { kanbanBoardFixture as fixture, kanbanWorkItem as item } from '../../test/kanban-fixtures'

@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { AppError } from '../../../shared/ipc-error'
+import { AppError } from '@shared/ipc-error'
 
 // Adapter host (spec kanban-adapter-interface Behaviour 3, 5): one process
 // per request. The request is a single JSON object written to stdin (stdin

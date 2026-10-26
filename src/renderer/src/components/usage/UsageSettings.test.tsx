@@ -1,11 +1,11 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type UsageSettings as Settings,
   USAGE_REMOVED_ADAPTER_MESSAGE,
   type UsageAdapter,
   type UsageSnapshot,
-} from '../../../../shared/usage-contract'
+} from '@shared/usage-contract'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { UsageSettings } from './UsageSettings'
 
