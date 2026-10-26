@@ -1,38 +1,50 @@
-import { isAbsolute } from 'node:path'
-import { parseAgentCommand } from '@shared/agent-command'
 import { isBottomTabId } from '@shared/bottom-tab-id'
+import { type ActionInput, actionInputSchema } from '@shared/contracts/actions-schema'
+import {
+  type AgentProfilePut,
+  type AgentProjectSelectionInput,
+  agentIdSchema,
+  agentProfilePutSchema,
+  agentProjectSelectionInputSchema,
+} from '@shared/contracts/agent-profiles-schema'
 import {
   type DesktopDictationSettings,
   isDesktopDictationSettings,
 } from '@shared/contracts/desktop-dictation-contract'
 import {
-  type CreateDictionaryEntryInput,
   type DictationSettings,
   isDictationSettings,
   isDictationWav,
-  type SetPostProcessingSettingsInput,
-  type UpdateDictionaryEntryInput,
 } from '@shared/contracts/dictation-contract'
-import { parseUsageSettings, type UsageConnection } from '@shared/contracts/usage-contract'
-import type {
-  ActionInput,
-  AgentProfilePut,
-  AgentProjectSelectionInput,
-  KanbanCreateInput,
-  KanbanHandoffAvailabilityInput,
-  KanbanHandoffCandidatesInput,
-  KanbanLaunchTaskInput,
-  KanbanUpdatePatch,
-} from '@shared/ipc-contract'
 import {
-  agentProfileFieldError,
-  IPC_CHANNEL,
-  isSecretStateKey,
-  isTaskProgressStateKey,
-  KANBAN_PRIORITIES,
-} from '@shared/ipc-contract'
+  type CreateDictionaryEntryInput,
+  createDictionaryEntryInputSchema,
+  providerConfigSchema,
+  type SetPostProcessingSettingsInput,
+  setPostProcessingSettingsInputSchema,
+  type UpdateDictionaryEntryInput,
+  updateDictionaryEntryInputSchema,
+} from '@shared/contracts/dictation-schema'
+import {
+  type KanbanCreateInput,
+  type KanbanHandoffAvailabilityInput,
+  type KanbanHandoffCandidatesInput,
+  type KanbanLaunchTaskInput,
+  type KanbanSetConfigInput,
+  type KanbanUpdatePatch,
+  kanbanCreateInputSchema,
+  kanbanHandoffAvailabilityInputSchema,
+  kanbanHandoffCandidatesInputSchema,
+  kanbanLaunchTaskInputSchema,
+  kanbanSetConfigInputSchema,
+  kanbanUpdatePatchSchema,
+} from '@shared/contracts/kanban-schema'
+import { BARE_MESSAGE, safePathSchema, stringValuesSchema } from '@shared/contracts/schema-rules'
+import { parseUsageSettings, type UsageConnection } from '@shared/contracts/usage-contract'
+import { IPC_CHANNEL, isSecretStateKey, isTaskProgressStateKey } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { wslProjectPath } from '@shared/wsl-path'
+import type { z } from 'zod'
 import type { AppServices } from './service-registry'
 
 // Payload validation layer in front of the real services (spec Errors:
@@ -64,23 +76,9 @@ const assertFiniteNumber: Validator = (value, label) => {
   }
 }
 
-/**
- * Path-shaped arguments (project roots, terminal cwd) are renderer-supplied
- * strings that become OS operations. Reject ambiguous input up front: NUL
- * bytes, relative paths and '..' segments (traversal).
- */
+/** Absolute path without NUL or '..' segments; the rule lives in `safePathSchema`. */
 const assertSafePath: Validator = (value, label) => {
-  assertString(value, label)
-  const path = value as string
-  if (path.includes('\u0000')) {
-    fail(label, 'must not contain NUL characters')
-  }
-  if (!isAbsolute(path)) {
-    fail(label, 'must be an absolute path')
-  }
-  if (path.split(/[\\/]+/).includes('..')) {
-    fail(label, 'must not contain ".." segments')
-  }
+  parsePayload(safePathSchema, value, label)
 }
 
 /**
@@ -115,64 +113,28 @@ function fail(label: string, rule: string): never {
   throw new ValidationError(`${label} ${rule}`)
 }
 
+/**
+ * Runs a payload schema. The first issue becomes a ValidationError labelled
+ * like the hand-written checks it replaced (`<label><path> <rule>`); an issue
+ * marked `BARE_MESSAGE` is a complete sentence and is reported as is. The
+ * schemas carry no transforms, so the validated input passes through unchanged.
+ */
+function parsePayload<S extends z.ZodType>(schema: S, value: unknown, label: string): z.output<S> {
+  const result = schema.safeParse(value)
+  if (result.success) return value as z.output<S>
+  const issue = result.error.issues[0]
+  if (issue.code === 'custom' && issue.params?.bare === BARE_MESSAGE.bare) {
+    throw new ValidationError(issue.message)
+  }
+  const path = issue.path
+    .map((segment) => (typeof segment === 'number' ? `[${segment}]` : `.${String(segment)}`))
+    .join('')
+  throw new ValidationError(`${label}${path} ${issue.message}`)
+}
+
 function requireArgs(payload: unknown[], count: number, channel: string): void {
   if (payload.length !== count) {
     throw new ValidationError(`${channel}: expected ${count} argument(s), got ${payload.length}`)
-  }
-}
-
-function assertActionInput(value: unknown, label: string): asserts value is ActionInput {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    fail(label, 'must be an action object')
-  const input = value as Record<string, unknown>
-  const keys = [
-    'scope',
-    'projectId',
-    'title',
-    'icon',
-    'command',
-    'cwd',
-    'runMode',
-    'confirm',
-    'sortOrder',
-  ]
-  if (
-    Object.keys(input).length !== keys.length ||
-    Object.keys(input).some((key) => !keys.includes(key))
-  )
-    fail(label, 'has unexpected or missing fields')
-  if (input.scope !== 'global' && input.scope !== 'project') fail(`${label}.scope`, 'is invalid')
-  if (input.projectId !== null) assertString(input.projectId, `${label}.projectId`)
-  if (typeof input.title !== 'string' || !input.title.trim())
-    fail(`${label}.title`, 'must be non-empty')
-  if (input.icon !== null) assertString(input.icon, `${label}.icon`)
-  if (typeof input.command !== 'string' || !input.command.trim())
-    fail(`${label}.command`, 'must be non-empty')
-  if (input.cwd !== null) assertSafePath(input.cwd, `${label}.cwd`)
-  if (
-    input.runMode !== 'background' &&
-    input.runMode !== 'new-terminal' &&
-    input.runMode !== 'bottom-terminal'
-  )
-    fail(`${label}.runMode`, 'is invalid')
-  if (typeof input.confirm !== 'boolean') fail(`${label}.confirm`, 'must be a boolean')
-  if (typeof input.sortOrder !== 'number' || !Number.isSafeInteger(input.sortOrder))
-    fail(`${label}.sortOrder`, 'must be an integer')
-  if ((input.scope === 'project') !== (input.projectId !== null))
-    fail(label, 'has inconsistent scope and projectId')
-}
-
-function assertKanbanValues(
-  value: unknown,
-  label: string,
-): asserts value is Record<string, string> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof entry !== 'string') {
-      fail(`${label}.${key}`, 'must be a string')
-    }
   }
 }
 
@@ -204,391 +166,6 @@ function requireArgsWithOptional(payload: unknown[], count: number, channel: str
   }
 }
 
-function assertOptionalKanbanValues(
-  value: unknown,
-  label: string,
-): asserts value is Record<string, string> | undefined {
-  if (value === undefined) {
-    return
-  }
-  assertKanbanValues(value, label)
-}
-
-function assertObject(value: unknown, label: string): asserts value is Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-}
-
-function assertCreateDictionaryEntry(
-  value: unknown,
-  label: string,
-): asserts value is CreateDictionaryEntryInput {
-  assertObject(value, label)
-  if (typeof value.term !== 'string' || value.term.trim().length === 0) {
-    fail(`${label}.term`, 'must be a non-empty string')
-  }
-  if (value.scope !== 'global' && value.scope !== 'project') {
-    fail(`${label}.scope`, "must be 'global' or 'project'")
-  }
-  if (value.scope === 'project') {
-    if (typeof value.projectId !== 'string' || value.projectId.trim().length === 0) {
-      fail(`${label}.projectId`, 'must be a non-empty string for project scope')
-    }
-  } else if (value.projectId !== undefined && value.projectId !== null) {
-    fail(`${label}.projectId`, 'must not be set for global scope')
-  }
-  if (value.aliases !== undefined) {
-    if (!Array.isArray(value.aliases) || !value.aliases.every((a) => typeof a === 'string')) {
-      fail(`${label}.aliases`, 'must be an array of strings')
-    }
-  }
-  if (
-    value.description !== undefined &&
-    value.description !== null &&
-    typeof value.description !== 'string'
-  ) {
-    fail(`${label}.description`, 'must be a string or null')
-  }
-  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
-    fail(`${label}.enabled`, 'must be a boolean')
-  }
-}
-
-function assertUpdateDictionaryEntry(
-  value: unknown,
-  label: string,
-): asserts value is UpdateDictionaryEntryInput {
-  assertObject(value, label)
-  if (
-    value.term !== undefined &&
-    (typeof value.term !== 'string' || value.term.trim().length === 0)
-  ) {
-    fail(`${label}.term`, 'must be a non-empty string')
-  }
-  if (
-    value.aliases !== undefined &&
-    (!Array.isArray(value.aliases) || !value.aliases.every((a) => typeof a === 'string'))
-  ) {
-    fail(`${label}.aliases`, 'must be an array of strings')
-  }
-  if (
-    value.description !== undefined &&
-    value.description !== null &&
-    typeof value.description !== 'string'
-  ) {
-    fail(`${label}.description`, 'must be a string or null')
-  }
-  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
-    fail(`${label}.enabled`, 'must be a boolean')
-  }
-}
-
-function assertPostProcessingSettings(
-  value: unknown,
-  label: string,
-): asserts value is SetPostProcessingSettingsInput {
-  assertObject(value, label)
-  if (
-    value.mode !== 'disabled' &&
-    value.mode !== 'provider_native' &&
-    value.mode !== 'external_llm'
-  ) {
-    fail(`${label}.mode`, "must be 'disabled', 'provider_native', or 'external_llm'")
-  }
-  if (value.level !== 'light' && value.level !== 'medium' && value.level !== 'full') {
-    fail(`${label}.level`, "must be 'light', 'medium', or 'full'")
-  }
-  if (value.model !== undefined && typeof value.model !== 'string') {
-    fail(`${label}.model`, 'must be a string')
-  }
-  if (value.apiKey !== undefined && typeof value.apiKey !== 'string') {
-    fail(`${label}.apiKey`, 'must be a string')
-  }
-}
-
-const AGENT_PROFILE_PUT_KEYS = ['id', 'name', 'command']
-
-function assertAgentId(value: unknown, label: string): asserts value is string {
-  assertString(value, label)
-  const id = value as string
-  if (id.length === 0 || id.includes('\u0000'))
-    fail(label, 'must be non-empty without NUL characters')
-}
-
-function assertAgentProfilePut(value: unknown, label: string): asserts value is AgentProfilePut {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-  const input = value as Record<string, unknown>
-  const keys = Object.keys(input)
-  if (
-    AGENT_PROFILE_PUT_KEYS.some((key) => !keys.includes(key)) ||
-    keys.some((key) => !AGENT_PROFILE_PUT_KEYS.includes(key) && key !== 'interactiveArgs')
-  ) {
-    fail(label, 'has unexpected or missing fields')
-  }
-  if (input.id !== null) {
-    assertAgentId(input.id, `${label}.id`)
-  }
-  assertString(input.name, `${label}.name`)
-  assertString(input.command, `${label}.command`)
-  let parsed: ReturnType<typeof parseAgentCommand>
-  try {
-    parsed = parseAgentCommand(input.command as string)
-  } catch (error) {
-    throw new ValidationError((error as Error).message)
-  }
-  const message = agentProfileFieldError({
-    name: input.name as string,
-    ...parsed,
-    interactiveArgs: input.interactiveArgs as string[] | undefined,
-  })
-  if (message !== null) throw new ValidationError(message)
-}
-
-function assertAgentSelection(
-  value: unknown,
-  label: string,
-): asserts value is AgentProjectSelectionInput {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    fail(label, 'must be an object')
-  const input = value as Record<string, unknown>
-  if (
-    Object.keys(input).length !== 2 ||
-    Object.keys(input).some((key) => key !== 'selectedIds' && key !== 'defaultId')
-  )
-    fail(label, 'has unexpected or missing fields')
-  if (!Array.isArray(input.selectedIds)) fail(`${label}.selectedIds`, 'must be an array')
-  input.selectedIds.forEach((id, index) => {
-    assertAgentId(id, `${label}.selectedIds[${index}]`)
-  })
-  if (new Set(input.selectedIds).size !== input.selectedIds.length)
-    fail(label, 'selected ids must be unique')
-  if (input.defaultId !== null) {
-    assertAgentId(input.defaultId, `${label}.defaultId`)
-    if (!input.selectedIds.includes(input.defaultId)) fail(label, 'default agent must be selected')
-  }
-}
-
-function assertKanbanSetConfig(
-  value: unknown,
-  label: string,
-): asserts value is { adapterId: string | null; values: Record<string, string> } {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-  const input = value as Record<string, unknown>
-  if (input.adapterId !== null && typeof input.adapterId !== 'string') {
-    fail(`${label}.adapterId`, 'must be a string or null')
-  }
-  assertKanbanValues(input.values, `${label}.values`)
-}
-
-function assertKanbanCreateInput(
-  value: unknown,
-  label: string,
-): asserts value is KanbanCreateInput {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-  const input = value as Record<string, unknown>
-  if (typeof input.title !== 'string' || !input.title.trim()) {
-    fail(`${label}.title`, 'must be non-empty')
-  }
-  if (input.description !== undefined && typeof input.description !== 'string') {
-    fail(`${label}.description`, 'must be a string')
-  }
-  if (
-    input.stateRef !== undefined &&
-    (typeof input.stateRef !== 'string' || !input.stateRef.trim())
-  ) {
-    fail(`${label}.stateRef`, 'must be non-empty')
-  }
-  if (
-    input.priority !== undefined &&
-    (typeof input.priority !== 'string' || !KANBAN_PRIORITIES.includes(input.priority as never))
-  ) {
-    fail(`${label}.priority`, `must be one of ${KANBAN_PRIORITIES.join('|')}`)
-  }
-}
-
-function assertKanbanUpdatePatch(
-  value: unknown,
-  label: string,
-): asserts value is KanbanUpdatePatch {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-  const input = value as Record<string, unknown>
-  const present = Object.keys(input)
-  if (present.length === 0) {
-    fail(label, 'must change at least one field')
-  }
-  for (const key of present) {
-    if (key !== 'title' && key !== 'description' && key !== 'stateRef' && key !== 'priority') {
-      fail(`${label}.${key}`, 'is not a patchable field')
-    }
-  }
-  if (input.title !== undefined && (typeof input.title !== 'string' || !input.title.trim())) {
-    fail(`${label}.title`, 'must be non-empty')
-  }
-  if (input.description !== undefined && typeof input.description !== 'string') {
-    fail(`${label}.description`, 'must be a string')
-  }
-  if (
-    input.stateRef !== undefined &&
-    (typeof input.stateRef !== 'string' || !input.stateRef.trim())
-  ) {
-    fail(`${label}.stateRef`, 'must be non-empty')
-  }
-  if (
-    input.priority !== undefined &&
-    input.priority !== null &&
-    (typeof input.priority !== 'string' || !KANBAN_PRIORITIES.includes(input.priority as never))
-  ) {
-    fail(`${label}.priority`, `must be one of ${KANBAN_PRIORITIES.join('|')} or null`)
-  }
-}
-
-const LAUNCH_TASK_FIELDS = ['projectId', 'itemId', 'ref', 'profileId', 'attemptId', 'mode'] as const
-const LAUNCH_TASK_RESUME_FIELDS = [...LAUNCH_TASK_FIELDS, 'fileName', 'stamp'] as const
-
-function assertKanbanLaunchTask(
-  value: unknown,
-  label: string,
-): asserts value is KanbanLaunchTaskInput {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-  const input = value as Record<string, unknown>
-  if (input.mode !== 'start' && input.mode !== 'resume' && input.mode !== 'draft') {
-    fail(`${label}.mode`, 'must be "start", "resume" or "draft"')
-  }
-  const allowed: readonly string[] =
-    input.mode === 'resume' ? LAUNCH_TASK_RESUME_FIELDS : LAUNCH_TASK_FIELDS
-  const keys = Object.keys(input)
-  if (keys.length !== allowed.length || keys.some((key) => !allowed.includes(key))) {
-    fail(label, 'has unexpected or missing fields')
-  }
-  for (const field of ['projectId', 'itemId', 'ref', 'profileId', 'attemptId'] as const) {
-    const fieldValue = input[field]
-    if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
-      fail(`${label}.${field}`, 'must be a non-empty string')
-    }
-    if (fieldValue.includes('\u0000')) {
-      fail(`${label}.${field}`, 'must not contain NUL characters')
-    }
-  }
-  if (input.mode === 'resume') {
-    for (const field of ['fileName', 'stamp'] as const) {
-      const fieldValue = input[field]
-      if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
-        fail(`${label}.${field}`, 'must be a non-empty string')
-      }
-      if (fieldValue.includes('\u0000')) {
-        fail(`${label}.${field}`, 'must not contain NUL characters')
-      }
-    }
-    // The renderer sends a name from a scan result main just produced, never a
-    // free path: a separator or a dot segment is rejected here.
-    const fileName = input.fileName as string
-    if (/[\\/]/.test(fileName) || fileName === '.' || fileName === '..') {
-      fail(`${label}.fileName`, 'must be a file name, not a path')
-    }
-  }
-}
-
-const HANDOFF_CANDIDATES_FIELDS = ['projectId', 'itemId', 'ref'] as const
-
-/** Shared projectId/itemId/ref shape for the handoff candidates channel. */
-function assertHandoffIdentity(
-  input: Record<string, unknown>,
-  label: string,
-  fields: readonly string[],
-): void {
-  const keys = Object.keys(input)
-  if (keys.length !== fields.length || keys.some((key) => !fields.includes(key))) {
-    fail(label, 'has unexpected or missing fields')
-  }
-  for (const field of ['projectId', 'itemId', 'ref'] as const) {
-    const fieldValue = input[field]
-    if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
-      fail(`${label}.${field}`, 'must be a non-empty string')
-    }
-    if ((fieldValue as string).includes('\u0000')) {
-      fail(`${label}.${field}`, 'must not contain NUL characters')
-    }
-  }
-}
-
-function assertKanbanHandoffCandidates(
-  value: unknown,
-  label: string,
-): asserts value is KanbanHandoffCandidatesInput {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-  assertHandoffIdentity(value as Record<string, unknown>, label, HANDOFF_CANDIDATES_FIELDS)
-}
-
-const HANDOFF_AVAILABILITY_FIELDS = ['projectId', 'items'] as const
-const HANDOFF_AVAILABILITY_ITEM_FIELDS = ['itemId', 'ref'] as const
-
-/**
- * Batch handoff check body: one project id and the loaded items' identities
- * (`{ itemId, ref }`). The renderer never sends a disk path; main resolves the
- * directory from its own state. Shape only here.
- */
-function assertKanbanHandoffAvailability(
-  value: unknown,
-  label: string,
-): asserts value is KanbanHandoffAvailabilityInput {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(label, 'must be an object')
-  }
-  const input = value as Record<string, unknown>
-  const keys = Object.keys(input)
-  if (
-    keys.length !== HANDOFF_AVAILABILITY_FIELDS.length ||
-    keys.some((key) => !HANDOFF_AVAILABILITY_FIELDS.includes(key as never))
-  ) {
-    fail(label, 'has unexpected or missing fields')
-  }
-  const projectId = input.projectId
-  if (typeof projectId !== 'string' || projectId.trim().length === 0) {
-    fail(`${label}.projectId`, 'must be a non-empty string')
-  }
-  if ((projectId as string).includes('\u0000')) {
-    fail(`${label}.projectId`, 'must not contain NUL characters')
-  }
-  if (!Array.isArray(input.items)) {
-    fail(`${label}.items`, 'must be an array')
-  }
-  input.items.forEach((entry, index) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      fail(`${label}.items[${index}]`, 'must be an object')
-    }
-    const item = entry as Record<string, unknown>
-    const itemKeys = Object.keys(item)
-    if (
-      itemKeys.length !== HANDOFF_AVAILABILITY_ITEM_FIELDS.length ||
-      itemKeys.some((key) => !HANDOFF_AVAILABILITY_ITEM_FIELDS.includes(key as never))
-    ) {
-      fail(`${label}.items[${index}]`, 'has unexpected or missing fields')
-    }
-    for (const field of HANDOFF_AVAILABILITY_ITEM_FIELDS) {
-      const fieldValue = item[field]
-      if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
-        fail(`${label}.items[${index}].${field}`, 'must be a non-empty string')
-      }
-      if ((fieldValue as string).includes('\u0000')) {
-        fail(`${label}.items[${index}].${field}`, 'must not contain NUL characters')
-      }
-    }
-  })
-}
-
 function actionInputChannel(
   channel: string,
   withId: boolean,
@@ -600,7 +177,7 @@ function actionInputChannel(
       requireArgs(payload, withId ? 2 : 1, channel)
       if (withId) assertString(payload[0], `${channel} arg[0]`)
       const input = payload[withId ? 1 : 0]
-      assertActionInput(input, `${channel} input`)
+      parsePayload(actionInputSchema, input, `${channel} input`)
       return withId ? [payload[0], input] : [input]
     },
     invoke: (args) =>
@@ -776,7 +353,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         if (!(payload[0] as string).trim())
           fail(IPC_CHANNEL.dictationProvidersTestConnection, 'requires a providerId')
         if (payload.length === 2 && payload[1] !== undefined) {
-          assertObject(payload[1], 'dictation:providersTestConnection config')
+          parsePayload(providerConfigSchema, payload[1], 'dictation:providersTestConnection config')
         }
         return payload
       },
@@ -794,7 +371,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         if (!(payload[0] as string).trim())
           fail(IPC_CHANNEL.dictationProvidersDiscoverModels, 'requires a providerId')
         if (payload.length === 2 && payload[1] !== undefined) {
-          assertObject(payload[1], 'dictation:providersDiscoverModels config')
+          parsePayload(providerConfigSchema, payload[1], 'dictation:providersDiscoverModels config')
         }
         return payload
       },
@@ -822,7 +399,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         assertString(payload[0], 'dictation:providersSetConfig providerId')
         if (!(payload[0] as string).trim())
           fail(IPC_CHANNEL.dictationProvidersSetConfig, 'requires a providerId')
-        assertObject(payload[1], 'dictation:providersSetConfig config')
+        parsePayload(providerConfigSchema, payload[1], 'dictation:providersSetConfig config')
         return payload
       },
       invoke: (args) =>
@@ -849,7 +426,11 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.dictationDictionaryAdd,
       parse: (payload) => {
         requireArgs(payload, 1, IPC_CHANNEL.dictationDictionaryAdd)
-        assertCreateDictionaryEntry(payload[0], IPC_CHANNEL.dictationDictionaryAdd)
+        parsePayload(
+          createDictionaryEntryInputSchema,
+          payload[0],
+          IPC_CHANNEL.dictationDictionaryAdd,
+        )
         return payload
       },
       invoke: (args) => services.dictation.dictionaryAdd(args[0] as CreateDictionaryEntryInput),
@@ -861,7 +442,11 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         assertString(payload[0], 'dictation:dictionaryUpdate id')
         if (!(payload[0] as string).trim())
           fail(IPC_CHANNEL.dictationDictionaryUpdate, 'requires an id')
-        assertUpdateDictionaryEntry(payload[1], IPC_CHANNEL.dictationDictionaryUpdate)
+        parsePayload(
+          updateDictionaryEntryInputSchema,
+          payload[1],
+          IPC_CHANNEL.dictationDictionaryUpdate,
+        )
         return payload
       },
       invoke: (args) =>
@@ -901,7 +486,11 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.dictationPostProcessingSetSettings,
       parse: (payload) => {
         requireArgs(payload, 1, IPC_CHANNEL.dictationPostProcessingSetSettings)
-        assertPostProcessingSettings(payload[0], IPC_CHANNEL.dictationPostProcessingSetSettings)
+        parsePayload(
+          setPostProcessingSettingsInputSchema,
+          payload[0],
+          IPC_CHANNEL.dictationPostProcessingSetSettings,
+        )
         return payload
       },
       invoke: (args) =>
@@ -1151,21 +740,22 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       parse: (payload) => {
         requireArgs(payload, 2, IPC_CHANNEL.kanbanSetConfig)
         assertString(payload[0], `${IPC_CHANNEL.kanbanSetConfig} arg[0]`)
-        assertKanbanSetConfig(payload[1], `${IPC_CHANNEL.kanbanSetConfig} arg[1]`)
+        parsePayload(
+          kanbanSetConfigInputSchema,
+          payload[1],
+          `${IPC_CHANNEL.kanbanSetConfig} arg[1]`,
+        )
         return payload
       },
       invoke: (args) =>
-        services.kanban.setConfig(
-          args[0] as string,
-          args[1] as { adapterId: string | null; values: Record<string, string> },
-        ),
+        services.kanban.setConfig(args[0] as string, args[1] as KanbanSetConfigInput),
     },
     {
       channel: IPC_CHANNEL.kanbanTest,
       parse: (payload) => {
         requireArgs(payload, 2, IPC_CHANNEL.kanbanTest)
         assertString(payload[0], `${IPC_CHANNEL.kanbanTest} arg[0]`)
-        assertOptionalKanbanValues(payload[1], `${IPC_CHANNEL.kanbanTest} arg[1]`)
+        parsePayload(stringValuesSchema.optional(), payload[1], `${IPC_CHANNEL.kanbanTest} arg[1]`)
         return payload
       },
       invoke: (args) =>
@@ -1179,7 +769,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       parse: (payload) => {
         requireArgsWithOptional(payload, 2, IPC_CHANNEL.kanbanCreateItem)
         assertString(payload[0], `${IPC_CHANNEL.kanbanCreateItem} arg[0]`)
-        assertKanbanCreateInput(payload[1], `${IPC_CHANNEL.kanbanCreateItem} arg[1]`)
+        parsePayload(kanbanCreateInputSchema, payload[1], `${IPC_CHANNEL.kanbanCreateItem} arg[1]`)
         assertOptionalRevision(payload[2], `${IPC_CHANNEL.kanbanCreateItem} arg[2]`)
         return payload
       },
@@ -1198,7 +788,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         requireArgsWithOptional(payload, 3, IPC_CHANNEL.kanbanUpdateItem)
         assertString(payload[0], `${IPC_CHANNEL.kanbanUpdateItem} arg[0]`)
         assertString(payload[1], `${IPC_CHANNEL.kanbanUpdateItem} arg[1]`)
-        assertKanbanUpdatePatch(payload[2], `${IPC_CHANNEL.kanbanUpdateItem} arg[2]`)
+        parsePayload(kanbanUpdatePatchSchema, payload[2], `${IPC_CHANNEL.kanbanUpdateItem} arg[2]`)
         assertOptionalRevision(payload[3], `${IPC_CHANNEL.kanbanUpdateItem} arg[3]`)
         return payload
       },
@@ -1287,7 +877,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.kanbanLaunchTask,
       parse: (payload) => {
         requireArgs(payload, 1, IPC_CHANNEL.kanbanLaunchTask)
-        assertKanbanLaunchTask(payload[0], IPC_CHANNEL.kanbanLaunchTask)
+        parsePayload(kanbanLaunchTaskInputSchema, payload[0], IPC_CHANNEL.kanbanLaunchTask)
         return payload
       },
       invoke: (args) => services.kanban.launchTask(args[0] as KanbanLaunchTaskInput),
@@ -1296,7 +886,11 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.kanbanHandoffCandidates,
       parse: (payload) => {
         requireArgs(payload, 1, IPC_CHANNEL.kanbanHandoffCandidates)
-        assertKanbanHandoffCandidates(payload[0], IPC_CHANNEL.kanbanHandoffCandidates)
+        parsePayload(
+          kanbanHandoffCandidatesInputSchema,
+          payload[0],
+          IPC_CHANNEL.kanbanHandoffCandidates,
+        )
         return payload
       },
       invoke: (args) => services.kanban.handoffCandidates(args[0] as KanbanHandoffCandidatesInput),
@@ -1305,7 +899,11 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.kanbanHandoffAvailability,
       parse: (payload) => {
         requireArgs(payload, 1, IPC_CHANNEL.kanbanHandoffAvailability)
-        assertKanbanHandoffAvailability(payload[0], IPC_CHANNEL.kanbanHandoffAvailability)
+        parsePayload(
+          kanbanHandoffAvailabilityInputSchema,
+          payload[0],
+          IPC_CHANNEL.kanbanHandoffAvailability,
+        )
         return payload
       },
       invoke: (args) =>
@@ -1329,7 +927,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         if (payload[1] !== null) {
           assertAdapterId(payload[1], `${channel} arg[1]`)
         }
-        assertKanbanValues(payload[2], `${channel} arg[2]`)
+        parsePayload(stringValuesSchema, payload[2], `${channel} arg[2]`)
         return payload
       },
       invoke: (args) =>
@@ -1346,7 +944,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         requireArgs(payload, 3, channel)
         assertString(payload[0], `${channel} arg[0]`)
         assertAdapterId(payload[1], `${channel} arg[1]`)
-        assertKanbanValues(payload[2], `${channel} arg[2]`)
+        parsePayload(stringValuesSchema, payload[2], `${channel} arg[2]`)
         return payload
       },
       invoke: (args) =>
@@ -1388,7 +986,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.agentProfilesSelectionGet,
       parse: (payload) => {
         requireArgs(payload, 1, IPC_CHANNEL.agentProfilesSelectionGet)
-        assertAgentId(payload[0], 'projectId')
+        parsePayload(agentIdSchema, payload[0], 'projectId')
         return payload
       },
       invoke: (args) => services.agentProfiles.selectionGet(args[0] as string),
@@ -1397,8 +995,8 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.agentProfilesSelectionSet,
       parse: (payload) => {
         requireArgs(payload, 2, IPC_CHANNEL.agentProfilesSelectionSet)
-        assertAgentId(payload[0], 'projectId')
-        assertAgentSelection(payload[1], 'selection')
+        parsePayload(agentIdSchema, payload[0], 'projectId')
+        parsePayload(agentProjectSelectionInputSchema, payload[1], 'selection')
         return payload
       },
       invoke: (args) =>
@@ -1411,7 +1009,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.agentProfilesPut,
       parse: (payload) => {
         requireArgs(payload, 1, IPC_CHANNEL.agentProfilesPut)
-        assertAgentProfilePut(payload[0], `${IPC_CHANNEL.agentProfilesPut} arg[0]`)
+        parsePayload(agentProfilePutSchema, payload[0], `${IPC_CHANNEL.agentProfilesPut} arg[0]`)
         return payload
       },
       invoke: (args) => services.agentProfiles.put(args[0] as AgentProfilePut),
@@ -1420,7 +1018,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       channel: IPC_CHANNEL.agentProfilesDelete,
       parse: (payload) => {
         requireArgs(payload, 1, IPC_CHANNEL.agentProfilesDelete)
-        assertAgentId(payload[0], `${IPC_CHANNEL.agentProfilesDelete} arg[0]`)
+        parsePayload(agentIdSchema, payload[0], `${IPC_CHANNEL.agentProfilesDelete} arg[0]`)
         return payload
       },
       invoke: (args) => services.agentProfiles.delete(args[0] as string),

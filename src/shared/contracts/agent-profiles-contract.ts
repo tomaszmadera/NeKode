@@ -1,3 +1,8 @@
+import type { AgentProjectSelectionInput } from './agent-profiles-schema'
+
+// Validated payload types are inferred from their schemas (one source of truth).
+export type { AgentProfilePut, AgentProjectSelectionInput } from './agent-profiles-schema'
+
 /**
  * The one argv element a profile reserves for the launch prompt. The saved
  * prompt replaces this whole element later; it is never concatenated into
@@ -27,11 +32,6 @@ export interface AgentProfileTemplate {
   command: string
 }
 
-export interface AgentProjectSelectionInput {
-  selectedIds: string[]
-  defaultId: string | null
-}
-
 export interface AgentProjectSelection extends AgentProjectSelectionInput {
   version: 1
 }
@@ -40,17 +40,6 @@ export interface AgentProjectSelection extends AgentProjectSelectionInput {
 export interface AgentProfilesDocument {
   defaultId: string | null
   profiles: AgentProfile[]
-}
-
-/**
- * `agentProfiles:put` body. `id: null` creates a global profile. A string
- * edits the same definition for future launches in every selected project.
- */
-export interface AgentProfilePut {
-  id: string | null
-  name: string
-  command: string
-  interactiveArgs?: string[]
 }
 
 export const AGENT_PROFILES_LIBRARY_KEY = 'agents.library'

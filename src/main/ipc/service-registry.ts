@@ -39,6 +39,7 @@ import type {
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   KanbanProjectConfig,
+  KanbanSetConfigInput,
   KanbanSkillStatus,
   KanbanUpdatePatch,
   ProjectInfo,
@@ -245,10 +246,7 @@ export interface AppServices {
     /** Binding + stored values; secret values never leave main. */
     getConfig(projectId: string): KanbanProjectConfig
     /** Persists binding and values (empty string clears; missing secret key keeps). */
-    setConfig(
-      projectId: string,
-      config: { adapterId: string | null; values: Record<string, string> },
-    ): void
+    setConfig(projectId: string, config: KanbanSetConfigInput): void
     /** Adapter `test` invocation; optional unsaved-values override. */
     test(projectId: string, values?: Record<string, string>): Promise<void>
     /** Normalized states + items of the bound adapter's backend. */

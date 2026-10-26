@@ -1,16 +1,7 @@
+import type { ActionInput } from './actions-schema'
 import type { ChatInfo } from './chats-contract'
 
-export interface ActionInput {
-  scope: 'global' | 'project'
-  projectId: string | null
-  title: string
-  icon: string | null
-  command: string
-  cwd: string | null
-  runMode: 'background' | 'new-terminal' | 'bottom-terminal'
-  confirm: boolean
-  sortOrder: number
-}
+export type { ActionInput } from './actions-schema'
 
 export interface ActionControl extends ActionInput {
   id: string

@@ -1,3 +1,10 @@
+// Validated payload types are inferred from their schemas (one source of truth).
+export type {
+  CreateDictionaryEntryInput,
+  SetPostProcessingSettingsInput,
+  UpdateDictionaryEntryInput,
+} from './dictation-schema'
+
 export const DICTATION_CONNECTION_STATES = [
   'bridge-missing',
   'bridge-invalid',
@@ -159,23 +166,6 @@ export interface DictationDictionaryEntry {
   updatedAt: string
 }
 
-export interface CreateDictionaryEntryInput {
-  id?: string
-  term: string
-  aliases?: string[]
-  description?: string | null
-  scope: 'global' | 'project'
-  projectId?: string | null
-  enabled?: boolean
-}
-
-export interface UpdateDictionaryEntryInput {
-  term?: string
-  aliases?: string[]
-  description?: string | null
-  enabled?: boolean
-}
-
 export type DictationPostProcessingMode = 'disabled' | 'provider_native' | 'external_llm'
 export type DictationPostProcessingLevel = 'light' | 'medium' | 'full'
 
@@ -184,13 +174,6 @@ export interface DictationPostProcessingSettings {
   level: DictationPostProcessingLevel
   model?: string
   hasApiKey: boolean
-}
-
-export interface SetPostProcessingSettingsInput {
-  mode: string
-  level: string
-  model?: string
-  apiKey?: string
 }
 
 // About 17 minutes of PCM, bounded before IPC allocation reaches filesystem work.

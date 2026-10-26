@@ -40,6 +40,7 @@ import type {
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   KanbanProjectConfig,
+  KanbanSetConfigInput,
   KanbanSkillStatus,
   KanbanUpdatePatch,
   WorkItem,
@@ -414,10 +415,7 @@ export interface AppApi {
      * Persists binding and field values. A missing (vs empty) secret entry
      * keeps the stored secret; an empty string clears any stored value.
      */
-    setConfig(
-      projectId: string,
-      config: { adapterId: string | null; values: Record<string, string> },
-    ): Promise<void>
+    setConfig(projectId: string, config: KanbanSetConfigInput): Promise<void>
     /** Invokes the adapter's `test` action; `values` falls back to stored config. */
     test(projectId: string, values?: Record<string, string>): Promise<void>
     /**

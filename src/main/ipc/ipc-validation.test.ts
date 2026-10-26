@@ -742,6 +742,132 @@ describe('ipc payload validation', () => {
     }
   })
 
+  it('reports a schema failure with the channel label and field path (spec Errors)', () => {
+    const channels = channelMap()
+    const action = {
+      scope: 'global',
+      projectId: null,
+      title: 'Build',
+      icon: null,
+      command: 'pnpm build',
+      cwd: null,
+      runMode: 'background',
+      confirm: false,
+      sortOrder: 0,
+    }
+    const cases: Array<[string, unknown[], string]> = [
+      [
+        'actions:create',
+        [{ ...action, cwd: 'relative' }],
+        'actions:create input.cwd must be an absolute path',
+      ],
+      [
+        'actions:create',
+        [{ ...action, sortOrder: 1.5 }],
+        'actions:create input.sortOrder must be an integer',
+      ],
+      [
+        'actions:create',
+        [{ ...action, projectId: 'p1' }],
+        'actions:create input has inconsistent scope and projectId',
+      ],
+      [
+        'actions:create',
+        [{ ...action, extra: 1 }],
+        'actions:create input has unexpected or missing fields',
+      ],
+      ['actions:create', ['x'], 'actions:create input must be an action object'],
+      [
+        'kanban:setConfig',
+        ['p1', { adapterId: 1, values: {} }],
+        'kanban:setConfig arg[1].adapterId must be a string or null',
+      ],
+      [
+        'kanban:setConfig',
+        ['p1', { adapterId: null, values: { a: 1 } }],
+        'kanban:setConfig arg[1].values.a must be a string',
+      ],
+      [
+        'kanban:updateItem',
+        ['p1', 'R', { x: 1 }],
+        'kanban:updateItem arg[2].x is not a patchable field',
+      ],
+      [
+        'kanban:updateItem',
+        ['p1', 'R', {}],
+        'kanban:updateItem arg[2] must change at least one field',
+      ],
+      [
+        'kanban:createItem',
+        ['p1', { title: 'T', priority: 'top' }],
+        'kanban:createItem arg[1].priority must be one of urgent|high|medium|low',
+      ],
+      [
+        'kanban:handoffAvailability',
+        [{ projectId: 'p1', items: [{ itemId: 'a\u0000', ref: 'R' }] }],
+        'kanban:handoffAvailability.items[0].itemId must not contain NUL characters',
+      ],
+      [
+        'dictation:dictionaryAdd',
+        [{ term: 'v', scope: 'global', projectId: 'p1' }],
+        'dictation:dictionaryAdd.projectId must not be set for global scope',
+      ],
+      [
+        'dictation:postProcessingSetSettings',
+        [{ mode: 'disabled', level: 'max' }],
+        "dictation:postProcessingSetSettings.level must be 'light', 'medium', or 'full'",
+      ],
+      [
+        'dictation:providersSetConfig',
+        ['p', []],
+        'dictation:providersSetConfig config must be an object',
+      ],
+      [
+        'agentProfiles:selectionSet',
+        ['p1', { selectedIds: ['a', 'a'], defaultId: null }],
+        'selection selected ids must be unique',
+      ],
+      [
+        'agentProfiles:selectionSet',
+        ['p1', { selectedIds: ['a'], defaultId: 'b' }],
+        'selection default agent must be selected',
+      ],
+      [
+        'taskProgress:saveBinding',
+        ['p1', null, { a: 1 }],
+        'taskProgress:saveBinding arg[2].a must be a string',
+      ],
+      // An own `__proto__` key survives structured clone; it must be checked too.
+      [
+        'kanban:setConfig',
+        ['p1', { adapterId: null, values: JSON.parse('{"__proto__":{"x":1}}') }],
+        'kanban:setConfig arg[1].values.__proto__ must be a string',
+      ],
+      [
+        'taskProgress:saveBinding',
+        ['p1', null, JSON.parse('{"__proto__":{"x":1}}')],
+        'taskProgress:saveBinding arg[2].__proto__ must be a string',
+      ],
+    ]
+    for (const [channel, payload, message] of cases) {
+      expect(() => channels.get(channel)?.parse(payload), channel).toThrow(
+        new ValidationError(message),
+      )
+    }
+  })
+
+  it('reports shared agent profile rules as their own sentence without a label', () => {
+    const put = channelMap().get('agentProfiles:put')
+    const input = { id: null, name: 'Claude', command: 'claude {prompt}' }
+    expect(() => put?.parse([{ ...input, name: ' ' }])).toThrow(
+      new ValidationError('Name is required.'),
+    )
+    expect(() => put?.parse([{ ...input, command: 'claude "open' }])).toThrow(ValidationError)
+    expect(() => put?.parse([{ ...input, interactiveArgs: ['{prompt}'] }])).toThrow(
+      new ValidationError('Interactive arguments must not include {prompt}.'),
+    )
+  })
+
   it('projects:add parses argument-free payloads and forbids direct invoke without dialog', () => {
     const channels = channelMap()
     const entry = channels.get(IPC_CHANNEL.projectsAdd)

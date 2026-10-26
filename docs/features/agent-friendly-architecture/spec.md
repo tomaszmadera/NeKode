@@ -66,6 +66,7 @@ None. Trust boundary rules for IPC senders stay as implemented in `ipc-handlers.
 
 - Optional and nullable fields (`relativePath?`, nullable `projectId`, optional revision) keep their exact accepted forms: `null` versus absent stays distinguished where it is today.
 - Numeric fields keep finite-number rules (no `NaN`, no `Infinity`).
+- Exception to Behaviour 2: array fields validated by schemas (dictionary `aliases`, agent selection `selectedIds`, kanban handoff availability `items`) reject sparse arrays (holes), which the hand-written validators skipped. The typed renderer cannot produce them; the change only narrows the trust boundary.
 - Extra object keys stay rejected where today's validator rejects them, and stay accepted where it accepts them.
 - Store hydration order: a store that loads from `app.state` must not render a default that a later load overwrites with a visible flash where today there is none.
 

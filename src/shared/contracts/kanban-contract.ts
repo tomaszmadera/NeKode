@@ -1,6 +1,20 @@
 import type { ChatInfo } from './chats-contract'
 import type { HandoffRejection } from './handoffs-contract'
 
+// Validated payload types are inferred from their schemas (one source of truth).
+export type {
+  KanbanCreateInput,
+  KanbanDraftLaunchInput,
+  KanbanHandoffAvailabilityInput,
+  KanbanHandoffCandidatesInput,
+  KanbanLaunchTaskBase,
+  KanbanLaunchTaskInput,
+  KanbanResumeLaunchInput,
+  KanbanSetConfigInput,
+  KanbanStartLaunchInput,
+  KanbanUpdatePatch,
+} from './kanban-schema'
+
 // ---------------------------------------------------------------------------
 // Kanban adapter integration (spec kanban-adapter-interface). Adapter plugins
 // are external user-installed processes; the shapes below are the app-side
@@ -134,94 +148,12 @@ export interface KanbanProjectConfig {
   sessionOnlySecrets?: boolean
 }
 
-export interface KanbanCreateInput {
-  title: string
-  description?: string
-  /** State name or group alias; resolved by the adapter, never by main. */
-  stateRef?: string
-  priority?: KanbanPriority
-}
-
-export interface KanbanUpdatePatch {
-  title?: string
-  description?: string
-  stateRef?: string
-  /**
-   * Named priority, or null to clear it. Omit the field to leave priority
-   * unchanged. Create still uses `KanbanPriority` only and does not clear.
-   */
-  priority?: KanbanPriority | null
-}
-
-/**
- * Shared fields of `kanban:launchTask`. Main refetches the item with `getItem`
- * `{ ref }` and checks `itemId`. The renderer does not send a chat name,
- * description, or prompt.
- */
-export interface KanbanLaunchTaskBase {
-  projectId: string
-  itemId: string
-  ref: string
-  profileId: string
-  attemptId: string
-}
-
-/** `kanban:launchTask` body for `mode: 'start'` (the Start prompt). */
-export interface KanbanStartLaunchInput extends KanbanLaunchTaskBase {
-  mode: 'start'
-}
-
-/**
- * `kanban:launchTask` body for `mode: 'resume'`. `fileName` and `stamp` come
- * from a scan result main just produced. Main rechecks the file and the stamp
- * immediately before creating the chat; a missing, unreadable, replaced, or
- * changed file refreshes the choice and creates no chat.
- */
-export interface KanbanResumeLaunchInput extends KanbanLaunchTaskBase {
-  mode: 'resume'
-  /** File name from the scan result main just produced. */
-  fileName: string
-  /** `modifiedAt` ISO stamp from that scan; main rechecks it before the chat. */
-  stamp: string
-}
-
-/**
- * `kanban:launchTask` body for `mode: 'draft'` (Start without sending,
- * NEKODE-99). Main starts the profile with its interactive argv and returns the
- * Start prompt as `draftPrompt` instead of passing it to the process.
- */
-export interface KanbanDraftLaunchInput extends KanbanLaunchTaskBase {
-  mode: 'draft'
-}
-
-export type KanbanLaunchTaskInput =
-  | KanbanStartLaunchInput
-  | KanbanResumeLaunchInput
-  | KanbanDraftLaunchInput
-
 /** Chat created for one confirmation. `delivered` is false when spawn failed. */
 export interface KanbanLaunchResult {
   chat: ChatInfo
   delivered: boolean
   /** The Start prompt for the prompt input; only for `mode: 'draft'` when delivered. */
   draftPrompt?: string
-}
-
-/** `kanban:handoffCandidates` body. Item identity comes from the board. */
-export interface KanbanHandoffCandidatesInput {
-  projectId: string
-  itemId: string
-  ref: string
-}
-
-/**
- * `kanban:handoffAvailability` body. The renderer sends the loaded items'
- * identities only, never a disk path; main resolves the configured directory
- * from its own state.
- */
-export interface KanbanHandoffAvailabilityInput {
-  projectId: string
-  items: Array<{ itemId: string; ref: string }>
 }
 
 /** One loaded item's availability in a batch handoff scan. */
