@@ -10,14 +10,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
 import { kanbanBoardFixture as fixture, kanbanWorkItem as item } from '../../test/kanban-fixtures'
+import { KanbanBoard } from './KanbanBoard'
+import { KanbanSessions } from './KanbanSessions'
 import {
-  KanbanBoard,
   type KanbanToolbarControls,
   kanbanCollapsedStorageKey,
   kanbanSortStorageKey,
   PRIORITY_COLOR,
-} from './KanbanBoard'
-import { KanbanSessions } from './KanbanSessions'
+} from './kanban-board-logic'
 
 // Read-only board surface (spec kanban-adapter-interface Behaviour 14, AC14):
 // the grouped list in adapter order, item review, and every inline state

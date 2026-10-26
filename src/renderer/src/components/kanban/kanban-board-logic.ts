@@ -1,4 +1,10 @@
-import type { KanbanBoard as KanbanBoardData, KanbanPriority, WorkItem } from '@shared/ipc-contract'
+import type {
+  KanbanBoard as KanbanBoardData,
+  KanbanPriority,
+  KanbanState,
+  WorkItem,
+} from '@shared/ipc-contract'
+import { parseAppErrorPayload } from '@shared/ipc-error'
 
 /** One rendered column: a state with the items that belong to it. */
 export interface KanbanColumn {
@@ -306,4 +312,155 @@ export function saveKanbanSort(projectId: string, state: KanbanSortState): void 
   } catch {
     // Ignore storage quota or access errors
   }
+}
+
+/** Inline render phase of the board. */
+export type KanbanBoardPhase = 'loading' | 'ready' | 'error' | 'not-configured' | 'empty'
+
+/**
+ * External toolbar control bridge (e.g. ActionBar host). The board reports
+ * these controls instead of rendering its internal header.
+ */
+export interface KanbanToolbarControls {
+  phase: KanbanBoardPhase
+  refreshing: boolean
+  isReviewing: boolean
+  creatingBusy: boolean
+  sortState: KanbanSortState
+  searchQuery: string
+  onSearchQueryChange: (query: string) => void
+  onSortByChange: (sortBy: KanbanSortBy) => void
+  onToggleSortDirection: () => void
+  onRefresh: () => void
+  onNewTask: () => void
+  onCloseReview: () => void
+}
+
+/**
+ * Columns shown for a search query: items whose title contains the trimmed,
+ * case-insensitive query, and only columns that keep at least one item. A
+ * blank query returns every column of `boardColumns`.
+ */
+export function visibleBoardColumns(
+  board: KanbanBoardData,
+  searchQuery: string,
+): { columns: KanbanColumn[]; isFiltering: boolean } {
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const isFiltering = normalizedQuery !== ''
+  const columns = boardColumns(
+    isFiltering
+      ? {
+          ...board,
+          items: board.items.filter((item) => item.title.toLowerCase().includes(normalizedQuery)),
+        }
+      : board,
+  ).filter((column) => !isFiltering || column.items.length > 0)
+  return { columns, isFiltering }
+}
+
+export const PRIORITY_COLOR: Record<KanbanPriority, string> = {
+  urgent: 'rgb(99, 40, 36)',
+  high: 'rgb(107, 62, 20)',
+  medium: '#f5d125',
+  low: '#63acff',
+}
+
+export const PRIORITY_LABEL: Record<KanbanPriority, string> = {
+  urgent: 'Urgent',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+}
+
+export const PRIORITY_OPTIONS: readonly { value: KanbanPriority | 'none'; label: string }[] = [
+  { value: 'urgent', label: PRIORITY_LABEL.urgent },
+  { value: 'high', label: PRIORITY_LABEL.high },
+  { value: 'medium', label: PRIORITY_LABEL.medium },
+  { value: 'low', label: PRIORITY_LABEL.low },
+  { value: 'none', label: 'None' },
+]
+
+/** Visible priority word. Null stays visible as None so the field is never dropped. */
+export function priorityLabel(priority: KanbanPriority | null): string {
+  return priority === null ? 'None' : PRIORITY_LABEL[priority]
+}
+
+/** Select value for a priority; null is the explicit `none` option. */
+export function prioritySelectValue(priority: KanbanPriority | null): string {
+  return priority === null ? 'none' : priority
+}
+
+/** Priority for a select value; `none` and unknown values are null. */
+export function priorityFromSelect(value: string): KanbanPriority | null {
+  if (value === 'none') return null
+  if (value === 'urgent' || value === 'high' || value === 'medium' || value === 'low') {
+    return value
+  }
+  return null
+}
+
+/** Review body. A null or blank description is a sentence, not an empty gap. */
+export function descriptionText(description: string | null): string {
+  if (description === null || description.trim() === '') {
+    return 'No description.'
+  }
+  return description
+}
+
+/**
+ * Comment timestamp for reading (spec kanban-adapter-interface, comments:
+ * "the creation timestamp (formatted for reading)"). Adapters return ISO
+ * strings in UTC; show them in local time with the same `toLocaleString()`
+ * form as other app dates. A value that does not parse stays unchanged.
+ */
+export function commentTimestamp(createdAt: string): string {
+  const time = Date.parse(createdAt)
+  return Number.isNaN(time) ? createdAt : new Date(time).toLocaleString()
+}
+
+/** A missing or blank `WorkItem.url` disables Copy link. */
+export function blankUrl(url: string | null): boolean {
+  return url === null || url.trim() === ''
+}
+
+/** Board states in adapter `order`, matching the columns. */
+export function statesInAdapterOrder(states: readonly KanbanState[]): KanbanState[] {
+  return [...states].sort((a, b) => a.order - b.order)
+}
+
+/**
+ * Status names the review offers after the board states: the item's own state
+ * name and the pending choice, when the board does not list them, once each.
+ */
+export function extraStatusNames(
+  states: readonly KanbanState[],
+  itemStateName: string,
+  statusValue: string,
+): string[] {
+  const names = new Set(states.map((state) => state.name))
+  return [itemStateName, statusValue].filter(
+    (name, index, all) => !names.has(name) && all.indexOf(name) === index,
+  )
+}
+
+/** Draft of the New task form. */
+export interface NewTaskDraft {
+  stateRef: string
+  title: string
+  description: string
+  priority: KanbanPriority | null
+}
+
+/** First state named Todo, ignoring case, or '' when the board has none. */
+export function defaultNewTaskStateRef(states: readonly KanbanState[]): string {
+  const match = statesInAdapterOrder(states).find((state) => state.name.toLowerCase() === 'todo')
+  return match?.name ?? ''
+}
+
+/** Message for a failed create or update: typed payload, then Error message, then fallback. */
+export function writeFailureMessage(cause: unknown, fallback: string): string {
+  const payload = parseAppErrorPayload(cause)
+  if (payload !== null) return payload.message
+  if (cause instanceof Error && cause.message.trim() !== '') return cause.message
+  return fallback
 }

@@ -7,17 +7,29 @@ import type { KanbanBoard as KanbanBoardData, WorkItem } from '@shared/ipc-contr
 import { describe, expect, it } from 'vitest'
 import { kanbanBoardFixture, kanbanWorkItem } from '../../test/kanban-fixtures'
 import {
+  blankUrl,
   boardColumns,
+  commentTimestamp,
   compareRefs,
   DEFAULT_KANBAN_SORT,
+  defaultNewTaskStateRef,
+  descriptionText,
+  extraStatusNames,
+  PRIORITY_OPTIONS,
   parseCollapsedStateIds,
   parseKanbanSort,
+  priorityFromSelect,
+  priorityLabel,
+  prioritySelectValue,
   reconcileBoard,
   reconcileBoardResponse,
   reconcileKeepingCreates,
   sortWorkItems,
+  statesInAdapterOrder,
   upsertWorkItem,
+  visibleBoardColumns,
   workItemsMatch,
+  writeFailureMessage,
 } from './kanban-board-logic'
 
 const item = kanbanWorkItem
@@ -390,5 +402,86 @@ describe('kanban board logic — concurrent IPC promise race ordering matrix (C.
       const result = reconcileKeepingCreates(baseBoard, next, [createdItem], [updatedItem])
       expect(result.items.map((i) => i.ref)).toEqual(['NK-1', 'NK-40'])
     })
+  })
+})
+
+describe('kanban board logic - view helpers', () => {
+  it('visibleBoardColumns filters by trimmed, case-insensitive title and drops empty columns', () => {
+    const all = visibleBoardColumns(kanbanBoardFixture, '   ')
+    expect(all.isFiltering).toBe(false)
+    expect(all.columns.map((column) => column.stateId)).toEqual(['s1', 's2', 's3'])
+
+    const filtered = visibleBoardColumns(kanbanBoardFixture, '  THIRD ')
+    expect(filtered.isFiltering).toBe(true)
+    expect(filtered.columns.map((column) => column.stateId)).toEqual(['s1'])
+    expect(filtered.columns[0].items.map((entry) => entry.ref)).toEqual(['NK-3'])
+
+    expect(visibleBoardColumns(kanbanBoardFixture, 'missing').columns).toEqual([])
+  })
+
+  it('maps priorities to labels and select values both ways', () => {
+    expect(priorityLabel(null)).toBe('None')
+    expect(priorityLabel('urgent')).toBe('Urgent')
+    expect(prioritySelectValue(null)).toBe('none')
+    expect(prioritySelectValue('low')).toBe('low')
+    expect(priorityFromSelect('none')).toBeNull()
+    expect(priorityFromSelect('high')).toBe('high')
+    expect(priorityFromSelect('bogus')).toBeNull()
+    expect(PRIORITY_OPTIONS.map((option) => option.label)).toEqual([
+      'Urgent',
+      'High',
+      'Medium',
+      'Low',
+      'None',
+    ])
+  })
+
+  it('describes a blank description and keeps a non-blank one unchanged', () => {
+    expect(descriptionText(null)).toBe('No description.')
+    expect(descriptionText(' \n\t ')).toBe('No description.')
+    expect(descriptionText(' body ')).toBe(' body ')
+  })
+
+  it('formats a parseable comment timestamp and keeps an unparseable one', () => {
+    const iso = '2026-01-02T03:04:05Z'
+    expect(commentTimestamp(iso)).toBe(new Date(Date.parse(iso)).toLocaleString())
+    expect(commentTimestamp('not a date')).toBe('not a date')
+  })
+
+  it('treats a null or blank url as blank', () => {
+    expect(blankUrl(null)).toBe(true)
+    expect(blankUrl('  ')).toBe(true)
+    expect(blankUrl('https://example.test/NK-1')).toBe(false)
+  })
+
+  it('orders states by adapter order and defaults a new task to Todo, ignoring case', () => {
+    expect(statesInAdapterOrder(kanbanBoardFixture.states).map((state) => state.id)).toEqual([
+      's1',
+      's2',
+      's3',
+    ])
+    expect(defaultNewTaskStateRef(kanbanBoardFixture.states)).toBe('')
+    expect(
+      defaultNewTaskStateRef([
+        ...kanbanBoardFixture.states,
+        { id: 's0', name: 'TODO', group: 'unstarted', order: 0 },
+      ]),
+    ).toBe('TODO')
+  })
+
+  it('lists unknown review status names once, after the board states', () => {
+    const states = kanbanBoardFixture.states
+    expect(extraStatusNames(states, 'Backlog', 'Backlog')).toEqual([])
+    expect(extraStatusNames(states, 'Archived', 'Archived')).toEqual(['Archived'])
+    expect(extraStatusNames(states, 'Archived', 'Gone')).toEqual(['Archived', 'Gone'])
+  })
+
+  it('prefers the typed error message, then the Error message, then the fallback', () => {
+    expect(
+      writeFailureMessage({ nekodeAppError: true, code: 'network', message: 'Offline' }, 'x'),
+    ).toBe('Offline')
+    expect(writeFailureMessage(new Error('Boom'), 'x')).toBe('Boom')
+    expect(writeFailureMessage(new Error('  '), 'Fallback')).toBe('Fallback')
+    expect(writeFailureMessage('weird', 'Fallback')).toBe('Fallback')
   })
 })

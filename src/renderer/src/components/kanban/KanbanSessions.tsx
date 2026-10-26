@@ -1,7 +1,8 @@
 import type { AppApi, WorkItem } from '@shared/ipc-contract'
 import type React from 'react'
 import { useCallback, useState } from 'react'
-import { KanbanBoard, type KanbanToolbarControls } from './KanbanBoard'
+import { KanbanBoard } from './KanbanBoard'
+import type { KanbanToolbarControls } from './kanban-board-logic'
 
 interface Props {
   app: AppApi
