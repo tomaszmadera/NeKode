@@ -3,9 +3,10 @@
 // `kanban`, a project view present for every selected project, project-home
 // spec Behaviour 1) plus the open file tabs in open order, the active tab and the
 // previously active tab (close fallback). The session lives for the app
-// session only — never persisted across restarts. Held by App; components
-// stay presentational. The reducers here are pure so the tab contract (order,
-// focus-without-reorder, close fallback) is testable in isolation.
+// session only — never persisted across restarts. Held by the tabs store
+// (stores/useTabsStore.ts); components stay presentational. The reducers
+// here are pure so the tab contract (order, focus-without-reorder, close
+// fallback) is testable in isolation.
 
 export type TabId = { kind: 'terminal' } | { kind: 'file'; path: string } | { kind: 'kanban' }
 

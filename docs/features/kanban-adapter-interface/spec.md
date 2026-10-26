@@ -867,9 +867,9 @@ Another decision of the same day removes the Board view and the List | Board swi
 
 ## Kanban review Start and Resume buttons amendment (NEKODE-84)
 
-An extension of the task preview (`ItemReview`) with launch and resume buttons, introduced in task NEKODE-84:
+An extension of the task preview (`KanbanItemReview`) with launch and resume buttons, introduced in task NEKODE-84:
 
-1. The task preview (`ItemReview`) has the Start and Resume controls (`ItemLaunchButtons`) in the right column, above the Priority and Status fields.
+1. The task preview (`KanbanItemReview`) has the Start and Resume controls (`ItemLaunchButtons` from `KanbanItemActions.tsx`) in the right column, above the Priority and Status fields.
 2. Start is always visible, and disabled when Resume is active for the given task (consistent with the list row).
 3. Resume renders only for a task for which the batch handoff check confirmed that a linked file is available.
 4. A click on Start opens the launch confirmation (`onStart(item)`), a click on Resume opens the resume confirmation (`onResume(item)`).
@@ -879,18 +879,18 @@ An extension of the task preview (`ItemReview`) with launch and resume buttons, 
 
 ## Kanban task comments and completion amendment (NEKODE-85)
 
-An extension of the task preview (`ItemReview`) with a comments section, and support for comments when closing a task, introduced in task NEKODE-85:
+An extension of the task preview (`KanbanItemReview`) with a comments section, and support for comments when closing a task, introduced in task NEKODE-85:
 
 ### Goal and scope
 
-1. The task preview (`ItemReview` in `KanbanBoard.tsx`) shows a `Comments` section in the left column under the description (`Description`).
+1. The task preview (`KanbanItemReview` in `src/renderer/src/components/kanban/KanbanItemReview.tsx`, split out of `KanbanBoard.tsx` in NEKODE-128) shows a `Comments` section in the left column under the description (`Description`).
 2. Without comments, the section shows the text `No comments.` (like `No description.`).
 3. With comments, a list is shown where each comment has:
    - the author (display name, email or user identifier from the project member map),
    - the creation timestamp (formatted for reading),
    - the comment text (safe text converted from HTML by the adapter's parser).
 4. Fetching comments:
-   - Comments are fetched lazily (on demand) after the task preview (`ItemReview`) opens, through a new adapter action `listComments` with the `{ ref }` parameter and the IPC channel `kanban:getComments(projectId, ref)`, which returns `KanbanComment[]`.
+   - Comments are fetched lazily (on demand) after the task preview (`KanbanItemReview`) opens, through a new adapter action `listComments` with the `{ ref }` parameter and the IPC channel `kanban:getComments(projectId, ref)`, which returns `KanbanComment[]`.
    - This prevents a flood of HTTP requests (N+1) while the whole board loads (`listBoard`).
 5. IPC contract types (`src/shared/ipc-contract.ts`):
    - `KanbanComment`: `{ id: string; author: string | null; text: string; createdAt: string | null }`.
@@ -907,7 +907,7 @@ An extension of the task preview (`ItemReview`) with a comments section, and sup
 
 1. `kanban:getComments` validates `projectId` and `ref`.
 2. The Plane adapter's `listComments` action correctly reads the comments of the given task and returns normalized `KanbanComment` objects.
-3. `ItemReview` in NeKode fetches and shows the task comments; the empty state shows `No comments.`.
+3. `KanbanItemReview` in NeKode fetches and shows the task comments; the empty state shows `No comments.`.
 4. `kanban_cli.py comment <ref> <text>` adds a comment to the task in Plane and confirms the creation.
 5. The `task-close` skill tells the agent to add a summary comment to the Kanban task after verification passes.
 
@@ -923,7 +923,7 @@ Poza zakresem: wpisywanie tekstu do terminala agenta, wykrywanie gotowości TUI 
 
 ### Menu przycisku Start
 
-1. Prawy przycisk myszy na aktywnym Start oraz klawisz menu kontekstowego albo Shift+F10, gdy Start ma fokus, otwierają menu w każdym miejscu, gdzie jest Start: wiersz listy i podgląd zadania (`ItemReview`).
+1. Prawy przycisk myszy na aktywnym Start oraz klawisz menu kontekstowego albo Shift+F10, gdy Start ma fokus, otwierają menu w każdym miejscu, gdzie jest Start: wiersz listy i podgląd zadania (`KanbanItemReview`).
 2. Menu ma dwie pozycje z angielskimi etykietami: `Start` i `Start without sending`. `Start` działa jak kliknięcie Start. `Start without sending` otwiera ten sam modal wyboru agenta w wariancie bez wysyłania.
 3. Nieaktywny Start (widoczny Resume) nie otwiera menu. Escape, wybór pozycji i wskaźnik poza menu zamykają menu, tak jak menu kopiowania. Menu kopiowania podglądu nadal nie otwiera się na Start.
 

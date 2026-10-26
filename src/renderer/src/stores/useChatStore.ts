@@ -45,8 +45,15 @@ function initialState(): ChatState {
 
 export type ChatStore = ChatState & ChatActions
 
-// A list snapshot can predate a create or close. Updating existing ids in place
-// preserves tree order and keeps mounted terminal views alive across that race.
+// A chats:list response is a snapshot that can predate mutations the renderer
+// already applied: a concurrent create lands after the snapshot was taken, a
+// close lands before a response that still carries the chat. Replacing the
+// known list with such a snapshot transiently drops a chat whose session view
+// is alive (the ChatWorkspace eviction effect then disposes its xterm and
+// scrollback) or resurrects a closed chat. Merge instead: fetched entries
+// update their id in place (preserving tree order), known entries the
+// snapshot predates are kept, and tombstoned ids (closed by this renderer in
+// this session) never come back.
 export function mergeFetchedChats(
   known: ChatInfo[],
   fetched: ChatInfo[],

@@ -629,6 +629,8 @@ Efekt: zachowanie zgodne z resztą aplikacji, bez cichych niepowodzeń.
 5. Etap E: aliasy `@shared`, `@main`, `@renderer` w czterech plikach konfiguracji (propozycja 5).
 Efekt: nowa funkcja UI nie wymaga czytania trzech tysięcy linii ani montowania całej aplikacji w teście.
 
+Status (2026-10-26): P4 dostarczone w NEKODE-128 (kontrakt: [agent-friendly-architecture/spec.md](../features/agent-friendly-architecture/spec.md)). Etapy A-E są w kodzie: `CenterTabs.tsx` z własnym testem, `KanbanBoard.tsx` złożony z `KanbanListView`, `KanbanItemReview`, `KanbanCreateTaskForm` i `KanbanHeader`, kontrakty w `src/shared/contracts/` ze schematami Zod używanymi tylko w main, aliasy `@shared`, `@main`, `@renderer`, store'y Zustand `useProjectStore`, `useChatStore`, `useTabsStore` i `useSettingsStore` w `src/renderer/src/stores/` (zakres jednego montażu `App` przez `AppStoresProvider`). `App.tsx` ma 628 linii; przepływy aplikacji są w hookach `src/renderer/src/hooks/app/`. Pozostałe pakiety (P0-P3, P5) prowadzą NEKODE-134 do NEKODE-140.
+
 **P5. Drobne porządki**
 `tsconfig.node.json` (`lib`, `types`), rozszerzenie `verify`, wersja `@types/better-sqlite3`, usunięcie nieużywanych zależności, zawężenie typów w `AppApi`, usunięcie testu mocka i zduplikowanego testu Ctrl+Tab.
 

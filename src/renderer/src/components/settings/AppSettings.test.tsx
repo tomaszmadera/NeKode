@@ -2,6 +2,11 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ATTENTION_SETTINGS } from '../../lib/attention-settings'
 import { DEFAULT_TERMINAL_FONT_FAMILIES, DEFAULT_TERMINAL_FONT_SIZE } from '../../lib/terminal-font'
+import {
+  createSettingsStore,
+  SettingsStoreContext,
+  settingsError,
+} from '../../stores/useSettingsStore'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { AppSettings } from './AppSettings'
 
@@ -26,33 +31,30 @@ function desktopDictation(error: string | null) {
 
 function renderSettings(initialTab: 'general' | 'dictation') {
   const app = createAppApiStub()
+  const settingsStore = createSettingsStore({ app, reportError: vi.fn() })
+  // The same settings fixture the props supplied before the settings store.
+  settingsStore.setState({
+    theme: 'nekode-float',
+    quickThemeSwitch: false,
+    chatSwitchEnabled: false,
+    projectNamesUppercase: false,
+    showProjectIcons: false,
+    attentionSettings: DEFAULT_ATTENTION_SETTINGS,
+    terminalFontFamilies: DEFAULT_TERMINAL_FONT_FAMILIES,
+    terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+    terminalCtrlVPaste: true,
+  })
+  expect(settingsError(settingsStore.getState())).toBeNull()
   render(
-    <AppSettings
-      app={app}
-      dictationApi={app.dictation}
-      desktopDictation={desktopDictation(SAVE_ERROR)}
-      initialTab={initialTab}
-      theme="nekode-float"
-      quickThemeSwitch={false}
-      onQuickThemeSwitchChange={vi.fn()}
-      chatSwitch={false}
-      projectNamesUppercase={false}
-      onProjectNamesUppercaseChange={vi.fn()}
-      showProjectIcons={false}
-      onShowProjectIconsChange={vi.fn()}
-      error={null}
-      onThemeChange={vi.fn()}
-      onChatSwitchChange={vi.fn()}
-      attentionSettings={DEFAULT_ATTENTION_SETTINGS}
-      onAttentionSettingChange={vi.fn()}
-      terminalFontFamilies={DEFAULT_TERMINAL_FONT_FAMILIES}
-      onTerminalFontFamiliesChange={vi.fn()}
-      terminalFontSize={DEFAULT_TERMINAL_FONT_SIZE}
-      onTerminalFontSizeChange={vi.fn()}
-      terminalCtrlVPaste={true}
-      onTerminalCtrlVPasteChange={vi.fn()}
-      onClose={vi.fn()}
-    />,
+    <SettingsStoreContext.Provider value={settingsStore}>
+      <AppSettings
+        app={app}
+        dictationApi={app.dictation}
+        desktopDictation={desktopDictation(SAVE_ERROR)}
+        initialTab={initialTab}
+        onClose={vi.fn()}
+      />
+    </SettingsStoreContext.Provider>,
   )
 }
 

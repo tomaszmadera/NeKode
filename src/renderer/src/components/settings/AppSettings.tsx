@@ -1,12 +1,12 @@
 import type { AppApi } from '@shared/ipc-contract'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { AttentionSettings } from '../../lib/attention-settings'
+import { useShallow } from 'zustand/react/shallow'
 import { cn } from '../../lib/cn'
 import { Icon, type LucideIcon } from '../../lib/icons'
-import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID } from '../../lib/test-ids'
-import { isThemeId, THEME_IDS, THEMES, type ThemeId } from '../../lib/theme'
+import { isThemeId, THEME_IDS, THEMES } from '../../lib/theme'
+import { settingsError, useSettingsStore } from '../../stores/useSettingsStore'
 import { UsageSettings } from '../usage/UsageSettings'
 import { AppUpdateBlock } from './AppUpdateBlock'
 import { DictationDictionary } from './DictationDictionary'
@@ -33,27 +33,6 @@ interface AppSettingsProps {
   scrollToUpdate?: boolean
   dictationApi: AppApi['dictation']
   desktopDictation: ReturnType<typeof import('../../hooks/useDesktopDictation').useDesktopDictation>
-  theme: ThemeId
-  quickThemeSwitch: boolean
-  onQuickThemeSwitchChange: (next: boolean) => void
-  chatSwitch: boolean
-  projectNamesUppercase: boolean
-  onProjectNamesUppercaseChange: (next: boolean) => void
-  showProjectIcons: boolean
-  onShowProjectIconsChange: (next: boolean) => void
-  error: string | null
-  onThemeChange: (theme: ThemeId) => void
-  onChatSwitchChange: (next: boolean) => void
-  /** Attention alert toggles (attention-alert-settings spec), all default on. */
-  attentionSettings: AttentionSettings
-  /** One handler for all four toggles; the key names the setting. */
-  onAttentionSettingChange: (key: keyof AttentionSettings, next: boolean) => void
-  terminalFontFamilies: TerminalFontFamilies
-  onTerminalFontFamiliesChange: (families: TerminalFontFamilies) => void
-  terminalFontSize: number
-  onTerminalFontSizeChange: (size: number) => void
-  terminalCtrlVPaste: boolean
-  onTerminalCtrlVPasteChange: (next: boolean) => void
   onClose: () => void
 }
 
@@ -106,27 +85,52 @@ export function AppSettings({
   scrollToUpdate = false,
   dictationApi,
   desktopDictation,
-  theme,
-  quickThemeSwitch,
-  onQuickThemeSwitchChange,
-  chatSwitch,
-  projectNamesUppercase,
-  onProjectNamesUppercaseChange,
-  showProjectIcons,
-  onShowProjectIconsChange,
-  error,
-  onThemeChange,
-  onChatSwitchChange,
-  attentionSettings,
-  onAttentionSettingChange,
-  terminalFontFamilies,
-  onTerminalFontFamiliesChange,
-  terminalFontSize,
-  onTerminalFontSizeChange,
-  terminalCtrlVPaste,
-  onTerminalCtrlVPasteChange,
   onClose,
 }: AppSettingsProps): React.JSX.Element {
+  // Domain state comes from the settings store, which persists each change.
+  const {
+    theme,
+    quickThemeSwitch,
+    onQuickThemeSwitchChange,
+    chatSwitch,
+    projectNamesUppercase,
+    onProjectNamesUppercaseChange,
+    showProjectIcons,
+    onShowProjectIconsChange,
+    error,
+    onThemeChange,
+    onChatSwitchChange,
+    attentionSettings,
+    onAttentionSettingChange,
+    terminalFontFamilies,
+    onTerminalFontFamiliesChange,
+    terminalFontSize,
+    onTerminalFontSizeChange,
+    terminalCtrlVPaste,
+    onTerminalCtrlVPasteChange,
+  } = useSettingsStore(
+    useShallow((state) => ({
+      theme: state.theme,
+      quickThemeSwitch: state.quickThemeSwitch,
+      onQuickThemeSwitchChange: state.setQuickThemeSwitch,
+      chatSwitch: state.chatSwitchEnabled,
+      projectNamesUppercase: state.projectNamesUppercase,
+      onProjectNamesUppercaseChange: state.setProjectNamesUppercase,
+      showProjectIcons: state.showProjectIcons,
+      onShowProjectIconsChange: state.setShowProjectIcons,
+      error: settingsError(state),
+      onThemeChange: state.setTheme,
+      onChatSwitchChange: state.setChatSwitchEnabled,
+      attentionSettings: state.attentionSettings,
+      onAttentionSettingChange: state.setAttentionSetting,
+      terminalFontFamilies: state.terminalFontFamilies,
+      onTerminalFontFamiliesChange: state.setTerminalFontFamilies,
+      terminalFontSize: state.terminalFontSize,
+      onTerminalFontSizeChange: state.setTerminalFontSize,
+      terminalCtrlVPaste: state.terminalCtrlVPaste,
+      onTerminalCtrlVPasteChange: state.setTerminalCtrlVPaste,
+    })),
+  )
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab)
   const selectRef = useRef<HTMLSelectElement>(null)
   const dialogRef = useRef<HTMLElement>(null)

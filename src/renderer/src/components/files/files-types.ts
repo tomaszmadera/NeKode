@@ -2,7 +2,7 @@ import type { FileEntry, GitFileStatuses } from '@shared/ipc-contract'
 
 // Per-project file-tree session state (spec Behaviour 14): expansion state
 // and the last selected file live for the app session only — never in the
-// database. Held by App; components stay presentational.
+// database. Held by hooks/app/useProjectFiles.ts; components stay presentational.
 
 export interface ProjectFilesSession {
   /** Loaded directory children by relative path ('' = project root). */
