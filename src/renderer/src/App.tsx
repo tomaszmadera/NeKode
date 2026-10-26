@@ -8,8 +8,6 @@ import type {
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   ProjectInfo,
-  SessionTaskProgress,
-  TaskProgressSnapshot,
   WorkItem,
 } from '@shared/ipc-contract'
 import {
@@ -90,11 +88,9 @@ import {
   DEFAULT_ATTENTION_SETTINGS,
   parseAttentionSettings,
 } from './lib/attention-settings'
-import type { ChatAttention } from './lib/chat-attention'
 import { isNewChatChord } from './lib/new-chat-chord'
 import { getProjectColor } from './lib/project-avatar'
 import { writeSubmitLine } from './lib/pty-submit'
-import { sessionTaskProgress } from './lib/task-progress'
 import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -114,6 +110,10 @@ import {
   THEMES,
   type ThemeId,
 } from './lib/theme'
+import { ProjectChatStoresProvider } from './stores/ProjectChatStoresProvider'
+import { mergeFetchedChats, useChatStore } from './stores/useChatStore'
+import { useProjectStore } from './stores/useProjectStore'
+import { useSessionTasks } from './stores/useSessionTasks'
 
 // Re-exported so existing imports keep working; the definitions live in
 // lib/test-ids.ts to break the App ↔ component import cycle.
@@ -212,30 +212,15 @@ function chatExistsIn(chatsByProject: Record<string, ChatInfo[]>, chatId: string
   return Object.values(chatsByProject).some((chats) => chats.some((chat) => chat.id === chatId))
 }
 
-// A chats:list response is a snapshot that can predate mutations the renderer
-// already applied: a concurrent create lands after the snapshot was taken, a
-// close lands before a response that still carries the chat. Replacing the
-// known list with such a snapshot transiently drops a chat whose session view
-// is alive (the ChatWorkspace eviction effect then disposes its xterm and
-// scrollback) or resurrects a closed chat. Merge instead: fetched entries
-// update their id in place, known entries the snapshot predates are kept, and
-// tombstoned ids (closed by this renderer in this session) never come back.
-function mergeFetchedChats(
-  known: ChatInfo[],
-  fetched: ChatInfo[],
-  removedChatIds: ReadonlySet<string>,
-): ChatInfo[] {
-  const byId = new Map(known.map((chat) => [chat.id, chat] as const))
-  for (const chat of fetched) {
-    byId.set(chat.id, chat)
-  }
-  for (const chatId of removedChatIds) {
-    byId.delete(chatId)
-  }
-  return [...byId.values()]
+export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
+  return (
+    <ProjectChatStoresProvider>
+      <AppContent app={app} />
+    </ProjectChatStoresProvider>
+  )
 }
 
-export function App({ app = window.app }: { app?: typeof window.app }): React.JSX.Element {
+function AppContent({ app }: { app: typeof window.app }): React.JSX.Element {
   const desktopDictation = useDesktopDictation(app)
   const [appSettingsOpen, setAppSettingsOpen] = useState(false)
   const [appSettingsUpdate, setAppSettingsUpdate] = useState(false)
@@ -399,27 +384,41 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     }
   }
 
-  const [projects, setProjects] = useState<ProjectInfo[]>([])
-  const [chatsByProject, setChatsByProject] = useState<Record<string, ChatInfo[]>>({})
-  const [taskSnapshots, setTaskSnapshots] = useState<Record<string, TaskProgressSnapshot>>({})
-  const sessionTasks = useMemo(() => {
-    const progress: Record<string, SessionTaskProgress> = {}
-    for (const chats of Object.values(chatsByProject)) {
-      for (const chat of chats) {
-        const task = sessionTaskProgress(chat, taskSnapshots[chat.projectId])
-        if (task !== undefined) progress[chat.id] = task
-      }
-    }
-    return progress
-  }, [chatsByProject, taskSnapshots])
-  // Projects whose chat list finished loading. The "Start new chat" empty
-  // state renders only for those: a missing entry means "not loaded yet",
-  // never "no chats" (it must not flash before the load settles).
-  const [loadedChatProjectIds, setLoadedChatProjectIds] = useState<ReadonlySet<string>>(new Set())
-  const [expandedProjectIds, setExpandedProjectIds] = useState<ReadonlySet<string>>(new Set())
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
-  const [selectionNonce, setSelectionNonce] = useState(0)
+  const {
+    projects,
+    setProjects,
+    expandedProjectIds,
+    setExpandedProjectIds,
+    selectedProjectId,
+    setSelectedProjectId,
+    projectColors,
+    setProjectColors,
+    kanbanProjectIds,
+    setKanbanProjectIds,
+    localFileProjectIds,
+    setLocalFileProjectIds,
+    settledKanbanProjects,
+    setSettledKanbanProjects,
+    kanbanBindingsError,
+    setKanbanBindingsError,
+  } = useProjectStore((state) => state)
+  const {
+    chatsByProject,
+    setChatsByProject,
+    setTaskSnapshots,
+    loadedChatProjectIds,
+    setLoadedChatProjectIds,
+    selectedChatId,
+    setSelectedChatId,
+    selectionNonce,
+    setSelectionNonce,
+    liveChatIds,
+    setLiveChatIds,
+    chatAttention,
+    setChatAttention,
+    setChatActivity,
+  } = useChatStore((state) => state)
+  const sessionTasks = useSessionTasks()
   const [notice, setNotice] = useState<string | null>(null)
   const [actions, setActions] = useState<ActionControl[]>([])
   const [actionSettingsOpen, setActionSettingsOpen] = useState(false)
@@ -437,7 +436,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   const projectNamesUppercaseTouchedRef = useRef(false)
   const [showProjectIcons, setShowProjectIcons] = useState(true)
   const showProjectIconsTouchedRef = useRef(false)
-  const [projectColors, setProjectColors] = useState<Record<string, string>>({})
   // Attention alert settings (attention-alert-settings spec): all four
   // default on; the persisted off-switches load once and apply live.
   const [attentionSettings, setAttentionSettings] = useState<AttentionSettings>(
@@ -457,12 +455,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     nonce: number
   } | null>(null)
   const promptInjectionNonceRef = useRef(0)
-  const [liveChatIds, setLiveChatIds] = useState<ReadonlySet<string>>(new Set())
   const [terminalCwds, setTerminalCwds] = useState<Record<string, string>>({})
-  // Per-chat attention badges (chat attention badge spec): in-memory for one
-  // run (AC8), keyed by chat id, rendered by the left navigation.
-  const [chatAttention, setChatAttention] = useState<Record<string, ChatAttention>>({})
-  const [chatActivity, setChatActivity] = useState<ReadonlySet<string>>(new Set())
   const pendingTerminalCommandsRef = useRef<Record<string, string>>({})
   // Bottom-terminal action commands waiting for their new tab's terminal to
   // become ready. Keyed by bottom tab id; consumed exactly once (AC10).
@@ -505,12 +498,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
   // projects whose read has finished. `kanbanBindingsError` holds the message
   // of the latest failed read (null after a successful one); the read covers
   // all projects in one batch and fails as a whole, so the error is global.
-  const [kanbanProjectIds, setKanbanProjectIds] = useState<ReadonlySet<string>>(new Set())
   // Bound projects whose source is the built-in `local-file` (project-home
   // spec Edge cases: a missing task file offers `Use a local task list`).
-  const [localFileProjectIds, setLocalFileProjectIds] = useState<ReadonlySet<string>>(new Set())
-  const [settledKanbanProjects, setSettledKanbanProjects] = useState<ReadonlySet<string>>(new Set())
-  const [kanbanBindingsError, setKanbanBindingsError] = useState<string | null>(null)
   const kanbanBindingsGeneration = useRef(0)
   const [kanbanVersions, setKanbanVersions] = useState<Record<string, number>>({})
   const [taskStart, setTaskStart] = useState<{
@@ -598,7 +587,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       chatsByProjectRef.current = updater(chatsByProjectRef.current)
       setChatsByProject(chatsByProjectRef.current)
     },
-    [],
+    [setChatsByProject],
   )
 
   const refreshActions = useCallback(async (): Promise<void> => {
@@ -645,7 +634,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       // shell notice, which later actions clear.
       setKanbanBindingsError(errorMessage(error, 'Failed to load task sources.'))
     }
-  }, [app, projects])
+  }, [
+    app,
+    projects,
+    setLocalFileProjectIds,
+    setKanbanBindingsError,
+    setSettledKanbanProjects,
+    setKanbanProjectIds,
+  ])
 
   useEffect(() => {
     void refreshKanbanBindings()
@@ -717,7 +713,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       alive = false
       unsubscribe()
     }
-  }, [app, visibleProjectKey])
+  }, [app, visibleProjectKey, setTaskSnapshots])
 
   useEffect(() => {
     let alive = true
@@ -844,19 +840,22 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     return () => {
       alive = false
     }
-  }, [projects, app.state])
+  }, [projects, app.state, setProjectColors])
 
-  const handleProjectColorChange = useCallback((projectId: string, color: string | null): void => {
-    setProjectColors((previous) => {
-      const next = { ...previous }
-      if (color) {
-        next[projectId] = color
-      } else {
-        delete next[projectId]
-      }
-      return next
-    })
-  }, [])
+  const handleProjectColorChange = useCallback(
+    (projectId: string, color: string | null): void => {
+      setProjectColors((previous) => {
+        const next = { ...previous }
+        if (color) {
+          next[projectId] = color
+        } else {
+          delete next[projectId]
+        }
+        return next
+      })
+    },
+    [setProjectColors],
+  )
 
   // Attention alert settings (attention-alert-settings spec): one setter per
   // toggle-key; the settings apply live from the set state and persist
@@ -963,7 +962,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         return next
       })
     },
-    [cancelPendingSubmit],
+    [cancelPendingSubmit, setLiveChatIds],
   )
 
   const handleSessionReady = useCallback(
@@ -1108,7 +1107,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
     return () => {
       cancelled = true
     }
-  }, [app, applyChatsUpdate])
+  }, [
+    app,
+    applyChatsUpdate,
+    setSelectedChatId,
+    setSelectedProjectId,
+    setLoadedChatProjectIds,
+    setExpandedProjectIds,
+    setProjects,
+  ])
 
   // Selection keys are written on every selection change (spec Business
   // rules); an empty string clears a key so no stale selection survives.
@@ -1170,7 +1177,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       }))
       setLoadedChatProjectIds((previous) => new Set(previous).add(projectId))
     },
-    [app, applyChatsUpdate],
+    [app, applyChatsUpdate, setLoadedChatProjectIds],
   )
 
   // --- Tab strip sessions (spec Behaviour 3–5) ----------------------------
@@ -1308,7 +1315,14 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       // the active tab of the chat's project (Behaviour 2).
       updateTabsSession(projectId, (session) => activateTab(session, TERMINAL_TAB))
     },
-    [persistSelection, updateTabsSession],
+    [
+      persistSelection,
+      updateTabsSession,
+      setSelectedProjectId,
+      setExpandedProjectIds,
+      setSelectedChatId,
+      setSelectionNonce,
+    ],
   )
 
   // Project name or icon click in the left navigation (project-home spec
@@ -1332,7 +1346,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       })
       updateTabsSession(projectId, (session) => activateTab(session, KANBAN_TAB))
     },
-    [loadChats, persistSelection, selectedProjectId, updateTabsSession],
+    [
+      loadChats,
+      persistSelection,
+      selectedProjectId,
+      updateTabsSession,
+      setExpandedProjectIds,
+      setSelectedProjectId,
+      setSelectedChatId,
+    ],
   )
 
   // Ctrl+Tab / Ctrl+Shift+Tab chat switching across all projects
@@ -1385,7 +1407,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         })
       }
     },
-    [expandedProjectIds, loadChats],
+    [expandedProjectIds, loadChats, setExpandedProjectIds],
   )
 
   const [addProjectOpen, setAddProjectOpen] = useState(false)
@@ -1401,7 +1423,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       setSelectedChatId(null)
       persistSelection(project.id, null)
     },
-    [app, applyChatsUpdate, persistSelection],
+    [
+      app,
+      applyChatsUpdate,
+      persistSelection,
+      setSelectedChatId,
+      setSelectedProjectId,
+      setLoadedChatProjectIds,
+      setProjects,
+      setExpandedProjectIds,
+    ],
   )
 
   const handleAddProject = useCallback((): void => {
@@ -1566,7 +1597,18 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
       })()
     },
-    [app, applyChatsUpdate, cancelPendingSubmit, persistSelection, refreshActions],
+    [
+      app,
+      applyChatsUpdate,
+      cancelPendingSubmit,
+      persistSelection,
+      refreshActions,
+      setSelectedChatId,
+      setLoadedChatProjectIds,
+      setSelectedProjectId,
+      setProjects,
+      setExpandedProjectIds,
+    ],
   )
 
   // --- Project Files mode (spec Behaviour 1–2, 6, 12, 14–15) ---------------
@@ -1848,6 +1890,9 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       selectedProjectId,
       updateFilesSession,
       updateTabsSession,
+      setSelectedProjectId,
+      setSelectedChatId,
+      setExpandedProjectIds,
     ],
   )
 
@@ -1996,7 +2041,16 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
         }
       })()
     },
-    [app, applyChatsUpdate, persistSelection, updateTabsSession],
+    [
+      app,
+      applyChatsUpdate,
+      persistSelection,
+      updateTabsSession,
+      setSelectionNonce,
+      setSelectedProjectId,
+      setSelectedChatId,
+      setExpandedProjectIds,
+    ],
   )
 
   // Start confirmation (kanban task launch). The chat is named in main. This
@@ -2017,7 +2071,15 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       persistSelection(projectId, chat.id)
       updateTabsSession(projectId, (session) => activateTab(session, TERMINAL_TAB))
     },
-    [applyChatsUpdate, persistSelection, updateTabsSession],
+    [
+      applyChatsUpdate,
+      persistSelection,
+      updateTabsSession,
+      setSelectionNonce,
+      setSelectedProjectId,
+      setSelectedChatId,
+      setExpandedProjectIds,
+    ],
   )
 
   // New Chat profile menu (spec new-chat-agent-menu): the menu reads the
@@ -2222,7 +2284,7 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
       }
       return true
     },
-    [app, applyChatsUpdate, cancelPendingSubmit, persistSelection],
+    [app, applyChatsUpdate, cancelPendingSubmit, persistSelection, setSelectedChatId],
   )
 
   // Close-chat control on a chat row (user request 2026-10-04): the row's X
@@ -2705,17 +2767,8 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
           onResizeNudge={leftRegion.nudge}
           projects={
             <LeftNavigation
-              projects={projects}
               projectNamesUppercase={projectNamesUppercase}
               showProjectIcons={showProjectIcons}
-              projectColors={projectColors}
-              chatsByProject={chatsByProject}
-              sessionTasks={sessionTasks}
-              expandedProjectIds={expandedProjectIds}
-              selectedProjectId={selectedProjectId}
-              selectedChatId={selectedChatId}
-              attention={chatAttention}
-              activity={chatActivity}
               attentionBadgeEnabled={attentionSettings.badge}
               attentionActiveIndicatorEnabled={attentionSettings.activeIndicator}
               onSelectProject={handleOpenProjectKanban}
@@ -2724,7 +2777,6 @@ export function App({ app = window.app }: { app?: typeof window.app }): React.JS
               onAddProject={handleAddProject}
               onRemoveProject={handleRemoveProject}
               onOpenProjectFiles={handleOpenProjectFiles}
-              kanbanProjectIds={kanbanProjectIds}
               onOpenProjectKanban={handleOpenProjectKanban}
               onOpenInFileExplorer={handleOpenInFileExplorer}
               onOpenProjectSettings={(projectId) => {

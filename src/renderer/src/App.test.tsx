@@ -272,8 +272,10 @@ describe('app settings and themes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     expect(app.dictation.dictionaryList).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('tab', { name: 'Dictation' }))
+    // Observe the lazy load before the dictionary's separate project-picker
+    // hydration can trigger its existing second global read.
+    expect(app.dictation.dictionaryList).toHaveBeenCalledOnce()
     await screen.findByRole('heading', { name: 'Dictionary (OpenWhispr)' })
-    await waitFor(() => expect(app.dictation.dictionaryList).toHaveBeenCalledOnce())
     // Select/confirm are journey setup only; the gating itself is asserted in
     // DesktopDictationSettings.test.tsx and useDesktopDictation.test.tsx.
     fireEvent.change(await screen.findByTestId('dictation-provider-select'), {
@@ -301,6 +303,52 @@ describe('app settings and themes', () => {
     // the desktop shortcut path must never start an in-app take.
     expect(app.dictation.audio).not.toHaveBeenCalled()
   })
+  it('hydrates project and chat selection without writing defaults, then persists explicit selections immediately', async () => {
+    const app = createAppApiStub()
+    let resolveChats: (chats: ChatInfo[]) => void = () => undefined
+    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectNoRuntime])
+    vi.mocked(app.chats.list).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveChats = resolve
+        }),
+    )
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === APP_STATE_KEY.selectedProjectId
+        ? 'p1'
+        : key === APP_STATE_KEY.selectedChatId
+          ? 't1'
+          : null,
+    )
+    render(<App app={app} />)
+    await waitFor(() => expect(app.chats.list).toHaveBeenCalledWith('p1'))
+    const selectionWrites = () =>
+      vi
+        .mocked(app.state.set)
+        .mock.calls.filter(
+          ([key]) =>
+            key === APP_STATE_KEY.selectedProjectId || key === APP_STATE_KEY.selectedChatId,
+        )
+    expect(selectionWrites()).toEqual([])
+    expect(screen.queryByTestId(TEST_ID.startNewChatState)).toBeNull()
+    await act(async () => {
+      resolveChats([chatOne, chatTwo])
+    })
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+    expect(selectionWrites()).toEqual([])
+
+    fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
+    expect(selectionWrites()).toEqual([
+      [APP_STATE_KEY.selectedProjectId, 'p1'],
+      [APP_STATE_KEY.selectedChatId, 't2'],
+    ])
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    expect(selectionWrites().slice(-2)).toEqual([
+      [APP_STATE_KEY.selectedProjectId, 'p2'],
+      [APP_STATE_KEY.selectedChatId, ''],
+    ])
+  })
+
   it('defaults project names to uppercase and persists the original-case preference', async () => {
     const app = createAppApiStub()
     vi.mocked(app.projects.list).mockResolvedValue([projectA])

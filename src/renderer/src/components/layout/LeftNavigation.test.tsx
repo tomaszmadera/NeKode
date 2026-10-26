@@ -1,10 +1,109 @@
-import type { ChatInfo, ProjectInfo } from '@shared/ipc-contract'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import type { ChatInfo, ProjectInfo, TaskProgressSnapshot } from '@shared/ipc-contract'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import type React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { ChatStoreContext, createChatStore } from '../../stores/useChatStore'
+import { createProjectStore, ProjectStoreContext } from '../../stores/useProjectStore'
 import { LeftNavigation } from './LeftNavigation'
 
 afterEach(cleanup)
+
+type NavigationFixture = React.ComponentProps<typeof LeftNavigation> & {
+  projects: ProjectInfo[]
+  projectColors: Record<string, string>
+  chatsByProject: Record<string, ChatInfo[]>
+  expandedProjectIds: ReadonlySet<string>
+  selectedProjectId: string | null
+  selectedChatId: string | null
+  attention: Record<string, { message: string | null }>
+  activity?: ReadonlySet<string>
+  taskSnapshots?: Record<string, TaskProgressSnapshot>
+  kanbanProjectIds: ReadonlySet<string>
+}
+
+function navigation(
+  {
+    projects,
+    projectColors,
+    chatsByProject,
+    expandedProjectIds,
+    selectedProjectId,
+    selectedChatId,
+    attention,
+    activity = new Set(),
+    taskSnapshots = {},
+    kanbanProjectIds,
+    ...props
+  }: NavigationFixture,
+  projectStore = createProjectStore(),
+  chatStore = createChatStore(),
+): React.JSX.Element {
+  projectStore.setState({
+    projects,
+    projectColors,
+    expandedProjectIds,
+    selectedProjectId,
+    kanbanProjectIds,
+  })
+  chatStore.setState({
+    chatsByProject,
+    selectedChatId,
+    chatAttention: attention,
+    chatActivity: activity,
+    taskSnapshots,
+  })
+  return (
+    <ProjectStoreContext.Provider value={projectStore}>
+      <ChatStoreContext.Provider value={chatStore}>
+        <LeftNavigation {...props} />
+      </ChatStoreContext.Provider>
+    </ProjectStoreContext.Provider>
+  )
+}
+
+function progressSnapshot(ref: string, stale = false): TaskProgressSnapshot {
+  return {
+    projectId: 'p1',
+    adapterId: 'example',
+    status: stale ? 'stale' : 'ok',
+    receivedAt: null,
+    ...(stale ? { error: { code: 'transient' as const, message: 'Source unavailable' } } : {}),
+    tasks: [
+      {
+        id: ref.toLowerCase(),
+        ref,
+        title: null,
+        state: 'active',
+        location: 'live',
+        recordState: 'valid',
+        errors: [],
+        activity: null,
+        phases: [
+          {
+            name: 'Work',
+            steps: Array.from({ length: 8 }, (_, index) => ({
+              id: `step-${index + 1}`,
+              label: index === 4 ? 'Fixes' : `Step ${index + 1}`,
+              done: index < 4,
+            })),
+          },
+        ],
+        currentStepId: 'step-5',
+        currentLabel: null,
+        corrections: 0,
+        reviews: 0,
+        nextAction: null,
+        blockers: null,
+        createdAt: null,
+        updatedAt: null,
+        completedAt: null,
+        checkpoints: [],
+        path: '.agents/tasks/example/task.md',
+      },
+    ],
+  }
+}
 
 function defaultProps() {
   const projects: ProjectInfo[] = [
@@ -43,6 +142,38 @@ function defaultProps() {
 }
 
 describe('LeftNavigation session status indicators', () => {
+  it('subscribes directly to project and chat store updates without domain props', () => {
+    const projectStore = createProjectStore()
+    const chatStore = createChatStore()
+    render(
+      navigation(
+        { ...defaultProps(), projects: [], expandedProjectIds: new Set(), selectedProjectId: null },
+        projectStore,
+        chatStore,
+      ),
+    )
+    expect(screen.queryByTestId(testIdFor.projectSelect('p1'))).toBeNull()
+    act(() => {
+      projectStore.getState().setProjects(defaultProps().projects)
+      projectStore.getState().setExpandedProjectIds(new Set(['p1']))
+      projectStore.getState().setSelectedProjectId('p1')
+      chatStore
+        .getState()
+        .setChatsByProject({ p1: [{ id: 'c1', projectId: 'p1', name: 'Direct' }] })
+      chatStore.getState().setSelectedChatId('c1')
+      chatStore.getState().setChatAttention({ c1: { message: 'Confirm?' } })
+    })
+    expect(screen.getByTestId(testIdFor.chatRow('c1')).getAttribute('data-selected')).toBe('true')
+    expect(screen.getByTestId(testIdFor.chatAttentionBadge('c1')).getAttribute('title')).toBe(
+      'Confirm?',
+    )
+    act(() => {
+      chatStore.getState().reset()
+      projectStore.getState().reset()
+    })
+    expect(screen.queryByTestId(testIdFor.projectSelect('p1'))).toBeNull()
+  })
+
   it('shows the Kanban ref with an agent badge and uses its identity for selection and closing', () => {
     const props = defaultProps()
     const chat: ChatInfo = {
@@ -52,7 +183,7 @@ describe('LeftNavigation session status indicators', () => {
       taskRef: 'NEKODE-42',
       agentName: 'Codex',
     }
-    render(<LeftNavigation {...props} chatsByProject={{ p1: [chat] }} />)
+    render(navigation({ ...props, chatsByProject: { p1: [chat] } }))
     const row = screen.getByTestId(testIdFor.chatRow(chat.id))
     expect(within(row).getByText('NEKODE-42')).toBeTruthy()
     expect(within(row).getByText('Codex')).toBeTruthy()
@@ -74,7 +205,7 @@ describe('LeftNavigation session status indicators', () => {
       { id: 'legacy', projectId: 'p1', name: '[WSL] Old profile' },
       { id: 'custom', projectId: 'p1', name: 'Existing name' },
     ]
-    render(<LeftNavigation {...defaultProps()} chatsByProject={{ p1: chats }} />)
+    render(navigation({ ...defaultProps(), chatsByProject: { p1: chats } }))
     const agent = screen.getByTestId(testIdFor.chatRow('agent'))
     expect(within(agent).getByText('Code analysis')).toBeTruthy()
     expect(within(agent).getByText('Claude')).toBeTruthy()
@@ -96,7 +227,7 @@ describe('LeftNavigation session status indicators', () => {
     const props = defaultProps()
     props.projects[0].path = path
     props.projects[1].runtimeLabel = 'WSL: misleading legacy label'
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
     const wslProject = screen.getByTestId(testIdFor.projectSelect('p1'))
     const badge = within(wslProject).getByText('WSL')
     expect(badge.getAttribute('title')).toBe('WSL: Ubuntu')
@@ -118,7 +249,7 @@ describe('LeftNavigation session status indicators', () => {
       attention: { t2: { message: 'Approval required' } }, // waiting
       // t3 has neither -> idle
     }
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     // Running session (t1)
     const row1 = screen.getByTestId(testIdFor.chatRow('t1'))
@@ -160,6 +291,7 @@ describe('LeftNavigation session status indicators', () => {
             id: 't1',
             projectId: 'p1',
             name: 'Task session',
+            taskRef: 'NEKODE-42',
           },
           {
             id: 't2',
@@ -168,9 +300,9 @@ describe('LeftNavigation session status indicators', () => {
           },
         ],
       },
-      sessionTasks: { t1: { taskId: 'NEKODE-42', step: 5, totalSteps: 8 } },
+      taskSnapshots: { p1: progressSnapshot('NEKODE-42') },
     }
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     const badge1 = screen.getByTestId(testIdFor.chatTaskProgress('t1'))
     expect(badge1.textContent).toBe('5/8')
@@ -189,7 +321,7 @@ describe('LeftNavigation session status indicators', () => {
         p1: [{ id: 't1', projectId: 'p1', name: 'Chat 1' }],
       },
     }
-    const view = render(<LeftNavigation {...props} />)
+    const view = render(navigation({ ...props }))
     const row = screen.getByTestId(testIdFor.chatRow('t1'))
     const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
 
@@ -199,18 +331,18 @@ describe('LeftNavigation session status indicators', () => {
     expect(screen.getByTestId(testIdFor.chatTime('t1')).textContent).toBe('now')
 
     // Becomes running via activity
-    view.rerender(<LeftNavigation {...props} activity={new Set(['t1'])} />)
+    view.rerender(navigation({ ...props, activity: new Set(['t1']) }))
     expect(dot.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80
     expect(row.getAttribute('title')).toBe('Chat 1: running')
     expect(screen.getByTestId(testIdFor.chatTime('t1')).textContent).toBe('now')
 
     // Becomes waiting via attention
     view.rerender(
-      <LeftNavigation
-        {...props}
-        activity={new Set(['t1'])}
-        attention={{ t1: { message: 'Confirm?' } }}
-      />,
+      navigation({
+        ...props,
+        activity: new Set(['t1']),
+        attention: { t1: { message: 'Confirm?' } },
+      }),
     )
     expect(dot.style.backgroundColor).toBe('rgb(245, 158, 11)') // #F59E0B
     expect(row.getAttribute('title')).toBe('Chat 1: waiting for input')
@@ -224,7 +356,7 @@ describe('LeftNavigation session status indicators', () => {
         p1: [{ id: 't1', projectId: 'p1', name: 'Chat 1' }],
       },
     }
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
     const row = screen.getByTestId(testIdFor.chatRow('t1'))
     const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
     const closeBtn = screen.getByTestId(testIdFor.chatClose('t1'))
@@ -251,7 +383,7 @@ describe('LeftNavigation session status indicators', () => {
 describe('LeftNavigation project avatar and initials', () => {
   it('renders project avatar with initials and stable color by default', () => {
     const props = defaultProps()
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     const avatar1 = screen.getByTestId(testIdFor.projectAvatar('p1'))
     expect(avatar1).toBeTruthy()
@@ -270,7 +402,7 @@ describe('LeftNavigation project avatar and initials', () => {
   it('uses custom project color when provided in projectColors', () => {
     const props = defaultProps()
     props.projectColors = { p1: '#F472B6' }
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     const avatar1 = screen.getByTestId(testIdFor.projectAvatar('p1'))
     expect(avatar1.style.color).toBe('rgb(244, 114, 182)') // #F472B6
@@ -280,7 +412,7 @@ describe('LeftNavigation project avatar and initials', () => {
   it('does not render avatars in DOM when showProjectIcons is false', () => {
     const props = defaultProps()
     props.showProjectIcons = false
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     expect(screen.queryByTestId(testIdFor.projectAvatar('p1'))).toBeNull()
     expect(screen.queryByTestId(testIdFor.projectAvatar('p2'))).toBeNull()
@@ -288,7 +420,7 @@ describe('LeftNavigation project avatar and initials', () => {
 
   it('folds with the chevron only and opens the project only from its icon and name (NEKODE-96)', () => {
     const props = defaultProps()
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     // The chevron of an unselected project unfolds it without selecting it.
     const toggle2 = screen.getByTestId(testIdFor.projectToggle('p2'))
@@ -323,7 +455,7 @@ describe('LeftNavigation project avatar and initials', () => {
     // p1 is expanded and selected; p2 is neither
     props.expandedProjectIds = new Set(['p1'])
     props.selectedProjectId = 'p1'
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     const btn1 = screen.getByTestId(testIdFor.projectSelect('p1'))
     const nameSpan1 = btn1.querySelector('span.truncate')
@@ -339,7 +471,7 @@ describe('LeftNavigation project avatar and initials', () => {
     // p1 is expanded and selected; p2 is collapsed and unselected
     props.expandedProjectIds = new Set(['p1'])
     props.selectedProjectId = 'p1'
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     const btn1 = screen.getByTestId(testIdFor.projectSelect('p1'))
     expect(btn1.className).toContain('text-project-title')
@@ -352,7 +484,7 @@ describe('LeftNavigation project avatar and initials', () => {
 
   it('renders project row flush left with no hover background and enlarged action buttons', () => {
     const props = defaultProps()
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     const row = screen.getByTestId(testIdFor.projectRow('p1'))
     expect(row.className).not.toContain('hover:bg-row-hover')
@@ -385,7 +517,7 @@ describe('LeftNavigation project avatar and initials', () => {
         p1: [{ id: 't1', projectId: 'p1', name: 'Chat 1' }],
       },
     }
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     // Kanban pill under project row is retired
     expect(screen.queryByTestId(testIdFor.projectKanban('p1'))).toBeNull()
@@ -417,18 +549,9 @@ describe('LeftNavigation project avatar and initials', () => {
           },
         ],
       },
-      sessionTasks: {
-        n74: {
-          taskId: 'NEKODE-74',
-          step: 5,
-          totalSteps: 8,
-          stale: true,
-          staleReason: 'Source unavailable',
-          ariaLabel: 'Out of date: Source unavailable. Task progress: step 5 of 8, Fixes',
-        },
-      },
+      taskSnapshots: { p1: progressSnapshot('NEKODE-74', true) },
     }
-    render(<LeftNavigation {...props} />)
+    render(navigation({ ...props }))
 
     const badge = screen.getByTestId(testIdFor.chatTaskProgress('n74'))
     expect(badge).toBeTruthy()

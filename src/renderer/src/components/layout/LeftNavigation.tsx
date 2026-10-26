@@ -2,18 +2,21 @@ import type {
   AgentProfile,
   AgentProfilesDocument,
   ChatInfo,
-  ProjectInfo,
   SessionStatus,
   SessionTaskProgress,
 } from '@shared/ipc-contract'
 import { parseWslPath } from '@shared/wsl-path'
 import type React from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'
 import { getProjectColor, getProjectInitials } from '../../lib/project-avatar'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { useChatStore } from '../../stores/useChatStore'
+import { useProjectStore } from '../../stores/useProjectStore'
+import { useSessionTasks } from '../../stores/useSessionTasks'
 import { NoticeBanner } from './NoticeBanner'
 
 // Left navigation (UX-UI §9-10): a "Projects" section header carries the
@@ -30,19 +33,9 @@ import { NoticeBanner } from './NoticeBanner'
 // remove button.
 
 interface LeftNavigationProps {
-  projects: ProjectInfo[]
   projectNamesUppercase?: boolean
   showProjectIcons?: boolean
-  projectColors?: Record<string, string>
-  chatsByProject: Record<string, ChatInfo[]>
-  expandedProjectIds: ReadonlySet<string>
-  selectedProjectId: string | null
-  selectedChatId: string | null
-  /** Chats currently showing the attention badge (chat id → tooltip data). */
-  attention: Record<string, { message: string | null }>
-  activity?: ReadonlySet<string>
   sessionStatuses?: Record<string, SessionStatus>
-  sessionTasks?: Record<string, SessionTaskProgress>
   /**
    * Attention surfacing gates (attention-alert-settings spec): the badge
    * toggle hides unselected chats' dots while the state itself survives
@@ -63,12 +56,6 @@ interface LeftNavigationProps {
   onRemoveProject: (projectId: string) => void
   /** Enters Project Files mode for the project (spec Behaviour 1). */
   onOpenProjectFiles: (projectId: string) => void
-  /**
-   * Projects with a stored Kanban binding (spec kanban-adapter-interface
-   * Behaviour 14): each shows a `Kanban` tile as the first element of its
-   * expanded content, directly under its name. Unbound projects show none.
-   */
-  kanbanProjectIds: ReadonlySet<string>
   /** Opens the project's Kanban board (selects the project, activates its tab). */
   onOpenProjectKanban: (projectId: string) => void
   onOpenProjectSettings: (projectId: string) => void
@@ -300,18 +287,9 @@ export function SessionRowItem({
 }
 
 export function LeftNavigation({
-  projects,
   projectNamesUppercase = true,
   showProjectIcons = true,
-  projectColors,
-  chatsByProject,
-  expandedProjectIds,
-  selectedProjectId,
-  selectedChatId,
-  attention,
-  activity,
   sessionStatuses,
-  sessionTasks,
   attentionBadgeEnabled,
   attentionActiveIndicatorEnabled,
   onSelectProject,
@@ -320,7 +298,6 @@ export function LeftNavigation({
   onAddProject,
   onRemoveProject,
   onOpenProjectFiles,
-  kanbanProjectIds,
   onOpenProjectKanban,
   onOpenProjectSettings,
   onCreateChat,
@@ -332,6 +309,23 @@ export function LeftNavigation({
   notice,
   children,
 }: LeftNavigationProps): React.JSX.Element {
+  const { projects, projectColors, expandedProjectIds, selectedProjectId } = useProjectStore(
+    useShallow((state) => ({
+      projects: state.projects,
+      projectColors: state.projectColors,
+      expandedProjectIds: state.expandedProjectIds,
+      selectedProjectId: state.selectedProjectId,
+    })),
+  )
+  const { chatsByProject, selectedChatId, attention, activity } = useChatStore(
+    useShallow((state) => ({
+      chatsByProject: state.chatsByProject,
+      selectedChatId: state.selectedChatId,
+      attention: state.chatAttention,
+      activity: state.chatActivity,
+    })),
+  )
+  const sessionTasks = useSessionTasks()
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   // Agent profile menu of one project's New Chat button (spec
   // new-chat-agent-menu): presentation-only state; the profiles themselves
