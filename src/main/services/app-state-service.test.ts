@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
+import { projectPathIdentity } from '../db/project-identity'
 import { AppStateService } from './app-state-service'
 
 // AppStateService unit tests on an :memory: database (pattern: db.test.ts),
@@ -26,8 +27,15 @@ function createService(): { state: AppStateService; db: Database.Database } {
 
 function insertProject(db: Database.Database, id: string): void {
   db.prepare(
-    'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(id, `project-${id}`, `D:/code/${id}`, null, '2026-01-01T00:00:00Z')
+    'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(
+    id,
+    `project-${id}`,
+    `D:/code/${id}`,
+    projectPathIdentity(`D:/code/${id}`, process.platform),
+    null,
+    '2026-01-01T00:00:00Z',
+  )
 }
 
 function insertChat(db: Database.Database, id: string, projectId: string): void {

@@ -380,8 +380,8 @@
 
 [data-theme="nekode-float"] .nk-chat-row {
   height: 38px;
-  padding-left: 22px;
-  padding-right: 10px;
+  padding-left: calc(22px * 0.7);
+  padding-right: calc(10px * 0.7);
   border-radius: 9px;
   gap: 10px;
   color: var(--color-chat-title);
@@ -394,6 +394,11 @@
 }
 
 [data-theme="nekode-float"] .nk-chat-row[data-selected="true"],
+[data-theme="nekode-float"] .nk-chat-row[data-selected="true"]:hover {
+  background-color: transparent;
+  color: var(--float-ink-strong);
+}
+
 [data-theme="nekode-float"] .nk-settings-nav[aria-current="page"] {
   background-color: var(--float-overlay-hover);
   color: var(--float-ink-strong);

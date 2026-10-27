@@ -232,6 +232,55 @@ describe('usage adapter process boundary', () => {
       message: 'Usage source config. Use a fixture management key.',
     })
   })
+  it.each([
+    ['catalog-empty', 'config', 'No refresh sources are assigned in the Hub.'],
+    ['unknown-reason', 'config', 'Check the account settings.'],
+    ['constructor', 'config', 'Check the account settings.'],
+    ['catalog-empty', 'auth', 'Sign in with the CLI or account this adapter uses, then retry.'],
+  ])('selects only a declared reason for the same code (%s, %s)', async (reason, code, action) => {
+    const a = {
+      ...adapter(
+        `console.log(JSON.stringify({protocolVersion:2,ok:false,error:{code:${JSON.stringify(code)},reason:${JSON.stringify(reason)},message:'fixture-secret'}}));process.exitCode=1`,
+      ),
+      errorActions: { config: 'Check the account settings.' },
+      errorReasons: {
+        'catalog-empty': {
+          code: 'config' as const,
+          message: 'No refresh sources are assigned in the Hub.',
+        },
+      },
+    }
+    await expect(new UsageAdapterHost().read(a, {}, 'account', signal())).rejects.toMatchObject({
+      code,
+      message: `Usage source ${code}. ${action}`,
+    })
+  })
+  it('loads bounded reason messages and rejects malformed reason declarations', () => {
+    const a = adapter('')
+    const write = (id: string, errorReasons: unknown) => {
+      mkdirSync(join(a.directory, id))
+      writeFileSync(
+        join(a.directory, id, 'usage-adapter.json'),
+        JSON.stringify({ ...a, id, errorReasons }),
+      )
+    }
+    const valid = { 'catalog-empty': { code: 'config', message: 'Configure Hub sources.' } }
+    write('valid', valid)
+    write('bad-code', { empty: { code: 'secret', message: 'No.' } })
+    write('bad-id', { 'secret token': { code: 'config', message: 'No.' } })
+    write('long-message', { empty: { code: 'config', message: 'x'.repeat(257) } })
+    write('missing-message', { empty: { code: 'config' } })
+    write(
+      'too-many',
+      Object.fromEntries(
+        Array.from({ length: 51 }, (_, i) => [`reason-${i}`, { code: 'config', message: 'No.' }]),
+      ),
+    )
+    const result = discoverUsageAdapters(a.directory)
+    expect(result.find((item) => item.id === 'valid')).toMatchObject({ errorReasons: valid })
+    for (const id of ['bad-code', 'bad-id', 'long-message', 'missing-message', 'too-many'])
+      expect(result.find((item) => item.directory === join(a.directory, id))?.error).toBeTruthy()
+  })
   it('accepts bounded descriptions and next actions and rejects invalid ones', () => {
     const a = adapter(''),
       root = a.directory

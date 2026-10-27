@@ -128,3 +128,36 @@ IDs are generated in the main process (UUID v4). All IPC channels are validated 
 ## Relevant SDD / ADR
 
 - `docs/architecture/sdd.md` §3, §5, §6, §7 (no ADR register exists in this repo).
+
+## IPC and process lifecycle hardening (NEKODE-135)
+
+This amendment specifies the P1 scope in [architecture agent review](../../architecture/architecture-agent-review.md), sections 7.2 and 8. It extends the existing IPC, quit, startup, and project-identity contracts. P0 and P2-P5 are excluded.
+
+### Trust boundary
+
+`projects:add`, `projects:remove`, and `chats:remove` require their `buildValidatedChannels` entry before parsing or invoking any dialog, persistence, cleanup, or process operation. A missing entry throws `AppError('validation')`, following `dictation:desktopActivate`. Raw payloads never bypass validation. Existing sender authorization, payload shapes, bridge methods, and successful operation behavior stay unchanged.
+
+The validated channel set equals the values of `IPC_CHANNEL` except the explicitly identified main-to-renderer push channels. Each invoke channel has exactly one entry, with no unknown entries. Preserve the existing set-equality regression rather than duplicating it.
+
+### Quit and startup
+
+1. Usage and task-progress shutdown failures are reported independently and cannot prevent terminal shutdown or the remaining cleanup hooks from starting. Each cleanup runs once. Database closure follows successful terminal shutdown.
+2. Every `before-quit` while terminal shutdown is pending calls `preventDefault`, including after synchronous cleanup failures and timeout reports. Repeated quit requests do not start another terminal shutdown.
+3. Successful terminal shutdown permits application exit. Rejected terminal shutdown is reported and keeps the initial quit blocked; a later explicit quit may force exit only after that terminal-shutdown promise has settled. A synchronous terminal-shutdown throw is treated as a settled failure. Chat persistence remains intact during application quit.
+4. A nonempty `NEKODE_USER_DATA` override is resolved using the existing quote/whitespace rules. Its directory is created recursively before `app.setPath`. Creation failures remain explicit and do not select another profile.
+5. Acquire Electron's single-instance lock after selecting `userData` and before opening the database or creating services/windows. A process denied the lock quits without initialization. A `second-instance` event restores a minimized existing main window, shows it if hidden, and focuses it; it never creates a duplicate window during startup. Different isolated userData profiles retain their independent lock scope.
+
+### Migration history and project identity
+
+1. Before executing pending migrations, the sorted applied version set must equal a prefix of the supplied, strictly ascending migration list. Empty history and the complete list are valid. A hole, missing first version, or unsupported version fails before any pending migration runs. Nonconsecutive migration numbers are valid when their applied history is a prefix of that exact list. Existing newer-schema rejection remains explicit.
+2. Add a forward migration; do not edit applied migrations. Persist a normalized project identity and enforce it with a unique index. Backfill existing rows transactionally. Preserve project ids, chats, settings, and usable display/filesystem paths.
+3. For Local projects on win32, identity ignores letter case, slash direction, and redundant terminal separators after normalizing the absolute path. Other platforms preserve case. Name derivation must not produce an empty name for a directory with a terminal separator; existing root rejection stays intact.
+4. Preserve the [WSL contract](../project-environments/spec.md): canonicalize WSL server aliases using the existing parser, preserve case of Linux directory components, and keep different distributions distinct. Do not lowercase Linux paths merely because NeKode runs on win32. Do not add symlink resolution or filesystem identity detection.
+5. Duplicate registration returns the existing typed `conflict` error. If existing rows collide under the new identity, reject the migration with an actionable error and roll back its changes. Do not merge/delete projects or dependent data. Recovery of such existing data is outside this amendment.
+
+### Acceptance and verification
+
+- New behavioral regressions demonstrably fail without the corresponding fixes and pass with them. Cover missing validation entries and absence of side effects; cleanup failures and pending/rejected/reentrant quit; missing userData directory; denied instance lock and existing-window focus; invalid migration prefixes; normalized duplicate identity and transactional backfill/collision handling, including Local versus WSL case behavior.
+- Preserve and run the existing invoke-channel set-equality test. Push channels remain excluded from invoke validation.
+- `pnpm run verify` passes on the final worktree, with unrelated existing changes identified in the task record.
+- Verify in the real Windows Electron application using isolated fixture data: a second launch with the same userData does not open another window and focuses/restores the first; quit with an open terminal leaves no owned shell process alive. Do not operate on the developer's actual profile or unrelated processes. Record actual evidence or the exact missing prerequisite; unit mocks do not satisfy this check.

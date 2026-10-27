@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { basename, isAbsolute } from 'node:path'
+import { isAbsolute } from 'node:path'
 import type { ProjectInfo } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { parseWslPath, wslProjectPath } from '@shared/wsl-path'
 import type Database from 'better-sqlite3'
+import { projectDirectoryName, projectPathIdentity } from '../db/project-identity'
 
 // ProjectService: project CRUD on top of the projects table.
 // All rule validation happens here (spec Business rules / Edge cases);
@@ -61,14 +62,15 @@ export class ProjectService {
 
     const normalized =
       location === null ? path : wslProjectPath(location.distribution, location.linuxPath)
-    const name = basename(normalized)
+    const name = projectDirectoryName(normalized, process.platform)
+    const pathIdentity = projectPathIdentity(path, process.platform)
     const id = randomUUID()
     try {
       this.db
         .prepare(
-          'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
         )
-        .run(id, name, normalized, null, new Date().toISOString())
+        .run(id, name, normalized, pathIdentity, null, new Date().toISOString())
     } catch (error) {
       if (isUniquePathViolation(error)) {
         throw new AppError(
@@ -105,9 +107,9 @@ export class ProjectService {
     if (!isAbsolute(path)) {
       return 'Project path must be an absolute directory path.'
     }
-    // Drive roots (C:\, D:\, /) have no usable folder name.
-    const name = basename(path)
-    if (name.length === 0) {
+    // Drive roots (C:\, D:\, /) have no usable folder name. A trailing
+    // separator on a real directory still yields that directory's name.
+    if (projectDirectoryName(path, process.platform).length === 0) {
       return 'Cannot add a drive root as a project.'
     }
     const stat = this.fs.stat(path)

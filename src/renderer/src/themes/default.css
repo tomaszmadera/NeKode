@@ -43,8 +43,8 @@
   --color-project-title-collapsed: rgb(195 199 212);
   --color-projects-header: rgb(139 144 167);
   --color-chat-title: rgb(163 169 194);
-  /* Selection accent: narrow left stripe on the selected project's container
-     (NEKODE-3, design doc 14). */
+  /* Selection accent: left bar on the selected session
+     (user decision 2026-10-27, design doc 14). */
   --color-accent: rgb(139 147 248);
   /* Settings dialog surfaces. Roles follow the settings reference: dialog,
      recessed field, grouped card, selected row, ink on accent, switch knob. */

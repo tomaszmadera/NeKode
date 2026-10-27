@@ -11,6 +11,7 @@ import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openDatabase } from '../../db/connection'
 import { runMigrations } from '../../db/migrations'
+import { projectPathIdentity } from '../../db/project-identity'
 import { AppStateService } from '../app-state-service'
 import { AgentProfilesService } from './agent-profiles-service'
 
@@ -25,10 +26,13 @@ function harness() {
   runMigrations(db)
   const state = new AppStateService({ db })
   for (const id of ['p1', 'p2', 'empty'])
-    db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT INTO projects (id, name, path, path_identity, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(
       id,
       `Project ${id}`,
       `D:/code/${id}`,
+      projectPathIdentity(`D:/code/${id}`, process.platform),
       '2026-01-01',
     )
   const projects = {
@@ -202,10 +206,13 @@ describe('global agent profiles and project opt-in', () => {
     expect(state.get(projectAgentSelectionKey('p1'))).toBeNull()
     expect(state.get(projectHandoffDirKey('p1'))).toBe('.agents/handoffs')
     expect(service.libraryGet().profiles).toEqual([agent])
-    db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT INTO projects (id, name, path, path_identity, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(
       'new',
       'Re-added',
       'D:/code/p1',
+      projectPathIdentity('D:/code/p1', process.platform),
       '2026-01-01',
     )
     expect(service.get('new').profiles).toEqual([])

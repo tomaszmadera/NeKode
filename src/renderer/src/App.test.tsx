@@ -2675,11 +2675,11 @@ describe('project and chat data flow', () => {
     render(<App app={app} />)
     fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const chats = await screen.findByTestId(testIdFor.projectChats('p1'))
-    expect(chats.textContent).toBe('No chats')
+    expect(chats.textContent).toBe('No active sessions')
     expect(within(chats).queryByRole('list')).toBeNull()
     fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
     await screen.findByTestId(testIdFor.chatRow('t1'))
-    expect(within(chats).queryByText('No chats')).toBeNull()
+    expect(within(chats).queryByText('No active sessions')).toBeNull()
     fireEvent.click(screen.getByTestId(TEST_ID.newChatButton))
     await screen.findByTestId(testIdFor.chatRow('t2'))
 

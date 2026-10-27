@@ -85,6 +85,9 @@ interface LeftNavigationProps {
   children?: React.ReactNode
 }
 
+/** One left edge for the session heading and the empty-list caption. */
+export const SESSION_CAPTION_CLASS = 'pl-3.5 text-xs leading-4 text-ink-muted'
+
 type ContextMenuState = {
   x: number
   y: number
@@ -191,9 +194,9 @@ export function SessionRowItem({
       <button
         type="button"
         className={cn(
-          'nk-chat-row flex h-control w-full items-center gap-2 rounded-md pl-5 pr-5 text-left text-sm transition-colors duration-fast ease-standard border-0',
+          'nk-chat-row relative flex h-control w-full items-center gap-2 rounded-md pl-3.5 pr-3.5 text-left text-sm transition-colors duration-fast ease-standard border-0',
           isChatSelected
-            ? 'bg-selected text-project-title'
+            ? 'bg-transparent text-project-title'
             : cn(
                 'bg-transparent text-chat-title hover:bg-row-hover group-hover:bg-row-hover',
                 isRevealed && 'bg-row-hover',
@@ -269,7 +272,7 @@ export function SessionRowItem({
       <button
         type="button"
         className={cn(
-          'absolute right-5 top-1/2 z-10 h-6 w-6 -translate-y-1/2 items-center justify-center rounded bg-transparent text-[#8A90A6] transition-colors duration-fast ease-standard hover:text-white',
+          'absolute right-3.5 top-1/2 z-10 h-6 w-6 -translate-y-1/2 items-center justify-center rounded bg-transparent text-[#8A90A6] transition-colors duration-fast ease-standard hover:text-white',
           isRevealed ? 'flex' : 'hidden',
         )}
         data-testid={testIdFor.chatClose(chat.id)}
@@ -375,8 +378,11 @@ export function LeftNavigation({
           icon-only Add Project button on the right. Title sized like the
           project rows (text-sm). Its height aligns the first project tile
           with the action buttons: header + 8px margin + 4px list inset =
-          tab strip + 1px action-row border + 8px action-row padding. */}
-      <div className="mt-2 flex h-[calc(var(--spacing-control)+0.3125rem)] shrink-0 items-center justify-between px-5">
+          tab strip + 1px action-row border + 8px action-row padding.
+          Horizontal inset is the list padding (14px) plus the project-row
+          gap (4px), so the title lines up with the chevron and Add lines
+          up with the row actions. */}
+      <div className="mt-2 flex h-[calc(var(--spacing-control)+0.3125rem)] shrink-0 items-center justify-between px-[18px]">
         <span
           className="text-sm uppercase text-projects-header"
           data-testid={TEST_ID.projectsHeader}
@@ -401,7 +407,7 @@ export function LeftNavigation({
         // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling and ContextMenu / Shift+F10 in this region.
         tabIndex={0}
         data-testid={TEST_ID.projectListArea}
-        className="min-h-0 flex-1 overflow-y-auto px-5 pb-2"
+        className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-2"
         onContextMenu={(event) => {
           // Project subtrees keep their own gestures, including chat controls.
           if (event.target instanceof Element && event.target.closest('li')) return
@@ -436,22 +442,15 @@ export function LeftNavigation({
               const wslLocation = parseWslPath(project.path)
               return (
                 <li key={project.id} className="py-1">
-                  {/* Selection container (NEKODE-3, brief r3.2): the whole
-                      row is the container — rounded, highlighted, with a
-                      narrow left accent stripe when selected; overflow-hidden
-                      clips the stripe to the radius. Stripe is decorative;
-                      selection stays announced by data-selected. */}
-                  {/* Active project row has no resting background fill (user decision 2026-10-17);
-                      selection is marked by the accent stripe and data-selected. */}
-                  {/* Flush left alignment and isolated icon hover (user decision 2026-10-18):
-                      the project row has no hover background fill, allowing row content
-                      to start flush at the left boundary (pl-0), aligning with the Projects
-                      header. Action buttons on the right are enlarged to 28x28 (h-7 w-7, 14px icons)
-                      with their own prominent hover highlight. */}
+                  {/* Selected project row carries the selection fill
+                      (user decision 2026-10-27). pl-1 and pr-1 keep the
+                      chevron and the right actions off the row edge by the
+                      same gap. data-selected still announces selection. */}
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
                   <div
                     className={cn(
-                      'relative flex h-control items-center py-1.5 pl-0 pr-0 transition-colors duration-fast ease-standard',
+                      'nk-project-row relative flex h-control items-center pl-1 pr-1 transition-colors duration-fast ease-standard',
+                      isSelected && 'rounded-md bg-selected',
                     )}
                     data-testid={testIdFor.projectRow(project.id)}
                     data-selected={isSelected ? 'true' : 'false'}
@@ -593,13 +592,14 @@ export function LeftNavigation({
                   </div>
                   {isExpanded ? (
                     <>
-                      {/* Full-width rows, no vertical guide line: the chat
-                         highlight reads across the whole list width. */}
-                      {/* Constant hairline gap under the project tile (user
-                         request 2026-10-01): ~3px (nearest scale step, 4px)
-                         between the tile's highlight and any highlight below,
-                         selected first chat included — always, not only when
-                         the first chat is selected. */}
+                      {/* An open project with sessions keeps this heading after
+                          the selection moves elsewhere (user decision 2026-10-27).
+                          An open project with none shows only the empty caption. */}
+                      {chats.length > 0 ? (
+                        <p className={cn('mt-1', SESSION_CAPTION_CLASS)}>Recent sessions</p>
+                      ) : null}
+                      {/* Full-width rows, no vertical guide line. The selected
+                          chat is marked by the accent bar, not a fill. */}
                       <div className="mt-1" data-testid={testIdFor.projectChats(project.id)}>
                         {chats.length > 0 ? (
                           <ul className="flex flex-col gap-1">
@@ -652,7 +652,7 @@ export function LeftNavigation({
                             })}
                           </ul>
                         ) : (
-                          <p className="py-1.5 pl-9 pr-5 text-xs text-ink-muted">No chats</p>
+                          <p className={SESSION_CAPTION_CLASS}>No active sessions</p>
                         )}
                       </div>
                     </>

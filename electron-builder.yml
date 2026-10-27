@@ -7,6 +7,11 @@
 #   Rebuilding them for Electron would require VS C++ Build Tools (not
 #   available on this host) and is not needed for N-API modules.
 npmRebuild: false
+# Production dependencies are added by electron-builder; project files are opt-in.
+files:
+  - out/**/*
+  - package.json
+afterPack: scripts/check-package.cjs
 extraResources:
   - from: resources/dictation/desktop-shortcut.ps1
     to: dictation/desktop-shortcut.ps1

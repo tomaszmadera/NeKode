@@ -40,9 +40,75 @@ type SessionStatus = 'running' | 'exited'
 interface TerminalSession {
   chatId: string
   pty: PtyProcessLike
+  /** Executable base name, lower case, without a Windows suffix. */
+  commandName: string
   status: SessionStatus
   exitCode: number | null
+  /** Recent PTY bytes, kept so a quit banner split across reads still matches. */
+  rawTail: string
+  grokExitTimer: ReturnType<typeof setTimeout> | null
   subscriptions: Array<{ dispose(): void }>
+}
+
+/**
+ * Grok's TUI prints this and leaves the alternate screen, then under ConPTY
+ * the process stays alive, so the PTY never emits exit and the chat stays
+ * open on a dead terminal. Measured with grok 1.0.70 on this host.
+ */
+export const GROK_EXIT_GRACE_MS = 250
+const GROK_EXIT_TAIL = 1024
+const GROK_SESSION_ENDED = /Resume this session with:\r?\n[ \t]+grok(?: --minimal)? --resume \S+/
+
+export function commandBaseName(file: string): string {
+  return basename(file)
+    .replace(/\.(exe|com|cmd|bat)$/i, '')
+    .toLowerCase()
+}
+
+/** True when `text` contains Grok's interactive quit banner. */
+export function grokSessionEnded(text: string): boolean {
+  return GROK_SESSION_ENDED.test(stripTerminalControls(text))
+}
+
+/** Drops CSI and OSC sequences so a quit banner can match around terminal modes. */
+function stripTerminalControls(text: string): string {
+  let result = ''
+  let index = 0
+  while (index < text.length) {
+    if (text.charCodeAt(index) !== 0x1b) {
+      result += text[index]
+      index += 1
+      continue
+    }
+    const kind = text[index + 1]
+    if (kind === '[') {
+      index += 2
+      while (index < text.length && text.charCodeAt(index) < 0x40) {
+        index += 1
+      }
+      if (index < text.length) {
+        index += 1
+      }
+      continue
+    }
+    if (kind === ']') {
+      index += 2
+      while (index < text.length) {
+        const code = text.charCodeAt(index)
+        index += 1
+        if (code === 0x07) {
+          break
+        }
+        if (code === 0x1b && text[index] === '\\') {
+          index += 1
+          break
+        }
+      }
+      continue
+    }
+    index += 1
+  }
+  return result
 }
 
 /** Maximum time a terminated bottom tab ID is kept to guard against racing create IPCs. */
@@ -175,8 +241,11 @@ export class TerminalService {
     const session: TerminalSession = {
       chatId,
       pty,
+      commandName: commandBaseName(shellSpec.file),
       status: 'running',
       exitCode: null,
+      rawTail: '',
+      grokExitTimer: null,
       subscriptions: [],
     }
     session.subscriptions.push(
@@ -184,6 +253,7 @@ export class TerminalService {
         for (const listener of this.#dataListeners) {
           listener(chatId, data)
         }
+        this.#watchGrokExit(session, data)
       }),
     )
     session.subscriptions.push(
@@ -192,6 +262,7 @@ export class TerminalService {
         // after any teardown disposed this subscription) exit events are
         // dropped, so the renderer's chat-close flow (spec Behaviour 11) is
         // never triggered by application quit (spec Behaviour 8).
+        this.#clearGrokExitTimer(session)
         if (session.status === 'exited' || this.#quitting) {
           return
         }
@@ -353,7 +424,41 @@ export class TerminalService {
     return session
   }
 
+  /**
+   * A Grok quit banner means the TUI has finished. Give the process a moment
+   * to exit on its own, then kill it so the normal exit path can close the chat.
+   */
+  #watchGrokExit(session: TerminalSession, data: string): void {
+    if (session.commandName !== 'grok' || session.grokExitTimer !== null || this.#quitting) {
+      return
+    }
+    session.rawTail = (session.rawTail + data).slice(-GROK_EXIT_TAIL)
+    if (!grokSessionEnded(session.rawTail)) {
+      return
+    }
+    session.grokExitTimer = setTimeout(() => {
+      session.grokExitTimer = null
+      if (session.status !== 'running' || this.#quitting) {
+        return
+      }
+      try {
+        session.pty.kill()
+      } catch {
+        // The process may already be gone.
+      }
+    }, GROK_EXIT_GRACE_MS)
+  }
+
+  #clearGrokExitTimer(session: TerminalSession): void {
+    if (session.grokExitTimer === null) {
+      return
+    }
+    clearTimeout(session.grokExitTimer)
+    session.grokExitTimer = null
+  }
+
   #disposeSession(session: TerminalSession): void {
+    this.#clearGrokExitTimer(session)
     for (const subscription of session.subscriptions) {
       try {
         subscription.dispose()

@@ -547,6 +547,8 @@ Example (the tab strip and action bar sit above the surface per §5; the project
 └──────────────────────────────────────────────────────────────┘
 ```
 
+The chat prompt defaults to Dictation and Send, centered, with Send on the right. An empty draft sends Enter, so a console prompt can be accepted without a keyboard. Dictation still inserts into the hidden field. App Settings > General, `Chat prompt`, can show the text field with those buttons, or hide the prompt. The bottom terminal has no prompt, Send, or Dictation.
+
 ---
 
 # 18. Center Surface — Project
@@ -659,7 +661,8 @@ Behavior:
 - hide if visible,
 - preserve terminal process,
 - preserve height,
-- restore focus sensibly.
+- restore focus sensibly,
+- no prompt field, Send, or Dictation.
 
 Recommended vertical animation:
 

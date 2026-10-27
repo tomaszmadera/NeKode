@@ -108,9 +108,8 @@ export function registerAppIpcHandlers(
   // still leaves the user's dialog choice remembered.
   handle(IPC_CHANNEL.projectsAdd, (payload) => {
     const entry = validated.get(IPC_CHANNEL.projectsAdd)
-    if (entry) {
-      entry.parse(payload)
-    }
+    if (!entry) throw new AppError('validation', 'Project add validation is unavailable.')
+    entry.parse(payload)
     const defaultPath = services.state.get(APP_STATE_KEY.projectsLastDirectory)
     return showOpenDialog({
       properties: ['openDirectory'],
@@ -132,7 +131,8 @@ export function registerAppIpcHandlers(
   // succeeds, from the in-memory set the cascade cannot see.
   handle(IPC_CHANNEL.projectsRemove, (payload) => {
     const entry = validated.get(IPC_CHANNEL.projectsRemove)
-    const args = entry !== undefined ? entry.parse(payload) : payload
+    if (!entry) throw new AppError('validation', 'Project removal validation is unavailable.')
+    const args = entry.parse(payload)
     const projectId = args[0]
     if (typeof projectId !== 'string') {
       throw new AppError('validation', 'projects:remove arg[0] must be a string')
@@ -170,7 +170,8 @@ export function registerAppIpcHandlers(
   // never starts this close flow while quitting (spec Behaviour 8).
   handle(IPC_CHANNEL.chatsRemove, (payload) => {
     const entry = validated.get(IPC_CHANNEL.chatsRemove)
-    const args = entry !== undefined ? entry.parse(payload) : payload
+    if (!entry) throw new AppError('validation', 'Chat removal validation is unavailable.')
+    const args = entry.parse(payload)
     const chatId = args[0]
     if (typeof chatId !== 'string') {
       throw new AppError('validation', 'chats:remove arg[0] must be a string')

@@ -85,6 +85,8 @@ export interface UsageAdapter {
   description?: string
   /** Optional fixed next action per declared failure code, replacing the generic one. */
   errorActions?: Partial<Record<UsageErrorCode, string>>
+  /** Fixed messages selected by an adapter's reason id, never by its raw error text. */
+  errorReasons?: Record<string, { code: UsageErrorCode; message: string }>
   /** Provider id the service reports; main assigns it to accounts (spec rule 23). */
   providerId?: string
   /** One sentence for the service picker (spec rule 22, at most 160 characters). */

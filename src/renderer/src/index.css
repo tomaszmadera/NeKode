@@ -284,6 +284,24 @@ button {
   }
 }
 
+/* Active session (user decision 2026-10-27): no row fill. The accent bar
+   shares its center with the project chevron: the row inset is pl-1 (4px),
+   the chevron is 14px, and the bar is 3px, so the bar starts 5.5px into
+   that chevron box. The bar is the chevron's height and is centered on
+   the session row. */
+.nk-chat-row[data-selected="true"]::before {
+  content: "";
+  position: absolute;
+  left: calc(0.25rem + (14px - 3px) / 2);
+  top: 50%;
+  width: 3px;
+  height: 14px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background-color: var(--color-accent);
+  pointer-events: none;
+}
+
 /* Paired left-panel slide (user decision 2026-10-07): Projects and Project
    Files sit side by side and translate together by one panel width. Duration
    and easing from the design doc 24 panel-expansion band. The reduced-motion

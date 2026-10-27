@@ -164,6 +164,8 @@ export const TEST_ID = {
   settingsQuickThemeSwitch: 'settings-quick-theme-switch',
   /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
   settingsChatSwitch: 'settings-chat-switch',
+  /** App Settings: chat prompt is buttons, the text field, or hidden. */
+  settingsPromptChrome: 'settings-prompt-chrome',
   /** App Settings: attention alert toggles (attention-alert-settings spec). */
   settingsAttentionBadge: 'settings-attention-badge',
   settingsAttentionActiveIndicator: 'settings-attention-active-indicator',

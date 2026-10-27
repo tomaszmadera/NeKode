@@ -110,12 +110,33 @@ Sequence verified on a clean environment:
 Both packaging scripts run with `--publish never` and give the same file names as the
 [release workflow](ci.md#release-workflow); local files are for testing, not for publishing.
 
+Packaging includes `out/**/*`, `package.json`, and the production dependencies added by
+electron-builder. Only `better-sqlite3` and `node-pty` are direct runtime dependencies;
+the JavaScript libraries are bundled by electron-vite. The `afterPack` hook runs
+`scripts/check-package.cjs` before building an installer or AppImage. It rejects project
+sources, agent configuration, and environment files using ASAR metadata only. Its contract
+is [package contents](../features/github-releases/spec.md#package-contents-nekode-134).
+To inspect a package yourself, run
+`pnpm run check:package dist/win-unpacked/resources/app.asar`.
+`pnpm run test:package` exercises the validator and is included in `verify`.
+
+For a packaged or installed Windows executable, run
+`node scripts/package-smoke.mjs <absolute-path-to-nekode.exe>`. This uses a temporary
+profile/project, checks renderer startup, SQLite persistence across restart, real PTY
+output, bundled resources, RunAsNode adapter execution with invalid fixture configuration,
+and process cleanup. It never installs the application. Keep installer and packaged
+smoke evidence separate.
+
 ### Running the installer / install test
 
 Run the NSIS installer through **PowerShell**
 (`Start-Process -FilePath ... -ArgumentList "/S","/D=<directory>" -Wait`).
 From bash/MSYS on this host, the installer hangs or fails (exit 139). That is a launcher problem,
 not an installer problem. Silent uninstall: `<directory>\Uninstall nekode.exe /S`.
+
+An explicit `/D` directory does not isolate an existing installation: NSIS still uses
+the application's registry identity and can uninstall its previous version. Use a clean
+test environment, or obtain approval before replacing an existing installation.
 
 ### Renderer verification (CSP/IPC)
 

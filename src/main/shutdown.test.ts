@@ -188,4 +188,212 @@ describe('shutdown failures', () => {
     expect(failed).toHaveBeenCalledWith(dbError)
     expect(app.quit).toHaveBeenCalledOnce()
   })
+
+  it('reports usage and task-progress failures independently and continues cleanup', async () => {
+    const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
+    let finish!: () => void
+    const terminals = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const usageError = new Error('usage shutdown failed')
+    const taskProgressError = new Error('task progress shutdown failed')
+    const shutdownUsage = vi.fn(() => {
+      throw usageError
+    })
+    const shutdownTaskProgress = vi.fn(() => {
+      throw taskProgressError
+    })
+    const dictation = vi.fn()
+    const stopActions = vi.fn()
+    const closeDatabase = vi.fn()
+    const failed = vi.fn()
+    registerShutdown(app, terminals, dictation, failed, {
+      shutdownUsage,
+      shutdownTaskProgress,
+      stopActions,
+      closeDatabase,
+    })
+    const event = { preventDefault: vi.fn() }
+    expect(() => app.emit('before-quit', event)).not.toThrow()
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(shutdownUsage).toHaveBeenCalledOnce()
+    expect(shutdownTaskProgress).toHaveBeenCalledOnce()
+    expect(dictation).toHaveBeenCalledOnce()
+    expect(stopActions).toHaveBeenCalledOnce()
+    expect(terminals).toHaveBeenCalledOnce()
+    expect(shutdownUsage.mock.invocationCallOrder[0]).toBeLessThan(
+      terminals.mock.invocationCallOrder[0],
+    )
+    expect(shutdownTaskProgress.mock.invocationCallOrder[0]).toBeLessThan(
+      terminals.mock.invocationCallOrder[0],
+    )
+    expect(failed.mock.calls).toEqual([[usageError], [taskProgressError]])
+    expect(closeDatabase).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+
+    const again = { preventDefault: vi.fn() }
+    app.emit('before-quit', again)
+    expect(again.preventDefault).toHaveBeenCalledOnce()
+    expect(shutdownUsage).toHaveBeenCalledOnce()
+    expect(shutdownTaskProgress).toHaveBeenCalledOnce()
+    expect(dictation).toHaveBeenCalledOnce()
+    expect(stopActions).toHaveBeenCalledOnce()
+    expect(terminals).toHaveBeenCalledOnce()
+
+    finish()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(closeDatabase).toHaveBeenCalledOnce()
+    expect(app.quit).toHaveBeenCalledOnce()
+    expect(closeDatabase.mock.invocationCallOrder[0]).toBeLessThan(
+      app.quit.mock.invocationCallOrder[0],
+    )
+    expect(failed.mock.calls).toEqual([[usageError], [taskProgressError]])
+    event.preventDefault.mockClear()
+    app.emit('before-quit', event)
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(shutdownUsage).toHaveBeenCalledOnce()
+    expect(terminals).toHaveBeenCalledOnce()
+    expect(closeDatabase).toHaveBeenCalledOnce()
+  })
+
+  it('keeps quit blocked until pending terminal shutdown settles', async () => {
+    const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
+    let rejectTerminals!: (error: unknown) => void
+    let reportTimeout: ((error: unknown) => void) | undefined
+    const terminals = vi.fn((reporter?: (error: unknown) => void) => {
+      reportTimeout = reporter
+      return new Promise<void>((_resolve, reject) => {
+        rejectTerminals = reject
+      })
+    })
+    const dictationError = new Error('dictation crash')
+    const dictation = vi.fn(() => {
+      throw dictationError
+    })
+    const stopActions = vi.fn()
+    const closeDatabase = vi.fn()
+    const failed = vi.fn()
+    registerShutdown(app, terminals, dictation, failed, { stopActions, closeDatabase })
+
+    const first = { preventDefault: vi.fn() }
+    expect(() => app.emit('before-quit', first)).not.toThrow()
+    expect(first.preventDefault).toHaveBeenCalledOnce()
+    expect(dictation).toHaveBeenCalledOnce()
+    expect(stopActions).toHaveBeenCalledOnce()
+    expect(terminals).toHaveBeenCalledOnce()
+    expect(terminals).toHaveBeenCalledWith(failed)
+    expect(failed).toHaveBeenCalledWith(dictationError)
+    expect(closeDatabase).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+
+    const whilePending = { preventDefault: vi.fn() }
+    app.emit('before-quit', whilePending)
+    expect(whilePending.preventDefault).toHaveBeenCalledOnce()
+    expect(terminals).toHaveBeenCalledOnce()
+    expect(dictation).toHaveBeenCalledOnce()
+    expect(stopActions).toHaveBeenCalledOnce()
+
+    reportTimeout?.(new Error('Terminal shutdown timed out.'))
+    const afterTimeout = { preventDefault: vi.fn() }
+    app.emit('before-quit', afterTimeout)
+    expect(afterTimeout.preventDefault).toHaveBeenCalledOnce()
+    expect(terminals).toHaveBeenCalledOnce()
+    expect(app.quit).not.toHaveBeenCalled()
+
+    const terminalError = new Error('terminal shutdown rejected')
+    rejectTerminals(terminalError)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(failed).toHaveBeenCalledWith(terminalError)
+    expect(closeDatabase).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+
+    const afterSettle = { preventDefault: vi.fn() }
+    app.emit('before-quit', afterSettle)
+    expect(afterSettle.preventDefault).not.toHaveBeenCalled()
+    expect(terminals).toHaveBeenCalledOnce()
+    expect(closeDatabase).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+  })
+
+  it('treats a synchronous terminal shutdown throw as a settled failure', () => {
+    const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
+    const error = new Error('terminal shutdown threw')
+    const failed = vi.fn()
+    const closeDatabase = vi.fn()
+    const terminals = vi.fn(() => {
+      throw error
+    })
+    registerShutdown(app, terminals, vi.fn(), failed, { closeDatabase })
+    const first = { preventDefault: vi.fn() }
+    expect(() => app.emit('before-quit', first)).not.toThrow()
+    expect(first.preventDefault).toHaveBeenCalledOnce()
+    expect(terminals).toHaveBeenCalledOnce()
+    expect(failed).toHaveBeenCalledWith(error)
+    expect(closeDatabase).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+
+    const later = { preventDefault: vi.fn() }
+    app.emit('before-quit', later)
+    expect(later.preventDefault).not.toHaveBeenCalled()
+    expect(terminals).toHaveBeenCalledOnce()
+    expect(closeDatabase).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+  })
+
+  it('continues cleanup when the failure report throws', async () => {
+    const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
+    let finish!: () => void
+    const terminals = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const usageError = new Error('usage shutdown failed')
+    const reportError = new Error('report failed')
+    const shutdownUsage = vi.fn(() => {
+      throw usageError
+    })
+    const shutdownTaskProgress = vi.fn()
+    const stopActions = vi.fn()
+    const failed = vi.fn(() => {
+      throw reportError
+    })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      registerShutdown(app, terminals, vi.fn(), failed, {
+        shutdownUsage,
+        shutdownTaskProgress,
+        stopActions,
+      })
+      const event = { preventDefault: vi.fn() }
+      expect(() => app.emit('before-quit', event)).not.toThrow()
+      expect(event.preventDefault).toHaveBeenCalledOnce()
+      expect(shutdownUsage).toHaveBeenCalledOnce()
+      expect(shutdownTaskProgress).toHaveBeenCalledOnce()
+      expect(stopActions).toHaveBeenCalledOnce()
+      expect(terminals).toHaveBeenCalledOnce()
+      expect(failed).toHaveBeenCalledWith(usageError)
+      expect(logged).toHaveBeenCalledWith(
+        '[shutdown] failed to report cleanup error',
+        usageError,
+        reportError,
+      )
+
+      const again = { preventDefault: vi.fn() }
+      app.emit('before-quit', again)
+      expect(again.preventDefault).toHaveBeenCalledOnce()
+      expect(terminals).toHaveBeenCalledOnce()
+      expect(app.quit).not.toHaveBeenCalled()
+
+      finish()
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(app.quit).toHaveBeenCalledOnce()
+    } finally {
+      logged.mockRestore()
+    }
+  })
 })

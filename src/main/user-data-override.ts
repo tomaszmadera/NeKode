@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
@@ -21,8 +22,8 @@ export function resolveUserDataPath(rawPath: string | undefined): string | null 
 
 /**
  * Applies the userData path override before the app is ready.
- * Ensures the target path is absolute to prevent Electron's
- * 'Path must be absolute' unhandled exception.
+ * The path is absolute. Its directory is created recursively before setPath.
+ * A creation failure propagates and does not select another profile.
  */
 export function applyUserDataOverride(
   rawPath: string | undefined,
@@ -30,6 +31,7 @@ export function applyUserDataOverride(
 ): string | null {
   const resolved = resolveUserDataPath(rawPath)
   if (resolved !== null) {
+    mkdirSync(resolved, { recursive: true })
     setPath('userData', resolved)
   }
   return resolved

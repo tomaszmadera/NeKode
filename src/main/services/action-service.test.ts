@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
+import { projectPathIdentity } from '../db/project-identity'
 import { hostPath } from '../test-support/host-path'
 import { ActionService } from './action-service'
 
@@ -12,8 +13,15 @@ function setup() {
   const db = openDatabase(':memory:')
   runMigrations(db)
   db.prepare(
-    'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run('p1', 'Demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+    'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(
+    'p1',
+    'Demo',
+    'D:/code/demo',
+    projectPathIdentity('D:/code/demo', process.platform),
+    null,
+    '2026-01-01T00:00:00Z',
+  )
   const startBackground = vi.fn(
     (
       _command: string,
@@ -75,9 +83,16 @@ describe('ActionService', () => {
       runMigrations(first)
       first
         .prepare(
-          'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
         )
-        .run('p1', 'Demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+        .run(
+          'p1',
+          'Demo',
+          'D:/code/demo',
+          projectPathIdentity('D:/code/demo', process.platform),
+          null,
+          '2026-01-01T00:00:00Z',
+        )
       const deps = {
         createChat: vi.fn(),
         createTerminal: vi.fn(),
@@ -422,11 +437,25 @@ describe('ActionService', () => {
     const db = openDatabase(':memory:')
     runMigrations(db)
     db.prepare(
-      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run('p1', 'Demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
+      'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'p1',
+      'Demo',
+      'D:/code/demo',
+      projectPathIdentity('D:/code/demo', process.platform),
+      null,
+      '2026-01-01T00:00:00Z',
+    )
     db.prepare(
-      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run('p2', 'Other', 'D:/code/other', null, '2026-01-01T00:00:00Z')
+      'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'p2',
+      'Other',
+      'D:/code/other',
+      projectPathIdentity('D:/code/other', process.platform),
+      null,
+      '2026-01-01T00:00:00Z',
+    )
     const startBackground = vi.fn((command: string) => {
       if (command === 'finished') {
         return { stop: stops.finished }
@@ -506,11 +535,25 @@ describe('ActionService', () => {
     const db = openDatabase(':memory:')
     runMigrations(db)
     db.prepare(
-      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run('p1', 'Demo 1', 'D:/code/demo1', null, '2026-01-01T00:00:00Z')
+      'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'p1',
+      'Demo 1',
+      'D:/code/demo1',
+      projectPathIdentity('D:/code/demo1', process.platform),
+      null,
+      '2026-01-01T00:00:00Z',
+    )
     db.prepare(
-      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run('p2', 'Demo 2', 'D:/code/demo2', null, '2026-01-01T00:00:00Z')
+      'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'p2',
+      'Demo 2',
+      'D:/code/demo2',
+      projectPathIdentity('D:/code/demo2', process.platform),
+      null,
+      '2026-01-01T00:00:00Z',
+    )
     const stops: Record<string, () => void> = {
       p1: vi.fn(),
       p2: vi.fn(),
@@ -587,8 +630,15 @@ describe('ActionService', () => {
     const db = openDatabase(':memory:')
     runMigrations(db)
     db.prepare(
-      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run('p1', 'Demo', directory, null, '2026-01-01T00:00:00Z')
+      'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'p1',
+      'Demo',
+      directory,
+      projectPathIdentity(directory, process.platform),
+      null,
+      '2026-01-01T00:00:00Z',
+    )
     const service = new ActionService({
       db,
       createChat: vi.fn(),
@@ -635,8 +685,15 @@ describe('ActionService', () => {
       const db = openDatabase(':memory:')
       runMigrations(db)
       db.prepare(
-        'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-      ).run('p1', 'Demo', directory, null, '2026-01-01T00:00:00Z')
+        'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run(
+        'p1',
+        'Demo',
+        directory,
+        projectPathIdentity(directory, process.platform),
+        null,
+        '2026-01-01T00:00:00Z',
+      )
       const service = new ActionService({ db, createChat: vi.fn(), createTerminal: vi.fn() })
       const action = service.create({
         scope: 'project',

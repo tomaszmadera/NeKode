@@ -55,8 +55,13 @@ export interface PromptInputProps {
   /** Forces the OpenWhispr desktop shortcut path. By default it is used
       when it is the dictation method selected in Settings (AC-014). */
   useDesktopBypass?: boolean
-  /** Submits one input line (without the terminator) to the terminal. */
+  /** Submits one input line (without the terminator) to the terminal.
+      An empty line is submitted only in `buttons` chrome, and the host sends
+      that as Enter. */
   onSubmit: (line: string) => void
+  /** `buttons` hides the text field and centers Dictation then Send. The
+      field stays mounted so dictation can still insert a draft. */
+  chrome?: 'buttons' | 'input'
   /** Placeholder shown while the input is empty. */
   placeholder?: string
   /** Pending draft fill addressed to this input; replaces the whole value. */
@@ -75,6 +80,7 @@ export function PromptInput({
   chatId,
   chatLabel,
   useDesktopBypass,
+  chrome = 'input',
 }: PromptInputProps): React.JSX.Element {
   const [value, setValue] = useState('')
   const [focusError, setFocusError] = useState<string | null>(null)
@@ -140,6 +146,9 @@ export function PromptInput({
 
   function submit(): void {
     if (value.length === 0) {
+      // A hidden field has no keyboard Enter. Send then accepts the console
+      // prompt by submitting an empty line, which the host writes as CR.
+      if (chrome === 'buttons') onSubmit('')
       return
     }
     onSubmit(value)
@@ -278,10 +287,42 @@ export function PromptInput({
   const activeError = isDesktopBypass
     ? dictation?.error
     : ((ownsResult ? dictationControl?.error : null) ?? dictation?.error)
+  const buttonsOnly = chrome === 'buttons'
+  const sendButton = (
+    <button
+      type="submit"
+      className="nk-prompt-submit flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
+      data-testid={TEST_ID.terminalPromptSend}
+      title={buttonsOnly ? 'Send the draft. An empty draft presses Enter.' : undefined}
+      disabled={!buttonsOnly && value.length === 0}
+    >
+      <Icon.send size={14} aria-hidden />
+      Send
+    </button>
+  )
+  const dictationButton = (
+    <button
+      type="button"
+      className="flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
+      data-testid={TEST_ID.terminalPromptDictation}
+      title={buttonTitle}
+      disabled={isButtonDisabled}
+      aria-busy={isDesktopBypass ? (dictation?.busy ?? false) : (dictationControl?.isBusy ?? false)}
+      onClick={handleDictationClick}
+    >
+      {buttonIcon}
+      {buttonLabel}
+    </button>
+  )
 
   return (
     <form
-      className="nk-prompt flex shrink-0 flex-wrap items-center gap-2 bg-terminal pt-2"
+      className={
+        buttonsOnly
+          ? 'nk-prompt relative flex shrink-0 flex-wrap items-center justify-center gap-2 bg-terminal pt-2'
+          : 'nk-prompt flex shrink-0 flex-wrap items-center gap-2 bg-terminal pt-2'
+      }
+      data-prompt-chrome={chrome}
       onSubmit={(event) => {
         event.preventDefault()
         submit()
@@ -296,15 +337,33 @@ export function PromptInput({
       }}
     >
       {/* overflow-hidden clips the segment group's right corners to the frame
-          radius, so the group reads as the input's right segment. */}
-      <div className="nk-prompt-frame flex min-h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-control-edge bg-panel pl-3 focus-within:border-info">
-        <span aria-hidden="true" className="nk-prompt-marker select-none font-mono text-ink-muted">
-          &gt;
-        </span>
+          radius, so the group reads as the input's right segment. Buttons-only
+          chrome keeps the same frame as a centered pair: the textarea stays
+          mounted and focusable for dictation, out of the tab order. */}
+      <div
+        className={
+          buttonsOnly
+            ? 'nk-prompt-frame relative flex h-control shrink-0 items-stretch overflow-hidden rounded-md border border-control-edge bg-panel focus-within:border-info'
+            : 'nk-prompt-frame flex min-h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-control-edge bg-panel pl-3 focus-within:border-info'
+        }
+      >
+        {buttonsOnly ? null : (
+          <span
+            aria-hidden="true"
+            className="nk-prompt-marker select-none font-mono text-ink-muted"
+          >
+            &gt;
+          </span>
+        )}
         <textarea
           ref={inputRef}
-          rows={Math.min(5, value.split('\n').length)}
-          className="terminal-prompt-input min-w-0 flex-1 resize-none bg-transparent py-1 font-mono text-[13px] text-ink outline-none placeholder:text-ink-muted"
+          rows={buttonsOnly ? 1 : Math.min(5, value.split('\n').length)}
+          tabIndex={buttonsOnly ? -1 : undefined}
+          className={
+            buttonsOnly
+              ? 'terminal-prompt-input sr-only'
+              : 'terminal-prompt-input min-w-0 flex-1 resize-none bg-transparent py-1 font-mono text-[13px] text-ink outline-none placeholder:text-ink-muted'
+          }
           data-testid={TEST_ID.terminalPromptInput}
           aria-label="Terminal input"
           placeholder={placeholder}
@@ -320,39 +379,21 @@ export function PromptInput({
         {/* The frame's right end is one segment group (design doc 5): Send and
             Dictation glued over a single bg-button surface with the centered
             hairline between them, and no divider on the input side. */}
-        <div className="flex shrink-0 items-stretch self-stretch bg-button">
-          {/* Send submits by click (form submit path, same as Enter). Disabled
-              while the input is empty, mirroring the Enter no-op. */}
-          <button
-            type="submit"
-            className="nk-prompt-submit flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
-            data-testid={TEST_ID.terminalPromptSend}
-            disabled={value.length === 0}
-          >
-            <Icon.send size={14} aria-hidden />
-            Send
-          </button>
+        <div
+          className={
+            buttonsOnly
+              ? 'flex h-full shrink-0 items-stretch bg-button'
+              : 'flex shrink-0 items-stretch self-stretch bg-button'
+          }
+        >
+          {/* With the text field, Send stays left of Dictation. Buttons-only
+              chrome puts Send on the right. Send is disabled while a visible
+              field is empty. An empty buttons-only draft presses Enter. */}
+          {buttonsOnly ? dictationButton : sendButton}
           {/* Toolbar-standard separator (design doc 5): a single low-contrast
               hairline, vertically centered, shorter than the buttons. */}
           <span aria-hidden="true" className="h-4 w-px self-center bg-divider" />
-          {/* The button is the frame's right segment:
-              square left edge, flush to the frame end. The visible label names
-              the control (and announces recording/transcribing), so the icon
-              is decorative. */}
-          <button
-            type="button"
-            className="flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
-            data-testid={TEST_ID.terminalPromptDictation}
-            title={buttonTitle}
-            disabled={isButtonDisabled}
-            aria-busy={
-              isDesktopBypass ? (dictation?.busy ?? false) : (dictationControl?.isBusy ?? false)
-            }
-            onClick={handleDictationClick}
-          >
-            {buttonIcon}
-            {buttonLabel}
-          </button>
+          {buttonsOnly ? sendButton : dictationButton}
         </div>
       </div>
       {showRawBanner && (lastInsertedTextRef.current?.raw || dictationControl?.rawText) ? (

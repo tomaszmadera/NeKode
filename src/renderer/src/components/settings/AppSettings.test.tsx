@@ -1,6 +1,7 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ATTENTION_SETTINGS } from '../../lib/attention-settings'
+import { PROMPT_CHROME_STORAGE_KEY } from '../../lib/prompt-chrome'
 import { DEFAULT_TERMINAL_FONT_FAMILIES, DEFAULT_TERMINAL_FONT_SIZE } from '../../lib/terminal-font'
 import {
   createSettingsStore,
@@ -78,5 +79,15 @@ describe('AppSettings dictation shortcut error', () => {
       .filter((node) => node.textContent?.includes('could not save'))
     expect(alerts).toHaveLength(1)
     expect(screen.queryByTestId('dictation-method-error')).toBeNull()
+  })
+
+  it('remembers the chat prompt choice from General', () => {
+    localStorage.removeItem(PROMPT_CHROME_STORAGE_KEY)
+    renderSettings('general')
+    const choice = screen.getByRole('combobox', { name: 'Chat prompt' }) as HTMLSelectElement
+    expect(choice.value).toBe('buttons')
+    fireEvent.change(choice, { target: { value: 'hidden' } })
+    expect(choice.value).toBe('hidden')
+    expect(localStorage.getItem(PROMPT_CHROME_STORAGE_KEY)).toBe('hidden')
   })
 })

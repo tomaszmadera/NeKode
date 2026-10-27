@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { projectPathIdentity } from './project-identity'
 
 // Simple versioned migration queue kept in code (no external tooling).
 // Each migration runs once inside a transaction and is recorded in
@@ -183,6 +184,57 @@ export const MIGRATIONS: readonly Migration[] = [
       `)
     },
   },
+  {
+    // Stored already-normalized identity. Not COLLATE NOCASE: WSL paths in
+    // this column must keep Linux component case. Triggers enforce non-null
+    // values after backfill without rebuilding the referenced projects table.
+    version: 8,
+    up: (db) => {
+      const rows = db.prepare('SELECT id, path FROM projects').all() as Array<{
+        id: string
+        path: string
+      }>
+      const assignments: Array<{ id: string; identity: string }> = []
+      const seen = new Map<string, { id: string; path: string }>()
+      for (const row of rows) {
+        let identity: string
+        try {
+          identity = projectPathIdentity(row.path, process.platform)
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          throw new Error(
+            `Cannot derive a project identity for ${row.id} (${row.path}): ${reason} ` +
+              'No project, chat, or setting was changed.',
+          )
+        }
+        const previous = seen.get(identity)
+        if (previous !== undefined) {
+          throw new Error(
+            `Project identity collision for ${JSON.stringify(identity)}: ` +
+              `${previous.id} (${previous.path}) and ${row.id} (${row.path}) are the same directory. ` +
+              'No project, chat, or setting was changed. Resolve the duplicate outside this migration.',
+          )
+        }
+        seen.set(identity, row)
+        assignments.push({ id: row.id, identity })
+      }
+
+      db.exec('ALTER TABLE projects ADD COLUMN path_identity TEXT')
+      const update = db.prepare('UPDATE projects SET path_identity = ? WHERE id = ?')
+      for (const assignment of assignments) update.run(assignment.identity, assignment.id)
+      db.exec(`
+        CREATE UNIQUE INDEX uq_projects_path_identity ON projects (path_identity);
+        CREATE TRIGGER projects_require_identity_insert BEFORE INSERT ON projects
+        WHEN NEW.path_identity IS NULL BEGIN
+          SELECT RAISE(ABORT, 'NOT NULL constraint failed: projects.path_identity');
+        END;
+        CREATE TRIGGER projects_require_identity_update BEFORE UPDATE OF path_identity ON projects
+        WHEN NEW.path_identity IS NULL BEGIN
+          SELECT RAISE(ABORT, 'NOT NULL constraint failed: projects.path_identity');
+        END;
+      `)
+    },
+  },
 ]
 
 export function assertValidMigrations(migrations: readonly Migration[]): void {
@@ -228,6 +280,18 @@ export function runMigrations(
   }
 
   const applied = new Set(appliedRows.map((row) => row.version))
+  // Reject a hole or a missing first version before any pending up() runs.
+  const sortedApplied = [...applied].sort((left, right) => left - right)
+  for (let index = 0; index < sortedApplied.length; index++) {
+    if (sortedApplied[index] !== migrations[index]?.version) {
+      const appliedList = sortedApplied.join(', ')
+      const migrationList = migrations.map((migration) => migration.version).join(', ')
+      throw new Error(
+        `Applied versions [${appliedList}] are not a prefix of the migration list ` +
+          `[${migrationList}].`,
+      )
+    }
+  }
 
   for (const migration of migrations) {
     if (applied.has(migration.version)) {

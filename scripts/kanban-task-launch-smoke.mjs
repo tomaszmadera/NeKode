@@ -230,8 +230,8 @@ try {
   const db = new DatabaseSync(join(userData, 'nekode.db'))
   db.exec('PRAGMA busy_timeout = 5000')
   db.prepare(
-    'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, NULL, ?)',
-  ).run(projectId, 'Smoke', projectDir, new Date().toISOString())
+    'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, NULL, ?)',
+  ).run(projectId, 'Smoke', projectDir, projectDir.toLowerCase(), new Date().toISOString())
   const state = db.prepare('INSERT INTO app_state (key, value) VALUES (?, ?)')
   state.run(`project.kanbanAdapter:${projectId}`, 'fixture')
   state.run(`project.kanbanConfig:${projectId}`, '{}')

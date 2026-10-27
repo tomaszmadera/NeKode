@@ -1,8 +1,8 @@
 import { createBottomTabId } from '@shared/bottom-tab-id'
 import { emptyGitWorktree, IPC_CHANNEL } from '@shared/ipc-contract'
-import { APP_ERROR_MARKER, AppError } from '@shared/ipc-error'
+import { APP_ERROR_MARKER, AppError, parseAppErrorPayload } from '@shared/ipc-error'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type PtyFactory,
   type PtyProcessLike,
@@ -13,6 +13,46 @@ import { hostPath } from '../test-support/host-path'
 import { registerAppIpcHandlers } from './ipc-handlers'
 import type { AppServices } from './service-registry'
 import { usageTestStub } from './usage-test-stub'
+
+// Tests omit or trace entries at registration. The handlers close over that map.
+const validationTestControl = vi.hoisted(() => ({
+  omitChannel: null as string | null,
+  traceParse: null as Set<string> | null,
+  parseOrder: null as string[] | null,
+}))
+
+vi.mock('./ipc-validation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./ipc-validation')>()
+  return {
+    ...actual,
+    buildValidatedChannels(services: Parameters<typeof actual.buildValidatedChannels>[0]) {
+      let entries = actual.buildValidatedChannels(services)
+      const trace = validationTestControl.traceParse
+      const order = validationTestControl.parseOrder
+      if (trace !== null && order !== null) {
+        entries = entries.map((entry) => {
+          if (!trace.has(entry.channel)) return entry
+          return {
+            ...entry,
+            parse(payload: unknown[]) {
+              order.push(entry.channel)
+              return entry.parse(payload)
+            },
+          }
+        })
+      }
+      const omit = validationTestControl.omitChannel
+      if (omit === null) return entries
+      return entries.filter((entry) => entry.channel !== omit)
+    },
+  }
+})
+
+afterEach(() => {
+  validationTestControl.omitChannel = null
+  validationTestControl.traceParse = null
+  validationTestControl.parseOrder = null
+})
 
 function fakeAgentProfiles(): AppServices['agentProfiles'] {
   return {
@@ -1564,5 +1604,201 @@ describe('agentProfiles:* channels', () => {
       /exactly once/,
     )
     expect(services.agentProfiles.put).not.toHaveBeenCalled()
+  })
+})
+
+function callCount(spy: unknown): number {
+  return vi.mocked(spy as (...args: unknown[]) => unknown).mock.calls.length
+}
+
+function effectCounts(harness: Harness): Record<string, number> {
+  const { services } = harness
+  return {
+    dialog: callCount(harness.showOpenDialog),
+    picker: callCount(services.dialogs.pickDirectory),
+    stateGet: callCount(services.state.get),
+    stateSet: callCount(services.state.set),
+    stateDelete: callCount(services.state.delete),
+    projectAdd: callCount(services.projects.add),
+    projectRemove: callCount(services.projects.remove),
+    chatList: callCount(services.chats.list),
+    chatRemove: callCount(services.chats.remove),
+    libraryGet: callCount(services.agentProfiles.libraryGet),
+    profileCleanup: callCount(services.agentProfiles.cleanupProject),
+    kanbanDrop: callCount(services.kanban.dropLaunchProject),
+    kanbanCleanup: callCount(services.kanban.cleanupProject),
+    taskCleanup: callCount(services.taskProgress.cleanupProject),
+    actionStop: callCount(services.actions.stopForProject),
+    terminalTerminate: callCount(services.terminals.terminate),
+    terminalBottom: callCount(services.terminals.terminateProjectBottom),
+  }
+}
+
+async function settle(run: () => unknown): Promise<unknown> {
+  try {
+    await run()
+    return null
+  } catch (error) {
+    return error
+  }
+}
+
+const NO_SIDE_EFFECTS = {
+  dialog: 0,
+  picker: 0,
+  stateGet: 0,
+  stateSet: 0,
+  stateDelete: 0,
+  projectAdd: 0,
+  projectRemove: 0,
+  chatList: 0,
+  chatRemove: 0,
+  libraryGet: 0,
+  profileCleanup: 0,
+  kanbanDrop: 0,
+  kanbanCleanup: 0,
+  taskCleanup: 0,
+  actionStop: 0,
+  terminalTerminate: 0,
+  terminalBottom: 0,
+}
+
+describe('special handlers require a validation entry', () => {
+  async function expectMissingEntry(
+    channel: string,
+    payload: unknown[],
+    message: string,
+  ): Promise<void> {
+    validationTestControl.omitChannel = channel
+    const harness = createHarness()
+    const error = await settle(() => harness.invoke(channel, payload))
+    const parsed = parseAppErrorPayload(error)
+    expect({
+      code: parsed?.code ?? null,
+      message: parsed?.message ?? null,
+      channel: parsed?.channel ?? null,
+      ...effectCounts(harness),
+    }).toEqual({
+      code: 'validation',
+      message,
+      channel,
+      ...NO_SIDE_EFFECTS,
+    })
+  }
+
+  it('rejects projects:add before the dialog when its validation entry is missing', async () => {
+    await expectMissingEntry(IPC_CHANNEL.projectsAdd, [], 'Project add validation is unavailable.')
+  })
+
+  it('rejects projects:remove before cleanup when its validation entry is missing', async () => {
+    await expectMissingEntry(
+      IPC_CHANNEL.projectsRemove,
+      ['p1'],
+      'Project removal validation is unavailable.',
+    )
+  })
+
+  it('rejects chats:remove before termination when its validation entry is missing', async () => {
+    await expectMissingEntry(
+      IPC_CHANNEL.chatsRemove,
+      ['t1'],
+      'Chat removal validation is unavailable.',
+    )
+  })
+
+  it('runs projects:add, projects:remove, and chats:remove only after parse', async () => {
+    const order: string[] = []
+    validationTestControl.traceParse = new Set([
+      IPC_CHANNEL.projectsAdd,
+      IPC_CHANNEL.projectsRemove,
+      IPC_CHANNEL.chatsRemove,
+    ])
+    validationTestControl.parseOrder = order
+    const harness = createHarness()
+    harness.showOpenDialog.mockImplementation(() => {
+      order.push('dialog')
+      return Promise.resolve({ canceled: false, filePaths: ['D:/code/demo'] })
+    })
+    vi.mocked(harness.services.projects.remove).mockImplementation(() => {
+      order.push('projects.remove')
+    })
+    vi.mocked(harness.services.chats.remove).mockImplementation(() => {
+      order.push('chats.remove')
+    })
+    vi.mocked(harness.services.terminals.terminate).mockImplementation(() => {
+      order.push('terminals.terminate')
+    })
+
+    const addRejected = await settle(() => harness.invoke(IPC_CHANNEL.projectsAdd, ['raw']))
+    expect(parseAppErrorPayload(addRejected)?.code).toBe('validation')
+    expect(parseAppErrorPayload(addRejected)?.message).toContain('expected 0 argument')
+    expect(order).toEqual([IPC_CHANNEL.projectsAdd])
+    expect(harness.showOpenDialog).not.toHaveBeenCalled()
+    expect(harness.services.state.get).not.toHaveBeenCalled()
+    expect(harness.services.projects.add).not.toHaveBeenCalled()
+
+    await harness.invoke(IPC_CHANNEL.projectsAdd, [])
+    expect(order).toEqual([IPC_CHANNEL.projectsAdd, IPC_CHANNEL.projectsAdd, 'dialog'])
+    expect(vi.mocked(harness.services.state.get).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(harness.showOpenDialog).mock.invocationCallOrder[0],
+    )
+    expect(vi.mocked(harness.showOpenDialog).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(harness.services.state.set).mock.invocationCallOrder[0],
+    )
+    expect(vi.mocked(harness.services.state.set).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(harness.services.projects.add).mock.invocationCallOrder[0],
+    )
+    expect(harness.services.state.set).toHaveBeenCalledWith(
+      'projects.lastDirectory',
+      'D:/code/demo',
+    )
+    expect(harness.services.projects.add).toHaveBeenCalledWith('D:/code/demo')
+
+    const removeRejected = await settle(() =>
+      harness.invoke(IPC_CHANNEL.projectsRemove, ['p1', 'raw']),
+    )
+    expect(parseAppErrorPayload(removeRejected)?.code).toBe('validation')
+    expect(parseAppErrorPayload(removeRejected)?.message).toContain('expected 1 argument')
+    expect(harness.services.chats.list).not.toHaveBeenCalled()
+    expect(harness.services.projects.remove).not.toHaveBeenCalled()
+    expect(harness.services.agentProfiles.libraryGet).not.toHaveBeenCalled()
+    expect(harness.services.terminals.terminateProjectBottom).not.toHaveBeenCalled()
+    expect(order).toEqual([
+      IPC_CHANNEL.projectsAdd,
+      IPC_CHANNEL.projectsAdd,
+      'dialog',
+      IPC_CHANNEL.projectsRemove,
+    ])
+
+    harness.invoke(IPC_CHANNEL.projectsRemove, ['p1'])
+    expect(order).toEqual([
+      IPC_CHANNEL.projectsAdd,
+      IPC_CHANNEL.projectsAdd,
+      'dialog',
+      IPC_CHANNEL.projectsRemove,
+      IPC_CHANNEL.projectsRemove,
+      'projects.remove',
+    ])
+    expect(harness.services.projects.remove).toHaveBeenCalledExactlyOnceWith('p1')
+    expect(harness.services.agentProfiles.libraryGet).toHaveBeenCalledOnce()
+    expect(harness.services.kanban.cleanupProject).toHaveBeenCalledExactlyOnceWith('p1')
+    expect(harness.services.taskProgress.cleanupProject).toHaveBeenCalledExactlyOnceWith('p1')
+    expect(harness.services.actions.stopForProject).toHaveBeenCalledExactlyOnceWith('p1')
+    expect(harness.services.terminals.terminateProjectBottom).toHaveBeenCalledExactlyOnceWith('p1')
+    expect(harness.services.chats.remove).not.toHaveBeenCalled()
+
+    const chatRejected = await settle(() => harness.invoke(IPC_CHANNEL.chatsRemove, ['t1', 'raw']))
+    expect(parseAppErrorPayload(chatRejected)?.code).toBe('validation')
+    expect(parseAppErrorPayload(chatRejected)?.message).toContain('expected 1 argument')
+    expect(harness.services.chats.remove).not.toHaveBeenCalled()
+    expect(harness.services.terminals.terminate).not.toHaveBeenCalled()
+
+    harness.invoke(IPC_CHANNEL.chatsRemove, ['t1'])
+    expect(order.at(-4)).toBe(IPC_CHANNEL.chatsRemove)
+    expect(order.at(-3)).toBe(IPC_CHANNEL.chatsRemove)
+    expect(order.at(-2)).toBe('chats.remove')
+    expect(order.at(-1)).toBe('terminals.terminate')
+    expect(harness.services.chats.remove).toHaveBeenCalledExactlyOnceWith('t1')
+    expect(harness.services.terminals.terminate).toHaveBeenCalledExactlyOnceWith('t1')
   })
 })

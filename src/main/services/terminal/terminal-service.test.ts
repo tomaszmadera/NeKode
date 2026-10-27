@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-service'
 import {
   CLOSED_BOTTOM_TAB_TTL_MS,
+  commandBaseName,
+  GROK_EXIT_GRACE_MS,
+  grokSessionEnded,
   MAX_CLOSED_BOTTOM_TABS,
   shellDisplayName,
   TerminalService,
@@ -563,5 +566,72 @@ describe('WSL terminal routing', () => {
       }),
     ).toThrow(/Linux executable/)
     expect(spawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('grok quit closes the chat', () => {
+  it('kills a Grok process that stays up after its quit banner so the chat can close', () => {
+    vi.useFakeTimers()
+    try {
+      const { service, ptys } = createHarness({ killEmitsExit: true })
+      const exits = vi.fn()
+      service.onExit(exits)
+      service.create('t1', 'D:/a', {
+        file: 'C:/Users/tomek/.grok/bin/grok.exe',
+        args: ['--permission-mode', 'auto'],
+      })
+      ptys[0].emitData('before\r\nResume this session with:\r\n  ')
+      ptys[0].emitData('grok --resume 9f00caa0-5042-4872-8244-9f4e2c3abc49\r\n')
+      expect(ptys[0].killCount).toBe(0)
+      vi.advanceTimersByTime(GROK_EXIT_GRACE_MS)
+      expect(ptys[0].killCount).toBe(1)
+      expect(exits).toHaveBeenCalledExactlyOnceWith('t1', 0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not kill Grok when the process exits on its own after the banner', () => {
+    vi.useFakeTimers()
+    try {
+      const { service, ptys } = createHarness()
+      service.create('t1', 'D:/a', { file: 'grok', args: [] })
+      ptys[0].emitData('Resume this session with:\r\n  grok --minimal --resume abc\r\n')
+      ptys[0].emitExit(0)
+      vi.advanceTimersByTime(GROK_EXIT_GRACE_MS)
+      expect(ptys[0].killCount).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves a shell session alone when its output contains the Grok quit banner', () => {
+    vi.useFakeTimers()
+    try {
+      const { service, ptys } = createHarness()
+      service.create('t1', 'D:/a')
+      ptys[0].emitData('Resume this session with:\r\n  grok --resume abc\r\n')
+      vi.advanceTimersByTime(GROK_EXIT_GRACE_MS)
+      expect(ptys[0].killCount).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('grok quit banner', () => {
+  it('matches the quit banner and ignores the welcome-screen resume row', () => {
+    expect(commandBaseName('C:/Users/tomek/.grok/bin/grok.exe')).toBe('grok')
+    expect(commandBaseName('grok.CMD')).toBe('grok')
+    expect(
+      grokSessionEnded(
+        'Resume this session with:\r\n  grok --resume 9f00caa0-5042-4872-8244-9f4e2c3abc49\r\n',
+      ),
+    ).toBe(true)
+    expect(
+      grokSessionEnded('\x1b[?1049lResume this session with:\n  grok --minimal --resume abc\n'),
+    ).toBe(true)
+    expect(grokSessionEnded('Resume session')).toBe(false)
+    expect(grokSessionEnded('press again to quit')).toBe(false)
   })
 })

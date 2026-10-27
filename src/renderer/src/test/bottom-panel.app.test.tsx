@@ -529,6 +529,10 @@ describe('bottom auxiliary terminal panel', () => {
     )
     pressChord()
     await screen.findByRole('button', { name: 'PowerShell' })
+    const bottom = within(bottomRegion())
+    expect(bottom.queryByTestId(TEST_ID.terminalPromptInput)).toBeNull()
+    expect(bottom.queryByTestId(TEST_ID.terminalPromptSend)).toBeNull()
+    expect(bottom.queryByTestId(TEST_ID.terminalPromptDictation)).toBeNull()
     for (const label of ['Handoff', 'Resume', 'Stop', 'Continue']) {
       fireEvent.click(screen.getByRole('button', { name: label }))
     }
@@ -543,7 +547,7 @@ describe('bottom auxiliary terminal panel', () => {
     ])
     // Handoff pastes English into the active chat's dedicated input; Resume
     // opens the handoff picker (unconfigured in this fixture -> modal only).
-    // The chat and bottom terminals each own a prompt input: scope to the chat.
+    // The chat owns the prompt input. The bottom terminal has none.
     await waitFor(() =>
       expect(
         (

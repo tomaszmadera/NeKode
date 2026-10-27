@@ -666,3 +666,46 @@ describe('unified dictation prompt workflow', () => {
     expect(control.start).not.toHaveBeenCalled()
   })
 })
+
+describe('buttons-only prompt', () => {
+  it('centers Dictation and Send with Send on the right, and sends Enter when empty', async () => {
+    const submit = vi.fn()
+    const activate = vi.fn(async () => {
+      expect(document.activeElement).toBe(screen.getByRole('textbox'))
+    })
+    render(
+      <PromptInput
+        chrome="buttons"
+        onSubmit={submit}
+        dictation={{ disabledReason: null, busy: false, error: null, activate }}
+      />,
+    )
+    const form = screen.getByTestId(TEST_ID.terminalPromptSend).closest('form') as HTMLFormElement
+    expect(form.getAttribute('data-prompt-chrome')).toBe('buttons')
+    expect(form.className).toContain('justify-center')
+    expect(form.querySelector('.nk-prompt-marker')).toBeNull()
+    const dictation = screen.getByTestId(TEST_ID.terminalPromptDictation)
+    const send = screen.getByTestId(TEST_ID.terminalPromptSend) as HTMLButtonElement
+    expect(dictation.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    const field = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(field.className).toContain('sr-only')
+    expect(field.tabIndex).toBe(-1)
+    expect(send.disabled).toBe(false)
+
+    fireEvent.click(send)
+    expect(submit).toHaveBeenCalledWith('')
+
+    fireEvent.change(field, { target: { value: 'git status' } })
+    fireEvent.click(send)
+    expect(submit).toHaveBeenLastCalledWith('git status')
+    expect(field.value).toBe('')
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Dictation' }))
+    })
+    expect(activate).toHaveBeenCalledOnce()
+    expect(submit).toHaveBeenCalledTimes(2)
+  })
+})

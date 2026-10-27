@@ -579,13 +579,18 @@ letter-spacing: 0.05em;
 color: var(--color-project-title);
 ```
 
-Each project should expose a visible `Chats` subheading.
+Every expanded project with at least one session shows `Recent sessions` directly under its row, including after the selection moves to another project (user decision 2026-10-27). An expanded project with no sessions shows `No active sessions` on that same left edge and does not show the heading. A collapsed project shows neither.
 
 Chat items must use a **chat bubble icon**, not document/file icons.
 
-Selected chat:
+Selected project (user decision 2026-10-27):
 
-- highlight background (`--color-highlight`),
+- fill background (`--color-selected`) on the project row.
+
+Selected chat (user decision 2026-10-27):
+
+- no fill,
+- a left bar in `--color-accent`,
 - primary text.
 
 Implemented (2026-09-28, revised 2026-10-02): project rows render in sentence
@@ -608,10 +613,8 @@ previously the project name had no hover background and chat hovers lightened
 the text). The project row carries its hover fill on the whole row container —
 the same footprint as selection — and chat tiles and the New Chat row hover
 one step dimmer as well (`--color-row-hover`, revised 2026-10-02): hovering
-never changes a tile's size, and the brighter `--color-highlight` remains the
-selected row's fill only. The chat list has no vertical guide line and
-its rows span the full list width; the selected chat keeps the highlight
-background (`--color-highlight`) across that full width. The `+ New Chat`
+never changes a tile's size, and the selected project row carries `--color-selected` (revised 2026-10-27). The chat list has no vertical guide line and
+its rows span the full list width; the selected chat has no fill, and a left bar in `--color-accent` marks it (revised 2026-10-27). The `+ New Chat`
 affordance is a row matching the chat rows: same height, the plus icon in
 the chat-icon column (user decision 2026-09-29). Each chat row further
 carries a close control (user request 2026-10-04): an X on the row's right

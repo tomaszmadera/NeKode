@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { openDatabase } from '../../../db/connection'
 import { runMigrations } from '../../../db/migrations'
+import { projectPathIdentity } from '../../../db/project-identity'
 import { DictationDictionaryService } from './dictation-dictionary-service'
 
 describe('DictationDictionaryService', () => {
@@ -16,11 +17,25 @@ describe('DictationDictionaryService', () => {
 
     // Seed test projects
     db.prepare(
-      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run('p1', 'Alpha', 'D:/code/alpha', null, '2026-01-01T00:00:00Z')
+      'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'p1',
+      'Alpha',
+      'D:/code/alpha',
+      projectPathIdentity('D:/code/alpha', process.platform),
+      null,
+      '2026-01-01T00:00:00Z',
+    )
     db.prepare(
-      'INSERT INTO projects (id, name, path, runtime_label, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run('p2', 'Beta', 'D:/code/beta', null, '2026-01-01T00:00:00Z')
+      'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'p2',
+      'Beta',
+      'D:/code/beta',
+      projectPathIdentity('D:/code/beta', process.platform),
+      null,
+      '2026-01-01T00:00:00Z',
+    )
   })
 
   describe('add and get', () => {

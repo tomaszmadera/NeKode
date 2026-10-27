@@ -11,6 +11,7 @@ import {
   pruneAttention,
 } from '../../lib/chat-attention'
 import { playAttentionChime } from '../../lib/chime'
+import type { PromptChrome } from '../../lib/prompt-chrome'
 import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { EMPTY_HELD_LAUNCHES, type HeldLaunch } from '../kanban/held-launch'
@@ -104,6 +105,8 @@ interface ChatWorkspaceProps {
   terminalFontFamilies?: TerminalFontFamilies
   terminalFontSize?: number
   terminalCtrlVPaste?: boolean
+  /** Chat prompt: buttons only, the text field with buttons, or hidden. */
+  promptChrome?: PromptChrome
   onSessionStatus?: (chatId: string, live: boolean) => void
   onSessionReady?: (chatId: string) => void
   /**
@@ -166,6 +169,7 @@ export function ChatWorkspace({
   terminalFontFamilies,
   terminalFontSize,
   terminalCtrlVPaste,
+  promptChrome = 'input',
   onSessionStatus,
   onSessionReady,
   promptInjection = null,
@@ -539,6 +543,7 @@ export function ChatWorkspace({
                 terminalFontSize={terminalFontSize}
                 terminalFontFamilies={terminalFontFamilies}
                 terminalCtrlVPaste={terminalCtrlVPaste}
+                promptChrome={promptChrome}
                 suppressSpawn={heldLaunches[chatId] !== undefined}
                 registerActivity={activity.register}
                 onExit={() => handleExit(chatId)}

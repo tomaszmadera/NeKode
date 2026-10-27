@@ -103,6 +103,7 @@ function AppContent({
       terminalFontSize: state.terminalFontSize,
       terminalFontFamilies: state.terminalFontFamilies,
       terminalCtrlVPaste: state.terminalCtrlVPaste,
+      promptChrome: state.promptChrome,
       autoSendHandoff: state.autoSendHandoff,
       setAutoSendHandoff: state.setAutoSendHandoff,
     })),
@@ -445,6 +446,7 @@ function AppContent({
               terminalFontSize={settings.terminalFontSize}
               terminalFontFamilies={settings.terminalFontFamilies}
               terminalCtrlVPaste={settings.terminalCtrlVPaste}
+              promptChrome={settings.promptChrome}
               onSessionStatus={terminals.handleSessionStatus}
               onSessionReady={terminals.handleSessionReady}
               onChatClosed={closing.handleChatClosed}

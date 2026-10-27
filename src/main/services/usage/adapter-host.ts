@@ -72,6 +72,24 @@ function errorActions(value: unknown): UsageAdapter['errorActions'] {
   return actions as UsageAdapter['errorActions']
 }
 
+/** A reason selects trusted manifest text for one error code, not process diagnostics. */
+function errorReasons(value: unknown): UsageAdapter['errorReasons'] {
+  if (value === undefined) return undefined
+  const reasons = usageObject(value)
+  if (Object.keys(reasons).length > 50) throw new Error('manifest error reasons')
+  for (const [id, raw] of Object.entries(reasons)) {
+    const reason = usageObject(raw)
+    if (
+      !/^[a-z][a-z0-9-]{0,63}$/.test(id) ||
+      !ERROR_CODES.includes(reason.code as UsageErrorCode) ||
+      typeof reason.message !== 'string' ||
+      !bounded(reason.message, 256)
+    )
+      throw new Error('manifest error reason')
+  }
+  return reasons as UsageAdapter['errorReasons']
+}
+
 /** Usage adapters shipped with NeKode (spec rule 17); `adapters/<name>` in the repository. */
 export const BUNDLED_USAGE_ADAPTERS = ['usage-claude', 'usage-codex']
 
@@ -169,6 +187,7 @@ function readManifest(dir: string, name: string): UsageAdapter {
     )
       throw new Error('manifest contract')
     const actions = errorActions(m.errorActions)
+    const reasons = errorReasons(m.errorReasons)
     const keys = new Set<string>()
     for (const raw of m.configSchema) {
       const f = usageObject(raw)
@@ -200,6 +219,7 @@ function readManifest(dir: string, name: string): UsageAdapter {
       configSchema: m.configSchema as UsageAdapter['configSchema'],
       ...(m.description === undefined ? {} : { description: m.description as string }),
       ...(actions ? { errorActions: actions } : {}),
+      ...(reasons ? { errorReasons: reasons } : {}),
       ...(m.providerId === undefined ? {} : { providerId: m.providerId as string }),
       ...(m.summary === undefined ? {} : { summary: m.summary as string }),
       ...(m.experimental === undefined ? {} : { experimental: m.experimental }),
@@ -387,7 +407,14 @@ export class UsageAdapterHost {
           throw new AppError('protocol', 'Invalid usage adapter failure response.')
         // Fixed per-code next actions (from the trusted manifest or built in); text the adapter
         // process writes is never transported.
+        const reason =
+          typeof error.reason === 'string' &&
+          adapter.errorReasons &&
+          Object.hasOwn(adapter.errorReasons, error.reason)
+            ? adapter.errorReasons[error.reason]
+            : undefined
         const action =
+          (reason?.code === error.code ? reason.message : undefined) ??
           adapter.errorActions?.[error.code as UsageErrorCode] ??
           (error.code === 'auth'
             ? 'Sign in with the CLI or account this adapter uses, then retry.'

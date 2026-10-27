@@ -8,7 +8,7 @@ Start OpenWhispr and configure `Ctrl + Super` (Windows key), activation `Tap`. I
 
 Configure microphone, language, model and Cloud or Local processing in OpenWhispr. OpenWhispr handles Cloud audio according to its selected mode. A local downloaded model or working local bridge is not a desktop launcher requirement.
 
-Click Dictation beside the intended chat prompt. NeKode focuses that input and moves its caret to the end of the draft, then sends `Ctrl + Super` once. The draft stays intact. "Sending shortcut..." describes dispatch only. Success does not establish that OpenWhispr started recording or completed transcription.
+Click Dictation beside the intended chat prompt. NeKode focuses that input and moves its caret to the end of the draft, then sends `Ctrl + Super` once. The draft stays intact. "Sending shortcut..." describes dispatch only. Success does not establish that OpenWhispr started recording or completed transcription. App Settings > General, `Chat prompt`, defaults to Dictation and Send, with Send on the right. The field stays the paste target. Send submits the draft, or Enter when the draft is empty. The same choice can show the text field or hide the prompt. The bottom terminal has no prompt, Send, or Dictation.
 
 Tap may start or stop a recording depending on OpenWhispr's current state. Stop or cancel through OpenWhispr or its configured shortcut. Keep the intended field focused until OpenWhispr pastes; moving focus can redirect insertion. Sending a prompt remains your separate explicit action.
 

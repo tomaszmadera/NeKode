@@ -15,15 +15,9 @@ import { createServices } from './services/create-services'
 import { DesktopShortcutSender, desktopHelperPath } from './services/dictation/desktop-sender'
 import { bundledUsageAdapterDirectories } from './services/usage/adapter-host'
 import { registerShutdown } from './shutdown'
-import { applyUserDataOverride } from './user-data-override'
+import { runPrimaryInstance } from './single-instance'
 
-// Isolated smoke/e2e runs (docs/development/setup.md §3): redirect userData
-// before the app is ready so the SQLite db and local settings stay out of the
-// developer's real profile. Windows ignores the APPDATA override (Known
-// Folder), so app.setPath is the only reliable isolation path.
-applyUserDataOverride(process.env.NEKODE_USER_DATA, (name, targetPath) => {
-  app.setPath(name as 'userData', targetPath)
-})
+let currentMainWindow: BrowserWindow | undefined
 
 // The single trusted renderer document: the dev server root in dev, the
 // built index.html in production. Used for both navigation locking and the
@@ -67,6 +61,7 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+  currentMainWindow = mainWindow
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -132,181 +127,203 @@ function createWindow(): void {
   }
 }
 
-app
-  .whenReady()
-  .then(() =>
-    bootstrap(
-      async () => {
-        electronApp.setAppUserModelId('com.nekode.app')
+function startApplication(): void {
+  app
+    .whenReady()
+    .then(() =>
+      bootstrap(
+        async () => {
+          electronApp.setAppUserModelId('com.nekode.app')
 
-        app.on('browser-window-created', (_, window) => {
-          optimizer.watchWindowShortcuts(window)
-        })
+          app.on('browser-window-created', (_, window) => {
+            optimizer.watchWindowShortcuts(window)
+          })
 
-        const desktopSender = new DesktopShortcutSender(
-          desktopHelperPath(app.isPackaged, app.getAppPath(), process.resourcesPath),
-        )
-        const services = createServices({
-          pickUsageFile: async (output) => {
-            if (output) {
-              const result = await dialog.showSaveDialog({
-                title: 'Export usage JSON',
+          const desktopSender = new DesktopShortcutSender(
+            desktopHelperPath(app.isPackaged, app.getAppPath(), process.resourcesPath),
+          )
+          const services = createServices({
+            pickUsageFile: async (output) => {
+              if (output) {
+                const result = await dialog.showSaveDialog({
+                  title: 'Export usage JSON',
+                  filters: [{ name: 'JSON', extensions: ['json'] }],
+                })
+                return result.canceled ? null : (result.filePath ?? null)
+              }
+              const result = await dialog.showOpenDialog({
+                title: 'Choose usage JSON input',
+                properties: ['openFile'],
                 filters: [{ name: 'JSON', extensions: ['json'] }],
               })
-              return result.canceled ? null : (result.filePath ?? null)
-            }
-            const result = await dialog.showOpenDialog({
-              title: 'Choose usage JSON input',
-              properties: ['openFile'],
-              filters: [{ name: 'JSON', extensions: ['json'] }],
-            })
-            return result.canceled ? null : (result.filePaths[0] ?? null)
-          },
-          desktopShortcut: (handle) => desktopSender.send(handle),
-          dbPath: join(app.getPath('userData'), 'nekode.db'),
-          userDataPath: app.getPath('userData'),
-          safeStorage,
-          packaged: app.isPackaged,
-          appVersion: app.getVersion(),
-          tempDir: app.getPath('temp'),
-          quitApp: () => {
-            app.quit()
-          },
-          subscribeAppQuit: (listener) => {
-            app.on('before-quit', listener)
-            return () => {
-              app.removeListener('before-quit', listener)
-            }
-          },
-          bundledUsageAdapterDirectories: bundledUsageAdapterDirectories(
-            app.isPackaged,
-            app.getAppPath(),
-            process.resourcesPath,
-          ),
-          // The single OS-facing action of the project-files feature (spec
-          // Behaviour 11): open with the OS default application. '' = success.
-          openExternal: (absolutePath) => shell.openPath(absolutePath),
-          showInFolder: (absolutePath) => {
-            shell.showItemInFolder(absolutePath)
-          },
-          trashItem: (absolutePath) => shell.trashItem(absolutePath),
-          // Native directory picker behind dialogs:pickDirectory (spec
-          // handoff-resume-flow Data/API). Null = user cancel.
-          pickDirectory: async (defaultPath) => {
-            const result = await dialog.showOpenDialog({
-              properties: ['openDirectory'],
-              title: 'Choose Directory',
-              defaultPath: defaultPath ?? undefined,
-            })
-            if (result.canceled || result.filePaths.length === 0) {
-              return null
-            }
-            return result.filePaths[0]
-          },
-        })
-        registerAppIpcHandlers(ipcMain, services, {
-          desktopWindow: (event) => {
-            const window = BrowserWindow.fromWebContents(event.sender)
-            if (!window || window.isDestroyed() || !window.isFocused()) return null
-            const handle = window.getNativeWindowHandle()
-            return (
-              handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE())
-            ).toString()
-          },
-          trustedRendererUrls: getTrustedRendererUrls(),
-          // Terminal data/exit events go to every trusted window's webContents.
-          broadcast: (channel, chatId, payload) => {
-            broadcastToTrustedWindows(
-              BrowserWindow.getAllWindows(),
-              getTrustedRendererUrls(),
-              channel,
-              chatId,
-              payload,
-            )
-          },
-          broadcastDictation: (result) => {
-            broadcastToTrustedWindows(
-              BrowserWindow.getAllWindows(),
-              getTrustedRendererUrls(),
-              IPC_CHANNEL.dictationResult,
-              result,
-            )
-          },
-          broadcastTaskProgress: (event) => {
-            broadcastToTrustedWindows(
-              BrowserWindow.getAllWindows(),
-              getTrustedRendererUrls(),
-              IPC_CHANNEL.taskProgressChanged,
-              event,
-            )
-          },
-        })
+              return result.canceled ? null : (result.filePaths[0] ?? null)
+            },
+            desktopShortcut: (handle) => desktopSender.send(handle),
+            dbPath: join(app.getPath('userData'), 'nekode.db'),
+            userDataPath: app.getPath('userData'),
+            safeStorage,
+            packaged: app.isPackaged,
+            appVersion: app.getVersion(),
+            tempDir: app.getPath('temp'),
+            quitApp: () => {
+              app.quit()
+            },
+            subscribeAppQuit: (listener) => {
+              app.on('before-quit', listener)
+              return () => {
+                app.removeListener('before-quit', listener)
+              }
+            },
+            bundledUsageAdapterDirectories: bundledUsageAdapterDirectories(
+              app.isPackaged,
+              app.getAppPath(),
+              process.resourcesPath,
+            ),
+            // The single OS-facing action of the project-files feature (spec
+            // Behaviour 11): open with the OS default application. '' = success.
+            openExternal: (absolutePath) => shell.openPath(absolutePath),
+            showInFolder: (absolutePath) => {
+              shell.showItemInFolder(absolutePath)
+            },
+            trashItem: (absolutePath) => shell.trashItem(absolutePath),
+            // Native directory picker behind dialogs:pickDirectory (spec
+            // handoff-resume-flow Data/API). Null = user cancel.
+            pickDirectory: async (defaultPath) => {
+              const result = await dialog.showOpenDialog({
+                properties: ['openDirectory'],
+                title: 'Choose Directory',
+                defaultPath: defaultPath ?? undefined,
+              })
+              if (result.canceled || result.filePaths.length === 0) {
+                return null
+              }
+              return result.filePaths[0]
+            },
+          })
+          registerAppIpcHandlers(ipcMain, services, {
+            desktopWindow: (event) => {
+              const window = BrowserWindow.fromWebContents(event.sender)
+              if (!window || window.isDestroyed() || !window.isFocused()) return null
+              const handle = window.getNativeWindowHandle()
+              return (
+                handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE())
+              ).toString()
+            },
+            trustedRendererUrls: getTrustedRendererUrls(),
+            // Terminal data/exit events go to every trusted window's webContents.
+            broadcast: (channel, chatId, payload) => {
+              broadcastToTrustedWindows(
+                BrowserWindow.getAllWindows(),
+                getTrustedRendererUrls(),
+                channel,
+                chatId,
+                payload,
+              )
+            },
+            broadcastDictation: (result) => {
+              broadcastToTrustedWindows(
+                BrowserWindow.getAllWindows(),
+                getTrustedRendererUrls(),
+                IPC_CHANNEL.dictationResult,
+                result,
+              )
+            },
+            broadcastTaskProgress: (event) => {
+              broadcastToTrustedWindows(
+                BrowserWindow.getAllWindows(),
+                getTrustedRendererUrls(),
+                IPC_CHANNEL.taskProgressChanged,
+                event,
+              )
+            },
+          })
 
-        // Usage polling and task progress reads pause while no window is
-        // visible and not minimized (usage-quota rule 12, task-progress-adapters
-        // Behaviour 18).
-        const updateUsageVisibility = () => {
-          const visible = BrowserWindow.getAllWindows().some(
-            (window) => !window.isDestroyed() && window.isVisible() && !window.isMinimized(),
-          )
-          services.usage.setVisible(visible)
-          services.taskProgress.setVisible(visible)
-        }
-        app.on('browser-window-created', (_, window) => {
-          window.on('show', updateUsageVisibility)
-          window.on('hide', updateUsageVisibility)
-          window.on('minimize', updateUsageVisibility)
-          window.on('restore', updateUsageVisibility)
-          window.on('closed', updateUsageVisibility)
-        })
-        app.on('before-quit', () => {
-          services.usage.shutdown()
-          services.taskProgress.shutdown()
-        })
-
-        // App-quit PTY teardown (spec Behaviour 8): terminate every chat terminal
-        // so no orphaned pwsh/powershell processes outlive the app. Quit is NOT a
-        // chat exit: chat rows are never deleted here, and terminateAll suppresses
-        // exit events so the renderer's chat-close flow cannot run while quitting.
-        registerShutdown(
-          app,
-          (reportTimeout) => services.terminals.shutdown(reportTimeout),
-          () => services.dictation.shutdown(),
-          () => {
-            console.error('[terminal] application shutdown did not complete')
-            dialog.showErrorBox(
-              'NeKode could not close',
-              'Terminal shutdown did not complete. NeKode is still running.',
+          // Usage polling and task progress reads pause while no window is
+          // visible and not minimized (usage-quota rule 12, task-progress-adapters
+          // Behaviour 18).
+          const updateUsageVisibility = () => {
+            const visible = BrowserWindow.getAllWindows().some(
+              (window) => !window.isDestroyed() && window.isVisible() && !window.isMinimized(),
             )
-          },
-          {
-            stopActions: () => services.actions.stopAll(),
-            closeDatabase: () => services.closeDatabase?.(),
-          },
-        )
-
-        createWindow()
-
-        app.on('activate', () => {
-          if (BrowserWindow.getAllWindows().length === 0) {
-            createWindow()
+            services.usage.setVisible(visible)
+            services.taskProgress.setVisible(visible)
           }
-        })
-      },
-      {
-        showErrorBox: (title, content) => dialog.showErrorBox(title, content),
-        quit: () => app.quit(),
-      },
-    ),
-  )
-  .catch((error) => {
-    console.error('[bootstrap] unexpected startup error', error)
-    dialog.showErrorBox(
-      'NeKode failed to start',
-      error instanceof Error ? error.message : String(error),
+          app.on('browser-window-created', (_, window) => {
+            window.on('show', updateUsageVisibility)
+            window.on('hide', updateUsageVisibility)
+            window.on('minimize', updateUsageVisibility)
+            window.on('restore', updateUsageVisibility)
+            window.on('closed', updateUsageVisibility)
+          })
+          // App-quit PTY teardown (spec Behaviour 8): terminate every chat terminal
+          // so no orphaned pwsh/powershell processes outlive the app. Quit is NOT a
+          // chat exit: chat rows are never deleted here, and terminateAll suppresses
+          // exit events so the renderer's chat-close flow cannot run while quitting.
+          // Usage and task-progress shutdown run in this sequence so one failure
+          // cannot skip the other hooks or terminal teardown.
+          registerShutdown(
+            app,
+            (reportTimeout) => services.terminals.shutdown(reportTimeout),
+            () => services.dictation.shutdown(),
+            () => {
+              console.error('[terminal] application shutdown did not complete')
+              dialog.showErrorBox(
+                'NeKode could not close',
+                'Terminal shutdown did not complete. NeKode is still running.',
+              )
+            },
+            {
+              shutdownUsage: () => services.usage.shutdown(),
+              shutdownTaskProgress: () => services.taskProgress.shutdown(),
+              stopActions: () => services.actions.stopAll(),
+              closeDatabase: () => services.closeDatabase?.(),
+            },
+          )
+
+          createWindow()
+
+          app.on('activate', () => {
+            if (BrowserWindow.getAllWindows().length === 0) {
+              createWindow()
+            }
+          })
+        },
+        {
+          showErrorBox: (title, content) => dialog.showErrorBox(title, content),
+          quit: () => app.quit(),
+        },
+      ),
     )
+    .catch((error) => {
+      console.error('[bootstrap] unexpected startup error', error)
+      dialog.showErrorBox(
+        'NeKode failed to start',
+        error instanceof Error ? error.message : String(error),
+      )
+      app.quit()
+    })
+}
+
+// Isolated smoke/e2e runs (docs/development/setup.md §3): redirect userData
+// before the app is ready so the SQLite db and local settings stay out of the
+// developer's real profile. Windows ignores the APPDATA override (Known
+// Folder), so app.setPath is the only reliable isolation path. The lock follows
+// that selection, so isolated profiles do not share it.
+runPrimaryInstance({
+  rawUserData: process.env.NEKODE_USER_DATA,
+  setPath: (name, targetPath) => {
+    app.setPath(name as 'userData', targetPath)
+  },
+  requestSingleInstanceLock: () => app.requestSingleInstanceLock(),
+  quit: () => {
     app.quit()
-  })
+  },
+  onSecondInstance: (listener) => {
+    app.on('second-instance', listener)
+  },
+  getMainWindows: () => (currentMainWindow ? [currentMainWindow] : []),
+  start: startApplication,
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -753,6 +753,77 @@ describe('ChatTerminal lifecycle', () => {
     expect((getByTestId(TEST_ID.terminalPromptSend) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('buttons-only Send writes Enter when the draft is empty and the line when it is not', async () => {
+    const { app } = createAppMock()
+    const { getByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        promptChrome="buttons"
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
+    const dictation = getByTestId(TEST_ID.terminalPromptDictation)
+    const send = getByTestId(TEST_ID.terminalPromptSend)
+    expect(dictation.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    fireEvent.click(send)
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r'))
+    expect(app.terminals.write).toHaveBeenCalledTimes(1)
+
+    const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'git status' } })
+    fireEvent.click(send)
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status'))
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
+  })
+
+  it('omits the prompt field, Send, and Dictation when the prompt is hidden', async () => {
+    const { app } = createAppMock()
+    const { queryByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        promptChrome="hidden"
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
+    expect(queryByTestId(TEST_ID.terminalPromptInput)).toBeNull()
+    expect(queryByTestId(TEST_ID.terminalPromptSend)).toBeNull()
+    expect(queryByTestId(TEST_ID.terminalPromptDictation)).toBeNull()
+  })
+
+  it('omits the prompt field, Send, and Dictation when the host turns the prompt off', async () => {
+    const { app } = createAppMock()
+    const { queryByTestId } = render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        showPrompt={false}
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
+    expect(queryByTestId(TEST_ID.terminalPromptInput)).toBeNull()
+    expect(queryByTestId(TEST_ID.terminalPromptSend)).toBeNull()
+    expect(queryByTestId(TEST_ID.terminalPromptDictation)).toBeNull()
+  })
+
   // Ctrl+D/Ctrl+U shortcuts (spec Behaviour 11 / AC9): the app closes
   // the chat when the input line is visibly empty outside full-screen
   // programs — including while a normal-buffer program (python REPL) runs

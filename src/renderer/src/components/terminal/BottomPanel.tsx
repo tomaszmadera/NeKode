@@ -143,6 +143,7 @@ export function BottomPanel({
                 terminalFontSize={terminalFontSize}
                 terminalFontFamilies={terminalFontFamilies}
                 terminalCtrlVPaste={terminalCtrlVPaste}
+                showPrompt={false}
                 onExit={() => onExit(tab.id)}
                 onClose={(options) => onCloseTab(tab.id, options)}
                 onSpawnError={(message) => onSpawnError(tab.id, message)}

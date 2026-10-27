@@ -50,6 +50,16 @@ The public `tomaszmadera/NeKode` repository offers ready-to-download releases of
 - Packaging never publishes by itself: electron-builder runs with `--publish never`, and only the workflow creates a release.
 - Local scripts: the existing `build:win` and the new `build:linux` give the same file names as CI.
 
+### Package contents (NEKODE-134)
+
+- Local and CI packages include application files only through `files: [out/**/*, package.json]`. electron-builder adds production dependencies and their runtime dependencies. Source files belonging to required native dependencies are allowed; project source directories are not.
+- `dependencies` contains only `better-sqlite3` and `node-pty`. Other application JavaScript dependencies are build dependencies bundled into `out/`, including the renderer libraries and the main process validation library. Native modules remain external and load in the packaged Electron runtime.
+- A content check runs automatically during Windows and Linux packaging, before CI uploads a binary. It also accepts an explicit `app.asar` path for local inspection. A missing, unreadable, or malformed archive fails with a diagnostic and a nonzero exit code.
+- The check rejects project-root `.agents`, `.claude`, `.codex`, `.grok`, `.opencode`, `src`, `docs`, and `tmp` entries, and `.env` files at any depth. It inspects archive metadata only and never reads or prints environment file contents. A failing check names the offending paths and stops packaging.
+- The allowlist also excludes project lockfiles and TypeScript build metadata. The check validates required compiled main, preload, and renderer entry points and the presence of the two native runtime dependencies, so an empty or incomplete archive cannot pass.
+- Existing `extraResources` (dictation helper and usage adapters), Windows and Linux icons, NSIS settings, artifact names, `npmRebuild: false`, and Electron fuse behavior remain compatible. Bundled usage adapters require the RunAsNode fuse to stay enabled.
+- Verification records the old and new archive sizes in bytes, entry counts, and the size reduction. It runs the packaged Windows app and the app installed by NSIS against an isolated profile and fixture project, verifies SQLite persistence and PTY output, and reaps every process started by the smoke.
+
 ### Release workflow
 
 - Trigger: a push of a tag that matches numeric semver (with an optional suffix). In addition, a manual run (`workflow_dispatch`) builds the files as run artifacts, without creating a release.
@@ -105,6 +115,9 @@ The public `tomaszmadera/NeKode` repository offers ready-to-download releases of
 5. A push of a valid tag creates a draft with three files; the checksums in `SHA256SUMS.txt` match the downloaded files.
 6. `docs/operations/releases.md` and `README.md` describe the behavior from this specification.
 7. The first release made with the new process is published and shown as "Latest", and the files downloaded from it install and start on both systems.
+8. Local Windows packaging produces an archive without the forbidden paths listed in "Package contents (NEKODE-134)"; the same content check gates CI packaging on both platforms.
+9. The packaged and installed Windows application starts with its renderer mounted, SQLite persists fixture data, and a real PTY emits expected fixture output. Extra resources and icons are present, and a bundled usage adapter can run through the packaged executable.
+10. The NEKODE-134 verification evidence measures the archive size reduction, confirms only the two native direct production dependencies, and includes a passing `pnpm run verify`.
 
 ## Required tests
 
@@ -112,6 +125,8 @@ The public `tomaszmadera/NeKode` repository offers ready-to-download releases of
 - A `workflow_dispatch` run (criterion 3) and a run with a deliberately wrong tag on a fork (criterion 4), agreed with the maintainer.
 - A smoke of the files downloaded from the published release (criterion 7).
 - `pnpm run verify` without regressions.
+- Package-content regression cases: clean archive, each forbidden project-root entry, nested `.env`, permitted native dependency source paths, incomplete archive, and missing or malformed input. The archive check must fail against the pre-fix local archive without reading its file payloads.
+- NEKODE-134 packaging and runtime checks from acceptance criteria 8-10. No new release or workflow dispatch is required for this packaging change; the local equivalent exercises the CI packaging gate.
 
 ## Relevant SDD / ADR
 

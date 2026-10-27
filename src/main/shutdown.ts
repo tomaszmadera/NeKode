@@ -4,11 +4,13 @@ interface QuitApp {
 }
 
 export interface ShutdownHooks {
+  shutdownUsage?: () => void
+  shutdownTaskProgress?: () => void
   stopActions?: () => void
   closeDatabase?: () => void
 }
 
-/** Keep Electron alive until native terminal exits and background processes have drained. */
+/** Keep Electron alive until terminal shutdown settles. A cleanup failure cannot skip the rest. */
 export function registerShutdown(
   app: QuitApp,
   shutdownTerminals: (reportTimeout?: (error: unknown) => void) => Promise<void>,
@@ -19,42 +21,57 @@ export function registerShutdown(
   let started = false
   let complete = false
   let teardownFailed = false
+  let terminalSettled = false
+
+  const reportCleanupFailure = (error: unknown): void => {
+    teardownFailed = true
+    try {
+      reportFailure(error)
+    } catch (reportError) {
+      console.error('[shutdown] failed to report cleanup error', error, reportError)
+    }
+  }
+
+  const runCleanup = (cleanup: (() => void) | undefined): void => {
+    if (!cleanup) return
+    try {
+      cleanup()
+    } catch (error) {
+      reportCleanupFailure(error)
+    }
+  }
+
+  const failTerminalShutdown = (error: unknown): void => {
+    terminalSettled = true
+    reportCleanupFailure(error)
+  }
 
   app.on('before-quit', (event) => {
-    if (complete || teardownFailed) return
+    // A cleanup failure or timeout report stays pending until the terminal
+    // promise settles. Only a settled terminal failure may force exit.
+    if (complete || (teardownFailed && terminalSettled)) return
     event.preventDefault()
     if (started) return
     started = true
 
-    try {
-      shutdownDictation()
-    } catch (error) {
-      teardownFailed = true
-      reportFailure(error)
-    }
+    runCleanup(hooks?.shutdownUsage)
+    runCleanup(hooks?.shutdownTaskProgress)
+    runCleanup(shutdownDictation)
+    runCleanup(hooks?.stopActions)
 
     try {
-      hooks?.stopActions?.()
-    } catch (error) {
-      teardownFailed = true
-      reportFailure(error)
-    }
-
-    void shutdownTerminals(reportFailure).then(
-      () => {
+      void shutdownTerminals(reportFailure).then(() => {
         try {
           hooks?.closeDatabase?.()
         } catch (error) {
-          teardownFailed = true
-          reportFailure(error)
+          reportCleanupFailure(error)
         }
+        terminalSettled = true
         complete = true
         app.quit()
-      },
-      (error) => {
-        teardownFailed = true
-        reportFailure(error)
-      },
-    )
+      }, failTerminalShutdown)
+    } catch (error) {
+      failTerminalShutdown(error)
+    }
   })
 }

@@ -7,6 +7,7 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { ActivitySession } from '../../lib/chat-activity'
 import { isNewChatChord } from '../../lib/new-chat-chord'
+import type { PromptChrome } from '../../lib/prompt-chrome'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
@@ -75,6 +76,11 @@ interface ChatTerminalProps {
   terminalFontFamilies?: TerminalFontFamilies
   /** Ctrl+V pastes text in full-screen programs; defaults on and applies live. */
   terminalCtrlVPaste?: boolean
+  /** `buttons` centers Dictation and Send, with Send on the right. `input`
+      shows the text field. `hidden` shows neither. */
+  promptChrome?: PromptChrome
+  /** Bottom terminals pass false: no field, Send, or Dictation. */
+  showPrompt?: boolean
   /**
    * `Ctrl+D` at an empty input line outside full-screen programs: the
    * shortcut is intercepted and the chat closes through the same flow as a
@@ -167,6 +173,8 @@ export function ChatTerminal({
   terminalFontSize,
   terminalFontFamilies = DEFAULT_TERMINAL_FONT_FAMILIES,
   terminalCtrlVPaste = true,
+  promptChrome = 'input',
+  showPrompt = true,
   suppressSpawn = false,
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -735,15 +743,18 @@ export function ChatTerminal({
               className="terminal-fit-host absolute inset-0 overflow-hidden"
             />
           </div>
-          <PromptInput
-            dictation={dictation}
-            dictationControl={dictationControl}
-            chatId={chatId}
-            chatLabel={chatLabel}
-            onSubmit={(line) => sendRef.current?.(line)}
-            injected={injected}
-            onInjected={onInjected}
-          />
+          {showPrompt && promptChrome !== 'hidden' ? (
+            <PromptInput
+              dictation={dictation}
+              dictationControl={dictationControl}
+              chatId={chatId}
+              chatLabel={chatLabel}
+              chrome={promptChrome === 'buttons' ? 'buttons' : 'input'}
+              onSubmit={(line) => sendRef.current?.(line)}
+              injected={injected}
+              onInjected={onInjected}
+            />
+          ) : null}
         </div>
       </div>
       {contextMenu !== null ? (

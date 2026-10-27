@@ -133,6 +133,13 @@ A quota adapter manifest has `id`, `name`, `protocolVersion: 2`, `invocation: {c
 
 One process per request: `{protocolVersion: 2, action, config, params: {connectionId}}`, where `action` is `read` for scheduled collection and `refresh` only for a manual `Refresh usage`. Every adapter implements both; `refresh` returns only values obtained from the provider during that request (L2-L4). Exactly one bounded JSON response: `{protocolVersion: 2, ok: true, data}` or `{protocolVersion: 2, ok: false, error: {code, message, retryAfterSeconds?}}`. Exit 0 for success, 1 for declared failure. Cap stdout at 1 MiB, stderr at 8 KiB, and execution at 30 seconds; terminate the process tree on timeout/cancellation. An adapter's internal deadlines, including version checks and cleanup, end before the host limit so its own typed timeout is reported. Main exposes sanitized error codes and messages, never arbitrary stderr or provider bodies. The Codex adapter handles its own bounded JSONL handshake and read internally, then closes app-server; it does not make app-server part of terminal ownership. Unsupported CLI versions fail explicitly. Never silently switch to an unofficial endpoint.
 
+Failure diagnostics may include an optional `error.reason` selector. A manifest's optional
+`errorReasons` maps at most 50 reason ids (`[a-z][a-z0-9-]{0,63}`) to a supported usage error
+`code` and fixed nonempty `message` (at most 256 characters, no NUL). Main uses that message
+only for an own manifest entry whose code matches the failure code. Missing, unknown and
+mismatched selectors retain the existing per-code or generic next action. Main never displays
+the selector or process error text. Existing manifests and protocol version 2 remain compatible.
+
 ### Normalized observation document
 
 Version 1 JSON uses `schemaVersion: 1` and `subscriptions`, with no credentials. Each subscription includes `id`, `providerId`, `label`, `sourceKind` (`api`, `cli`, or `file`), `metrics`, and a source status. Connection ids bind inputs to configured account scopes; duplicate ids/metric ids are rejected. The file adapter selects the one subscription whose id equals its configured `subscriptionId`, or the connection id when that field is absent, and ignores the others (rule 25); the export contains every enabled connection. Labels and free text are bounded to 256 characters; documents have at most 100 subscriptions and 50 metrics per subscription. Document size is at most 1 MiB.

@@ -11,6 +11,12 @@ import {
   parseAttentionSettings,
 } from '../lib/attention-settings'
 import {
+  DEFAULT_PROMPT_CHROME,
+  PROMPT_CHROME_STORAGE_KEY,
+  type PromptChrome,
+  parsePromptChrome,
+} from '../lib/prompt-chrome'
+import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
   DEFAULT_TERMINAL_FONT_SIZE,
   parseTerminalFontFamilies,
@@ -43,6 +49,9 @@ interface SettingsState {
   terminalFontError: string | null
   terminalCtrlVPaste: boolean
   terminalPasteError: string | null
+  /** Chat prompt: buttons only, text field with buttons, or hidden. */
+  promptChrome: PromptChrome
+  promptChromeError: string | null
   mascotVisible: boolean
   mascotError: string | null
   // App-global settings in app_state: defaults until hydrate() resolves,
@@ -63,6 +72,7 @@ interface SettingsActions {
   setTerminalFontSize: (size: number) => void
   setTerminalFontFamilies: (families: TerminalFontFamilies) => void
   setTerminalCtrlVPaste: (enabled: boolean) => void
+  setPromptChrome: (chrome: PromptChrome) => void
   toggleMascot: () => void
   setAutoSendHandoff: (next: boolean) => void
   setChatSwitchEnabled: (next: boolean) => void
@@ -132,6 +142,13 @@ function readLocalSettings(): Omit<
   } catch {
     terminalPasteError = 'Failed to load the saved terminal paste setting.'
   }
+  let promptChrome: PromptChrome = DEFAULT_PROMPT_CHROME
+  let promptChromeError: string | null = null
+  try {
+    promptChrome = parsePromptChrome(localStorage.getItem(PROMPT_CHROME_STORAGE_KEY))
+  } catch {
+    promptChromeError = 'Failed to load the prompt setting.'
+  }
   return {
     theme,
     themeError,
@@ -143,6 +160,8 @@ function readLocalSettings(): Omit<
     terminalFontError,
     terminalCtrlVPaste,
     terminalPasteError,
+    promptChrome,
+    promptChromeError,
     mascotVisible,
     mascotError,
   }
@@ -154,6 +173,7 @@ export function settingsError(state: SettingsState): string | null {
     state.themeError ??
     state.quickThemeSwitchError ??
     state.terminalPasteError ??
+    state.promptChromeError ??
     state.terminalFontError ??
     state.terminalFontSizeError
   )
@@ -219,6 +239,18 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
         set({
           terminalCtrlVPaste: enabled,
           terminalPasteError: 'Failed to save the terminal paste setting.',
+        })
+      }
+    },
+    setPromptChrome: (chrome) => {
+      try {
+        localStorage.setItem(PROMPT_CHROME_STORAGE_KEY, chrome)
+        set({ promptChrome: chrome, promptChromeError: null })
+      } catch {
+        // The choice still applies for this run; only the save failed.
+        set({
+          promptChrome: chrome,
+          promptChromeError: 'Failed to save the prompt setting.',
         })
       }
     },

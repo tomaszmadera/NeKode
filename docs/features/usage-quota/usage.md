@@ -62,6 +62,19 @@ For `refresh`, the adapter obtains every value it returns from the provider duri
 
 For an actual read, `subscriptions` must contain exactly one subscription with the account's id (`params.connectionId`), and its provider id when the manifest declares `providerId`. A declared error exits 1 and returns `ok:false` with an `error` containing a typed `code`, safe `message` and optional numeric `retryAfterSeconds`. Supported codes are `validation_error`, `not_found`, `protocol`, `timeout`, `auth`, `network`, `rate_limited`, `unsupported`, `config`, `io`. Main replaces plugin error messages with `Usage source <code>.` plus the manifest's `errorActions` entry or a generic next action, and never transports stderr. Limits: 30 seconds, 1 MiB stdout, 8 KiB stderr, 100 subscriptions and 50 metrics per subscription. Timeout, cancellation and application shutdown terminate process trees. The normalized document is described by [schema.json](schema.json), with a sample in [example.json](example.json).
 
+### Specific failure reasons
+
+An adapter may add `reason` to its failure response, for example
+`error: {code: "config", reason: "catalog-empty", message: "..."}`. Its manifest declares
+`errorReasons: {"catalog-empty": {code: "config", message: "Configure quota sources in the Hub."}}`.
+NeKode displays that fixed manifest message only when both the reason id and error code match.
+The process's `message`, response bodies and unknown reason ids never become displayed text.
+An absent, unknown or mismatched reason keeps the existing `errorActions` or generic next action.
+Older hosts ignore `errorReasons` and retain their existing error handling.
+
+A manifest may declare at most 50 reasons. Each id matches `[a-z][a-z0-9-]{0,63}`; its code is a
+supported usage error code and its nonempty message is at most 256 characters, with no NUL.
+
 ### Partial refresh results (`partial-refresh-v1`)
 
 A manual refresh request may carry `params.capabilities: ["partial-refresh-v1"]`. An adapter that

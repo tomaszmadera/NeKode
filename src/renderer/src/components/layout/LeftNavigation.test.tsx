@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ChatStoreContext, createChatStore } from '../../stores/useChatStore'
 import { createProjectStore, ProjectStoreContext } from '../../stores/useProjectStore'
-import { LeftNavigation } from './LeftNavigation'
+import { LeftNavigation, SESSION_CAPTION_CLASS } from './LeftNavigation'
 
 afterEach(cleanup)
 
@@ -258,8 +258,10 @@ describe('LeftNavigation session status indicators', () => {
     expect(dot1.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80
     expect(row1.getAttribute('title')).toBe('Chat 1: running')
     expect(row1.getAttribute('aria-label')).toBe('Chat 1, running, now')
-    // Active session styling: selected-row and project-title theme tokens
-    expect(row1.className).toContain('bg-selected')
+    // Active session: no fill. The accent bar is the CSS marker on data-selected.
+    expect(row1.className).not.toContain('bg-selected')
+    expect(row1.className).toContain('bg-transparent')
+    expect(row1.getAttribute('data-selected')).toBe('true')
     expect(row1.className).toContain('text-project-title')
 
     // Waiting session (t2)
@@ -482,14 +484,54 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(btn2.className).toContain('transition-colors')
   })
 
-  it('renders project row flush left with no hover background and enlarged action buttons', () => {
+  it('highlights only the active project and labels its open session list', () => {
+    const props = {
+      ...defaultProps(),
+      expandedProjectIds: new Set(['p1', 'p2']),
+      selectedProjectId: 'p1',
+      chatsByProject: {
+        p1: [{ id: 't1', projectId: 'p1', name: 'Chat 1' }],
+        p2: [{ id: 't2', projectId: 'p2', name: 'Chat 2' }],
+      },
+    }
+    const view = render(navigation({ ...props }))
+
+    const active = screen.getByTestId(testIdFor.projectRow('p1'))
+    const inactive = screen.getByTestId(testIdFor.projectRow('p2'))
+    expect(active.className).toContain('bg-selected')
+    expect(inactive.className).not.toContain('bg-selected')
+    expect(screen.getAllByText('Recent sessions')).toHaveLength(2)
+    expect(active.closest('li')?.textContent).toContain('Recent sessions')
+    expect(inactive.closest('li')?.textContent).toContain('Recent sessions')
+
+    // Folding the selected project hides its heading. The other open
+    // project keeps the heading because it still has sessions.
+    view.rerender(navigation({ ...props, expandedProjectIds: new Set(['p2']) }))
+    expect(screen.getAllByText('Recent sessions')).toHaveLength(1)
+    expect(screen.getByTestId(testIdFor.projectRow('p1')).closest('li')?.textContent).not.toContain(
+      'Recent sessions',
+    )
+    expect(screen.getByTestId(testIdFor.projectRow('p2')).closest('li')?.textContent).toContain(
+      'Recent sessions',
+    )
+    expect(screen.getByTestId(testIdFor.projectRow('p1')).className).toContain('bg-selected')
+  })
+
+  it('shows only No active sessions when an open project has no sessions', () => {
+    render(navigation({ ...defaultProps() }))
+    const empty = screen.getByText('No active sessions')
+    expect(screen.queryByText('Recent sessions')).toBeNull()
+    expect(empty.className).toBe(SESSION_CAPTION_CLASS)
+  })
+
+  it('insets the project row from both edges and enlarges the action buttons', () => {
     const props = defaultProps()
     render(navigation({ ...props }))
 
     const row = screen.getByTestId(testIdFor.projectRow('p1'))
     expect(row.className).not.toContain('hover:bg-row-hover')
-    expect(row.className).toContain('pl-0')
-    expect(row.className).toContain('pr-0')
+    expect(row.className).toContain('pl-1')
+    expect(row.className).toContain('pr-1')
 
     const selectBtn = screen.getByTestId(testIdFor.projectSelect('p1'))
     expect(selectBtn.className).toContain('pl-0')
@@ -522,10 +564,10 @@ describe('LeftNavigation project avatar and initials', () => {
     // Kanban pill under project row is retired
     expect(screen.queryByTestId(testIdFor.projectKanban('p1'))).toBeNull()
 
-    // Session alignment at 20px (pl-5 / pr-5 / right-5)
+    // Session inset is 70% of the previous 20px (pl-3.5 / pr-3.5 / right-3.5).
     const chatBtn = screen.getByTestId(testIdFor.chatRow('t1'))
-    expect(chatBtn.className).toContain('pl-5')
-    expect(chatBtn.className).toContain('pr-5')
+    expect(chatBtn.className).toContain('pl-3.5')
+    expect(chatBtn.className).toContain('pr-3.5')
     const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
     expect(dot.className).toContain('h-2')
     expect(dot.className).toContain('w-2')
@@ -534,7 +576,7 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(timeSpan).toBeTruthy()
 
     const closeBtn = screen.getByTestId(testIdFor.chatClose('t1'))
-    expect(closeBtn.className).toContain('right-5')
+    expect(closeBtn.className).toContain('right-3.5')
   })
 
   it('dims stale progress and exposes its error in the title and accessible label', () => {
