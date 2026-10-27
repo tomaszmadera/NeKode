@@ -551,7 +551,7 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(projectFilesIcon?.getAttribute('height')).toBe('14')
   })
 
-  it('does not render Kanban pill under project and aligns session status dot at 20px', () => {
+  it('does not render Kanban pill under project and aligns session content with the project icon', () => {
     const props = {
       ...defaultProps(),
       kanbanProjectIds: new Set(['p1']),
@@ -564,9 +564,9 @@ describe('LeftNavigation project avatar and initials', () => {
     // Kanban pill under project row is retired
     expect(screen.queryByTestId(testIdFor.projectKanban('p1'))).toBeNull()
 
-    // Session inset is 70% of the previous 20px (pl-3.5 / pr-3.5 / right-3.5).
+    // Content starts after the project row inset (4px), chevron (14px), and gap (8px).
     const chatBtn = screen.getByTestId(testIdFor.chatRow('t1'))
-    expect(chatBtn.className).toContain('pl-3.5')
+    expect(chatBtn.className).toContain('pl-6.5')
     expect(chatBtn.className).toContain('pr-3.5')
     const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
     expect(dot.className).toContain('h-2')

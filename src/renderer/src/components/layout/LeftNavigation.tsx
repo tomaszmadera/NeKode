@@ -85,8 +85,8 @@ interface LeftNavigationProps {
   children?: React.ReactNode
 }
 
-/** One left edge for the session heading and the empty-list caption. */
-export const SESSION_CAPTION_CLASS = 'pl-3.5 text-xs leading-4 text-ink-muted'
+/** Align captions with the project icon: 4px row inset + 14px chevron + 8px gap. */
+export const SESSION_CAPTION_CLASS = 'pl-6.5 text-xs leading-4 text-ink-muted'
 
 type ContextMenuState = {
   x: number
@@ -194,7 +194,7 @@ export function SessionRowItem({
       <button
         type="button"
         className={cn(
-          'nk-chat-row relative flex h-control w-full items-center gap-2 rounded-md pl-3.5 pr-3.5 text-left text-sm transition-colors duration-fast ease-standard border-0',
+          'nk-chat-row relative flex h-control w-full items-center gap-2 rounded-md pl-6.5 pr-3.5 text-left text-sm transition-colors duration-fast ease-standard border-0',
           isChatSelected
             ? 'bg-transparent text-project-title'
             : cn(

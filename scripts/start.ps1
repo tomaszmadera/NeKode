@@ -6,6 +6,8 @@
 .DESCRIPTION
   Dev mode (default): launches `pnpm run dev` detached from a hidden console,
   with stdout/stderr redirected to tmp\logs\ (tmp\ is gitignored).
+  Uses tmp\dev-user-data unless NEKODE_USER_DATA explicitly selects a profile,
+  so the installed app can keep running with its own projects and settings.
   Unpacked mode: runs the packaged build from dist\win-unpacked\nekode.exe
   (build it first with `pnpm run build:unpack`).
 
@@ -57,15 +59,29 @@ if ($Mode -eq 'Dev') {
     }
     $outLog = Join-Path $LogDir 'nekode-dev.log'
     $errLog = Join-Path $LogDir 'nekode-dev.err.log'
+    $previousUserData = $env:NEKODE_USER_DATA
+    $devUserData = if ([string]::IsNullOrWhiteSpace($previousUserData)) {
+        Join-Path $RepoRoot 'tmp\dev-user-data'
+    }
+    else {
+        $previousUserData
+    }
     # cmd /c keeps pnpm.cmd resolution simple; the console stays hidden and
-    # both streams land in tmp\logs.
-    $proc = Start-Process -FilePath 'cmd.exe' `
-        -ArgumentList '/c', 'pnpm run dev' `
-        -WorkingDirectory $RepoRoot `
-        -RedirectStandardOutput $outLog `
-        -RedirectStandardError $errLog `
-        -WindowStyle Hidden `
-        -PassThru
+    # both streams land in tmp\logs. Scope the profile to the child process.
+    try {
+        $env:NEKODE_USER_DATA = $devUserData
+        $proc = Start-Process -FilePath 'cmd.exe' `
+            -ArgumentList '/c', 'pnpm run dev' `
+            -WorkingDirectory $RepoRoot `
+            -RedirectStandardOutput $outLog `
+            -RedirectStandardError $errLog `
+            -WindowStyle Hidden `
+            -PassThru
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('NEKODE_USER_DATA', $previousUserData, 'Process')
+    }
+    Write-Host "Dev profile: $devUserData"
     $rootPid = $proc.Id
     $logFile = $outLog
 }

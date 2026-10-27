@@ -380,7 +380,6 @@
 
 [data-theme="nekode-float"] .nk-chat-row {
   height: 38px;
-  padding-left: calc(22px * 0.7);
   padding-right: calc(10px * 0.7);
   border-radius: 9px;
   gap: 10px;

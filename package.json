@@ -16,6 +16,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "dev": "electron-vite dev",
+    "demo:seed": "node scripts/seed-demo.mjs",
     "build": "electron-vite build",
     "rebuild:native": "electron-builder install-app-deps",
     "build:unpack": "pnpm run build && electron-builder --dir --publish never",

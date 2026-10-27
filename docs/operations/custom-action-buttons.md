@@ -56,12 +56,15 @@ When you edit a command with this prefix, the checkbox is selected automatically
 - Run In = **Background**: `start.ps1` starts `pnpm run dev` in the background
   (logs in `tmp\logs\`) and exits after about 3 s, so the button shows
   running → success while the app keeps running.
-- If the app is already running, `start.ps1` exits with code 1 ("already running")
-  and the button shows **failed**. This is intended. Stop it with stop.ps1 (below).
-- Dev mode started **from inside** NeKode starts **a second instance**
-  (a second window next to the first). If you want to "open the app" during
-  normal use, use the Unpacked mode (below) after running
-  `pnpm run build:unpack` first.
+- If the run recorded by `start.ps1` is already active, the script exits with code 1
+  ("already running") and the button shows **failed**. Stop that run with `stop.ps1`.
+- Dev mode uses `tmp/dev-user-data` by default. Its projects and settings persist
+  between starts, separately from the installed app, so both can run at once.
+  An explicit `NEKODE_USER_DATA` overrides this default. Choosing the installed
+  app's profile requires closing that app first because one profile has one instance.
+  Running `pnpm run dev` directly does not apply the script's default profile.
+- Unpacked mode uses the app's normal profile unless `NEKODE_USER_DATA` overrides it.
+  Build it first with `pnpm run build:unpack`.
 
 ## Ready-to-paste commands
 
@@ -84,3 +87,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start.ps1" -Mode 
 ```
 
 For Stop/Unpacked the other fields are the same (only the Title differs).
+
+## Demo data for UI development
+
+The dev profile keeps projects, sessions, and settings between starts. To populate
+it once, start and stop Dev so the app initializes the database, then run:
+
+```powershell
+pnpm run demo:seed
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start.ps1"
+```
+
+The command targets only `tmp/dev-user-data/nekode.db` and requires the recorded
+dev run to be stopped. It adds Atlas Web (three sessions), Orbit API (two sessions),
+and Empty Playground (no sessions), with local folders under `tmp/demo-projects`.
+It sets initial selection, project colors, icons, and sidebar width when those
+settings have no stored value. Sessions use ordinary shells; no agent CLI is launched.
+The selected project's sessions appear on startup; expand the other projects to
+inspect their lists. The app restores the selected session, not every terminal process.
+
+Repeating `pnpm run demo:seed` preserves edits and removals and creates no duplicates.
+It does not populate an explicit `NEKODE_USER_DATA` override or the installed profile.
+To check the seed behavior, run `node --test scripts/seed-demo.test.mjs`.
