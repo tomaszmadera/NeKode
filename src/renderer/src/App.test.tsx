@@ -3299,7 +3299,7 @@ describe('project and chat data flow', () => {
     )
     expect(screen.queryByTestId(TEST_ID.statusProjectName)).toBeNull()
     const row = screen.getByTestId(testIdFor.projectRow('p1'))
-    const newChat = within(row).getByRole('button', { name: 'New chat' })
+    const newChat = within(row).getByRole('button', { name: /^New (session in Demo|chat)/ })
     expect(newChat.textContent).toBe('')
     expect(newChat.nextElementSibling).toBe(screen.getByTestId(testIdFor.projectFiles('p1')))
     expect(app.chats.list).not.toHaveBeenCalled()

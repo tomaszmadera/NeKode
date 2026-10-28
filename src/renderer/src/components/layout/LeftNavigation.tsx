@@ -1,15 +1,16 @@
 import type {
   AgentProfile,
   AgentProfilesDocument,
+  AppApi,
   ChatInfo,
+  GitStatus,
   SessionStatus,
   SessionTaskProgress,
 } from '@shared/ipc-contract'
 import { parseWslPath } from '@shared/wsl-path'
 import type React from 'react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'
 import { getProjectColor, getProjectInitials } from '../../lib/project-avatar'
@@ -19,81 +20,43 @@ import { useProjectStore } from '../../stores/useProjectStore'
 import { useSessionTasks } from '../../stores/useSessionTasks'
 import { NoticeBanner } from './NoticeBanner'
 
-// Left navigation (UX-UI §9-10): a "Projects" section header carries the
-// icon-only Add Project button (user decision 2026-10-01); project rows
-// carry Files and New Chat actions and expand to show Kanban and their chat lists.
-// New Chat creates the chat immediately (no naming form: the name
-// is the shell's display label, spec Behaviour 3).
-//
-// Project Files entry (spec Behaviour 1): the row shows a "Files" action on
-// hover/focus (tooltip "Show project files"); clicking the row itself only
-// selects the project and expands/collapses its chat list — it never opens
-// Project Files. Project removal lives in the row's context menu only (right
-// click / ContextMenu key / Shift+F10, spec Behaviour 3): the row has no
-// remove button.
+export type SidebarView = 'projects' | 'sessions'
 
-interface LeftNavigationProps {
+export interface LeftNavigationProps {
   projectNamesUppercase?: boolean
   showProjectIcons?: boolean
   sessionStatuses?: Record<string, SessionStatus>
-  /**
-   * Attention surfacing gates (attention-alert-settings spec): the badge
-   * toggle hides unselected chats' dots while the state itself survives
-   * (re-enabling re-renders without a new signal); the active-indicator
-   * toggle shows the selected chat's dot. Gating here keeps LeftNavigation
-   * presentation-only.
-   */
-  attentionBadgeEnabled: boolean
-  attentionActiveIndicatorEnabled: boolean
-  /**
-   * Project name or icon click: opens the project's home tab. Called for the
-   * already selected project too (project-home spec Behaviour 4).
-   */
+  gitStatuses?: Record<string, GitStatus>
+  floating?: boolean
+  attentionBadgeEnabled?: boolean
+  attentionActiveIndicatorEnabled?: boolean
   onSelectProject: (projectId: string) => void
   onToggleProject: (projectId: string) => void
   onSelectChat: (projectId: string, chatId: string) => void
   onAddProject: () => void
   onRemoveProject: (projectId: string) => void
-  /** Enters Project Files mode for the project (spec Behaviour 1). */
   onOpenProjectFiles: (projectId: string) => void
-  /** Opens the project's Kanban board (selects the project, activates its tab). */
-  onOpenProjectKanban: (projectId: string) => void
+  onOpenProjectKanban?: (projectId: string) => void
   onOpenProjectSettings: (projectId: string) => void
-  /** Creates a chat immediately with the shell-derived name (no form). */
   onCreateChat: (projectId: string) => Promise<boolean>
-  /**
-   * Starts one chat with the chosen agent profile (spec new-chat-agent-menu):
-   * main names the chat and runs the profile in its terminal. Resolves true
-   * when the chat was adopted; the host owns the notice on failure.
-   */
   onCreateAgentChat: (projectId: string, profileId: string) => Promise<boolean>
-  /** Reads a project's agent profiles for the New Chat menu (agentProfiles:get). */
   loadAgentProfiles: (projectId: string) => Promise<AgentProfilesDocument>
-  /** Opens Project Settings on the Agents tab without creating a chat. */
   onConfigureAgents: (projectId: string) => void
-  /** Opens the project root in the OS file explorer. */
   onOpenInFileExplorer: (projectId: string) => void
-  /**
-   * Requests closing a chat from its row's close control (user request
-   * 2026-10-04): the host opens the confirmation dialog and, on confirm,
-   * runs the same close flow as a terminal exit (spec Behaviour 11).
-   */
-  onRequestCloseChat: (chatId: string) => void
+  onRequestCloseChat?: (chatId: string) => void
+  onOpenAppSettings?: (options?: { scrollToUpdate?: boolean }) => void
   notice: string | null
-  /** Bottom-of-panel strip (App Settings opener), rendered after the
-      scrollable list. The slot owns the resize handle. */
   children?: React.ReactNode
+  app?: AppApi
 }
 
-/** Align captions with the project icon: 4px row inset + 14px chevron + 8px gap. */
-export const SESSION_CAPTION_CLASS = 'pl-6.5 text-xs leading-4 text-ink-muted'
+export const SESSION_CAPTION_CLASS = 'text-xs text-ink-muted'
 
 type ContextMenuState = {
   x: number
   y: number
 } & ({ projectId: string } | { projectId: null })
 
-/** Open position of the New Chat button's agent profile menu. */
 interface NewChatMenuState {
   projectId: string
   x: number
@@ -116,192 +79,69 @@ export function formatTimeSince(seconds: number): string {
   return `${days} d`
 }
 
-interface SessionRowItemProps {
-  chat: ChatInfo
-  projectId: string
-  isChatSelected: boolean
-  status: SessionStatus
-  task?: SessionTaskProgress
-  revealedChatId: string | null
-  setRevealedChatId: (chatId: string | null) => void
-  onSelectChat: (projectId: string, chatId: string) => void
-  onRequestCloseChat: (chatId: string) => void
-  legacyAttention?: {
-    badgeVisible: boolean
-    badgeTitle?: string
+export function getAgentOrShell(chat: ChatInfo): string {
+  if (chat.agentName) {
+    return chat.agentName.toLowerCase()
   }
-  legacyActivity?: boolean
+  const match = chat.name.match(/^\[([^\]]+)\]/)
+  if (match) {
+    return match[1].toLowerCase()
+  }
+  return 'pwsh'
 }
 
-export function SessionRowItem({
-  chat,
-  projectId,
-  isChatSelected,
-  status,
-  task,
-  revealedChatId,
-  setRevealedChatId,
-  onSelectChat,
-  onRequestCloseChat,
-  legacyAttention,
-  legacyActivity,
-}: SessionRowItemProps): React.JSX.Element {
-  const [prevStatus, setPrevStatus] = useState(status)
-  const [statusTimestamp, setStatusTimestamp] = useState(() => Date.now())
-  const [now, setNow] = useState(() => Date.now())
+export function getChatLabel(chat: ChatInfo): string {
+  return chat.taskRef?.trim() || chat.name.replace(/^\[[^\]]+\](?:\s+|$)/, '').trim() || 'Terminal'
+}
 
-  if (prevStatus !== status) {
-    setPrevStatus(status)
-    setStatusTimestamp(Date.now())
+function resolveChatStatus(
+  chat: ChatInfo,
+  sessionStatuses: Record<string, SessionStatus> | undefined,
+  _attention: Record<string, { message: string | null }>,
+  _activity: ReadonlySet<string> | undefined,
+  badgeVisible: boolean,
+  task?: SessionTaskProgress,
+): SessionStatus {
+  if (badgeVisible) {
+    return 'waiting'
   }
+  if (sessionStatuses?.[chat.id]) {
+    return sessionStatuses[chat.id]
+  }
+  if (chat.status) {
+    return chat.status
+  }
+  if (task !== undefined && !task.stale) {
+    return 'running'
+  }
+  return 'idle'
+}
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now())
-    }, 10_000)
-    return () => clearInterval(timer)
-  }, [])
-
-  const elapsedSeconds = Math.max(0, Math.floor((now - statusTimestamp) / 1000))
-  const timeFormatted = formatTimeSince(elapsedSeconds)
-  const config = SESSION_STATUS_CONFIG[status]
-  const isRevealed = revealedChatId === chat.id
-  const label =
-    chat.taskRef?.trim() || chat.name.replace(/^\[[^\]]+\](?:\s+|$)/, '').trim() || 'Terminal'
-  const accessibleName = chat.agentName ? `${label}, ${chat.agentName}` : label
-
-  return (
-    <li
-      className="group relative"
-      onFocus={() => setRevealedChatId(chat.id)}
-      onMouseEnter={() => setRevealedChatId(chat.id)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-          if (revealedChatId === chat.id) {
-            setRevealedChatId(null)
-          }
-        }
-      }}
-      onMouseLeave={(event) => {
-        if (event.currentTarget.contains(document.activeElement)) {
-          return
-        }
-        if (revealedChatId === chat.id) {
-          setRevealedChatId(null)
-        }
-      }}
-    >
-      <button
-        type="button"
-        className={cn(
-          'nk-chat-row relative flex h-control w-full items-center gap-2 rounded-md pl-6.5 pr-3.5 text-left text-sm transition-colors duration-fast ease-standard border-0',
-          isChatSelected
-            ? 'bg-transparent text-project-title'
-            : cn(
-                'bg-transparent text-chat-title hover:bg-row-hover group-hover:bg-row-hover',
-                isRevealed && 'bg-row-hover',
-              ),
-        )}
-        data-testid={testIdFor.chatRow(chat.id)}
-        data-selected={isChatSelected ? 'true' : 'false'}
-        title={`${accessibleName}: ${config.label}`}
-        aria-label={`${accessibleName}, ${config.label}, ${timeFormatted}`}
-        onMouseEnter={() => setRevealedChatId(chat.id)}
-        onClick={() => onSelectChat(projectId, chat.id)}
-      >
-        <Icon.terminal size={16} aria-hidden className="session-icon neon-term shrink-0" />
-        <span
-          aria-hidden="true"
-          className="nk-chat-dot h-2 w-2 shrink-0 rounded-full"
-          style={{ backgroundColor: config.color }}
-          data-testid={testIdFor.chatStatusDot(chat.id)}
-          data-status={status}
-        />
-        <span className="min-w-0 truncate font-mono">{label}</span>
-        {chat.agentName ? (
-          <span
-            className="max-w-24 shrink-0 truncate rounded border border-edge bg-highlight px-1.5 py-0.5 font-mono text-[10px] leading-none text-ink-muted"
-            title={`Agent: ${chat.agentName}`}
-          >
-            {chat.agentName}
-          </span>
-        ) : null}
-        {task !== undefined ? (
-          <span
-            role="img"
-            className="rounded-[3px] px-1.5 py-0.5 text-[11px] font-mono shrink-0 leading-none"
-            style={{
-              color: '#5AA9FF',
-              backgroundColor: 'rgba(90, 169, 255, 0.12)',
-              opacity: task.stale ? 0.5 : undefined,
-            }}
-            title={`${task.stale ? `Out of date: ${task.staleReason}. ` : ''}Task ${task.taskId}: step ${task.step} of ${task.totalSteps}`}
-            aria-label={task.ariaLabel}
-            data-testid={testIdFor.chatTaskProgress(chat.id)}
-          >
-            {task.step}/{task.totalSteps}
-          </span>
-        ) : null}
-        <span
-          className={cn(
-            'ml-auto shrink-0 text-xs font-mono text-[#6c7288]',
-            isRevealed && 'invisible',
-          )}
-          data-testid={testIdFor.chatTime(chat.id)}
-        >
-          {timeFormatted}
-        </span>
-        {legacyAttention?.badgeVisible && !isRevealed ? (
-          <span
-            role="img"
-            className="sr-only"
-            data-testid={testIdFor.chatAttentionBadge(chat.id)}
-            title={legacyAttention.badgeTitle}
-            aria-label={`${accessibleName} needs attention`}
-          />
-        ) : legacyActivity && !isRevealed ? (
-          <span
-            className="sr-only"
-            data-testid={testIdFor.chatActivity(chat.id)}
-            role="img"
-            aria-label={`${accessibleName}: recent terminal output`}
-            title="Recent terminal output. This is not agent status; silence does not mean completion."
-          />
-        ) : null}
-      </button>
-      <button
-        type="button"
-        className={cn(
-          'absolute right-3.5 top-1/2 z-10 h-6 w-6 -translate-y-1/2 items-center justify-center rounded bg-transparent text-[#8A90A6] transition-colors duration-fast ease-standard hover:text-white',
-          isRevealed ? 'flex' : 'hidden',
-        )}
-        data-testid={testIdFor.chatClose(chat.id)}
-        aria-label={`Close chat ${accessibleName}`}
-        title="Close chat"
-        onClick={(event) => {
-          event.stopPropagation()
-          onRequestCloseChat(chat.id)
-        }}
-      >
-        <Icon.close size={14} aria-hidden />
-      </button>
-    </li>
-  )
+function sessionSortPriority(status: SessionStatus): number {
+  switch (status) {
+    case 'waiting':
+      return 0
+    case 'running':
+      return 1
+    default:
+      return 2
+  }
 }
 
 export function LeftNavigation({
   projectNamesUppercase = true,
   showProjectIcons = true,
   sessionStatuses,
-  attentionBadgeEnabled,
-  attentionActiveIndicatorEnabled,
+  gitStatuses: externalGitStatuses,
+  floating = true,
+  attentionBadgeEnabled = true,
+  attentionActiveIndicatorEnabled = true,
   onSelectProject,
   onToggleProject,
   onSelectChat,
   onAddProject,
   onRemoveProject,
   onOpenProjectFiles,
-  onOpenProjectKanban,
   onOpenProjectSettings,
   onCreateChat,
   onCreateAgentChat,
@@ -309,8 +149,10 @@ export function LeftNavigation({
   onConfigureAgents,
   onOpenInFileExplorer,
   onRequestCloseChat,
+  onOpenAppSettings,
   notice,
   children,
+  app,
 }: LeftNavigationProps): React.JSX.Element {
   const { projects, projectColors, expandedProjectIds, selectedProjectId } = useProjectStore(
     useShallow((state) => ({
@@ -329,17 +171,49 @@ export function LeftNavigation({
     })),
   )
   const sessionTasks = useSessionTasks()
+  const [sidebarView, setSidebarView] = useState<SidebarView>('projects')
+  const [gitStatuses, setGitStatuses] = useState<Record<string, GitStatus>>({})
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
-  // Agent profile menu of one project's New Chat button (spec
-  // new-chat-agent-menu): presentation-only state; the profiles themselves
-  // come from agentProfiles:get through the host.
   const [newChatMenu, setNewChatMenu] = useState<NewChatMenuState | null>(null)
-  // Chat row whose close control is revealed (row hover or keyboard focus).
-  // JS state instead of CSS :hover so the attention badge can yield the same
-  // corner while the X is visible.
   const [revealedChatId, setRevealedChatId] = useState<string | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+  const statusTimestampsRef = useRef<Record<string, { status: SessionStatus; timestamp: number }>>(
+    {},
+  )
 
-  // Escape closes the open menu (the overlay handles pointer dismissal).
+  function getSessionTime(chatId: string, status: SessionStatus): string {
+    const record = statusTimestampsRef.current[chatId]
+    if (!record || record.status !== status) {
+      statusTimestampsRef.current[chatId] = { status, timestamp: now }
+      return 'now'
+    }
+    const elapsedSeconds = Math.max(0, Math.floor((now - record.timestamp) / 1000))
+    return formatTimeSince(elapsedSeconds)
+  }
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now())
+    }, 10_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Query git status for expanded projects when app is available
+  useEffect(() => {
+    if (!app?.git) return
+    for (const projectId of expandedProjectIds) {
+      if (!gitStatuses[projectId] && !externalGitStatuses?.[projectId]) {
+        void app.git
+          .getStatus(projectId)
+          .then((status) => {
+            setGitStatuses((prev) => ({ ...prev, [projectId]: status }))
+          })
+          .catch(() => {})
+      }
+    }
+  }, [app, expandedProjectIds, gitStatuses, externalGitStatuses])
+
+  // Escape closes any open menu
   useEffect(() => {
     if (contextMenu === null && newChatMenu === null) {
       return
@@ -357,9 +231,6 @@ export function LeftNavigation({
   }, [contextMenu, newChatMenu])
 
   function openContextMenu(projectId: string | null, x: number, y: number): void {
-    // One menu at a time (spec Behaviour 7: a gesture while a menu is open
-    // closes the old menu first). Only pointer gestures are swallowed by the
-    // open overlay; a keyboard gesture reaches the other opener directly.
     setNewChatMenu(null)
     setContextMenu({ projectId, x, y })
   }
@@ -369,47 +240,205 @@ export function LeftNavigation({
     setNewChatMenu({ projectId, x, y })
   }
 
+  const totalSessionCount = useMemo(() => {
+    let count = 0
+    for (const project of projects) {
+      count += (chatsByProject[project.id] ?? []).length
+    }
+    return count
+  }, [projects, chatsByProject])
+
+  // Flat list of sessions from all projects for the Sessions view
+  const allSessions = useMemo(() => {
+    const list: Array<{
+      project: (typeof projects)[number]
+      chat: ChatInfo
+      status: SessionStatus
+      task?: SessionTaskProgress
+      label: string
+      agentOrShell: string
+      projectColor: string
+      initials: string
+      folderName: string
+      isChatSelected: boolean
+    }> = []
+
+    for (const project of projects) {
+      const chats = chatsByProject[project.id] ?? []
+      const projectColor = getProjectColor(project, projectColors?.[project.id])
+      const initials = getProjectInitials(project.name)
+      const folderName =
+        project.path.replace(/\\/g, '/').split('/').filter(Boolean).pop() || project.name
+
+      for (const chat of chats) {
+        const isChatSelected = chat.id === selectedChatId && project.id === selectedProjectId
+        const attentionState = attention[chat.id]
+        const badgeVisible =
+          attentionState !== undefined &&
+          (isChatSelected ? attentionActiveIndicatorEnabled : attentionBadgeEnabled)
+
+        const task = sessionTasks?.[chat.id]
+        const status = resolveChatStatus(
+          chat,
+          sessionStatuses,
+          attention,
+          activity,
+          badgeVisible,
+          task,
+        )
+        const label = getChatLabel(chat)
+        const agentOrShell = getAgentOrShell(chat)
+
+        list.push({
+          project,
+          chat,
+          status,
+          task,
+          label,
+          agentOrShell,
+          projectColor,
+          initials,
+          folderName,
+          isChatSelected,
+        })
+      }
+    }
+
+    list.sort((a, b) => {
+      return sessionSortPriority(a.status) - sessionSortPriority(b.status)
+    })
+
+    return list
+  }, [
+    projects,
+    chatsByProject,
+    projectColors,
+    selectedChatId,
+    selectedProjectId,
+    attention,
+    activity,
+    attentionActiveIndicatorEnabled,
+    attentionBadgeEnabled,
+    sessionStatuses,
+    sessionTasks,
+  ])
+
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-panel">
-      {/* The brand strip left with the window title bar (user decision
-          2026-10-01); the panel starts with the notices and Projects header. */}
       <NoticeBanner notice={notice} />
-      {/* Section header (user decision 2026-10-01): "Projects" title with an
-          icon-only Add Project button on the right. Title sized like the
-          project rows (text-sm). Its height aligns the first project tile
-          with the action buttons: header + 8px margin + 4px list inset =
-          tab strip + 1px action-row border + 8px action-row padding.
-          Horizontal inset is the list padding (14px) plus the project-row
-          gap (4px), so the title lines up with the chevron and Add lines
-          up with the row actions. */}
-      <div className="mt-2 flex h-[calc(var(--spacing-control)+0.3125rem)] shrink-0 items-center justify-between px-[18px]">
-        <span
-          className="text-sm uppercase text-projects-header"
-          data-testid={TEST_ID.projectsHeader}
+
+      {/* Header (spec §3): Segmented control on left, Add project on right */}
+      <div
+        className="flex shrink-0 items-center justify-between"
+        style={{ padding: '16px 14px 8px 20px' }}
+      >
+        {/* biome-ignore lint/a11y/useSemanticElements: spec §3.1 requires role="group" and aria-label="Sidebar view" */}
+        <div
+          role="group"
+          aria-label="Sidebar view"
+          style={{
+            display: 'flex',
+            gap: 2,
+            padding: 2,
+            borderRadius: floating ? 8 : 0,
+            border: '1px solid var(--color-edge)',
+            backgroundColor: 'var(--color-dialog)',
+          }}
         >
-          Projects
-        </span>
-        <div className="flex items-center gap-2">
           <button
             type="button"
-            className="nk-add-project flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-highlight hover:text-ink"
+            aria-pressed={sidebarView === 'projects'}
+            onClick={() => setSidebarView('projects')}
+            data-testid={TEST_ID.projectsHeader}
+            style={{
+              height: 26,
+              padding: '0 10px',
+              gap: 6,
+              border: 0,
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              backgroundColor: sidebarView === 'projects' ? 'var(--color-selected)' : 'transparent',
+              color: sidebarView === 'projects' ? '#ffffff' : 'var(--color-ink-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            Projects
+          </button>
+          <button
+            type="button"
+            aria-pressed={sidebarView === 'sessions'}
+            onClick={() => setSidebarView('sessions')}
+            style={{
+              height: 26,
+              padding: '0 10px',
+              gap: 6,
+              border: 0,
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              backgroundColor: sidebarView === 'sessions' ? 'var(--color-selected)' : 'transparent',
+              color: sidebarView === 'sessions' ? '#ffffff' : 'var(--color-ink-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <span>Sessions</span>
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                fontWeight: 500,
+                color: 'var(--color-ink-disabled)',
+              }}
+            >
+              {totalSessionCount}
+            </span>
+          </button>
+        </div>
+
+        {sidebarView === 'projects' ? (
+          <button
+            type="button"
+            className="nk-add-project nk-icon-btn flex size-8 shrink-0 items-center justify-center bg-transparent transition-colors duration-fast ease-standard"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: '1px solid var(--color-edge)',
+              color: 'var(--color-ink-secondary)',
+            }}
             data-testid={TEST_ID.addProjectButton}
             aria-label="Add Project"
             title="Add Project"
             onClick={onAddProject}
           >
-            <Icon.plus size={14} aria-hidden />
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
           </button>
-        </div>
+        ) : null}
       </div>
+
+      {/* Scrollable list (spec §4 & §5) */}
       <section
         aria-label="Projects"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling and ContextMenu / Shift+F10 in this region.
-        tabIndex={0}
+        tabIndex={-1}
         data-testid={TEST_ID.projectListArea}
-        className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-2"
+        className="min-h-0 flex-1 overflow-y-auto"
         onContextMenu={(event) => {
-          // Project subtrees keep their own gestures, including chat controls.
           if (event.target instanceof Element && event.target.closest('li')) return
           event.preventDefault()
           event.currentTarget.focus()
@@ -424,249 +453,922 @@ export function LeftNavigation({
           }
         }}
       >
-        {projects.length === 0 ? (
-          <p
-            className="px-2 py-3 text-xs leading-relaxed text-ink-muted"
-            data-testid={TEST_ID.emptyProjectList}
+        {sidebarView === 'projects' ? (
+          /* Projects view (spec §4) */
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: 0,
+              padding: '4px 10px 12px 10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0,
+            }}
+            data-testid={TEST_ID.projectList}
           >
-            No projects yet. Add a project to start working.
-          </p>
-        ) : (
-          <ul data-testid={TEST_ID.projectList}>
-            {projects.map((project) => {
-              const isExpanded = expandedProjectIds.has(project.id)
-              const isSelected = project.id === selectedProjectId
-              const chats = chatsByProject[project.id] ?? []
-              const projectColor = getProjectColor(project, projectColors?.[project.id])
-              const initials = getProjectInitials(project.name)
-              const wslLocation = parseWslPath(project.path)
-              return (
-                <li key={project.id} className="py-1">
-                  {/* Selected project row carries the selection fill
-                      (user decision 2026-10-27). pl-1 and pr-1 keep the
-                      chevron and the right actions off the row edge by the
-                      same gap. data-selected still announces selection. */}
-                  {/* biome-ignore lint/a11y/noStaticElementInteractions: the row hosts the context-menu gesture (right click / ContextMenu key / Shift+F10 — spec Behaviour 3); the menu items are real buttons and the menu closes on Escape. */}
-                  <div
-                    className={cn(
-                      'nk-project-row relative flex h-control items-center pl-1 pr-1 transition-colors duration-fast ease-standard',
-                      isSelected && 'rounded-md bg-selected',
-                    )}
-                    data-testid={testIdFor.projectRow(project.id)}
-                    data-selected={isSelected ? 'true' : 'false'}
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      openContextMenu(project.id, event.clientX, event.clientY)
-                    }}
-                    onKeyDown={(event) => {
-                      // Keyboard context-menu invocation (spec Behaviour 3):
-                      // the ContextMenu key or Shift+F10 opens the menu.
-                      if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
-                        event.preventDefault()
-                        const rect = event.currentTarget.getBoundingClientRect()
-                        openContextMenu(project.id, rect.left, rect.bottom)
-                      }
-                    }}
-                  >
-                    {/* Split surfaces (NEKODE-96): the chevron only folds and
-                        unfolds the chat list and never changes the selection;
-                        the icon and name open the project's home tab
-                        (project-home spec Behaviour 4). The host keeps the
-                        selected chat when the project is already selected. */}
-                    <button
-                      type="button"
-                      className={cn(
-                        'flex shrink-0 items-center self-stretch rounded pl-0 pr-2 transition-colors duration-fast ease-standard',
-                        isExpanded || isSelected
-                          ? 'text-project-title'
-                          : 'text-project-title-collapsed hover:text-project-title',
-                      )}
-                      data-testid={testIdFor.projectToggle(project.id)}
-                      aria-label={
-                        isExpanded ? `Collapse ${project.name}` : `Expand ${project.name}`
-                      }
-                      aria-expanded={isExpanded}
-                      onClick={() => {
-                        onToggleProject(project.id)
-                      }}
-                    >
-                      {isExpanded ? (
-                        <Icon.chevronDown
-                          size={14}
-                          aria-hidden
-                          className="project-chevron shrink-0"
-                        />
-                      ) : (
-                        <Icon.chevronRight
-                          size={14}
-                          aria-hidden
-                          className="project-chevron shrink-0"
-                        />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className={cn(
-                        'flex min-w-0 flex-1 items-center self-stretch rounded pl-0 pr-1 py-1 text-left text-sm transition-colors duration-fast ease-standard',
-                        isExpanded || isSelected
-                          ? 'text-project-title'
-                          : 'text-project-title-collapsed hover:text-project-title',
-                      )}
-                      data-testid={testIdFor.projectSelect(project.id)}
-                      title={project.path}
-                      onClick={() => {
-                        onSelectProject(project.id)
-                      }}
-                    >
-                      {showProjectIcons ? (
-                        <span
-                          aria-hidden="true"
-                          data-testid={testIdFor.projectAvatar(project.id)}
-                          className="mr-2 flex h-5 w-5 shrink-0 select-none items-center justify-center rounded font-mono text-[10px] font-bold leading-none"
+            {projects.length === 0 ? (
+              <p
+                style={{ padding: '4px 12px', fontSize: 12, color: 'var(--color-ink-disabled)' }}
+                data-testid={TEST_ID.emptyProjectList}
+              >
+                No projects yet. Add a project to start working.
+              </p>
+            ) : (
+              projects.map((project) => {
+                const isExpanded = expandedProjectIds.has(project.id)
+                const isSelected = project.id === selectedProjectId
+                const chats = chatsByProject[project.id] ?? []
+                const projectColor = getProjectColor(project, projectColors?.[project.id])
+                const initials = getProjectInitials(project.name)
+                const wslLocation = parseWslPath(project.path)
+
+                const statusObj = externalGitStatuses?.[project.id] ?? gitStatuses[project.id]
+                const branch = statusObj?.branch ?? null
+                const changes = statusObj?.worktree
+                  ? statusObj.worktree.modified +
+                    statusObj.worktree.added +
+                    statusObj.worktree.deleted +
+                    statusObj.worktree.untracked
+                  : statusObj?.dirty
+                    ? 1
+                    : 0
+                const gitLabel = branch ? (changes > 0 ? `${branch} · ${changes}` : branch) : null
+                const hasGitChanges = changes > 0 || (statusObj?.dirty ?? false)
+
+                let runningCount = 0
+                let waitingCount = 0
+                for (const chat of chats) {
+                  const attentionState = attention[chat.id]
+                  const isChatSelected = chat.id === selectedChatId && isSelected
+                  const badgeVisible =
+                    attentionState !== undefined &&
+                    (isChatSelected ? attentionActiveIndicatorEnabled : attentionBadgeEnabled)
+                  const task = sessionTasks?.[chat.id]
+                  const st = resolveChatStatus(
+                    chat,
+                    sessionStatuses,
+                    attention,
+                    activity,
+                    badgeVisible,
+                    task,
+                  )
+                  if (st === 'running') runningCount++
+                  if (st === 'waiting') waitingCount++
+                }
+
+                return (
+                  <li key={project.id} style={{ listStyle: 'none' }}>
+                    <section style={{ padding: isExpanded ? '0 0 10px 0' : 0 }}>
+                      {/* Project row: 34px, rounded (8px) inset tint when active */}
+                      {/* biome-ignore lint/a11y/noStaticElementInteractions: project row wrapper handles context menu and shortcut gestures */}
+                      <div
+                        className={`nk-project-row ${isSelected ? 'bg-selected' : ''}`}
+                        data-testid={testIdFor.projectRow(project.id)}
+                        data-selected={isSelected ? 'true' : 'false'}
+                        onContextMenu={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          openContextMenu(project.id, event.clientX, event.clientY)
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === 'ContextMenu' ||
+                            (event.key === 'F10' && event.shiftKey)
+                          ) {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            openContextMenu(project.id, rect.left, rect.bottom)
+                          }
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          minHeight: 34,
+                          height: 34,
+                          borderRadius: floating ? 8 : 0,
+                          backgroundColor: isSelected
+                            ? 'color-mix(in srgb, var(--color-accent) 12%, transparent)'
+                            : 'transparent',
+                        }}
+                      >
+                        {/* Toggle button fills the row */}
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          aria-label={
+                            isExpanded ? `Collapse ${project.name}` : `Expand ${project.name}`
+                          }
+                          onClick={() => onToggleProject(project.id)}
+                          data-testid={testIdFor.projectToggle(project.id)}
                           style={{
-                            color: projectColor,
-                            backgroundColor: `${projectColor}2e`,
+                            flex: '1 1 0%',
+                            minWidth: 0,
+                            minHeight: 34,
+                            height: 34,
+                            padding: '0 4px 0 6px',
+                            gap: 8,
+                            border: 0,
+                            borderRadius: 8,
+                            background: 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            textAlign: 'left',
+                            color: 'var(--color-ink-secondary)',
+                            cursor: 'pointer',
                           }}
                         >
-                          {initials}
+                          {/* 1. Chevron */}
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="var(--color-ink-muted)"
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            style={{
+                              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              transition: 'transform .15s',
+                              flexShrink: 0,
+                            }}
+                            aria-hidden="true"
+                          >
+                            <path d="M9 6l6 6-6 6" />
+                          </svg>
+
+                          {/* 2. Avatar */}
+                          {showProjectIcons ? (
+                            <span
+                              aria-hidden="true"
+                              data-testid={testIdFor.projectAvatar(project.id)}
+                              style={{
+                                width: 22,
+                                height: 22,
+                                minWidth: 22,
+                                borderRadius: floating ? 6 : 0,
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                color: projectColor,
+                                backgroundColor: `color-mix(in srgb, ${projectColor} 18%, transparent)`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                userSelect: 'none',
+                              }}
+                            >
+                              {initials}
+                            </span>
+                          ) : null}
+
+                          {/* 3. Name */}
+                          {/* biome-ignore lint/a11y/noStaticElementInteractions: inner name element handles project selection click */}
+                          {/* biome-ignore lint/a11y/useKeyWithClickEvents: outer toggle button handles keyboard events */}
+                          <span
+                            data-testid={testIdFor.projectSelect(project.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onSelectProject(project.id)
+                            }}
+                            className={
+                              isExpanded || isSelected
+                                ? 'text-project-title'
+                                : 'text-project-title-collapsed hover:text-project-title transition-colors'
+                            }
+                            style={{
+                              flex: '1 1 0%',
+                              minWidth: 0,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: 13,
+                              fontWeight: isExpanded || isSelected ? 700 : 500,
+                              color:
+                                isExpanded || isSelected
+                                  ? 'var(--color-ink)'
+                                  : 'var(--color-ink-secondary)',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <span
+                              className={`truncate ${isExpanded || isSelected ? 'font-semibold' : 'font-normal'}`}
+                            >
+                              {projectNamesUppercase ? project.name.toUpperCase() : project.name}
+                            </span>
+                            {wslLocation !== null ? (
+                              <span
+                                style={{
+                                  borderRadius: 4,
+                                  border: '1px solid var(--color-edge)',
+                                  backgroundColor: 'var(--color-highlight)',
+                                  padding: '2px 4px',
+                                  marginLeft: 6,
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: 10,
+                                  lineHeight: 1,
+                                  color: 'var(--color-ink-muted)',
+                                  flexShrink: 0,
+                                }}
+                                title={`WSL: ${wslLocation.distribution}`}
+                              >
+                                WSL
+                              </span>
+                            ) : null}
+                          </span>
+
+                          {/* 4. Git label (expanded only) */}
+                          {isExpanded && gitLabel ? (
+                            <span
+                              style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 11,
+                                color: hasGitChanges
+                                  ? 'var(--color-warning)'
+                                  : 'var(--color-ink-muted)',
+                                flexShrink: 0,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {gitLabel}
+                            </span>
+                          ) : null}
+
+                          {/* 5. Status badges (collapsed only) */}
+                          {!isExpanded && (runningCount > 0 || waitingCount > 0) ? (
+                            <span
+                              style={{
+                                display: 'flex',
+                                gap: 8,
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 11,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {runningCount > 0 ? (
+                                <span style={{ color: 'var(--color-success)' }}>
+                                  ● {runningCount}
+                                </span>
+                              ) : null}
+                              {waitingCount > 0 ? (
+                                <span style={{ color: 'var(--color-warning)' }}>
+                                  ● {waitingCount}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                        </button>
+
+                        {/* Row action 1: New session */}
+                        <button
+                          type="button"
+                          aria-label={`New session in ${project.name}`}
+                          title="New session"
+                          onClick={() => void onCreateChat(project.id)}
+                          onContextMenu={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            openNewChatMenu(project.id, event.clientX, event.clientY)
+                          }}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === 'ContextMenu' ||
+                              (event.key === 'F10' && event.shiftKey)
+                            ) {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              const rect = event.currentTarget.getBoundingClientRect()
+                              openNewChatMenu(project.id, rect.left, rect.bottom)
+                            }
+                          }}
+                          data-testid={TEST_ID.newChatButton}
+                          className="nk-project-row-action nk-icon-btn flex size-8 shrink-0 items-center justify-center rounded-lg bg-transparent text-ink-muted transition-colors duration-fast ease-standard"
+                          style={{
+                            width: 32,
+                            height: 32,
+                            minWidth: 32,
+                            flex: 'none',
+                            border: 0,
+                            borderRadius: 8,
+                          }}
+                        >
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            <path d="M12 7v6M9 10h6" />
+                          </svg>
+                        </button>
+
+                        {/* Row action 2: File tree */}
+                        <button
+                          type="button"
+                          aria-label={`Open file tree of ${project.name}`}
+                          title="File tree"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onOpenProjectFiles(project.id)
+                          }}
+                          data-testid={testIdFor.projectFiles(project.id)}
+                          className="nk-project-row-action nk-icon-btn flex size-8 shrink-0 items-center justify-center rounded-lg bg-transparent text-ink-muted transition-colors duration-fast ease-standard"
+                          style={{
+                            width: 32,
+                            height: 32,
+                            minWidth: 32,
+                            flex: 'none',
+                            border: 0,
+                            borderRadius: 8,
+                          }}
+                        >
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M5 12h14M13 6l6 6-6 6" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      {/* Expanded content */}
+                      {isExpanded ? (
+                        <div>
+                          {/* Recent sessions label */}
+                          {chats.length > 0 ? (
+                            <div
+                              style={{
+                                margin: '8px 0 2px 0',
+                                paddingLeft: 28,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                letterSpacing: '0.08em',
+                                textTransform: 'uppercase',
+                                color: 'var(--color-ink-muted)',
+                              }}
+                            >
+                              Recent sessions
+                            </div>
+                          ) : null}
+
+                          {/* Session cards container */}
+                          <div
+                            data-testid={testIdFor.projectChats(project.id)}
+                            style={{
+                              padding: '2px 0 0 28px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 6,
+                            }}
+                          >
+                            {chats.length === 0 ? (
+                              <div
+                                className={SESSION_CAPTION_CLASS}
+                                style={{
+                                  fontSize: 12,
+                                  color: 'var(--color-ink-disabled)',
+                                  padding: '4px 12px',
+                                }}
+                              >
+                                No active sessions
+                              </div>
+                            ) : (
+                              <>
+                                <ul
+                                  style={{
+                                    listStyle: 'none',
+                                    margin: 0,
+                                    padding: 0,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 6,
+                                  }}
+                                >
+                                  {chats.map((chat) => {
+                                    const isChatSelected = chat.id === selectedChatId && isSelected
+                                    const attentionState = attention[chat.id]
+                                    const badgeVisible =
+                                      attentionState !== undefined &&
+                                      (isChatSelected
+                                        ? attentionActiveIndicatorEnabled
+                                        : attentionBadgeEnabled)
+
+                                    const task = sessionTasks?.[chat.id]
+                                    const status = resolveChatStatus(
+                                      chat,
+                                      sessionStatuses,
+                                      attention,
+                                      activity,
+                                      badgeVisible,
+                                      task,
+                                    )
+                                    const label = getChatLabel(chat)
+                                    const agentOrShell = getAgentOrShell(chat)
+                                    const config = SESSION_STATUS_CONFIG[status]
+                                    const timeFormatted = getSessionTime(chat.id, status)
+                                    const accessibleName = chat.agentName
+                                      ? `${label}, ${chat.agentName}`
+                                      : label
+                                    const isRevealed = revealedChatId === chat.id
+
+                                    return (
+                                      <li
+                                        key={chat.id}
+                                        className="relative"
+                                        style={{ listStyle: 'none' }}
+                                        onMouseEnter={() => setRevealedChatId(chat.id)}
+                                        onMouseLeave={() => {
+                                          if (revealedChatId === chat.id) {
+                                            setRevealedChatId(null)
+                                          }
+                                        }}
+                                        onFocus={(event) => {
+                                          if (event.currentTarget.contains(event.target)) {
+                                            setRevealedChatId(chat.id)
+                                          }
+                                        }}
+                                        onBlur={(event) => {
+                                          if (
+                                            !event.currentTarget.contains(
+                                              event.relatedTarget as Node | null,
+                                            )
+                                          ) {
+                                            if (revealedChatId === chat.id) {
+                                              setRevealedChatId(null)
+                                            }
+                                          }
+                                        }}
+                                      >
+                                        <button
+                                          type="button"
+                                          aria-current={isChatSelected ? 'true' : 'false'}
+                                          onClick={() => onSelectChat(project.id, chat.id)}
+                                          data-testid={testIdFor.chatRow(chat.id)}
+                                          data-selected={isChatSelected ? 'true' : 'false'}
+                                          title={`${accessibleName}: ${config.label}`}
+                                          aria-label={`${accessibleName}, ${config.label}, ${timeFormatted}`}
+                                          className="nk-session-card"
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 4,
+                                            width: '100%',
+                                            boxSizing: 'border-box',
+                                            padding: '8px 10px 8px 12px',
+                                            borderRadius: 8,
+                                            textAlign: 'left',
+                                            border: isChatSelected
+                                              ? '1px solid var(--color-accent)'
+                                              : '1px solid var(--color-edge)',
+                                            backgroundColor: isChatSelected
+                                              ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)'
+                                              : 'var(--color-group)',
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          {/* Line 1 */}
+                                          <div
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: 8,
+                                              width: '100%',
+                                            }}
+                                          >
+                                            <span
+                                              aria-hidden="true"
+                                              data-testid={testIdFor.chatStatusDot(chat.id)}
+                                              data-status={status}
+                                              style={{
+                                                width: 8,
+                                                height: 8,
+                                                minWidth: 8,
+                                                borderRadius: '50%',
+                                                backgroundColor: config.color,
+                                                boxShadow: `0 0 6px ${config.color}99`,
+                                                flexShrink: 0,
+                                              }}
+                                            />
+                                            <span
+                                              className="truncate"
+                                              style={{
+                                                minWidth: 0,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                fontSize: 13,
+                                                fontWeight: isChatSelected ? 600 : 500,
+                                                color: isChatSelected
+                                                  ? '#ffffff'
+                                                  : 'var(--color-ink)',
+                                              }}
+                                            >
+                                              {label}
+                                            </span>
+                                            <span style={{ flex: 1 }} />
+                                            <span
+                                              data-testid={testIdFor.chatTime(chat.id)}
+                                              className={isRevealed ? 'invisible' : ''}
+                                              style={{
+                                                fontSize: 11,
+                                                color: 'var(--color-ink-muted)',
+                                                flexShrink: 0,
+                                                whiteSpace: 'nowrap',
+                                              }}
+                                            >
+                                              {timeFormatted}
+                                            </span>
+                                          </div>
+
+                                          {/* Line 2 */}
+                                          <div
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: 8,
+                                              paddingLeft: 16,
+                                              fontFamily: 'var(--font-mono)',
+                                              fontSize: 11,
+                                              color: 'var(--color-ink-muted)',
+                                            }}
+                                          >
+                                            <span className="lowercase">
+                                              {chat.agentName ?? agentOrShell}
+                                            </span>
+                                            {task !== undefined ? (
+                                              <span
+                                                role="img"
+                                                data-testid={testIdFor.chatTaskProgress(chat.id)}
+                                                title={`${task.stale ? `Out of date: ${task.staleReason}. ` : ''}Task ${task.taskId}: step ${task.step} of ${task.totalSteps}`}
+                                                aria-label={task.ariaLabel}
+                                                className="font-mono rounded-[3px] px-1.5 py-0.5 leading-none"
+                                                style={{
+                                                  color: '#5AA9FF',
+                                                  backgroundColor: 'rgba(90, 169, 255, 0.12)',
+                                                  opacity: task.stale ? 0.5 : undefined,
+                                                }}
+                                              >
+                                                {task.step}/{task.totalSteps}
+                                              </span>
+                                            ) : null}
+                                          </div>
+
+                                          {/* Screen reader indicators */}
+                                          {badgeVisible && !isRevealed ? (
+                                            <span
+                                              role="img"
+                                              className="sr-only"
+                                              data-testid={testIdFor.chatAttentionBadge(chat.id)}
+                                              title={attentionState?.message ?? 'Needs attention'}
+                                              aria-label={`${accessibleName} needs attention`}
+                                            />
+                                          ) : null}
+                                          {activity?.has(chat.id) &&
+                                          !badgeVisible &&
+                                          !isRevealed ? (
+                                            <span
+                                              className="sr-only"
+                                              data-testid={testIdFor.chatActivity(chat.id)}
+                                              role="img"
+                                              aria-label={`${accessibleName}: recent terminal output`}
+                                              title="Recent terminal output. This is not agent status; silence does not mean completion."
+                                            />
+                                          ) : null}
+                                        </button>
+
+                                        {/* Close chat button */}
+                                        {onRequestCloseChat ? (
+                                          <button
+                                            type="button"
+                                            className={`nk-chat-close absolute right-2.5 top-2.5 z-10 size-5 items-center justify-center rounded bg-transparent text-ink-muted transition-colors hover:text-ink ${
+                                              isRevealed ? 'flex' : 'hidden'
+                                            }`}
+                                            data-testid={testIdFor.chatClose(chat.id)}
+                                            aria-label={`Close chat ${accessibleName}`}
+                                            onClick={(event) => {
+                                              event.stopPropagation()
+                                              onRequestCloseChat(chat.id)
+                                            }}
+                                          >
+                                            <Icon.close size={12} aria-hidden strokeWidth={1.8} />
+                                          </button>
+                                        ) : null}
+                                      </li>
+                                    )
+                                  })}
+                                </ul>
+
+                                {/* "New session" action button */}
+                                <button
+                                  type="button"
+                                  aria-label={`New session in ${project.name}`}
+                                  onClick={() => void onCreateChat(project.id)}
+                                  className="nk-new-session-action nk-icon-btn"
+                                  style={{
+                                    alignSelf: 'flex-start',
+                                    height: 32,
+                                    padding: '0 12px',
+                                    gap: 8,
+                                    border: 0,
+                                    borderRadius: 8,
+                                    background: 'transparent',
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    color: 'var(--color-accent)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.2"
+                                    strokeLinecap="round"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M12 5v14M5 12h14" />
+                                  </svg>
+                                  <span>New session</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+        ) : (
+          /* Sessions view (spec §5): flat list sorted by status */
+          <div
+            style={{
+              padding: '4px 10px 12px 10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            {allSessions.length === 0 ? (
+              <p style={{ padding: '4px 12px', fontSize: 12, color: 'var(--color-ink-disabled)' }}>
+                No active sessions
+              </p>
+            ) : (
+              allSessions.map((item) => {
+                const timeFormatted = getSessionTime(item.chat.id, item.status)
+
+                return (
+                  <button
+                    key={`${item.project.id}:${item.chat.id}`}
+                    type="button"
+                    aria-current={item.isChatSelected ? 'true' : 'false'}
+                    onClick={() => onSelectChat(item.project.id, item.chat.id)}
+                    data-testid={testIdFor.chatRow(item.chat.id)}
+                    className="nk-flat-session-row"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 3,
+                      padding: '7px 12px 6px 12px',
+                      border: item.isChatSelected
+                        ? '1px solid var(--color-accent)'
+                        : '1px solid transparent',
+                      borderRadius: floating ? 8 : 0,
+                      textAlign: 'left',
+                      backgroundColor: item.isChatSelected
+                        ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)'
+                        : 'transparent',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {/* Line 1 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 18,
+                          height: 18,
+                          minWidth: 18,
+                          borderRadius: floating ? 5 : 0,
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: item.projectColor,
+                          backgroundColor: `color-mix(in srgb, ${item.projectColor} 18%, transparent)`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {item.initials}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 12,
+                          color: item.isChatSelected ? '#ffffff' : 'var(--color-ink-secondary)',
+                          fontWeight: item.isChatSelected ? 600 : 400,
+                          minWidth: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {item.label}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 11,
+                          color: 'var(--color-ink-disabled)',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {item.agentOrShell}
+                      </span>
+                      <span style={{ flex: 1 }} />
+                      {item.task ? (
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 11,
+                            color: 'var(--color-info)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {item.task.step}/{item.task.totalSteps}
                         </span>
                       ) : null}
                       <span
-                        className={cn(
-                          'min-w-0 truncate',
-                          isExpanded || isSelected ? 'font-semibold' : 'font-normal',
-                        )}
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--color-ink-muted)',
+                          flexShrink: 0,
+                        }}
                       >
-                        {projectNamesUppercase ? project.name.toUpperCase() : project.name}
+                        {timeFormatted}
                       </span>
-                      {wslLocation !== null ? (
-                        <span
-                          className="ml-2 shrink-0 rounded border border-edge bg-highlight px-1.5 py-0.5 font-mono text-[10px] leading-none text-ink-muted"
-                          title={`WSL: ${wslLocation.distribution}`}
+                    </div>
+
+                    {/* Line 2 */}
+                    <div
+                      style={{
+                        paddingLeft: 26,
+                        gap: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        width: '100%',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 11,
+                          color: item.projectColor,
+                          maxWidth: '45%',
+                          minWidth: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {item.folderName}
+                      </span>
+                      {/* Activity sparkline filling the rest of width */}
+                      {item.status === 'running' ? (
+                        <svg
+                          width="100%"
+                          height="14"
+                          viewBox="0 0 100 14"
+                          preserveAspectRatio="none"
+                          style={{ flex: 1, height: 14 }}
+                          aria-hidden="true"
                         >
-                          WSL
-                        </span>
-                      ) : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="nk-project-row-action ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors duration-fast ease-standard hover:bg-highlight hover:text-ink"
-                      data-testid={TEST_ID.newChatButton}
-                      title="New chat"
-                      aria-label="New chat"
-                      onClick={() => {
-                        void onCreateChat(project.id)
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        openNewChatMenu(project.id, event.clientX, event.clientY)
-                      }}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === 'ContextMenu' ||
-                          (event.key === 'F10' && event.shiftKey)
-                        ) {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          const rect = event.currentTarget.getBoundingClientRect()
-                          openNewChatMenu(project.id, rect.left, rect.bottom)
-                        }
-                      }}
-                    >
-                      <Icon.newChat size={14} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      className="nk-project-row-action ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-transparent text-ink-muted transition-colors duration-fast ease-standard hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                      data-testid={testIdFor.projectFiles(project.id)}
-                      title="File tree"
-                      aria-label={`Open file tree of ${project.name}`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onOpenProjectFiles(project.id)
-                      }}
-                    >
-                      <Icon.arrowRight size={14} aria-hidden />
-                    </button>
-                  </div>
-                  {isExpanded ? (
-                    <>
-                      {/* An open project with sessions keeps this heading after
-                          the selection moves elsewhere (user decision 2026-10-27).
-                          An open project with none shows only the empty caption. */}
-                      {chats.length > 0 ? (
-                        <p className={cn('mt-1', SESSION_CAPTION_CLASS)}>Recent sessions</p>
-                      ) : null}
-                      {/* Full-width rows, no vertical guide line. The selected
-                          chat is marked by the accent bar, not a fill. */}
-                      <div className="mt-1" data-testid={testIdFor.projectChats(project.id)}>
-                        {chats.length > 0 ? (
-                          <ul className="flex flex-col gap-1">
-                            {chats.map((chat) => {
-                              const isChatSelected = chat.id === selectedChatId && isSelected
-                              const attentionState = attention[chat.id]
-                              const badgeVisible =
-                                attentionState !== undefined &&
-                                (isChatSelected
-                                  ? attentionActiveIndicatorEnabled
-                                  : attentionBadgeEnabled)
-                              const badgeTitle =
-                                attentionState === undefined
-                                  ? undefined
-                                  : (attentionState.message ?? 'Needs attention')
-
-                              let resolvedStatus: SessionStatus = 'idle'
-                              if (sessionStatuses?.[chat.id]) {
-                                resolvedStatus = sessionStatuses[chat.id]
-                              } else if (chat.status) {
-                                resolvedStatus = chat.status
-                              } else if (badgeVisible) {
-                                resolvedStatus = 'waiting'
-                              } else if (activity?.has(chat.id)) {
-                                resolvedStatus = 'running'
-                              }
-
-                              const resolvedTask = sessionTasks?.[chat.id]
-
-                              return (
-                                <SessionRowItem
-                                  key={chat.id}
-                                  chat={chat}
-                                  projectId={project.id}
-                                  isChatSelected={isChatSelected}
-                                  status={resolvedStatus}
-                                  task={resolvedTask}
-                                  revealedChatId={revealedChatId}
-                                  setRevealedChatId={setRevealedChatId}
-                                  onSelectChat={onSelectChat}
-                                  onRequestCloseChat={onRequestCloseChat}
-                                  legacyAttention={
-                                    attentionState !== undefined
-                                      ? { badgeVisible, badgeTitle }
-                                      : undefined
-                                  }
-                                  legacyActivity={activity?.has(chat.id)}
-                                />
-                              )
-                            })}
-                          </ul>
-                        ) : (
-                          <p className={SESSION_CAPTION_CLASS}>No active sessions</p>
-                        )}
-                      </div>
-                    </>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
+                          <path
+                            d="M0 7 Q 10 7, 15 2 T 25 12 T 35 4 T 45 10 T 55 1 T 65 11 T 75 5 T 85 9 T 95 6 L 100 7"
+                            fill="none"
+                            stroke="var(--color-success)"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : item.status === 'waiting' ? (
+                        <svg
+                          width="100%"
+                          height="14"
+                          viewBox="0 0 100 14"
+                          preserveAspectRatio="none"
+                          style={{ flex: 1, height: 14 }}
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M0 7 L 80 7"
+                            fill="none"
+                            stroke="var(--color-ink-muted)"
+                            strokeWidth="1.5"
+                          />
+                          <path
+                            d="M80 7 L 88 1 L 94 13 L 97 7 L 100 7"
+                            fill="none"
+                            stroke="var(--color-warning)"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          width="100%"
+                          height="14"
+                          viewBox="0 0 100 14"
+                          preserveAspectRatio="none"
+                          style={{ flex: 1, height: 14 }}
+                          aria-hidden="true"
+                        >
+                          <line
+                            x1="0"
+                            y1="7"
+                            x2="100"
+                            y2="7"
+                            stroke="var(--color-ink-disabled)"
+                            strokeWidth="1.5"
+                            strokeDasharray="2 3"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </button>
+                )
+              })
+            )}
+          </div>
         )}
       </section>
-      {/* Bottom-of-panel strip (user decision 2026-10-02, after Zed): the
-          App Settings opener lives at the very bottom of the left panel,
-          not in the window title bar. */}
-      {children}
+
+      {/* Footer (spec §6) */}
+      {children ? (
+        children
+      ) : (
+        <div style={{ padding: '8px 10px', borderTop: '1px solid var(--color-edge)' }}>
+          <button
+            type="button"
+            className="nk-app-settings nk-icon-btn"
+            aria-label="App Settings"
+            title="App Settings"
+            data-testid={TEST_ID.appSettingsButton}
+            onClick={() => onOpenAppSettings?.()}
+            style={{
+              height: 44,
+              width: '100%',
+              padding: '0 12px',
+              gap: 10,
+              border: 0,
+              borderRadius: 8,
+              background: 'transparent',
+              fontSize: 13,
+              color: 'var(--color-ink-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <Icon.settings size={16} aria-hidden strokeWidth={1.8} />
+            <span>App settings</span>
+          </button>
+        </div>
+      )}
+
+      {/* Context Menus */}
       {contextMenu?.projectId === null ? (
         <ProjectsContextMenu
           x={contextMenu.x}
@@ -696,6 +1398,7 @@ export function LeftNavigation({
           }}
         />
       ) : null}
+
       {newChatMenu !== null ? (
         <NewChatAgentMenu
           state={newChatMenu}
@@ -779,11 +1482,6 @@ function ProjectsContextMenu({
   )
 }
 
-/**
- * Project row context menu (spec Behaviour 3): the only place the Remove
- * Project action lives now. Rendered as a fixed overlay so the menu closes on
- * any outside click or context-menu gesture.
- */
 function ContextMenuOverlay({
   state,
   projectName,
@@ -805,7 +1503,6 @@ function ContextMenuOverlay({
       aria-label={`Project ${projectName}`}
       className="fixed inset-0 z-40"
       onClick={(event) => {
-        // Only the backdrop dismisses: menu-item clicks run their own action.
         if (event.target === event.currentTarget) {
           onClose()
         }
@@ -856,15 +1553,6 @@ function ContextMenuOverlay({
   )
 }
 
-/**
- * Agent profile menu of one project's New Chat button (spec
- * new-chat-agent-menu). Rendered as a fixed overlay like the project-row menu:
- * an outside click, Escape, a further context-menu gesture, or activating an
- * item closes it. The profiles are read through the host's `loadProfiles`
- * (`agentProfiles:get`), so this component owns no domain data: while the list
- * loads it shows a non-actionable row, and a failed load shows the failure row
- * — neither creates a chat.
- */
 function NewChatAgentMenu({
   state,
   loadProfiles,
@@ -881,7 +1569,6 @@ function NewChatAgentMenu({
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
 
-  // The menu opens immediately; the list arrives through the host.
   useEffect(() => {
     let active = true
     void loadProfiles(state.projectId)
@@ -912,7 +1599,6 @@ function NewChatAgentMenu({
       aria-label="New chat with agent"
       className="fixed inset-0 z-40"
       onClick={(event) => {
-        // Only the backdrop dismisses: menu-item clicks run their own action.
         if (event.target === event.currentTarget) {
           onClose()
         }
@@ -955,7 +1641,6 @@ function NewChatAgentMenu({
             className={itemClass}
             data-testid={TEST_ID.newChatAgentConfigure}
             onClick={() => {
-              // Closing first keeps one gesture to one outcome.
               onClose()
               onConfigureAgents(state.projectId)
             }}
@@ -973,8 +1658,6 @@ function NewChatAgentMenu({
                 className={itemClass}
                 data-testid={testIdFor.newChatAgentProfile(profile.id)}
                 onClick={() => {
-                  // One gesture creates at most one chat: the menu is gone
-                  // before the launch resolves, so it cannot fire twice.
                   onClose()
                   void onCreateChat(state.projectId, profile.id)
                 }}

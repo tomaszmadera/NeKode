@@ -146,21 +146,33 @@ export function LeftPanelTrack({
   const sliding = slide !== null
   const showProjects = sliding || shown === 'projects'
   const showFiles = sliding || shown === 'files'
-  const filesShifted = slide !== null && (slide.run ? slide.to === 'files' : slide.from === 'files')
   const filesNode = files ?? retainedFiles.current
   const slideState = slide?.run ? 'sliding' : shown === 'files' ? 'open' : 'closed'
+
+  let currentTransform: string | undefined
+  if (sliding) {
+    const target = slide.run ? slide.to : slide.from
+    currentTransform = target === 'files' ? 'translateX(0)' : 'translateX(-50%)'
+  } else if (shown === 'files') {
+    currentTransform = 'translateX(0)'
+  } else {
+    currentTransform = 'translateX(-50%)'
+  }
 
   return (
     <aside
       className={cn(
-        // overflow-clip (not hidden) so a focused control in the outgoing
-        // view cannot scroll this slot and fight the transform. The track is
-        // absolute so the slot's height still comes from the row, the same
-        // way the old single panel stretched.
-        'relative min-h-0 shrink-0 overflow-clip',
-        floating ? 'm-2 rounded-lg border border-edge' : 'border-r border-edge',
+        'relative min-h-0 shrink-0 overflow-hidden bg-panel',
+        floating ? 'm-2 rounded-[10px] border border-edge' : 'border-r border-edge rounded-none',
       )}
-      style={{ width }}
+      style={{
+        flex: '1 1 320px',
+        maxWidth: 340,
+        minWidth: 0,
+        height: '100%',
+        margin: floating ? 0 : undefined,
+        width,
+      }}
       data-testid={TEST_ID.leftNav}
       data-slide-state={sliding ? 'sliding' : view === 'files' ? 'open' : 'closed'}
       data-panel-visible={view === 'files' ? 'true' : 'false'}
@@ -172,29 +184,31 @@ export function LeftPanelTrack({
           slide?.run && 'left-panel-track-run',
         )}
         style={{
-          // Percentages of the slot's content box, so the border stays outside
-          // the two views. Half of the 200% track is one slot width.
-          // `right: auto` releases inset-0's right edge, which would
-          // otherwise win against the wider track.
-          width: sliding ? '200%' : '100%',
-          right: sliding ? 'auto' : undefined,
-          // Keep an explicit translate while the transition runs. Removing
-          // the property to mean "0" skips the return trip.
-          transform: sliding ? (filesShifted ? 'translateX(-50%)' : 'translateX(0)') : undefined,
+          width: '200%',
+          height: '100%',
+          right: 'auto',
+          transform: currentTransform,
+          transition: slide?.run ? 'transform .32s cubic-bezier(.22,.8,.24,1)' : undefined,
         }}
         data-slide-state={slideState}
         onTransitionEnd={settle}
       >
-        {showProjects ? (
-          <div className="h-full shrink-0" style={{ width: sliding ? '50%' : '100%' }}>
-            {projects}
-          </div>
-        ) : null}
-        {showFiles && filesNode != null ? (
-          <div className="h-full shrink-0" style={{ width: sliding ? '50%' : '100%' }}>
-            {filesNode}
-          </div>
-        ) : null}
+        <section
+          className="h-full shrink-0"
+          style={{ width: '50%', minWidth: 0 }}
+          aria-label="Files"
+          aria-hidden={shown !== 'files'}
+        >
+          {showFiles && filesNode != null ? filesNode : null}
+        </section>
+        <section
+          className="h-full shrink-0"
+          style={{ width: '50%', minWidth: 0 }}
+          aria-label="Projects"
+          aria-hidden={shown !== 'projects'}
+        >
+          {showProjects ? projects : null}
+        </section>
       </div>
       <ResizeHandle
         axis="x"

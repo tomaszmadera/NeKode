@@ -57,7 +57,7 @@ describe('LeftPanelTrack', () => {
     expect(screen.getByTestId('projects-view')).toBeTruthy()
     expect(screen.queryByTestId('files-view')).toBeNull()
     expect(screen.getByTestId(TEST_ID.leftNav).style.width).toBe('280px')
-    expect(track().style.width).toBe('100%')
+    expect(track().style.width).toBe('200%')
     expect(track().getAttribute('data-slide-state')).toBe('closed')
     expect(screen.getByTestId(TEST_ID.leftNav).getAttribute('data-slide-state')).toBe('closed')
 
@@ -74,7 +74,7 @@ describe('LeftPanelTrack', () => {
 
     expect(screen.queryByTestId('projects-view')).toBeNull()
     expect(screen.getByTestId('files-view')).toBeTruthy()
-    expect(track().style.transform).toBe('')
+    expect(track().style.transform).toBe('translateX(0)')
     expect(track().className).not.toContain('left-panel-track-run')
     expect(track().getAttribute('data-slide-state')).toBe('open')
     expect(screen.getByTestId(TEST_ID.leftNav).getAttribute('data-slide-state')).toBe('open')
@@ -147,8 +147,8 @@ describe('LeftPanelTrack', () => {
     expect(screen.getByTestId('files-view')).toBeTruthy()
     expect(moving.className).toContain('left-panel-track-run')
     expect(moving.getAttribute('data-slide-state')).toBe('sliding')
-    expect((moving.children[0] as HTMLElement).textContent).toContain('Projects')
-    expect((moving.children[1] as HTMLElement).textContent).toContain('Files')
+    expect((moving.children[0] as HTMLElement).textContent).toContain('Files')
+    expect((moving.children[1] as HTMLElement).textContent).toContain('Projects')
 
     fireEvent.transitionEnd(moving, { propertyName: 'transform' })
 

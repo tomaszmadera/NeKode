@@ -317,6 +317,9 @@ function AppContent({
         className={
           floatingTheme ? 'flex min-h-0 flex-1' : 'flex min-h-0 flex-1 border-t border-edge'
         }
+        style={
+          floatingTheme ? { padding: '10px 10px 6px 10px', gap: '6px' } : { padding: 0, gap: 0 }
+        }
       >
         <LeftPanelTrack
           view={files.filesProject !== null ? 'files' : 'projects'}
@@ -326,6 +329,8 @@ function AppContent({
           onResizeNudge={layout.leftRegion.nudge}
           projects={
             <LeftNavigation
+              app={app}
+              floating={floatingTheme}
               projectNamesUppercase={settings.projectNamesUppercase}
               showProjectIcons={settings.showProjectIcons}
               attentionBadgeEnabled={settings.attentionSettings.badge}
@@ -346,6 +351,7 @@ function AppContent({
               loadAgentProfiles={selection.loadAgentProfiles}
               onConfigureAgents={projectSettings.openAgentsSettings}
               onRequestCloseChat={closing.handleRequestCloseChat}
+              onOpenAppSettings={appSettings.openAppSettings}
               notice={files.filesProject !== null ? null : notice}
             >
               {panelFooter}
