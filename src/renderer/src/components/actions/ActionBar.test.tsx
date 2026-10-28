@@ -423,4 +423,103 @@ describe('ActionBar', () => {
     fireEvent.contextMenu(screen.getByRole('button', { name: 'Handoff' }))
     expect(screen.queryByTestId(TEST_ID.actionContextMenu)).toBeNull()
   })
+
+  it('renders the new session button on the left without text and triggers onNewChat when clicked', () => {
+    const app = makeAppMock()
+    const onNewChat = vi.fn()
+    render(
+      <ActionBar
+        app={app}
+        actions={[]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewChat={onNewChat}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    const btn = screen.getByTestId(TEST_ID.actionNewChat)
+    expect(btn).toBeTruthy()
+    expect(btn.getAttribute('aria-label')).toBe('New session')
+    expect(btn.getAttribute('title')).toBe('New session')
+    expect(btn.textContent).toBe('')
+    expect(btn.hasAttribute('disabled')).toBe(false)
+
+    fireEvent.click(btn)
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables the new session button when projectId is null or onNewChat is missing', () => {
+    const app = makeAppMock()
+    const { rerender } = render(
+      <ActionBar
+        app={app}
+        actions={[]}
+        projectId={null}
+        activeChatId={null}
+        chatIsLive={false}
+        onNewChat={vi.fn()}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    const btn = screen.getByTestId(TEST_ID.actionNewChat)
+    expect(btn.hasAttribute('disabled')).toBe(true)
+
+    rerender(
+      <ActionBar
+        app={app}
+        actions={[]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+    expect(screen.getByTestId(TEST_ID.actionNewChat).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('renders the new session button on the left in kanban mode as well', () => {
+    const app = makeAppMock()
+    render(
+      <ActionBar
+        app={app}
+        actions={[]}
+        projectId="p1"
+        activeChatId={null}
+        chatIsLive={false}
+        onNewChat={vi.fn()}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={true}
+      />,
+    )
+
+    const btn = screen.getByTestId(TEST_ID.actionNewChat)
+    expect(btn).toBeTruthy()
+    expect(btn.hasAttribute('disabled')).toBe(false)
+  })
 })

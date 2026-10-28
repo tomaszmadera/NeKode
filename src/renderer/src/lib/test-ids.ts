@@ -29,6 +29,8 @@ export const TEST_ID = {
   tabContextCopyRelative: 'tab-context-copy-relative',
   tabContextCopyAbsolute: 'tab-context-copy-absolute',
   actionRowSlot: 'action-row-slot',
+  /** Button at the start of the action bar to create a new session. */
+  actionNewChat: 'action-new-chat',
   /** Context menu of a custom action button (right click / ContextMenu key / Shift+F10). */
   actionContextMenu: 'action-context-menu',
   actionContextCopyCommand: 'action-context-copy-command',

@@ -649,6 +649,23 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(flatRows[1].textContent).toContain('Chat 2')
     expect(flatRows[2].textContent).toContain('Chat 3')
 
+    // Flat list of sessions renders status dots in the bottom-right corner of project initials icon
+    const dot1 = screen.getByTestId(testIdFor.chatStatusDot('c1'))
+    const dot2 = screen.getByTestId(testIdFor.chatStatusDot('c2'))
+    const dot3 = screen.getByTestId(testIdFor.chatStatusDot('c3'))
+
+    expect(dot1.getAttribute('data-status')).toBe('waiting')
+    expect(dot1.style.backgroundColor).toBe('rgb(245, 158, 11)') // #F59E0B amber
+    expect(dot2.getAttribute('data-status')).toBe('running')
+    expect(dot2.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80 green
+    expect(dot3.getAttribute('data-status')).toBe('idle')
+    expect(dot3.style.backgroundColor).toBe('rgb(138, 144, 166)') // #8A90A6 gray
+
+    // No fake SVG sparklines in flat session rows
+    expect(flatRows[0].querySelector('svg')).toBeNull()
+    expect(flatRows[1].querySelector('svg')).toBeNull()
+    expect(flatRows[2].querySelector('svg')).toBeNull()
+
     // Clicking a flat session row selects it
     fireEvent.click(flatRows[0])
     expect(props.onSelectChat).toHaveBeenCalledWith('p1', 'c1')

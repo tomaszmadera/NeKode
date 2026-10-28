@@ -410,6 +410,7 @@ function AppContent({
                   ? (kanban.kanbanToolbarByProject[tabProjectId] ?? null)
                   : null
               }
+              onNewChat={selection.handleStartNewChat}
               onNewTerminal={selection.handleNewTerminalAction}
               onBottomTerminal={bottom.handleBottomTerminalAction}
               onPromptCommand={terminals.handlePromptCommand}

@@ -1094,6 +1094,7 @@ export function LeftNavigation({
             ) : (
               allSessions.map((item) => {
                 const timeFormatted = getSessionTime(item.chat.id, item.status)
+                const statusConfig = SESSION_STATUS_CONFIG[item.status]
 
                 return (
                   <button
@@ -1124,24 +1125,49 @@ export function LeftNavigation({
                     {/* Line 1 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
                       <span
-                        aria-hidden="true"
                         style={{
-                          width: 18,
-                          height: 18,
-                          minWidth: 18,
-                          borderRadius: floating ? 5 : 0,
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 9,
-                          fontWeight: 700,
-                          color: item.projectColor,
-                          backgroundColor: `color-mix(in srgb, ${item.projectColor} 18%, transparent)`,
-                          display: 'flex',
+                          position: 'relative',
+                          display: 'inline-flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           flexShrink: 0,
                         }}
                       >
-                        {item.initials}
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 18,
+                            height: 18,
+                            minWidth: 18,
+                            borderRadius: floating ? 5 : 0,
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            color: item.projectColor,
+                            backgroundColor: `color-mix(in srgb, ${item.projectColor} 18%, transparent)`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {item.initials}
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          data-testid={testIdFor.chatStatusDot(item.chat.id)}
+                          data-status={item.status}
+                          style={{
+                            position: 'absolute',
+                            bottom: -2,
+                            right: -2,
+                            width: 7,
+                            height: 7,
+                            minWidth: 7,
+                            borderRadius: '50%',
+                            backgroundColor: statusConfig.color,
+                            boxShadow: `0 0 0 1.5px var(--color-panel), 0 0 4px ${statusConfig.color}99`,
+                          }}
+                        />
                       </span>
                       <span
                         style={{
@@ -1195,7 +1221,6 @@ export function LeftNavigation({
                     <div
                       style={{
                         paddingLeft: 26,
-                        gap: 8,
                         display: 'flex',
                         alignItems: 'center',
                         width: '100%',
@@ -1206,79 +1231,14 @@ export function LeftNavigation({
                           fontFamily: 'var(--font-mono)',
                           fontSize: 11,
                           color: item.projectColor,
-                          maxWidth: '45%',
                           minWidth: 0,
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
-                          flexShrink: 0,
                         }}
                       >
                         {item.folderName}
                       </span>
-                      {/* Activity sparkline filling the rest of width */}
-                      {item.status === 'running' ? (
-                        <svg
-                          width="100%"
-                          height="14"
-                          viewBox="0 0 100 14"
-                          preserveAspectRatio="none"
-                          style={{ flex: 1, height: 14 }}
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M0 7 Q 10 7, 15 2 T 25 12 T 35 4 T 45 10 T 55 1 T 65 11 T 75 5 T 85 9 T 95 6 L 100 7"
-                            fill="none"
-                            stroke="var(--color-success)"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      ) : item.status === 'waiting' ? (
-                        <svg
-                          width="100%"
-                          height="14"
-                          viewBox="0 0 100 14"
-                          preserveAspectRatio="none"
-                          style={{ flex: 1, height: 14 }}
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M0 7 L 80 7"
-                            fill="none"
-                            stroke="var(--color-ink-muted)"
-                            strokeWidth="1.5"
-                          />
-                          <path
-                            d="M80 7 L 88 1 L 94 13 L 97 7 L 100 7"
-                            fill="none"
-                            stroke="var(--color-warning)"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      ) : (
-                        <svg
-                          width="100%"
-                          height="14"
-                          viewBox="0 0 100 14"
-                          preserveAspectRatio="none"
-                          style={{ flex: 1, height: 14 }}
-                          aria-hidden="true"
-                        >
-                          <line
-                            x1="0"
-                            y1="7"
-                            x2="100"
-                            y2="7"
-                            stroke="var(--color-ink-disabled)"
-                            strokeWidth="1.5"
-                            strokeDasharray="2 3"
-                          />
-                        </svg>
-                      )}
                     </div>
                   </button>
                 )

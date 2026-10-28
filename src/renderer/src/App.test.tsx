@@ -1666,7 +1666,7 @@ describe('action row and settings', () => {
       [...row.querySelectorAll('button')].map(
         (button) => button.getAttribute('aria-label') ?? button.textContent,
       ),
-    ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Build'])
+    ).toEqual(['New session', 'Handoff', 'Resume', 'Stop', 'Continue', 'Build'])
     expect(app.actions.execute).not.toHaveBeenCalled()
     const statusReadsAtIdle = vi.mocked(app.actions.status).mock.calls.length
     fireEvent.click(screen.getByRole('button', { name: 'Build' }))
@@ -2030,7 +2030,7 @@ describe('action row and settings', () => {
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
           (button) => button.getAttribute('aria-label') ?? button.textContent,
         ),
-      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Build']),
+      ).toEqual(['New session', 'Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Build']),
     )
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
     await waitFor(() =>
@@ -2038,8 +2038,19 @@ describe('action row and settings', () => {
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
           (button) => button.getAttribute('aria-label') ?? button.textContent,
         ),
-      ).toEqual(['Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Test']),
+      ).toEqual(['New session', 'Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Test']),
     )
+  })
+
+  it('action bar new session button creates a chat in the selected project', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+
+    const newSessionBtn = screen.getByTestId(TEST_ID.actionNewChat)
+    expect(newSessionBtn).toBeTruthy()
+    fireEvent.click(newSessionBtn)
+    await waitFor(() => expect(app.chats.create).toHaveBeenCalledWith('p1'))
   })
 
   it('derives the icon picker mode from the stored icon and saves presets and emoji', async () => {

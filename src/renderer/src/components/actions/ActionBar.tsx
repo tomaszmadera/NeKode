@@ -23,6 +23,8 @@ interface ActionBarProps {
   projectId: string | null
   activeChatId: string | null
   chatIsLive: boolean
+  /** Create a new session in the active project. */
+  onNewChat?: () => void
   onNewTerminal: (execution: ActionExecution) => void
   /** Bottom-terminal delivery: opens the panel and adds a new bottom tab. */
   onBottomTerminal: (execution: ActionExecution, projectId: string) => void
@@ -95,6 +97,7 @@ export function ActionBar({
   projectId,
   activeChatId,
   chatIsLive,
+  onNewChat,
   onNewTerminal,
   onBottomTerminal,
   onPromptCommand,
@@ -342,6 +345,25 @@ export function ActionBar({
       className="nk-action-row flex shrink-0 items-center gap-2 overflow-x-auto bg-panel border-b border-edge px-3 py-2"
       data-testid={TEST_ID.actionRowSlot}
     >
+      <div className="nk-btn-group shrink-0">
+        <button
+          type="button"
+          disabled={!projectId || !onNewChat}
+          className="nk-tb !px-2"
+          aria-label="New session"
+          title="New session"
+          data-testid={TEST_ID.actionNewChat}
+          onClick={() => {
+            onNewChat?.()
+          }}
+        >
+          <Icon.newChat
+            size={15}
+            aria-hidden
+            className={!projectId || !onNewChat ? 'text-ink-disabled' : 'text-ink-secondary'}
+          />
+        </button>
+      </div>
       {isKanban ? (
         <>
           <div className="nk-btn-group shrink-0">
