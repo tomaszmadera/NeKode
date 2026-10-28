@@ -3,7 +3,6 @@ import type {
   AgentProfilesDocument,
   AppApi,
   ChatInfo,
-  GitStatus,
   SessionStatus,
   SessionTaskProgress,
 } from '@shared/ipc-contract'
@@ -27,7 +26,6 @@ export interface LeftNavigationProps {
   projectNamesUppercase?: boolean
   showProjectIcons?: boolean
   sessionStatuses?: Record<string, SessionStatus>
-  gitStatuses?: Record<string, GitStatus>
   floating?: boolean
   attentionBadgeEnabled?: boolean
   attentionActiveIndicatorEnabled?: boolean
@@ -133,7 +131,6 @@ export function LeftNavigation({
   projectNamesUppercase = true,
   showProjectIcons = true,
   sessionStatuses,
-  gitStatuses: externalGitStatuses,
   floating = true,
   attentionBadgeEnabled = true,
   attentionActiveIndicatorEnabled = true,
@@ -153,7 +150,7 @@ export function LeftNavigation({
   onOpenAppSettings,
   notice,
   children,
-  app,
+  app: _app,
 }: LeftNavigationProps): React.JSX.Element {
   const { projects, projectColors, expandedProjectIds, selectedProjectId } = useProjectStore(
     useShallow((state) => ({
@@ -173,7 +170,6 @@ export function LeftNavigation({
   )
   const sessionTasks = useSessionTasks()
   const [sidebarView, setSidebarView] = useState<SidebarView>('projects')
-  const [gitStatuses, setGitStatuses] = useState<Record<string, GitStatus>>({})
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [newChatMenu, setNewChatMenu] = useState<NewChatMenuState | null>(null)
   const [revealedChatId, setRevealedChatId] = useState<string | null>(null)
@@ -198,21 +194,6 @@ export function LeftNavigation({
     }, 10_000)
     return () => clearInterval(timer)
   }, [])
-
-  // Query git status for expanded projects when app is available
-  useEffect(() => {
-    if (!app?.git) return
-    for (const projectId of expandedProjectIds) {
-      if (!gitStatuses[projectId] && !externalGitStatuses?.[projectId]) {
-        void app.git
-          .getStatus(projectId)
-          .then((status) => {
-            setGitStatuses((prev) => ({ ...prev, [projectId]: status }))
-          })
-          .catch(() => {})
-      }
-    }
-  }, [app, expandedProjectIds, gitStatuses, externalGitStatuses])
 
   // Escape closes any open menu
   useEffect(() => {
@@ -483,19 +464,6 @@ export function LeftNavigation({
                 const initials = getProjectInitials(project.name)
                 const wslLocation = parseWslPath(project.path)
 
-                const statusObj = externalGitStatuses?.[project.id] ?? gitStatuses[project.id]
-                const branch = statusObj?.branch ?? null
-                const changes = statusObj?.worktree
-                  ? statusObj.worktree.modified +
-                    statusObj.worktree.added +
-                    statusObj.worktree.deleted +
-                    statusObj.worktree.untracked
-                  : statusObj?.dirty
-                    ? 1
-                    : 0
-                const gitLabel = branch ? (changes > 0 ? `${branch} · ${changes}` : branch) : null
-                const hasGitChanges = changes > 0 || (statusObj?.dirty ?? false)
-
                 let runningCount = 0
                 let waitingCount = 0
                 for (const chat of chats) {
@@ -683,23 +651,6 @@ export function LeftNavigation({
                               </span>
                             ) : null}
                           </span>
-
-                          {/* 4. Git label (expanded only) */}
-                          {isExpanded && gitLabel ? (
-                            <span
-                              style={{
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: 11,
-                                color: hasGitChanges
-                                  ? 'var(--color-warning)'
-                                  : 'var(--color-ink-muted)',
-                                flexShrink: 0,
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {gitLabel}
-                            </span>
-                          ) : null}
 
                           {/* 5. Status badges (collapsed only) */}
                           {!isExpanded && (runningCount > 0 || waitingCount > 0) ? (

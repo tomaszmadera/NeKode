@@ -721,4 +721,14 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(Number.parseInt(menu.style.left, 10)).toBeLessThan(9999)
     expect(Number.parseInt(menu.style.top, 10)).toBeLessThan(9999)
   })
+
+  it('does not render git branch info on the project row', () => {
+    const props = defaultProps()
+    render(navigation({ ...props }))
+
+    const projectRow = screen.getByTestId(testIdFor.projectRow('p1'))
+    expect(projectRow.textContent).toContain('NEKODE')
+    expect(projectRow.textContent).not.toContain('main')
+    expect(projectRow.textContent).not.toContain('master')
+  })
 })
