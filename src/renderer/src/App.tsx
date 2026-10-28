@@ -317,9 +317,6 @@ function AppContent({
         className={
           floatingTheme ? 'flex min-h-0 flex-1' : 'flex min-h-0 flex-1 border-t border-edge'
         }
-        style={
-          floatingTheme ? { padding: '10px 10px 6px 10px', gap: '6px' } : { padding: 0, gap: 0 }
-        }
       >
         <LeftPanelTrack
           view={files.filesProject !== null ? 'files' : 'projects'}

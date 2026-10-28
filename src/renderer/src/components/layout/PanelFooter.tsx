@@ -36,10 +36,10 @@ export function PanelFooter({
           {mascotError}
         </p>
       ) : null}
-      <div className="flex items-center gap-1 border-t border-edge" style={{ padding: '8px 10px' }}>
+      <div className="flex items-center gap-1 border-t border-edge px-3 py-1.5">
         <button
           type="button"
-          className="nk-app-settings flex h-11 w-full items-center gap-2.5 rounded-lg border-0 bg-transparent px-3 text-[13px] text-ink-muted transition-[background-color,color] duration-fast ease-standard hover:bg-highlight hover:text-ink focus-visible:outline focus-visible:outline-info"
+          className="nk-app-settings nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
           data-testid={TEST_ID.appSettingsButton}
           aria-label="App Settings"
           title="App Settings"
@@ -47,12 +47,11 @@ export function PanelFooter({
             onOpenAppSettings()
           }}
         >
-          <Icon.settings size={16} aria-hidden strokeWidth={1.8} />
-          <span>App settings</span>
+          <Icon.settings size={16} aria-hidden />
         </button>
         <button
           type="button"
-          className="nk-footer-action sr-only"
+          className="nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info aria-pressed:text-ink"
           data-testid={TEST_ID.mascotToggle}
           aria-label="Show mascot"
           aria-pressed={mascotVisible}
@@ -64,7 +63,7 @@ export function PanelFooter({
         {/* target=_blank reaches setWindowOpenHandler, which opens allowlisted
             URLs in the system browser (src/main/index.ts). */}
         <a
-          className="nk-footer-action sr-only"
+          className="nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
           data-testid={TEST_ID.reportIssueLink}
           href={REPORT_ISSUE_URL}
           target="_blank"
@@ -76,7 +75,7 @@ export function PanelFooter({
         </a>
         <button
           type="button"
-          className="sr-only cursor-pointer border-0 bg-transparent p-0 font-mono text-xs text-ink-muted select-none hover:text-ink focus-visible:outline focus-visible:outline-info"
+          className="ml-auto cursor-pointer border-0 bg-transparent p-0 font-mono text-xs text-ink-muted select-none hover:text-ink focus-visible:outline focus-visible:outline-info"
           data-testid={TEST_ID.panelAppVersion}
           title={`NeKode v${__APP_VERSION__}`}
           aria-label="Open app settings"

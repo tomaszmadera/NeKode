@@ -165,14 +165,7 @@ export function LeftPanelTrack({
         'relative min-h-0 shrink-0 overflow-hidden bg-panel',
         floating ? 'm-2 rounded-[10px] border border-edge' : 'border-r border-edge rounded-none',
       )}
-      style={{
-        flex: '1 1 320px',
-        maxWidth: 340,
-        minWidth: 0,
-        height: '100%',
-        margin: floating ? 0 : undefined,
-        width,
-      }}
+      style={{ width }}
       data-testid={TEST_ID.leftNav}
       data-slide-state={sliding ? 'sliding' : view === 'files' ? 'open' : 'closed'}
       data-panel-visible={view === 'files' ? 'true' : 'false'}
