@@ -296,9 +296,17 @@ export class MockTerminal {
    * focused terminal view by its stable test id.
    */
   focus = vi.fn((): void => {
-    const view = this.openedElement?.closest<HTMLElement>('[data-testid^="terminal-canvas"]')
-    ;(view ?? this.openedElement)?.focus()
+    this.textarea?.focus()
   })
+
+  /** Focus target corresponding to the real terminal's helper textarea. */
+  get textarea(): HTMLElement | undefined {
+    return (
+      this.openedElement?.closest<HTMLElement>('[data-testid^="terminal-canvas"]') ??
+      this.openedElement ??
+      undefined
+    )
+  }
 
   dispose = vi.fn((): void => {
     this.disposed = true

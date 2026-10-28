@@ -9,8 +9,8 @@ import { OrphanedTranscriptBanner, RawTranscriptBanner } from './RawTranscriptBa
 // Styled terminal prompt (UX-UI): a real input below the terminal instead of
 // typing at the shell prompt line. Enter submits the line plus CR through the
 // host's PTY write path, so shell echo, history and the Ctrl+D emptiness gate
-// keep working exactly as with typed input. Desktop dictation only focuses
-// this input and dispatches OpenWhispr's fixed shortcut; paste uses onChange.
+// keep working exactly as with typed input. Desktop dictation focuses the
+// visible input or console before dispatching OpenWhispr's fixed shortcut.
 
 /** External draft fill (Handoff/Resume paste, spec handoff-resume-flow): the
     nonce lets the same text re-inject and the host drop exactly this fill. */
@@ -59,9 +59,12 @@ export interface PromptInputProps {
       An empty line is submitted only in `buttons` chrome, and the host sends
       that as Enter. */
   onSubmit: (line: string) => void
-  /** `buttons` hides the text field and centers Dictation then Send. The
-      field stays mounted so dictation can still insert a draft. */
+  /** `buttons` hides the text field and centers Dictation then Send.
+      Dictation targets the console in this mode. */
   chrome?: 'buttons' | 'input'
+  onFocusTerminal?: () => boolean
+  /** Available once the terminal view can receive pasted text. */
+  onPasteToTerminal?: (text: string) => void
   /** Placeholder shown while the input is empty. */
   placeholder?: string
   /** Pending draft fill addressed to this input; replaces the whole value. */
@@ -81,9 +84,12 @@ export function PromptInput({
   chatLabel,
   useDesktopBypass,
   chrome = 'input',
+  onFocusTerminal,
+  onPasteToTerminal,
 }: PromptInputProps): React.JSX.Element {
   const [value, setValue] = useState('')
   const [focusError, setFocusError] = useState<string | null>(null)
+  const formRef = useRef<HTMLFormElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const onInjectedRef = useRef(onInjected)
   onInjectedRef.current = onInjected
@@ -124,9 +130,14 @@ export function PromptInput({
     // A remounted prompt (session retry) sees the same shared result again.
     const control = dictationControlRef.current
     if (control?.isInserted?.(res.sessionId)) return
+    if (chrome === 'buttons' && !onPasteToTerminal) return
     lastResultIdRef.current = res.sessionId
     control?.markInserted?.(res.sessionId)
     const textToInsert = res.text
+    if (chrome === 'buttons') {
+      onPasteToTerminal?.(textToInsert)
+      return
+    }
     setValue((prev) => {
       if (prev.length === 0) return textToInsert
       return prev.endsWith(' ') ? `${prev}${textToInsert}` : `${prev} ${textToInsert}`
@@ -142,7 +153,7 @@ export function PromptInput({
       setShowRawBanner(false)
     }
     inputRef.current?.focus()
-  }, [dictationControl?.result, chatId])
+  }, [dictationControl?.result, chatId, chrome, onPasteToTerminal])
 
   function submit(): void {
     if (value.length === 0) {
@@ -160,6 +171,14 @@ export function PromptInput({
   function activateDesktopDictation(): void {
     if (!dictation || dictation.disabledReason !== null || dictation.busy) return
     setFocusError(null)
+    if (chrome === 'buttons') {
+      if (!onFocusTerminal?.()) {
+        setFocusError('The console cannot receive focus. Select an available chat and try again.')
+        return
+      }
+      void dictation.activate()
+      return
+    }
     const input = inputRef.current
     if (!input?.isConnected || input.disabled || input.readOnly) {
       setFocusError('The prompt cannot receive focus. Select an available chat and try again.')
@@ -195,7 +214,8 @@ export function PromptInput({
     }
     // The button disables while transcribing; keep focus inside the form so
     // Esc still reaches the cancel handler.
-    inputRef.current?.focus()
+    if (chrome === 'buttons') formRef.current?.focus()
+    else inputRef.current?.focus()
   }
 
   /** Swaps the last occurrence of `from` for `to`. Leaves the prompt as is
@@ -225,6 +245,12 @@ export function PromptInput({
   }
 
   function handleInsertOrphaned(transcript: DictationResult): void {
+    if (chrome === 'buttons') {
+      if (!onPasteToTerminal) return
+      onPasteToTerminal(transcript.text)
+      dictationControl?.dismissOrphaned?.(transcript.sessionId)
+      return
+    }
     setValue((prev) => {
       if (prev.length === 0) return transcript.text
       return prev.endsWith(' ') ? `${prev}${transcript.text}` : `${prev} ${transcript.text}`
@@ -317,6 +343,8 @@ export function PromptInput({
 
   return (
     <form
+      ref={formRef}
+      tabIndex={buttonsOnly ? -1 : undefined}
       className={
         buttonsOnly
           ? 'nk-prompt relative flex shrink-0 flex-wrap items-center justify-center gap-2 bg-terminal pt-2'
@@ -339,7 +367,7 @@ export function PromptInput({
       {/* overflow-hidden clips the segment group's right corners to the frame
           radius, so the group reads as the input's right segment. Buttons-only
           chrome keeps the same frame as a centered pair: the textarea stays
-          mounted and focusable for dictation, out of the tab order. */}
+          mounted for pending draft injections, out of the tab order. */}
       <div
         className={
           buttonsOnly

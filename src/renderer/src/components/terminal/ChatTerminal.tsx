@@ -4,7 +4,7 @@ import '@xterm/xterm/css/xterm.css'
 import type { AppApi } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActivitySession } from '../../lib/chat-activity'
 import { isNewChatChord } from '../../lib/new-chat-chord'
 import type { PromptChrome } from '../../lib/prompt-chrome'
@@ -54,7 +54,7 @@ interface ChatTerminalProps {
   cwd: string
   /** Whether this view is the selected terminal (chat or bottom tab). */
   visible: boolean
-  /** Focus the xterm textarea. Bottom-panel open uses this; chats do not. */
+  /** Focus the xterm textarea when this terminal becomes selected. */
   focused?: boolean
   /** PTY exit: the host closes the chat (spec Behaviour 11). */
   onExit: (exitCode: number) => void
@@ -179,6 +179,20 @@ export function ChatTerminal({
 }: ChatTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const [terminalMounted, setTerminalMounted] = useState(false)
+  const focusTerminal = useCallback((): boolean => {
+    const terminal = terminalRef.current
+    if (!terminal?.textarea?.isConnected) return false
+    terminal.focus()
+    return document.activeElement === terminal.textarea
+  }, [])
+  const pasteToTerminal = useCallback(
+    (text: string): void => {
+      terminalRef.current?.paste(text)
+      focusTerminal()
+    },
+    [focusTerminal],
+  )
   const fontReadyRef = useRef(false)
   const pendingOutputRef = useRef<string[]>([])
   const pendingOutputLengthRef = useRef(0)
@@ -639,6 +653,7 @@ export function ChatTerminal({
     }
     fitAndResize()
 
+    setTerminalMounted(true)
     return () => {
       disposed = true
       activitySession?.dispose()
@@ -750,6 +765,8 @@ export function ChatTerminal({
               chatId={chatId}
               chatLabel={chatLabel}
               chrome={promptChrome === 'buttons' ? 'buttons' : 'input'}
+              onFocusTerminal={focusTerminal}
+              onPasteToTerminal={terminalMounted ? pasteToTerminal : undefined}
               onSubmit={(line) => sendRef.current?.(line)}
               injected={injected}
               onInjected={onInjected}

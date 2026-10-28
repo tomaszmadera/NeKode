@@ -281,6 +281,9 @@ describe('ChatWorkspace session host', () => {
     )
     await waitFor(() => expect(bundle.app.terminals.create).toHaveBeenCalledTimes(1))
     const firstTerminal = mockTerminalInstances[0]
+    expect(document.activeElement).toBe(firstTerminal.textarea)
+    const draft = screen.getByTestId(TEST_ID.terminalPromptInput)
+    draft.focus()
 
     // Switch to chat two: its own lazy spawn; chat one stays alive and hidden.
     view.rerender(
@@ -289,6 +292,7 @@ describe('ChatWorkspace session host', () => {
     await waitFor(() => expect(bundle.app.terminals.create).toHaveBeenCalledTimes(2))
     expect(bundle.app.terminals.create).toHaveBeenLastCalledWith('t2', 'D:/code/demo')
     expect(firstTerminal.dispose).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(mockTerminalInstances[1].textarea)
     expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('none')
     expect(screen.getByTestId(testIdFor.terminalView('t2')).style.display).toBe('block')
 
@@ -300,6 +304,7 @@ describe('ChatWorkspace session host', () => {
     expect(bundle.app.terminals.create).toHaveBeenCalledTimes(2)
     expect(mockTerminalInstances).toHaveLength(2)
     expect(firstTerminal.dispose).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(firstTerminal.textarea)
     expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('block')
 
     // Background data keeps flowing into the hidden terminal's scrollback.

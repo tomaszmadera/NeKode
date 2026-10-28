@@ -642,6 +642,54 @@ describe('unified dictation prompt workflow', () => {
     expect(button.title).toContain('Confirm OpenWhispr')
   })
 
+  it('keeps Esc cancellation reachable without focusing the hidden draft in buttons-only mode', async () => {
+    const control = createUnifiedDictationStub()
+    const view = render(
+      <PromptInput chrome="buttons" onSubmit={vi.fn()} dictationControl={control} />,
+    )
+    await act(async () => fireEvent.click(screen.getByTestId(TEST_ID.terminalPromptDictation)))
+    expect(control.start).toHaveBeenCalledOnce()
+    const form = screen.getByTestId(TEST_ID.terminalPromptSend).closest('form')
+    expect(document.activeElement).toBe(form)
+    view.rerender(
+      <PromptInput
+        chrome="buttons"
+        onSubmit={vi.fn()}
+        dictationControl={{ ...control, state: 'transcribing', isTranscribing: true, isBusy: true }}
+      />,
+    )
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' })
+    expect(control.cancel).toHaveBeenCalledOnce()
+  })
+
+  it('pastes recovered dictation into the console in buttons-only mode', () => {
+    const paste = vi.fn()
+    const submit = vi.fn()
+    const transcript = {
+      sessionId: 'recovered-1',
+      chatId: 'chat-background',
+      outcome: 'success' as const,
+      text: 'recovered text',
+      warning: null,
+      error: null,
+      retryable: false,
+    }
+    const control = createUnifiedDictationStub({ orphanedTranscripts: [transcript] })
+    render(
+      <PromptInput
+        chrome="buttons"
+        onSubmit={submit}
+        onPasteToTerminal={paste}
+        dictationControl={control}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('insert-orphaned-transcript'))
+    expect(paste).toHaveBeenCalledExactlyOnceWith('recovered text')
+    expect(control.dismissOrphaned).toHaveBeenCalledWith('recovered-1')
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+    expect(submit).not.toHaveBeenCalled()
+  })
+
   it('fails closed while the selected method is unknown instead of recording in-app', async () => {
     const control = createUnifiedDictationStub()
     render(
@@ -670,12 +718,14 @@ describe('unified dictation prompt workflow', () => {
 describe('buttons-only prompt', () => {
   it('centers Dictation and Send with Send on the right, and sends Enter when empty', async () => {
     const submit = vi.fn()
+    const focusTerminal = vi.fn(() => true)
     const activate = vi.fn(async () => {
-      expect(document.activeElement).toBe(screen.getByRole('textbox'))
+      expect(focusTerminal).toHaveBeenCalledOnce()
     })
     render(
       <PromptInput
         chrome="buttons"
+        onFocusTerminal={focusTerminal}
         onSubmit={submit}
         dictation={{ disabledReason: null, busy: false, error: null, activate }}
       />,

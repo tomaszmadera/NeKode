@@ -784,6 +784,86 @@ describe('ChatTerminal lifecycle', () => {
     expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
   })
 
+  it('focuses the console before desktop dictation in buttons-only mode and refuses failed focus', async () => {
+    const { app } = createAppMock()
+    const activate = vi.fn(async () => {
+      expect(document.activeElement).toBe(mockTerminalInstances[0].textarea)
+    })
+    render(
+      <ChatTerminal
+        app={app}
+        chatId="t1"
+        cwd="D:/code/demo"
+        visible
+        promptChrome="buttons"
+        dictation={{ selected: true, disabledReason: null, busy: false, error: null, activate }}
+        onExit={() => undefined}
+        onClose={() => undefined}
+        onSpawnError={() => undefined}
+      />,
+    )
+    const button = screen.getByTestId(TEST_ID.terminalPromptDictation)
+    await act(async () => fireEvent.click(button))
+    expect(activate).toHaveBeenCalledOnce()
+    expect(app.terminals.write).not.toHaveBeenCalled()
+
+    button.focus()
+    mockTerminalInstances[0].focus.mockImplementation(() => {})
+    await act(async () => fireEvent.click(button))
+    expect(activate).toHaveBeenCalledOnce()
+    expect(screen.getByRole('alert').textContent).toContain('focus')
+  })
+
+  it('pastes adapter dictation into the console once without submitting or filling the hidden draft', async () => {
+    const { app } = createAppMock()
+    const markInserted = vi.fn()
+    const result = {
+      sessionId: 'take-1',
+      chatId: 't1',
+      outcome: 'success' as const,
+      text: 'edited take',
+      rawText: 'raw take',
+      warning: null,
+      error: null,
+      retryable: false,
+    }
+    const control = {
+      state: 'idle' as const,
+      isRecording: false,
+      isTranscribing: false,
+      isBusy: false,
+      error: null,
+      warning: null,
+      result,
+      start: vi.fn(),
+      stop: vi.fn(),
+      cancel: vi.fn(),
+      markInserted,
+    }
+    const props = {
+      app,
+      chatId: 't1',
+      cwd: 'D:/code/demo',
+      visible: true,
+      promptChrome: 'buttons' as const,
+      dictationControl: control,
+      onExit: vi.fn(),
+      onClose: vi.fn(),
+      onSpawnError: vi.fn(),
+    }
+    const view = render(<ChatTerminal {...props} />)
+    expect(mockTerminalInstances[0].paste).toHaveBeenCalledExactlyOnceWith('edited take')
+    expect(app.terminals.write).toHaveBeenCalledExactlyOnceWith('t1', 'edited take')
+    expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLTextAreaElement).value).toBe('')
+    expect(markInserted).toHaveBeenCalledWith('take-1')
+    view.rerender(
+      <ChatTerminal {...props} dictationControl={{ ...control, result: { ...result } }} />,
+    )
+    expect(mockTerminalInstances[0].paste).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId(TEST_ID.terminalPromptSend))
+    await waitFor(() => expect(app.terminals.write).toHaveBeenLastCalledWith('t1', '\r'))
+  })
+
   it('omits the prompt field, Send, and Dictation when the prompt is hidden', async () => {
     const { app } = createAppMock()
     const { queryByTestId } = render(

@@ -540,6 +540,7 @@ export function ChatWorkspace({
                 chatId={chatId}
                 cwd={record.cwd}
                 visible={chatId === selectedChatId}
+                focused={chatId === selectedChatId}
                 terminalFontSize={terminalFontSize}
                 terminalFontFamilies={terminalFontFamilies}
                 terminalCtrlVPaste={terminalCtrlVPaste}
