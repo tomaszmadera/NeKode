@@ -1,8 +1,10 @@
 import type { FileEntry, GitFileStatuses } from '@shared/ipc-contract'
 import type React from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
+import { clampMenuPosition } from '../../lib/menu-position'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import {
   buildStatusIndex,
@@ -282,12 +284,29 @@ function FileTreeContextMenu({
   onCopyRelativePath: (relativePath: string) => void
   onTrash: (relativePath: string) => void
 }): React.JSX.Element {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const position = clampMenuPosition(state.x, state.y, { menuWidth: 180, menuHeight: 140 })
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const rect = menu.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const refined = clampMenuPosition(state.x, state.y, {
+        menuWidth: rect.width,
+        menuHeight: rect.height,
+      })
+      menu.style.left = `${refined.left}px`
+      menu.style.top = `${refined.top}px`
+    }
+  }, [state.x, state.y])
+
   function run(action: (relativePath: string) => void): void {
     onClose()
     action(state.relativePath)
   }
 
-  return (
+  return createPortal(
     <div
       role="menu"
       aria-label={state.name}
@@ -308,14 +327,15 @@ function FileTreeContextMenu({
       }}
     >
       <div
+        ref={menuRef}
         className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
-        style={{ left: state.x, top: state.y }}
+        style={position}
         data-testid={TEST_ID.fileTreeContextMenu}
       >
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
           data-testid={TEST_ID.fileTreeShowInFolder}
           onClick={() => run(onShowInFolder)}
         >
@@ -324,7 +344,7 @@ function FileTreeContextMenu({
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
           data-testid={TEST_ID.fileTreeCopyPath}
           onClick={() => run(onCopyPath)}
         >
@@ -333,7 +353,7 @@ function FileTreeContextMenu({
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
           data-testid={TEST_ID.fileTreeCopyRelativePath}
           onClick={() => run(onCopyRelativePath)}
         >
@@ -342,13 +362,14 @@ function FileTreeContextMenu({
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-error hover:bg-error/10"
+          className="block w-full px-3 py-1.5 text-left text-xs text-error hover:bg-error/10 whitespace-nowrap"
           data-testid={TEST_ID.fileTreeTrash}
           onClick={() => run(onTrash)}
         >
           Delete
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

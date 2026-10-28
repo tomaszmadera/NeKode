@@ -694,4 +694,31 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(rows[1].textContent).toContain('Chat 2')
     expect(rows[2].textContent).toContain('Chat 3')
   })
+
+  it('new session agent menu renders in a portal with clamped positioning and block items', async () => {
+    const props = {
+      ...defaultProps(),
+      loadAgentProfiles: vi.fn().mockResolvedValue({
+        version: 1,
+        profiles: [
+          { id: 'p-1', name: 'Hermes Coder' },
+          { id: 'p-2', name: 'Hermes MiMo-v2.6-Pro' },
+        ],
+      }),
+    }
+    render(navigation({ ...props }))
+
+    const newChatBtn = screen.getAllByTestId(TEST_ID.newChatButton)[0]
+    fireEvent.contextMenu(newChatBtn, { clientX: 9999, clientY: 9999 })
+
+    const menu = await screen.findByTestId(TEST_ID.newChatAgentMenu)
+    expect(menu.parentElement?.parentElement).toBe(document.body)
+
+    const profileItem = await screen.findByTestId(testIdFor.newChatAgentProfile('p-1'))
+    expect(profileItem.className).toContain('block')
+    expect(profileItem.className).toContain('whitespace-nowrap')
+    // Clamped coordinates should not be 9999
+    expect(Number.parseInt(menu.style.left, 10)).toBeLessThan(9999)
+    expect(Number.parseInt(menu.style.top, 10)).toBeLessThan(9999)
+  })
 })

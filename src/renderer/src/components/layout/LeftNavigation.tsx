@@ -10,6 +10,7 @@ import type {
 import { parseWslPath } from '@shared/wsl-path'
 import type React from 'react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'
@@ -1082,6 +1083,22 @@ export function LeftNavigation({
                                   type="button"
                                   aria-label={`New session in ${project.name}`}
                                   onClick={() => void onCreateChat(project.id)}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    openNewChatMenu(project.id, event.clientX, event.clientY)
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (
+                                      event.key === 'ContextMenu' ||
+                                      (event.key === 'F10' && event.shiftKey)
+                                    ) {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      const rect = event.currentTarget.getBoundingClientRect()
+                                      openNewChatMenu(project.id, rect.left, rect.bottom)
+                                    }
+                                  }}
                                   className="nk-new-session-action nk-icon-btn"
                                   style={{
                                     alignSelf: 'flex-start',
@@ -1446,7 +1463,7 @@ function ProjectsContextMenu({
     }
   }, [x, y])
 
-  return (
+  return createPortal(
     <div
       role="menu"
       aria-label="Projects"
@@ -1472,13 +1489,14 @@ function ProjectsContextMenu({
           ref={actionRef}
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
           onClick={onAddProject}
         >
           Add Project
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -1497,7 +1515,24 @@ function ContextMenuOverlay({
   onOpenInFileExplorer: (projectId: string) => void
   onOpenProjectSettings: (projectId: string) => void
 }): React.JSX.Element {
-  return (
+  const menuRef = useRef<HTMLDivElement>(null)
+  const position = clampMenuPosition(state.x, state.y, { menuWidth: 160, menuHeight: 120 })
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const rect = menu.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const refined = clampMenuPosition(state.x, state.y, {
+        menuWidth: rect.width,
+        menuHeight: rect.height,
+      })
+      menu.style.left = `${refined.left}px`
+      menu.style.top = `${refined.top}px`
+    }
+  }, [state.x, state.y])
+
+  return createPortal(
     <div
       role="menu"
       aria-label={`Project ${projectName}`}
@@ -1518,14 +1553,15 @@ function ContextMenuOverlay({
       }}
     >
       <div
+        ref={menuRef}
         className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
-        style={{ left: state.x, top: state.y }}
+        style={position}
         data-testid={TEST_ID.projectContextMenu}
       >
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
           onClick={() => onOpenProjectSettings(state.projectId)}
         >
           Project Settings
@@ -1533,7 +1569,7 @@ function ContextMenuOverlay({
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
+          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
           onClick={() => onOpenInFileExplorer(state.projectId)}
         >
           Open in file explorer
@@ -1541,7 +1577,7 @@ function ContextMenuOverlay({
         <button
           type="button"
           role="menuitem"
-          className="w-full px-3 py-1.5 text-left text-xs text-error hover:bg-error/10"
+          className="block w-full px-3 py-1.5 text-left text-xs text-error hover:bg-error/10 whitespace-nowrap"
           data-testid={testIdFor.removeProject(state.projectId)}
           aria-label={`Remove Project ${projectName}`}
           onClick={() => onRemoveProject(state.projectId)}
@@ -1549,7 +1585,8 @@ function ContextMenuOverlay({
           Remove Project
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -1568,6 +1605,8 @@ function NewChatAgentMenu({
 }): React.JSX.Element {
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
+  const menuRef = useRef<HTMLDivElement>(null)
+  const position = clampMenuPosition(state.x, state.y, { menuWidth: 180, menuHeight: 160 })
 
   useEffect(() => {
     let active = true
@@ -1590,10 +1629,26 @@ function NewChatAgentMenu({
     }
   }, [loadProfiles, state.projectId])
 
-  const itemClass =
-    'w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink'
+  useLayoutEffect(() => {
+    void phase
+    void profiles.length
+    const menu = menuRef.current
+    if (!menu) return
+    const rect = menu.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const refined = clampMenuPosition(state.x, state.y, {
+        menuWidth: rect.width,
+        menuHeight: rect.height,
+      })
+      menu.style.left = `${refined.left}px`
+      menu.style.top = `${refined.top}px`
+    }
+  }, [state.x, state.y, phase, profiles.length])
 
-  return (
+  const itemClass =
+    'block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap'
+
+  return createPortal(
     <div
       role="menu"
       aria-label="New chat with agent"
@@ -1614,13 +1669,14 @@ function NewChatAgentMenu({
       }}
     >
       <div
+        ref={menuRef}
         className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
-        style={{ left: state.x, top: state.y }}
+        style={position}
         data-testid={TEST_ID.newChatAgentMenu}
       >
         {phase === 'loading' ? (
           <p
-            className="px-3 py-1.5 text-xs text-ink-muted"
+            className="px-3 py-1.5 text-xs text-ink-muted whitespace-nowrap"
             data-testid={TEST_ID.newChatAgentMenuLoading}
           >
             Loading…
@@ -1628,7 +1684,7 @@ function NewChatAgentMenu({
         ) : null}
         {phase === 'error' ? (
           <p
-            className="px-3 py-1.5 text-xs text-ink-muted"
+            className="px-3 py-1.5 text-xs text-ink-muted whitespace-nowrap"
             data-testid={TEST_ID.newChatAgentMenuError}
           >
             Failed to load agent profiles.
@@ -1681,6 +1737,7 @@ function NewChatAgentMenu({
           </>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
