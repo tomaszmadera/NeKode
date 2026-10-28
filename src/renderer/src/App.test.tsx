@@ -160,6 +160,7 @@ describe('app settings and themes', () => {
   beforeEach(() => {
     resetMockTerminals()
     resetMockFitAddons()
+    localStorage.clear()
   })
 
   it('toggles the mascot independently of App Settings and restores its saved visibility', () => {
@@ -421,9 +422,6 @@ describe('app settings and themes', () => {
     expect(screen.queryByRole('dialog', { name: 'App Settings' })).toBeNull()
   })
 
-  beforeEach(() => {
-    localStorage.clear()
-  })
   afterEach(() => {
     cleanup()
     localStorage.clear()
