@@ -234,7 +234,7 @@ Buttons should be compact:
 
 Do not require icons.
 
-The fixed buttons act on the active chat. `Stop` and `Continue` write terminal input through `terminals:write`. `Handoff` and `Resume` paste into the prompt input unless auto-send is on, in which case they write the same text plus CR. `docs/features/handoff-resume-flow/spec.md` owns that flow.
+The fixed buttons act on the active chat. `Stop` and `Continue` write terminal input through `terminals:write`. `Handoff` and `Resume` paste into the console without submitting unless auto-send is on, in which case they write the same text plus CR. `docs/features/handoff-resume-flow/spec.md` owns that flow.
 
 ```text
 Handoff     Write a handoff
@@ -547,7 +547,7 @@ Example (the tab strip and action bar sit above the surface per §5; the project
 └──────────────────────────────────────────────────────────────┘
 ```
 
-The chat prompt defaults to Dictation and Send, centered, with Send on the right. An empty draft sends Enter, so a console prompt can be accepted without a keyboard. Dictation still inserts into the hidden field. App Settings > General, `Chat prompt`, can show the text field with those buttons, or hide the prompt. The bottom terminal has no prompt, Send, or Dictation.
+Chat terminals show Dictation and Send, centered, with Send on the right. Send presses Enter in the console, so a console prompt can be accepted without a keyboard. Dictation inserts directly into the console without submitting. There is no separate text field. App Settings > General > Terminal has a "Show Dictation and Send buttons" switch, enabled by default and saved on this device. Hiding the row preserves console paste delivery, including Handoff/Resume and completed dictation. The bottom terminal has no Send or Dictation.
 
 ---
 

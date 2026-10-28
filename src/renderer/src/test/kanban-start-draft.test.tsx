@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App, TEST_ID, testIdFor } from '../App'
 import { createAppApiStub } from './app-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
-import { resetMockTerminals } from './xterm-mock'
+import { mockTerminalInstances, resetMockTerminals } from './xterm-mock'
 
 // Start without sending (NEKODE-99, spec kanban-adapter-interface): a draft
-// launch adopts the new chat and fills its prompt input with the prompt main
-// returned; nothing reaches the PTY until the user sends it.
+// launch adopts the new chat and pastes into its console the prompt main
+// returned without appending CR; the user submits it.
 vi.mock('@xterm/xterm', () => import('./xterm-mock'))
 vi.mock('@xterm/addon-fit', () => import('./fit-addon-mock'))
 
@@ -55,7 +55,7 @@ describe('kanban Start without sending', () => {
     cleanup()
   })
 
-  it('fills the new chat prompt input with the returned prompt and writes nothing', async () => {
+  it('pastes the returned prompt into the new console without submitting', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([])
     vi.mocked(app.kanban.listBoard).mockResolvedValue(board)
@@ -91,15 +91,17 @@ describe('kanban Start without sending', () => {
     })
     expect(vi.mocked(app.kanban.launchTask).mock.calls[0]?.[0].mode).toBe('draft')
     await waitFor(() => {
-      const input = screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLTextAreaElement
-      expect(input.value).toBe(DRAFT)
+      expect(
+        mockTerminalInstances.find((terminal) => !terminal.disposed)?.paste,
+      ).toHaveBeenCalledWith(DRAFT)
     })
     expect(screen.queryByTestId(TEST_ID.kanbanStartDialog)).toBeNull()
     const written = vi.mocked(app.terminals.write).mock.calls.map(([, data]) => data)
-    expect(written.some((data) => data.includes('Work on task'))).toBe(false)
+    expect(written).toContain(DRAFT)
+    expect(written).not.toContain('\r')
   })
 
-  it('fills the prompt input only after a held draft launch is retried', async () => {
+  it('pastes into the console only after a held draft launch is retried', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([])
     vi.mocked(app.kanban.listBoard).mockResolvedValue(board)
@@ -133,10 +135,12 @@ describe('kanban Start without sending', () => {
     expect(calls[1]?.[0]).toEqual(calls[0]?.[0])
     expect(calls[1]?.[0].mode).toBe('draft')
     await waitFor(() => {
-      const input = screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLTextAreaElement
-      expect(input.value).toBe(DRAFT)
+      expect(
+        mockTerminalInstances.find((terminal) => !terminal.disposed)?.paste,
+      ).toHaveBeenCalledWith(DRAFT)
     })
     const written = vi.mocked(app.terminals.write).mock.calls.map(([, data]) => data)
-    expect(written.some((data) => data.includes('Work on task'))).toBe(false)
+    expect(written).toContain(DRAFT)
+    expect(written).not.toContain('\r')
   })
 })

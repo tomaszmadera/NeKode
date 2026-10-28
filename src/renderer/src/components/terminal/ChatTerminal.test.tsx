@@ -598,7 +598,7 @@ describe('ChatTerminal lifecycle', () => {
       />,
     )
     // The view element (test id carrier) drives visibility; the xterm host is
-    // its flex child that shares the prompt input row below.
+    // its flex child that shares the action row below.
     const view = getByTestId('terminal-canvas-t1')
     expect(view.style.display).toBe('block')
 
@@ -620,11 +620,7 @@ describe('ChatTerminal lifecycle', () => {
     expect(mockTerminalInstances[0].dispose).not.toHaveBeenCalled()
   })
 
-  // Styled prompt input under the terminal: Enter submits the line plus CR
-  // through the PTY write path with Enter semantics (the Ctrl+D prompt base
-  // re-collects from the shell's next redraw), an empty line submits nothing,
-  // and Dictation stays disabled when no desktop control is provided.
-  it('prompt input writes the submitted line plus CR to the PTY and clears itself', async () => {
+  it('Send writes Enter to the console without a separate text field', async () => {
     const { app } = createAppMock()
     const { getByTestId } = render(
       <ChatTerminal
@@ -632,136 +628,6 @@ describe('ChatTerminal lifecycle', () => {
         chatId="t1"
         cwd="D:/code/demo"
         visible
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-      />,
-    )
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
-    const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
-    expect(input.className).toContain('terminal-prompt-input')
-    fireEvent.change(input, { target: { value: 'git status' } })
-    fireEvent.submit(input.closest('form') as HTMLFormElement)
-    // Split-write submission (lib/pty-submit.ts): the line, then the CR as
-    // its own write (0 ms gap under tests).
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status'))
-    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
-    expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
-  })
-
-  it('prompt input submits nothing on an empty line', async () => {
-    const { app } = createAppMock()
-    const { getByTestId } = render(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-      />,
-    )
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
-    const form = getByTestId(TEST_ID.terminalPromptInput).closest('form') as HTMLFormElement
-    fireEvent.submit(form)
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
-    expect(app.terminals.write).not.toHaveBeenCalled()
-  })
-
-  it('prompt input applies an injected draft, reports consumption and sends nothing', async () => {
-    const { app } = createAppMock()
-    const onInjected = vi.fn()
-    const { getByTestId, rerender } = render(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-        injected={{ text: 'Write a handoff', nonce: 1 }}
-        onInjected={onInjected}
-      />,
-    )
-    await waitFor(() => expect(onInjected).toHaveBeenCalledTimes(1))
-    expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
-      'Write a handoff',
-    )
-    // A fresh injection with a new nonce replaces the existing draft (nonce
-    // tracking is owned by PromptInput.test.tsx; this is the host wiring).
-    rerender(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-        injected={{ text: 'ls -la', nonce: 2 }}
-        onInjected={onInjected}
-      />,
-    )
-    await waitFor(() =>
-      expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('ls -la'),
-    )
-    expect(onInjected).toHaveBeenCalledTimes(2)
-    // Paste-only delivery (spec handoff-resume-flow Behaviour 3): the draft
-    // waits for the user; the injection itself writes nothing to the PTY.
-    expect(app.terminals.write).not.toHaveBeenCalled()
-  })
-
-  it('prompt input Send button submits the typed line and clears the input', async () => {
-    const { app } = createAppMock()
-    const { getByTestId } = render(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-      />,
-    )
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
-    const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'git status' } })
-    fireEvent.click(getByTestId(TEST_ID.terminalPromptSend))
-    // Split-write submission: the line, then the CR as its own write.
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status'))
-    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
-    expect((getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
-  })
-
-  it('prompt input Send button is disabled while the input is empty', async () => {
-    const { app } = createAppMock()
-    const { getByTestId } = render(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-      />,
-    )
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
-    expect((getByTestId(TEST_ID.terminalPromptSend) as HTMLButtonElement).disabled).toBe(true)
-  })
-
-  it('buttons-only Send writes Enter when the draft is empty and the line when it is not', async () => {
-    const { app } = createAppMock()
-    const { getByTestId } = render(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        promptChrome="buttons"
         onExit={() => undefined}
         onClose={() => undefined}
         onSpawnError={() => undefined}
@@ -777,11 +643,7 @@ describe('ChatTerminal lifecycle', () => {
     await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r'))
     expect(app.terminals.write).toHaveBeenCalledTimes(1)
 
-    const input = getByTestId(TEST_ID.terminalPromptInput) as HTMLTextAreaElement
-    fireEvent.change(input, { target: { value: 'git status' } })
-    fireEvent.click(send)
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'git status'))
-    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
+    expect(screen.queryByRole('textbox', { name: 'Terminal input' })).toBeNull()
   })
 
   it('focuses the console before desktop dictation in buttons-only mode and refuses failed focus', async () => {
@@ -795,7 +657,6 @@ describe('ChatTerminal lifecycle', () => {
         chatId="t1"
         cwd="D:/code/demo"
         visible
-        promptChrome="buttons"
         dictation={{ selected: true, disabledReason: null, busy: false, error: null, activate }}
         onExit={() => undefined}
         onClose={() => undefined}
@@ -814,75 +675,60 @@ describe('ChatTerminal lifecycle', () => {
     expect(screen.getByRole('alert').textContent).toContain('focus')
   })
 
-  it('pastes adapter dictation into the console once without submitting or filling the hidden draft', async () => {
-    const { app } = createAppMock()
-    const markInserted = vi.fn()
-    const result = {
-      sessionId: 'take-1',
-      chatId: 't1',
-      outcome: 'success' as const,
-      text: 'edited take',
-      rawText: 'raw take',
-      warning: null,
-      error: null,
-      retryable: false,
-    }
-    const control = {
-      state: 'idle' as const,
-      isRecording: false,
-      isTranscribing: false,
-      isBusy: false,
-      error: null,
-      warning: null,
-      result,
-      start: vi.fn(),
-      stop: vi.fn(),
-      cancel: vi.fn(),
-      markInserted,
-    }
-    const props = {
-      app,
-      chatId: 't1',
-      cwd: 'D:/code/demo',
-      visible: true,
-      promptChrome: 'buttons' as const,
-      dictationControl: control,
-      onExit: vi.fn(),
-      onClose: vi.fn(),
-      onSpawnError: vi.fn(),
-    }
-    const view = render(<ChatTerminal {...props} />)
-    expect(mockTerminalInstances[0].paste).toHaveBeenCalledExactlyOnceWith('edited take')
-    expect(app.terminals.write).toHaveBeenCalledExactlyOnceWith('t1', 'edited take')
-    expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLTextAreaElement).value).toBe('')
-    expect(markInserted).toHaveBeenCalledWith('take-1')
-    view.rerender(
-      <ChatTerminal {...props} dictationControl={{ ...control, result: { ...result } }} />,
-    )
-    expect(mockTerminalInstances[0].paste).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByTestId(TEST_ID.terminalPromptSend))
-    await waitFor(() => expect(app.terminals.write).toHaveBeenLastCalledWith('t1', '\r'))
-  })
-
-  it('omits the prompt field, Send, and Dictation when the prompt is hidden', async () => {
-    const { app } = createAppMock()
-    const { queryByTestId } = render(
-      <ChatTerminal
-        app={app}
-        chatId="t1"
-        cwd="D:/code/demo"
-        visible
-        promptChrome="hidden"
-        onExit={() => undefined}
-        onClose={() => undefined}
-        onSpawnError={() => undefined}
-      />,
-    )
-    await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
-    expect(queryByTestId(TEST_ID.terminalPromptInput)).toBeNull()
-    expect(queryByTestId(TEST_ID.terminalPromptSend)).toBeNull()
-    expect(queryByTestId(TEST_ID.terminalPromptDictation)).toBeNull()
-  })
+  it.each([true, false])(
+    'pastes adapter dictation once without submitting with actions visible: %s',
+    async (terminalActionsVisible) => {
+      const { app } = createAppMock()
+      const markInserted = vi.fn()
+      const result = {
+        sessionId: 'take-1',
+        chatId: 't1',
+        outcome: 'success' as const,
+        text: 'edited take',
+        rawText: 'raw take',
+        warning: null,
+        error: null,
+        retryable: false,
+      }
+      const control = {
+        state: 'idle' as const,
+        isRecording: false,
+        isTranscribing: false,
+        isBusy: false,
+        error: null,
+        warning: null,
+        result,
+        start: vi.fn(),
+        stop: vi.fn(),
+        cancel: vi.fn(),
+        markInserted,
+      }
+      const props = {
+        app,
+        chatId: 't1',
+        cwd: 'D:/code/demo',
+        visible: true,
+        dictationControl: control,
+        terminalActionsVisible,
+        onExit: vi.fn(),
+        onClose: vi.fn(),
+        onSpawnError: vi.fn(),
+      }
+      const view = render(<ChatTerminal {...props} />)
+      expect(mockTerminalInstances[0].paste).toHaveBeenCalledExactlyOnceWith('edited take')
+      expect(app.terminals.write).toHaveBeenCalledExactlyOnceWith('t1', 'edited take')
+      expect(screen.queryByRole('textbox', { name: 'Terminal input' })).toBeNull()
+      expect(markInserted).toHaveBeenCalledWith('take-1')
+      view.rerender(
+        <ChatTerminal {...props} dictationControl={{ ...control, result: { ...result } }} />,
+      )
+      expect(mockTerminalInstances[0].paste).toHaveBeenCalledTimes(1)
+      view.rerender(<ChatTerminal {...props} terminalActionsVisible />)
+      expect(mockTerminalInstances[0].paste).toHaveBeenCalledTimes(1)
+      fireEvent.click(screen.getByTestId(TEST_ID.terminalPromptSend))
+      await waitFor(() => expect(app.terminals.write).toHaveBeenLastCalledWith('t1', '\r'))
+    },
+  )
 
   it('omits the prompt field, Send, and Dictation when the host turns the prompt off', async () => {
     const { app } = createAppMock()
@@ -899,7 +745,6 @@ describe('ChatTerminal lifecycle', () => {
       />,
     )
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalled())
-    expect(queryByTestId(TEST_ID.terminalPromptInput)).toBeNull()
     expect(queryByTestId(TEST_ID.terminalPromptSend)).toBeNull()
     expect(queryByTestId(TEST_ID.terminalPromptDictation)).toBeNull()
   })

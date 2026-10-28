@@ -1,7 +1,6 @@
 import { APP_STATE_KEY } from '@shared/ipc-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ATTENTION_SETTINGS } from '../lib/attention-settings'
-import { PROMPT_CHROME_STORAGE_KEY } from '../lib/prompt-chrome'
 import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -10,7 +9,12 @@ import {
 } from '../lib/terminal-font'
 import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from '../lib/terminal-paste'
 import { QUICK_THEME_SWITCH_STORAGE_KEY, THEME_STORAGE_KEY } from '../lib/theme'
-import { createSettingsStore, MASCOT_VISIBLE_STORAGE_KEY, settingsError } from './useSettingsStore'
+import {
+  createSettingsStore,
+  MASCOT_VISIBLE_STORAGE_KEY,
+  settingsError,
+  TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY,
+} from './useSettingsStore'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -52,7 +56,7 @@ describe('settings store: device-local settings', () => {
       TERMINAL_FONT_SIZE_STORAGE_KEY,
       TERMINAL_FONT_FAMILIES_STORAGE_KEY,
       TERMINAL_CTRL_V_PASTE_STORAGE_KEY,
-      PROMPT_CHROME_STORAGE_KEY,
+      TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY,
     ])
     expect(state).toMatchObject({
       theme: 'nekode-float',
@@ -60,7 +64,7 @@ describe('settings store: device-local settings', () => {
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       terminalFontFamilies: DEFAULT_TERMINAL_FONT_FAMILIES,
       terminalCtrlVPaste: true,
-      promptChrome: 'buttons',
+      terminalActionsVisible: true,
       mascotVisible: true,
       autoSendHandoff: false,
       chatSwitchEnabled: true,
@@ -79,14 +83,14 @@ describe('settings store: device-local settings', () => {
     actions.setQuickThemeSwitch(true)
     actions.setTerminalFontSize(18)
     actions.setTerminalCtrlVPaste(false)
-    actions.setPromptChrome('hidden')
+    actions.setTerminalActionsVisible(false)
     actions.toggleMascot()
 
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('nekode-flat')
     expect(localStorage.getItem(QUICK_THEME_SWITCH_STORAGE_KEY)).toBe('1')
     expect(localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY)).toBe('18')
     expect(localStorage.getItem(TERMINAL_CTRL_V_PASTE_STORAGE_KEY)).toBe('0')
-    expect(localStorage.getItem(PROMPT_CHROME_STORAGE_KEY)).toBe('hidden')
+    expect(localStorage.getItem(TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY)).toBe('0')
     expect(localStorage.getItem(MASCOT_VISIBLE_STORAGE_KEY)).toBe('0')
     actions.setTerminalFontFamilies(DEFAULT_TERMINAL_FONT_FAMILIES)
     expect(localStorage.getItem(TERMINAL_FONT_FAMILIES_STORAGE_KEY)).toBe(
@@ -101,7 +105,7 @@ describe('settings store: device-local settings', () => {
       quickThemeSwitch: true,
       terminalFontSize: 18,
       terminalCtrlVPaste: false,
-      promptChrome: 'hidden',
+      terminalActionsVisible: false,
       mascotVisible: false,
     })
     reloaded.toggleMascot()
@@ -124,13 +128,44 @@ describe('settings store: device-local settings', () => {
       terminalFontError: 'Failed to load the saved terminal fonts.',
       terminalCtrlVPaste: true,
       terminalPasteError: 'Failed to load the saved terminal paste setting.',
-      promptChrome: 'buttons',
-      promptChromeError: 'Failed to load the prompt setting.',
+      terminalActionsVisible: true,
+      terminalActionsError: 'Failed to load the terminal actions setting.',
       mascotVisible: true,
       mascotError: 'Failed to load the mascot setting.',
     })
     // App Settings shows the first failure in this order.
     expect(settingsError(state)).toBe('Failed to load the saved theme.')
+  })
+
+  it.each(['1', 'junk'])('keeps terminal actions visible for stored value %s', (value) => {
+    localStorage.setItem(TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY, value)
+    const store = createSettingsStore({ app: fakeApp(), reportError: vi.fn() })
+    expect(store.getState().terminalActionsVisible).toBe(true)
+  })
+
+  it('reports an actions load failure and keeps the default visible', () => {
+    const read = Storage.prototype.getItem
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key) {
+      if (key === TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY) throw new Error('denied')
+      return read.call(this, key)
+    })
+    const state = createSettingsStore({ app: fakeApp(), reportError: vi.fn() }).getState()
+    expect(state.terminalActionsVisible).toBe(true)
+    expect(settingsError(state)).toBe('Failed to load the terminal actions setting.')
+  })
+
+  it('applies action visibility despite a save failure and clears the error after retry', () => {
+    const store = createSettingsStore({ app: fakeApp(), reportError: vi.fn() })
+    const save = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota')
+    })
+    store.getState().setTerminalActionsVisible(false)
+    expect(store.getState().terminalActionsVisible).toBe(false)
+    expect(settingsError(store.getState())).toBe('Failed to save the terminal actions setting.')
+    save.mockRestore()
+    store.getState().setTerminalActionsVisible(true)
+    expect(settingsError(store.getState())).toBeNull()
+    expect(localStorage.getItem(TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY)).toBe('1')
   })
 
   it('reports a failed save; theme, quick switch, fonts keep their value, paste and mascot apply', () => {
@@ -145,9 +180,6 @@ describe('settings store: device-local settings', () => {
     actions.setTerminalFontFamilies({ ...DEFAULT_TERMINAL_FONT_FAMILIES, text: 'Other Mono' })
     expect(store.getState().terminalFontFamilies).toEqual(DEFAULT_TERMINAL_FONT_FAMILIES)
     expect(settingsError(store.getState())).toBe('Failed to save the terminal fonts.')
-    actions.setPromptChrome('input')
-    expect(store.getState().promptChrome).toBe('input')
-    expect(settingsError(store.getState())).toBe('Failed to save the prompt setting.')
     actions.setTerminalCtrlVPaste(false)
     expect(store.getState().terminalCtrlVPaste).toBe(false)
     expect(settingsError(store.getState())).toBe('Failed to save the terminal paste setting.')

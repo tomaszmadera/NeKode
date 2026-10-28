@@ -28,7 +28,7 @@ interface ActionBarProps {
   onBottomTerminal: (execution: ActionExecution, projectId: string) => void
   /**
    * Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): the host
-   * pastes the English command into the active prompt input, or sends it
+   * pastes the English command into the active console, or sends it
    * straight to the PTY when auto-send is on. The command stays English.
    */
   onPromptCommand: (text: string) => void

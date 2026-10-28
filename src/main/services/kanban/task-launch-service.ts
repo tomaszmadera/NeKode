@@ -27,7 +27,7 @@ import { validateWslExecutable } from '../terminal/wsl'
 // and uses the Resume prompt. A detected file is never treated as plan
 // approval. Draft (Start without sending, NEKODE-99) shares the Start checks
 // and prompt, starts the profile with its interactive argv like New Chat, and
-// returns the prompt for the renderer's prompt input instead of the process.
+// returns the prompt for the renderer to paste into the console without submitting.
 
 const CHANNEL = 'kanban:launchTask'
 const SPAWN_LOG = '[kanban-launch] failed to start the task process'

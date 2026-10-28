@@ -41,7 +41,7 @@ The central concept of the MVP is the **Chat**: a terminal session assigned to a
 
 5. **Project action bar (Action Bar):**
    - The action bar in the center column, directly under the tab bar (user decision 2026-09-26): fixed groups `Handoff | Resume` and `Stop | Continue`, followed by configurable buttons that run defined project commands (for example dev server, tests, build, verification).
-   - `Stop` sends Ctrl+C, and `Continue` sends text and CR, through `terminals:write`. `Handoff` and `Resume` paste their string into the prompt by default; with auto-send on, they send the string and one CR. The flow is owned by [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
+   - `Stop` sends Ctrl+C, and `Continue` sends text and CR, through `terminals:write`. `Handoff` and `Resume` paste their string into the console without submitting by default; with auto-send on, they send the string and one CR. The flow is owned by [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
    - Running commands in `background` or `new-terminal` mode (a new chat with the command); the `bottom-terminal` mode (a new bottom panel tab with the command) follows the `docs/features/bottom-auxiliary-terminal/spec.md` contract once the bottom terminal panel is delivered (requirement 3).
 
 6. **Data persistence:**
@@ -52,7 +52,7 @@ The central concept of the MVP is the **Chat**: a terminal session assigned to a
    - Scalable and resizable work panels.
    - Center column: a tab bar at the top (the active chat tab, which cannot be closed; tabs of open files; `+ New chat`), the action bar under it (see 5), and the main surface below.
    - A status bar at the very bottom of the window (full width) with the project context: name, path, detected runtimes, and Git branch and status.
-   - The interface is entirely in English; fixed action bar button strings (for example `Write a handoff`) are literal data and are not translated. Handoff and Resume paste their string into the prompt or, with auto-send on, send it to the terminal. This flow is owned by [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
+   - The interface is entirely in English; fixed action bar button strings (for example `Write a handoff`) are literal data and are not translated. Handoff and Resume paste their string into the console without submitting or, with auto-send on, send it with CR. This flow is owned by [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
 
 ---
 

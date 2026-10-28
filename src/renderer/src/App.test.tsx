@@ -285,13 +285,10 @@ describe('app settings and themes', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /I confirm/ }))
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.terminalPromptInput)).toBeTruthy())
-    const input = screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'draft' } })
     vi.mocked(app.dictation.desktopActivate).mockImplementation(async () => {
-      expect(document.activeElement).toBe(input)
-      expect(input.value).toBe('draft')
-      expect(input.selectionStart).toBe(5)
+      const terminal = mockTerminalInstances.find((entry) => !entry.disposed)
+      expect(terminal).toBeDefined()
+      expect(document.activeElement).toBe(terminal?.textarea)
     })
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Dictation' }))
@@ -700,6 +697,50 @@ describe('app settings and themes', () => {
       .map((terminal) => (terminal.options as { fontSize: number }).fontSize)
   }
 
+  it('persists the action visibility toggle, applies it live, and still delivers hidden Handoff paste', async () => {
+    const app = createAppApiStub()
+    await renderTwoChats(app)
+    fireEvent.keyDown(window, { code: 'Backquote', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
+    const terminals = mockTerminalInstances.filter((terminal) => !terminal.disposed)
+    const toggle = () => screen.getByRole('switch', { name: 'Show Dictation and Send buttons' })
+    const openSettings = () => fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const closeSettings = () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
+    expect(screen.getAllByTestId(TEST_ID.terminalPromptSend)).toHaveLength(1)
+    openSettings()
+    expect(toggle().getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(toggle())
+    closeSettings()
+    expect(screen.queryByTestId(TEST_ID.terminalPromptSend)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.terminalPromptDictation)).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Terminal input' })).toBeNull()
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Handoff' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
+    await waitFor(() =>
+      expect(terminals[0].paste).toHaveBeenCalledExactlyOnceWith('Write a handoff'),
+    )
+    expect(app.terminals.write).toHaveBeenCalledExactlyOnceWith('t1', 'Write a handoff')
+    openSettings()
+    fireEvent.click(toggle())
+    expect(screen.getAllByTestId(TEST_ID.terminalPromptSend)).toHaveLength(1)
+    fireEvent.click(toggle())
+    expect(app.terminals.create).toHaveBeenCalledTimes(2)
+    expect(terminals.every((terminal) => !terminal.disposed)).toBe(true)
+    cleanup()
+
+    await renderTwoChats(app)
+    openSettings()
+    expect(toggle().getAttribute('aria-checked')).toBe('false')
+    expect(screen.queryByTestId(TEST_ID.terminalPromptSend)).toBeNull()
+    fireEvent.click(toggle())
+    expect(screen.getAllByTestId(TEST_ID.terminalPromptSend)).toHaveLength(1)
+  })
+
   it('defaults Ctrl+V paste on, applies the toggle to live chat and bottom terminals, and restores it', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -1102,7 +1143,7 @@ describe('action row and settings', () => {
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
   }
 
-  it('writes contractual bytes only for a live terminal; Handoff pastes English into the input', async () => {
+  it('writes contractual bytes only for a live terminal; Handoff pastes English into the console', async () => {
     await renderSelectedChat()
     const buttons = ['Handoff', 'Resume', 'Stop', 'Continue']
     await waitFor(() =>
@@ -1111,20 +1152,20 @@ describe('action row and settings', () => {
       ),
     )
     for (const label of buttons) fireEvent.click(screen.getByRole('button', { name: label }))
-    // Paste-only default (spec handoff-resume-flow Behaviour 3): only Stop and
-    // Continue write to the PTY; Handoff fills the prompt input in English and
-    // Resume opens the handoff picker (unconfigured here -> modal only).
+    // Handoff pastes text without CR; Resume opens the handoff picker
+    // (unconfigured here -> modal only). Stop and Continue send their bytes.
     // Continue is a split-write submission: the line, then the CR (0 ms gap
     // under tests).
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(3))
-    expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
-      ['t1', '\x03'],
-      ['t1', 'Continue'],
-      ['t1', '\r'],
-    ])
-    expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
-      'Write a handoff',
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(4))
+    expect(vi.mocked(app.terminals.write).mock.calls).toEqual(
+      expect.arrayContaining([
+        ['t1', 'Write a handoff'],
+        ['t1', '\x03'],
+        ['t1', 'Continue'],
+        ['t1', '\r'],
+      ]),
     )
+    expect(mockTerminalInstances[0].paste).toHaveBeenLastCalledWith('Write a handoff')
     await screen.findByTestId(TEST_ID.handoffPicker)
     expect(app.handoffs.list).not.toHaveBeenCalled()
   })
@@ -1157,7 +1198,7 @@ describe('action row and settings', () => {
     // Split-write submission: the line, then the CR as its own write.
     await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff'))
     expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
-    expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe('')
+    expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     await screen.findByTestId(TEST_ID.handoffPicker)
@@ -1247,11 +1288,11 @@ describe('action row and settings', () => {
     expect(names[0]).toContain('.agents/handoffs/newest.md')
     fireEvent.click(screen.getAllByTestId(TEST_ID.handoffPickerEntry)[0])
     await waitFor(() =>
-      expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
+      expect(mockTerminalInstances[0].paste).toHaveBeenLastCalledWith(
         'Resume from handoff .agents/handoffs/newest.md',
       ),
     )
-    expect(app.terminals.write).not.toHaveBeenCalled()
+    expect(app.terminals.write).not.toHaveBeenCalledWith('t1', '\r')
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
   })
 
@@ -1293,11 +1334,11 @@ describe('action row and settings', () => {
       await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r'))
     } else {
       await waitFor(() =>
-        expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLTextAreaElement).value).toBe(
+        expect(mockTerminalInstances[0].paste).toHaveBeenLastCalledWith(
           'Read .agents/handoffs/a.md\nUse instructions.',
         ),
       )
-      expect(app.terminals.write).not.toHaveBeenCalled()
+      expect(app.terminals.write).not.toHaveBeenCalledWith('t1', '\r')
     }
   })
 
@@ -1336,9 +1377,6 @@ describe('action row and settings', () => {
     fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
     await act(async () => resolve('Stale Resume prompt'))
-    for (const input of screen.getAllByTestId(TEST_ID.terminalPromptInput)) {
-      expect((input as HTMLTextAreaElement).value).toBe('')
-    }
     expect(app.terminals.write).not.toHaveBeenCalled()
   })
 
@@ -1398,9 +1436,7 @@ describe('action row and settings', () => {
     // Plain fallback: the English command without a path (spec Behaviour 5).
     fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerPlainPaste))
     await waitFor(() =>
-      expect((screen.getByTestId(TEST_ID.terminalPromptInput) as HTMLInputElement).value).toBe(
-        'Resume from handoff',
-      ),
+      expect(mockTerminalInstances[0].paste).toHaveBeenLastCalledWith('Resume from handoff'),
     )
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
 
@@ -1572,18 +1608,13 @@ describe('action row and settings', () => {
       ),
     )
     fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
-    const promptOf = (chatId: string): HTMLInputElement =>
-      within(screen.getByTestId(testIdFor.terminalView(chatId))).getByTestId(
-        TEST_ID.terminalPromptInput,
-      ) as HTMLInputElement
-    await waitFor(() => expect(promptOf('t1').value).toBe('Write a handoff'))
-
-    // Behaviour 7: only the addressed chat sees the fill; switching to another
-    // chat must not deliver it there, and the draft stays in its chat.
+    await waitFor(() =>
+      expect(mockTerminalInstances[0].paste).toHaveBeenCalledWith('Write a handoff'),
+    )
     fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
-    expect(promptOf('t2').value).toBe('')
-    expect(promptOf('t1').value).toBe('Write a handoff')
+    expect(mockTerminalInstances[1].paste).not.toHaveBeenCalled()
+    expect(mockTerminalInstances[0].paste).toHaveBeenCalledTimes(1)
   })
 
   it('disables fixed buttons before spawn and after a spawn failure', async () => {

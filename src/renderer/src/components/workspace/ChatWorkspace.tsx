@@ -11,12 +11,11 @@ import {
   pruneAttention,
 } from '../../lib/chat-attention'
 import { playAttentionChime } from '../../lib/chime'
-import type { PromptChrome } from '../../lib/prompt-chrome'
 import type { TerminalFontFamilies } from '../../lib/terminal-font'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { EMPTY_HELD_LAUNCHES, type HeldLaunch } from '../kanban/held-launch'
 import { ChatTerminal } from '../terminal/ChatTerminal'
-import type { PromptInjection } from '../terminal/PromptInput'
+import type { PromptInjection } from '../terminal/PromptActions'
 import { StartNewChatSurface } from './StartNewChatSurface'
 import { WelcomeSurface } from './WelcomeSurface'
 
@@ -105,12 +104,11 @@ interface ChatWorkspaceProps {
   terminalFontFamilies?: TerminalFontFamilies
   terminalFontSize?: number
   terminalCtrlVPaste?: boolean
-  /** Chat prompt: buttons only, the text field with buttons, or hidden. */
-  promptChrome?: PromptChrome
+  terminalActionsVisible?: boolean
   onSessionStatus?: (chatId: string, live: boolean) => void
   onSessionReady?: (chatId: string) => void
   /**
-   * Pending prompt-input fill from the action row (Handoff/Resume paste,
+   * Pending console paste from the action row (Handoff/Resume paste,
    * spec handoff-resume-flow Behaviour 3/7): delivered only to the addressed
    * chat's terminal, dropped when the selection moved elsewhere.
    */
@@ -169,7 +167,7 @@ export function ChatWorkspace({
   terminalFontFamilies,
   terminalFontSize,
   terminalCtrlVPaste,
-  promptChrome = 'input',
+  terminalActionsVisible,
   onSessionStatus,
   onSessionReady,
   promptInjection = null,
@@ -544,7 +542,7 @@ export function ChatWorkspace({
                 terminalFontSize={terminalFontSize}
                 terminalFontFamilies={terminalFontFamilies}
                 terminalCtrlVPaste={terminalCtrlVPaste}
-                promptChrome={promptChrome}
+                terminalActionsVisible={terminalActionsVisible}
                 suppressSpawn={heldLaunches[chatId] !== undefined}
                 registerActivity={activity.register}
                 onExit={() => handleExit(chatId)}

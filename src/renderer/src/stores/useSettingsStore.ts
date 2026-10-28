@@ -11,12 +11,6 @@ import {
   parseAttentionSettings,
 } from '../lib/attention-settings'
 import {
-  DEFAULT_PROMPT_CHROME,
-  PROMPT_CHROME_STORAGE_KEY,
-  type PromptChrome,
-  parsePromptChrome,
-} from '../lib/prompt-chrome'
-import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
   DEFAULT_TERMINAL_FONT_SIZE,
   parseTerminalFontFamilies,
@@ -35,6 +29,7 @@ import {
 } from '../lib/theme'
 
 export const MASCOT_VISIBLE_STORAGE_KEY = 'nekode.mascot-visible.v1'
+export const TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY = 'nekode.terminal-actions-visible.v1'
 
 interface SettingsState {
   // Device-local settings in localStorage: read once when the store is
@@ -49,14 +44,13 @@ interface SettingsState {
   terminalFontError: string | null
   terminalCtrlVPaste: boolean
   terminalPasteError: string | null
-  /** Chat prompt: buttons only, text field with buttons, or hidden. */
-  promptChrome: PromptChrome
-  promptChromeError: string | null
+  terminalActionsVisible: boolean
+  terminalActionsError: string | null
   mascotVisible: boolean
   mascotError: string | null
   // App-global settings in app_state: defaults until hydrate() resolves,
   // written best-effort on change (failures go to the shell notice).
-  /** Handoff/Resume delivery (spec handoff-resume-flow): off pastes into the prompt input. */
+  /** Handoff/Resume delivery (spec handoff-resume-flow): off pastes into the terminal without submitting. */
   autoSendHandoff: boolean
   /** Ctrl+Tab chat switching (NEKODE-2): enabled unless explicitly turned off. */
   chatSwitchEnabled: boolean
@@ -72,7 +66,7 @@ interface SettingsActions {
   setTerminalFontSize: (size: number) => void
   setTerminalFontFamilies: (families: TerminalFontFamilies) => void
   setTerminalCtrlVPaste: (enabled: boolean) => void
-  setPromptChrome: (chrome: PromptChrome) => void
+  setTerminalActionsVisible: (visible: boolean) => void
   toggleMascot: () => void
   setAutoSendHandoff: (next: boolean) => void
   setChatSwitchEnabled: (next: boolean) => void
@@ -142,12 +136,12 @@ function readLocalSettings(): Omit<
   } catch {
     terminalPasteError = 'Failed to load the saved terminal paste setting.'
   }
-  let promptChrome: PromptChrome = DEFAULT_PROMPT_CHROME
-  let promptChromeError: string | null = null
+  let terminalActionsVisible = true
+  let terminalActionsError: string | null = null
   try {
-    promptChrome = parsePromptChrome(localStorage.getItem(PROMPT_CHROME_STORAGE_KEY))
+    terminalActionsVisible = localStorage.getItem(TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY) !== '0'
   } catch {
-    promptChromeError = 'Failed to load the prompt setting.'
+    terminalActionsError = 'Failed to load the terminal actions setting.'
   }
   return {
     theme,
@@ -160,8 +154,8 @@ function readLocalSettings(): Omit<
     terminalFontError,
     terminalCtrlVPaste,
     terminalPasteError,
-    promptChrome,
-    promptChromeError,
+    terminalActionsVisible,
+    terminalActionsError,
     mascotVisible,
     mascotError,
   }
@@ -173,7 +167,7 @@ export function settingsError(state: SettingsState): string | null {
     state.themeError ??
     state.quickThemeSwitchError ??
     state.terminalPasteError ??
-    state.promptChromeError ??
+    state.terminalActionsError ??
     state.terminalFontError ??
     state.terminalFontSizeError
   )
@@ -242,15 +236,14 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
         })
       }
     },
-    setPromptChrome: (chrome) => {
+    setTerminalActionsVisible: (visible) => {
       try {
-        localStorage.setItem(PROMPT_CHROME_STORAGE_KEY, chrome)
-        set({ promptChrome: chrome, promptChromeError: null })
+        localStorage.setItem(TERMINAL_ACTIONS_VISIBLE_STORAGE_KEY, visible ? '1' : '0')
+        set({ terminalActionsVisible: visible, terminalActionsError: null })
       } catch {
-        // The choice still applies for this run; only the save failed.
         set({
-          promptChrome: chrome,
-          promptChromeError: 'Failed to save the prompt setting.',
+          terminalActionsVisible: visible,
+          terminalActionsError: 'Failed to save the terminal actions setting.',
         })
       }
     },

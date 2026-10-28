@@ -7,7 +7,6 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActivitySession } from '../../lib/chat-activity'
 import { isNewChatChord } from '../../lib/new-chat-chord'
-import type { PromptChrome } from '../../lib/prompt-chrome'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
@@ -20,7 +19,7 @@ import { themeColor } from '../lib/theme-color'
 import { isBottomPanelChord } from './bottom-panel-chord'
 import { chatSwitchDirection } from './chat-switch-chord'
 import { type CursorLine, decideCtrlDAction } from './ctrl-d-gate'
-import { type PromptInjection, PromptInput, type UnifiedDictationControl } from './PromptInput'
+import { PromptActions, type PromptInjection, type UnifiedDictationControl } from './PromptActions'
 import { TerminalContextMenu } from './TerminalContextMenu'
 
 interface Clipboard {
@@ -59,7 +58,7 @@ interface ChatTerminalProps {
   /** PTY exit: the host closes the chat (spec Behaviour 11). */
   onExit: (exitCode: number) => void
   /**
-   * Draft fill addressed to THIS chat's prompt input (Handoff/Resume paste,
+   * Text paste addressed to THIS chat's console (Handoff/Resume paste,
    * spec handoff-resume-flow Behaviour 3). The host addresses injections per
    * chat, so hidden terminals never receive another chat's fill.
    */
@@ -76,9 +75,8 @@ interface ChatTerminalProps {
   terminalFontFamilies?: TerminalFontFamilies
   /** Ctrl+V pastes text in full-screen programs; defaults on and applies live. */
   terminalCtrlVPaste?: boolean
-  /** `buttons` centers Dictation and Send, with Send on the right. `input`
-      shows the text field. `hidden` shows neither. */
-  promptChrome?: PromptChrome
+  /** Hides action presentation while preserving console paste delivery. */
+  terminalActionsVisible?: boolean
   /** Bottom terminals pass false: no field, Send, or Dictation. */
   showPrompt?: boolean
   /**
@@ -173,7 +171,7 @@ export function ChatTerminal({
   terminalFontSize,
   terminalFontFamilies = DEFAULT_TERMINAL_FONT_FAMILIES,
   terminalCtrlVPaste = true,
-  promptChrome = 'input',
+  terminalActionsVisible = true,
   showPrompt = true,
   suppressSpawn = false,
 }: ChatTerminalProps): React.JSX.Element {
@@ -203,7 +201,7 @@ export function ChatTerminal({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const contextMenuRef = useRef<{ x: number; y: number } | null>(null)
   contextMenuRef.current = contextMenu
-  // Latest PTY writer for the prompt input below the terminal (assigned inside
+  // Latest PTY writer for the Send action below the terminal (assigned inside
   // the mount effect; null outside it). A submission is Enter semantics: the
   // line plus CR goes to the PTY and the Ctrl+D prompt base is re-collected
   // from the shell's next prompt redraw.
@@ -758,16 +756,16 @@ export function ChatTerminal({
               className="terminal-fit-host absolute inset-0 overflow-hidden"
             />
           </div>
-          {showPrompt && promptChrome !== 'hidden' ? (
-            <PromptInput
+          {showPrompt ? (
+            <PromptActions
+              visible={terminalActionsVisible}
               dictation={dictation}
               dictationControl={dictationControl}
               chatId={chatId}
               chatLabel={chatLabel}
-              chrome={promptChrome === 'buttons' ? 'buttons' : 'input'}
               onFocusTerminal={focusTerminal}
               onPasteToTerminal={terminalMounted ? pasteToTerminal : undefined}
-              onSubmit={(line) => sendRef.current?.(line)}
+              onSend={() => sendRef.current?.('')}
               injected={injected}
               onInjected={onInjected}
             />

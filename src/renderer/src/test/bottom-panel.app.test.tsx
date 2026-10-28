@@ -530,33 +530,17 @@ describe('bottom auxiliary terminal panel', () => {
     pressChord()
     await screen.findByRole('button', { name: 'PowerShell' })
     const bottom = within(bottomRegion())
-    expect(bottom.queryByTestId(TEST_ID.terminalPromptInput)).toBeNull()
     expect(bottom.queryByTestId(TEST_ID.terminalPromptSend)).toBeNull()
     expect(bottom.queryByTestId(TEST_ID.terminalPromptDictation)).toBeNull()
     for (const label of ['Handoff', 'Resume', 'Stop', 'Continue']) {
       fireEvent.click(screen.getByRole('button', { name: label }))
     }
-    // Paste-only default (spec handoff-resume-flow): Stop and Continue write
-    // to the active chat PTY only; the bottom tab never receives bytes.
-    // Continue is a split-write submission: the line, then the CR (0 ms gap).
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(3))
-    expect(vi.mocked(app.terminals.write).mock.calls).toEqual([
-      ['t1', '\x03'],
-      ['t1', 'Continue'],
-      ['t1', '\r'],
-    ])
-    // Handoff pastes English into the active chat's dedicated input; Resume
-    // opens the handoff picker (unconfigured in this fixture -> modal only).
-    // The chat owns the prompt input. The bottom terminal has none.
-    await waitFor(() =>
-      expect(
-        (
-          within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
-            TEST_ID.terminalPromptInput,
-          ) as HTMLInputElement
-        ).value,
-      ).toBe('Write a handoff'),
-    )
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledTimes(4))
+    expect(vi.mocked(app.terminals.write).mock.calls.every(([id]) => id === 't1')).toBe(true)
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\x03')
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Continue')
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff')
     await screen.findByTestId(TEST_ID.handoffPicker)
   })
 

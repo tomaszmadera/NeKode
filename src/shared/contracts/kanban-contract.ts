@@ -152,7 +152,7 @@ export interface KanbanProjectConfig {
 export interface KanbanLaunchResult {
   chat: ChatInfo
   delivered: boolean
-  /** The Start prompt for the prompt input; only for `mode: 'draft'` when delivered. */
+  /** The Start prompt for console paste; only for `mode: 'draft'` when delivered. */
   draftPrompt?: string
 }
 

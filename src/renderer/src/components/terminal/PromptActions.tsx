@@ -4,13 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { DesktopDictationControl } from '../../hooks/useDesktopDictation'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
-import { OrphanedTranscriptBanner, RawTranscriptBanner } from './RawTranscriptBanner'
+import { OrphanedTranscriptBanner } from './OrphanedTranscriptBanner'
 
-// Styled terminal prompt (UX-UI): a real input below the terminal instead of
-// typing at the shell prompt line. Enter submits the line plus CR through the
-// host's PTY write path, so shell echo, history and the Ctrl+D emptiness gate
-// keep working exactly as with typed input. Desktop dictation focuses the
-// visible input or console before dispatching OpenWhispr's fixed shortcut.
+// Chat terminal actions. Text is pasted into the console; Send presses Enter.
 
 /** External draft fill (Handoff/Resume paste, spec handoff-resume-flow): the
     nonce lets the same text re-inject and the host drop exactly this fill. */
@@ -46,7 +42,9 @@ export interface UnifiedDictationControl {
   disabledReason?: string | null
 }
 
-export interface PromptInputProps {
+export interface PromptActionsProps {
+  /** Presentation only: injection and transcription delivery stay mounted. */
+  visible?: boolean
   dictation?: DesktopDictationControl
   dictationControl?: UnifiedDictationControl
   chatId?: string
@@ -55,27 +53,19 @@ export interface PromptInputProps {
   /** Forces the OpenWhispr desktop shortcut path. By default it is used
       when it is the dictation method selected in Settings (AC-014). */
   useDesktopBypass?: boolean
-  /** Submits one input line (without the terminator) to the terminal.
-      An empty line is submitted only in `buttons` chrome, and the host sends
-      that as Enter. */
-  onSubmit: (line: string) => void
-  /** `buttons` hides the text field and centers Dictation then Send.
-      Dictation targets the console in this mode. */
-  chrome?: 'buttons' | 'input'
+  onSend: () => void
   onFocusTerminal?: () => boolean
   /** Available once the terminal view can receive pasted text. */
   onPasteToTerminal?: (text: string) => void
-  /** Placeholder shown while the input is empty. */
-  placeholder?: string
-  /** Pending draft fill addressed to this input; replaces the whole value. */
+  /** Pending text addressed to this console, pasted without submitting. */
   injected?: PromptInjection | null
   /** Reports consumption so the host can drop the pending injection. */
   onInjected?: () => void
 }
 
-export function PromptInput({
-  onSubmit,
-  placeholder = 'Type a command',
+export function PromptActions({
+  visible = true,
+  onSend,
   injected = null,
   onInjected,
   dictation,
@@ -83,14 +73,11 @@ export function PromptInput({
   chatId,
   chatLabel,
   useDesktopBypass,
-  chrome = 'input',
   onFocusTerminal,
   onPasteToTerminal,
-}: PromptInputProps): React.JSX.Element {
-  const [value, setValue] = useState('')
+}: PromptActionsProps): React.JSX.Element | null {
   const [focusError, setFocusError] = useState<string | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
-  const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const onInjectedRef = useRef(onInjected)
   onInjectedRef.current = onInjected
   const lastAppliedNonceRef = useRef<number | null>(null)
@@ -99,9 +86,6 @@ export function PromptInput({
   // Latest shared control for the result effect, which re-runs per result only.
   const dictationControlRef = useRef(dictationControl)
   dictationControlRef.current = dictationControl
-  const lastInsertedTextRef = useRef<{ raw: string; edited: string } | null>(null)
-  const [showRawBanner, setShowRawBanner] = useState(false)
-  const [reverted, setReverted] = useState(false)
 
   // An unknown method choice (null) fails closed onto the disabled desktop
   // path instead of recording with an STT adapter.
@@ -110,14 +94,13 @@ export function PromptInput({
   )
 
   useEffect(() => {
-    if (injected === null || injected.nonce === lastAppliedNonceRef.current) {
+    if (!onPasteToTerminal || injected === null || injected.nonce === lastAppliedNonceRef.current) {
       return
     }
     lastAppliedNonceRef.current = injected.nonce
-    setValue(injected.text)
+    onPasteToTerminal(injected.text)
     onInjectedRef.current?.()
-    inputRef.current?.focus()
-  }, [injected])
+  }, [injected, onPasteToTerminal])
 
   useEffect(() => {
     const res = dictationControl?.result
@@ -130,66 +113,17 @@ export function PromptInput({
     // A remounted prompt (session retry) sees the same shared result again.
     const control = dictationControlRef.current
     if (control?.isInserted?.(res.sessionId)) return
-    if (chrome === 'buttons' && !onPasteToTerminal) return
+    if (!onPasteToTerminal) return
     lastResultIdRef.current = res.sessionId
     control?.markInserted?.(res.sessionId)
-    const textToInsert = res.text
-    if (chrome === 'buttons') {
-      onPasteToTerminal?.(textToInsert)
-      return
-    }
-    setValue((prev) => {
-      if (prev.length === 0) return textToInsert
-      return prev.endsWith(' ') ? `${prev}${textToInsert}` : `${prev} ${textToInsert}`
-    })
-    lastInsertedTextRef.current = {
-      raw: res.rawText ?? res.text,
-      edited: res.text,
-    }
-    setReverted(false)
-    if (res.rawText && res.rawText.trim() !== res.text.trim()) {
-      setShowRawBanner(true)
-    } else {
-      setShowRawBanner(false)
-    }
-    inputRef.current?.focus()
-  }, [dictationControl?.result, chatId, chrome, onPasteToTerminal])
-
-  function submit(): void {
-    if (value.length === 0) {
-      // A hidden field has no keyboard Enter. Send then accepts the console
-      // prompt by submitting an empty line, which the host writes as CR.
-      if (chrome === 'buttons') onSubmit('')
-      return
-    }
-    onSubmit(value)
-    setValue('')
-    setShowRawBanner(false)
-    lastInsertedTextRef.current = null
-  }
+    onPasteToTerminal(res.text)
+  }, [dictationControl?.result, chatId, onPasteToTerminal])
 
   function activateDesktopDictation(): void {
     if (!dictation || dictation.disabledReason !== null || dictation.busy) return
     setFocusError(null)
-    if (chrome === 'buttons') {
-      if (!onFocusTerminal?.()) {
-        setFocusError('The console cannot receive focus. Select an available chat and try again.')
-        return
-      }
-      void dictation.activate()
-      return
-    }
-    const input = inputRef.current
-    if (!input?.isConnected || input.disabled || input.readOnly) {
-      setFocusError('The prompt cannot receive focus. Select an available chat and try again.')
-      return
-    }
-    try {
-      input.focus()
-      if (document.activeElement !== input) throw new Error('Focus refused')
-      input.setSelectionRange(input.value.length, input.value.length)
-    } catch {
-      setFocusError('The prompt cannot receive focus. Select its NeKode window and try again.')
+    if (!onFocusTerminal?.()) {
+      setFocusError('The console cannot receive focus. Select an available chat and try again.')
       return
     }
     void dictation.activate()
@@ -214,51 +148,13 @@ export function PromptInput({
     }
     // The button disables while transcribing; keep focus inside the form so
     // Esc still reaches the cancel handler.
-    if (chrome === 'buttons') formRef.current?.focus()
-    else inputRef.current?.focus()
-  }
-
-  /** Swaps the last occurrence of `from` for `to`. Leaves the prompt as is
-      when the user already edited the dictated take away. */
-  function swapLastTake(from: string, to: string): void {
-    setValue((prev) => {
-      const index = prev.lastIndexOf(from)
-      if (index === -1) return prev
-      return `${prev.slice(0, index)}${to}${prev.slice(index + from.length)}`
-    })
-  }
-
-  function handleRevertToRaw(): void {
-    if (!lastInsertedTextRef.current) return
-    const { raw, edited } = lastInsertedTextRef.current
-    swapLastTake(edited, raw)
-    setReverted(true)
-    dictationControl?.revertToRaw?.()
-  }
-
-  function handleRestoreEdited(): void {
-    if (!lastInsertedTextRef.current) return
-    const { raw, edited } = lastInsertedTextRef.current
-    swapLastTake(raw, edited)
-    setReverted(false)
-    dictationControl?.restoreEdited?.()
+    formRef.current?.focus()
   }
 
   function handleInsertOrphaned(transcript: DictationResult): void {
-    if (chrome === 'buttons') {
-      if (!onPasteToTerminal) return
-      onPasteToTerminal(transcript.text)
-      dictationControl?.dismissOrphaned?.(transcript.sessionId)
-      return
-    }
-    setValue((prev) => {
-      if (prev.length === 0) return transcript.text
-      return prev.endsWith(' ') ? `${prev}${transcript.text}` : `${prev} ${transcript.text}`
-    })
-    if (transcript.sessionId) {
-      dictationControl?.dismissOrphaned?.(transcript.sessionId)
-    }
-    inputRef.current?.focus()
+    if (!onPasteToTerminal) return
+    onPasteToTerminal(transcript.text)
+    dictationControl?.dismissOrphaned?.(transcript.sessionId)
   }
 
   const isButtonDisabled = isDesktopBypass
@@ -313,14 +209,12 @@ export function PromptInput({
   const activeError = isDesktopBypass
     ? dictation?.error
     : ((ownsResult ? dictationControl?.error : null) ?? dictation?.error)
-  const buttonsOnly = chrome === 'buttons'
   const sendButton = (
     <button
       type="submit"
       className="nk-prompt-submit flex h-full shrink-0 items-center gap-1.5 bg-button px-2.5 text-xs text-ink hover:bg-button-hover disabled:cursor-not-allowed disabled:text-ink-disabled"
       data-testid={TEST_ID.terminalPromptSend}
-      title={buttonsOnly ? 'Send the draft. An empty draft presses Enter.' : undefined}
-      disabled={!buttonsOnly && value.length === 0}
+      title="Press Enter in the console."
     >
       <Icon.send size={14} aria-hidden />
       Send
@@ -341,99 +235,35 @@ export function PromptInput({
     </button>
   )
 
+  if (!visible) return null
+
   return (
     <form
       ref={formRef}
-      tabIndex={buttonsOnly ? -1 : undefined}
-      className={
-        buttonsOnly
-          ? 'nk-prompt relative flex shrink-0 flex-wrap items-center justify-center gap-2 bg-terminal pt-2'
-          : 'nk-prompt flex shrink-0 flex-wrap items-center gap-2 bg-terminal pt-2'
-      }
-      data-prompt-chrome={chrome}
+      tabIndex={-1}
+      className="nk-prompt relative flex shrink-0 flex-wrap items-center justify-center gap-2 bg-terminal pt-2"
       onSubmit={(event) => {
         event.preventDefault()
-        submit()
+        onSend()
       }}
       onKeyDown={(event) => {
         // Esc cancels capture and aborts in-flight transcription (AC-012),
-        // from the textarea or from the Dictation button.
+        // from the action row or the Dictation button.
         if (event.key === 'Escape' && !isDesktopBypass && dictationControl?.isBusy) {
           event.preventDefault()
           void dictationControl.cancel()
         }
       }}
     >
-      {/* overflow-hidden clips the segment group's right corners to the frame
-          radius, so the group reads as the input's right segment. Buttons-only
-          chrome keeps the same frame as a centered pair: the textarea stays
-          mounted for pending draft injections, out of the tab order. */}
-      <div
-        className={
-          buttonsOnly
-            ? 'nk-prompt-frame relative flex h-control shrink-0 items-stretch overflow-hidden rounded-md border border-control-edge bg-panel focus-within:border-info'
-            : 'nk-prompt-frame flex min-h-control min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-control-edge bg-panel pl-3 focus-within:border-info'
-        }
-      >
-        {buttonsOnly ? null : (
-          <span
-            aria-hidden="true"
-            className="nk-prompt-marker select-none font-mono text-ink-muted"
-          >
-            &gt;
-          </span>
-        )}
-        <textarea
-          ref={inputRef}
-          rows={buttonsOnly ? 1 : Math.min(5, value.split('\n').length)}
-          tabIndex={buttonsOnly ? -1 : undefined}
-          className={
-            buttonsOnly
-              ? 'terminal-prompt-input sr-only'
-              : 'terminal-prompt-input min-w-0 flex-1 resize-none bg-transparent py-1 font-mono text-[13px] text-ink outline-none placeholder:text-ink-muted'
-          }
-          data-testid={TEST_ID.terminalPromptInput}
-          aria-label="Terminal input"
-          placeholder={placeholder}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault()
-              submit()
-            }
-          }}
-        />
-        {/* The frame's right end is one segment group (design doc 5): Send and
-            Dictation glued over a single bg-button surface with the centered
-            hairline between them, and no divider on the input side. */}
-        <div
-          className={
-            buttonsOnly
-              ? 'flex h-full shrink-0 items-stretch bg-button'
-              : 'flex shrink-0 items-stretch self-stretch bg-button'
-          }
-        >
-          {/* With the text field, Send stays left of Dictation. Buttons-only
-              chrome puts Send on the right. Send is disabled while a visible
-              field is empty. An empty buttons-only draft presses Enter. */}
-          {buttonsOnly ? dictationButton : sendButton}
+      <div className="nk-prompt-frame relative flex h-control shrink-0 items-stretch overflow-hidden rounded-md border border-control-edge bg-panel focus-within:border-info">
+        <div className="flex h-full shrink-0 items-stretch bg-button">
+          {dictationButton}
           {/* Toolbar-standard separator (design doc 5): a single low-contrast
               hairline, vertically centered, shorter than the buttons. */}
           <span aria-hidden="true" className="h-4 w-px self-center bg-divider" />
-          {buttonsOnly ? sendButton : dictationButton}
+          {sendButton}
         </div>
       </div>
-      {showRawBanner && (lastInsertedTextRef.current?.raw || dictationControl?.rawText) ? (
-        <RawTranscriptBanner
-          rawText={lastInsertedTextRef.current?.raw ?? dictationControl?.rawText ?? ''}
-          editedText={lastInsertedTextRef.current?.edited ?? dictationControl?.text ?? undefined}
-          reverted={reverted}
-          onRevert={handleRevertToRaw}
-          onRestore={handleRestoreEdited}
-          onDismiss={() => setShowRawBanner(false)}
-        />
-      ) : null}
       {dictationControl?.orphanedTranscripts?.map((orphaned) => {
         const named = chatLabel?.(orphaned.chatId)?.trim()
         return (
@@ -451,7 +281,7 @@ export function PromptInput({
           {focusError ?? activeError}
         </p>
       ) : null}
-      {!showRawBanner && dictationWarning ? (
+      {dictationWarning ? (
         <p role="status" className="w-full text-xs text-warning">
           {dictationWarning === 'post-processing-rejected'
             ? 'Safety guardrails preserved original transcript.'

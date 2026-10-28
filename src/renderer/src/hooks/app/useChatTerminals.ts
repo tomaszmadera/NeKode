@@ -26,14 +26,14 @@ export function useChatTerminals(runtime: WorkspaceRuntime): {
   const setLiveChatIds = useChatStore((state) => state.setLiveChatIds)
   const autoSendHandoff = useSettingsStore((state) => state.autoSendHandoff)
   const [terminalCwds, setTerminalCwds] = useState<Record<string, string>>({})
-  // Pending prompt-input fill addressed to one chat (paste-only delivery).
+  // Pending console paste addressed to one chat (without submitting).
   const [promptInjection, setPromptInjection] = useState<PromptInjection | null>(null)
   const promptInjectionNonceRef = useRef(0)
 
   // Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): auto-send
   // writes the English command plus CR straight to the PTY through the
-  // split-write helper; the default paste mode fills the addressed chat's
-  // prompt input and waits for the user.
+  // split-write helper; the default pastes into the addressed console and
+  // waits for the user to submit.
   const handlePromptCommand = useCallback(
     (text: string): void => {
       const chatId = selectionRef.current.chatId
@@ -49,7 +49,7 @@ export function useChatTerminals(runtime: WorkspaceRuntime): {
   )
 
   // Start without sending (NEKODE-99): the prompt main returned for a delivered
-  // draft launch fills the new chat's prompt input; nothing is written to the PTY.
+  // draft launch is pasted into the new chat's console without submitting.
   const fillDraftPrompt = useCallback((chatId: string, text: string): void => {
     promptInjectionNonceRef.current += 1
     setPromptInjection({ chatId, text, nonce: promptInjectionNonceRef.current })

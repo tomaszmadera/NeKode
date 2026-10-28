@@ -681,22 +681,17 @@ Avoid syntax-editor conventions such as line numbers unless the console content 
 
 The console must look like a **running terminal agent**, not an AI chat.
 
-Prompt input (2026-09-28): every terminal view ends in a styled input row
-(`PromptInput`) instead of typing at the shell prompt line: a `>` glyph, a
-mono input in an `--radius-md` frame on `--color-panel` with a
-`--color-control-edge` border (info on focus), and the Send and Dictation controls
-at the right end of the frame. Send (2026-09-28: Lucide paper plane
-`Icon.send` plus the visible `Send` label) submits the line by click through
-the same PTY write path as Enter and is disabled while the input is empty; a
-centered hairline divider (design doc 5) separates Send from the Dictation
-control (design doc 21), the frame's last segment. The frame is the only
-boundary between
-terminal output and the input row: no separator line above the row (the old
-full-width hairline doubled the frame's border and rendered unevenly under
-fractional Windows scaling; removed 2026-09-28). Enter submits the line plus
-CR through the
-same PTY write path as typed input, so shell echo, history and the Ctrl+D
-emptiness gate keep working. Scrollbars render only when content overflows
+Terminal actions (2026-10-28): chat terminals end in `PromptActions`, a centered
+Dictation and Send pair with Send on the right. There is no separate text field
+and the device-local "Show Dictation and Send buttons" switch in App Settings >
+General > Terminal controls row visibility (default on). Hiding the row preserves
+console paste delivery. The `--radius-md` frame uses `--color-panel` and a
+`--color-control-edge` border (info on focus), with a centered hairline divider
+between the buttons. Send uses `Icon.send` and the visible `Send` label and
+presses Enter in the console, including when its line is empty. Dictation and
+Handoff/Resume drafts paste directly into the console without submitting.
+The bottom terminal has no action row. There is no separator above the row.
+Scrollbars render only when content overflows
 (xterm.css forces a permanent `overflow-y: scroll`; `index.css` overrides it
 to `auto`) and use `--color-scrollbar` / `--color-scrollbar-active`.
 
@@ -832,15 +827,13 @@ Do not show editor-specific metadata such as:
 
 Dictation should use a microphone icon.
 
-Implemented (2026-09-28): the Idle state ships as a disabled, labeled button
+Implemented (2026-10-28): the Idle state ships as a labeled button
 (`Icon.dictation` mic plus the visible `Dictation` label, `--color-button`
-surface, `--color-ink-disabled`) built into the terminal prompt input frame
-as its right segment (2026-09-28: its last segment, after the Send control,
-design doc 15): flush to the frame end at full inner height, square
-left edge, right corners following the frame radius (clipped by the frame).
+surface, `--color-ink-disabled` when disabled) in the terminal action frame,
+before Send (design doc 15), at full inner height. The frame clips the outer
+corners to its radius.
 The visible label names the control, so the icon is decorative
-(`aria-hidden`). No recognizer is wired yet, so Hover and Listening are
-pending until the dictation feature lands.
+(`aria-hidden`). Availability follows the selected dictation method and setup.
 
 States:
 

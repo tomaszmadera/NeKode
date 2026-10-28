@@ -282,8 +282,7 @@ describe('ChatWorkspace session host', () => {
     await waitFor(() => expect(bundle.app.terminals.create).toHaveBeenCalledTimes(1))
     const firstTerminal = mockTerminalInstances[0]
     expect(document.activeElement).toBe(firstTerminal.textarea)
-    const draft = screen.getByTestId(TEST_ID.terminalPromptInput)
-    draft.focus()
+    screen.getByTestId(TEST_ID.terminalPromptSend).focus()
 
     // Switch to chat two: its own lazy spawn; chat one stays alive and hidden.
     view.rerender(
@@ -689,12 +688,11 @@ describe('ChatWorkspace session host', () => {
         { chatId: 't2', selectionNonce: 2, attention: { t1: { message: null } } },
         vi.fn(),
       )
-      const hiddenInput = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
-        TEST_ID.terminalPromptInput,
+      const send = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
+        TEST_ID.terminalPromptSend,
       )
-      fireEvent.change(hiddenInput, { target: { value: 'go on' } })
-      fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
-      await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', 'go on'))
+      fireEvent.click(send)
+      await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\r'))
       expect(vi.mocked(playAttentionChime).mock.calls.length).toBe(chimesAfterSignal)
     })
 
@@ -712,14 +710,12 @@ describe('ChatWorkspace session host', () => {
         writeSpy,
       )
 
-      // The hidden chat's prompt input is mounted and addressable: submitting
-      // there is delivered input for exactly that chat.
-      const hiddenInput = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
-        TEST_ID.terminalPromptInput,
+      // The hidden chat's Send action delivers Enter to exactly that chat.
+      const send = within(screen.getByTestId(testIdFor.terminalView('t1'))).getByTestId(
+        TEST_ID.terminalPromptSend,
       )
-      fireEvent.change(hiddenInput, { target: { value: 'go on' } })
-      fireEvent.submit(hiddenInput.closest('form') as HTMLFormElement)
-      await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', 'go on'))
+      fireEvent.click(send)
+      await waitFor(() => expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', '\r'))
       expect(writeSpy).toHaveBeenLastCalledWith({})
     })
 
@@ -992,12 +988,6 @@ describe('ChatWorkspace dictation (AC-013)', () => {
     return { view, emit: () => act(() => emitResult(result)) }
   }
 
-  function promptOf(chatId: string): HTMLTextAreaElement {
-    return within(screen.getByTestId(testIdFor.terminalView(chatId))).getByTestId(
-      TEST_ID.terminalPromptInput,
-    ) as HTMLTextAreaElement
-  }
-
   it('keeps a take across a chat switch and offers it in the visible prompt', async () => {
     const bundle = createAppMock()
     const { view, emit } = await dictateInChatOne(bundle)
@@ -1009,13 +999,13 @@ describe('ChatWorkspace dictation (AC-013)', () => {
     emit()
 
     expect(bundle.app.dictation.cancel).not.toHaveBeenCalled()
-    expect(promptOf('t1').value).toBe('')
+    expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled()
     const visible = within(screen.getByTestId(testIdFor.terminalView('t2')))
     expect(visible.getByTestId('orphaned-transcript-banner').textContent).toContain(
       'Recovered transcript for First chat in Demo',
     )
     fireEvent.click(visible.getByTestId('insert-orphaned-transcript'))
-    expect(promptOf('t2').value).toBe('git status')
+    expect(mockTerminalInstances[1].paste).toHaveBeenCalledWith('git status')
     expect(screen.queryByTestId('orphaned-transcript-banner')).toBeNull()
   })
 

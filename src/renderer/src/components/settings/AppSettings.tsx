@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '../../lib/cn'
 import { Icon, type LucideIcon } from '../../lib/icons'
-import { isPromptChrome } from '../../lib/prompt-chrome'
 import { TEST_ID } from '../../lib/test-ids'
 import { isThemeId, THEME_IDS, THEMES } from '../../lib/theme'
 import { settingsError, useSettingsStore } from '../../stores/useSettingsStore'
@@ -109,8 +108,8 @@ export function AppSettings({
     onTerminalFontSizeChange,
     terminalCtrlVPaste,
     onTerminalCtrlVPasteChange,
-    promptChrome,
-    onPromptChromeChange,
+    terminalActionsVisible,
+    onTerminalActionsVisibleChange,
   } = useSettingsStore(
     useShallow((state) => ({
       theme: state.theme,
@@ -132,8 +131,8 @@ export function AppSettings({
       onTerminalFontSizeChange: state.setTerminalFontSize,
       terminalCtrlVPaste: state.terminalCtrlVPaste,
       onTerminalCtrlVPasteChange: state.setTerminalCtrlVPaste,
-      promptChrome: state.promptChrome,
-      onPromptChromeChange: state.setPromptChrome,
+      terminalActionsVisible: state.terminalActionsVisible,
+      onTerminalActionsVisibleChange: state.setTerminalActionsVisible,
     })),
   )
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab)
@@ -235,6 +234,18 @@ export function AppSettings({
               />
             </GroupBox>
           </SettingsGroup>
+          <SettingsGroup label="Terminal">
+            <SectionLabel title="Terminal" />
+            <GroupBox>
+              <SettingsSwitch
+                id="app-terminal-actions-visible"
+                label="Show Dictation and Send buttons"
+                description="Show the action row below chat consoles."
+                checked={terminalActionsVisible}
+                onChange={onTerminalActionsVisibleChange}
+              />
+            </GroupBox>
+          </SettingsGroup>
           <SettingsGroup label="Keyboard">
             <SectionLabel title="Keyboard" />
             <GroupBox>
@@ -253,25 +264,6 @@ export function AppSettings({
                 divided
                 onChange={onTerminalCtrlVPasteChange}
               />
-              <FieldRow
-                label="Chat prompt"
-                htmlFor="app-prompt-chrome"
-                description="Dictation and Send is the default, with Send on the right. An empty draft presses Enter."
-                divided
-              >
-                <SettingsSelect
-                  id="app-prompt-chrome"
-                  value={promptChrome}
-                  testId={TEST_ID.settingsPromptChrome}
-                  onChange={(value) => {
-                    if (isPromptChrome(value)) onPromptChromeChange(value)
-                  }}
-                >
-                  <option value="buttons">Dictation and Send</option>
-                  <option value="input">Text field with buttons</option>
-                  <option value="hidden">Hidden</option>
-                </SettingsSelect>
-              </FieldRow>
             </GroupBox>
           </SettingsGroup>
           <SettingsGroup label="Attention">
