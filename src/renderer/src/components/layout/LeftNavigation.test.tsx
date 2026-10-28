@@ -642,12 +642,12 @@ describe('LeftNavigation project avatar and initials', () => {
     // Add project button is hidden in Sessions view
     expect(screen.queryByTestId(TEST_ID.addProjectButton)).toBeNull()
 
-    // Flat list of sessions sorted by status: waiting first (c1), running (c2), idle (c3)
+    // Flat list of sessions remains in project and start order (never re-sorted by attention/status)
     const flatRows = screen.getAllByRole('button', { name: /Chat/ })
     expect(flatRows.length).toBe(3)
-    expect(flatRows[0].textContent).toContain('Chat 1') // waiting
-    expect(flatRows[1].textContent).toContain('Chat 2') // running
-    expect(flatRows[2].textContent).toContain('Chat 3') // idle
+    expect(flatRows[0].textContent).toContain('Chat 1')
+    expect(flatRows[1].textContent).toContain('Chat 2')
+    expect(flatRows[2].textContent).toContain('Chat 3')
 
     // Clicking a flat session row selects it
     fireEvent.click(flatRows[0])

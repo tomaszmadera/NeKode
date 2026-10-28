@@ -116,17 +116,6 @@ function resolveChatStatus(
   return 'idle'
 }
 
-function sessionSortPriority(status: SessionStatus): number {
-  switch (status) {
-    case 'waiting':
-      return 0
-    case 'running':
-      return 1
-    default:
-      return 2
-  }
-}
-
 export function LeftNavigation({
   projectNamesUppercase = true,
   showProjectIcons = true,
@@ -285,10 +274,6 @@ export function LeftNavigation({
         })
       }
     }
-
-    list.sort((a, b) => {
-      return sessionSortPriority(a.status) - sessionSortPriority(b.status)
-    })
 
     return list
   }, [

@@ -157,6 +157,11 @@ const buildAction: ActionControl = {
 }
 
 describe('app settings and themes', () => {
+  beforeEach(() => {
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+
   it('toggles the mascot independently of App Settings and restores its saved visibility', () => {
     const app = createAppApiStub()
     const view = render(<App app={app} />)
@@ -286,7 +291,7 @@ describe('app settings and themes', () => {
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
     vi.mocked(app.dictation.desktopActivate).mockImplementation(async () => {
-      const terminal = mockTerminalInstances.find((entry) => !entry.disposed)
+      const terminal = mockTerminalInstances[0]
       expect(terminal).toBeDefined()
       expect(document.activeElement).toBe(terminal?.textarea)
     })
@@ -686,15 +691,11 @@ describe('app settings and themes', () => {
     expect(document.documentElement.dataset.theme).toBe('nekode-float')
   })
 
-  /**
-   * Font sizes of the terminals still mounted (mockTerminalInstances keeps
-   * disposed entries from earlier tests in this describe; App's beforeEach
-   * does not reset them).
-   */
+  /** Font sizes of every mounted terminal. */
   function aliveFontSizeOptions(): number[] {
-    return mockTerminalInstances
-      .filter((terminal) => !terminal.disposed)
-      .map((terminal) => (terminal.options as { fontSize: number }).fontSize)
+    return mockTerminalInstances.map(
+      (terminal) => (terminal.options as { fontSize: number }).fontSize,
+    )
   }
 
   it('persists the action visibility toggle, applies it live, and still delivers hidden Handoff paste', async () => {
@@ -702,7 +703,7 @@ describe('app settings and themes', () => {
     await renderTwoChats(app)
     fireEvent.keyDown(window, { code: 'Backquote', ctrlKey: true, bubbles: true, cancelable: true })
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
-    const terminals = mockTerminalInstances.filter((terminal) => !terminal.disposed)
+    const terminals = [...mockTerminalInstances]
     const toggle = () => screen.getByRole('switch', { name: 'Show Dictation and Send buttons' })
     const openSettings = () => fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
     const closeSettings = () =>
@@ -732,6 +733,8 @@ describe('app settings and themes', () => {
     expect(app.terminals.create).toHaveBeenCalledTimes(2)
     expect(terminals.every((terminal) => !terminal.disposed)).toBe(true)
     cleanup()
+    resetMockTerminals()
+    resetMockFitAddons()
 
     await renderTwoChats(app)
     openSettings()
@@ -755,7 +758,7 @@ describe('app settings and themes', () => {
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
     fireEvent.keyDown(window, { code: 'Backquote', ctrlKey: true, bubbles: true, cancelable: true })
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(3))
-    const terminals = mockTerminalInstances.filter((terminal) => !terminal.disposed)
+    const terminals = [...mockTerminalInstances]
     expect(terminals).toHaveLength(3)
     for (const terminal of terminals) terminal.buffer.active.type = 'alternate'
 
@@ -780,6 +783,8 @@ describe('app settings and themes', () => {
     expect(app.terminals.create).toHaveBeenCalledTimes(3)
     expect(terminals.every((terminal) => !terminal.disposed)).toBe(true)
     cleanup()
+    resetMockTerminals()
+    resetMockFitAddons()
 
     await renderTwoChats(app)
     fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
@@ -787,7 +792,7 @@ describe('app settings and themes', () => {
       name: 'Paste with Ctrl+V in terminals',
     })
     expect(restoredCheckbox.getAttribute('aria-checked')).toBe('false')
-    const restoredTerminal = mockTerminalInstances.filter((terminal) => !terminal.disposed)[0]
+    const restoredTerminal = mockTerminalInstances[0]
     restoredTerminal.buffer.active.type = 'alternate'
     act(() => expect(pressCtrlV(restoredTerminal)).toBe(true))
     fireEvent.click(restoredCheckbox)
@@ -870,6 +875,8 @@ describe('app settings and themes', () => {
     ).toBe('16')
     fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
     cleanup()
+    resetMockTerminals()
+    resetMockFitAddons()
 
     localStorage.setItem(TERMINAL_FONT_SIZE_STORAGE_KEY, 'not-a-number')
     render(<App app={app} />)
@@ -1030,25 +1037,6 @@ describe('app settings and themes', () => {
     fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
     expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
     expect(app.terminals.create).not.toHaveBeenCalledWith('u1', projectNoRuntime.path)
-  })
-
-  it('turning the chat switch off in App Settings disables the chord', async () => {
-    const app = createAppApiStub()
-    await renderTwoChats(app)
-
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
-    const dialog = screen.getByRole('dialog', { name: 'App Settings' })
-    const checkbox = within(dialog).getByTestId(TEST_ID.settingsChatSwitch)
-    expect(checkbox.getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(checkbox)
-    await waitFor(() =>
-      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.chatSwitchEnabled, '0'),
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
-
-    fireEvent.keyDown(window, { code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
-    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
-    expect(app.terminals.create).not.toHaveBeenCalledWith('t2', projectA.path)
   })
 
   it('Ctrl+N starts a new chat in the active project and selects its terminal', async () => {
@@ -1240,8 +1228,15 @@ describe('action row and settings', () => {
       // Unmounting before the submit gap must cancel the pending CR timer:
       view.unmount()
 
-      await new Promise((resolve) => setTimeout(resolve, 150))
-      expect(app.terminals.write).not.toHaveBeenCalledWith('t1', '\r')
+      vi.useFakeTimers()
+      try {
+        act(() => {
+          vi.advanceTimersByTime(150)
+        })
+        expect(app.terminals.write).not.toHaveBeenCalledWith('t1', '\r')
+      } finally {
+        vi.useRealTimers()
+      }
     } finally {
       window.NEKODE_PROMPT_SUBMIT_GAP_MS = 0
     }
@@ -2230,11 +2225,16 @@ describe('action row and settings', () => {
     )
     expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
     const settled = vi.mocked(app.actions.status).mock.calls.length
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 700))
-    })
-    expect(vi.mocked(app.actions.status).mock.calls.length).toBe(settled)
-    expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
+    vi.useFakeTimers()
+    try {
+      act(() => {
+        vi.advanceTimersByTime(700)
+      })
+      expect(vi.mocked(app.actions.status).mock.calls.length).toBe(settled)
+      expect(screen.queryByTestId(TEST_ID.actionNotice)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

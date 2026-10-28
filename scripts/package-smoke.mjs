@@ -276,6 +276,26 @@ try {
     chats.some((item) => item.id === chat.id),
     'SQLite chat must persist across restarts',
   )
+
+  // Verify sender guard frame identity (NEKODE-139): invoke from main frame succeeds (above).
+  // Subframes cannot invoke privileged IPC: iframes have no IPC bridge and untrusted subframe invokes are rejected.
+  const subframeCheck = await evaluate(`
+    new Promise((resolve) => {
+      const frame = document.createElement('iframe')
+      document.body.appendChild(frame)
+      try {
+        resolve({
+          hasApp: Boolean(frame.contentWindow?.app),
+          hasIpcRenderer: Boolean(frame.contentWindow?.require || frame.contentWindow?.electron),
+        })
+      } finally {
+        frame.remove()
+      }
+    })
+  `)
+  assert.equal(subframeCheck.hasApp, false, 'Iframe must not have window.app IPC bridge')
+  assert.equal(subframeCheck.hasIpcRenderer, false, 'Iframe must not have direct IPC access')
+
   await evaluate(`window.app.chats.remove(${JSON.stringify(chat.id)})`)
   await stop()
   const survivors = processSnapshot().filter(
@@ -286,6 +306,7 @@ try {
     JSON.stringify({
       executable,
       renderer: 'pass',
+      senderGuard: 'pass',
       sqliteRestart: 'pass',
       pty: 'pass',
       resources: 'pass',
