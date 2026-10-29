@@ -1,6 +1,7 @@
 import type {
   ActionControl,
   ActionExecution,
+  AgentProfilesDocument,
   AppApi,
   SessionTaskProgress,
 } from '@shared/ipc-contract'
@@ -14,6 +15,7 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import type { MarkdownViewMode } from '../files/markdown-path'
 import { KanbanSearch } from '../kanban/KanbanSearch'
 import type { KanbanSortBy, KanbanToolbarControls } from '../kanban/kanban-board-logic'
+import { NewChatAgentMenu } from '../layout/LeftNavigation'
 import { TaskProgressButton } from '../task-progress/TaskProgressButton'
 import { ActionContextMenu } from './ActionContextMenu'
 
@@ -25,6 +27,9 @@ interface ActionBarProps {
   chatIsLive: boolean
   /** Create a new session in the active project. */
   onNewChat?: () => void
+  loadAgentProfiles?: (projectId: string) => Promise<AgentProfilesDocument>
+  onCreateAgentChat?: (projectId: string, profileId: string) => Promise<boolean>
+  onConfigureAgents?: (projectId: string) => void
   onNewTerminal: (execution: ActionExecution) => void
   /** Bottom-terminal delivery: opens the panel and adds a new bottom tab. */
   onBottomTerminal: (execution: ActionExecution, projectId: string) => void
@@ -98,6 +103,9 @@ export function ActionBar({
   activeChatId,
   chatIsLive,
   onNewChat,
+  loadAgentProfiles,
+  onCreateAgentChat,
+  onConfigureAgents,
   onNewTerminal,
   onBottomTerminal,
   onPromptCommand,
@@ -108,6 +116,19 @@ export function ActionBar({
   isKanban = false,
   kanbanControls = null,
 }: ActionBarProps): React.JSX.Element {
+  const [newChatMenu, setNewChatMenu] = useState<{
+    projectId: string
+    x: number
+    y: number
+  } | null>(null)
+  useEffect(() => {
+    if (newChatMenu === null) return
+    const close = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setNewChatMenu(null)
+    }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [newChatMenu])
   const [states, setStates] = useState<Record<string, ActionExecution>>({})
   const [contextMenu, setContextMenu] = useState<{
     action: ActionControl
@@ -356,6 +377,19 @@ export function ActionBar({
           onClick={() => {
             onNewChat?.()
           }}
+          onContextMenu={(event) => {
+            if (!projectId || !loadAgentProfiles || !onCreateAgentChat || !onConfigureAgents) return
+            event.preventDefault()
+            setNewChatMenu({ projectId, x: event.clientX, y: event.clientY })
+          }}
+          onKeyDown={(event) => {
+            if (!projectId || !loadAgentProfiles || !onCreateAgentChat || !onConfigureAgents) return
+            if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+              event.preventDefault()
+              const rect = event.currentTarget.getBoundingClientRect()
+              setNewChatMenu({ projectId, x: rect.left, y: rect.bottom })
+            }
+          }}
         >
           <Icon.newChat
             size={15}
@@ -364,6 +398,15 @@ export function ActionBar({
           />
         </button>
       </div>
+      {newChatMenu && loadAgentProfiles && onCreateAgentChat && onConfigureAgents ? (
+        <NewChatAgentMenu
+          state={newChatMenu}
+          loadProfiles={loadAgentProfiles}
+          onCreateChat={onCreateAgentChat}
+          onConfigureAgents={onConfigureAgents}
+          onClose={() => setNewChatMenu(null)}
+        />
+      ) : null}
       {isKanban ? (
         <>
           <div className="nk-btn-group shrink-0">

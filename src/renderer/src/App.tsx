@@ -411,6 +411,9 @@ function AppContent({
                   : null
               }
               onNewChat={selection.handleStartNewChat}
+              loadAgentProfiles={selection.loadAgentProfiles}
+              onCreateAgentChat={selection.handleCreateAgentChat}
+              onConfigureAgents={projectSettings.openAgentsSettings}
               onNewTerminal={selection.handleNewTerminalAction}
               onBottomTerminal={bottom.handleBottomTerminalAction}
               onPromptCommand={terminals.handlePromptCommand}

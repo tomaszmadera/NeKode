@@ -2959,6 +2959,33 @@ describe('project and chat data flow', () => {
     expect(screen.queryByTestId(TEST_ID.newChatAgentMenu)).toBeNull()
   })
 
+  it('action bar new session menu opens by mouse and keyboard and launches the selected agent', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({
+      defaultId: null,
+      profiles: [codexProfile],
+    })
+    vi.mocked(app.chats.createWithAgent).mockResolvedValue({
+      id: 'a7',
+      projectId: 'p1',
+      name: 'Codex',
+      agentName: 'Codex',
+    })
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    const button = await screen.findByTestId(TEST_ID.actionNewChat)
+    fireEvent.contextMenu(button, { clientX: 40, clientY: 60 })
+    expect(await screen.findByTestId(testIdFor.newChatAgentProfile('prof-1'))).toBeTruthy()
+    expect(app.chats.createWithAgent).not.toHaveBeenCalled()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.newChatAgentMenu)).toBeNull()
+    fireEvent.keyDown(button, { key: 'F10', shiftKey: true })
+    fireEvent.click(await screen.findByTestId(testIdFor.newChatAgentProfile('prof-1')))
+    await waitFor(() => expect(app.chats.createWithAgent).toHaveBeenCalledWith('p1', 'prof-1'))
+    expect(app.chats.create).not.toHaveBeenCalled()
+  })
+
   it('new-chat agent menu: choosing a profile creates and adopts the agent chat', async () => {
     const agentChat: ChatInfo = {
       id: 'a7',

@@ -1486,7 +1486,7 @@ function ContextMenuOverlay({
   )
 }
 
-function NewChatAgentMenu({
+export function NewChatAgentMenu({
   state,
   loadProfiles,
   onCreateChat,
