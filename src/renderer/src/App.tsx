@@ -229,7 +229,7 @@ function AppContent({
   const handleConfigureProjectHandoffs = useCallback(
     (projectId: string): void => {
       setNotice(null)
-      openProjectSettings(projectId, 'actions')
+      openProjectSettings(projectId, 'kanban')
     },
     [openProjectSettings, setNotice],
   )
@@ -578,7 +578,7 @@ function AppContent({
           onPick={terminals.handlePromptCommand}
           onConfigure={() => {
             setHandoffPickerOpen(false)
-            projectSettings.openProjectSettings(tabProjectId, 'actions')
+            projectSettings.openProjectSettings(tabProjectId, 'kanban')
           }}
           onClose={() => setHandoffPickerOpen(false)}
         />

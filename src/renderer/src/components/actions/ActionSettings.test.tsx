@@ -23,6 +23,10 @@ function shellAppMock(): AppApi {
       shellAddCustom: vi.fn(),
     },
     state: {},
+    kanban: {
+      adaptersList: vi.fn().mockResolvedValue([]),
+      getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
+    },
   } as unknown as AppApi
 }
 
@@ -47,7 +51,7 @@ describe('PowerShell action option', () => {
     }
     const view = render(<ActionSettings {...props} />)
     // The modal opens on the Shell tab; the action form lives on the
-    // Actions & Configuration tab.
+    // Actions tab.
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Example' } })
@@ -138,7 +142,7 @@ describe('Kanban tab shell', () => {
     } as unknown as AppApi
   }
 
-  it('renders Tasks as its own tab and keeps the Configuration/Actions sections on theirs', async () => {
+  it('places handoff settings in Tasks and toolbar actions in Actions', async () => {
     const props = {
       app: kanbanAppMock(),
       actions: [] as ActionControl[],
@@ -154,16 +158,16 @@ describe('Kanban tab shell', () => {
     // Visible section label is Tasks (project-home spec Behaviour 6).
     expect(kanbanTab.textContent).toBe('Tasks')
     expect(kanbanTab.getAttribute('aria-selected')).toBe('false')
-    // The Configuration section is not part of the Kanban tab.
+    // Handoff settings appear only on the Tasks tab.
     expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
 
     fireEvent.click(kanbanTab)
     await screen.findByTestId(TEST_ID.settingsKanbanPanel)
-    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
-
-    // The existing sections are untouched: back on Actions & Configuration.
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
+
+    // Actions has its own toolbar controls.
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
   })
 
@@ -253,7 +257,7 @@ describe('Kanban tab shell', () => {
     // No click: the dialog mounts directly on the Kanban tab.
     expect(screen.getByTestId(TEST_ID.settingsKanbanTab).getAttribute('aria-selected')).toBe('true')
     expect(await screen.findByTestId(TEST_ID.settingsKanbanPanel)).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
   })
 
   it('adds an Agents tab beside Shell, Actions, and Tasks', async () => {
@@ -292,7 +296,7 @@ describe('Kanban tab shell', () => {
     expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
 
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-    expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.settingsAgentsPanel)).toBeNull()
   })
 
@@ -331,10 +335,7 @@ describe('handoff directory save', () => {
     const set = vi.fn().mockResolvedValue(undefined)
     const onKanbanInvalidate = vi.fn()
     const app = {
-      terminals: {
-        shellDetect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
-        shellAddCustom: vi.fn(),
-      },
+      ...shellAppMock(),
       state: { get: vi.fn().mockResolvedValue('old/dir'), set },
       dialogs: { pickDirectory: vi.fn().mockResolvedValue(null) },
     } as unknown as AppApi
@@ -348,7 +349,7 @@ describe('handoff directory save', () => {
         onAutoSendChange={vi.fn()}
         onRefresh={vi.fn().mockResolvedValue(undefined)}
         onClose={vi.fn()}
-        initialTab="actions"
+        initialTab="kanban"
         onKanbanInvalidate={onKanbanInvalidate}
       />,
     )
@@ -667,7 +668,7 @@ describe('mutation in-flight guards and duplicate prevention', () => {
       state: { get: vi.fn().mockResolvedValue('old/dir'), set },
       dialogs: { pickDirectory: vi.fn().mockResolvedValue(null) },
     } as unknown as AppApi
-    render(<ActionSettings {...guardProps(app, 'p1', 'D:/p')} initialTab="actions" />)
+    render(<ActionSettings {...guardProps(app, 'p1', 'D:/p')} initialTab="kanban" />)
     const input = await screen.findByTestId(TEST_ID.settingsHandoffDir)
     fireEvent.change(input, { target: { value: '.agents/handoffs' } })
     const button = screen.getByTestId(TEST_ID.settingsHandoffDirSave) as HTMLButtonElement
@@ -706,7 +707,7 @@ describe('mutation in-flight guards and duplicate prevention', () => {
       state: { get: vi.fn().mockResolvedValue('old/dir'), set: vi.fn() },
       dialogs: { pickDirectory },
     } as unknown as AppApi
-    render(<ActionSettings {...guardProps(app, 'p1', 'D:/p')} initialTab="actions" />)
+    render(<ActionSettings {...guardProps(app, 'p1', 'D:/p')} initialTab="kanban" />)
     const button = (await screen.findByTestId(
       TEST_ID.settingsHandoffDirBrowse,
     )) as HTMLButtonElement

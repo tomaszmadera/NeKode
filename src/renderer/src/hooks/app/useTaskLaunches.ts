@@ -83,7 +83,7 @@ export function useTaskLaunches(
       return
     }
     setNotice(null)
-    openProjectSettings(projectId, 'actions')
+    openProjectSettings(projectId, 'kanban')
   }, [openProjectSettings, setNotice, taskResume])
 
   const handleTaskLaunched = useCallback(

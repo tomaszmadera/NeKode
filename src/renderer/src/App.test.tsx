@@ -1458,7 +1458,7 @@ describe('action row and settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     const dialog = await screen.findByRole('dialog', { name: 'Project Settings' })
     // An unsaved edit plus a mouse down inside the dialog: it stays open.
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
     fireEvent.change(screen.getByTestId(TEST_ID.settingsHandoffDir), {
       target: { value: '.agents/handoffs' },
     })
@@ -1480,9 +1480,8 @@ describe('action row and settings', () => {
     await renderSelectedChat()
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
-    // The modal opens on the Shell tab; the Configuration section lives on
-    // Actions & Configuration.
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    // The modal opens on the Shell tab; the handoff settings live on Tasks.
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
 
     const autoSend = screen.getByTestId(TEST_ID.settingsAutoSend)
     expect(autoSend.getAttribute('aria-checked')).toBe('false')
@@ -1505,7 +1504,7 @@ describe('action row and settings', () => {
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/.agents/handoffs')
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
     // The picked directory stores relative to the project root.
     await waitFor(() =>
@@ -1521,7 +1520,7 @@ describe('action row and settings', () => {
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/elsewhere/handoffs')
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
     await waitFor(() =>
       expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
@@ -1535,7 +1534,7 @@ describe('action row and settings', () => {
     vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/handoffs')
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
     fireEvent.change(screen.getByTestId(TEST_ID.settingsHandoffDir), {
       target: { value: '.agents/handoffs' },
     })

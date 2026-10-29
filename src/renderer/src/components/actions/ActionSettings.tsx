@@ -358,7 +358,90 @@ export function ActionSettings({
       {activeTab === 'shell' ? (
         <ShellTab app={app} projectId={projectId} onProjectColorChange={onProjectColorChange} />
       ) : activeTab === 'kanban' ? (
-        <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
+        <div className="flex max-w-[660px] flex-col gap-7">
+          <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
+          <SettingsGroup label="Handoff">
+            <SectionLabel title="Handoff" />
+            <GroupBox>
+              <div data-testid={TEST_ID.settingsConfigSection}>
+                <SettingsSwitch
+                  id="settings-auto-send"
+                  label="Auto-send after Handoff and Resume"
+                  description="Sends the handoff prompt without waiting for Enter."
+                  checked={autoSend}
+                  testId={TEST_ID.settingsAutoSend}
+                  onChange={onAutoSendChange}
+                />
+                {projectId !== null ? (
+                  <StackedRow
+                    label="Handoff directory"
+                    htmlFor="settings-handoff-dir"
+                    help="Relative to the project root, or absolute."
+                    divided
+                  >
+                    <span className="flex gap-2">
+                      <input
+                        id="settings-handoff-dir"
+                        className={cn(monoClass, 'min-w-0 flex-1')}
+                        value={handoffDir}
+                        placeholder=".agents/handoffs"
+                        spellCheck={false}
+                        data-testid={TEST_ID.settingsHandoffDir}
+                        onChange={(event) => {
+                          setHandoffDir(event.target.value)
+                          setHandoffDirSaved(false)
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={guard.busy}
+                        className={secondaryClass}
+                        data-testid={TEST_ID.settingsHandoffDirBrowse}
+                        onClick={() => {
+                          void browseHandoffDir()
+                        }}
+                      >
+                        Browse
+                      </button>
+                    </span>
+                  </StackedRow>
+                ) : null}
+                {configError ? (
+                  <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
+                    {configError}
+                  </p>
+                ) : null}
+                {projectId !== null ? (
+                  <GroupFooter
+                    status={
+                      handoffDirSaved ? (
+                        <span
+                          className="text-success"
+                          data-testid={TEST_ID.settingsHandoffDirSaved}
+                        >
+                          Saved
+                        </span>
+                      ) : null
+                    }
+                  >
+                    <button
+                      type="button"
+                      aria-label="Save handoff directory"
+                      disabled={guard.busy}
+                      className={primaryClass}
+                      data-testid={TEST_ID.settingsHandoffDirSave}
+                      onClick={() => {
+                        void saveHandoffDir()
+                      }}
+                    >
+                      Save
+                    </button>
+                  </GroupFooter>
+                ) : null}
+              </div>
+            </GroupBox>
+          </SettingsGroup>
+        </div>
       ) : activeTab === 'taskProgress' ? (
         <TaskProgressSettings app={app} projectId={projectId} />
       ) : activeTab === 'agents' ? (
@@ -370,93 +453,9 @@ export function ActionSettings({
         />
       ) : (
         <div className="flex max-w-[660px] flex-col gap-7">
-          <PageIntro
-            title="Actions"
-            description="Handoff settings and the command buttons in this project's toolbar."
-          />
+          <PageIntro title="Actions" description="Command buttons in this project's toolbar." />
           {form === null ? (
             <>
-              <SettingsGroup label="Handoff">
-                <SectionLabel title="Handoff" />
-                <GroupBox>
-                  <div data-testid={TEST_ID.settingsConfigSection}>
-                    <SettingsSwitch
-                      id="settings-auto-send"
-                      label="Auto-send after Handoff and Resume"
-                      description="Sends the handoff prompt without waiting for Enter."
-                      checked={autoSend}
-                      testId={TEST_ID.settingsAutoSend}
-                      onChange={onAutoSendChange}
-                    />
-                    {projectId !== null ? (
-                      <StackedRow
-                        label="Handoff directory"
-                        htmlFor="settings-handoff-dir"
-                        help="Relative to the project root, or absolute."
-                        divided
-                      >
-                        <span className="flex gap-2">
-                          <input
-                            id="settings-handoff-dir"
-                            className={cn(monoClass, 'min-w-0 flex-1')}
-                            value={handoffDir}
-                            placeholder=".agents/handoffs"
-                            spellCheck={false}
-                            data-testid={TEST_ID.settingsHandoffDir}
-                            onChange={(event) => {
-                              setHandoffDir(event.target.value)
-                              setHandoffDirSaved(false)
-                            }}
-                          />
-                          <button
-                            type="button"
-                            disabled={guard.busy}
-                            className={secondaryClass}
-                            data-testid={TEST_ID.settingsHandoffDirBrowse}
-                            onClick={() => {
-                              void browseHandoffDir()
-                            }}
-                          >
-                            Browse
-                          </button>
-                        </span>
-                      </StackedRow>
-                    ) : null}
-                    {configError ? (
-                      <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
-                        {configError}
-                      </p>
-                    ) : null}
-                    {projectId !== null ? (
-                      <GroupFooter
-                        status={
-                          handoffDirSaved ? (
-                            <span
-                              className="text-success"
-                              data-testid={TEST_ID.settingsHandoffDirSaved}
-                            >
-                              Saved
-                            </span>
-                          ) : null
-                        }
-                      >
-                        <button
-                          type="button"
-                          aria-label="Save handoff directory"
-                          disabled={guard.busy}
-                          className={primaryClass}
-                          data-testid={TEST_ID.settingsHandoffDirSave}
-                          onClick={() => {
-                            void saveHandoffDir()
-                          }}
-                        >
-                          Save
-                        </button>
-                      </GroupFooter>
-                    ) : null}
-                  </div>
-                </GroupBox>
-              </SettingsGroup>
               <SettingsGroup label="Toolbar actions">
                 <SectionLabel
                   title={`Toolbar actions · ${visible.length}`}
