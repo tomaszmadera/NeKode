@@ -730,6 +730,7 @@ describe('LeftNavigation project avatar and initials', () => {
 
     const menu = await screen.findByTestId(TEST_ID.newChatAgentMenu)
     expect(menu.parentElement?.parentElement).toBe(document.body)
+    expect(menu.parentElement?.classList.contains('no-drag')).toBe(true)
 
     const profileItem = await screen.findByTestId(testIdFor.newChatAgentProfile('p-1'))
     expect(profileItem.className).toContain('block')

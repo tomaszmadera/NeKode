@@ -1548,7 +1548,7 @@ export function NewChatAgentMenu({
     <div
       role="menu"
       aria-label="New chat with agent"
-      className="fixed inset-0 z-40"
+      className="no-drag fixed inset-0 z-40"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           onClose()
