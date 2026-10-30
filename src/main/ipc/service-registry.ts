@@ -26,15 +26,10 @@ import type {
   FilePreview,
   GitFileStatuses,
   GitStatus,
-  HandoffCandidatesResult,
-  HandoffEntry,
   KanbanAdapterInfo,
   KanbanBoard,
   KanbanComment,
   KanbanCreateInput,
-  KanbanHandoffAvailabilityInput,
-  KanbanHandoffAvailabilityResult,
-  KanbanHandoffCandidatesInput,
   KanbanItemWriteResult,
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
@@ -43,6 +38,12 @@ import type {
   KanbanSkillStatus,
   KanbanUpdatePatch,
   ProjectInfo,
+  ResumeSourceBinding,
+  ResumeSourceDiscovery,
+  ResumeSourceLibrary,
+  ResumeSourcePreview,
+  ResumeSourcePut,
+  ResumeSourcesChanged,
   ShellInfo,
   SttProviderSummary,
   TaskProgressAdapterList,
@@ -235,10 +236,26 @@ export interface AppServices {
     showInFolder(projectId: string, relativePath: string): Promise<void>
     trash(projectId: string, relativePath: string): Promise<void>
   }
-  handoffs: {
-    /** Regular files of the project's configured handoff directory, newest first. */
-    list(projectId: string): Promise<HandoffEntry[]>
-    resumePrompt(projectId: string, handoffPath: string): Promise<string>
+  resumeSources: {
+    list(): ResumeSourceLibrary
+    put(input: ResumeSourcePut): ResumeSourceLibrary
+    duplicate(id: string, revision: number): ResumeSourceLibrary
+    delete(id: string, revision: number): ResumeSourceLibrary
+    test(
+      templateId: string,
+      projectId: string,
+      revision: number,
+      requestId: string,
+    ): Promise<ResumeSourcePreview>
+    cancel(requestId: string): void
+    onChanged(callback: (event: ResumeSourcesChanged) => void): Unsubscribe
+    bind(projectId: string, templateId: string | null): ResumeSourceBinding
+    binding(projectId: string): ResumeSourceBinding
+    discover(projectId: string, requestId: string): Promise<ResumeSourceDiscovery>
+    prepare(projectId: string, token: string, requestId: string): Promise<string>
+    importLegacy(): Promise<string | null>
+    dropProject(projectId: string): void
+    shutdown(): Promise<void>
   }
   kanban: {
     /** Adapters discovered in the configured adapters directory (fresh scan). */
@@ -275,15 +292,6 @@ export interface AppServices {
     getComments(projectId: string, ref: string): Promise<KanbanComment[]>
     /** Start one task chat. Same attempt id returns the same chat. */
     launchTask(input: KanbanLaunchTaskInput): Promise<KanbanLaunchResult>
-    /** One handoff scan for an item. Read-only; failures are distinct states. */
-    handoffCandidates(input: KanbanHandoffCandidatesInput): Promise<HandoffCandidatesResult>
-    /**
-     * One batch handoff scan for the loaded items: one directory read and at
-     * most one read per qualifying file, matched against every item.
-     */
-    handoffAvailability(
-      input: KanbanHandoffAvailabilityInput,
-    ): Promise<KanbanHandoffAvailabilityResult>
     /** Per-project key cleanup on projects:remove; not on the renderer bridge. */
     cleanupProject(projectId: string): void
     /** Drops in-flight Start launches for a removed project. Not on the renderer bridge. */

@@ -13,6 +13,7 @@ import { DictationDictionary } from './DictationDictionary'
 import { DictationSettings } from './DictationSettings'
 import { FontsSettings } from './FontsSettings'
 import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
+import { ResumeTemplatesSettings } from './ResumeTemplatesSettings'
 import { SettingsShell } from './SettingsShell'
 import {
   FieldRow,
@@ -36,13 +37,14 @@ interface AppSettingsProps {
   onClose: () => void
 }
 
-type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation' | 'agents' | 'usage'
+type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation' | 'agents' | 'usage' | 'resume'
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }> = [
   { id: 'general', label: 'General', icon: Icon.sliders },
   { id: 'fonts', label: 'Fonts', icon: Icon.type },
   { id: 'shortcuts', label: 'Shortcuts', icon: Icon.keyboard },
   { id: 'dictation', label: 'Dictation', icon: Icon.dictation },
   { id: 'agents', label: 'Agents', icon: Icon.agent },
+  { id: 'resume', label: 'Resume templates', icon: Icon.sliders },
   { id: 'usage', label: 'Usage', icon: Icon.gauge },
 ]
 function tabId(tab: SettingsTab): string {
@@ -304,6 +306,8 @@ export function AppSettings({
           </SettingsGroup>
           <AppUpdateBlock app={app} />
         </div>
+      ) : activeTab === 'resume' ? (
+        <ResumeTemplatesSettings app={app} />
       ) : activeTab === 'usage' ? (
         <UsageSettings app={app} onSaved={onUsageSaved} />
       ) : activeTab === 'agents' ? (

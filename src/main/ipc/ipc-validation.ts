@@ -27,21 +27,28 @@ import {
 } from '@shared/contracts/dictation-schema'
 import {
   type KanbanCreateInput,
-  type KanbanHandoffAvailabilityInput,
-  type KanbanHandoffCandidatesInput,
   type KanbanLaunchTaskInput,
   type KanbanSetConfigInput,
   type KanbanUpdatePatch,
   kanbanCreateInputSchema,
-  kanbanHandoffAvailabilityInputSchema,
-  kanbanHandoffCandidatesInputSchema,
   kanbanLaunchTaskInputSchema,
   kanbanSetConfigInputSchema,
   kanbanUpdatePatchSchema,
 } from '@shared/contracts/kanban-schema'
+import {
+  resumeIdSchema,
+  resumeRevisionSchema,
+  resumeSourcePutSchema,
+  resumeTokenSchema,
+} from '@shared/contracts/resume-sources-schema'
 import { BARE_MESSAGE, safePathSchema, stringValuesSchema } from '@shared/contracts/schema-rules'
 import { parseUsageSettings, type UsageConnection } from '@shared/contracts/usage-contract'
-import { IPC_CHANNEL, isSecretStateKey, isTaskProgressStateKey } from '@shared/ipc-contract'
+import {
+  IPC_CHANNEL,
+  isResumeSourcesStateKey,
+  isSecretStateKey,
+  isTaskProgressStateKey,
+} from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { wslProjectPath } from '@shared/wsl-path'
 import type { z } from 'zod'
@@ -101,7 +108,11 @@ const assertRelativePath: Validator = (value, label) => {
 
 const assertStateKey: Validator = (value, label) => {
   assertString(value, label)
-  if (isSecretStateKey(value as string) || isTaskProgressStateKey(value as string)) {
+  if (
+    isSecretStateKey(value as string) ||
+    isTaskProgressStateKey(value as string) ||
+    isResumeSourcesStateKey(value as string)
+  ) {
     fail(label, 'is a protected key')
   }
 }
@@ -720,13 +731,102 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel(IPC_CHANNEL.filesTrash, ['string', 'relativePath'], (args) =>
       services.files.trash(args[0], args[1]),
     ),
-    // Handoff directory listing (spec handoff-resume-flow): read-only, one
-    // registered project id argument. The configured directory may resolve
-    // outside the project root by explicit user configuration, so unlike
-    // files:* there is no containment rule here.
-    serviceChannel(IPC_CHANNEL.handoffsList, ['string'], (args) => services.handoffs.list(args[0])),
-    serviceChannel(IPC_CHANNEL.handoffsResumePrompt, ['string', 'path'], (args) =>
-      services.handoffs.resumePrompt(args[0], args[1]),
+    serviceChannel(IPC_CHANNEL.resumeSourcesList, [], () => services.resumeSources.list()),
+    {
+      channel: IPC_CHANNEL.resumeSourcesPut,
+      parse: (args) => {
+        requireArgs(args, 1, IPC_CHANNEL.resumeSourcesPut)
+        parsePayload(resumeSourcePutSchema, args[0], 'template')
+        return args
+      },
+      invoke: (args) =>
+        services.resumeSources.put(args[0] as import('@shared/ipc-contract').ResumeSourcePut),
+    },
+    ...([IPC_CHANNEL.resumeSourcesDuplicate, IPC_CHANNEL.resumeSourcesDelete] as const).map(
+      (channel) => ({
+        channel,
+        parse: (args: unknown[]) => {
+          requireArgs(args, 2, channel)
+          parsePayload(resumeIdSchema, args[0], 'templateId')
+          parsePayload(resumeRevisionSchema, args[1], 'revision')
+          return args
+        },
+        invoke: (args: unknown[]) =>
+          channel === IPC_CHANNEL.resumeSourcesDelete
+            ? services.resumeSources.delete(args[0] as string, args[1] as number)
+            : services.resumeSources.duplicate(args[0] as string, args[1] as number),
+      }),
+    ),
+    {
+      channel: IPC_CHANNEL.resumeSourcesTest,
+      parse: (args) => {
+        requireArgs(args, 4, IPC_CHANNEL.resumeSourcesTest)
+        parsePayload(resumeIdSchema, args[0], 'templateId')
+        parsePayload(resumeIdSchema, args[1], 'projectId')
+        parsePayload(resumeRevisionSchema, args[2], 'revision')
+        parsePayload(resumeIdSchema, args[3], 'requestId')
+        return args
+      },
+      invoke: (args) =>
+        services.resumeSources.test(
+          args[0] as string,
+          args[1] as string,
+          args[2] as number,
+          args[3] as string,
+        ),
+    },
+    {
+      channel: IPC_CHANNEL.resumeSourcesCancel,
+      parse: (args) => {
+        requireArgs(args, 1, IPC_CHANNEL.resumeSourcesCancel)
+        parsePayload(resumeIdSchema, args[0], 'requestId')
+        return args
+      },
+      invoke: (args) => services.resumeSources.cancel(args[0] as string),
+    },
+    {
+      channel: IPC_CHANNEL.resumeSourcesBind,
+      parse: (args) => {
+        requireArgs(args, 2, IPC_CHANNEL.resumeSourcesBind)
+        parsePayload(resumeIdSchema, args[0], 'projectId')
+        parsePayload(resumeIdSchema.nullable(), args[1], 'templateId')
+        return args
+      },
+      invoke: (args) => services.resumeSources.bind(args[0] as string, args[1] as string | null),
+    },
+    {
+      channel: IPC_CHANNEL.resumeSourcesBinding,
+      parse: (args) => {
+        requireArgs(args, 1, IPC_CHANNEL.resumeSourcesBinding)
+        parsePayload(resumeIdSchema, args[0], 'projectId')
+        return args
+      },
+      invoke: (args) => services.resumeSources.binding(args[0] as string),
+    },
+    {
+      channel: IPC_CHANNEL.resumeSourcesDiscover,
+      parse: (args) => {
+        requireArgs(args, 2, IPC_CHANNEL.resumeSourcesDiscover)
+        parsePayload(resumeIdSchema, args[0], 'projectId')
+        parsePayload(resumeIdSchema, args[1], 'requestId')
+        return args
+      },
+      invoke: (args) => services.resumeSources.discover(args[0] as string, args[1] as string),
+    },
+    {
+      channel: IPC_CHANNEL.resumeSourcesPrepare,
+      parse: (args) => {
+        requireArgs(args, 3, IPC_CHANNEL.resumeSourcesPrepare)
+        parsePayload(resumeIdSchema, args[0], 'projectId')
+        parsePayload(resumeTokenSchema, args[1], 'token')
+        parsePayload(resumeIdSchema, args[2], 'requestId')
+        return args
+      },
+      invoke: (args) =>
+        services.resumeSources.prepare(args[0] as string, args[1] as string, args[2] as string),
+    },
+    serviceChannel(IPC_CHANNEL.resumeSourcesImportLegacy, [], () =>
+      services.resumeSources.importLegacy(),
     ),
     // Kanban adapter channels (spec kanban-adapter-interface Data/API).
     // adaptersList/getConfig/setConfig are synchronous app-side operations;
@@ -881,33 +981,6 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
         return payload
       },
       invoke: (args) => services.kanban.launchTask(args[0] as KanbanLaunchTaskInput),
-    },
-    {
-      channel: IPC_CHANNEL.kanbanHandoffCandidates,
-      parse: (payload) => {
-        requireArgs(payload, 1, IPC_CHANNEL.kanbanHandoffCandidates)
-        parsePayload(
-          kanbanHandoffCandidatesInputSchema,
-          payload[0],
-          IPC_CHANNEL.kanbanHandoffCandidates,
-        )
-        return payload
-      },
-      invoke: (args) => services.kanban.handoffCandidates(args[0] as KanbanHandoffCandidatesInput),
-    },
-    {
-      channel: IPC_CHANNEL.kanbanHandoffAvailability,
-      parse: (payload) => {
-        requireArgs(payload, 1, IPC_CHANNEL.kanbanHandoffAvailability)
-        parsePayload(
-          kanbanHandoffAvailabilityInputSchema,
-          payload[0],
-          IPC_CHANNEL.kanbanHandoffAvailability,
-        )
-        return payload
-      },
-      invoke: (args) =>
-        services.kanban.handoffAvailability(args[0] as KanbanHandoffAvailabilityInput),
     },
     // Task progress adapter channels (spec task-progress-adapters Data/API).
     // The renderer names only an adapter id; main resolves the command and

@@ -1,56 +1,51 @@
 import type {
   AgentProfile,
   AppApi,
-  HandoffCandidatesResult,
-  HandoffFileInfo,
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   KanbanResumeLaunchInput,
+  ResumeDiscoveryCandidate,
+  ResumeSourceDiscovery,
   WorkItem,
 } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { matchesTaskRef } from './KanbanHandoffNotices'
 
 interface TaskResumeModalProps {
   app: AppApi
   projectId: string
   item: WorkItem
   onCancel: () => void
-  /** Project Settings on the tab that owns the handoff directory. */
+  /** Project Settings on the tab that owns the Resume template configuration. */
   onConfigureHandoffs: () => void
   /** Project Settings on the Agents tab (no profiles configured). */
   onConfigureAgents?: () => void
   onLaunched?: (result: KanbanLaunchResult & { input: KanbanLaunchTaskInput }) => void
 }
 
-/** One selectable row: a readable file whose name carries the full ref. */
-type ReadyResult = Extract<HandoffCandidatesResult, { state: 'ready' }>
-
 function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
   return parseAppErrorPayload(error)?.message ?? fallback
 }
 
-/** The readable files whose name carries the item's full ref (the candidates). */
-function candidateOptions(result: ReadyResult): HandoffFileInfo[] {
-  return result.files.filter((file) => file.matchKind === 'filename')
-}
-
-/** The newest filename candidate, or null when no name carries the ref. */
-function defaultSelection(result: ReadyResult): string | null {
-  const filename = result.files.find((file) => file.matchKind === 'filename')
-  return filename?.name ?? null
+/** The first matching candidate, or null when no candidate matches the ref. */
+function defaultSelection(options: ResumeDiscoveryCandidate[]): string | null {
+  return options[0]?.token ?? null
 }
 
 /**
- * Resume confirmation (kanban task launch amendment, stages 4 and 5). The scan
- * runs on open and on Refresh only, never on hover and never on a poll. A
- * missing directory offers Configure handoffs; a read failure is its own
- * visible state, never an empty set; a rejected file is a named warning beside
- * the good candidates. Confirm is enabled only after the scan finishes and the
- * user has an agent profile plus a still-matching file; main rechecks the file and its
- * stamp before it creates the chat, and a changed file refreshes this choice.
+ * Resume confirmation (Task and file Resume sources, NEKODE-142). The scan
+ * runs on open and on Refresh only, never on hover and never on a poll.
+ * Without a template selected, offers Configure Resume. A read failure is its own
+ * visible state; rejected files/items are named warnings beside valid candidates.
+ * Confirm is enabled only after discovery finishes and the user has an agent
+ * profile plus a matching candidate. Before chat creation, main revalidates
+ * the template binding and candidate fingerprint via prepare.
  */
 export function TaskResumeModal({
   app,
@@ -67,7 +62,7 @@ export function TaskResumeModal({
   const busyRef = useRef(false)
   const generation = useRef(0)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'not-configured'>('loading')
-  const [result, setResult] = useState<ReadyResult | null>(null)
+  const [result, setResult] = useState<ResumeSourceDiscovery | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selection, setSelection] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -82,47 +77,44 @@ export function TaskResumeModal({
     setError(null)
     setScanning(true)
     try {
-      const next = await app.kanban.handoffCandidates({
-        projectId,
-        itemId: item.id,
-        ref: item.ref,
-      })
+      const binding = await app.resumeSources.binding(projectId)
       if (requestGeneration !== generation.current || !openRef.current) {
         return
       }
-      if (next.state === 'not-configured') {
+      if (!binding.templateId) {
         setResult(null)
         setPhase('not-configured')
         return
       }
-      if (next.state === 'error') {
-        setResult(null)
-        setError(next.message)
-        setPhase('error')
+      const requestId = `resume-modal-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const next = await app.resumeSources.discover(projectId, requestId)
+      if (requestGeneration !== generation.current || !openRef.current) {
         return
       }
       setResult(next)
       setPhase('ready')
       setSelection((current) => {
-        const options = candidateOptions(next)
-        if (current !== null && options.some((option) => option.name === current)) {
+        const matching = next.candidates.filter((candidate) =>
+          matchesTaskRef(item.ref, candidate.id),
+        )
+        if (current !== null && matching.some((candidate) => candidate.token === current)) {
           return current
         }
-        return defaultSelection(next)
+        return defaultSelection(matching)
       })
     } catch (cause) {
       if (requestGeneration !== generation.current || !openRef.current) {
         return
       }
       setResult(null)
-      setError(errorMessage(cause, 'Failed to read the handoff directory.'))
+      setError(errorMessage(cause, 'Failed to discover Resume sources.'))
       setPhase('error')
     } finally {
       if (requestGeneration === generation.current) {
         setScanning(false)
       }
     }
-  }, [app, projectId, item.id, item.ref])
+  }, [app, projectId, item.ref])
 
   useEffect(() => {
     openRef.current = true
@@ -199,48 +191,48 @@ export function TaskResumeModal({
     controls[next]?.focus()
   }
 
-  function handleConfirm(): void {
+  async function handleConfirm(): Promise<void> {
     if (busyRef.current || phase !== 'ready' || selection === null || selectedProfileId === null) {
       return
     }
-    const chosen = options.find((option) => option.name === selection)
+    const chosen = options.find((option) => option.token === selection)
     if (chosen === undefined) {
       return
     }
     busyRef.current = true
     setBusy(true)
     setError(null)
-    const input: KanbanResumeLaunchInput = {
-      projectId,
-      itemId: item.id,
-      ref: item.ref,
-      profileId: selectedProfileId,
-      attemptId: crypto.randomUUID(),
-      mode: 'resume',
-      fileName: chosen.name,
-      stamp: chosen.modifiedAt,
+    try {
+      const requestId = `resume-prep-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const prompt = await app.resumeSources.prepare(projectId, chosen.token, requestId)
+      const input: KanbanResumeLaunchInput = {
+        projectId,
+        itemId: item.id,
+        ref: item.ref,
+        profileId: selectedProfileId,
+        attemptId: crypto.randomUUID(),
+        mode: 'resume',
+        prompt,
+      }
+      const launchResult = await app.kanban.launchTask(input)
+      if (!openRef.current) {
+        return
+      }
+      onLaunched?.({ ...launchResult, input })
+    } catch (launchError: unknown) {
+      if (!openRef.current) {
+        return
+      }
+      busyRef.current = false
+      setBusy(false)
+      setError(errorMessage(launchError, 'Failed to resume the task.'))
     }
-    // While in flight the dismiss controls are locked, so a confirmed resume
-    // always reaches onLaunched; main owns the file and the stamp recheck.
-    void app.kanban
-      .launchTask(input)
-      .then((launchResult) => {
-        if (!openRef.current) {
-          return
-        }
-        onLaunched?.({ ...launchResult, input })
-      })
-      .catch((launchError: unknown) => {
-        if (!openRef.current) {
-          return
-        }
-        busyRef.current = false
-        setBusy(false)
-        setError(errorMessage(launchError, 'Failed to resume the task.'))
-      })
   }
 
-  const options = result === null ? [] : candidateOptions(result)
+  const options =
+    result === null
+      ? []
+      : result.candidates.filter((candidate) => matchesTaskRef(item.ref, candidate.id))
   const canConfirm =
     phase === 'ready' &&
     !busy &&
@@ -248,7 +240,7 @@ export function TaskResumeModal({
     selection !== null &&
     profilePhase === 'ready' &&
     selectedProfileId !== null &&
-    options.some((option) => option.name === selection)
+    options.some((option) => option.token === selection)
 
   return (
     <>
@@ -289,14 +281,14 @@ export function TaskResumeModal({
               className="mt-3 text-[12.6px] text-ink-secondary"
               data-testid={TEST_ID.kanbanResumeLoading}
             >
-              Reading handoffs…
+              Reading resume sources…
             </p>
           ) : null}
 
           {phase === 'not-configured' ? (
             <div className="mt-3 text-[12.6px]">
               <p className="text-ink-secondary">
-                No handoff directory is configured for this project.
+                No Resume template is configured for this project.
               </p>
               <button
                 type="button"
@@ -304,7 +296,7 @@ export function TaskResumeModal({
                 data-testid={TEST_ID.kanbanResumeConfigure}
                 onClick={onConfigureHandoffs}
               >
-                Configure handoffs
+                Configure Resume
               </button>
             </div>
           ) : null}
@@ -316,11 +308,17 @@ export function TaskResumeModal({
                   className="mt-3 list-none space-y-1 text-[12.6px] text-warning"
                   data-testid={TEST_ID.kanbanResumeWarnings}
                 >
-                  {result.rejections.map((rejection) => (
-                    <li key={rejection.name}>
-                      {rejection.name}: {rejection.reason}
-                    </li>
-                  ))}
+                  {result.rejections.map((rejection) => {
+                    const label =
+                      'name' in rejection && typeof rejection.name === 'string'
+                        ? rejection.name
+                        : rejection.path
+                    return (
+                      <li key={rejection.path}>
+                        {label}: {rejection.reason}
+                      </li>
+                    )
+                  })}
                 </ul>
               ) : null}
               {options.length === 0 ? (
@@ -332,27 +330,34 @@ export function TaskResumeModal({
                 </p>
               ) : (
                 <fieldset className="mt-3 min-w-0 border-0 p-0" disabled={busy}>
-                  <legend className="text-[12.6px] font-semibold text-ink">Handoff</legend>
+                  <legend className="text-[12.6px] font-semibold text-ink">Resume source</legend>
                   <div
                     className="mt-2 flex flex-col gap-1"
                     data-testid={TEST_ID.kanbanResumeCandidates}
                   >
                     {options.map((option) => (
                       <label
-                        key={option.name}
+                        key={option.token}
                         className="flex items-center gap-2 text-[12.6px] text-ink"
-                        data-testid={testIdFor.kanbanResumeCandidate(option.name)}
+                        data-testid={testIdFor.kanbanResumeCandidate(option.id)}
                       >
                         <input
                           type="radio"
-                          name="kanban-resume-file"
-                          value={option.name}
-                          checked={selection === option.name}
+                          name="kanban-resume-candidate"
+                          value={option.token}
+                          checked={selection === option.token}
                           onChange={() => {
-                            setSelection(option.name)
+                            setSelection(option.token)
                           }}
                         />
-                        <span className="truncate">{option.name}</span>
+                        <span className="truncate">
+                          {option.title || option.displayPath || option.id}
+                        </span>
+                        {option.current_phase ? (
+                          <span className="ml-auto text-xs text-ink-secondary">
+                            {option.current_phase}
+                          </span>
+                        ) : null}
                       </label>
                     ))}
                   </div>
@@ -451,7 +456,9 @@ export function TaskResumeModal({
               className="h-control rounded-md bg-button px-4 text-[12.6px] text-ink hover:bg-button-hover focus-visible:outline focus-visible:outline-info disabled:opacity-50"
               data-testid={TEST_ID.kanbanResumeConfirm}
               disabled={!canConfirm}
-              onClick={handleConfirm}
+              onClick={() => {
+                void handleConfirm()
+              }}
             >
               Resume
             </button>

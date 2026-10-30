@@ -9,10 +9,25 @@ afterEach(cleanup)
 
 function setup() {
   const app = createAppApiStub()
-  vi.mocked(app.state.get).mockResolvedValue('handoffs')
-  vi.mocked(app.handoffs.list).mockResolvedValue([
-    { name: 'a.md', path: 'D:/code/demo/handoffs/a.md', modifiedAt: '2026-10-17T10:00:00Z' },
-  ])
+  vi.mocked(app.resumeSources.binding).mockResolvedValue({
+    projectId: 'p1',
+    templateId: 'agent-harness',
+  })
+  vi.mocked(app.resumeSources.discover).mockResolvedValue({
+    projectId: 'p1',
+    templateId: 'agent-harness',
+    revision: 1,
+    candidates: [
+      {
+        token: 'tok-a',
+        id: 'a',
+        title: 'a.md',
+        displayPath: 'handoffs/a.md',
+        modifiedAt: '2026-10-17T10:00:00Z',
+      },
+    ],
+    rejections: [],
+  })
   const props = {
     app,
     projectId: 'p1',
@@ -35,18 +50,19 @@ function deferred<T>() {
 }
 
 describe('Resume prompt selection', () => {
-  it('composes on selection only, suppresses duplicates, and delivers the main response unchanged', async () => {
+  it('composes on selection only, suppresses duplicates, and delivers the prepared prompt unchanged', async () => {
     const { app, props } = setup()
     const response = deferred<string>()
-    vi.mocked(app.handoffs.resumePrompt).mockReturnValueOnce(response.promise)
+    vi.mocked(app.resumeSources.prepare).mockReturnValueOnce(response.promise)
     render(<HandoffPicker {...props} />)
     const entry = await screen.findByTestId(TEST_ID.handoffPickerEntry)
-    expect(app.handoffs.resumePrompt).not.toHaveBeenCalled()
+    expect(app.resumeSources.prepare).not.toHaveBeenCalled()
     fireEvent.click(entry)
     fireEvent.click(entry)
-    expect(app.handoffs.resumePrompt).toHaveBeenCalledExactlyOnceWith(
+    expect(app.resumeSources.prepare).toHaveBeenCalledExactlyOnceWith(
       'p1',
-      'D:/code/demo/handoffs/a.md',
+      'tok-a',
+      expect.any(String),
     )
     expect((entry as HTMLButtonElement).disabled).toBe(true)
     expect(props.onPick).not.toHaveBeenCalled()
@@ -57,14 +73,14 @@ describe('Resume prompt selection', () => {
     expect(props.onClose).toHaveBeenCalledOnce()
   })
 
-  it('shows a recoverable configuration error without hiding the list', async () => {
+  it('shows a recoverable configuration or preparation error without hiding the list', async () => {
     const { app, props } = setup()
-    vi.mocked(app.handoffs.resumePrompt)
-      .mockRejectedValueOnce(new AppError('config', 'Fix settings.json').toPayload())
+    vi.mocked(app.resumeSources.prepare)
+      .mockRejectedValueOnce(new AppError('config', 'The candidate changed. Refresh.').toPayload())
       .mockResolvedValueOnce('Fixed template')
     render(<HandoffPicker {...props} />)
     fireEvent.click(await screen.findByTestId(TEST_ID.handoffPickerEntry))
-    expect((await screen.findByRole('alert')).textContent).toBe('Fix settings.json')
+    expect((await screen.findByRole('alert')).textContent).toBe('The candidate changed. Refresh.')
     expect(props.onPick).not.toHaveBeenCalled()
     expect(props.onClose).not.toHaveBeenCalled()
     await waitFor(() =>
@@ -74,7 +90,7 @@ describe('Resume prompt selection', () => {
     )
     fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerEntry))
     await waitFor(() => expect(props.onPick).toHaveBeenCalledWith('Fixed template'))
-    expect(app.handoffs.resumePrompt).toHaveBeenCalledTimes(2)
+    expect(app.resumeSources.prepare).toHaveBeenCalledTimes(2)
   })
 
   it.each(['close', 'escape', 'backdrop', 'unmount', 'project'])(
@@ -82,7 +98,7 @@ describe('Resume prompt selection', () => {
     async (change) => {
       const { app, props } = setup()
       const response = deferred<string>()
-      vi.mocked(app.handoffs.resumePrompt).mockReturnValueOnce(response.promise)
+      vi.mocked(app.resumeSources.prepare).mockReturnValueOnce(response.promise)
       const view = render(<HandoffPicker {...props} />)
       fireEvent.click(await screen.findByTestId(TEST_ID.handoffPickerEntry))
       if (change === 'close')
@@ -102,7 +118,7 @@ describe('Resume prompt selection', () => {
     const { app, props } = setup()
     const first = deferred<string>()
     const second = deferred<string>()
-    vi.mocked(app.handoffs.resumePrompt)
+    vi.mocked(app.resumeSources.prepare)
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise)
     const view = render(<HandoffPicker {...props} />)
@@ -118,12 +134,14 @@ describe('Resume prompt selection', () => {
     expect(props.onPick).toHaveBeenCalledExactlyOnceWith('Current template')
   })
 
-  it('does not request a template for pathless Resume', async () => {
+  it('shows unconfigured state with configure button and no pathless Resume fallback', async () => {
     const { app, props } = setup()
-    vi.mocked(app.state.get).mockResolvedValue(null)
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({ projectId: 'p1', templateId: null })
     render(<HandoffPicker {...props} />)
-    fireEvent.click(await screen.findByTestId(TEST_ID.handoffPickerPlainPaste))
-    expect(props.onPick).toHaveBeenCalledExactlyOnceWith('Resume from handoff')
-    expect(app.handoffs.resumePrompt).not.toHaveBeenCalled()
+    await screen.findByTestId(TEST_ID.handoffPickerUnconfigured)
+    expect(screen.queryByTestId(TEST_ID.handoffPickerPlainPaste)).toBeNull()
+    fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerConfigure))
+    expect(props.onConfigure).toHaveBeenCalledOnce()
+    expect(app.resumeSources.discover).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ATTENTION_SETTINGS } from '../../lib/attention-settings'
 import { DEFAULT_TERMINAL_FONT_FAMILIES, DEFAULT_TERMINAL_FONT_SIZE } from '../../lib/terminal-font'
@@ -59,6 +59,12 @@ function renderSettings(initialTab: 'general' | 'dictation') {
 }
 
 describe('AppSettings dictation shortcut error', () => {
+  it('opens the reusable Resume editor from the application settings navigation', async () => {
+    renderSettings('general')
+    fireEvent.click(screen.getByRole('tab', { name: 'Resume templates' }))
+    expect(await screen.findByRole('button', { name: 'New template' })).not.toBeNull()
+    expect(screen.getByLabelText('Test project')).not.toBeNull()
+  })
   it('announces an OpenWhispr shortcut save error once on the Dictation tab', async () => {
     renderSettings('dictation')
     await screen.findByTestId('dictation-method-error')

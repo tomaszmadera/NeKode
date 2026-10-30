@@ -1,8 +1,7 @@
 import type { ActionControl, ActionInput, AppApi } from '@shared/ipc-contract'
-import { projectHandoffDirKey, relativeToProject } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { cn } from '../../lib/cn'
 import {
@@ -16,6 +15,7 @@ import { getProjectInitials } from '../../lib/project-avatar'
 import { TEST_ID } from '../../lib/test-ids'
 import { AgentProfilesSettings } from '../settings/AgentProfilesSettings'
 import { KanbanSettings } from '../settings/KanbanSettings'
+import { ProjectResumeSettings } from '../settings/ProjectResumeSettings'
 import { type SettingsNavItem, SettingsShell } from '../settings/SettingsShell'
 import { ShellTab } from '../settings/ShellTab'
 import {
@@ -55,6 +55,7 @@ interface Props {
   onClose: () => void
   onKanbanInvalidate?: (projectId: string | null) => void
   onManageAgents?: () => void
+  onManageResumeTemplates?: () => void
   onProjectColorChange?: (projectId: string, color: string | null) => void
   /** Shown in the header so the open project stays obvious. */
   projectName?: string | null
@@ -103,12 +104,6 @@ function nextSortOrder(actions: ActionControl[]): number {
   return max + 1
 }
 
-/** Absolute path shape for the picker defaultPath (the channel takes null or
-    absolute only): drive-rooted Windows and POSIX forms, no relative input. */
-function isAbsolutePath(path: string): boolean {
-  return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path)
-}
-
 function emptyInput(projectId: string | null, sortOrder: number): ActionInput {
   return {
     scope: projectId === null ? 'global' : 'project',
@@ -142,7 +137,7 @@ export function ActionSettings({
   app,
   actions,
   projectId,
-  projectPath,
+  projectPath: _projectPath,
   autoSend,
   onAutoSendChange,
   onRefresh,
@@ -150,6 +145,7 @@ export function ActionSettings({
   onClose,
   onKanbanInvalidate,
   onManageAgents,
+  onManageResumeTemplates,
   onProjectColorChange,
   projectName = null,
   projectColor = null,
@@ -169,87 +165,7 @@ export function ActionSettings({
     (action) => action.scope === 'global' || action.projectId === projectId,
   )
 
-  // Configuration section state (spec handoff-resume-flow Behaviour 6): the
-  // handoff directory loads once per bound project; Save persists the exact
-  // input (empty clears the setting). Auto-send persists immediately.
-  const [handoffDir, setHandoffDir] = useState('')
-  const [handoffDirSaved, setHandoffDirSaved] = useState(false)
-  const [configError, setConfigError] = useState<string | null>(null)
   const guard = useMutationGuard()
-
-  useEffect(() => {
-    if (projectId === null) {
-      setHandoffDir('')
-      return
-    }
-    let alive = true
-    setHandoffDirSaved(false)
-    setConfigError(null)
-    void app.state
-      .get(projectHandoffDirKey(projectId))
-      .then((value) => {
-        if (alive) setHandoffDir(value ?? '')
-      })
-      .catch((cause: unknown) => {
-        // A failed read must not masquerade as "unconfigured": an empty input
-        // plus a visible error keeps a later Save from wiping the setting.
-        if (alive) {
-          setHandoffDir('')
-          setConfigError(
-            parseAppErrorPayload(cause)?.message ?? 'Failed to load the handoff directory setting.',
-          )
-        }
-      })
-    return () => {
-      alive = false
-    }
-  }, [app, projectId])
-
-  async function saveHandoffDir(): Promise<void> {
-    if (projectId === null) return
-    await guard.run(async () => {
-      try {
-        await app.state.set(projectHandoffDirKey(projectId), handoffDir.trim())
-        setHandoffDirSaved(true)
-        setConfigError(null)
-        // A saved directory invalidates the previous availability result: the
-        // board session is keyed by this version, so it re-scans (spec
-        // Resume availability item 6).
-        onKanbanInvalidate?.(projectId)
-      } catch (cause) {
-        setHandoffDirSaved(false)
-        setConfigError(
-          parseAppErrorPayload(cause)?.message ?? 'Failed to save the handoff directory.',
-        )
-      }
-    })
-  }
-
-  async function browseHandoffDir(): Promise<void> {
-    await guard.run(async () => {
-      // The picker's defaultPath must be null or absolute (validator rule): a
-      // relative current value falls back to the project root, like the empty
-      // case (spec Behaviour 6: current value or project root). The confirmed
-      // directory stores relative to the project root when it lies inside it
-      // (absolute otherwise): the relative form is the norm for this setting.
-      const current = handoffDir.trim()
-      const fallback = current.length > 0 && isAbsolutePath(current) ? current : projectPath
-      try {
-        const picked = await app.dialogs.pickDirectory(fallback)
-        if (picked !== null) {
-          // The root itself (relative form '') stores absolute: an empty stored
-          // value means unconfigured, so Browse never produces one.
-          const relative = projectPath !== null ? relativeToProject(projectPath, picked) : null
-          setHandoffDir(relative !== null && relative.length > 0 ? relative : picked)
-          setHandoffDirSaved(false)
-        }
-      } catch (cause) {
-        setConfigError(
-          parseAppErrorPayload(cause)?.message ?? 'Failed to open the directory picker.',
-        )
-      }
-    })
-  }
 
   function edit(action: ActionControl): void {
     const decoded = actionCommand(action.command)
@@ -360,6 +276,11 @@ export function ActionSettings({
       ) : activeTab === 'kanban' ? (
         <div className="flex max-w-[660px] flex-col gap-7">
           <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
+          <ProjectResumeSettings
+            app={app}
+            projectId={projectId}
+            onManageTemplates={onManageResumeTemplates}
+          />
           <SettingsGroup label="Handoff">
             <SectionLabel title="Handoff" />
             <GroupBox>
@@ -372,72 +293,6 @@ export function ActionSettings({
                   testId={TEST_ID.settingsAutoSend}
                   onChange={onAutoSendChange}
                 />
-                {projectId !== null ? (
-                  <StackedRow
-                    label="Handoff directory"
-                    htmlFor="settings-handoff-dir"
-                    help="Relative to the project root, or absolute."
-                    divided
-                  >
-                    <span className="flex gap-2">
-                      <input
-                        id="settings-handoff-dir"
-                        className={cn(monoClass, 'min-w-0 flex-1')}
-                        value={handoffDir}
-                        placeholder=".agents/handoffs"
-                        spellCheck={false}
-                        data-testid={TEST_ID.settingsHandoffDir}
-                        onChange={(event) => {
-                          setHandoffDir(event.target.value)
-                          setHandoffDirSaved(false)
-                        }}
-                      />
-                      <button
-                        type="button"
-                        disabled={guard.busy}
-                        className={secondaryClass}
-                        data-testid={TEST_ID.settingsHandoffDirBrowse}
-                        onClick={() => {
-                          void browseHandoffDir()
-                        }}
-                      >
-                        Browse
-                      </button>
-                    </span>
-                  </StackedRow>
-                ) : null}
-                {configError ? (
-                  <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
-                    {configError}
-                  </p>
-                ) : null}
-                {projectId !== null ? (
-                  <GroupFooter
-                    status={
-                      handoffDirSaved ? (
-                        <span
-                          className="text-success"
-                          data-testid={TEST_ID.settingsHandoffDirSaved}
-                        >
-                          Saved
-                        </span>
-                      ) : null
-                    }
-                  >
-                    <button
-                      type="button"
-                      aria-label="Save handoff directory"
-                      disabled={guard.busy}
-                      className={primaryClass}
-                      data-testid={TEST_ID.settingsHandoffDirSave}
-                      onClick={() => {
-                        void saveHandoffDir()
-                      }}
-                    >
-                      Save
-                    </button>
-                  </GroupFooter>
-                ) : null}
               </div>
             </GroupBox>
           </SettingsGroup>

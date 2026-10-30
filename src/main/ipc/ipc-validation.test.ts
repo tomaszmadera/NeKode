@@ -3,26 +3,14 @@ import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
 import { hostPath } from '../test-support/host-path'
 import { buildValidatedChannels, ValidationError } from './ipc-validation'
+import { resumeSourcesTestStub } from './resume-sources-test-stub'
 import type { AppServices } from './service-registry'
 import { usageTestStub } from './usage-test-stub'
-
-/** A ready scan with no candidates; the handoff candidates channel returns it by default. */
-const EMPTY_HANDOFF_CANDIDATES = {
-  state: 'ready' as const,
-  files: [],
-  rejections: [],
-}
-
-/** A ready batch check with no available items. */
-const EMPTY_HANDOFF_AVAILABILITY = {
-  state: 'ready' as const,
-  items: [],
-  rejections: [],
-}
 
 function fakeServices(): AppServices {
   return {
     usage: usageTestStub(),
+    resumeSources: resumeSourcesTestStub(),
     appUpdate: {
       latest: async () => ({ canInstall: false, version: null, error: null }),
       download: async () => undefined,
@@ -112,10 +100,6 @@ function fakeServices(): AppServices {
       showInFolder: vi.fn(() => Promise.resolve()),
       trash: vi.fn(() => Promise.resolve()),
     },
-    handoffs: {
-      list: vi.fn(() => Promise.resolve([])),
-      resumePrompt: vi.fn(async () => 'Resume prompt'),
-    },
     kanban: {
       adaptersList: vi.fn(() => []),
       getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
@@ -130,8 +114,6 @@ function fakeServices(): AppServices {
       skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
       writeSkill: vi.fn(() => Promise.resolve()),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
-      handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-      handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
       cleanupProject: vi.fn(),
       dropLaunchProject: vi.fn(),
       blocksProjectShell: vi.fn(() => false),
@@ -173,6 +155,98 @@ function channelMap() {
 }
 
 describe('ipc payload validation', () => {
+  it('strictly validates saved Resume templates, revisions, Test ids and protected storage', () => {
+    const map = channelMap()
+    const parse = (name: string, args: unknown[]) => {
+      const entry = map.get(name)
+      if (entry === undefined) throw new Error(`Missing channel ${name}`)
+      return entry.parse(args)
+    }
+    const input = {
+      id: null,
+      revision: null,
+      name: 'Notes',
+      prompt: '{taskPath}',
+      source: {
+        kind: 'files',
+        directory: '.',
+        pattern: '*.txt',
+        recursive: false,
+        identity: 'stem',
+      },
+    }
+    expect(parse(IPC_CHANNEL.resumeSourcesPut, [input])).toEqual([input])
+    for (const patch of [
+      { unknown: true },
+      { id: 'existing' },
+      { revision: 0 },
+      { prompt: 'missing' },
+      { source: { ...input.source, extra: true } },
+      { source: { ...input.source, pattern: 'dir/file' } },
+      { source: { ...input.source, directory: '../' } },
+      { source: { kind: 'command', protocol: 'agent-harness', executable: 'malicious', args: [] } },
+      { source: { kind: 'command', protocol: 'generic', executable: 'tool\u0000', args: [] } },
+      { source: { kind: 'command', protocol: 'generic', executable: 'tool', args: ['\u0000'] } },
+    ])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesPut, [{ ...input, ...patch }])).toThrow()
+    expect(() => parse(IPC_CHANNEL.resumeSourcesPut, [input, 'extra'])).toThrow()
+    expect(parse(IPC_CHANNEL.resumeSourcesTest, ['saved', 'p1', 1, 'request'])).toEqual([
+      'saved',
+      'p1',
+      1,
+      'request',
+    ])
+    for (const bad of [
+      [],
+      ['saved', 'p1', 1, 'request', 'path'],
+      ['saved', '../p1', 1, 'request'],
+      ['saved', 'p1', 0, 'request'],
+      ['saved', 'p1', 1, 'request\u0000'],
+      [' saved ', 'p1', 1, 'request'],
+    ])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesTest, bad)).toThrow()
+    for (const name of [IPC_CHANNEL.resumeSourcesDelete, IPC_CHANNEL.resumeSourcesDuplicate]) {
+      expect(parse(name, ['saved', 1])).toEqual(['saved', 1])
+      for (const bad of [[], ['', 1], ['saved', -1], ['saved', 1.5], ['saved', 1, 'extra']])
+        expect(() => parse(name, bad)).toThrow()
+    }
+    for (const bad of [[], [''], ['request', 'extra'], ['../request']])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesCancel, bad)).toThrow()
+    expect(parse(IPC_CHANNEL.resumeSourcesBind, ['p1', 'template-1'])).toEqual(['p1', 'template-1'])
+    expect(parse(IPC_CHANNEL.resumeSourcesBind, ['p1', null])).toEqual(['p1', null])
+    for (const bad of [
+      [],
+      ['p1'],
+      ['p1', 'template-1', 'extra'],
+      ['../p1', 'template-1'],
+      ['p1', '../t1'],
+    ])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesBind, bad)).toThrow()
+    expect(parse(IPC_CHANNEL.resumeSourcesBinding, ['p1'])).toEqual(['p1'])
+    for (const bad of [[], [''], ['p1', 'extra'], ['../p1']])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesBinding, bad)).toThrow()
+    expect(parse(IPC_CHANNEL.resumeSourcesDiscover, ['p1', 'req1'])).toEqual(['p1', 'req1'])
+    for (const bad of [[], ['p1'], ['p1', 'req1', 'extra'], ['../p1', 'req1']])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesDiscover, bad)).toThrow()
+    expect(parse(IPC_CHANNEL.resumeSourcesPrepare, ['p1', 'tok-1', 'req1'])).toEqual([
+      'p1',
+      'tok-1',
+      'req1',
+    ])
+    for (const bad of [
+      [],
+      ['p1', 'tok-1'],
+      ['p1', 'tok-1', 'req1', 'extra'],
+      ['p1', 'tok\u0000', 'req1'],
+    ])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesPrepare, bad)).toThrow()
+    expect(parse(IPC_CHANNEL.resumeSourcesImportLegacy, [])).toEqual([])
+    expect(() => parse(IPC_CHANNEL.resumeSourcesImportLegacy, ['extra'])).toThrow()
+    for (const key of ['resume.sources', 'project.resumeTemplate:p1']) {
+      expect(() => parse(IPC_CHANNEL.stateGet, [key])).toThrow(/protected/)
+      expect(() => parse(IPC_CHANNEL.stateSet, [key, '{}'])).toThrow(/protected/)
+    }
+  })
   it('validates usage shapes and protects the encrypted settings key', () => {
     const entries = buildValidatedChannels(fakeServices()),
       channel = (name: string) => {
@@ -722,6 +796,7 @@ describe('ipc payload validation', () => {
       IPC_CHANNEL.terminalsData,
       IPC_CHANNEL.terminalsExit,
       IPC_CHANNEL.taskProgressChanged,
+      IPC_CHANNEL.resumeSourcesChanged,
     ])
     const expectedInvokeChannels = new Set(
       Object.values(IPC_CHANNEL).filter((channel) => !pushChannels.has(channel)),
@@ -801,11 +876,6 @@ describe('ipc payload validation', () => {
         'kanban:createItem',
         ['p1', { title: 'T', priority: 'top' }],
         'kanban:createItem arg[1].priority must be one of urgent|high|medium|low',
-      ],
-      [
-        'kanban:handoffAvailability',
-        [{ projectId: 'p1', items: [{ itemId: 'a\u0000', ref: 'R' }] }],
-        'kanban:handoffAvailability.items[0].itemId must not contain NUL characters',
       ],
       [
         'dictation:dictionaryAdd',
@@ -923,18 +993,12 @@ describe('ipc payload validation', () => {
     expect(() => shellName?.parse(['extra', 'extra2'])).toThrow(ValidationError)
   })
 
-  it('validates handoffs:list and dialogs:pickDirectory payloads', () => {
+  it('validates dialogs:pickDirectory payloads', () => {
     const services = fakeServices()
     const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
     for (const entry of buildValidatedChannels(services)) {
       channels.set(entry.channel, entry)
     }
-
-    const handoffs = channels.get('handoffs:list')
-    expect(() => handoffs?.parse([42])).toThrow(ValidationError)
-    expect(() => handoffs?.parse([])).toThrow(/expected 1 argument/)
-    handoffs?.invoke(handoffs.parse(['p1']))
-    expect(services.handoffs.list).toHaveBeenCalledWith('p1')
 
     const pick = channels.get('dialogs:pickDirectory')
     // Null (no default) and absolute defaults pass; relative/NUL shapes fail.
@@ -944,33 +1008,6 @@ describe('ipc payload validation', () => {
     expect(() => pick?.parse([hostPath('D:/code\u0000x')])).toThrow(/NUL/)
     pick?.invoke(pick.parse([hostPath('D:/code')]))
     expect(services.dialogs.pickDirectory).toHaveBeenCalledWith(hostPath('D:/code'))
-  })
-
-  it('validates Resume formatting before service calls', async () => {
-    const services = fakeServices()
-    const channel = buildValidatedChannels(services).find(
-      (entry) => entry.channel === IPC_CHANNEL.handoffsResumePrompt,
-    )
-    if (!channel) throw new Error('Resume prompt channel is missing')
-    for (const payload of [
-      [],
-      ['p1'],
-      ['p1', hostPath('D:/a.md'), 'extra'],
-      [42, hostPath('D:/a.md')],
-      ['p1', null],
-      ['p1', 42],
-      ['p1', ''],
-      ['p1', 'relative.md'],
-      ['p1', hostPath('D:/a\u0000.md')],
-      ['p1', hostPath('D:/../a.md')],
-    ]) {
-      expect(() => channel.parse(payload)).toThrow(ValidationError)
-    }
-    expect(services.handoffs.resumePrompt).not.toHaveBeenCalled()
-    await expect(channel.invoke(channel.parse(['p1', hostPath('D:/handoffs/a.md')]))).resolves.toBe(
-      'Resume prompt',
-    )
-    expect(services.handoffs.resumePrompt).toHaveBeenCalledWith('p1', hostPath('D:/handoffs/a.md'))
   })
 
   it('validates agentProfiles payloads before the service', () => {
@@ -1161,26 +1198,24 @@ describe('ipc payload validation', () => {
     const resumeInput = {
       ...launchInput,
       mode: 'resume' as const,
-      fileName: 'nekode-28-notes.md',
-      stamp: '2026-10-08T00:00:00.000Z',
+      prompt: 'Resume from notes.md',
     }
     launch?.invoke(launch.parse([resumeInput]))
     expect(services.kanban.launchTask).toHaveBeenCalledWith(resumeInput)
-    // Resume without the file name and stamp is not a valid confirmation.
+    // Resume without prompt is not a valid confirmation.
     expect(() => launch?.parse([{ ...launchInput, mode: 'resume' }])).toThrow(
       /unexpected or missing/,
     )
-    expect(() => launch?.parse([{ ...resumeInput, fileName: 'a/b.md' }])).toThrow(
-      /file name, not a path/,
+    expect(() => launch?.parse([{ ...resumeInput, prompt: '' }])).toThrow(
+      /prompt must be non-empty/,
     )
-    expect(() => launch?.parse([{ ...resumeInput, stamp: '' }])).toThrow(/stamp/)
+    expect(() => launch?.parse([{ ...resumeInput, fileName: 'a/b.md' }])).toThrow(
+      /unexpected or missing/,
+    )
     expect(() => launch?.parse([{ ...launchInput, name: 'Codex' }])).toThrow(
       /unexpected or missing/,
     )
     expect(() => launch?.parse([{ ...launchInput, description: 'secret' }])).toThrow(
-      /unexpected or missing/,
-    )
-    expect(() => launch?.parse([{ ...launchInput, prompt: 'secret' }])).toThrow(
       /unexpected or missing/,
     )
     // Start without sending (NEKODE-99) carries exactly the Start fields.
@@ -1196,50 +1231,6 @@ describe('ipc payload validation', () => {
     expect(() => launch?.parse([{ ...launchInput, mode: 'other' }])).toThrow(ValidationError)
     expect(services.kanban.getItem).toHaveBeenCalledTimes(1)
     expect(services.kanban.launchTask).toHaveBeenCalledTimes(3)
-  })
-
-  it('validates kanban:handoffCandidates before the service', () => {
-    const services = fakeServices()
-    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
-    for (const entry of buildValidatedChannels(services)) {
-      channels.set(entry.channel, entry)
-    }
-    const identity = { projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1' }
-    const candidates = channels.get('kanban:handoffCandidates')
-    candidates?.invoke(candidates.parse([identity]))
-    expect(services.kanban.handoffCandidates).toHaveBeenCalledWith(identity)
-    expect(() => candidates?.parse([{ ...identity, extra: 1 }])).toThrow(
-      /unexpected or missing fields/,
-    )
-    expect(() => candidates?.parse([{ ...identity, itemId: '' }])).toThrow(ValidationError)
-    expect(() => candidates?.parse([{ ...identity, ref: 1 }])).toThrow(ValidationError)
-    expect(() => candidates?.parse([])).toThrow(/expected 1 argument/)
-    expect(services.kanban.handoffCandidates).toHaveBeenCalledTimes(1)
-  })
-
-  it('validates kanban:handoffAvailability before the service', () => {
-    const services = fakeServices()
-    const channels = new Map<string, ReturnType<typeof buildValidatedChannels>[number]>()
-    for (const entry of buildValidatedChannels(services)) {
-      channels.set(entry.channel, entry)
-    }
-    const input = { projectId: 'p1', items: [{ itemId: 'native-1', ref: 'DEMO-1' }] }
-    const availability = channels.get('kanban:handoffAvailability')
-    availability?.invoke(availability.parse([input]))
-    expect(services.kanban.handoffAvailability).toHaveBeenCalledWith(input)
-    // An empty item set is a valid request (a loaded board may have no items).
-    availability?.invoke(availability.parse([{ projectId: 'p1', items: [] }]))
-    expect(services.kanban.handoffAvailability).toHaveBeenCalledTimes(2)
-    expect(() => availability?.parse([{ projectId: 'p1' }])).toThrow(/unexpected or missing fields/)
-    expect(() => availability?.parse([{ projectId: '', items: [] }])).toThrow(ValidationError)
-    expect(() =>
-      availability?.parse([{ projectId: 'p1', items: [{ itemId: '', ref: 'DEMO-1' }] }]),
-    ).toThrow(ValidationError)
-    expect(() =>
-      availability?.parse([{ projectId: 'p1', items: [{ itemId: 'n', ref: 'DEMO-1', x: 1 }] }]),
-    ).toThrow(/unexpected or missing fields/)
-    expect(() => availability?.parse(['p1'])).toThrow(ValidationError)
-    expect(() => availability?.parse([])).toThrow(/expected 1 argument/)
   })
 
   it('terminals:create does not start the project shell for an undelivered launch', () => {

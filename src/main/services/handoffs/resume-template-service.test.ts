@@ -40,7 +40,13 @@ describe('ResumeTemplateService', () => {
     await expect(service.resumePrompt('p1', join(projectPath, 'handoffs/a.md'))).resolves.toBe(
       'Resume from handoff handoffs/a.md',
     )
+    await expect(service.readLegacyTemplate()).resolves.toBeNull()
     await expect(fs.stat(settings)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('reads legacy template directly for explicit import', async () => {
+    await configure({ resume: { template: 'Imported {handoffPath}' } })
+    await expect(service.readLegacyTemplate()).resolves.toBe('Imported {handoffPath}')
   })
 
   it.each([{}, { unrelated: true }, { resume: {} }, { resume: { other: 'value' } }])(

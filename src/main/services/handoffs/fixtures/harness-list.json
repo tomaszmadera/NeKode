@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "tasks": [
+    {
+      "id": "session-01a1871b-next-step",
+      "path": ".agents/tasks/session-01a1871b-next-step/task.md",
+      "title": "Next step after session 01a1871b-153b-7ab3-b05c-6431a41d2643",
+      "status": "active",
+      "current_phase": "Phase 1",
+      "current_step": "Phase 1.1",
+      "next_action": "Present the task-centric-handoff continuation and obtain explicit authorization for any further recovery round before resuming it",
+      "awaiting_resumption": true
+    }
+  ]
+}

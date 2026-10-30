@@ -58,6 +58,7 @@ function createAppMock(): AppMockBundle {
   const exitListenersByChat = new Map<string, Set<(exitCode: number) => void>>()
   const dataListenersByChat = new Map<string, Set<(data: string) => void>>()
   const app: AppApi = {
+    resumeSources: createAppApiStub().resumeSources,
     usage: createAppApiStub().usage,
     appUpdate: createAppApiStub().appUpdate,
     dictation: createDictationApiStub(),
@@ -128,10 +129,6 @@ function createAppMock(): AppMockBundle {
       showInFolder: vi.fn().mockResolvedValue(undefined),
       trash: vi.fn().mockResolvedValue(undefined),
     },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
-      resumePrompt: vi.fn().mockResolvedValue('Resume prompt'),
-    },
     kanban: {
       adaptersList: vi.fn().mockResolvedValue([]),
       getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
@@ -146,12 +143,6 @@ function createAppMock(): AppMockBundle {
       skillStatus: vi.fn().mockResolvedValue({ exists: false }),
       writeSkill: vi.fn().mockResolvedValue(undefined),
       launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
-      handoffAvailability: vi.fn(async () => ({
-        state: 'ready' as const,
-        items: [],
-        rejections: [],
-      })),
     },
     taskProgress: {
       adaptersList: vi.fn().mockResolvedValue({ adapters: [], warnings: [] }),

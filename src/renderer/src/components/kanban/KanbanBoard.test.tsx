@@ -2,7 +2,7 @@ import type {
   AppApi,
   KanbanBoard as KanbanBoardData,
   KanbanComment,
-  KanbanHandoffAvailabilityResult,
+  ResumeSourceDiscovery,
   WorkItem,
 } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -224,15 +224,34 @@ function appWith(listBoard: AppApi['kanban']['listBoard']): AppApi {
     kanban: {
       listBoard,
       getComments: vi.fn().mockResolvedValue([]),
-      // Available by default so the Resume control renders where the existing
-      // tests expect it; availability-specific tests override this mock.
-      handoffAvailability: vi.fn(
-        async (input: { items: Array<{ itemId: string; ref: string }> }) => ({
-          state: 'ready' as const,
-          items: input.items.map((entry) => ({ ...entry, available: true })),
-          rejections: [],
-        }),
-      ),
+    },
+    resumeSources: {
+      binding: vi.fn().mockResolvedValue({ projectId: 'p1', templateId: 'tmpl-1' }),
+      discover: vi.fn(async () => ({
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [
+          'NK-1',
+          'NK-2',
+          'NK-3',
+          'A-1',
+          'B-1',
+          'NEW',
+          'ITEM-1',
+          'ITEM-2',
+          'DEMO-1',
+          'TASK-1',
+        ].map((id) => ({
+          token: `tok-${id}`,
+          id,
+          title: id,
+          displayPath: `h/${id}.md`,
+          modifiedAt: new Date().toISOString(),
+        })),
+        rejections: [],
+      })),
+      onChanged: vi.fn(),
     },
   } as unknown as AppApi
 }
@@ -691,7 +710,7 @@ describe('live title filtering (NEKODE-117)', () => {
     expect(document.activeElement).toBe(search)
     expect(screen.getAllByTestId(/^kanban-item-NK-/)).toHaveLength(500)
     expect(listBoard).toHaveBeenCalledTimes(1)
-    expect(app.kanban.handoffAvailability).toHaveBeenCalledTimes(1)
+    expect(app.resumeSources.discover).toHaveBeenCalledTimes(1)
   })
 
   it('reveals collapsed matches, counts and sorts results, then restores the saved collapse state', async () => {
@@ -1106,14 +1125,25 @@ describe('kanban work item controls (task launch navigation)', () => {
       kanban: {
         listBoard: vi.fn().mockResolvedValue(richBoard()),
         getComments: vi.fn().mockResolvedValue([]),
-        handoffAvailability: vi.fn().mockResolvedValue({
-          state: 'ready',
-          items: [
-            { itemId: 'id-NK-1', ref: 'NK-1', available: true },
-            { itemId: 'id-NK-2', ref: 'NK-2', available: false },
+      },
+      resumeSources: {
+        binding: vi.fn().mockResolvedValue({ projectId: 'p1', templateId: 'tmpl-1' }),
+        discover: vi.fn().mockResolvedValue({
+          projectId: 'p1',
+          templateId: 'tmpl-1',
+          revision: 1,
+          candidates: [
+            {
+              token: 'tok-NK-1',
+              id: 'NK-1',
+              title: 'NK-1',
+              displayPath: 'h/NK-1.md',
+              modifiedAt: new Date().toISOString(),
+            },
           ],
           rejections: [],
         }),
+        onChanged: vi.fn(),
       },
     } as unknown as AppApi
 
@@ -1331,29 +1361,47 @@ describe('kanban item copy menu', () => {
 describe('kanban handoff availability', () => {
   function appWithAvailability(
     listBoard: AppApi['kanban']['listBoard'],
-    handoffAvailability: AppApi['kanban']['handoffAvailability'],
+    discover: AppApi['resumeSources']['discover'],
+    binding?: AppApi['resumeSources']['binding'],
   ): AppApi {
     return {
-      kanban: { listBoard, handoffAvailability, getComments: vi.fn().mockResolvedValue([]) },
+      kanban: { listBoard, getComments: vi.fn().mockResolvedValue([]) },
+      resumeSources: {
+        binding: binding ?? vi.fn().mockResolvedValue({ projectId: 'p1', templateId: 'tmpl-1' }),
+        discover,
+        onChanged: vi.fn(),
+      },
     } as unknown as AppApi
   }
 
   it('disables Start only for items with Resume and re-enables it after handoff removal', async () => {
-    const availability = vi
+    const discover = vi
       .fn()
       .mockResolvedValueOnce({
-        state: 'ready',
-        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: true }],
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [
+          {
+            token: 'tok-NK-1',
+            id: 'NK-1',
+            title: 'NK-1',
+            displayPath: 'h/NK-1.md',
+            modifiedAt: '',
+          },
+        ],
         rejections: [],
       })
       .mockResolvedValue({
-        state: 'ready',
-        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: false }],
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [],
         rejections: [],
       })
     const onStart = vi.fn()
     const onResume = vi.fn()
-    const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), availability)
+    const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), discover)
     render(
       <KanbanBoard
         app={app}
@@ -1393,7 +1441,7 @@ describe('kanban handoff availability', () => {
   })
 
   it('hides Resume until the batch check succeeds, and always shows Start', async () => {
-    const pending = deferred<KanbanHandoffAvailabilityResult>()
+    const pending = deferred<ResumeSourceDiscovery>()
     const app = appWithAvailability(
       vi.fn().mockResolvedValue(richBoard()),
       vi.fn(() => pending.promise),
@@ -1403,8 +1451,18 @@ describe('kanban handoff availability', () => {
     expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull()
     await act(async () =>
       pending.resolve({
-        state: 'ready',
-        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: true }],
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [
+          {
+            token: 'tok-NK-1',
+            id: 'NK-1',
+            title: 'NK-1',
+            displayPath: 'h/NK-1.md',
+            modifiedAt: '',
+          },
+        ],
         rejections: [],
       }),
     )
@@ -1418,7 +1476,8 @@ describe('kanban handoff availability', () => {
     const onConfigureHandoffs = vi.fn()
     const app = appWithAvailability(
       vi.fn().mockResolvedValue(richBoard()),
-      vi.fn().mockResolvedValue({ state: 'not-configured' }),
+      vi.fn(),
+      vi.fn().mockResolvedValue({ projectId: 'p1', templateId: null }),
     )
     render(
       <KanbanBoard
@@ -1437,18 +1496,25 @@ describe('kanban handoff availability', () => {
   })
 
   it('shows a directory read error with Retry and keeps the board', async () => {
-    const availability = vi
+    const discover = vi
       .fn()
+      .mockRejectedValueOnce(new Error('Handoff directory not found: D:/nowhere'))
       .mockResolvedValueOnce({
-        state: 'error',
-        message: 'Handoff directory not found: D:/nowhere',
-      })
-      .mockResolvedValueOnce({
-        state: 'ready',
-        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: true }],
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [
+          {
+            token: 'tok-NK-1',
+            id: 'NK-1',
+            title: 'NK-1',
+            displayPath: 'h/NK-1.md',
+            modifiedAt: '',
+          },
+        ],
         rejections: [],
       })
-    const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), availability)
+    const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), discover)
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
     const notice = await screen.findByTestId(TEST_ID.kanbanHandoffError)
     expect(notice.textContent).toContain('Handoff directory not found: D:/nowhere')
@@ -1456,15 +1522,17 @@ describe('kanban handoff availability', () => {
     expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBeTruthy()
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanHandoffRetry))
     expect(await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeTruthy()
-    expect(availability).toHaveBeenCalledTimes(2)
+    expect(discover).toHaveBeenCalledTimes(2)
   })
 
   it('treats a ready scan with no candidate as an empty state, not an error', async () => {
     const app = appWithAvailability(
       vi.fn().mockResolvedValue(richBoard()),
       vi.fn().mockResolvedValue({
-        state: 'ready',
-        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: false }],
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [],
         rejections: [],
       }),
     )
@@ -1480,14 +1548,24 @@ describe('kanban handoff availability', () => {
     const app = appWithAvailability(
       vi.fn().mockResolvedValue(richBoard()),
       vi.fn().mockResolvedValue({
-        state: 'ready',
-        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: true }],
-        rejections: [{ name: 'big.md', path: 'h/big.md', reason: 'File is larger than 1 MiB.' }],
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [
+          {
+            token: 'tok-NK-1',
+            id: 'NK-1',
+            title: 'NK-1',
+            displayPath: 'h/NK-1.md',
+            modifiedAt: '',
+          },
+        ],
+        rejections: [{ path: 'h/big.md', reason: 'File is larger than 1 MiB.' }],
       }),
     )
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
     const warnings = await screen.findByTestId(TEST_ID.kanbanHandoffWarnings)
-    expect(warnings.textContent).toContain('big.md')
+    expect(warnings.textContent).toContain('h/big.md')
     expect(warnings.textContent).toContain('File is larger than 1 MiB.')
     expect(await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeTruthy()
   })
@@ -1496,7 +1574,13 @@ describe('kanban handoff availability', () => {
     const onResume = vi.fn()
     const app = appWithAvailability(
       vi.fn().mockResolvedValue(richBoard()),
-      vi.fn().mockResolvedValue({ state: 'ready', items: [], rejections: [] }),
+      vi.fn().mockResolvedValue({
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [],
+        rejections: [],
+      }),
     )
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} onResume={onResume} />)
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
@@ -1513,19 +1597,32 @@ describe('kanban handoff availability', () => {
   })
 
   it('never restores Resume from a late response after the project changes', async () => {
-    const stale = deferred<KanbanHandoffAvailabilityResult>()
-    const availability = vi
-      .fn()
-      .mockReturnValueOnce(stale.promise)
-      .mockResolvedValueOnce({ state: 'ready', items: [], rejections: [] })
-    const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), availability)
+    const stale = deferred<ResumeSourceDiscovery>()
+    const discover = vi.fn().mockReturnValueOnce(stale.promise).mockResolvedValueOnce({
+      projectId: 'p2',
+      templateId: 'tmpl-1',
+      revision: 1,
+      candidates: [],
+      rejections: [],
+    })
+    const app = appWithAvailability(vi.fn().mockResolvedValue(richBoard()), discover)
     const ui = render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
     await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
     ui.rerender(<KanbanBoard app={app} projectId="p2" onConfigure={vi.fn()} />)
     await act(async () =>
       stale.resolve({
-        state: 'ready',
-        items: [{ itemId: 'id-NK-1', ref: 'NK-1', available: true }],
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [
+          {
+            token: 'tok-NK-1',
+            id: 'NK-1',
+            title: 'NK-1',
+            displayPath: 'h/NK-1.md',
+            modifiedAt: '',
+          },
+        ],
         rejections: [],
       }),
     )
@@ -1533,19 +1630,27 @@ describe('kanban handoff availability', () => {
   })
 
   it('coalesces parallel triggers of the same check into one request', async () => {
-    const pending = deferred<KanbanHandoffAvailabilityResult>()
-    const availability = vi.fn(() => pending.promise)
+    const pending = deferred<ResumeSourceDiscovery>()
+    const discover = vi.fn(() => pending.promise)
     const listBoard = vi.fn().mockResolvedValue(richBoard())
-    const app = appWithAvailability(listBoard, availability)
+    const app = appWithAvailability(listBoard, discover)
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} active />)
     await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
-    expect(availability).toHaveBeenCalledTimes(1)
+    expect(discover).toHaveBeenCalledTimes(1)
     // Refresh re-loads the board with the same item set while the first check
     // is still in flight: the availability request is coalesced.
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     await waitFor(() => expect(listBoard).toHaveBeenCalledTimes(2))
-    expect(availability).toHaveBeenCalledTimes(1)
-    await act(async () => pending.resolve({ state: 'ready', items: [], rejections: [] }))
+    expect(discover).toHaveBeenCalledTimes(1)
+    await act(async () =>
+      pending.resolve({
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [],
+        rejections: [],
+      }),
+    )
   })
 })
 
@@ -2653,14 +2758,25 @@ describe('kanban Start context menu (NEKODE-99)', () => {
       kanban: {
         listBoard: vi.fn().mockResolvedValue(richBoard()),
         getComments: vi.fn().mockResolvedValue([]),
-        handoffAvailability: vi.fn().mockResolvedValue({
-          state: 'ready',
-          items: [
-            { itemId: 'id-NK-1', ref: 'NK-1', available: true },
-            { itemId: 'id-NK-2', ref: 'NK-2', available: false },
+      },
+      resumeSources: {
+        binding: vi.fn().mockResolvedValue({ projectId: 'p1', templateId: 'tmpl-1' }),
+        discover: vi.fn().mockResolvedValue({
+          projectId: 'p1',
+          templateId: 'tmpl-1',
+          revision: 1,
+          candidates: [
+            {
+              token: 'tok-NK-1',
+              id: 'NK-1',
+              title: 'NK-1',
+              displayPath: 'h/NK-1.md',
+              modifiedAt: new Date().toISOString(),
+            },
           ],
           rejections: [],
         }),
+        onChanged: vi.fn(),
       },
     } as unknown as AppApi
   }

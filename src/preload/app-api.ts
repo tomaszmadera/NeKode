@@ -8,6 +8,7 @@ import {
   isDictationResult,
   type SttProviderSummary,
 } from '@shared/contracts/dictation-contract'
+import { isResumeSourcesChanged } from '@shared/contracts/resume-sources-contract'
 import type {
   ActionControl,
   ActionExecution,
@@ -21,17 +22,18 @@ import type {
   FilePreview,
   GitFileStatuses,
   GitStatus,
-  HandoffCandidatesResult,
-  HandoffEntry,
   KanbanAdapterInfo,
   KanbanBoard,
   KanbanComment,
-  KanbanHandoffAvailabilityResult,
   KanbanItemWriteResult,
   KanbanLaunchResult,
   KanbanProjectConfig,
   KanbanSkillStatus,
   ProjectInfo,
+  ResumeSourceBinding,
+  ResumeSourceDiscovery,
+  ResumeSourceLibrary,
+  ResumeSourcePreview,
   ShellInfo,
   TaskProgressAdapterList,
   TaskProgressBinding,
@@ -247,10 +249,38 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
       trash: (projectId, relativePath) =>
         invoke<void>(IPC_CHANNEL.filesTrash, projectId, relativePath),
     },
-    handoffs: {
-      list: (projectId) => invoke<HandoffEntry[]>(IPC_CHANNEL.handoffsList, projectId),
-      resumePrompt: (projectId, handoffPath) =>
-        invoke<string>(IPC_CHANNEL.handoffsResumePrompt, projectId, handoffPath),
+    resumeSources: {
+      list: () => invoke<ResumeSourceLibrary>(IPC_CHANNEL.resumeSourcesList),
+      put: (input) => invoke<ResumeSourceLibrary>(IPC_CHANNEL.resumeSourcesPut, input),
+      duplicate: (id, revision) =>
+        invoke<ResumeSourceLibrary>(IPC_CHANNEL.resumeSourcesDuplicate, id, revision),
+      delete: (id, revision) =>
+        invoke<ResumeSourceLibrary>(IPC_CHANNEL.resumeSourcesDelete, id, revision),
+      test: (templateId, projectId, revision, requestId) =>
+        invoke<ResumeSourcePreview>(
+          IPC_CHANNEL.resumeSourcesTest,
+          templateId,
+          projectId,
+          revision,
+          requestId,
+        ),
+      cancel: (requestId) => invoke<void>(IPC_CHANNEL.resumeSourcesCancel, requestId),
+      bind: (projectId, templateId) =>
+        invoke<ResumeSourceBinding>(IPC_CHANNEL.resumeSourcesBind, projectId, templateId),
+      binding: (projectId) =>
+        invoke<ResumeSourceBinding>(IPC_CHANNEL.resumeSourcesBinding, projectId),
+      discover: (projectId, requestId) =>
+        invoke<ResumeSourceDiscovery>(IPC_CHANNEL.resumeSourcesDiscover, projectId, requestId),
+      prepare: (projectId, token, requestId) =>
+        invoke<string>(IPC_CHANNEL.resumeSourcesPrepare, projectId, token, requestId),
+      importLegacy: () => invoke<string | null>(IPC_CHANNEL.resumeSourcesImportLegacy),
+      onChanged: (callback) => {
+        const listener = (_event: unknown, payload: unknown) => {
+          if (isResumeSourcesChanged(payload)) callback(payload)
+        }
+        ipc.on(IPC_CHANNEL.resumeSourcesChanged, listener)
+        return () => ipc.off(IPC_CHANNEL.resumeSourcesChanged, listener)
+      },
     },
     kanban: {
       adaptersList: () => invoke<KanbanAdapterInfo[]>(IPC_CHANNEL.kanbanAdaptersList),
@@ -283,10 +313,6 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
         invoke<KanbanSkillStatus>(IPC_CHANNEL.kanbanSkillStatus, projectId),
       writeSkill: (projectId) => invoke<void>(IPC_CHANNEL.kanbanWriteSkill, projectId),
       launchTask: (input) => invoke<KanbanLaunchResult>(IPC_CHANNEL.kanbanLaunchTask, input),
-      handoffCandidates: (input) =>
-        invoke<HandoffCandidatesResult>(IPC_CHANNEL.kanbanHandoffCandidates, input),
-      handoffAvailability: (input) =>
-        invoke<KanbanHandoffAvailabilityResult>(IPC_CHANNEL.kanbanHandoffAvailability, input),
     },
     taskProgress: {
       adaptersList: () => invoke<TaskProgressAdapterList>(IPC_CHANNEL.taskProgressAdaptersList),

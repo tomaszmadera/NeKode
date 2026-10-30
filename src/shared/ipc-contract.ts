@@ -27,15 +27,11 @@ import type {
 } from './contracts/dictation-contract'
 import type { FileEntry, FilePreview } from './contracts/files-contract'
 import type { GitFileStatuses, GitStatus } from './contracts/git-contract'
-import type { HandoffCandidatesResult, HandoffEntry } from './contracts/handoffs-contract'
 import type {
   KanbanAdapterInfo,
   KanbanBoard,
   KanbanComment,
   KanbanCreateInput,
-  KanbanHandoffAvailabilityInput,
-  KanbanHandoffAvailabilityResult,
-  KanbanHandoffCandidatesInput,
   KanbanItemWriteResult,
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
@@ -46,6 +42,14 @@ import type {
   WorkItem,
 } from './contracts/kanban-contract'
 import type { ProjectInfo } from './contracts/projects-contract'
+import type {
+  ResumeSourceBinding,
+  ResumeSourceDiscovery,
+  ResumeSourceLibrary,
+  ResumeSourcePreview,
+  ResumeSourcePut,
+  ResumeSourcesChanged,
+} from './contracts/resume-sources-contract'
 import type { ShellInfo } from './contracts/shell-contract'
 import type {
   TaskProgressAdapterList,
@@ -87,6 +91,7 @@ export * from './contracts/git-contract'
 export * from './contracts/handoffs-contract'
 export * from './contracts/kanban-contract'
 export * from './contracts/projects-contract'
+export * from './contracts/resume-sources-contract'
 export * from './contracts/shell-contract'
 export * from './contracts/task-progress-contract'
 
@@ -179,8 +184,18 @@ export const IPC_CHANNEL = {
   actionsDelete: 'actions:delete',
   actionsExecute: 'actions:execute',
   actionsStatus: 'actions:status',
-  handoffsList: 'handoffs:list',
-  handoffsResumePrompt: 'handoffs:resumePrompt',
+  resumeSourcesList: 'resumeSources:list',
+  resumeSourcesPut: 'resumeSources:put',
+  resumeSourcesDuplicate: 'resumeSources:duplicate',
+  resumeSourcesDelete: 'resumeSources:delete',
+  resumeSourcesTest: 'resumeSources:test',
+  resumeSourcesCancel: 'resumeSources:cancel',
+  resumeSourcesChanged: 'resumeSources:changed',
+  resumeSourcesBind: 'resumeSources:bind',
+  resumeSourcesBinding: 'resumeSources:binding',
+  resumeSourcesDiscover: 'resumeSources:discover',
+  resumeSourcesPrepare: 'resumeSources:prepare',
+  resumeSourcesImportLegacy: 'resumeSources:importLegacy',
   dialogsPickDirectory: 'dialogs:pickDirectory',
   kanbanAdaptersList: 'kanban:adaptersList',
   kanbanGetConfig: 'kanban:getConfig',
@@ -195,8 +210,6 @@ export const IPC_CHANNEL = {
   kanbanSkillStatus: 'kanban:skillStatus',
   kanbanWriteSkill: 'kanban:writeSkill',
   kanbanLaunchTask: 'kanban:launchTask',
-  kanbanHandoffCandidates: 'kanban:handoffCandidates',
-  kanbanHandoffAvailability: 'kanban:handoffAvailability',
   taskProgressAdaptersList: 'taskProgress:adaptersList',
   taskProgressGetBinding: 'taskProgress:getBinding',
   taskProgressSaveBinding: 'taskProgress:saveBinding',
@@ -396,15 +409,24 @@ export interface AppApi {
     execute(id: string, projectId: string | null, confirmed: boolean): Promise<ActionExecution>
     status(id: string): Promise<ActionExecution>
   }
-  handoffs: {
-    /**
-     * One lazy listing of the project's configured handoff directory
-     * (regular files, newest first). Unconfigured project: typed
-     * validation error; missing directory: not_found naming the path.
-     */
-    list(projectId: string): Promise<HandoffEntry[]>
-    /** Compose a file-based Resume using current local settings; no handoff read. */
-    resumePrompt(projectId: string, handoffPath: string): Promise<string>
+  resumeSources: {
+    list(): Promise<ResumeSourceLibrary>
+    put(input: ResumeSourcePut): Promise<ResumeSourceLibrary>
+    duplicate(id: string, revision: number): Promise<ResumeSourceLibrary>
+    delete(id: string, revision: number): Promise<ResumeSourceLibrary>
+    test(
+      templateId: string,
+      projectId: string,
+      revision: number,
+      requestId: string,
+    ): Promise<ResumeSourcePreview>
+    cancel(requestId: string): Promise<void>
+    onChanged(callback: (event: ResumeSourcesChanged) => void): Unsubscribe
+    bind(projectId: string, templateId: string | null): Promise<ResumeSourceBinding>
+    binding(projectId: string): Promise<ResumeSourceBinding>
+    discover(projectId: string, requestId: string): Promise<ResumeSourceDiscovery>
+    prepare(projectId: string, token: string, requestId: string): Promise<string>
+    importLegacy(): Promise<string | null>
   }
   kanban: {
     /** Adapters discovered in the configured adapters directory (fresh scan). */
@@ -466,21 +488,6 @@ export interface AppApi {
      * process. The same `attemptId` returns the same chat.
      */
     launchTask(input: KanbanLaunchTaskInput): Promise<KanbanLaunchResult>
-    /**
-     * One scan of the project's configured handoff directory for a work item.
-     * Read-only: main returns names, match kind, display path, stamp and
-     * rejection reasons, never file bodies. Failures are distinct states,
-     * never an empty set.
-     */
-    handoffCandidates(input: KanbanHandoffCandidatesInput): Promise<HandoffCandidatesResult>
-    /**
-     * One batch handoff scan for the loaded items: the directory and each
-     * qualifying file are read at most once, then matched against every item.
-     * Read-only; failures are distinct states, never an empty set.
-     */
-    handoffAvailability(
-      input: KanbanHandoffAvailabilityInput,
-    ): Promise<KanbanHandoffAvailabilityResult>
   }
   taskProgress: {
     /** Fresh one-level scan of the fixed `<userData>/task-progress-adapters` directory. */

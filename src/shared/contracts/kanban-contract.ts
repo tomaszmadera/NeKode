@@ -1,12 +1,9 @@
 import type { ChatInfo } from './chats-contract'
-import type { HandoffRejection } from './handoffs-contract'
 
 // Validated payload types are inferred from their schemas (one source of truth).
 export type {
   KanbanCreateInput,
   KanbanDraftLaunchInput,
-  KanbanHandoffAvailabilityInput,
-  KanbanHandoffCandidatesInput,
   KanbanLaunchTaskBase,
   KanbanLaunchTaskInput,
   KanbanResumeLaunchInput,
@@ -155,27 +152,3 @@ export interface KanbanLaunchResult {
   /** The Start prompt for console paste; only for `mode: 'draft'` when delivered. */
   draftPrompt?: string
 }
-
-/** One loaded item's availability in a batch handoff scan. */
-export interface KanbanHandoffAvailabilityItem {
-  itemId: string
-  ref: string
-  /** True when at least one readable file name carries the item's full ref. */
-  available: boolean
-}
-
-/**
- * One batch handoff check for the loaded items. `not-configured` is an
- * unconfigured directory; `error` is a directory read failure and is never
- * shown as an empty set. Both are distinct from a `ready` scan whose items are
- * all unavailable. The result carries no file bodies and no adapter config.
- */
-export type KanbanHandoffAvailabilityResult =
-  | { state: 'not-configured' }
-  | { state: 'error'; message: string }
-  | {
-      state: 'ready'
-      items: KanbanHandoffAvailabilityItem[]
-      /** File-level scan warnings (size, encoding, read); never hides an item. */
-      rejections: HandoffRejection[]
-    }

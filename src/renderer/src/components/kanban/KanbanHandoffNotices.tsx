@@ -4,8 +4,8 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TEST_ID } from '../../lib/test-ids'
 
-// Handoff availability for the board (spec Resume availability): Resume is
-// hidden until a batch check succeeds and the item has a readable accepted
+// Resume availability for the board (spec Task and file Resume sources, NEKODE-142):
+// Resume is hidden until a discovery succeeds and the item has a matching
 // candidate. The check runs beside the board load and never delays rendering
 // the board.
 
@@ -24,10 +24,19 @@ export interface HandoffAvailability {
 }
 
 /**
- * One batch handoff check for the loaded items: one directory read, then the
- * same snapshot matched against every item. Identical concurrent triggers are
- * coalesced; a different item set is its own generation, so an older result
- * never marks a new item available (spec Resume availability items 6-9).
+ * Case-insensitive match on the full ref: exact equality or ref followed by a hyphen.
+ * (e.g. "NEKODE-2" matches "nekode-2" or "nekode-2-slug", but not "nekode-20" or "old-nekode-2").
+ */
+export function matchesTaskRef(ref: string, candidateId: string): boolean {
+  const r = ref.trim().toLowerCase()
+  const c = candidateId.trim().toLowerCase()
+  return c === r || c.startsWith(`${r}-`)
+}
+
+/**
+ * One batch check for the loaded items: discovers the project's reusable template
+ * candidates, then matches against every loaded item ref. Identical concurrent triggers
+ * are coalesced; a different item set is its own generation.
  */
 export function useHandoffAvailability(app: AppApi, projectId: string): HandoffAvailability {
   const [phase, setPhase] = useState<HandoffPhase>('loading')
@@ -38,8 +47,6 @@ export function useHandoffAvailability(app: AppApi, projectId: string): HandoffA
   const generation = useRef(0)
 
   const reset = useCallback((): void => {
-    // A project change (or a direct projectId switch in a test) is a new scan
-    // generation: a late response for the previous project never restores Resume.
     generation.current += 1
     pending.current = null
     setPhase('loading')
@@ -48,18 +55,20 @@ export function useHandoffAvailability(app: AppApi, projectId: string): HandoffA
     setWarnings([])
   }, [])
 
-  // A disposed session ignores late responses (including StrictMode replay).
   useEffect(() => {
+    const unsub = app.resumeSources?.onChanged?.(() => {
+      reset()
+    })
     return () => {
       generation.current += 1
       pending.current = null
+      unsub?.()
     }
-  }, [])
+  }, [app, reset])
 
   const load = useCallback(
     async (items: Array<{ itemId: string; ref: string }>): Promise<void> => {
       const signature = items.map((entry) => `${entry.itemId}:${entry.ref}`).join('|')
-      // The same load firing twice for an unchanged item set is one request.
       if (pending.current === signature) {
         return
       }
@@ -70,26 +79,34 @@ export function useHandoffAvailability(app: AppApi, projectId: string): HandoffA
       setError(null)
       setWarnings([])
       try {
-        const result = await app.kanban.handoffAvailability({ projectId, items })
+        const binding = await app.resumeSources.binding(projectId)
         if (requestGeneration !== generation.current) return
-        if (result.state === 'not-configured') {
+        if (!binding.templateId) {
           setPhase('not-configured')
           return
         }
-        if (result.state === 'error') {
-          setPhase('error')
-          setError(result.message)
-          return
+        const requestId = `kanban-avail-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        const discovery = await app.resumeSources.discover(projectId, requestId)
+        if (requestGeneration !== generation.current) return
+        const matched = new Set<string>()
+        for (const item of items) {
+          if (discovery.candidates.some((candidate) => matchesTaskRef(item.ref, candidate.id))) {
+            matched.add(item.itemId)
+          }
         }
-        setAvailableIds(
-          new Set(result.items.filter((entry) => entry.available).map((entry) => entry.itemId)),
+        setAvailableIds(matched)
+        setWarnings(
+          discovery.rejections.map((r) => ({ name: r.path, path: r.path, reason: r.reason })),
         )
-        setWarnings(result.rejections)
         setPhase('ready')
       } catch (cause) {
         if (requestGeneration !== generation.current) return
         setPhase('error')
-        setError(parseAppErrorPayload(cause)?.message ?? 'Failed to read the handoff directory.')
+        const message =
+          (cause instanceof Error && cause.message ? cause.message : null) ??
+          parseAppErrorPayload(cause)?.message ??
+          'Failed to discover Resume sources.'
+        setError(message)
       } finally {
         if (requestGeneration === generation.current) {
           pending.current = null
@@ -99,18 +116,15 @@ export function useHandoffAvailability(app: AppApi, projectId: string): HandoffA
     [app, projectId],
   )
 
-  // The backend status and the mere presence of files never decide (spec
-  // Resume availability item 2).
   const itemResumable = (item: WorkItem): boolean => phase === 'ready' && availableIds.has(item.id)
 
   return { phase, error, warnings, itemResumable, load, reset }
 }
 
 /**
- * Inline handoff-directory notices beneath the board header (spec Resume
- * availability items 3-4): an unconfigured directory offers Configure handoffs, a read
- * failure is its own state with Retry, and rejected files are named warnings.
- * A read failure never removes the loaded board; the notices render above it.
+ * Inline Resume source notices beneath the board header: an unconfigured template
+ * offers Configure Resume, a read failure is its own state with Retry, and rejected
+ * items are named warnings.
  */
 export function HandoffNotices({
   phase,
@@ -128,14 +142,14 @@ export function HandoffNotices({
   if (phase === 'not-configured') {
     return (
       <div className="mb-3 text-[12.6px]" data-testid={TEST_ID.kanbanHandoffNotConfigured}>
-        <p className="text-ink-secondary">Handoff directory is not configured.</p>
+        <p className="text-ink-secondary">No Resume template is configured for this project.</p>
         <button
           type="button"
           className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
           data-testid={TEST_ID.kanbanHandoffConfigure}
           onClick={onConfigureHandoffs}
         >
-          Configure handoffs
+          Configure Resume
         </button>
       </div>
     )
@@ -143,7 +157,7 @@ export function HandoffNotices({
   if (phase === 'error') {
     return (
       <div className="mb-3 text-[12.6px]" data-testid={TEST_ID.kanbanHandoffError}>
-        <p className="text-error">{error ?? 'Failed to read the handoff directory.'}</p>
+        <p className="text-error">{error ?? 'Failed to discover Resume sources.'}</p>
         <button
           type="button"
           className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"

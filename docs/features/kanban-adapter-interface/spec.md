@@ -1,6 +1,7 @@
 # Kanban adapter interface: plugin discovery, project binding, normalized board data
 
-Status: Delivered (adapter-backed board with Start, Resume, New task, and item review); drag-and-drop and the UX-UI 26-30 visual design remain later work.
+Status: Delivered (adapter-backed board with Start, Resume via reusable Resume templates [NEKODE-142], New task, and item review); drag-and-drop and the UX-UI 26-30 visual design remain later work.
+NEKODE-142 amendment below: specification and three-stage plan approved by the user on 2026-10-29; Stage 3 completed. Legacy handoff directory setting and old handoff matcher decommissioned.
 Path: `docs/features/kanban-adapter-interface/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
@@ -312,6 +313,8 @@ a list of all Actions and are not detected from button names.
 
 ### Linking a handoff to a task
 
+This section and the following legacy Resume section describe historical behavior superseded by NEKODE-142 Stage 3. They are replaced by the task and file Resume sources amendment below. Start, profile launch, retry ownership and unrelated board contracts remain current.
+
 The proposed bridge between the app and any agent tool is based
 on files and the task ref. NeKode does not import Harness, does not run
 `taskctl`, does not read `.agents/.env` and does not modify Harness templates or
@@ -485,6 +488,8 @@ are defined by the NEKODE-30 addition below.
   return only after a future decision.
 
 ## Resume availability and handoff producer contract (NEKODE-30)
+
+The directory, handoff producer naming and one-time snapshot adjustment in this section are superseded requirements decommissioned in NEKODE-142 Stage 3. The task and file Resume sources amendment below owns final matching, availability and launch requirements.
 
 User requirement of 2026-10-08: Resume on the Kanban list is visible
 only when a handoff for the given task exists in the configured directory.
@@ -957,3 +962,37 @@ Poza zakresem: wykrywanie gotowości TUI agenta, zmiana treści polecenia Start,
 - Testy jednostkowe usługi uruchomienia: argv trybu `draft` (z `interactiveArgs` i bez), zwrócone `draftPrompt` równe poleceniu Start, ponowienie.
 - Testy walidacji IPC dla `mode: 'draft'`.
 - Testy komponentów: menu Start (mysz, klawiatura, nieaktywny Start, podgląd), wariant modalu, wklejenie do właściwej konsoli po uruchomieniu i ponowieniu bez dopisanego CR.
+
+## Task and file Resume sources (NEKODE-142)
+
+### Authority and scope
+
+This amendment was approved by the user on 2026-10-29 with the paired [Resume source contract](../handoff-resume-flow/spec.md#reusable-resume-sources-and-prompts-nekode-142) and three-stage plan. It supersedes Linking a handoff to a task, the handoff-specific parts of Resume, and Resume availability and handoff producer contract (NEKODE-30), including its old directory, file-name-only and no-taskctl restrictions. Historical producer requirements do not apply to every new source. Other board, profile, Start/draft, cache, editing, launch retry and auto-send rules remain in force. The paired contract's staged transition governs temporary legacy behavior.
+
+The current user decision requires reusable application templates selected by project, with configurable source paths/file names and Resume instructions. Agent Harness is one preset; generic file or custom command sources must not depend on it. No Harness sync or upstream edit is included in the product change.
+
+### Matching and availability
+
+1. Main discovers one inventory from the project's selected template and matches it against all loaded `{ itemId, ref }` identities. A Harness source matches the reported task `id`; a custom command source also matches its reported id; a file source uses its configured identity extractor (file stem or immediate parent directory). The full ref matches case-insensitively by exact equality or prefix followed by `-`. `NEKODE-2` does not match `nekode-20` or `old-nekode-2`. Titles, file contents and backend metadata do not create links. An arbitrary file name such as `progress.txt` can match through its configured parent-directory identity.
+2. Resume is visible only after successful discovery with a matching valid candidate. Start remains available while unconfigured, loading, empty or failed. Backend status and handoff wait alone do not establish availability. Completed Harness tasks are absent, while archived unfinished records remain eligible; blocked task metadata is shown and the agent resolves the recorded blocker under its own workflow.
+3. Without a selected template, show Configure Resume and open Project Settings at the template selector. A missing/incompatible Harness source shows an install/update error and Retry. Generic sources have their own file/command errors. No source falls back to the obsolete handoff directory or a different source kind. Errors never hide the loaded board.
+4. Refresh on first Kanban activation, return to its tab, explicit Refresh, binding/template changes and changes of the loaded item identities. Coalesce concurrent triggers and perform at most one source invocation per cycle, never one per row. Hidden sessions do not scan. No scan on hover, sort, grouping or List/Board switching; no watcher or polling is added. Template edits invalidate every dependent project's previous inventory immediately.
+5. Results belong to the project, adapter binding, template id/revision, item identity set and request generation. Stale results cannot restore Resume or populate another project's modal. A template shared by projects does not share their inventories or selection tokens.
+
+### Modal and launch
+
+The Resume modal freshly discovers candidates for that item and asks for a specific candidate and agent profile. It shows candidate identity, title or file name, display path and available continuation metadata. The user confirms the selection; there is no manual path assignment, guessing from a title or pathless Resume. Multiple candidates remain distinct and use the source's deterministic ordering.
+
+Immediately before chat creation, main revalidates the current project, adapter item, agent profile, source/template binding and selected fingerprint using the shared source service. Re-run discovery and compare the selected entry and file content. An archive move, content change, completion, missing file, unreadable file or changed template requires a new choice; no chat or process is created on rejection. Unrelated inventory changes need not invalidate an unchanged selected candidate. The shared formatter uses the current saved template and selected display path, under the paired contract. It never inserts the full Kanban description into Resume by default.
+
+A successful Resume launches one new chat of the selected profile using the existing single-prompt argv path and idempotent attempt mechanism. It does not depend on the action-bar auto-send setting. An undelivered Retry repeats source and template validation; a delivered attempt sends nothing again. Late responses, cancellation, double confirmation and project deletion retain existing guards. New task discovery never closes a task's handoff wait or calls taskctl handoff/resume; those actions belong to the agent after it receives the instruction.
+
+Start and Start without sending retain the actual full ref, current description, URL and project instructions. Replace the obsolete request for a future handoff file and the configured-directory sentence with `Keep the full ref in the name of the local task record, following the project's instructions.` Start works without a Resume source and does not create or modify source files. Draft keeps its interactive argv and console injection behavior.
+
+### Data, compatibility and verification
+
+Typed IPC uses task/file candidate identities and opaque selection tokens instead of trusted renderer paths or handoff mtimes. Main owns the selected template and matching. The existing Kanban adapter protocol, backend data and profile storage do not change. Reuse the existing app_state store for application templates and project bindings; no new local Task entity or database schema migration is proposed. Old `project.handoffDir` values remain unused, not an automatic source conversion. The app does not rename or delete records, handoffs or historical manifests.
+
+Tests must cover full-ref boundaries for both identity extractors and command ids; Harness interrupted and archived unfinished tasks; source errors distinct from empty success; one invocation per cycle; invalidation across shared-template projects; stale adapter/project/item replies; modal reopen and launch-time content changes; custom templates; single-argument safety, duplicate confirmation and Retry. Existing Start/draft/profile/cache regression coverage remains. Replace handoff-only fixtures with both generic-file and Harness-source fixtures.
+
+Real Electron smoke must show matching Resume in List and Board, a candidate disappearing or changing before confirmation, a successful new fixture-agent chat with the selected prompt and project cwd, an undelivered retry, and Start remaining usable when discovery fails. It must not contact a model, change backend work-item state or mutate Harness lifecycle state. The final verification scope is full after all independently reviewed stages.

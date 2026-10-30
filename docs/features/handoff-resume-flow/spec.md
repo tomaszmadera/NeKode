@@ -1,12 +1,17 @@
-# Handoff/Resume flow: remembered Add Project path, auto-send, project configuration, handoff list
+# Handoff/Resume flow: reusable sources, prompts and console delivery
 
-Status: Delivered (Handoff and Resume actions, remembered directory, per-project handoff list).
+Status: Delivered (reusable Resume sources, prompts, console delivery and task-centric Kanban integration delivered under NEKODE-142).
 Resume template amendment (NEKODE-83): specification and plan approved on 2026-10-17.
+NEKODE-142 amendment below: specification and three-stage plan approved by the user on 2026-10-29; Stage 3 completed. Legacy handoff directory setting and old handoff matcher decommissioned.
 Path: `docs/features/handoff-resume-flow/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
-## Goal
+## Delivered baseline and legacy compatibility
+
+The following baseline sections describe historical behavior superseded by the delivered NEKODE-142 implementation. Their directory configuration, handoff-only picker, pathless fallback and JSON prompt override were temporary compatibility contracts decommissioned in Stage 3. The NEKODE-142 section is the sole final contract for Resume configuration, discovery, selection and prompts. Add Project, Handoff delivery, auto-send, Stop, Continue and addressed-console injection remain current requirements throughout.
+
+### Baseline goal
 
 Make the Handoff/Resume action row and the Add Project dialog less lossy for an English-speaking agent workflow: the Add Project dialog reopens at the previously selected directory, Handoff/Resume paste English commands into the active console without submitting (with an opt-in auto-send), and Resume offers a lazily loaded list of handoff files from a per-project configured directory managed in a project configuration view.
 
@@ -103,6 +108,8 @@ Renderer invokes stay behind the existing trusted-sender guard. `handoffs:list` 
 
 ## Resume template amendment (NEKODE-83)
 
+This section applies to legacy consumers until their migration, not to reusable sources. After migration its bounded UTF-8/JSON reader validation remains the contract for explicit import into the editor. Import previews the value and saves only after confirmation; no new source consults settings.json during discovery or prompt composition. The legacy defaults, pathless action and per-click reload rules expire with their owning consumer.
+
 ### Goal and evidence
 
 Allow the local user to edit the Resume prompt in JSON while preserving existing behavior when no override exists. This section owns the template contract for both the action-bar picker and [Kanban Resume](../kanban-adapter-interface/spec.md). It is proposed under NEKODE-83 (internal tracker).
@@ -153,3 +160,62 @@ The application reads the optional file and never creates or rewrites it. Existi
 5. IPC tests prove trusted-sender checks, strict payload validation, unknown-project rejection, and no renderer control over the settings-file path. Renderer tests cover paste, auto-send, pending duplicate selection, stale responses after close/project change, and recoverable inline errors.
 6. Existing handoff selection, path formatting, candidate/stamp validation, Start prompts, profile argv substitution, and attempt idempotency retain regression coverage. Configuration tests use temporary directories, never the real user's settings.
 7. Update the user-facing settings documentation with the file location, JSON example, reload timing, defaults, and error recovery. Run affected tests and static checks, then independent review and final changed verification.
+
+## Reusable Resume sources and prompts (NEKODE-142)
+
+### Authority and scope
+
+This amendment and its three-stage plan were approved by the user on 2026-10-29. It replaces the handoff-directory, file-picker, selected-path formatting and JSON-only prompt configuration rules above, including the conflicting parts of NEKODE-83. Add Project, Stop, Continue, console targeting, nonce consumption and paste/auto-send semantics remain as specified above. The staged transition below governs temporary legacy behavior.
+
+Current user decisions on 2026-10-29: remove the old Handoff directory field and retain its saved values without use; define reusable templates in application settings and select them in projects; configure both file search or discovery and the Resume instruction in the UI; allow arbitrary directories and file names; provide Agent Harness as one ready-made template. Missing or incompatible Agent Harness discovery has a visible install/update error, not a fallback to old handoff files.
+
+The actors are the local user, the main-process source service and the running agent. NeKode discovers and selects continuation context. The agent owns handoff/resume lifecycle, reconciliation and its workflow gates. NeKode does not execute lifecycle mutations while listing or composing prompts.
+
+The approved staged transition first adds template management and Test without changing existing consumers, then switches the action-bar picker and project binding, then switches Kanban. During the middle stage only, the old directory input is labelled Legacy Kanban handoff directory and affects only that old consumer. The completed feature removes it. No new source reads its values.
+
+### Templates and project selection
+
+Application Settings gains a Resume templates section to create, edit, duplicate and delete named templates. The editor exposes the source kind and its fields, the Resume prompt, and Test for a selected project with a preview of candidates or an actionable error. A saved template has a stable id. Duplicate creates a new id; names are not identities. Changes persist across restart through existing app_state storage.
+
+Project Settings replaces Handoff directory with a Resume template selector and a route to manage application templates. Selecting and saving a template opts that project into its configured source. No source is guessed from files, the old directory value or the presence of Harness. A project without a selection shows Configure Resume; configuration is reused by reference rather than copied into each project. An edit invalidates results in every project using that template. An in-use template cannot be deleted until its project bindings are removed or changed; the UI names those projects. Invalid edits do not replace a valid saved template.
+
+Templates contain either a file source or a command source:
+
+- File source: a directory relative to each registered project root or an explicit absolute directory, a file-name wildcard filter (`*` and `?`, no path separators), an explicit recursive-search switch (default off), and candidate identity from either the file stem or immediate parent directory. The same template can therefore select `notes/<id>.txt` or `work/<id>/progress.md`. Arbitrary literal file names and extensions are supported. Relative directories must stay within the project; absolute directories explicitly permit another root. Symlinks and directory junctions are not followed. The source lists matching readable regular files without inferring completion or parsing a Harness schema. The UI describes them as files, not validated unfinished tasks. File candidates sort newest first with path as a stable tie-breaker.
+- Command source: executable and an argument list edited separately, run without a shell in the project root and appropriate project runtime. Stdout is one UTF-8 JSON object with `success: true` and `tasks`, each with unique nonblank `id`, `title`, `path`; optional task status and continuation metadata are validated when present. Paths resolve against the project root and must remain within it after realpath resolution. Unknown optional fields may be ignored; malformed, duplicate or conflicting identities reject the whole response. No renderer-supplied invocation is accepted at list or launch time: main loads the saved template. Listing does not interpret stdout as instructions or execute reported paths.
+
+The Agent Harness preset is a command source invoking `python .agents/scripts/taskctl list --json` in the selected project's runtime. It additionally requires `status`, `current_phase`, `current_step`, `next_action` and boolean `awaiting_resumption` on every row, with unfinished status `active` or `blocked`. Its output is sorted by id. It uses the producer's reported canonical paths and does not reimplement discovery by scanning `.agents/tasks`. It includes archived unfinished records and excludes completed ones. Absence of a handoff wait does not hide a task; a wait does not imply a live or dead process. Missing Python, missing script, unsupported command and invalid producer output show distinct actionable errors. The UI does not install or update Harness.
+
+The preset is available for selection or duplication, not implicitly bound to every project. Custom command sources use the same JSON envelope without requiring Harness-specific metadata. Generic file sources work without Python or Harness. Command sources execute local code configured by the user, like existing adapters; selection and Test make that execution visible.
+
+### Discovery and selection
+
+Resume opens a lazily loaded Resume task picker for the active project and chat. It shows title, identity, display path, and known status/next action for task-aware sources; generic files show file metadata. Distinguish unconfigured source, loading, ready-empty and error. Configure opens the project's template selector. Retry repeats discovery. There is no pathless Resume fallback.
+
+Discovery uses the saved source, not the old `project.handoffDir:<projectId>` key. It returns metadata and opaque selection tokens, never file bodies. Selection triggers fresh source validation and verifies the chosen identity, path and content fingerprint before composing a prompt. A changed, moved, completed, missing or unreadable selection requires refresh and delivers nothing. The fingerprint covers the selected file bytes and relevant entry metadata, not unrelated task files. Binding/template revision and request generation are part of the selection token. Invalid or superseded tokens never deliver text.
+
+Source limits are 30 seconds per discovery, 10 MiB stdout for command sources, 1 MiB per selected file, and at most 10,000 visited entries for file traversal. Exceeding a limit is an explicit error, never a silently truncated success. File text must be valid UTF-8. Directory errors are not empty results; individual rejected files have visible reasons while valid file candidates remain available. A command failure rejects the inventory as a whole, matching Harness validation. Cancellation and project removal terminate owned child processes. Local Windows, Linux and Windows-hosted WSL projects preserve their existing runtime boundaries; a WSL source and its prompt paths use that distribution's Linux paths, not UNC paths. NeKode running on Linux does not gain Windows-hosted WSL support.
+
+### Prompt configuration and compatibility
+
+The template editor exposes the Resume instruction. Placeholder `{taskPath}` is the selected display path, relative within the project and absolute for explicitly configured external file roots. `{handoffPath}` remains a deprecated alias to the same value so existing prompt text can be reused. Require a nonblank prompt containing at least one supported path placeholder and no NUL. Replace all supported placeholders in one pass; preserve whitespace, language, line breaks, dollar signs and unknown braces; never expand inserted path contents. This compatibility choice is part of the approved plan.
+
+The Agent Harness preset's default is `Resume task {taskPath}`. Generic templates start with `Resume from {taskPath}` and remain editable. Handoff keeps its existing English instruction `Write a handoff` and delivery semantics; in a Harness project the agent's skill now records canonical task state rather than creating a transfer file. Handoff does not require discovery or start a taskctl process in NeKode.
+
+The UI owns new prompt configuration. Existing `<userData>/settings.json` is neither rewritten nor deleted. Application Settings offers an explicit Import existing Resume template operation using NEKODE-83's bounded UTF-8/JSON validation, showing the prompt before saving it into a selected template. No automatic import, per-click JSON override or silent prompt replacement occurs once the new source is used. Import errors are visible and leave saved templates unchanged. The application does not delete old handoffs or task data. Removing a project may retain the existing cleanup of its obsolete directory key, but discovery never reads it.
+
+### Boundaries and acceptance
+
+Main owns template validation, storage, project resolution, source execution, matching, fingerprints and prompt composition behind strict typed IPC and the trusted-sender guard. Renderer names project ids, template ids and opaque selections, not arbitrary scan/format paths or an executable for an individual request. Test uses a saved template and a registered project. Absolute external file roots must be explicitly configured in that template. Source commands receive no adapter secrets. Set the intended `TASKCTL_ROOT` for the Harness invocation so inherited environment cannot redirect it. Do not log file bodies, prompts or full discovery output.
+
+Required evidence:
+
+1. Create one template, select it in two projects, restart and observe the same saved configuration; edits invalidate both projects and deletion protects active bindings.
+2. Select arbitrary file names, custom directories and parent-directory identity without Harness; recursion, exclusion of links, file limits, encoding failures and external-root display paths have behavioral tests.
+3. The Harness preset consumes real `taskctl list --json` output, including archived unfinished and interrupted work; duplicates, invalid records, completed entries and incompatible CLI fail visibly without fallback. Custom command output has strict protocol, timeout, output-cap and child-cleanup tests.
+4. Both auto-send modes deliver the configured prompt once to the addressed live chat. Selection changes, closing, switching projects or invalidating a template discard late results. Errors deliver no text.
+5. Template substitution and explicit legacy JSON import preserve multiline text and literal path data; invalid templates/imports leave saved state unchanged.
+6. IPC rejects untrusted senders, malformed payloads, arbitrary selection paths, stale revisions and unknown projects/templates. Temporary fixtures isolate test configuration from the user's real settings.
+7. Real Electron smoke proves configuration, picker selection, console paste and direct-send behavior using a local fixture CLI without a model call. User documentation covers template reuse, both source kinds, Harness setup, compatibility and recovery.
+
+The paired [Kanban amendment](../kanban-adapter-interface/spec.md#task-and-file-resume-sources-nekode-142) owns work-item matching and launch. No new Kanban backend entity, automatic lifecycle write, watcher or background polling is introduced.

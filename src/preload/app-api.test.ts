@@ -25,6 +25,58 @@ function createIpcMock() {
 }
 
 describe('preload app api', () => {
+  it('routes saved Resume source operations and unsubscribes revision events', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc).resumeSources
+    const template = {
+      id: null,
+      revision: null,
+      name: 'Files',
+      prompt: '{taskPath}',
+      source: {
+        kind: 'files' as const,
+        directory: '.',
+        pattern: '*.md',
+        recursive: false,
+        identity: 'stem' as const,
+      },
+    }
+    await api.list()
+    await api.put(template)
+    await api.duplicate('saved', 1)
+    await api.delete('saved', 1)
+    await api.test('saved', 'project', 1, 'request')
+    await api.cancel('request')
+    await api.bind('project', 'saved')
+    await api.binding('project')
+    await api.discover('project', 'req-disc')
+    await api.prepare('project', 'tok-1', 'req-prep')
+    await api.importLegacy()
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.resumeSourcesList, args: [] },
+      { channel: IPC_CHANNEL.resumeSourcesPut, args: [template] },
+      { channel: IPC_CHANNEL.resumeSourcesDuplicate, args: ['saved', 1] },
+      { channel: IPC_CHANNEL.resumeSourcesDelete, args: ['saved', 1] },
+      { channel: IPC_CHANNEL.resumeSourcesTest, args: ['saved', 'project', 1, 'request'] },
+      { channel: IPC_CHANNEL.resumeSourcesCancel, args: ['request'] },
+      { channel: IPC_CHANNEL.resumeSourcesBind, args: ['project', 'saved'] },
+      { channel: IPC_CHANNEL.resumeSourcesBinding, args: ['project'] },
+      { channel: IPC_CHANNEL.resumeSourcesDiscover, args: ['project', 'req-disc'] },
+      { channel: IPC_CHANNEL.resumeSourcesPrepare, args: ['project', 'tok-1', 'req-prep'] },
+      { channel: IPC_CHANNEL.resumeSourcesImportLegacy, args: [] },
+    ])
+    const callback = vi.fn()
+    const unsubscribe = api.onChanged(callback)
+    const listener = [...(ipc.listeners.get(IPC_CHANNEL.resumeSourcesChanged) ?? [])][0]
+    listener({}, null)
+    listener({}, { revision: -1, templateId: 'saved' })
+    listener({}, { revision: 2, templateId: '../path' })
+    expect(callback).not.toHaveBeenCalled()
+    listener({}, { revision: 2, templateId: 'saved' })
+    expect(callback).toHaveBeenCalledWith({ revision: 2, templateId: 'saved' })
+    unsubscribe()
+    expect(ipc.listeners.get(IPC_CHANNEL.resumeSourcesChanged)?.size).toBe(0)
+  })
   it('exposes the host platform the preload passes in (no IPC round trip)', () => {
     const ipc = createIpcMock()
     expect(createAppApi(ipc, 'linux').platform).toBe('linux')
@@ -441,16 +493,12 @@ describe('preload app api', () => {
     expect(exitListeners?.size ?? 0).toBe(0)
   })
 
-  it('routes handoff listing and the directory picker through typed channels', async () => {
+  it('routes directory picker through typed channel', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
-    await api.handoffs.list('p1')
-    await api.handoffs.resumePrompt('p1', 'D:/handoffs/a.md')
     await api.dialogs.pickDirectory('D:/code')
     await api.dialogs.pickDirectory(null)
     expect(ipc.invocations).toEqual([
-      { channel: IPC_CHANNEL.handoffsList, args: ['p1'] },
-      { channel: IPC_CHANNEL.handoffsResumePrompt, args: ['p1', 'D:/handoffs/a.md'] },
       { channel: IPC_CHANNEL.dialogsPickDirectory, args: ['D:/code'] },
       { channel: IPC_CHANNEL.dialogsPickDirectory, args: [null] },
     ])
@@ -530,32 +578,6 @@ describe('preload app api', () => {
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.kanbanSkillStatus, args: ['p1'] },
       { channel: IPC_CHANNEL.kanbanWriteSkill, args: ['p1'] },
-    ])
-  })
-
-  it('routes kanban handoff candidates through its typed channel', async () => {
-    const ipc = createIpcMock()
-    const api = createAppApi(ipc)
-    const identity = { projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1' }
-    await api.kanban.handoffCandidates(identity)
-    expect(ipc.invocations).toEqual([
-      { channel: IPC_CHANNEL.kanbanHandoffCandidates, args: [identity] },
-    ])
-  })
-
-  it('routes the batch handoff availability check through its typed channel', async () => {
-    const ipc = createIpcMock()
-    const api = createAppApi(ipc)
-    const availabilityInput = {
-      projectId: 'p1',
-      items: [
-        { itemId: 'native-1', ref: 'DEMO-1' },
-        { itemId: 'native-28', ref: 'DEMO-28' },
-      ],
-    }
-    await api.kanban.handoffAvailability(availabilityInput)
-    expect(ipc.invocations).toEqual([
-      { channel: IPC_CHANNEL.kanbanHandoffAvailability, args: [availabilityInput] },
     ])
   })
 

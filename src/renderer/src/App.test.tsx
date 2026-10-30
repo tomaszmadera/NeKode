@@ -3,9 +3,9 @@ import type {
   AgentProfile,
   AgentProfilesDocument,
   ChatInfo,
-  HandoffCandidatesResult,
   KanbanBoard as KanbanBoardData,
   ProjectInfo,
+  ResumeSourceDiscovery,
   TaskProgressChangedEvent,
   TaskProgressSnapshot,
 } from '@shared/ipc-contract'
@@ -70,13 +70,6 @@ function createAppApiStub(): AppApi {
     },
     kanban: {
       ...stub.kanban,
-      handoffAvailability: vi.fn(
-        async (input: { items: Array<{ itemId: string; ref: string }> }) => ({
-          state: 'ready' as const,
-          items: input.items.map((entry) => ({ ...entry, available: true })),
-          rejections: [],
-        }),
-      ),
     },
   }
 }
@@ -1153,7 +1146,6 @@ describe('action row and settings', () => {
     )
     expect(mockTerminalInstances[0].paste).toHaveBeenLastCalledWith('Write a handoff')
     await screen.findByTestId(TEST_ID.handoffPicker)
-    expect(app.handoffs.list).not.toHaveBeenCalled()
   })
 
   it('auto-send writes the English Handoff and Resume commands straight to the PTY', async () => {
@@ -1166,13 +1158,28 @@ describe('action row and settings', () => {
     })
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    vi.mocked(app.handoffs.list).mockResolvedValue([
-      {
-        name: '2026-10-01-auth.md',
-        path: 'D:/code/demo/.agents/handoffs/2026-10-01-auth.md',
-        modifiedAt: '2026-10-01T10:00:00.000Z',
-      },
-    ])
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'agent-harness',
+    })
+    vi.mocked(app.resumeSources.discover).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'agent-harness',
+      revision: 1,
+      candidates: [
+        {
+          token: 'tok-1',
+          id: '2026-10-01-auth',
+          title: '2026-10-01-auth.md',
+          displayPath: '.agents/handoffs/2026-10-01-auth.md',
+          modifiedAt: '2026-10-01T10:00:00.000Z',
+        },
+      ],
+      rejections: [],
+    })
+    vi.mocked(app.resumeSources.prepare).mockResolvedValue(
+      'Resume from handoff .agents/handoffs/2026-10-01-auth.md',
+    )
     render(<App app={app} />)
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
     await waitFor(() =>
@@ -1188,7 +1195,9 @@ describe('action row and settings', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     await screen.findByTestId(TEST_ID.handoffPicker)
-    await waitFor(() => expect(app.handoffs.list).toHaveBeenCalledWith('p1'))
+    await waitFor(() =>
+      expect(app.resumeSources.discover).toHaveBeenCalledWith('p1', expect.any(String)),
+    )
     fireEvent.click(screen.getAllByTestId(TEST_ID.handoffPickerEntry)[0])
     // Auto-send uses the same project-relative command text as the paste.
     await waitFor(() =>
@@ -1244,27 +1253,42 @@ describe('action row and settings', () => {
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
       if (key === APP_STATE_KEY.selectedChatId) return 't1'
-      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
       return null
     })
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    vi.mocked(app.handoffs.list).mockResolvedValue([
-      {
-        name: 'newest.md',
-        path: 'D:/code/demo/.agents/handoffs/newest.md',
-        modifiedAt: '2026-10-01T10:00:00.000Z',
-      },
-      {
-        name: 'older.md',
-        path: 'D:/code/demo/.agents/handoffs/older.md',
-        modifiedAt: '2026-09-30T08:00:00.000Z',
-      },
-    ])
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'agent-harness',
+    })
+    vi.mocked(app.resumeSources.discover).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'agent-harness',
+      revision: 1,
+      candidates: [
+        {
+          token: 'tok-1',
+          id: 'newest',
+          title: 'newest.md',
+          displayPath: '.agents/handoffs/newest.md',
+          modifiedAt: '2026-10-01T10:00:00.000Z',
+        },
+        {
+          token: 'tok-2',
+          id: 'older',
+          title: 'older.md',
+          displayPath: '.agents/handoffs/older.md',
+          modifiedAt: '2026-09-30T08:00:00.000Z',
+        },
+      ],
+      rejections: [],
+    })
+    vi.mocked(app.resumeSources.prepare).mockResolvedValue(
+      'Resume from handoff .agents/handoffs/newest.md',
+    )
     render(<App app={app} />)
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
-    // Lazy load (spec Behaviour 4): the listing happens at picker open only.
-    expect(app.handoffs.list).not.toHaveBeenCalled()
+    expect(app.resumeSources.discover).not.toHaveBeenCalled()
     await waitFor(() =>
       expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(
         false,
@@ -1272,12 +1296,11 @@ describe('action row and settings', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     await screen.findByTestId(TEST_ID.handoffPickerList)
-    expect(app.handoffs.list).toHaveBeenCalledTimes(1)
+    expect(app.resumeSources.discover).toHaveBeenCalledTimes(1)
     const names = screen
       .getAllByTestId(TEST_ID.handoffPickerEntry)
       .map((entry) => entry.textContent)
     expect(names[0]).toContain('newest.md')
-    // The row displays the project-relative path (spec Required tests).
     expect(names[0]).toContain('.agents/handoffs/newest.md')
     fireEvent.click(screen.getAllByTestId(TEST_ID.handoffPickerEntry)[0])
     await waitFor(() =>
@@ -1293,20 +1316,31 @@ describe('action row and settings', () => {
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
       if (key === APP_STATE_KEY.selectedChatId) return 't1'
-      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
       if (key === APP_STATE_KEY.autoSendHandoffResume) return autoSend ? '1' : '0'
       return null
     })
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    vi.mocked(app.handoffs.list).mockResolvedValue([
-      {
-        name: 'a.md',
-        path: 'D:/code/demo/.agents/handoffs/a.md',
-        modifiedAt: '2026-10-17T10:00:00Z',
-      },
-    ])
-    vi.mocked(app.handoffs.resumePrompt).mockResolvedValue(
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 't1',
+    })
+    vi.mocked(app.resumeSources.discover).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 't1',
+      revision: 1,
+      candidates: [
+        {
+          token: 'tok-a',
+          id: 'a',
+          title: 'a.md',
+          displayPath: '.agents/handoffs/a.md',
+          modifiedAt: '2026-10-17T10:00:00Z',
+        },
+      ],
+      rejections: [],
+    })
+    vi.mocked(app.resumeSources.prepare).mockResolvedValue(
       'Read .agents/handoffs/a.md\nUse instructions.',
     )
     render(<App app={app} />)
@@ -1339,20 +1373,31 @@ describe('action row and settings', () => {
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
       if (key === APP_STATE_KEY.selectedChatId) return 't1'
-      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
       return null
     })
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
-    vi.mocked(app.handoffs.list).mockResolvedValue([
-      {
-        name: 'a.md',
-        path: 'D:/code/demo/.agents/handoffs/a.md',
-        modifiedAt: '2026-10-17T10:00:00Z',
-      },
-    ])
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 't1',
+    })
+    vi.mocked(app.resumeSources.discover).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 't1',
+      revision: 1,
+      candidates: [
+        {
+          token: 'tok-a',
+          id: 'a',
+          title: 'a.md',
+          displayPath: '.agents/handoffs/a.md',
+          modifiedAt: '2026-10-17T10:00:00Z',
+        },
+      ],
+      rejections: [],
+    })
     let resolve!: (text: string) => void
-    vi.mocked(app.handoffs.resumePrompt).mockReturnValueOnce(
+    vi.mocked(app.resumeSources.prepare).mockReturnValueOnce(
       new Promise((done) => {
         resolve = done
       }),
@@ -1366,7 +1411,7 @@ describe('action row and settings', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     fireEvent.click(await screen.findByTestId(TEST_ID.handoffPickerEntry))
-    expect(app.handoffs.resumePrompt).toHaveBeenCalledOnce()
+    expect(app.resumeSources.prepare).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByTestId(testIdFor.chatRow('t2')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
     await act(async () => resolve('Stale Resume prompt'))
@@ -1377,21 +1422,32 @@ describe('action row and settings', () => {
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
       if (key === APP_STATE_KEY.selectedChatId) return 't1'
-      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
       if (key === APP_STATE_KEY.autoSendHandoffResume) return '1'
       return null
     })
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    vi.mocked(app.handoffs.list).mockResolvedValue([
-      {
-        name: 'a.md',
-        path: 'D:/code/demo/.agents/handoffs/a.md',
-        modifiedAt: '2026-10-17T10:00:00Z',
-      },
-    ])
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 't1',
+    })
+    vi.mocked(app.resumeSources.discover).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 't1',
+      revision: 1,
+      candidates: [
+        {
+          token: 'tok-a',
+          id: 'a',
+          title: 'a.md',
+          displayPath: '.agents/handoffs/a.md',
+          modifiedAt: '2026-10-17T10:00:00Z',
+        },
+      ],
+      rejections: [],
+    })
     let resolve!: (text: string) => void
-    vi.mocked(app.handoffs.resumePrompt).mockReturnValueOnce(
+    vi.mocked(app.resumeSources.prepare).mockReturnValueOnce(
       new Promise((done) => {
         resolve = done
       }),
@@ -1410,7 +1466,7 @@ describe('action row and settings', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     fireEvent.click(await screen.findByTestId(TEST_ID.handoffPickerEntry))
-    expect(app.handoffs.resumePrompt).toHaveBeenCalledOnce()
+    expect(app.resumeSources.prepare).toHaveBeenCalledOnce()
     act(() => exit(0))
     expect(app.chats.remove).toHaveBeenCalledWith('t1')
     expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(
@@ -1420,26 +1476,19 @@ describe('action row and settings', () => {
     expect(app.terminals.write).not.toHaveBeenCalled()
   })
 
-  it('resume picker without a configured directory offers configure and plain paste', async () => {
+  it('resume picker without a configured directory offers configure and no plain paste fallback', async () => {
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({ projectId: 'p1', templateId: null })
     await renderSelectedChat()
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     await screen.findByTestId(TEST_ID.handoffPickerUnconfigured)
-    expect(app.handoffs.list).not.toHaveBeenCalled()
+    expect(app.resumeSources.discover).not.toHaveBeenCalled()
+    expect(screen.queryByTestId(TEST_ID.handoffPickerPlainPaste)).toBeNull()
 
-    // Plain fallback: the English command without a path (spec Behaviour 5).
-    fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerPlainPaste))
-    await waitFor(() =>
-      expect(mockTerminalInstances[0].paste).toHaveBeenLastCalledWith('Resume from handoff'),
-    )
-    expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
-
-    // Configure opens Project Settings for the active project on the Actions tab.
-    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
-    await screen.findByTestId(TEST_ID.handoffPickerUnconfigured)
+    // Configure opens Project Settings for the active project.
     fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerConfigure))
     await screen.findByText('Project Settings')
     expect(screen.queryByTestId(TEST_ID.handoffPicker)).toBeNull()
-    expect(screen.getByTestId(TEST_ID.settingsHandoffDir)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTab)).toBeTruthy()
   })
 
   it('closes the resume picker on a backdrop mouse down', async () => {
@@ -1457,16 +1506,9 @@ describe('action row and settings', () => {
     await renderSelectedChat()
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     const dialog = await screen.findByRole('dialog', { name: 'Project Settings' })
-    // An unsaved edit plus a mouse down inside the dialog: it stays open.
     fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
-    fireEvent.change(screen.getByTestId(TEST_ID.settingsHandoffDir), {
-      target: { value: '.agents/handoffs' },
-    })
     fireEvent.mouseDown(dialog)
     expect(screen.getByRole('dialog', { name: 'Project Settings' })).toBeTruthy()
-    expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
-      '.agents/handoffs',
-    )
     // The dimmed backdrop closes it, and so does Escape anywhere on the page.
     fireEvent.mouseDown(dialog.parentElement as HTMLElement)
     expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
@@ -1476,11 +1518,11 @@ describe('action row and settings', () => {
     expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
   })
 
-  it('project settings edits auto-send and the per-project handoff directory', async () => {
+  it('project settings edits auto-send', async () => {
     await renderSelectedChat()
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
-    // The modal opens on the Shell tab; the handoff settings live on Tasks.
+    // The modal opens on the Shell tab; the tasks/resume settings live on Tasks.
     fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
 
     const autoSend = screen.getByTestId(TEST_ID.settingsAutoSend)
@@ -1489,76 +1531,24 @@ describe('action row and settings', () => {
     await waitFor(() =>
       expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.autoSendHandoffResume, '1'),
     )
-
-    const dirInput = screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement
-    expect(dirInput.value).toBe('')
-    fireEvent.change(dirInput, { target: { value: ' .agents/handoffs ' } })
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirSave))
-    // The saved-value contract (input trimming included) lives in
-    // ActionSettings.test.tsx; the journey only proves the save completes.
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsHandoffDirSaved)))
-  })
-
-  it('project settings browse fills the handoff directory from the native picker', async () => {
-    await renderSelectedChat()
-    vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/.agents/handoffs')
-    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
-    await screen.findByText('Project Settings')
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
-    // The picked directory stores relative to the project root.
-    await waitFor(() =>
-      expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
-        '.agents/handoffs',
-      ),
-    )
-    expect(app.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code/demo')
-  })
-
-  it('browse stores the absolute path when the picked directory lies outside the project root', async () => {
-    await renderSelectedChat()
-    vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/elsewhere/handoffs')
-    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
-    await screen.findByText('Project Settings')
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
-    await waitFor(() =>
-      expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
-        'D:/elsewhere/handoffs',
-      ),
-    )
-  })
-
-  it('browse falls back to the project root while the current value is relative', async () => {
-    await renderSelectedChat()
-    vi.mocked(app.dialogs.pickDirectory).mockResolvedValue('D:/code/demo/handoffs')
-    fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
-    await screen.findByText('Project Settings')
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
-    fireEvent.change(screen.getByTestId(TEST_ID.settingsHandoffDir), {
-      target: { value: '.agents/handoffs' },
-    })
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirBrowse))
-    await waitFor(() =>
-      expect((screen.getByTestId(TEST_ID.settingsHandoffDir) as HTMLInputElement).value).toBe(
-        'handoffs',
-      ),
-    )
-    // The picker takes null or absolute only: the relative draft falls back
-    // to the project root instead of failing validation.
-    expect(app.dialogs.pickDirectory).toHaveBeenCalledWith('D:/code/demo')
   })
 
   it('resume picker shows the empty-list and typed-error states for a configured directory', async () => {
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
       if (key === APP_STATE_KEY.selectedChatId) return 't1'
-      if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
       return null
     })
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    vi.mocked(app.handoffs.list).mockResolvedValue([])
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({ projectId: 'p1', templateId: 't1' })
+    vi.mocked(app.resumeSources.discover).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 't1',
+      revision: 1,
+      candidates: [],
+      rejections: [],
+    })
     render(<App app={app} />)
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
     await waitFor(() =>
@@ -1569,17 +1559,16 @@ describe('action row and settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     await screen.findByTestId(TEST_ID.handoffPickerEmpty)
 
-    // Configured but missing on disk: the typed not_found message renders
-    // inline in the reopened picker (spec Behaviour 5 / Errors).
-    vi.mocked(app.handoffs.list).mockRejectedValue({
+    // Failed discovery: the typed error message renders inline
+    vi.mocked(app.resumeSources.discover).mockRejectedValue({
       nekodeAppError: true,
       code: 'not_found',
-      message: 'Handoff directory not found: D:/code/demo/.agents/handoffs',
+      message: 'Resume discovery failed: missing directory',
     })
     fireEvent.click(screen.getByRole('button', { name: 'Close handoff picker' }))
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     const error = await screen.findByTestId(TEST_ID.handoffPickerError)
-    expect(error.textContent).toContain('Handoff directory not found:')
+    expect(error.textContent).toContain('Resume discovery failed: missing directory')
   })
 
   it('prompt injection is addressed to one chat only', async () => {
@@ -4353,8 +4342,28 @@ describe('kanban task resume — removing the project', () => {
       key === projectKanbanAdapterKey('p1') ? 'demo' : null,
     )
     // The resume scan is held open so removal happens while it is in flight.
-    const scan = deferred<HandoffCandidatesResult>()
-    vi.mocked(app.kanban.handoffCandidates).mockReturnValue(scan.promise)
+    const scan = deferred<ResumeSourceDiscovery>()
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'tmpl-1',
+    })
+    vi.mocked(app.resumeSources.discover)
+      .mockResolvedValueOnce({
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [
+          {
+            id: 'NEKODE-28',
+            title: 'nekode-28.md',
+            displayPath: 'h/nekode-28.md',
+            modifiedAt: new Date(1).toISOString(),
+            token: 'tok-28',
+          },
+        ],
+        rejections: [],
+      })
+      .mockReturnValue(scan.promise)
 
     render(<App app={app} />)
     // Select the project (its subtree expands), then open its Kanban board.
@@ -4364,7 +4373,7 @@ describe('kanban task resume — removing the project', () => {
     // Open the Resume modal for the project's item.
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemResume('NEKODE-28')))
     await screen.findByTestId(TEST_ID.kanbanResumeDialog)
-    expect(app.kanban.handoffCandidates).toHaveBeenCalledTimes(1)
+    expect(app.resumeSources.discover).toHaveBeenCalledTimes(2)
 
     // Remove the project while the scan is still pending (spec Bledy i
     // wyscigi: removing the project before confirmation invalidates it).
@@ -4379,20 +4388,23 @@ describe('kanban task resume — removing the project', () => {
     // candidate row appears and the dialog stays gone.
     await act(async () => {
       scan.resolve({
-        state: 'ready',
-        files: [
+        projectId: 'p1',
+        templateId: 'tmpl-1',
+        revision: 1,
+        candidates: [
           {
-            name: 'nekode-28.md',
-            path: 'h/nekode-28.md',
+            id: 'NEKODE-28',
+            title: 'nekode-28.md',
+            displayPath: 'h/nekode-28.md',
             modifiedAt: new Date(1).toISOString(),
-            matchKind: 'filename',
+            token: 'tok-28',
           },
         ],
         rejections: [],
       })
       await Promise.resolve()
     })
-    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('nekode-28.md'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('NEKODE-28'))).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanResumeDialog)).toBeNull()
   })
 

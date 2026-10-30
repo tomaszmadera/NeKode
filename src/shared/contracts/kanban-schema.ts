@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { KANBAN_PRIORITIES } from './kanban-contract'
 import {
   exactKeys,
-  exactObject,
   nonBlankSchema,
   nonEmptyIdSchema,
   objectInput,
@@ -95,24 +94,13 @@ export const kanbanStartLaunchInputSchema = z.strictObject({
 export type KanbanStartLaunchInput = z.output<typeof kanbanStartLaunchInputSchema>
 
 /**
- * `kanban:launchTask` body for `mode: 'resume'`. `fileName` and `stamp` come
- * from a scan result main just produced. Main rechecks the file and the stamp
- * immediately before creating the chat; a missing, unreadable, replaced, or
- * changed file refreshes the choice and creates no chat.
+ * `kanban:launchTask` body for `mode: 'resume'`. `prompt` is prepared by the
+ * Resume selection mechanism (fingerprint revalidated, format applied).
  */
 export const kanbanResumeLaunchInputSchema = z.strictObject({
   ...launchTaskBaseShape,
   mode: z.literal('resume'),
-  /**
-   * File name from the scan result main just produced, never a free path: a
-   * separator or a dot segment is rejected.
-   */
-  fileName: nonEmptyIdSchema.refine(
-    (fileName) => !/[\\/]/.test(fileName) && fileName !== '.' && fileName !== '..',
-    { error: 'must be a file name, not a path' },
-  ),
-  /** `modifiedAt` ISO stamp from that scan; main rechecks it before the chat. */
-  stamp: nonEmptyIdSchema,
+  prompt: nonBlankSchema,
 })
 
 export type KanbanResumeLaunchInput = z.output<typeof kanbanResumeLaunchInputSchema>
@@ -158,26 +146,3 @@ export const kanbanLaunchTaskInputSchema = objectInput()
   )
 
 export type KanbanLaunchTaskInput = z.output<typeof kanbanLaunchTaskInputSchema>
-
-/** `kanban:handoffCandidates` body. Item identity comes from the board. */
-export const kanbanHandoffCandidatesInputSchema = exactObject({
-  projectId: nonEmptyIdSchema,
-  itemId: nonEmptyIdSchema,
-  ref: nonEmptyIdSchema,
-})
-
-export type KanbanHandoffCandidatesInput = z.output<typeof kanbanHandoffCandidatesInputSchema>
-
-/**
- * `kanban:handoffAvailability` body. The renderer sends the loaded items'
- * identities only, never a disk path; main resolves the configured directory
- * from its own state.
- */
-export const kanbanHandoffAvailabilityInputSchema = exactObject({
-  projectId: nonEmptyIdSchema,
-  items: z.array(exactObject({ itemId: nonEmptyIdSchema, ref: nonEmptyIdSchema }), {
-    error: 'must be an array',
-  }),
-})
-
-export type KanbanHandoffAvailabilityInput = z.output<typeof kanbanHandoffAvailabilityInputSchema>

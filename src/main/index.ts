@@ -236,6 +236,14 @@ function startApplication(): void {
                 event,
               )
             },
+            broadcastResumeSources: (event) => {
+              broadcastToTrustedWindows(
+                BrowserWindow.getAllWindows(),
+                getTrustedRendererUrls(),
+                IPC_CHANNEL.resumeSourcesChanged,
+                event,
+              )
+            },
           })
 
           // Usage polling and task progress reads pause while no window is
@@ -275,6 +283,7 @@ function startApplication(): void {
             {
               shutdownUsage: () => services.usage.shutdown(),
               shutdownTaskProgress: () => services.taskProgress.shutdown(),
+              shutdownResumeSources: () => services.resumeSources.shutdown(),
               stopActions: () => services.actions.stopAll(),
               closeDatabase: () => services.closeDatabase?.(),
             },

@@ -3,12 +3,35 @@
 // after the factory call in each test file (Stage 2 W16). One definition so
 // the copies that used to live in eight test files cannot drift.
 
-import { type AppApi, emptyGitWorktree, relativeToProject } from '@shared/ipc-contract'
+import { type AppApi, emptyGitWorktree } from '@shared/ipc-contract'
 import { vi } from 'vitest'
 import { createDictationApiStub } from './dictation-api-stub'
 
 export function createAppApiStub(): AppApi {
   return {
+    resumeSources: {
+      list: vi.fn().mockResolvedValue({ revision: 1, templates: [] }),
+      put: vi.fn(),
+      duplicate: vi.fn(),
+      delete: vi.fn(),
+      test: vi.fn(),
+      cancel: vi.fn().mockResolvedValue(undefined),
+      onChanged: vi.fn(() => () => undefined),
+      bind: vi.fn(async (projectId: string, templateId: string | null) => ({
+        projectId,
+        templateId,
+      })),
+      binding: vi.fn(async (projectId: string) => ({ projectId, templateId: null })),
+      discover: vi.fn(async (projectId: string) => ({
+        projectId,
+        templateId: 'agent-harness',
+        revision: 1,
+        candidates: [],
+        rejections: [],
+      })),
+      prepare: vi.fn(async () => 'Resume task demo'),
+      importLegacy: vi.fn(async () => null),
+    },
     appUpdate: {
       latest: vi.fn().mockResolvedValue({ canInstall: false, version: null, error: null }),
       download: vi.fn().mockResolvedValue(undefined),
@@ -90,13 +113,6 @@ export function createAppApiStub(): AppApi {
       showInFolder: vi.fn().mockResolvedValue(undefined),
       trash: vi.fn().mockResolvedValue(undefined),
     },
-    handoffs: {
-      list: vi.fn().mockResolvedValue([]),
-      resumePrompt: vi.fn(
-        async (_projectId: string, path: string) =>
-          `Resume from handoff ${relativeToProject('D:/code/demo', path) ?? path}`,
-      ),
-    },
     kanban: {
       adaptersList: vi.fn().mockResolvedValue([]),
       getConfig: vi.fn().mockResolvedValue({ adapterId: null, values: {}, secretKeys: [] }),
@@ -111,12 +127,6 @@ export function createAppApiStub(): AppApi {
       skillStatus: vi.fn().mockResolvedValue({ exists: false }),
       writeSkill: vi.fn().mockResolvedValue(undefined),
       launchTask: vi.fn(),
-      handoffCandidates: vi.fn(),
-      handoffAvailability: vi.fn(async () => ({
-        state: 'ready' as const,
-        items: [],
-        rejections: [],
-      })),
     },
     taskProgress: {
       adaptersList: vi.fn().mockResolvedValue({ adapters: [], warnings: [] }),

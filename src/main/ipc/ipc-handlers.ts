@@ -6,6 +6,7 @@ import {
   projectHandoffDirKey,
   projectShellKey,
   projectWslShellsKey,
+  type ResumeSourcesChanged,
   type TaskProgressChangedEvent,
 } from '@shared/ipc-contract'
 import { AppError, type AppErrorPayload, toTransportError } from '@shared/ipc-error'
@@ -36,6 +37,7 @@ export interface RegisterHandlersOptions {
   broadcastDictation?: (result: DictationResult) => void
   /** taskProgress:changed fan-out to every trusted window (spec Behaviour 22). */
   broadcastTaskProgress?: (event: TaskProgressChangedEvent) => void
+  broadcastResumeSources?: (event: ResumeSourcesChanged) => void
   /** Main-owned window identity. No renderer window/key/path is accepted. */
   desktopWindow?: (event: IpcMainInvokeEvent) => string | null
 }
@@ -50,6 +52,7 @@ export function registerAppIpcHandlers(
   const broadcast = options.broadcast ?? (() => undefined)
   services.dictation.onResult((result) => options.broadcastDictation?.(result))
   services.taskProgress.onChanged((event) => options.broadcastTaskProgress?.(event))
+  services.resumeSources.onChanged((event) => options.broadcastResumeSources?.(event))
 
   const validated = new Map<string, ValidatedChannel>()
   for (const entry of buildValidatedChannels(services)) {
@@ -153,6 +156,7 @@ export function registerAppIpcHandlers(
     services.state.delete(projectColorKey(projectId))
     services.kanban.cleanupProject(projectId)
     services.taskProgress.cleanupProject(projectId)
+    services.resumeSources.dropProject(projectId)
     services.agentProfiles.cleanupProject(projectId)
     services.actions.stopForProject(projectId)
     for (const chatId of chatIds) {

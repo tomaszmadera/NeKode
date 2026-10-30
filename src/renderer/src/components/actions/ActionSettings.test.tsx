@@ -1,9 +1,4 @@
-import {
-  type ActionControl,
-  type ActionInput,
-  type AppApi,
-  projectHandoffDirKey,
-} from '@shared/ipc-contract'
+import type { ActionControl, ActionInput, AppApi } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID } from '../../lib/test-ids'
@@ -330,15 +325,9 @@ describe('Kanban tab shell', () => {
   })
 })
 
-describe('handoff directory save', () => {
-  it('persists the directory and invalidates the previous availability result', async () => {
-    const set = vi.fn().mockResolvedValue(undefined)
-    const onKanbanInvalidate = vi.fn()
-    const app = {
-      ...shellAppMock(),
-      state: { get: vi.fn().mockResolvedValue('old/dir'), set },
-      dialogs: { pickDirectory: vi.fn().mockResolvedValue(null) },
-    } as unknown as AppApi
+describe('legacy handoff directory removal', () => {
+  it('does not render the legacy handoff directory setting', async () => {
+    const app = shellAppMock()
     render(
       <ActionSettings
         app={app}
@@ -350,17 +339,11 @@ describe('handoff directory save', () => {
         onRefresh={vi.fn().mockResolvedValue(undefined)}
         onClose={vi.fn()}
         initialTab="kanban"
-        onKanbanInvalidate={onKanbanInvalidate}
       />,
     )
-    const input = await screen.findByTestId(TEST_ID.settingsHandoffDir)
-    // Whitespace is trimmed on save; the exact stored value is asserted below.
-    fireEvent.change(input, { target: { value: ' .agents/handoffs ' } })
-    fireEvent.click(screen.getByTestId(TEST_ID.settingsHandoffDirSave))
-    await waitFor(() =>
-      expect(set).toHaveBeenCalledWith(projectHandoffDirKey('p1'), '.agents/handoffs'),
-    )
-    expect(onKanbanInvalidate).toHaveBeenCalledWith('p1')
+    expect(screen.queryByTestId(TEST_ID.settingsHandoffDir)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.settingsHandoffDirBrowse)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.settingsHandoffDirSave)).toBeNull()
   })
 })
 
@@ -653,88 +636,9 @@ describe('mutation in-flight guards and duplicate prevention', () => {
     }
   }
 
-  // Original scenario: 'blocks rapid double activation of saveHandoffDir,
-  // disables button during mutation, and unlocks on error'.
-  async function saveHandoffDirCase(): Promise<GuardCase> {
-    let resolveSet: () => void = () => {}
-    const set = vi.fn().mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveSet = resolve
-        }),
-    )
-    const app = {
-      ...shellAppMock(),
-      state: { get: vi.fn().mockResolvedValue('old/dir'), set },
-      dialogs: { pickDirectory: vi.fn().mockResolvedValue(null) },
-    } as unknown as AppApi
-    render(<ActionSettings {...guardProps(app, 'p1', 'D:/p')} initialTab="kanban" />)
-    const input = await screen.findByTestId(TEST_ID.settingsHandoffDir)
-    fireEvent.change(input, { target: { value: '.agents/handoffs' } })
-    const button = screen.getByTestId(TEST_ID.settingsHandoffDirSave) as HTMLButtonElement
-    return {
-      button,
-      call: set,
-      complete: async () => {
-        resolveSet()
-        await waitFor(() => expect(button.disabled).toBe(false))
-      },
-      rearm: () => {
-        set.mockRejectedValueOnce({
-          nekodeAppError: true,
-          code: 'internal',
-          message: 'Save dir error',
-        })
-        fireEvent.change(input, { target: { value: '.agents/other' } })
-        return button
-      },
-      errorMessage: 'Save dir error',
-    }
-  }
-
-  // Original scenario: 'blocks rapid double activation of browseHandoffDir,
-  // disables button during mutation, and unlocks on error'.
-  async function browseHandoffDirCase(): Promise<GuardCase> {
-    let resolvePick: (path: string | null) => void = () => {}
-    const pickDirectory = vi.fn().mockImplementation(
-      () =>
-        new Promise<string | null>((resolve) => {
-          resolvePick = resolve
-        }),
-    )
-    const app = {
-      ...shellAppMock(),
-      state: { get: vi.fn().mockResolvedValue('old/dir'), set: vi.fn() },
-      dialogs: { pickDirectory },
-    } as unknown as AppApi
-    render(<ActionSettings {...guardProps(app, 'p1', 'D:/p')} initialTab="kanban" />)
-    const button = (await screen.findByTestId(
-      TEST_ID.settingsHandoffDirBrowse,
-    )) as HTMLButtonElement
-    return {
-      button,
-      call: pickDirectory,
-      complete: async () => {
-        resolvePick('D:/p/new-dir')
-        await waitFor(() => expect(button.disabled).toBe(false))
-      },
-      rearm: () => {
-        pickDirectory.mockRejectedValueOnce({
-          nekodeAppError: true,
-          code: 'internal',
-          message: 'Dialog error',
-        })
-        return button
-      },
-      errorMessage: 'Dialog error',
-    }
-  }
-
   const guardRows: Array<[string, () => Promise<GuardCase>]> = [
     ['action save', actionSaveCase],
     ['action remove', actionRemoveCase],
-    ['saveHandoffDir', saveHandoffDirCase],
-    ['browseHandoffDir', browseHandoffDirCase],
   ]
 
   it.each(guardRows)(

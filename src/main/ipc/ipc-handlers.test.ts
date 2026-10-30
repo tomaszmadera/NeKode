@@ -11,6 +11,7 @@ import {
 } from '../services/terminal/terminal-service'
 import { hostPath } from '../test-support/host-path'
 import { registerAppIpcHandlers } from './ipc-handlers'
+import { resumeSourcesTestStub } from './resume-sources-test-stub'
 import type { AppServices } from './service-registry'
 import { usageTestStub } from './usage-test-stub'
 
@@ -65,20 +66,6 @@ function fakeAgentProfiles(): AppServices['agentProfiles'] {
     selectionSet: vi.fn(() => ({ version: 1 as const, selectedIds: [], defaultId: null })),
     cleanupProject: vi.fn(),
   }
-}
-
-/** A ready scan with no candidates; the handoff candidates channel returns it by default. */
-const EMPTY_HANDOFF_CANDIDATES = {
-  state: 'ready' as const,
-  files: [],
-  rejections: [],
-}
-
-/** A ready batch check with no available items; the default availability result. */
-const EMPTY_HANDOFF_AVAILABILITY = {
-  state: 'ready' as const,
-  items: [],
-  rejections: [],
 }
 
 function fakeActions(): AppServices['actions'] {
@@ -201,6 +188,7 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
   } = { data: [], exit: [] }
 
   const services: AppServices = {
+    resumeSources: resumeSourcesTestStub(),
     usage: usageTestStub(),
     appUpdate: {
       latest: async () => ({ canInstall: false, version: null, error: null }),
@@ -265,10 +253,6 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
       showInFolder: vi.fn(() => Promise.resolve()),
       trash: vi.fn(() => Promise.resolve()),
     },
-    handoffs: {
-      resumePrompt: vi.fn(async () => 'Resume prompt'),
-      list: vi.fn(() => Promise.resolve([])),
-    },
     kanban: {
       adaptersList: vi.fn(() => []),
       getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
@@ -288,8 +272,6 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
       skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
       writeSkill: vi.fn(() => Promise.resolve()),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
-      handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-      handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
       cleanupProject: vi.fn(),
       dropLaunchProject: vi.fn(),
       blocksProjectShell: vi.fn(() => false),
@@ -579,6 +561,46 @@ describe('registered ipc handlers', () => {
     }
   })
 
+  it('routes Resume template operations, broadcasts revisions and rejects untrusted senders', async () => {
+    const { services, invoke } = createHarness()
+    await invoke(IPC_CHANNEL.resumeSourcesList, [])
+    expect(services.resumeSources.list).toHaveBeenCalledOnce()
+    await invoke(IPC_CHANNEL.resumeSourcesTest, ['saved', 'p1', 1, 'request'])
+    expect(services.resumeSources.test).toHaveBeenCalledWith('saved', 'p1', 1, 'request')
+    await invoke(IPC_CHANNEL.resumeSourcesCancel, ['request'])
+    expect(services.resumeSources.cancel).toHaveBeenCalledWith('request')
+    for (const name of [
+      IPC_CHANNEL.resumeSourcesList,
+      IPC_CHANNEL.resumeSourcesPut,
+      IPC_CHANNEL.resumeSourcesDuplicate,
+      IPC_CHANNEL.resumeSourcesDelete,
+      IPC_CHANNEL.resumeSourcesTest,
+      IPC_CHANNEL.resumeSourcesCancel,
+    ])
+      expect(() => invoke(name, [], 'file:///untrusted/index.html')).toThrow(/untrusted/)
+    expect(services.resumeSources.put).not.toHaveBeenCalled()
+    expect(services.resumeSources.delete).not.toHaveBeenCalled()
+    expect(services.resumeSources.duplicate).not.toHaveBeenCalled()
+  })
+
+  it('broadcasts Resume template invalidation and cancels discovery on project removal', async () => {
+    const { services } = createHarness()
+    const events: unknown[] = []
+    const ipc = { handle: vi.fn() } as unknown as import('electron').IpcMain
+    registerAppIpcHandlers(ipc, services, {
+      showOpenDialog: vi.fn(),
+      broadcastResumeSources: (event) => events.push(event),
+    })
+    vi.mocked(services.resumeSources.onChanged).mock.calls.at(-1)?.[0]({
+      revision: 2,
+      templateId: 'saved',
+    })
+    expect(events).toEqual([{ revision: 2, templateId: 'saved' }])
+    const harness = createHarness()
+    await harness.invoke(IPC_CHANNEL.projectsRemove, ['p1'])
+    expect(harness.services.resumeSources.dropProject).toHaveBeenCalledWith('p1')
+  })
+
   it('rejects untrusted senders before touching services', () => {
     const { services, invoke } = createHarness()
     expect(() => invoke(IPC_CHANNEL.chatsList, ['p1'], 'file:///untrusted/index.html')).toThrow(
@@ -587,23 +609,11 @@ describe('registered ipc handlers', () => {
     expect(services.chats.list).not.toHaveBeenCalled()
   })
 
-  it('rejects untrusted senders on the handoff and dialog channels before services', () => {
+  it('rejects untrusted senders on dialog channels before services', () => {
     const { services, invoke } = createHarness()
-    expect(() => invoke(IPC_CHANNEL.handoffsList, ['p1'], 'file:///untrusted/index.html')).toThrow(
-      /untrusted/,
-    )
     expect(() =>
       invoke(IPC_CHANNEL.dialogsPickDirectory, [null], 'file:///untrusted/index.html'),
     ).toThrow(/untrusted/)
-    expect(services.handoffs.list).not.toHaveBeenCalled()
-    expect(() =>
-      invoke(
-        IPC_CHANNEL.handoffsResumePrompt,
-        ['p1', 'D:/handoffs/a.md'],
-        'file:///untrusted/index.html',
-      ),
-    ).toThrow(/untrusted/)
-    expect(services.handoffs.resumePrompt).not.toHaveBeenCalled()
     expect(services.dialogs.pickDirectory).not.toHaveBeenCalled()
   })
 
@@ -720,6 +730,7 @@ describe('registered ipc handlers', () => {
       { id: 't3', projectId: 'p2', name: 'c' },
     ]
     const services: AppServices = {
+      resumeSources: resumeSourcesTestStub(),
       usage: usageTestStub(),
       appUpdate: {
         latest: async () => ({ canInstall: false, version: null, error: null }),
@@ -759,10 +770,6 @@ describe('registered ipc handlers', () => {
         showInFolder: vi.fn(() => Promise.resolve()),
         trash: vi.fn(() => Promise.resolve()),
       },
-      handoffs: {
-        resumePrompt: vi.fn(async () => 'Resume prompt'),
-        list: vi.fn(() => Promise.resolve([])),
-      },
       kanban: {
         adaptersList: vi.fn(() => []),
         getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
@@ -777,8 +784,6 @@ describe('registered ipc handlers', () => {
         skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
         writeSkill: vi.fn(() => Promise.resolve()),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
-        handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-        handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
         cleanupProject: vi.fn(),
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
@@ -851,6 +856,7 @@ describe('registered ipc handlers', () => {
       { id: 't3', projectId: 'p2', name: 'c' },
     ]
     const services: AppServices = {
+      resumeSources: resumeSourcesTestStub(),
       usage: usageTestStub(),
       appUpdate: {
         latest: async () => ({ canInstall: false, version: null, error: null }),
@@ -890,10 +896,6 @@ describe('registered ipc handlers', () => {
         showInFolder: vi.fn(() => Promise.resolve()),
         trash: vi.fn(() => Promise.resolve()),
       },
-      handoffs: {
-        resumePrompt: vi.fn(async () => 'Resume prompt'),
-        list: vi.fn(() => Promise.resolve([])),
-      },
       kanban: {
         adaptersList: vi.fn(() => []),
         getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
@@ -908,8 +910,6 @@ describe('registered ipc handlers', () => {
         skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
         writeSkill: vi.fn(() => Promise.resolve()),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
-        handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-        handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
         cleanupProject: vi.fn(),
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
@@ -990,6 +990,7 @@ describe('registered ipc handlers', () => {
       shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
     })
     const services: AppServices = {
+      resumeSources: resumeSourcesTestStub(),
       usage: usageTestStub(),
       appUpdate: {
         latest: async () => ({ canInstall: false, version: null, error: null }),
@@ -1029,10 +1030,6 @@ describe('registered ipc handlers', () => {
         showInFolder: vi.fn(() => Promise.resolve()),
         trash: vi.fn(() => Promise.resolve()),
       },
-      handoffs: {
-        resumePrompt: vi.fn(async () => 'Resume prompt'),
-        list: vi.fn(() => Promise.resolve([])),
-      },
       kanban: {
         adaptersList: vi.fn(() => []),
         getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
@@ -1047,8 +1044,6 @@ describe('registered ipc handlers', () => {
         skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
         writeSkill: vi.fn(() => Promise.resolve()),
         launchTask: vi.fn(() => Promise.resolve({} as never)),
-        handoffCandidates: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_CANDIDATES)),
-        handoffAvailability: vi.fn(() => Promise.resolve(EMPTY_HANDOFF_AVAILABILITY)),
         cleanupProject: vi.fn(),
         dropLaunchProject: vi.fn(),
         blocksProjectShell: vi.fn(() => false),
@@ -1278,17 +1273,6 @@ describe('kanban:* channels (adapter integration)', () => {
     }
     await invoke(IPC_CHANNEL.kanbanLaunchTask, [launchInput])
     expect(services.kanban.launchTask).toHaveBeenCalledWith(launchInput)
-
-    const candidates = { projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1' }
-    await invoke(IPC_CHANNEL.kanbanHandoffCandidates, [candidates])
-    expect(services.kanban.handoffCandidates).toHaveBeenCalledWith(candidates)
-
-    const availabilityInput = {
-      projectId: 'p1',
-      items: [{ itemId: 'native-1', ref: 'DEMO-1' }],
-    }
-    await invoke(IPC_CHANNEL.kanbanHandoffAvailability, [availabilityInput])
-    expect(services.kanban.handoffAvailability).toHaveBeenCalledWith(availabilityInput)
   })
 
   it('projects:remove cleans the per-project kanban keys', () => {
@@ -1358,22 +1342,6 @@ describe('kanban:* channels (adapter integration)', () => {
           },
         ],
       ],
-      [IPC_CHANNEL.kanbanHandoffCandidates, [{ projectId: 'p1', itemId: '', ref: 'DEMO-1' }]],
-      [
-        IPC_CHANNEL.kanbanHandoffCandidates,
-        [{ projectId: 'p1', itemId: 'native-1', ref: 'DEMO-1', extra: 1 }],
-      ],
-      [IPC_CHANNEL.kanbanHandoffAvailability, [{ projectId: 'p1' }]],
-      [IPC_CHANNEL.kanbanHandoffAvailability, [{ projectId: '', items: [] }]],
-      [IPC_CHANNEL.kanbanHandoffAvailability, ['p1']],
-      [
-        IPC_CHANNEL.kanbanHandoffAvailability,
-        [{ projectId: 'p1', items: [{ itemId: '', ref: 'DEMO-1' }] }],
-      ],
-      [
-        IPC_CHANNEL.kanbanHandoffAvailability,
-        [{ projectId: 'p1', items: [{ itemId: 'native-1', ref: 'DEMO-1', extra: 1 }] }],
-      ],
     ]
     for (const [channel, payload] of cases) {
       try {
@@ -1391,8 +1359,6 @@ describe('kanban:* channels (adapter integration)', () => {
     expect(services.kanban.bindLocalFile).not.toHaveBeenCalled()
     expect(services.kanban.skillStatus).not.toHaveBeenCalled()
     expect(services.kanban.writeSkill).not.toHaveBeenCalled()
-    expect(services.kanban.handoffCandidates).not.toHaveBeenCalled()
-    expect(services.kanban.handoffAvailability).not.toHaveBeenCalled()
   })
 
   it('transports adapter failures with their typed codes and messages', async () => {

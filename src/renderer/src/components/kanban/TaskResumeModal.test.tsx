@@ -1,9 +1,7 @@
 import type {
   AppApi,
-  HandoffCandidatesResult,
-  HandoffFileInfo,
-  HandoffRejection,
-  KanbanLaunchResult,
+  ResumeDiscoveryCandidate,
+  ResumeSourceDiscovery,
   WorkItem,
 } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -27,24 +25,34 @@ const item: WorkItem = {
   updatedAt: null,
 }
 
-const candidatesInput = { projectId: 'p1', itemId: 'native-28', ref: 'NEKODE-28' }
-
-function file(name: string, matchKind: HandoffFileInfo['matchKind'], mtime = 1): HandoffFileInfo {
-  return { name, path: `h/${name}`, modifiedAt: new Date(mtime).toISOString(), matchKind }
+function candidate(
+  id: string,
+  overrides: Partial<ResumeDiscoveryCandidate> = {},
+): ResumeDiscoveryCandidate {
+  return {
+    token: `tok-${id}`,
+    id,
+    title: id,
+    displayPath: `h/${id}.md`,
+    modifiedAt: new Date(100).toISOString(),
+    ...overrides,
+  }
 }
 
-function ready(input: {
-  files?: HandoffFileInfo[]
-  rejections?: HandoffRejection[]
-}): HandoffCandidatesResult {
+function discovery(input: {
+  candidates?: ResumeDiscoveryCandidate[]
+  rejections?: Array<{ path: string; reason: string }>
+}): ResumeSourceDiscovery {
   return {
-    state: 'ready',
-    files: input.files ?? [],
+    projectId: 'p1',
+    templateId: 'tmpl-1',
+    revision: 1,
+    candidates: input.candidates ?? [],
     rejections: input.rejections ?? [],
   }
 }
 
-const EMPTY = ready({})
+const EMPTY_DISCOVERY = discovery({})
 
 const profile = {
   id: 'prof-1',
@@ -58,9 +66,16 @@ function appMock(): AppApi {
     agentProfiles: {
       get: vi.fn().mockResolvedValue({ defaultId: profile.id, profiles: [profile] }),
     },
+    resumeSources: {
+      binding: vi.fn().mockResolvedValue({ projectId: 'p1', templateId: 'tmpl-1' }),
+      discover: vi.fn().mockResolvedValue(EMPTY_DISCOVERY),
+      prepare: vi.fn().mockResolvedValue('Resume from candidate prompt'),
+    },
     kanban: {
-      handoffCandidates: vi.fn().mockResolvedValue(EMPTY),
-      launchTask: vi.fn(),
+      launchTask: vi.fn().mockResolvedValue({
+        chat: { id: 'chat-1', name: '[PowerShell] Codex' },
+        delivered: true,
+      }),
     },
   } as unknown as AppApi
 }
@@ -121,14 +136,15 @@ describe('TaskResumeModal', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByTestId(TEST_ID.kanbanResumeCancel))
     })
-    expect(app.kanban.handoffCandidates).toHaveBeenCalledTimes(1)
-    expect(app.kanban.handoffCandidates).toHaveBeenCalledWith(candidatesInput)
+    expect(app.resumeSources.binding).toHaveBeenCalledTimes(1)
+    expect(app.resumeSources.binding).toHaveBeenCalledWith('p1')
+    expect(app.resumeSources.discover).toHaveBeenCalledTimes(1)
     expect(screen.getByTestId(TEST_ID.kanbanResumeTask).textContent).toBe(
       'NEKODE-28: Match the handoff',
     )
     // Hovering never triggers a scan.
     fireEvent.mouseOver(screen.getByRole('dialog'))
-    expect(app.kanban.handoffCandidates).toHaveBeenCalledTimes(1)
+    expect(app.resumeSources.discover).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeCancel))
     await waitFor(() => {
@@ -147,9 +163,9 @@ describe('TaskResumeModal', () => {
     expect(app.kanban.launchTask).not.toHaveBeenCalled()
   })
 
-  it('offers Configure handoffs when no directory is configured', async () => {
+  it('offers Configure Resume when no template is configured', async () => {
     const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue({ state: 'not-configured' })
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({ projectId: 'p1', templateId: null })
     const onConfigureHandoffs = vi.fn()
     render(
       <TaskResumeModal
@@ -163,14 +179,14 @@ describe('TaskResumeModal', () => {
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanResumeConfigure))
     expect(onConfigureHandoffs).toHaveBeenCalledTimes(1)
     expect(screen.queryByTestId(TEST_ID.kanbanResumeEmpty)).toBeNull()
+    expect(app.resumeSources.discover).not.toHaveBeenCalled()
   })
 
-  it('shows a directory read failure as an error, not as no handoffs', async () => {
+  it('shows a discovery read failure as an error, not as no handoffs', async () => {
     const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue({
-      state: 'error',
-      message: 'Handoff directory not found: D:/code/demo/h',
-    })
+    vi.mocked(app.resumeSources.discover).mockRejectedValue(
+      new Error('Failed to execute resume discovery'),
+    )
     render(
       <TaskResumeModal
         app={app}
@@ -181,14 +197,14 @@ describe('TaskResumeModal', () => {
       />,
     )
     const error = await screen.findByTestId(TEST_ID.kanbanResumeError)
-    expect(error.textContent).toContain('Handoff directory not found')
+    expect(error.textContent).toContain('Failed to execute resume discovery')
     expect(screen.queryByTestId(TEST_ID.kanbanResumeEmpty)).toBeNull()
   })
 
-  it('shows the empty state without a manual handoff action when nothing matches', async () => {
+  it('shows the empty state when nothing matches the task ref', async () => {
     const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('loose.md', 'none')] }),
+    vi.mocked(app.resumeSources.discover).mockResolvedValue(
+      discovery({ candidates: [candidate('loose')] }),
     )
     render(
       <TaskResumeModal
@@ -203,25 +219,19 @@ describe('TaskResumeModal', () => {
       'No linked handoff',
     )
     expect(screen.queryByTestId(TEST_ID.kanbanResumeCandidates)).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Link handoff' })).toBeNull()
-    expect(screen.queryByText('loose.md')).toBeNull()
     expect((screen.getByTestId(TEST_ID.kanbanResumeConfirm) as HTMLButtonElement).disabled).toBe(
       true,
     )
   })
 
-  it('selects the newest filename match, never labels candidate kinds, and lists rejections', async () => {
+  it('selects the first matching candidate and lists rejections', async () => {
     const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({
-        files: [
-          file('nekode-28-notes.md', 'filename', 30),
-          file('meta.md', 'none', 20),
-          file('loose.md', 'none', 10),
-        ],
+    vi.mocked(app.resumeSources.discover).mockResolvedValue(
+      discovery({
+        candidates: [candidate('nekode-28-notes'), candidate('meta'), candidate('loose')],
         rejections: [
-          { name: 'big.md', path: 'h/big.md', reason: 'File is larger than 1 MiB.' },
-          { name: 'bad.md', path: 'h/bad.md', reason: 'File is not valid UTF-8.' },
+          { path: 'big.md', reason: 'File is larger than 1 MiB.' },
+          { path: 'bad.md', reason: 'File is not valid UTF-8.' },
         ],
       }),
     )
@@ -239,68 +249,20 @@ describe('TaskResumeModal', () => {
     expect(warnings.textContent).toContain('big.md')
     expect(warnings.textContent).toContain('File is larger than 1 MiB.')
     expect(warnings.textContent).toContain('bad.md')
-    // Only a ref-named file is a candidate, and its row carries the name with
-    // no match-kind label (NEKODE-30 stage 2).
-    const row = screen.getByTestId(testIdFor.kanbanResumeCandidate('nekode-28-notes.md'))
+
+    const row = screen.getByTestId(testIdFor.kanbanResumeCandidate('nekode-28-notes'))
     expect((within(row).getByRole('radio') as HTMLInputElement).checked).toBe(true)
-    expect(row.textContent).toBe('nekode-28-notes.md')
-    // A file whose name does not carry the ref is never a candidate.
-    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('meta.md'))).toBeNull()
-    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('loose.md'))).toBeNull()
+    expect(row.textContent).toContain('nekode-28-notes')
+    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('meta'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('loose'))).toBeNull()
   })
 
-  it('ignores a stored legacy handoff link and only offers filename candidates', async () => {
+  it('allows choosing another candidate and launches with prepared prompt', async () => {
     const app = appMock()
-    vi.mocked(app.kanban.launchTask).mockResolvedValue({
-      chat: { id: 'chat-linked', projectId: 'p1', name: 'Codex' },
-      delivered: true,
-    })
-    // A scan result that still carries a legacy link document (NEKODE-30
-    // stage 2 removed the link) must not add or suppress a candidate.
-    const withLegacyLink = {
-      ...ready({
-        files: [file('nekode-28-notes.md', 'filename', 10), file('meta.md', 'none', 5)],
+    vi.mocked(app.resumeSources.discover).mockResolvedValue(
+      discovery({
+        candidates: [candidate('nekode-28-notes'), candidate('nekode-28-stage-2')],
       }),
-      link: { name: 'meta.md', path: 'h/meta.md', modifiedAt: new Date(5).toISOString() },
-    } as unknown as HandoffCandidatesResult
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(withLegacyLink)
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={vi.fn()}
-        onConfigureHandoffs={vi.fn()}
-      />,
-    )
-    const row = await screen.findByTestId(testIdFor.kanbanResumeCandidate('nekode-28-notes.md'))
-    expect((within(row).getByRole('radio') as HTMLInputElement).checked).toBe(true)
-    // The legacy link's file is a name miss and stays unselectable.
-    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('meta.md'))).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Link handoff' })).toBeNull()
-    const confirm = screen.getByTestId(TEST_ID.kanbanResumeConfirm)
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
-    fireEvent.click(confirm)
-    await waitFor(() =>
-      expect(app.kanban.launchTask).toHaveBeenCalledWith({
-        ...candidatesInput,
-        profileId: profile.id,
-        attemptId: expect.any(String),
-        mode: 'resume',
-        fileName: 'nekode-28-notes.md',
-        stamp: new Date(10).toISOString(),
-      }),
-    )
-  })
-
-  it('allows choosing another automatic candidate without offering manual assignment', async () => {
-    const app = appMock()
-    vi.mocked(app.kanban.launchTask).mockResolvedValue({
-      chat: { id: 'chat-candidate', projectId: 'p1', name: 'Codex' },
-      delivered: true,
-    })
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('meta.md', 'none', 10), file('older.md', 'filename', 5)] }),
     )
     render(
       <TaskResumeModal
@@ -311,30 +273,39 @@ describe('TaskResumeModal', () => {
         onConfigureHandoffs={vi.fn()}
       />,
     )
-    const row = await screen.findByTestId(testIdFor.kanbanResumeCandidate('older.md'))
-    fireEvent.click(within(row).getByRole('radio'))
-    expect((within(row).getByRole('radio') as HTMLInputElement).checked).toBe(true)
-    expect(screen.queryByRole('button', { name: 'Link handoff' })).toBeNull()
+    const secondRow = await screen.findByTestId(
+      testIdFor.kanbanResumeCandidate('nekode-28-stage-2'),
+    )
+    fireEvent.click(within(secondRow).getByRole('radio'))
+    expect((within(secondRow).getByRole('radio') as HTMLInputElement).checked).toBe(true)
+
     const confirm = screen.getByTestId(TEST_ID.kanbanResumeConfirm)
     await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(confirm)
-    await waitFor(() =>
+
+    await waitFor(() => {
+      expect(app.resumeSources.prepare).toHaveBeenCalledWith(
+        'p1',
+        'tok-nekode-28-stage-2',
+        expect.any(String),
+      )
       expect(app.kanban.launchTask).toHaveBeenCalledWith({
-        ...candidatesInput,
+        projectId: 'p1',
+        itemId: 'native-28',
+        ref: 'NEKODE-28',
         profileId: profile.id,
         attemptId: expect.any(String),
         mode: 'resume',
-        fileName: 'older.md',
-        stamp: new Date(5).toISOString(),
-      }),
-    )
+        prompt: 'Resume from candidate prompt',
+      })
+    })
   })
 
   it('re-scans on Refresh and drops a stale scan from a disposed modal', async () => {
     const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates)
-      .mockResolvedValueOnce(ready({ files: [file('a.md', 'filename', 1)] }))
-      .mockResolvedValueOnce(ready({ files: [file('b.md', 'filename', 2)] }))
+    vi.mocked(app.resumeSources.discover)
+      .mockResolvedValueOnce(discovery({ candidates: [candidate('nekode-28-a')] }))
+      .mockResolvedValueOnce(discovery({ candidates: [candidate('nekode-28-b')] }))
     render(
       <TaskResumeModal
         app={app}
@@ -344,15 +315,13 @@ describe('TaskResumeModal', () => {
         onConfigureHandoffs={vi.fn()}
       />,
     )
-    await screen.findByTestId(testIdFor.kanbanResumeCandidate('a.md'))
+    await screen.findByTestId(testIdFor.kanbanResumeCandidate('nekode-28-a'))
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeRefresh))
-    await screen.findByTestId(testIdFor.kanbanResumeCandidate('b.md'))
-    expect(app.kanban.handoffCandidates).toHaveBeenCalledTimes(2)
+    await screen.findByTestId(testIdFor.kanbanResumeCandidate('nekode-28-b'))
+    expect(app.resumeSources.discover).toHaveBeenCalledTimes(2)
 
-    // A late scan after unmount must not touch state: the promise below only
-    // resolves after the tree is gone and must not warn or throw.
-    let resolveLate: (value: HandoffCandidatesResult) => void = () => undefined
-    vi.mocked(app.kanban.handoffCandidates).mockReturnValue(
+    let resolveLate: (value: ResumeSourceDiscovery) => void = () => undefined
+    vi.mocked(app.resumeSources.discover).mockReturnValue(
       new Promise((resolve) => {
         resolveLate = resolve
       }),
@@ -368,215 +337,21 @@ describe('TaskResumeModal', () => {
     )
     tree.unmount()
     await act(async () => {
-      resolveLate(ready({ files: [file('late.md', 'filename', 3)] }))
+      resolveLate(discovery({ candidates: [candidate('nekode-28-late')] }))
     })
-    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('late.md'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('nekode-28-late'))).toBeNull()
   })
 
-  it('enables Resume only after the scan finishes with a still-matching file and a profile', async () => {
+  it('shows error when prepare fails due to candidate change or conflict', async () => {
     const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('nekode-28-notes.md', 'filename', 5)] }),
+    vi.mocked(app.resumeSources.discover).mockResolvedValue(
+      discovery({ candidates: [candidate('nekode-28-notes')] }),
     )
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={vi.fn()}
-        onConfigureHandoffs={vi.fn()}
-      />,
-    )
-    const confirm = await screen.findByTestId(TEST_ID.kanbanResumeConfirm)
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
-    expect(screen.getByTestId(testIdFor.kanbanResumeProfile(profile.id))).toBeTruthy()
-  })
-
-  it('keeps Resume disabled when no file still matches', async () => {
-    const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('loose.md', 'none', 5)] }),
-    )
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={vi.fn()}
-        onConfigureHandoffs={vi.fn()}
-      />,
-    )
-    await screen.findByTestId(TEST_ID.kanbanResumeEmpty)
-    expect((screen.getByTestId(TEST_ID.kanbanResumeConfirm) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeConfirm))
-    expect(app.kanban.launchTask).not.toHaveBeenCalled()
-  })
-
-  it('sends the resume input with the chosen file name and its stamp', async () => {
-    const app = appMock()
-    const stamp = new Date(5).toISOString()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('nekode-28-notes.md', 'filename', 5)] }),
-    )
-    vi.mocked(app.kanban.launchTask).mockResolvedValue({
-      chat: { id: 'chat-1', projectId: 'p1', name: 'Codex' },
-      delivered: true,
-    })
-    const onLaunched = vi.fn()
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={vi.fn()}
-        onConfigureHandoffs={vi.fn()}
-        onLaunched={onLaunched}
-      />,
-    )
-    const confirm = await screen.findByTestId(TEST_ID.kanbanResumeConfirm)
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
-    fireEvent.click(confirm)
-    await waitFor(() => expect(app.kanban.launchTask).toHaveBeenCalledTimes(1))
-    expect(app.kanban.launchTask).toHaveBeenCalledWith({
-      projectId: 'p1',
-      itemId: 'native-28',
-      ref: 'NEKODE-28',
-      profileId: profile.id,
-      attemptId: expect.any(String),
-      mode: 'resume',
-      fileName: 'nekode-28-notes.md',
-      stamp,
-    })
-    expect(onLaunched).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows the failure from main and keeps the choice for a fresh attempt', async () => {
-    const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('nekode-28-notes.md', 'filename', 5)] }),
-    )
-    vi.mocked(app.kanban.launchTask).mockRejectedValue(new Error('recheck refused'))
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={vi.fn()}
-        onConfigureHandoffs={vi.fn()}
-      />,
-    )
-    const confirm = await screen.findByTestId(TEST_ID.kanbanResumeConfirm)
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
-    fireEvent.click(confirm)
-    const error = await screen.findByTestId(TEST_ID.kanbanResumeError)
-    expect(error.textContent).toContain('Failed to resume the task.')
-    expect(screen.getByRole('dialog')).toBeTruthy()
-    // The failure unlocks Confirm for a fresh confirmation.
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
-  })
-
-  it('ignores Escape and the backdrop while the resume is in flight and still calls onLaunched', async () => {
-    const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('nekode-28-notes.md', 'filename', 5)] }),
-    )
-    let resolveLaunch: (value: KanbanLaunchResult) => void = () => undefined
-    vi.mocked(app.kanban.launchTask).mockReturnValue(
-      new Promise((resolve) => {
-        resolveLaunch = resolve
-      }),
-    )
-    const onCancel = vi.fn()
-    const onLaunched = vi.fn()
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={onCancel}
-        onConfigureHandoffs={vi.fn()}
-        onLaunched={onLaunched}
-      />,
-    )
-    const confirm = await screen.findByTestId(TEST_ID.kanbanResumeConfirm)
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
-    fireEvent.click(confirm)
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
-    fireEvent.mouseDown(screen.getByRole('presentation'))
-    expect(onCancel).not.toHaveBeenCalled()
-    expect((screen.getByTestId(TEST_ID.kanbanResumeCancel) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-    await act(async () => {
-      resolveLaunch({ chat: { id: 'chat-9', projectId: 'p1', name: 'Codex' }, delivered: true })
-    })
-    expect(onLaunched).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows Configure agents and keeps Resume disabled when the project has no profiles', async () => {
-    const app = appMock()
-    vi.mocked(app.agentProfiles.get).mockResolvedValue({ defaultId: null, profiles: [] })
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('nekode-28-notes.md', 'filename', 5)] }),
-    )
-    const onConfigureAgents = vi.fn()
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={vi.fn()}
-        onConfigureHandoffs={vi.fn()}
-        onConfigureAgents={onConfigureAgents}
-      />,
-    )
-    await screen.findByTestId(TEST_ID.kanbanResumeProfilesEmpty)
-    // The handoff matched, so only the missing profile keeps Resume disabled.
-    expect(screen.getByTestId(testIdFor.kanbanResumeCandidate('nekode-28-notes.md'))).toBeTruthy()
-    expect(screen.queryByTestId(testIdFor.kanbanResumeProfile(profile.id))).toBeNull()
-    expect((screen.getByTestId(TEST_ID.kanbanResumeConfirm) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeConfigureAgents))
-    expect(onConfigureAgents).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows the agent-profile load failure and keeps Resume disabled', async () => {
-    const app = appMock()
-    vi.mocked(app.agentProfiles.get).mockRejectedValue({
+    vi.mocked(app.resumeSources.prepare).mockRejectedValueOnce({
       nekodeAppError: true,
-      code: 'internal',
-      message: 'Agent profiles could not be read.',
+      code: 'conflict',
+      message: 'The selected candidate has changed. Refresh the Resume list.',
     })
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValue(
-      ready({ files: [file('nekode-28-notes.md', 'filename', 5)] }),
-    )
-    render(
-      <TaskResumeModal
-        app={app}
-        projectId="p1"
-        item={item}
-        onCancel={vi.fn()}
-        onConfigureHandoffs={vi.fn()}
-        onConfigureAgents={vi.fn()}
-      />,
-    )
-    const profileError = await screen.findByTestId(TEST_ID.kanbanResumeProfileError)
-    expect(profileError.textContent).toContain('Agent profiles could not be read.')
-    // The handoff matched, so only the failed profile load keeps Resume disabled.
-    expect(screen.getByTestId(testIdFor.kanbanResumeCandidate('nekode-28-notes.md'))).toBeTruthy()
-    expect((screen.getByTestId(TEST_ID.kanbanResumeConfirm) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-  })
-
-  it('keeps Resume disabled while a Refresh rescan is still running', async () => {
-    const app = appMock()
-    vi.mocked(app.kanban.handoffCandidates).mockResolvedValueOnce(
-      ready({ files: [file('nekode-28-notes.md', 'filename', 5)] }),
-    )
     render(
       <TaskResumeModal
         app={app}
@@ -586,24 +361,12 @@ describe('TaskResumeModal', () => {
         onConfigureHandoffs={vi.fn()}
       />,
     )
-    const confirm = await screen.findByTestId(TEST_ID.kanbanResumeConfirm)
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+    await screen.findByTestId(testIdFor.kanbanResumeCandidate('nekode-28-notes'))
+    const confirm = screen.getByTestId(TEST_ID.kanbanResumeConfirm)
+    fireEvent.click(confirm)
 
-    let resolveRescan: (value: HandoffCandidatesResult) => void = () => undefined
-    vi.mocked(app.kanban.handoffCandidates).mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveRescan = resolve
-      }),
-    )
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeRefresh))
-    // The rescan is pending, so even though the previous scan left a matching
-    // selection, Resume stays disabled until the search finishes (Resume.2).
-    expect(app.kanban.handoffCandidates).toHaveBeenCalledTimes(2)
-    expect((confirm as HTMLButtonElement).disabled).toBe(true)
-
-    await act(async () => {
-      resolveRescan(ready({ files: [file('nekode-28-notes.md', 'filename', 5)] }))
-    })
-    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+    const error = await screen.findByTestId(TEST_ID.kanbanResumeError)
+    expect(error.textContent).toBe('The selected candidate has changed. Refresh the Resume list.')
+    expect(app.kanban.launchTask).not.toHaveBeenCalled()
   })
 })

@@ -1,17 +1,15 @@
-import type { AppApi, HandoffEntry } from '@shared/ipc-contract'
-import { projectHandoffDirKey, relativeToProject } from '@shared/ipc-contract'
+import type { AppApi, ResumeDiscoveryCandidate } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 import { focusRing, primaryClass, secondaryClass } from '../settings/settings-ui'
 
-// Resume handoff picker (spec handoff-resume-flow Behaviour 4-5): the list
-// loads lazily at open - one state read for the configured directory plus one
-// handoffs:list call. Selecting an entry asks main to compose the prompt
-// using the latest optional Resume template, then delivers it through the
-// existing paste/auto-send path. The picker reads no files and persists nothing.
+// Resume picker (spec handoff-resume-flow Behaviour 4-5, NEKODE-142): the list
+// loads lazily at open from the project's configured reusable Resume source.
+// Selecting a candidate validates the selection fingerprint and asks main to
+// compose the prompt, then delivers it through the existing paste/auto-send path.
 
 interface HandoffPickerProps {
   app: AppApi
@@ -26,17 +24,6 @@ interface HandoffPickerProps {
   onClose: () => void
 }
 
-/** Plain fallback command (no path): the agent finds the handoff itself. */
-const PLAIN_RESUME_COMMAND = 'Resume from handoff'
-
-/** Project-root-relative path when inside the root; absolute otherwise. */
-function displayPath(entry: HandoffEntry, projectPath: string | null): string {
-  if (projectPath === null) {
-    return entry.path
-  }
-  return relativeToProject(projectPath, entry.path) ?? entry.path
-}
-
 function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
 }
@@ -44,51 +31,57 @@ function errorMessage(error: unknown, fallback: string): string {
 export function HandoffPicker({
   app,
   projectId,
-  projectPath,
   onPick,
   onConfigure,
   onClose,
 }: HandoffPickerProps): React.JSX.Element {
   const [phase, setPhase] = useState<'loading' | 'unconfigured' | 'ready' | 'error'>('loading')
-  const [entries, setEntries] = useState<HandoffEntry[]>([])
+  const [candidates, setCandidates] = useState<ResumeDiscoveryCandidate[]>([])
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const requestRef = useRef<object | null>(null)
+  const discoveryIdRef = useRef<string | null>(null)
   const onPickRef = useRef(onPick)
   // An in-flight reply must use the current chat's live-session delivery guard.
   onPickRef.current = onPick
 
-  useEffect(() => {
-    let alive = true
+  const load = useCallback(async (): Promise<void> => {
     requestRef.current = null
     setPending(false)
     setError(null)
     setPhase('loading')
-    setEntries([])
-    async function load(): Promise<void> {
-      try {
-        const configured = await app.state.get(projectHandoffDirKey(projectId))
-        if (!alive) return
-        if (configured === null || configured.trim().length === 0) {
-          setPhase('unconfigured')
-          return
-        }
-        const list = await app.handoffs.list(projectId)
-        if (!alive) return
-        setEntries(list)
-        setPhase('ready')
-      } catch (cause) {
-        if (!alive) return
-        setError(errorMessage(cause, 'Failed to load handoffs.'))
-        setPhase('error')
+    setCandidates([])
+    const requestId = crypto.randomUUID()
+    discoveryIdRef.current = requestId
+    try {
+      const binding = await app.resumeSources.binding(projectId)
+      if (discoveryIdRef.current !== requestId) return
+      if (binding.templateId === null) {
+        setPhase('unconfigured')
+        return
       }
-    }
-    void load()
-    return () => {
-      alive = false
-      requestRef.current = null
+      const discovery = await app.resumeSources.discover(projectId, requestId)
+      if (discoveryIdRef.current !== requestId) return
+      setCandidates(discovery.candidates)
+      setPhase('ready')
+    } catch (cause) {
+      if (discoveryIdRef.current !== requestId) return
+      setError(errorMessage(cause, 'Failed to discover Resume candidates.'))
+      setPhase('error')
     }
   }, [app, projectId])
+
+  useEffect(() => {
+    void load()
+    return () => {
+      const pendingReq = discoveryIdRef.current
+      discoveryIdRef.current = null
+      requestRef.current = null
+      if (pendingReq !== null) {
+        void app.resumeSources.cancel(pendingReq).catch(() => undefined)
+      }
+    }
+  }, [app, load])
 
   // Escape closes the picker from anywhere: the trigger button keeps focus
   // when the dialog opens, so a dialog-level onKeyDown would never see the
@@ -116,19 +109,19 @@ export function HandoffPicker({
     onClose()
   }
 
-  async function pickEntry(entry: HandoffEntry): Promise<void> {
+  async function pickCandidate(candidate: ResumeDiscoveryCandidate): Promise<void> {
     if (requestRef.current !== null) return
     const request = {}
     requestRef.current = request
     setPending(true)
     setError(null)
     try {
-      const text = await app.handoffs.resumePrompt(projectId, entry.path)
+      const text = await app.resumeSources.prepare(projectId, candidate.token, crypto.randomUUID())
       if (requestRef.current !== request) return
       pick(text)
     } catch (cause) {
       if (requestRef.current === request) {
-        setError(errorMessage(cause, 'Failed to compose the Resume prompt.'))
+        setError(errorMessage(cause, 'Failed to prepare the Resume prompt.'))
       }
     } finally {
       if (requestRef.current === request) {
@@ -140,15 +133,11 @@ export function HandoffPicker({
 
   return (
     <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the backdrop hosts the dismiss gesture (mouse down outside the dialog); the dialog's controls are real buttons and inputs and it closes on Escape. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: backdrop dismiss on mouse down outside dialog */}
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
         role="presentation"
         onMouseDown={(event) => {
-          // Backdrop dismiss: only a pointer-down on the dimmed area itself
-          // closes. mousedown (not click) survives a text-selection drag that
-          // releases outside the dialog; the target check keeps pointer-downs
-          // inside the dialog from closing it.
           if (event.target === event.currentTarget) {
             close()
           }
@@ -157,12 +146,12 @@ export function HandoffPicker({
         <section
           role="dialog"
           aria-modal="true"
-          aria-label="Resume from handoff"
+          aria-label="Resume task"
           className="flex max-h-[85vh] w-[min(40rem,calc(100%-48px))] flex-col overflow-hidden rounded-[12px] border border-edge bg-dialog text-ink shadow-xl"
           data-testid={TEST_ID.handoffPicker}
         >
           <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-edge pr-2.5 pl-5">
-            <h2 className="text-[15px] font-semibold text-project-title">Resume from handoff</h2>
+            <h2 className="text-[15px] font-semibold text-project-title">Resume task</h2>
             <button
               type="button"
               aria-label="Close handoff picker"
@@ -179,14 +168,14 @@ export function HandoffPicker({
                 className="mt-4 text-xs text-ink-secondary"
                 data-testid={TEST_ID.handoffPickerLoading}
               >
-                Loading handoffs...
+                Loading Resume candidates...
               </p>
             ) : null}
             {phase === 'unconfigured' ? (
               <div className="mt-4 text-xs" data-testid={TEST_ID.handoffPickerUnconfigured}>
                 <p className="text-ink-secondary">
-                  No handoff directory is configured for this project. Set it in Project Settings to
-                  pick from past handoffs.
+                  No Resume template is configured for this project. Set it in Project Settings to
+                  resume tasks.
                 </p>
                 <div className="mt-3 flex gap-2">
                   <button
@@ -197,64 +186,72 @@ export function HandoffPicker({
                   >
                     Configure
                   </button>
-                  <button
-                    type="button"
-                    className={secondaryClass}
-                    data-testid={TEST_ID.handoffPickerPlainPaste}
-                    onClick={() => {
-                      pick(PLAIN_RESUME_COMMAND)
-                    }}
-                  >
-                    Paste without path
-                  </button>
                 </div>
               </div>
             ) : null}
             {error !== null ? (
-              <p
-                className="mt-4 text-xs text-error"
-                role="alert"
-                data-testid={TEST_ID.handoffPickerError}
-              >
-                {error}
-              </p>
+              <div className="mt-4 flex flex-col gap-2">
+                <p
+                  className="text-xs text-error"
+                  role="alert"
+                  data-testid={TEST_ID.handoffPickerError}
+                >
+                  {error}
+                </p>
+                <button
+                  type="button"
+                  className={`${secondaryClass} self-start text-xs`}
+                  onClick={() => void load()}
+                >
+                  Retry
+                </button>
+              </div>
             ) : null}
             {phase === 'ready' ? (
-              entries.length === 0 ? (
-                <p
-                  className="mt-4 text-xs text-ink-secondary"
+              candidates.length === 0 ? (
+                <div
+                  className="mt-4 flex flex-col gap-2 text-xs text-ink-secondary"
                   data-testid={TEST_ID.handoffPickerEmpty}
                 >
-                  No handoffs in the configured directory.
-                </p>
+                  <p>No candidates found for the configured Resume source.</p>
+                  <button
+                    type="button"
+                    className={`${secondaryClass} self-start text-xs`}
+                    onClick={() => void load()}
+                  >
+                    Retry
+                  </button>
+                </div>
               ) : (
                 <ul
                   className="overflow-hidden rounded-[10px] border border-edge bg-group"
                   data-testid={TEST_ID.handoffPickerList}
                 >
-                  {entries.map((entry) => (
-                    <li key={entry.path} className="border-edge not-first:border-t">
+                  {candidates.map((candidate) => (
+                    <li key={candidate.token} className="border-edge not-first:border-t">
                       <button
                         type="button"
                         className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-highlight disabled:opacity-50 ${focusRing}`}
-                        title={entry.path}
+                        title={candidate.displayPath}
                         data-testid={TEST_ID.handoffPickerEntry}
                         disabled={pending}
                         onClick={() => {
-                          void pickEntry(entry)
+                          void pickCandidate(candidate)
                         }}
                       >
                         <span className="min-w-0 truncate text-[13px] font-medium text-ink">
-                          {entry.name}
+                          {candidate.title || candidate.id}
                         </span>
                         <span
                           className="col-start-1 min-w-0 truncate text-xs text-ink-muted"
-                          title={displayPath(entry, projectPath)}
+                          title={candidate.displayPath}
                         >
-                          {displayPath(entry, projectPath)}
+                          {candidate.displayPath}
+                          {candidate.status ? ` · ${candidate.status}` : ''}
+                          {candidate.next_action ? ` · ${candidate.next_action}` : ''}
                         </span>
                         <span className="col-start-2 row-span-2 row-start-1 self-center text-xs text-ink-muted">
-                          {new Date(entry.modifiedAt).toLocaleString()}
+                          {new Date(candidate.modifiedAt).toLocaleString()}
                         </span>
                       </button>
                     </li>

@@ -5,7 +5,6 @@ import { bottomTabProjectId, isBottomTabId } from '@shared/bottom-tab-id'
 import {
   APP_STATE_KEY,
   IPC_CHANNEL,
-  projectHandoffDirKey,
   projectShellKey,
   projectWslShellsKey,
 } from '@shared/ipc-contract'
@@ -33,11 +32,10 @@ import { PostProcessor } from './dictation/post-processing/post-processor'
 import { ProviderRegistry } from './dictation/registry/provider-registry'
 import { FilesService } from './files/files-service'
 import { GitService } from './git/git-service'
-import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
-import { HandoffsService } from './handoffs/handoffs-service'
+import { ResumeSourcesService } from './handoffs/resume-sources-service'
 import { ResumeTemplateService } from './handoffs/resume-template-service'
 import { KanbanService, type SafeStorageLike } from './kanban/kanban-service'
-import { buildResumePrompt, TaskLaunchService } from './kanban/task-launch-service'
+import { TaskLaunchService } from './kanban/task-launch-service'
 import { ProjectService } from './project-service'
 import { TASK_PROGRESS_ADAPTERS_DIR_NAME } from './task-progress/adapter-manifest'
 import { TaskProgressService } from './task-progress/task-progress-service'
@@ -184,15 +182,15 @@ export function createServices(options: CreateServicesOptions): AppServices {
     showInFolder: options.showInFolder,
     trashItem: options.trashItem,
   })
-  const handoffs = new HandoffsService({ projects, state, handoffDirKey: projectHandoffDirKey })
   const resumeTemplates = new ResumeTemplateService({
     projects,
     userDataPath: options.userDataPath,
   })
-  // Handoff match (stage 4): a shallow, read-only scan beside HandoffsService.
-  // HandoffsService.list keeps its own contract; this service only reads the
-  // configured directory and returns file metadata.
-  const handoffMatcher = new HandoffMatcherService({ projects, state })
+  const resumeSources = new ResumeSourcesService({
+    projects,
+    state,
+    readLegacyTemplate: () => resumeTemplates.readLegacyTemplate(),
+  })
   const kanban = new KanbanService({
     projects,
     state,
@@ -237,17 +235,6 @@ export function createServices(options: CreateServicesOptions): AppServices {
     projects,
     profiles: agentProfiles,
     kanban,
-    // Resume rechecks its chosen file through the stage 4 matcher before the
-    // chat is created (spec Resume.3).
-    handoffs: handoffMatcher,
-    resumePrompt: (path) => resumeTemplates.format(path, buildResumePrompt(path)),
-    handoffDir: (projectId) => {
-      const value = state.get(projectHandoffDirKey(projectId))
-      if (value === null || value.trim().length === 0) {
-        return null
-      }
-      return value
-    },
     createChat: (projectId, name, identity) =>
       chats.createNamed(projectId, name, IPC_CHANNEL.kanbanLaunchTask, identity),
     terminals: agentTerminals,
@@ -462,11 +449,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       showInFolder: (projectId, relativePath) => files.showInFolder(projectId, relativePath),
       trash: (projectId, relativePath) => files.trash(projectId, relativePath),
     },
-    handoffs: {
-      list: (projectId) => handoffs.list(projectId),
-      resumePrompt: (projectId, handoffPath) =>
-        resumeTemplates.resumePrompt(projectId, handoffPath),
-    },
+    resumeSources,
     kanban: {
       adaptersList: () => kanban.adaptersList(),
       getConfig: (projectId) => kanban.getConfig(projectId),
@@ -482,8 +465,6 @@ export function createServices(options: CreateServicesOptions): AppServices {
       getItem: (projectId, ref) => kanban.getItem(projectId, ref),
       getComments: (projectId, ref) => kanban.getComments(projectId, ref),
       launchTask: (input) => taskLaunch.launch(input),
-      handoffCandidates: (input) => handoffMatcher.candidates(input),
-      handoffAvailability: (input) => handoffMatcher.availability(input),
       cleanupProject: (projectId) => kanban.cleanupProject(projectId),
       dropLaunchProject: (projectId) => taskLaunch.dropProject(projectId),
       blocksProjectShell: (chatId) => taskLaunch.blocksProjectShell(chatId),

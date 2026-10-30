@@ -36,6 +36,11 @@ export class ResumeTemplateService {
     return template === null ? defaultPrompt : template.replaceAll(PLACEHOLDER, () => handoffPath)
   }
 
+  /** Read legacy template from settings.json without formatting. */
+  async readLegacyTemplate(): Promise<string | null> {
+    return this.#readTemplate()
+  }
+
   #error(reason: string): AppError {
     return new AppError('config', `Resume settings ${this.#settingsPath}: ${reason}`)
   }

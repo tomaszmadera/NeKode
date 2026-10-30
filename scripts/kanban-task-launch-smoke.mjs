@@ -296,46 +296,95 @@ try {
   if (typeof prompt !== 'string' || !prompt.startsWith('Work on task SMK-1: Smoke launch.')) {
     throw new Error('the prompt was not the single argv element')
   }
-  for (const piece of ['\n', '"', '&', '|', ';', '`', LEAK, itemUrl, handoffDir]) {
+  for (const piece of ['\n', '"', '&', '|', ';', '`', LEAK, itemUrl]) {
     if (!prompt.includes(piece)) throw new Error(`prompt is missing ${JSON.stringify(piece)}`)
   }
-  for (const secret of [LEAK, itemUrl, handoffDir, 'Quote "here"']) {
+  if (!prompt.includes('Keep the full ref in the name of the local task record')) {
+    throw new Error('the prompt is missing the task record instruction')
+  }
+  if (prompt.includes(handoffDir)) {
+    throw new Error('the start prompt must not include the legacy handoff directory')
+  }
+  for (const secret of [LEAK, itemUrl, 'Quote "here"']) {
     if (fullStderr.includes(secret)) throw new Error('Electron stderr included launch prompt data')
   }
   process.stdout.write(`${printed}\n`)
 
-  // Resume (stage 5): the same fixture CLI, driven by the Resume prompt built
-  // in main. The scan runs through the same typed bridge the modal uses.
-  const candidatesInput = { projectId, itemId: 'native-smoke', ref: 'SMK-1' }
+  // Resume (NEKODE-142 Stage 3):
+  // 1. Generic file source Resume:
+  // Register reusable template and bind to project.
+  const genericTemplate = {
+    id: null,
+    revision: null,
+    name: 'Generic files',
+    prompt: 'Resume from {taskPath}',
+    source: {
+      kind: 'files',
+      directory: 'handoffs',
+      pattern: '*.md',
+      recursive: false,
+      identity: 'stem',
+    },
+  }
+  const putGeneric = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.put(${JSON.stringify(genericTemplate)})`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (putGeneric.exceptionDetails !== undefined) {
+    throw new Error(`put template failed: ${JSON.stringify(putGeneric.exceptionDetails)}`)
+  }
+  const genericLibrary = putGeneric.result?.value
+  const createdGeneric = genericLibrary?.templates?.find((t) => t.name === 'Generic files')
+  if (!createdGeneric) throw new Error('created generic template not found')
+  await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.bind(${JSON.stringify(projectId)}, ${JSON.stringify(createdGeneric.id)})`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+
+  // Discover candidates from the generic file source.
   const scanCall = await pageCall('Runtime.evaluate', {
-    expression: `window.app.kanban.handoffCandidates(${JSON.stringify(candidatesInput)})`,
+    expression: `window.app.resumeSources.discover(${JSON.stringify(projectId)}, 'req-smoke-file')`,
     awaitPromise: true,
     returnByValue: true,
   })
   if (scanCall.exceptionDetails !== undefined) {
-    throw new Error(`handoffCandidates rejected: ${JSON.stringify(scanCall.exceptionDetails)}`)
+    throw new Error(`discover rejected: ${JSON.stringify(scanCall.exceptionDetails)}`)
   }
   const scan = scanCall.result?.value
-  if (scan?.state !== 'ready') {
-    throw new Error(`unexpected handoff scan: ${JSON.stringify(scan)}`)
+  const candidate = scan.candidates?.find((entry) => entry.id === 'smk-1-handoff')
+  if (!candidate) {
+    throw new Error(`file candidate smk-1-handoff not found: ${JSON.stringify(scan)}`)
   }
-  const candidate = scan.files.find((entry) => entry.name === handoffFileName)
-  if (candidate === undefined || candidate.matchKind !== 'filename') {
-    throw new Error(`the handoff file was not a filename match: ${JSON.stringify(scan.files)}`)
+
+  // Prepare prompt for file candidate.
+  const prepCall = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.prepare(${JSON.stringify(projectId)}, ${JSON.stringify(candidate.token)}, 'req-smoke-file')`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (prepCall.exceptionDetails !== undefined) {
+    throw new Error(`prepare rejected: ${JSON.stringify(prepCall.exceptionDetails)}`)
   }
+  const resumePrompt = prepCall.result?.value
+  const expectedFilePrompt = `Resume from ${join('handoffs', 'smk-1-handoff.md')}`
+  if (resumePrompt !== expectedFilePrompt) {
+    throw new Error(`unexpected prepared prompt: ${resumePrompt}`)
+  }
+
+  // Launch Resume with the prepared prompt.
   rmSync(outFile, { force: true })
-  const resumeInput = {
-    projectId,
-    itemId: 'native-smoke',
-    ref: 'SMK-1',
-    profileId: 'prof-smoke',
-    attemptId: 'attempt-smoke-resume',
-    mode: 'resume',
-    fileName: handoffFileName,
-    stamp: candidate.modifiedAt,
-  }
   const resumeLaunch = await pageCall('Runtime.evaluate', {
-    expression: `window.app.kanban.launchTask(${JSON.stringify(resumeInput)}).then((result) => ({ name: result.chat.name, delivered: result.delivered }))`,
+    expression: `window.app.kanban.launchTask(${JSON.stringify({
+      projectId,
+      itemId: 'native-smoke',
+      ref: 'SMK-1',
+      profileId: 'prof-smoke',
+      attemptId: 'attempt-smoke-resume-file',
+      mode: 'resume',
+      prompt: resumePrompt,
+    })}).then((result) => ({ name: result.chat.name, delivered: result.delivered }))`,
     awaitPromise: true,
     returnByValue: true,
   })
@@ -366,16 +415,220 @@ try {
   if (resumeParsed.argv[0] !== fixtureScript) {
     throw new Error(`resume fixture script arg was ${resumeParsed.argv[0]}`)
   }
-  const resumePrompt = resumeParsed.argv[1]
-  if (resumePrompt !== 'Resume from handoffs/smk-1-handoff.md') {
+  if (resumeParsed.argv[1] !== expectedFilePrompt) {
     throw new Error(`the resume prompt was not the single argv element: ${resumePrinted}`)
   }
-  for (const secret of [LEAK, itemUrl, 'handoffs/smk-1-handoff.md']) {
+  for (const secret of [LEAK, itemUrl, expectedFilePrompt]) {
     if (fullStderr.includes(secret)) {
       throw new Error('Electron stderr included resume prompt data')
     }
   }
-  process.stdout.write(`${resumePrinted}\n`)
+  process.stdout.write(`Generic file resume: ${resumePrinted}\n`)
+
+  // 2. Stale selection and token revalidation:
+  // Reusing an already-prepared token must reject.
+  const reuseCall = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.prepare(${JSON.stringify(projectId)}, ${JSON.stringify(candidate.token)}, 'req-smoke-reuse').catch((err) => ({ error: err.message }))`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (!reuseCall.result?.value?.error) {
+    throw new Error('reusing already prepared token must fail')
+  }
+
+  // Modifying the candidate file before prepare must reject with conflict.
+  const scanFresh = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.discover(${JSON.stringify(projectId)}, 'req-smoke-fresh')`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  const freshCandidate = scanFresh.result?.value?.candidates?.find(
+    (entry) => entry.id === 'smk-1-handoff',
+  )
+  if (!freshCandidate) throw new Error('fresh candidate not found')
+  writeFileSync(join(handoffDir, handoffFileName), '# Stale modified content\n')
+  const stalePrep = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.prepare(${JSON.stringify(projectId)}, ${JSON.stringify(freshCandidate.token)}, 'req-smoke-stale').catch((err) => ({ error: err.message }))`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (!stalePrep.result?.value?.error) {
+    throw new Error('preparing candidate after content changed must fail with conflict')
+  }
+
+  // 3. Agent Harness command source discovery and Resume:
+  const harnessScriptsDir = join(projectDir, '.agents', 'scripts')
+  mkdirSync(harnessScriptsDir, { recursive: true })
+  const mockTaskctl = join(harnessScriptsDir, 'taskctl')
+  writeFileSync(
+    mockTaskctl,
+    `import sys, json
+if '--json' in sys.argv:
+    print(json.dumps({
+        "success": True,
+        "tasks": [{
+            "id": "SMK-1",
+            "title": "Smoke task in harness",
+            "path": ".agents/tasks/smk-1/task.md",
+            "status": "active",
+            "current_phase": "implementation",
+            "current_step": "verification",
+            "next_action": "run tests",
+            "awaiting_resumption": True
+        }]
+    }))
+`,
+  )
+  const harnessTaskDir = join(projectDir, '.agents', 'tasks', 'smk-1')
+  mkdirSync(harnessTaskDir, { recursive: true })
+  writeFileSync(join(harnessTaskDir, 'task.md'), '# Smoke task in harness\n')
+
+  await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.bind(${JSON.stringify(projectId)}, 'agent-harness')`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  const harnessScanCall = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.discover(${JSON.stringify(projectId)}, 'req-smoke-harness')`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (harnessScanCall.exceptionDetails !== undefined) {
+    throw new Error(
+      `harness discover rejected: ${JSON.stringify(harnessScanCall.exceptionDetails)}`,
+    )
+  }
+  const harnessScan = harnessScanCall.result?.value
+  const harnessCandidate = harnessScan.candidates?.find((entry) => entry.id === 'SMK-1')
+  if (!harnessCandidate) {
+    throw new Error(`harness candidate SMK-1 not found: ${JSON.stringify(harnessScan)}`)
+  }
+
+  const harnessPrep = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.prepare(${JSON.stringify(projectId)}, ${JSON.stringify(harnessCandidate.token)}, 'req-smoke-harness')`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (harnessPrep.exceptionDetails !== undefined) {
+    throw new Error(`harness prepare rejected: ${JSON.stringify(harnessPrep.exceptionDetails)}`)
+  }
+  const harnessPrompt = harnessPrep.result?.value
+  const expectedHarnessPrompt = `Resume task ${join('.agents', 'tasks', 'smk-1', 'task.md')}`
+  if (harnessPrompt !== expectedHarnessPrompt) {
+    throw new Error(`unexpected harness prompt: ${harnessPrompt}`)
+  }
+
+  rmSync(outFile, { force: true })
+  const harnessLaunch = await pageCall('Runtime.evaluate', {
+    expression: `window.app.kanban.launchTask(${JSON.stringify({
+      projectId,
+      itemId: 'native-smoke',
+      ref: 'SMK-1',
+      profileId: 'prof-smoke',
+      attemptId: 'attempt-smoke-resume-harness',
+      mode: 'resume',
+      prompt: harnessPrompt,
+    })}).then((result) => ({ name: result.chat.name, delivered: result.delivered }))`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (harnessLaunch.exceptionDetails !== undefined) {
+    throw new Error(
+      `harness launchTask rejected: ${JSON.stringify(harnessLaunch.exceptionDetails)}`,
+    )
+  }
+  const harnessSummary = harnessLaunch.result?.value
+  if (harnessSummary?.delivered !== true) {
+    throw new Error(`unexpected harness launch result: ${JSON.stringify(harnessSummary)}`)
+  }
+  let harnessPrinted = ''
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      harnessPrinted = readFileSync(outFile, 'utf8')
+      break
+    } catch {
+      await sleep(100)
+    }
+  }
+  const harnessParsed = JSON.parse(harnessPrinted)
+  if (harnessParsed.argv[1] !== expectedHarnessPrompt) {
+    throw new Error(`unexpected harness argv: ${harnessPrinted}`)
+  }
+  process.stdout.write(`Harness resume: ${harnessPrinted}\n`)
+
+  // 4. Start remains fully functional after Resume source failure:
+  const brokenTemplate = {
+    id: null,
+    revision: null,
+    name: 'Broken template',
+    prompt: 'Resume {taskPath}',
+    source: {
+      kind: 'command',
+      protocol: 'generic',
+      executable: 'nonexistent-smoke-bin-never-exists',
+      args: ['--fail'],
+    },
+  }
+  const putBroken = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.put(${JSON.stringify(brokenTemplate)})`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  const brokenLibrary = putBroken.result?.value
+  const createdBroken = brokenLibrary?.templates?.find((t) => t.name === 'Broken template')
+  if (!createdBroken) throw new Error('created broken template not found')
+  await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.bind(${JSON.stringify(projectId)}, ${JSON.stringify(createdBroken.id)})`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  const brokenScan = await pageCall('Runtime.evaluate', {
+    expression: `window.app.resumeSources.discover(${JSON.stringify(projectId)}, 'req-broken').catch((err) => ({ error: err.message }))`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (!brokenScan.result?.value?.error) {
+    throw new Error('broken template discover should fail')
+  }
+
+  rmSync(outFile, { force: true })
+  const startAfterFail = await pageCall('Runtime.evaluate', {
+    expression: `window.app.kanban.launchTask(${JSON.stringify({
+      projectId,
+      itemId: 'native-smoke',
+      ref: 'SMK-1',
+      profileId: 'prof-smoke',
+      attemptId: 'attempt-smoke-start-after-fail',
+      mode: 'start',
+    })}).then((result) => ({ name: result.chat.name, delivered: result.delivered }))`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (startAfterFail.exceptionDetails !== undefined) {
+    throw new Error(
+      `start after source failure rejected: ${JSON.stringify(startAfterFail.exceptionDetails)}`,
+    )
+  }
+  const startAfterFailSummary = startAfterFail.result?.value
+  if (startAfterFailSummary?.delivered !== true) {
+    throw new Error(
+      `start after failure was not delivered: ${JSON.stringify(startAfterFailSummary)}`,
+    )
+  }
+  let startAfterFailPrinted = ''
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      startAfterFailPrinted = readFileSync(outFile, 'utf8')
+      break
+    } catch {
+      await sleep(100)
+    }
+  }
+  const startAfterFailParsed = JSON.parse(startAfterFailPrinted)
+  if (!startAfterFailParsed.argv[1]?.startsWith('Work on task SMK-1: Smoke launch.')) {
+    throw new Error(`unexpected start prompt after failure: ${startAfterFailPrinted}`)
+  }
+  process.stdout.write(`Start after source failure: ${startAfterFailPrinted}\n`)
 
   // Electron never acknowledges Browser.close, so bound the wait and ignore
   // its timeout here; the finally block owns killing the process and cleanup.

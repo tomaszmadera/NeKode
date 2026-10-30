@@ -2,6 +2,96 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import { registerShutdown } from './shutdown'
 
+it('waits for owned Resume source cleanup before quitting', async () => {
+  const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
+  let finish!: () => void
+  const source = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+  )
+  registerShutdown(app, async () => undefined, vi.fn(), vi.fn(), { shutdownResumeSources: source })
+  app.emit('before-quit', { preventDefault: vi.fn() })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(source).toHaveBeenCalledOnce()
+  expect(app.quit).not.toHaveBeenCalled()
+  finish()
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(app.quit).toHaveBeenCalledOnce()
+})
+
+it('keeps terminal teardown pending when Resume source cleanup fails', async () => {
+  const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
+  let finish!: () => void
+  const failed = vi.fn()
+  const error = new Error('source cleanup failed')
+  registerShutdown(
+    app,
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+    vi.fn(),
+    failed,
+    {
+      shutdownResumeSources: async () => {
+        throw error
+      },
+    },
+  )
+  app.emit('before-quit', { preventDefault: vi.fn() })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(failed).toHaveBeenCalledWith(error)
+  const second = { preventDefault: vi.fn() }
+  app.emit('before-quit', second)
+  expect(second.preventDefault).toHaveBeenCalledOnce()
+  finish()
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(app.quit).not.toHaveBeenCalled()
+  const final = { preventDefault: vi.fn() }
+  app.emit('before-quit', final)
+  expect(final.preventDefault).not.toHaveBeenCalled()
+})
+
+it.each(['reject', 'throw'])(
+  'waits for Resume cleanup after terminal shutdown %s',
+  async (mode) => {
+    const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
+    let finish!: () => void
+    const failure = new Error('terminal teardown failed')
+    const closeDatabase = vi.fn()
+    registerShutdown(
+      app,
+      () => {
+        if (mode === 'throw') throw failure
+        return Promise.reject(failure)
+      },
+      vi.fn(),
+      vi.fn(),
+      {
+        shutdownResumeSources: () =>
+          new Promise<void>((resolve) => {
+            finish = resolve
+          }),
+        closeDatabase,
+      },
+    )
+    app.emit('before-quit', { preventDefault: vi.fn() })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const pending = { preventDefault: vi.fn() }
+    app.emit('before-quit', pending)
+    expect(pending.preventDefault).toHaveBeenCalledOnce()
+    finish()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const settled = { preventDefault: vi.fn() }
+    app.emit('before-quit', settled)
+    expect(settled.preventDefault).not.toHaveBeenCalled()
+    expect(closeDatabase).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+  },
+)
+
 it('prevents reentrant quit until terminal shutdown finishes, then quits once', async () => {
   const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
   let finish!: () => void

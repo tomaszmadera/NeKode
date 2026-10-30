@@ -4,8 +4,6 @@ import { APP_STATE_KEY, projectShellKey, projectWslShellsKey } from '@shared/ipc
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isWindowsHost } from '../test-support/host-path'
 import { createServices } from './create-services'
-import { HandoffMatcherService } from './handoffs/handoff-matcher-service'
-import { ResumeTemplateService } from './handoffs/resume-template-service'
 import { KanbanService } from './kanban/kanban-service'
 import { createNodePty } from './terminal/node-pty-factory'
 import { listWslDirectories, listWslDistributions, runWsl } from './terminal/wsl'
@@ -108,21 +106,6 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         url: 'https://example.test/DEMO-1',
         updatedAt: null,
       })
-      const handoff = vi.spyOn(HandoffMatcherService.prototype, 'candidates').mockResolvedValue({
-        state: 'ready',
-        files: [
-          {
-            name: 'demo-1.md',
-            path: 'D:/My Project/demo-1.md',
-            modifiedAt: 'stamp',
-            matchKind: 'filename',
-          },
-        ],
-        rejections: [],
-      })
-      const resume = vi
-        .spyOn(ResumeTemplateService.prototype, 'format')
-        .mockResolvedValue('Resume from demo-1.md\n$(literal)')
       vi.mocked(execFileSync).mockImplementation((_file, args) =>
         args?.includes('wslpath') ? '/mnt/d/My Project\n' : 'usable',
       )
@@ -151,7 +134,7 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
                 await services.kanban.launchTask(
                   mode === 'start'
                     ? { ...input, mode }
-                    : { ...input, mode, fileName: 'demo-1.md', stamp: 'stamp' },
+                    : { ...input, mode, prompt: 'Resume from demo-1.md\n$(literal)' },
                 )
               ).chat
         expect(chat).toMatchObject({ name: '[WSL] Codex', agentName: 'Codex' })
@@ -181,8 +164,6 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         expect(createNodePty).toHaveBeenCalledTimes(1)
       } finally {
         item.mockRestore()
-        handoff.mockRestore()
-        resume.mockRestore()
         services.terminals.terminateAll()
         services.closeDatabase?.()
       }

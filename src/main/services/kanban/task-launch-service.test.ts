@@ -3,9 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
   AgentProfile,
-  HandoffCandidatesResult,
   KanbanDraftLaunchInput,
-  KanbanHandoffCandidatesInput,
   KanbanResumeLaunchInput,
   KanbanStartLaunchInput,
   WorkItem,
@@ -24,14 +22,13 @@ import {
   type PtySpawnOptions,
   TerminalService,
 } from '../terminal/terminal-service'
-import { buildResumePrompt, buildStartPrompt, TaskLaunchService } from './task-launch-service'
+import { buildStartPrompt, TaskLaunchService } from './task-launch-service'
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn(() => 'usable') }))
 
 const openDatabases: Array<{ close(): void }> = []
 const projectPath = join(tmpdir(), 'nekode-task-launch', 'demo-project')
 const LEAK = 'PROMPT_LEAK_9f3a'
-const HANDOFF = 'D:\\handoffs\\box'
 const URL = 'https://example.test/tasks/DEMO-1?q=1&x=2'
 
 afterEach(() => {
@@ -84,25 +81,6 @@ const profile: AgentProfile = {
   args: ['--model', 'gpt', '{prompt}', '--yolo'],
 }
 
-const STAMP = new Date(1000).toISOString()
-const EMPTY_SCAN: HandoffCandidatesResult = {
-  state: 'ready',
-  files: [],
-  rejections: [],
-}
-
-/** One ready scan result. `files` carry the name, display path and stamp. */
-function readyScan(
-  files: Array<{
-    name: string
-    path: string
-    modifiedAt: string
-    matchKind: 'filename' | 'none'
-  }>,
-): HandoffCandidatesResult {
-  return { state: 'ready', files, rejections: [] }
-}
-
 function input(overrides: Partial<KanbanStartLaunchInput> = {}): KanbanStartLaunchInput {
   return {
     projectId: 'pending',
@@ -123,15 +101,13 @@ function resumeInput(overrides: Partial<KanbanResumeLaunchInput> = {}): KanbanRe
     profileId: profile.id,
     attemptId: 'resume-1',
     mode: 'resume',
-    fileName: 'nekode-28-notes.md',
-    stamp: STAMP,
+    prompt: 'Resume from handoffs/nekode-28-notes.md',
     ...overrides,
   }
 }
 
 function harness(
   options: {
-    handoff?: string | null
     failSpawn?: boolean
     globalProfiles?: boolean
     path?: string
@@ -158,19 +134,9 @@ function harness(
       return new FakePty(spawns.length, spawn)
     },
   })
-  const reads: string[] = []
   let current = liveItem()
   const getItem = vi.fn(async () => current)
-  let scan: (input: KanbanHandoffCandidatesInput) => HandoffCandidatesResult = () => EMPTY_SCAN
-  const handoffScans: KanbanHandoffCandidatesInput[] = []
-  const handoffs = {
-    candidates: vi.fn(async (candidatesInput: KanbanHandoffCandidatesInput) => {
-      handoffScans.push(candidatesInput)
-      return scan(candidatesInput)
-    }),
-  }
   const globalProfiles = new AgentProfilesService({ projects, state: new AppStateService({ db }) })
-  const resumePrompt = vi.fn(async (path: string) => buildResumePrompt(path))
   const service = new TaskLaunchService({
     projects,
     profiles: options.globalProfiles
@@ -179,18 +145,6 @@ function harness(
           get: () => ({ defaultId: profile.id, profiles: [options.profile ?? profile] }),
         },
     kanban: { getItem },
-    handoffs,
-    resumePrompt,
-    handoffDir: (projectId) => {
-      reads.push(projectId)
-      if (reads.some((key) => key.includes('autoSend') || key.includes('handoffResume'))) {
-        throw new Error('Start read handoffResume.autoSend')
-      }
-      const value = options.handoff === undefined ? HANDOFF : options.handoff
-      return value
-    },
-    // The launch flow owns the name and supplies its own channel (spec
-    // new-chat-agent-menu Data/API): task launch keeps its kanban channel.
     createChat: (projectId, name, identity) =>
       chats.createNamed(projectId, name, 'kanban:launchTask', identity),
     terminals,
@@ -203,13 +157,6 @@ function harness(
     chats,
     spawns,
     getItem,
-    reads,
-    handoffs,
-    handoffScans,
-    resumePrompt,
-    setScan: (next: (input: KanbanHandoffCandidatesInput) => HandoffCandidatesResult) => {
-      scan = next
-    },
     setItem: (next: WorkItem) => {
       current = next
     },
@@ -228,16 +175,6 @@ describe('project opt-in at Kanban launch', () => {
         command: 'missing-cli "{prompt}"',
       }).profiles[0]
       h.globalProfiles.selectionSet(h.project.id, { selectedIds: [selected.id], defaultId: null })
-      h.setScan(() =>
-        readyScan([
-          {
-            name: 'nekode-28-notes.md',
-            path: 'handoffs/nekode-28-notes.md',
-            modifiedAt: STAMP,
-            matchKind: 'filename',
-          },
-        ]),
-      )
       vi.mocked(execFileSync).mockReturnValueOnce('')
       const fields = { projectId: h.project.id, profileId: selected.id }
       await expect(
@@ -267,13 +204,6 @@ describe('project opt-in at Kanban launch', () => {
         interactiveArgs: [],
       }).profiles[0]
       h.globalProfiles.selectionSet(h.project.id, { selectedIds: [agent.id], defaultId: null })
-      const notesFile = {
-        name: 'nekode-28-notes.md',
-        path: 'handoffs/nekode-28-notes.md',
-        modifiedAt: STAMP,
-        matchKind: 'filename' as const,
-      }
-      h.setScan(() => readyScan([notesFile]))
       const overrides = { projectId: h.project.id, profileId: agent.id }
       const result = await h.service.launch(
         mode === 'start' ? input(overrides) : resumeInput(overrides),
@@ -282,7 +212,7 @@ describe('project opt-in at Kanban launch', () => {
       expect(h.chats.list(h.project.id)).toHaveLength(1)
       expect(h.spawns).toHaveLength(1)
       const prompt =
-        mode === 'start' ? buildStartPrompt(liveItem(), HANDOFF) : buildResumePrompt(notesFile.path)
+        mode === 'start' ? buildStartPrompt(liveItem()) : 'Resume from handoffs/nekode-28-notes.md'
       expect(h.spawns[0].file).toBe(executable)
       expect(h.spawns[0].args).toEqual([flag, prompt, '--model', 'my model'])
     },
@@ -344,13 +274,13 @@ describe('project opt-in at Kanban launch', () => {
     const result = await pending
     expect(result.chat.name).toBe('[PowerShell] Edited')
     expect(h.spawns[0].file).toBe('updated')
-    expect(h.spawns[0].args).toEqual(['--model', 'my model', buildStartPrompt(liveItem(), HANDOFF)])
+    expect(h.spawns[0].args).toEqual(['--model', 'my model', buildStartPrompt(liveItem())])
   })
 })
 
 describe('buildStartPrompt', () => {
-  it('includes the live description, URL, instructions, and handoff directory', () => {
-    const prompt = buildStartPrompt(liveItem(), HANDOFF)
+  it('includes the live description, URL, and instructions', () => {
+    const prompt = buildStartPrompt(liveItem())
     expect(prompt.startsWith('Work on task DEMO-1: Ship the launch.')).toBe(true)
     expect(prompt).toContain(`line one\nline "two" & | ; \` {prompt} ${LEAK}`)
     expect(prompt).toContain(URL)
@@ -358,14 +288,14 @@ describe('buildStartPrompt', () => {
       "Follow the project's instructions. Do not assume approval for actions that require it.",
     )
     expect(prompt).toContain(
-      "Keep the full ref in the name of the future local record and handoff, following the project's instructions.",
+      "Keep the full ref in the name of the local task record, following the project's instructions.",
     )
-    expect(prompt).toContain(`The project's handoff directory is ${HANDOFF}.`)
     expect(prompt).not.toContain('autoSend')
+    expect(prompt).not.toContain('handoff directory')
   })
 
-  it('says when the description, URL, or handoff directory is missing', () => {
-    const prompt = buildStartPrompt(liveItem({ description: '  ', url: ' \n' }), '   ')
+  it('says when the description or URL is missing', () => {
+    const prompt = buildStartPrompt(liveItem({ description: '  ', url: ' \n' }))
     expect(prompt).toContain('This task has no description.')
     expect(prompt).not.toContain(URL)
     expect(prompt).not.toContain('handoff directory')
@@ -390,7 +320,7 @@ describe('TaskLaunchService start', () => {
     const spawn = bundle.spawns[0]
     expect(spawn?.file).toBe('codex.exe')
     expect(spawn?.cwd).toBe(projectPath)
-    const prompt = buildStartPrompt(liveItem(), HANDOFF)
+    const prompt = buildStartPrompt(liveItem())
     expect(spawn?.args).toEqual(['--model', 'gpt', prompt, '--yolo'])
     expect(spawn?.args[2]).toContain('\n')
     expect(spawn?.args[2]).toContain('"')
@@ -400,7 +330,6 @@ describe('TaskLaunchService start', () => {
     expect(spawn?.args[2]).toContain('`')
     expect(spawn?.args[2]).toContain(' ')
     expect(spawn?.args.filter((arg) => arg.includes(LEAK))).toHaveLength(1)
-    expect(bundle.reads).toEqual([bundle.project.id])
     expect(bundle.service.blocksProjectShell(result.chat.id)).toBe(false)
   })
 
@@ -465,7 +394,6 @@ describe('TaskLaunchService start', () => {
     expect(logged).toContain('[kanban-launch] failed to start the task process')
     expect(logged).not.toContain(LEAK)
     expect(logged).not.toContain(URL)
-    expect(logged).not.toContain(HANDOFF)
     expect(logged).not.toContain('SPAWN_FAIL')
     expect(logged).not.toContain('quoted')
     bundle.setItem(liveItem())
@@ -503,13 +431,18 @@ describe('TaskLaunchService start', () => {
 
   it('rejects an invalid resume and a mismatched retry before creating a chat', async () => {
     const bundle = harness()
-    // A file name that is a path, or a missing stamp, is not a valid resume.
     expect(() =>
-      bundle.service.launch(resumeInput({ projectId: bundle.project.id, fileName: 'a/b.md' })),
-    ).toThrow(/file name, not a path/)
+      bundle.service.launch({
+        ...resumeInput({ projectId: bundle.project.id }),
+        prompt: '',
+      }),
+    ).toThrow(/prompt is invalid/)
     expect(() =>
-      bundle.service.launch({ ...resumeInput({ projectId: bundle.project.id }), stamp: '' }),
-    ).toThrow(/stamp is invalid/)
+      bundle.service.launch({
+        ...resumeInput({ projectId: bundle.project.id }),
+        prompt: '   ',
+      }),
+    ).toThrow(/prompt is invalid/)
     bundle.setItem(liveItem({ id: 'other-native' }))
     await expect(
       bundle.service.launch(input({ projectId: bundle.project.id })),
@@ -549,7 +482,7 @@ describe('TaskLaunchService draft (NEKODE-99)', () => {
     expect(result.delivered).toBe(true)
     expect(result.chat.name).toBe('[PowerShell] Codex')
     expect(result.chat.taskRef).toBe('DEMO-1')
-    expect(result.draftPrompt).toBe(buildStartPrompt(liveItem(), HANDOFF))
+    expect(result.draftPrompt).toBe(buildStartPrompt(liveItem()))
     expect(bundle.spawns).toHaveLength(1)
     expect(bundle.spawns[0]?.file).toBe('codex.exe')
     expect(bundle.spawns[0]?.args).toEqual(['--model', 'gpt', '--yolo'])
@@ -560,7 +493,7 @@ describe('TaskLaunchService draft (NEKODE-99)', () => {
     const bundle = harness({ profile: { ...profile, interactiveArgs: ['--tui'] } })
     const result = await bundle.service.launch(draftInput({ projectId: bundle.project.id }))
     expect(bundle.spawns[0]?.args).toEqual(['--tui'])
-    expect(result.draftPrompt).toBe(buildStartPrompt(liveItem(), HANDOFF))
+    expect(result.draftPrompt).toBe(buildStartPrompt(liveItem()))
   })
 
   it('keeps the Start result shape without draftPrompt', async () => {
@@ -582,7 +515,7 @@ describe('TaskLaunchService draft (NEKODE-99)', () => {
     const retried = await bundle.service.launch(launch)
     expect(retried.delivered).toBe(true)
     expect(retried.chat.id).toBe(failed.chat.id)
-    expect(retried.draftPrompt).toBe(buildStartPrompt(liveItem(), HANDOFF))
+    expect(retried.draftPrompt).toBe(buildStartPrompt(liveItem()))
     const again = await bundle.service.launch(launch)
     expect(again).toEqual(retried)
     expect(bundle.spawns).toHaveLength(2)
@@ -605,151 +538,70 @@ describe('TaskLaunchService draft (NEKODE-99)', () => {
   })
 })
 
-describe('buildResumePrompt', () => {
-  it('includes only the resume command and handoff path', () => {
-    const prompt = buildResumePrompt('handoffs/nekode-28-notes.md')
-    expect(prompt).toBe('Resume from handoffs/nekode-28-notes.md')
-    expect(prompt).not.toContain(liveItem().description)
-    expect(prompt).not.toContain(URL)
-  })
-
-  it('preserves an absolute handoff path with spaces', () => {
-    const prompt = buildResumePrompt('D:/Shared handoffs/notes.md')
-    expect(prompt).toBe('Resume from D:/Shared handoffs/notes.md')
-  })
-})
-
 describe('TaskLaunchService resume', () => {
-  const notesFile = {
-    name: 'nekode-28-notes.md',
-    path: 'handoffs/nekode-28-notes.md',
-    modifiedAt: STAMP,
-    matchKind: 'filename' as const,
-  }
-
-  it('uses the configured prompt only after candidate validation and keeps Start unchanged', async () => {
+  it('passes the prepared prompt as one argv element and keeps Start unchanged', async () => {
     const bundle = harness()
-    bundle.resumePrompt.mockImplementation(
-      async (path) => `Read ${path}\nUse project instructions.`,
-    )
+    const resumePromptText = `Resume from demo-1.md\nUse project instructions.`
     await bundle.service.launch(input({ projectId: bundle.project.id }))
-    expect(bundle.resumePrompt).not.toHaveBeenCalled()
-    await expect(
-      bundle.service.launch(resumeInput({ projectId: bundle.project.id })),
-    ).rejects.toMatchObject({ code: 'conflict' })
-    expect(bundle.resumePrompt).not.toHaveBeenCalled()
-    bundle.setScan(() => readyScan([notesFile]))
-    await bundle.service.launch(resumeInput({ projectId: bundle.project.id }))
-    expect(bundle.resumePrompt).toHaveBeenCalledExactlyOnceWith(notesFile.path)
-    expect(bundle.spawns[1]?.args[2]).toBe(`Read ${notesFile.path}\nUse project instructions.`)
+    expect(bundle.spawns[0]?.args[2]).toBe(buildStartPrompt(liveItem()))
+
+    const result = await bundle.service.launch(
+      resumeInput({ projectId: bundle.project.id, prompt: resumePromptText }),
+    )
+    expect(result.delivered).toBe(true)
+    expect(result.chat.name).toBe('[PowerShell] Codex')
+    expect(bundle.chats.list(bundle.project.id)).toEqual([
+      bundle.chats.list(bundle.project.id)[0],
+      result.chat,
+    ])
+    expect(result.chat.taskRef).toBe('DEMO-1')
+    expect(result.chat.agentName).toBe('Codex')
+    expect(bundle.spawns).toHaveLength(2)
+    const spawn = bundle.spawns[1]
+    expect(spawn?.cwd).toBe(projectPath)
+    expect(spawn?.args).toEqual(['--model', 'gpt', resumePromptText, '--yolo'])
+    expect(spawn?.args[2]).toBe(resumePromptText)
+    expect(spawn?.args.filter((arg) => arg.includes(LEAK))).toHaveLength(0)
   })
 
-  it('creates no chat on a settings error and allows the same attempt after fixing settings', async () => {
+  it('creates no chat on an invalid prompt', async () => {
     const bundle = harness()
-    bundle.setScan(() => readyScan([notesFile]))
-    bundle.resumePrompt.mockRejectedValueOnce(new AppError('config', 'Fix settings.json'))
-    const launch = resumeInput({ projectId: bundle.project.id })
-    await expect(bundle.service.launch(launch)).rejects.toMatchObject({ code: 'config' })
-    expect(bundle.resumePrompt).toHaveBeenCalledTimes(1)
+    const launch = resumeInput({ projectId: bundle.project.id, prompt: '   ' })
+    expect(() => bundle.service.launch(launch)).toThrow(AppError)
     expect(bundle.chats.list(bundle.project.id)).toHaveLength(0)
     expect(bundle.spawns).toHaveLength(0)
-    await bundle.service.launch(launch)
-    expect(bundle.spawns).toHaveLength(1)
   })
 
-  it('re-reads settings on an undelivered retry and never re-reads a delivered attempt', async () => {
+  it('dedups a resume by attempt id and delivers to the same chat', async () => {
     const options = { failSpawn: true }
     const bundle = harness(options)
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
-      bundle.setScan(() => readyScan([notesFile]))
-      bundle.resumePrompt.mockResolvedValueOnce('First prompt').mockResolvedValue('Edited prompt')
-      const launch = resumeInput({ projectId: bundle.project.id })
+      const launch = resumeInput({ projectId: bundle.project.id, prompt: 'Resume attempt 1' })
       const failed = await bundle.service.launch(launch)
       expect(failed.delivered).toBe(false)
       options.failSpawn = false
       const delivered = await bundle.service.launch(launch)
       expect(delivered.delivered).toBe(true)
       expect(delivered.chat.id).toBe(failed.chat.id)
-      expect(bundle.spawns.map((spawn) => spawn.args[2])).toEqual(['First prompt', 'Edited prompt'])
-      await bundle.service.launch(launch)
-      expect(bundle.resumePrompt).toHaveBeenCalledTimes(2)
-      expect(bundle.spawns).toHaveLength(2)
+      expect(bundle.spawns.map((spawn) => spawn.args[2])).toEqual([
+        'Resume attempt 1',
+        'Resume attempt 1',
+      ])
+      expect(bundle.chats.list(bundle.project.id)).toHaveLength(1)
     } finally {
       log.mockRestore()
     }
   })
 
-  it('rechecks the file and stamp, then passes the Resume prompt as one argv element', async () => {
-    const bundle = harness()
-    bundle.setScan(() => readyScan([notesFile]))
-    const launch = resumeInput({ projectId: bundle.project.id })
-    const result = await bundle.service.launch(launch)
-    expect(bundle.getItem).toHaveBeenCalledTimes(1)
-    expect(bundle.getItem).toHaveBeenCalledWith(bundle.project.id, 'DEMO-1')
-    expect(bundle.handoffs.candidates).toHaveBeenCalledWith({
-      projectId: bundle.project.id,
-      itemId: 'native-1',
-      ref: 'DEMO-1',
-    })
-    expect(result.delivered).toBe(true)
-    expect(result.chat.name).toBe('[PowerShell] Codex')
-    expect(bundle.chats.list(bundle.project.id)).toEqual([result.chat])
-    expect(result.chat.taskRef).toBe('DEMO-1')
-    expect(result.chat.agentName).toBe('Codex')
-    expect(bundle.spawns).toHaveLength(1)
-    const spawn = bundle.spawns[0]
-    expect(spawn?.cwd).toBe(projectPath)
-    const prompt = buildResumePrompt(notesFile.path)
-    expect(spawn?.args).toEqual(['--model', 'gpt', prompt, '--yolo'])
-    expect(spawn?.args[2]).toBe('Resume from handoffs/nekode-28-notes.md')
-    expect(spawn?.args.filter((arg) => arg.includes(LEAK))).toHaveLength(0)
-  })
-
-  it('refreshes the choice and creates no chat when the stamp changed or the file is gone', async () => {
-    const bundle = harness()
-    bundle.setScan(() => readyScan([{ ...notesFile, modifiedAt: new Date(2000).toISOString() }]))
-    await expect(
-      bundle.service.launch(resumeInput({ projectId: bundle.project.id })),
-    ).rejects.toMatchObject({
-      code: 'conflict',
-      message: /Refresh the handoff list and resume again/,
-    })
-    expect(bundle.chats.list(bundle.project.id)).toHaveLength(0)
-    expect(bundle.spawns).toHaveLength(0)
-
-    bundle.setScan(() => readyScan([]))
-    await expect(
-      bundle.service.launch(resumeInput({ projectId: bundle.project.id, attemptId: 'resume-2' })),
-    ).rejects.toMatchObject({ code: 'conflict' })
-    expect(bundle.chats.list(bundle.project.id)).toHaveLength(0)
-    expect(bundle.spawns).toHaveLength(0)
-
-    bundle.setScan(() => ({ state: 'error', message: 'Handoff directory not found: D:/x' }))
-    await expect(
-      bundle.service.launch(resumeInput({ projectId: bundle.project.id, attemptId: 'resume-3' })),
-    ).rejects.toMatchObject({ code: 'conflict' })
-    expect(bundle.spawns).toHaveLength(0)
-  })
-
-  it('refuses a resume whose file is not a filename match', async () => {
-    const bundle = harness()
-    bundle.setScan(() => readyScan([{ ...notesFile, name: 'loose.md', matchKind: 'none' }]))
-    await expect(
-      bundle.service.launch(resumeInput({ projectId: bundle.project.id, fileName: 'loose.md' })),
-    ).rejects.toMatchObject({ code: 'conflict' })
-    expect(bundle.spawns).toHaveLength(0)
-  })
-
-  it('dedups a resume by attempt id and keeps the prompt and handoff path out of logs', async () => {
+  it('keeps the prompt out of logs on spawn failure', async () => {
     const bundle = harness({ failSpawn: true })
-    const handoffPath = `handoffs/${LEAK}-notes.md`
-    bundle.setScan(() => readyScan([{ ...notesFile, path: handoffPath }]))
+    const sensitivePrompt = `Secret instructions with ${LEAK}`
     const errors: unknown[][] = []
     const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       errors.push(args)
     })
-    const launch = resumeInput({ projectId: bundle.project.id })
+    const launch = resumeInput({ projectId: bundle.project.id, prompt: sensitivePrompt })
     const failed = await bundle.service.launch(launch)
     expect(failed.delivered).toBe(false)
     expect(bundle.service.blocksProjectShell(failed.chat.id)).toBe(true)
@@ -760,7 +612,6 @@ describe('TaskLaunchService resume', () => {
     expect(bundle.chats.list(bundle.project.id)).toHaveLength(1)
     const logged = JSON.stringify(errors)
     expect(logged).not.toContain(LEAK)
-    expect(logged).not.toContain(handoffPath)
     spy.mockRestore()
   })
 })
