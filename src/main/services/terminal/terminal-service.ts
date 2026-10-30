@@ -3,7 +3,7 @@ import { basename } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '@shared/bottom-tab-id'
 import type { Unsubscribe } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { prepareWslTerminal, validateWslExecutable } from './wsl'
+import { prepareWslTerminal, validateWslExecutable, validateWslExecutableAsync } from './wsl'
 
 // Chat terminal sessions (spec Data/API, SDD §17): one PTY process per chat,
 // spawned lazily on the first terminal attach. The renderer never touches
@@ -164,6 +164,7 @@ export class TerminalService {
   readonly #cols: number
   readonly #rows: number
   readonly #sessions = new Map<string, TerminalSession>()
+  readonly #pendingCreates = new Map<string, { cancelled: boolean; promise: Promise<string> }>()
   readonly #dataListeners = new Set<(chatId: string, data: string) => void>()
   readonly #exitListeners = new Set<(chatId: string, exitCode: number) => void>()
   readonly #now: () => number
@@ -192,6 +193,58 @@ export class TerminalService {
    * default (platform default, unchanged).
    */
   create(chatId: string, cwd: string, shell?: ShellSpec | (() => ShellSpec)): string {
+    return this.#create(chatId, cwd, shell, false)
+  }
+
+  createAsync(
+    chatId: string,
+    cwd: string,
+    shell?: ShellSpec | (() => ShellSpec | Promise<ShellSpec>),
+  ): Promise<string> {
+    if (this.#quitting)
+      return Promise.reject(new AppError('conflict', 'The application is closing.'))
+    const existing = this.#sessions.get(chatId)
+    if (existing?.status === 'running') return Promise.resolve(existing.chatId)
+    const pending = this.#pendingCreates.get(chatId)
+    if (pending) return pending.promise
+    const closedAt = this.#closedBottomTabs.get(chatId)
+    if (closedAt !== undefined) {
+      this.#closedBottomTabs.delete(chatId)
+      if (this.#now() - closedAt <= CLOSED_BOTTOM_TAB_TTL_MS) {
+        return Promise.reject(
+          new AppError('conflict', 'The terminal was closed before it started.'),
+        )
+      }
+    }
+    if (!this.#isDirectory(cwd)) {
+      return Promise.reject(
+        new AppError(
+          'not_found',
+          'The project directory does not exist. Terminal sessions need an existing project directory.',
+        ),
+      )
+    }
+    const entry = { cancelled: false, promise: undefined as unknown as Promise<string> }
+    entry.promise = (async () => {
+      const resolvedShell = typeof shell === 'function' ? await shell() : shell
+      if (resolvedShell !== undefined) await validateWslExecutableAsync(cwd, resolvedShell)
+      if (this.#quitting) throw new AppError('conflict', 'The application is closing.')
+      if (entry.cancelled)
+        throw new AppError('conflict', 'The terminal was closed before it started.')
+      return this.#create(chatId, cwd, resolvedShell, true)
+    })().finally(() => {
+      if (this.#pendingCreates.get(chatId) === entry) this.#pendingCreates.delete(chatId)
+    })
+    this.#pendingCreates.set(chatId, entry)
+    return entry.promise
+  }
+
+  #create(
+    chatId: string,
+    cwd: string,
+    shell: ShellSpec | (() => ShellSpec) | undefined,
+    validated: boolean,
+  ): string {
     if (this.#quitting) {
       throw new AppError('conflict', 'The application is closing.')
     }
@@ -219,7 +272,7 @@ export class TerminalService {
 
     const resolvedShell = typeof shell === 'function' ? shell() : shell
     const wsl = prepareWslTerminal(cwd, resolvedShell)
-    if (resolvedShell !== undefined) validateWslExecutable(cwd, resolvedShell)
+    if (resolvedShell !== undefined && !validated) validateWslExecutable(cwd, resolvedShell)
     const shellSpec = wsl ?? resolvedShell ?? this.#shell
     let pty: PtyProcessLike
     try {
@@ -290,6 +343,8 @@ export class TerminalService {
 
   /** Terminates one session; safe to call repeatedly. */
   terminate(chatId: string): void {
+    const pending = this.#pendingCreates.get(chatId)
+    if (pending) pending.cancelled = true
     if (isBottomTabId(chatId)) {
       const now = this.#now()
       this.#pruneClosedBottomTabs(now)
@@ -311,6 +366,9 @@ export class TerminalService {
 
   /** Project removal: kill bottom-tab PTYs of that project and no others. */
   terminateProjectBottom(projectId: string): void {
+    for (const sessionId of this.#pendingCreates.keys()) {
+      if (bottomTabProjectId(sessionId) === projectId) this.terminate(sessionId)
+    }
     for (const sessionId of [...this.#sessions.keys()]) {
       if (bottomTabProjectId(sessionId) === projectId) {
         this.terminate(sessionId)
@@ -331,6 +389,7 @@ export class TerminalService {
    */
   terminateAll(): void {
     this.#quitting = true
+    for (const pending of this.#pendingCreates.values()) pending.cancelled = true
     this.#closedBottomTabs.clear()
     for (const session of [...this.#sessions.values()]) {
       this.#disposeSession(session)
@@ -382,7 +441,10 @@ export class TerminalService {
             })
           }),
       )
-    this.#shutdown = Promise.all(exits).then(() => undefined)
+    const pendingCreates = [...this.#pendingCreates.values()].map((entry) =>
+      entry.promise.catch(() => undefined),
+    )
+    this.#shutdown = Promise.all([...exits, ...pendingCreates]).then(() => undefined)
     this.terminateAll()
     return this.#shutdown
   }

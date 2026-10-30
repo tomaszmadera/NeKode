@@ -35,9 +35,9 @@ const codexProfile: AgentProfile = {
   args: ['--flag', '{prompt}', '--keep'],
 }
 
-function expectAppError(run: () => unknown, code: AppErrorCode): AppError {
+async function expectAppError(run: () => Promise<unknown>, code: AppErrorCode): Promise<AppError> {
   try {
-    run()
+    await run()
   } catch (error) {
     if (error instanceof AppError) {
       expect(error.code).toBe(code)
@@ -89,11 +89,26 @@ function createHarness(options: HarnessOptions = {}) {
 }
 
 describe('AgentChatLaunchService', () => {
-  it('stores the launched CLI name separately from the profile name', () => {
+  it('rolls back a chat when asynchronous terminal creation fails', async () => {
+    const { service, chats, project, terminals } = createHarness()
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    terminals.create.mockImplementationOnce(
+      () => Promise.reject(new AppError('not_found', 'Unavailable')) as unknown as string,
+    )
+    try {
+      await expect(service.createWithAgent(project.id, codexProfile.id)).rejects.toThrow(
+        'Unavailable',
+      )
+      expect(chats.list(project.id)).toEqual([])
+    } finally {
+      log.mockRestore()
+    }
+  })
+  it('stores the launched CLI name separately from the profile name', async () => {
     const { service, chats, project } = createHarness({
       profiles: [{ ...codexProfile, name: 'Code analysis', executable: 'claude.cmd' }],
     })
-    const chat = service.createWithAgent(project.id, codexProfile.id)
+    const chat = await service.createWithAgent(project.id, codexProfile.id)
     expect(chat).toMatchObject({ name: '[PowerShell] Code analysis', agentName: 'Claude' })
     expect(chat.taskRef).toBeUndefined()
     expect(chats.get(chat.id)).toEqual(chat)
@@ -103,10 +118,10 @@ describe('AgentChatLaunchService', () => {
     [null, 'args', [42], new Array<string>(1), ['\u0000'], ['{prompt}'], ['pre{prompt}']].map(
       (interactiveArgs) => ({ interactiveArgs }),
     ),
-  )('rejects invalid interactive argv %j before creating a chat', ({ interactiveArgs }) => {
+  )('rejects invalid interactive argv %j before creating a chat', async ({ interactiveArgs }) => {
     const selected = { ...codexProfile, interactiveArgs } as AgentProfile
     const { service, project, chats, terminals } = createHarness({ profiles: [selected] })
-    expectAppError(() => service.createWithAgent(project.id, selected.id), 'validation')
+    await expectAppError(() => service.createWithAgent(project.id, selected.id), 'validation')
     expect(chats.list(project.id)).toEqual([])
     expect(terminals.create).not.toHaveBeenCalled()
   })
@@ -123,10 +138,10 @@ describe('AgentChatLaunchService', () => {
       args: ['C:\\Agent tools\\cli.js', '-q', '{prompt}'],
       interactiveArgs: ['C:\\Agent tools\\cli.js', '--model', 'my model', ''],
     },
-  ])('uses the complete interactive override for $executable', (fields) => {
+  ])('uses the complete interactive override for $executable', async (fields) => {
     const selected = { ...codexProfile, ...fields }
     const { service, project, spawns, chats } = createHarness({ profiles: [selected] })
-    const chat = service.createWithAgent(project.id, selected.id)
+    const chat = await service.createWithAgent(project.id, selected.id)
     expect(chats.list(project.id)).toHaveLength(1)
     expect(chat.id).toBeTruthy()
     expect(spawns).toEqual([{ file: fields.executable, args: fields.interactiveArgs }])
@@ -136,16 +151,16 @@ describe('AgentChatLaunchService', () => {
 
   it.each(['codex', 'grok'])(
     'keeps positional-prompt behavior for %s without an override',
-    (executable) => {
+    async (executable) => {
       const { service, project, spawns } = createHarness({
         profiles: [{ ...codexProfile, executable, args: ['--model', 'my model', '{prompt}'] }],
       })
-      service.createWithAgent(project.id, codexProfile.id)
+      await service.createWithAgent(project.id, codexProfile.id)
       expect(spawns).toEqual([{ file: executable, args: ['--model', 'my model'] }])
     },
   )
 
-  it('rejects a globally existing unselected profile before chat creation and reads the current definition on later launch', () => {
+  it('rejects a globally existing unselected profile before chat creation and reads the current definition on later launch', async () => {
     const { db, projects, chats, terminals, project, spawns } = createHarness()
     const profiles = new AgentProfilesService({ projects, state: new AppStateService({ db }) })
     const agent = profiles.put({ id: null, name: 'Agent', command: 'original "{prompt}"' })
@@ -158,24 +173,24 @@ describe('AgentChatLaunchService', () => {
         chats.createNamed(id, name, 'chats:createWithAgent', identity),
       removeChat: (id) => chats.remove(id),
     })
-    expectAppError(() => launch.createWithAgent(project.id, agent.id), 'not_found')
+    await expectAppError(() => launch.createWithAgent(project.id, agent.id), 'not_found')
     expect(chats.list(project.id)).toEqual([])
     expect(terminals.create).not.toHaveBeenCalled()
     profiles.selectionSet(project.id, { selectedIds: [agent.id], defaultId: null })
     profiles.put({ id: agent.id, name: 'Edited', command: 'updated --model "my model" "{prompt}"' })
-    const chat = launch.createWithAgent(project.id, agent.id)
+    const chat = await launch.createWithAgent(project.id, agent.id)
     expect(chat.name).toBe('[PowerShell] Edited')
     expect(spawns).toEqual([{ file: 'updated', args: ['--model', 'my model'] }])
     chats.remove(chat.id)
     profiles.selectionSet(project.id, { selectedIds: [], defaultId: null })
-    expectAppError(() => launch.createWithAgent(project.id, agent.id), 'not_found')
+    await expectAppError(() => launch.createWithAgent(project.id, agent.id), 'not_found')
     expect(chats.list(project.id)).toEqual([])
     expect(spawns).toHaveLength(1)
   })
-  it('creates one chat named for the profile and spawns its executable at the project root', () => {
+  it('creates one chat named for the profile and spawns its executable at the project root', async () => {
     const { service, chats, spawns, terminals, project } = createHarness()
 
-    const chat = service.createWithAgent(project.id, 'prof-1')
+    const chat = await service.createWithAgent(project.id, 'prof-1')
 
     // The name follows the existing `[shell] <profile name>` contract.
     expect(chat.name).toBe('[PowerShell] Codex')
@@ -189,18 +204,18 @@ describe('AgentChatLaunchService', () => {
     expect(spawns).toEqual([{ file: 'codex.exe', args: ['--flag', '--keep'] }])
   })
 
-  it('removes exactly the prompt argv element and starts the agent interactively', () => {
+  it('removes exactly the prompt argv element and starts the agent interactively', async () => {
     const { service, spawns, project } = createHarness({
       profiles: [{ id: 'prof-1', name: 'Codex', executable: 'codex.exe', args: ['{prompt}'] }],
     })
 
-    service.createWithAgent(project.id, 'prof-1')
+    await service.createWithAgent(project.id, 'prof-1')
 
     // No prompt is typed anywhere: the agent gets an empty argv.
     expect(spawns).toEqual([{ file: 'codex.exe', args: [] }])
   })
 
-  it('keeps the other argv elements in order and never substitutes the prompt', () => {
+  it('keeps the other argv elements in order and never substitutes the prompt', async () => {
     const { service, spawns, project } = createHarness({
       profiles: [
         {
@@ -212,12 +227,12 @@ describe('AgentChatLaunchService', () => {
       ],
     })
 
-    service.createWithAgent(project.id, 'prof-1')
+    await service.createWithAgent(project.id, 'prof-1')
 
     expect(spawns).toEqual([{ file: 'codex.exe', args: ['-a', '--model', 'gpt', '--'] }])
   })
 
-  it('rolls the chat back and surfaces the classified spawn error', () => {
+  it('rolls the chat back and surfaces the classified spawn error', async () => {
     const spawnError = new AppError(
       'not_found',
       'The project directory does not exist. Terminal sessions need an existing project directory.',
@@ -225,7 +240,10 @@ describe('AgentChatLaunchService', () => {
     )
     const { service, chats, project } = createHarness({ spawnError })
 
-    const error = expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'not_found')
+    const error = await expectAppError(
+      () => service.createWithAgent(project.id, 'prof-1'),
+      'not_found',
+    )
 
     expect(error.message).toContain('project directory does not exist')
     // No half-chat survives the failed launch, and no fallback shell chat is
@@ -233,10 +251,13 @@ describe('AgentChatLaunchService', () => {
     expect(chats.list(project.id)).toEqual([])
   })
 
-  it('rolls the chat back and reports the launch failure for an unclassified spawn error', () => {
+  it('rolls the chat back and reports the launch failure for an unclassified spawn error', async () => {
     const { service, chats, project } = createHarness({ spawnError: new Error('EPERM: spawn') })
 
-    const error = expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'unknown')
+    const error = await expectAppError(
+      () => service.createWithAgent(project.id, 'prof-1'),
+      'unknown',
+    )
 
     // A raw OS error never reaches the renderer: it becomes the launch's typed
     // failure with its fallback message.
@@ -245,10 +266,10 @@ describe('AgentChatLaunchService', () => {
     expect(chats.list(project.id)).toEqual([])
   })
 
-  it('creates no chat for an unknown project', () => {
+  it('creates no chat for an unknown project', async () => {
     const { service, chats, terminals, project } = createHarness()
 
-    const error = expectAppError(
+    const error = await expectAppError(
       () => service.createWithAgent('ghost-project', 'prof-1'),
       'not_found',
     )
@@ -258,10 +279,10 @@ describe('AgentChatLaunchService', () => {
     expect(terminals.create).not.toHaveBeenCalled()
   })
 
-  it('creates no chat for a profile that no longer exists', () => {
+  it('creates no chat for a profile that no longer exists', async () => {
     const { service, chats, terminals, project } = createHarness()
 
-    const error = expectAppError(
+    const error = await expectAppError(
       () => service.createWithAgent(project.id, 'ghost-profile'),
       'not_found',
     )
@@ -271,19 +292,22 @@ describe('AgentChatLaunchService', () => {
     expect(terminals.create).not.toHaveBeenCalled()
   })
 
-  it('refuses a profile whose argv has no single prompt element', () => {
+  it('refuses a profile whose argv has no single prompt element', async () => {
     const { service, chats, terminals, project } = createHarness({
       profiles: [{ id: 'prof-1', name: 'Codex', executable: 'codex.exe', args: ['--flag'] }],
     })
 
-    const error = expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'validation')
+    const error = await expectAppError(
+      () => service.createWithAgent(project.id, 'prof-1'),
+      'validation',
+    )
 
     expect(error.message).toBe('The selected agent profile is invalid.')
     expect(chats.list(project.id)).toEqual([])
     expect(terminals.create).not.toHaveBeenCalled()
   })
 
-  it('refuses a profile with two prompt elements instead of dropping an argument', () => {
+  it('refuses a profile with two prompt elements instead of dropping an argument', async () => {
     const { service, chats, project } = createHarness({
       profiles: [
         {
@@ -295,7 +319,7 @@ describe('AgentChatLaunchService', () => {
       ],
     })
 
-    expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'validation')
+    await expectAppError(() => service.createWithAgent(project.id, 'prof-1'), 'validation')
     expect(chats.list(project.id)).toEqual([])
   })
 })

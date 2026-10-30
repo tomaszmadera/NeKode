@@ -89,7 +89,7 @@ describe('OpenWhisprAdapter', () => {
   })
 
   describe('transcribe', () => {
-    it('writes audio to temp file, delegates to client.transcribe, cleans up, and returns text', async () => {
+    it('delegates the owned audio path without removing it', async () => {
       let passedTempPath = ''
       const mockClient = {
         getSettings: vi.fn().mockReturnValue({
@@ -112,16 +112,15 @@ describe('OpenWhisprAdapter', () => {
       const adapter = new OpenWhisprAdapter(mockClient)
       const wav = createFakeAudioWav()
 
-      const result = await adapter.transcribe({ audioWav: wav }, {})
+      const result = await adapter.transcribe({ audioWav: wav, audioPath: 'package.json' }, {})
 
       expect(result.text).toBe('Rozpoznany tekst z OpenWhispr')
       expect(result.rawText).toBe('Rozpoznany tekst z OpenWhispr')
       expect(result.providerId).toBe('openwhispr')
       expect(result.modelId).toBe('default')
 
-      // Verifies cleanup of temp file
-      expect(passedTempPath).toBeTruthy()
-      expect(existsSync(passedTempPath)).toBe(false)
+      expect(passedTempPath).toBe('package.json')
+      expect(existsSync(passedTempPath)).toBe(true)
     })
 
     it('resolves requested model against client catalog and includes modelId in result', async () => {
@@ -154,7 +153,7 @@ describe('OpenWhisprAdapter', () => {
 
       const adapter = new OpenWhisprAdapter(mockClient)
       const result = await adapter.transcribe(
-        { audioWav: createFakeAudioWav(), model: 'ggml-medium.bin' },
+        { audioWav: createFakeAudioWav(), audioPath: 'package.json', model: 'ggml-medium.bin' },
         {},
       )
 
@@ -195,7 +194,7 @@ describe('OpenWhisprAdapter', () => {
 
       const adapter = new OpenWhisprAdapter(mockClient)
       const result = await adapter.transcribe(
-        { audioWav: createFakeAudioWav() },
+        { audioWav: createFakeAudioWav(), audioPath: 'package.json' },
         { model: 'default' },
       )
 
@@ -219,9 +218,9 @@ describe('OpenWhisprAdapter', () => {
       } as unknown as OpenWhisprClient
 
       const adapter = new OpenWhisprAdapter(mockClient)
-      await expect(adapter.transcribe({ audioWav: createFakeAudioWav() }, {})).rejects.toThrowError(
-        AppError,
-      )
+      await expect(
+        adapter.transcribe({ audioWav: createFakeAudioWav(), audioPath: 'package.json' }, {}),
+      ).rejects.toThrowError(AppError)
     })
   })
 })

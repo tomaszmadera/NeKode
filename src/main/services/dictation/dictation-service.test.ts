@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppStateService } from '../app-state-service'
 import type { SttProviderAdapter } from './adapters/adapter-contract'
 import { DictationProviderError } from './adapters/dictation-provider-error'
+import { LocalOpenAiAdapter } from './adapters/local-openai-adapter'
 import { OpenRouterAdapter } from './adapters/openrouter-adapter'
 import { OpenWhisprAdapter } from './adapters/openwhispr-adapter'
 import { OpenWhisprCloudAdapter } from './adapters/openwhispr-cloud-adapter'
@@ -87,6 +88,18 @@ function harness(
 }
 
 describe('dictation sessions', () => {
+  it('passes the owned recording to OpenWhispr and removes it after completion', async () => {
+    const h = harness(async (path) => {
+      expect(recordings(h.directory)).toEqual([path])
+      expect(existsSync(path)).toBe(true)
+      return { text: 'hello', error: null, warning: null }
+    })
+    const { sessionId } = h.service.start('chat', null)
+    await h.service.audio(sessionId as string, wav())
+    expect(h.client.transcribe).toHaveBeenCalledOnce()
+    expect(h.results[0].outcome).toBe('success')
+    expect(recordings(h.directory)).toEqual([])
+  })
   it('starts when another service sweeps an exited owner between discovery and inspection', () => {
     const directory = mkdtempSync(join(tmpdir(), 'nekode-dictation-test-'))
     directories.push(directory)
@@ -434,6 +447,42 @@ describe('dictation provider architecture orchestration', () => {
 
     return { service, registry, mockAdapter, dictService, state, store, results, directory, client }
   }
+
+  it.each(['{', 'null', '[]', '42', '"text"'])(
+    'isolates invalid provider configuration %s',
+    async (raw) => {
+      const h = createTestHarness()
+      h.state.set('dictation.providerConfig:elevenlabs', raw)
+      expect(h.service.providersList()[0].configured).toBe(false)
+      expect(h.service.providersGetConfig('elevenlabs').language).toBe('pl')
+      expect((await h.service.providersTestConnection('elevenlabs')).ok).toBe(true)
+      h.service.providersSetConfig('elevenlabs', { language: 'en' })
+      expect(JSON.parse(h.state.get('dictation.providerConfig:elevenlabs') as string)).toEqual({
+        language: 'en',
+      })
+    },
+  )
+
+  it('releases the session after a provider deadline so another take can start', async () => {
+    vi.useFakeTimers()
+    try {
+      const h = createTestHarness()
+      const fetch = vi.fn(
+        () => new Promise<Response>(() => {}),
+      ) as unknown as typeof globalThis.fetch
+      h.registry.register(new LocalOpenAiAdapter({ fetch }))
+      h.service.setActiveProvider('local-openai')
+      const first = h.service.start('chat', null)
+      const pending = h.service.audio(first.sessionId as string, wav())
+      await vi.advanceTimersByTimeAsync(120_000)
+      await pending
+      expect(h.results[0]).toMatchObject({ outcome: 'failed', error: 'timeout' })
+      expect(h.service.start('chat', null).sessionId).toBeTruthy()
+      h.service.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it('starts configured ElevenLabs with an injected local client whose settings are disabled', async () => {
     const h = createTestHarness(undefined, false)

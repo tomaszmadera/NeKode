@@ -1,4 +1,5 @@
 import { AppError } from '@shared/ipc-error'
+import { DictationDeadlineError, withDictationDeadline } from '../request-deadline'
 import {
   type ConnectionTestResult,
   type DiscoveredModel,
@@ -82,12 +83,57 @@ export class LocalOpenAiAdapter implements SttProviderAdapter {
   }
 
   async testConnection(config?: Record<string, unknown>): Promise<ConnectionTestResult> {
+    try {
+      return await withDictationDeadline((signal) =>
+        this.testConnectionRequest(config ?? {}, signal),
+      )
+    } catch (error) {
+      if (!(error instanceof DictationDeadlineError)) throw error
+      return { ok: false, message: 'Dictation connection request timed out or was cancelled.' }
+    }
+  }
+
+  async discoverModels(config?: Record<string, unknown>): Promise<DiscoveredModel[]> {
+    try {
+      return await withDictationDeadline((signal) => this.discoverModelsRequest(config, signal))
+    } catch (error) {
+      if (!(error instanceof DictationDeadlineError)) throw error
+      throw new AppError('timeout', 'Dictation model discovery timed out.')
+    }
+  }
+
+  async transcribe(
+    request: TranscriptionRequest,
+    config: Record<string, unknown>,
+  ): Promise<TranscriptionResult> {
+    try {
+      return await withDictationDeadline(
+        (signal) => this.transcribeRequest({ ...request, signal }, config),
+        request.signal,
+      )
+    } catch (error) {
+      if (error instanceof DictationDeadlineError)
+        throw new AppError(
+          'timeout',
+          request.signal?.aborted
+            ? 'Dictation transcription cancelled.'
+            : 'Dictation transcription timeout.',
+        )
+      throw error
+    }
+  }
+
+  private async testConnectionRequest(
+    config: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<ConnectionTestResult> {
     const baseUrl = this.resolveBaseUrl(config)
     const headers = this.buildHeaders(config)
 
     try {
       const response = await this.fetch(`${baseUrl}/models`, {
         method: 'GET',
+        signal,
         headers,
       })
 
@@ -110,13 +156,17 @@ export class LocalOpenAiAdapter implements SttProviderAdapter {
     }
   }
 
-  async discoverModels(config?: Record<string, unknown>): Promise<DiscoveredModel[]> {
+  private async discoverModelsRequest(
+    config: Record<string, unknown> | undefined,
+    signal: AbortSignal,
+  ): Promise<DiscoveredModel[]> {
     const baseUrl = this.resolveBaseUrl(config)
     const headers = this.buildHeaders(config)
 
     try {
       const response = await this.fetch(`${baseUrl}/models`, {
         method: 'GET',
+        signal,
         headers,
       })
 
@@ -146,7 +196,7 @@ export class LocalOpenAiAdapter implements SttProviderAdapter {
     }
   }
 
-  async transcribe(
+  private async transcribeRequest(
     request: TranscriptionRequest,
     config: Record<string, unknown>,
   ): Promise<TranscriptionResult> {

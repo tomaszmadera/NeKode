@@ -397,7 +397,7 @@ describe('GitService.sync (NEKODE-1)', () => {
     await service.sync('p1')
 
     expect(executed).toEqual([
-      { args: ['pull'], cwd: 'D:/projects/repo' },
+      { args: ['pull', '--no-edit'], cwd: 'D:/projects/repo' },
       { args: ['push'], cwd: 'D:/projects/repo' },
       { args: ['push', '--tags'], cwd: 'D:/projects/repo' },
     ])
@@ -421,7 +421,7 @@ describe('GitService.sync (NEKODE-1)', () => {
     await expect(service.sync('p1')).rejects.toThrow(
       /git pull failed: fatal: could not read Username/,
     )
-    expect(executed).toEqual([['pull']])
+    expect(executed).toEqual([['pull', '--no-edit']])
   })
 
   it('stops immediately when git push fails and does not execute push --tags', async () => {
@@ -442,7 +442,7 @@ describe('GitService.sync (NEKODE-1)', () => {
     await expect(service.sync('p1')).rejects.toThrow(
       /git push failed: error: failed to push some refs/,
     )
-    expect(executed).toEqual([['pull'], ['push']])
+    expect(executed).toEqual([['pull', '--no-edit'], ['push']])
   })
 
   it('throws AppError with code git_error when git push --tags fails', async () => {
@@ -473,11 +473,61 @@ describe('GitService.sync (NEKODE-1)', () => {
     const service = new GitService({ run: runner, projects: wslProjects })
     await service.sync('p-wsl')
     expect(executed).toEqual([
-      { args: ['pull'], cwd: '\\\\wsl$\\Ubuntu\\home\\user\\repo' },
+      { args: ['pull', '--no-edit'], cwd: '\\\\wsl$\\Ubuntu\\home\\user\\repo' },
       { args: ['push'], cwd: '\\\\wsl$\\Ubuntu\\home\\user\\repo' },
       { args: ['push', '--tags'], cwd: '\\\\wsl$\\Ubuntu\\home\\user\\repo' },
     ])
   })
+
+  it('rejects a concurrent sync for the same project while allowing another project', async () => {
+    let releasePull!: (result: { stdout: string; stderr: string; exitCode: number }) => void
+    const pendingPull = new Promise<{ stdout: string; stderr: string; exitCode: number }>(
+      (resolve) => {
+        releasePull = resolve
+      },
+    )
+    const runner = vi
+      .fn<GitStatusRunner>()
+      .mockImplementation((args, cwd) =>
+        cwd === 'D:/p1' && args[0] === 'pull'
+          ? pendingPull
+          : Promise.resolve({ stdout: '', stderr: '', exitCode: 0 }),
+      )
+    const service = new GitService({
+      run: runner,
+      projects: { get: (id) => ({ path: `D:/${id}` }) },
+    })
+    const first = service.sync('p1')
+    await expect(service.sync('p1')).rejects.toMatchObject({
+      code: 'conflict',
+      channel: 'git:sync',
+    })
+    await service.sync('p2')
+    expect(runner.mock.calls.filter(([, cwd]) => cwd === 'D:/p1')).toHaveLength(1)
+    expect(runner.mock.calls.filter(([, cwd]) => cwd === 'D:/p2')).toHaveLength(3)
+    releasePull({ stdout: '', stderr: '', exitCode: 0 })
+    await first
+    await service.sync('p1')
+    expect(runner.mock.calls.filter(([, cwd]) => cwd === 'D:/p1')).toHaveLength(6)
+  })
+
+  it.each(['exit failure', 'runner rejection'])(
+    'releases the project after %s',
+    async (failure) => {
+      const runner = vi
+        .fn<GitStatusRunner>()
+        .mockImplementationOnce(() =>
+          failure === 'exit failure'
+            ? Promise.resolve({ stdout: '', stderr: 'failed', exitCode: 1 })
+            : Promise.reject(new Error('runner failed')),
+        )
+        .mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
+      const service = new GitService({ run: runner, projects })
+      await expect(service.sync('p1')).rejects.toThrow()
+      await service.sync('p1')
+      expect(runner).toHaveBeenCalledTimes(4)
+    },
+  )
 
   it('rejects unknown projectId with not_found and does not run any commands', async () => {
     const runner = vi.fn()

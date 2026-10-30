@@ -157,9 +157,9 @@ export interface AppServices {
   projects: {
     list(): ProjectInfo[]
     add(path: string): ProjectInfo
-    wslDistributions(): string[]
-    wslDirectories(distribution: string, linuxPath: string): string[]
-    addWsl(distribution: string, linuxPath: string): ProjectInfo
+    wslDistributions(): Promise<string[]> | string[]
+    wslDirectories(distribution: string, linuxPath: string): Promise<string[]> | string[]
+    addWsl(distribution: string, linuxPath: string): Promise<ProjectInfo> | ProjectInfo
     remove(projectId: string): void
   }
   chats: {
@@ -171,7 +171,7 @@ export interface AppServices {
      * in its terminal (new-chat-agent-menu). Rolls the chat back and throws a
      * typed error when the agent cannot start.
      */
-    createWithAgent(projectId: string, profileId: string): ChatInfo
+    createWithAgent(projectId: string, profileId: string): ChatInfo | Promise<ChatInfo>
     /** Removes one chat row (terminal-exit close flow, spec Behaviour 11). */
     remove(chatId: string): void
   }
@@ -187,7 +187,7 @@ export interface AppServices {
      * Main resolves the id's project and spawns its stored shell (spec
      * project-shell-selection); the renderer payload is unchanged.
      */
-    create(chatId: string, cwd: string): string
+    create(chatId: string, cwd: string): string | Promise<string>
     write(chatId: string, data: string): void
     resize(chatId: string, cols: number, rows: number): void
     /** Display label of the project's resolved shell (fallback: platform default). */
@@ -195,9 +195,9 @@ export interface AppServices {
     /** Cached shell list; never probes (spec project-shell-selection). */
     shellList(projectId?: string | null): ShellInfo[]
     /** One explicit detection run; replaces the cache, prunes dead custom paths. */
-    shellDetect(projectId?: string | null): ShellInfo[]
+    shellDetect(projectId?: string | null): Promise<ShellInfo[]> | ShellInfo[]
     /** Validates and adds an absolute executable path as a custom shell. */
-    shellAddCustom(path: string, projectId?: string | null): ShellInfo
+    shellAddCustom(path: string, projectId?: string | null): Promise<ShellInfo> | ShellInfo
     /**
      * Per-session teardown. The renderer bridge exposes this only for bottom
      * tab ids. Project removal and chat close call it in main.

@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
@@ -22,9 +21,11 @@ import {
   type PtySpawnOptions,
   TerminalService,
 } from '../terminal/terminal-service'
+import { runWslAsync } from '../terminal/wsl-async'
 import { buildStartPrompt, TaskLaunchService } from './task-launch-service'
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn(() => 'usable') }))
+vi.mock('../terminal/wsl-async', () => ({ runWslAsync: vi.fn(async () => 'usable') }))
 
 const openDatabases: Array<{ close(): void }> = []
 const projectPath = join(tmpdir(), 'nekode-task-launch', 'demo-project')
@@ -155,6 +156,7 @@ function harness(
     projects,
     project,
     chats,
+    terminals,
     spawns,
     getItem,
     setItem: (next: WorkItem) => {
@@ -164,6 +166,25 @@ function harness(
 }
 
 describe('project opt-in at Kanban launch', () => {
+  it('rejects a removed project while terminal creation is pending', async () => {
+    const bundle = harness()
+    let finish: () => void = () => {}
+    let started: () => void = () => {}
+    const spawnStarted = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    vi.spyOn(bundle.terminals, 'create').mockImplementationOnce(() => {
+      started()
+      return new Promise<string>((resolve) => {
+        finish = () => resolve('chat')
+      }) as unknown as string
+    })
+    const result = bundle.service.launch(input({ projectId: bundle.project.id }))
+    await spawnStarted
+    bundle.service.dropProject(bundle.project.id)
+    finish()
+    await expect(result).rejects.toThrow('Project not found.')
+  })
   // WSL UNC project paths are Windows-only (absolute only under win32 path rules).
   it.skipIf(!isWindowsHost).each(['start', 'resume'] as const)(
     'reports a missing WSL CLI before creating a %s chat',
@@ -175,7 +196,7 @@ describe('project opt-in at Kanban launch', () => {
         command: 'missing-cli "{prompt}"',
       }).profiles[0]
       h.globalProfiles.selectionSet(h.project.id, { selectedIds: [selected.id], defaultId: null })
-      vi.mocked(execFileSync).mockReturnValueOnce('')
+      vi.mocked(runWslAsync).mockResolvedValueOnce('')
       const fields = { projectId: h.project.id, profileId: selected.id }
       await expect(
         h.service.launch(mode === 'start' ? input(fields) : resumeInput(fields)),
@@ -185,6 +206,101 @@ describe('project opt-in at Kanban launch', () => {
       })
       expect(h.chats.list(h.project.id)).toEqual([])
       expect(h.spawns).toEqual([])
+    },
+  )
+
+  it.skipIf(!isWindowsHost)(
+    'rejects a profile deselected during the WSL executable probe',
+    async () => {
+      const h = harness({ globalProfiles: true, path: '\\\\wsl$\\Ubuntu\\tmp' })
+      const agent = h.globalProfiles.put({ id: null, name: 'Agent', command: 'old "{prompt}"' })
+        .profiles[0]
+      h.globalProfiles.selectionSet(h.project.id, { selectedIds: [agent.id], defaultId: null })
+      let release!: (value: string) => void
+      let started!: () => void
+      const probing = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      vi.mocked(runWslAsync).mockImplementationOnce(() => {
+        started()
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      })
+      const pending = h.service.launch(input({ projectId: h.project.id, profileId: agent.id }))
+      await probing
+      h.globalProfiles.selectionSet(h.project.id, { selectedIds: [], defaultId: null })
+      release('usable')
+      await expect(pending).rejects.toMatchObject({ code: 'not_found' })
+      expect(h.chats.list(h.project.id)).toEqual([])
+      expect(h.spawns).toEqual([])
+    },
+  )
+
+  it.skipIf(!isWindowsHost)(
+    'validates and uses a profile edited during the WSL executable probe',
+    async () => {
+      vi.mocked(runWslAsync).mockClear()
+      const h = harness({ globalProfiles: true, path: '\\\\wsl$\\Ubuntu\\tmp' })
+      const agent = h.globalProfiles.put({ id: null, name: 'Agent', command: 'old "{prompt}"' })
+        .profiles[0]
+      h.globalProfiles.selectionSet(h.project.id, { selectedIds: [agent.id], defaultId: null })
+      let release!: (value: string) => void
+      let started!: () => void
+      const probing = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      vi.mocked(runWslAsync).mockImplementationOnce(() => {
+        started()
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      })
+      const pending = h.service.launch(input({ projectId: h.project.id, profileId: agent.id }))
+      await probing
+      h.globalProfiles.put({ id: agent.id, name: 'Edited', command: 'updated --flag "{prompt}"' })
+      release('usable')
+      const result = await pending
+      expect(result.chat.name).toBe('[PowerShell] Edited')
+      expect(vi.mocked(runWslAsync).mock.calls.some((call) => call[1].includes('updated'))).toBe(
+        true,
+      )
+      expect(h.spawns[0].args).toContain('updated')
+      expect(h.spawns[0].args).toContain('--flag')
+    },
+  )
+
+  it.skipIf(!isWindowsHost)(
+    'validates a replacement profile when the pending WSL probe fails',
+    async () => {
+      vi.mocked(runWslAsync).mockClear()
+      const h = harness({ globalProfiles: true, path: '\\\\wsl$\\Ubuntu\\tmp' })
+      const agent = h.globalProfiles.put({ id: null, name: 'Agent', command: 'old "{prompt}"' })
+        .profiles[0]
+      h.globalProfiles.selectionSet(h.project.id, { selectedIds: [agent.id], defaultId: null })
+      let release!: (value: string) => void
+      let started!: () => void
+      const probing = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      vi.mocked(runWslAsync).mockImplementationOnce(() => {
+        started()
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      })
+      const pending = h.service.launch(input({ projectId: h.project.id, profileId: agent.id }))
+      await probing
+      h.globalProfiles.put({ id: agent.id, name: 'Edited', command: 'updated --flag "{prompt}"' })
+      release('')
+      const result = await pending
+      expect(result.delivered).toBe(true)
+      expect(result.chat.name).toBe('[PowerShell] Edited')
+      expect(vi.mocked(runWslAsync).mock.calls.some((call) => call[1].includes('updated'))).toBe(
+        true,
+      )
+      expect(h.spawns[0].args).toContain('updated')
+      expect(h.spawns[0].args).toContain('--flag')
     },
   )
 

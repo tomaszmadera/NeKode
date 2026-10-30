@@ -12,7 +12,7 @@ import { AppError } from '@shared/ipc-error'
 import { agentArgs } from '../agent-chat-launch-service'
 import { agentDisplayName } from '../agent-identity'
 import type { ShellSpec } from '../terminal/terminal-service'
-import { validateWslExecutable } from '../terminal/wsl'
+import { validateWslExecutableAsync } from '../terminal/wsl'
 
 // Task launch (kanban task launch amendment, NEKODE-142). Main rechecks the project, the
 // adapter binding (via getItem), the profile, and the live item, then inserts
@@ -49,7 +49,7 @@ export interface TaskLaunchDeps {
   kanban: TaskLaunchKanban
   createChat: (projectId: string, name: string, identity: ChatLaunchIdentity) => ChatInfo
   terminals: {
-    create(chatId: string, cwd: string, shell?: ShellSpec): string
+    create(chatId: string, cwd: string, shell?: ShellSpec): string | Promise<string>
   }
 }
 
@@ -237,7 +237,7 @@ export class TaskLaunchService {
         taskRef: prepared.taskRef,
         agentName: agentDisplayName(prepared.shell.file, prepared.shell.args),
       })
-      return this.#spawn(attempt, project.path, prepared)
+      return await this.#spawn(attempt, project.path, prepared)
     } finally {
       attempt.inflight = null
       if (attempt.chat === null) {
@@ -265,7 +265,7 @@ export class TaskLaunchService {
       if (project === null) {
         throw new AppError('not_found', 'Project not found.', CHANNEL)
       }
-      return this.#spawn(attempt, project.path, prepared)
+      return await this.#spawn(attempt, project.path, prepared)
     } finally {
       attempt.inflight = null
     }
@@ -308,34 +308,70 @@ export class TaskLaunchService {
     ) {
       throw new AppError('not_found', 'Project not found.', CHANNEL)
     }
-    // Adapter reads and resume scans await. Recheck opt-in and use the current
-    // global definition immediately before creating a chat and spawning.
-    profile = this.#profiles
-      .get(input.projectId)
-      .profiles.find((candidate) => candidate.id === input.profileId)
-    if (profile === undefined) {
-      throw new AppError('not_found', 'The selected agent profile is no longer available.', CHANNEL)
-    }
     const draft = input.mode === 'draft'
-    const shell = {
-      file: profile.executable,
-      args: draft
-        ? agentArgs(profile.args, profile.interactiveArgs, CHANNEL)
-        : substitutePrompt(profile.args, prompt),
-    }
-    // A missing Linux CLI must reject before a persisted chat exists. The
-    // terminal checks again at spawn; PTY creation alone only proves wsl.exe ran.
-    validateWslExecutable(current.path, shell)
-    return {
-      taskRef: item.ref,
-      projectPath: current.path,
-      profile,
-      shell,
-      draftPrompt: draft ? prompt : null,
+    while (true) {
+      // Recheck selection and the definition after every asynchronous probe.
+      profile = this.#profiles
+        .get(input.projectId)
+        .profiles.find((candidate) => candidate.id === input.profileId)
+      if (profile === undefined) {
+        throw new AppError(
+          'not_found',
+          'The selected agent profile is no longer available.',
+          CHANNEL,
+        )
+      }
+      const shell = {
+        file: profile.executable,
+        args: draft
+          ? agentArgs(profile.args, profile.interactiveArgs, CHANNEL)
+          : substitutePrompt(profile.args, prompt),
+      }
+      // A missing Linux CLI must reject before a persisted chat exists.
+      let probeFailure: { error: unknown } | undefined
+      try {
+        await validateWslExecutableAsync(current.path, shell)
+      } catch (error) {
+        probeFailure = { error }
+      }
+      const latest = this.#profiles
+        .get(input.projectId)
+        .profiles.find((candidate) => candidate.id === input.profileId)
+      if (latest === undefined) {
+        throw new AppError(
+          'not_found',
+          'The selected agent profile is no longer available.',
+          CHANNEL,
+        )
+      }
+      const latestArgs = draft
+        ? agentArgs(latest.args, latest.interactiveArgs, CHANNEL)
+        : substitutePrompt(latest.args, prompt)
+      if (
+        latest.executable !== shell.file ||
+        latestArgs.length !== shell.args.length ||
+        latestArgs.some((arg, index) => arg !== shell.args[index])
+      ) {
+        continue
+      }
+      if (probeFailure !== undefined) {
+        throw probeFailure.error
+      }
+      return {
+        taskRef: item.ref,
+        projectPath: current.path,
+        profile: latest,
+        shell,
+        draftPrompt: draft ? prompt : null,
+      }
     }
   }
 
-  #spawn(attempt: Attempt, cwd: string, prepared: PreparedLaunch): KanbanLaunchResult {
+  async #spawn(
+    attempt: Attempt,
+    cwd: string,
+    prepared: PreparedLaunch,
+  ): Promise<KanbanLaunchResult> {
     if (attempt.chat === null) {
       throw new AppError('conflict', 'The task chat is missing.', CHANNEL)
     }
@@ -346,10 +382,16 @@ export class TaskLaunchService {
       throw new AppError('not_found', 'Project not found.', CHANNEL)
     }
     try {
-      this.#terminals.create(attempt.chat.id, cwd, prepared.shell)
+      await this.#terminals.create(attempt.chat.id, cwd, prepared.shell)
     } catch {
+      if (attempt.dropped || this.#droppedProjects.has(attempt.projectId)) {
+        throw new AppError('not_found', 'Project not found.', CHANNEL)
+      }
       logSpawnFailure()
       return { chat: attempt.chat, delivered: false }
+    }
+    if (attempt.dropped || this.#droppedProjects.has(attempt.projectId)) {
+      throw new AppError('not_found', 'Project not found.', CHANNEL)
     }
     attempt.delivered = true
     attempt.draftPrompt = prepared.draftPrompt

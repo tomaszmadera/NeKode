@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { AppError } from '@shared/ipc-error'
 import { parseWslPath, type WslLocation, wslProjectPath } from '@shared/wsl-path'
 import type { ShellSpec } from './shell-service'
+import { runWslAsync } from './wsl-async'
 
 export type WslRun = (distribution: string, args: string[]) => string
 
@@ -46,15 +47,65 @@ export function listWslDistributions(): string[] {
   }
 }
 
+export function listWslDistributionsAsync(): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'wsl.exe',
+      ['--list', '--quiet'],
+      { timeout: 5000, windowsHide: true, encoding: 'buffer' },
+      (error, stdout) => {
+        if (error) {
+          reject(
+            new AppError(
+              'unknown',
+              'Unable to list WSL distributions. Check that WSL is installed.',
+            ),
+          )
+          return
+        }
+        resolve(
+          stdout
+            .toString('utf16le')
+            .replace(/^\uFEFF/, '')
+            .split(/\r?\n/)
+            .map((name) => name.trim())
+            .filter(Boolean),
+        )
+      },
+    )
+  })
+}
+
 /** Query paths may end in '/' and include the root, unlike registration paths. */
 export function listWslDirectories(distribution: string, query: string): string[] {
+  const location = validateDirectoryQuery(distribution, query)
+  if (location === null) return []
+  const { parent } = location
+  runWsl(distribution, ['/usr/bin/test', '-d', parent])
+  const output = runWsl(distribution, directoryFindArgs(parent))
+  return filterDirectories(distribution, location, output)
+}
+
+export async function listWslDirectoriesAsync(
+  distribution: string,
+  query: string,
+): Promise<string[]> {
+  const location = validateDirectoryQuery(distribution, query)
+  if (location === null) return []
+  const { parent } = location
+  await runWslAsync(distribution, ['/usr/bin/test', '-d', parent])
+  const output = await runWslAsync(distribution, directoryFindArgs(parent))
+  return filterDirectories(distribution, location, output)
+}
+
+function validateDirectoryQuery(distribution: string, query: string) {
   try {
     // Validate the distribution even for empty queries without invoking WSL.
     wslProjectPath(distribution, '/query')
     if ([...query].some((character) => character.charCodeAt(0) < 32)) {
       throw new Error('Directory queries must not contain control characters.')
     }
-    if (!query.startsWith('/')) return []
+    if (!query.startsWith('/')) return null
     const candidate = query === '/' ? '/query' : query.endsWith('/') ? query.slice(0, -1) : query
     wslProjectPath(distribution, candidate)
   } catch (error) {
@@ -64,20 +115,19 @@ export function listWslDirectories(distribution: string, query: string): string[
   const parent = query.slice(0, separator) || '/'
   const prefix = query.slice(separator + 1)
   const childPrefix = parent === '/' ? '/' : `${parent}/`
+  return { parent, prefix, childPrefix }
+}
+
+function directoryFindArgs(parent: string): string[] {
   // find on a regular file can succeed with no output; prove the parent is a directory first.
-  runWsl(distribution, ['/usr/bin/test', '-d', parent])
-  const output = runWsl(distribution, [
-    'find',
-    '-H',
-    parent,
-    '-mindepth',
-    '1',
-    '-maxdepth',
-    '1',
-    '-type',
-    'd',
-    '-print0',
-  ])
+  return ['find', '-H', parent, '-mindepth', '1', '-maxdepth', '1', '-type', 'd', '-print0']
+}
+
+function filterDirectories(
+  distribution: string,
+  { prefix, childPrefix }: { prefix: string; childPrefix: string },
+  output: string,
+): string[] {
   return output
     .split('\0')
     .filter((path) => {
@@ -97,20 +147,35 @@ export function listWslDirectories(distribution: string, query: string): string[
 }
 
 export function validatedWslProjectPath(distribution: string, linuxPath: string): string {
-  let path: string
+  const path = validateWslProjectPath(distribution, linuxPath)
+  if (!listWslDistributions().includes(distribution)) {
+    throw new AppError('validation', 'The WSL distribution is not installed.')
+  }
+  runWsl(distribution, ['/usr/bin/test', '-d', linuxPath])
+  return path
+}
+
+export async function validatedWslProjectPathAsync(
+  distribution: string,
+  linuxPath: string,
+): Promise<string> {
+  const path = validateWslProjectPath(distribution, linuxPath)
+  if (!(await listWslDistributionsAsync()).includes(distribution)) {
+    throw new AppError('validation', 'The WSL distribution is not installed.')
+  }
+  await runWslAsync(distribution, ['/usr/bin/test', '-d', linuxPath])
+  return path
+}
+
+function validateWslProjectPath(distribution: string, linuxPath: string): string {
   try {
-    path = wslProjectPath(distribution, linuxPath)
+    return wslProjectPath(distribution, linuxPath)
   } catch (error) {
     throw new AppError(
       'validation',
       error instanceof Error ? error.message : 'Invalid WSL project path.',
     )
   }
-  if (!listWslDistributions().includes(distribution)) {
-    throw new AppError('validation', 'The WSL distribution is not installed.')
-  }
-  runWsl(distribution, ['/usr/bin/test', '-d', linuxPath])
-  return path
 }
 
 /** Check the project's Linux PATH before a launch is reported as delivered. */
@@ -140,6 +205,36 @@ export function validateWslExecutable(path: string | WslLocation, shell: ShellSp
       `Linux executable "${shell.file}" is unavailable or not executable in WSL distribution "${location.distribution}".`,
     )
   }
+}
+
+export async function validateWslExecutableAsync(
+  path: string | WslLocation,
+  shell: ShellSpec,
+): Promise<void> {
+  const location = typeof path === 'string' ? parseWslPath(path) : path
+  if (location === null || (shell.file === 'wsl.exe' && shell.args.length === 0)) return
+  assertLinuxExecutable(shell.file)
+  let result: string
+  try {
+    result = await runWslAsync(location.distribution, [
+      'bash',
+      '-lc',
+      'cd -- "$1" && if executable=$(type -P -- "$2") && test -f "$executable" && test -x "$executable"; then printf usable; fi',
+      'nekode-executable',
+      location.linuxPath,
+      shell.file,
+    ])
+  } catch {
+    throw new AppError(
+      'unknown',
+      `Unable to check Linux executable "${shell.file}" in WSL distribution "${location.distribution}".`,
+    )
+  }
+  if (result !== 'usable')
+    throw new AppError(
+      'not_found',
+      `Linux executable "${shell.file}" is unavailable or not executable in WSL distribution "${location.distribution}".`,
+    )
 }
 
 function assertLinuxExecutable(file: string): void {
@@ -203,6 +298,35 @@ export function prepareWslAgent(
   }
   validateWslExecutable(location, command)
   // An explicit location always produces a WSL launch; the host cwd stays the Windows folder.
+  const prepared = wslTerminalSpec(location, command)
+  return { file: prepared.file, args: prepared.args }
+}
+
+export async function prepareWslAgentAsync(
+  path: string,
+  command: ShellSpec,
+  shellChoice: string | null,
+): Promise<ShellSpec> {
+  if (parseWslPath(path) !== null || !shellChoice?.startsWith('wsl:')) return command
+  const distribution = shellChoice.slice('wsl:'.length)
+  if (!distribution) return command
+  assertLinuxExecutable(command.file)
+  let location: WslLocation
+  try {
+    wslProjectPath(distribution, '/query')
+    const linuxPath = (await runWslAsync(distribution, ['wslpath', '-a', '-u', path])).replace(
+      /\r?\n$/,
+      '',
+    )
+    wslProjectPath(distribution, linuxPath)
+    location = { distribution, linuxPath }
+  } catch {
+    throw new AppError(
+      'unknown',
+      `Unable to resolve the project directory in WSL distribution "${distribution}".`,
+    )
+  }
+  await validateWslExecutableAsync(location, command)
   const prepared = wslTerminalSpec(location, command)
   return { file: prepared.file, args: prepared.args }
 }

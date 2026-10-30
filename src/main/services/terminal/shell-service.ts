@@ -4,7 +4,8 @@ import { basename, isAbsolute, posix } from 'node:path'
 import type { ShellChoice, ShellInfo } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { parseWslPath } from '@shared/wsl-path'
-import { runWsl, type WslRun } from './wsl'
+import { listWslDistributionsAsync, runWsl, type WslRun } from './wsl'
+import { runWslAsync } from './wsl-async'
 
 // ShellService (spec project-shell-selection): detection of installed shells,
 // per-choice resolution to a spawnable spec, and display labels. Detection is
@@ -95,6 +96,8 @@ export interface ShellServiceOptions {
    * accessSync(F_OK): see the module comment for the MSIX-alias rationale.
    */
   runWsl?: WslRun
+  runWslAsync?: (distribution: string, args: string[]) => Promise<string>
+  listWslDistributionsAsync?: () => Promise<string[]>
   exists?: (path: string) => boolean
   /** File check for custom paths; injectable for tests. */
   isFile?: (path: string) => boolean
@@ -211,6 +214,8 @@ export class ShellService {
   readonly #listWslDistributions: () => string[]
   readonly #env: NodeJS.ProcessEnv
   readonly #runWsl: WslRun
+  readonly #runWslAsync: (distribution: string, args: string[]) => Promise<string>
+  readonly #listWslDistributionsAsync: () => Promise<string[]>
   readonly #platform: NodeJS.Platform
   readonly #readEtcShells: () => string
   readonly #isExecutable: (path: string) => boolean
@@ -222,6 +227,7 @@ export class ShellService {
   #customEntries: ShellInfo[] = []
   /** A pending detection run; concurrent callers share it. */
   #pending: DetectResult | null = null
+  #pendingAsync: Promise<DetectResult> | null = null
 
   constructor(options: ShellServiceOptions = {}) {
     this.#exists = options.exists ?? realExists
@@ -229,6 +235,8 @@ export class ShellService {
     this.#listWslDistributions = options.listWslDistributions ?? realWslDistributions
     this.#env = options.env ?? process.env
     this.#runWsl = options.runWsl ?? runWsl
+    this.#runWslAsync = options.runWslAsync ?? runWslAsync
+    this.#listWslDistributionsAsync = options.listWslDistributionsAsync ?? listWslDistributionsAsync
     this.#platform = options.platform ?? process.platform
     this.#readEtcShells = options.readEtcShells ?? realReadEtcShells
     this.#isExecutable = options.isExecutable ?? realIsExecutable
@@ -265,6 +273,56 @@ export class ShellService {
       this.#wslLists.set(projectPath as string, shells)
       return { shells, prunedCustomPaths }
     }
+    return this.#detectHost(customPaths, () => this.#listWslDistributions())
+  }
+
+  async detectAsync(customPaths: readonly string[], projectPath?: string): Promise<DetectResult> {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location !== null) {
+      const output = await this.#runWslAsync(location.distribution, ['/bin/cat', '/etc/shells'])
+      const paths = [
+        ...new Set([
+          ...output.split(/\r?\n/).filter((path) => path.startsWith('/')),
+          ...customPaths,
+        ]),
+      ]
+      const shells: ShellInfo[] = [
+        { id: 'default', label: `Default (WSL: ${location.distribution})` },
+      ]
+      const prunedCustomPaths: string[] = []
+      for (const path of paths) {
+        try {
+          await this.#validateLinuxShellAsync(path, location.distribution)
+          shells.push({ id: customChoice(path), label: posix.basename(path) })
+        } catch (error) {
+          if (!(error instanceof AppError) || error.code !== 'validation') throw error
+          if (customPaths.includes(path)) prunedCustomPaths.push(path)
+        }
+      }
+      this.#wslLists.set(projectPath as string, shells)
+      return { shells, prunedCustomPaths }
+    }
+    if (this.#pendingAsync !== null) return this.#pendingAsync
+    const pending = (async () => {
+      let distributions: string[] = []
+      if (this.#platform === 'win32') {
+        try {
+          distributions = await this.#listWslDistributionsAsync()
+        } catch {
+          /* Detection degrades when WSL is unavailable. */
+        }
+      }
+      return this.#detectHost(customPaths, () => distributions)
+    })()
+    this.#pendingAsync = pending
+    try {
+      return await pending
+    } finally {
+      this.#pendingAsync = null
+    }
+  }
+
+  #detectHost(customPaths: readonly string[], listDistributions: () => string[]): DetectResult {
     if (this.#pending !== null) {
       return this.#pending
     }
@@ -276,7 +334,7 @@ export class ShellService {
           shells.push({ id: candidate.id, label: candidate.label })
         }
       }
-      for (const distro of this.#listWslDistributions()) {
+      for (const distro of listDistributions()) {
         shells.push({ id: `wsl:${distro}`, label: `WSL: ${distro}` })
       }
     } else {
@@ -349,6 +407,18 @@ export class ShellService {
     return entry
   }
 
+  async addCustomPathAsync(path: string, projectPath?: string): Promise<ShellInfo> {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location === null) return this.addCustomPath(path, projectPath)
+    await this.#validateLinuxShellAsync(path, location.distribution)
+    const entry: ShellInfo = { id: customChoice(path), label: posix.basename(path) }
+    this.#wslLists.set(projectPath as string, [
+      ...this.list(projectPath).filter((shell) => shell.id !== entry.id),
+      entry,
+    ])
+    return entry
+  }
+
   /** Read access for the caller persisting shells.custom. */
   customPaths(): string[] {
     return this.#customEntries.map((entry) => customPathOf(entry.id))
@@ -388,6 +458,15 @@ export class ShellService {
     }
     const path = candidate.paths(this.#env).find((item) => this.#exists(item))
     return path !== undefined ? candidate.spec(path) : this.defaultShellSpec()
+  }
+
+  async resolveAsync(choice: string | null | undefined, projectPath?: string): Promise<ShellSpec> {
+    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    if (location === null || !choice?.startsWith('custom:/'))
+      return this.resolve(choice, projectPath)
+    const path = customPathOf(choice)
+    await this.#validateLinuxShellAsync(path, location.distribution)
+    return { file: path, args: [] }
   }
 
   /**
@@ -479,6 +558,18 @@ export class ShellService {
   }
 
   #validateLinuxShell(path: string, distribution: string): void {
+    this.#assertLinuxShellPath(path)
+    const result = this.#runWsl(distribution, this.#linuxShellProbe(path))
+    this.#assertLinuxShellResult(result)
+  }
+
+  async #validateLinuxShellAsync(path: string, distribution: string): Promise<void> {
+    this.#assertLinuxShellPath(path)
+    const result = await this.#runWslAsync(distribution, this.#linuxShellProbe(path))
+    this.#assertLinuxShellResult(result)
+  }
+
+  #assertLinuxShellPath(path: string): void {
     if (
       !path.startsWith('/') ||
       path.includes('\\') ||
@@ -487,14 +578,20 @@ export class ShellService {
     ) {
       throw new AppError('validation', 'Use an absolute Linux shell path.')
     }
+  }
+
+  #linuxShellProbe(path: string): string[] {
     // Fixed source, positional path data. Never interpolate the executable.
-    const result = this.#runWsl(distribution, [
+    return [
       '/bin/sh',
       '-c',
       'if test -f "$1" && test -x "$1"; then printf usable; fi',
       'nekode-shell',
       path,
-    ])
+    ]
+  }
+
+  #assertLinuxShellResult(result: string): void {
     if (result !== 'usable')
       throw new AppError('validation', 'The Linux shell is unavailable or not executable.')
   }

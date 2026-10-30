@@ -263,6 +263,7 @@ export interface GitServiceOptions {
 export class GitService {
   readonly #run: GitStatusRunner
   readonly #projects?: GitProjectLookup
+  readonly #syncingProjects = new Set<string>()
 
   constructor(options: GitServiceOptions = {}) {
     this.#run = options.run ?? execFileRunner
@@ -331,22 +332,30 @@ export class GitService {
    * git push --tags. Halts immediately on the first non-zero exit code.
    */
   async sync(projectId: string): Promise<void> {
-    const projectPath = this.#resolveProjectPath(projectId, 'git:sync')
-    const steps: Array<{ name: string; args: string[] }> = [
-      { name: 'git pull', args: ['pull'] },
-      { name: 'git push', args: ['push'] },
-      { name: 'git push --tags', args: ['push', '--tags'] },
-    ]
+    if (this.#syncingProjects.has(projectId)) {
+      throw new AppError('conflict', 'Git sync is already running for this project.', 'git:sync')
+    }
+    this.#syncingProjects.add(projectId)
+    try {
+      const projectPath = this.#resolveProjectPath(projectId, 'git:sync')
+      const steps: Array<{ name: string; args: string[] }> = [
+        { name: 'git pull', args: ['pull', '--no-edit'] },
+        { name: 'git push', args: ['push'] },
+        { name: 'git push --tags', args: ['push', '--tags'] },
+      ]
 
-    for (const step of steps) {
-      const result = await this.#run(step.args, projectPath)
-      if (result.exitCode !== 0) {
-        const detail = result.stderr.trim() || result.stdout.trim() || 'command failed'
-        console.warn(
-          `[git] ${step.name} exited with code ${result.exitCode} for "${projectPath}": ${detail}`,
-        )
-        throw new AppError('git_error', `${step.name} failed: ${detail}`, 'git:sync')
+      for (const step of steps) {
+        const result = await this.#run(step.args, projectPath)
+        if (result.exitCode !== 0) {
+          const detail = result.stderr.trim() || result.stdout.trim() || 'command failed'
+          console.warn(
+            `[git] ${step.name} exited with code ${result.exitCode} for "${projectPath}": ${detail}`,
+          )
+          throw new AppError('git_error', `${step.name} failed: ${detail}`, 'git:sync')
+        }
       }
+    } finally {
+      this.#syncingProjects.delete(projectId)
     }
   }
 }

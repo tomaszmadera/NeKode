@@ -36,7 +36,7 @@ export interface AgentChatLaunchDeps {
   /** Removes the chat row again when the agent process cannot start. */
   removeChat: (chatId: string) => void
   terminals: {
-    create(chatId: string, cwd: string, shell?: ShellSpec): string
+    create(chatId: string, cwd: string, shell?: ShellSpec): string | Promise<string>
   }
 }
 
@@ -92,17 +92,14 @@ export class AgentChatLaunchService {
    * row again and surfaces the typed error; no half-chat survives and there is
    * no fallback to a plain shell chat.
    */
-  createWithAgent(projectId: string, profileId: string): ChatInfo {
+  async createWithAgent(projectId: string, profileId: string): Promise<ChatInfo> {
     const project = this.#projects.get(projectId)
-    if (project === null) {
-      throw new AppError('not_found', 'Project not found.', CHANNEL)
-    }
+    if (project === null) throw new AppError('not_found', 'Project not found.', CHANNEL)
     const profile = this.#profiles
       .get(projectId)
       .profiles.find((candidate) => candidate.id === profileId)
-    if (profile === undefined) {
+    if (profile === undefined)
       throw new AppError('not_found', 'The selected agent profile is no longer available.', CHANNEL)
-    }
     const shell: ShellSpec = {
       file: profile.executable,
       args: agentArgs(profile.args, profile.interactiveArgs),
@@ -111,7 +108,7 @@ export class AgentChatLaunchService {
       agentName: agentDisplayName(shell.file, shell.args),
     })
     try {
-      this.#terminals.create(chat.id, project.path, shell)
+      await this.#terminals.create(chat.id, project.path, shell)
     } catch (error) {
       this.#removeChat(chat.id)
       throw spawnFailure(error)

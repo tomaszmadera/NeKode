@@ -1,3 +1,4 @@
+import { DictationDeadlineError, withDictationDeadline } from '../request-deadline'
 import { DiffValidator } from './diff-validator'
 import type {
   GlossaryEntry,
@@ -98,6 +99,25 @@ export class PostProcessor {
   }
 
   async process(request: PostProcessRequest): Promise<PostProcessResult> {
+    const signal = request.options?.signal ?? request.signal
+    try {
+      return await withDictationDeadline(
+        (deadlineSignal) =>
+          this.processRequest({
+            ...request,
+            signal: deadlineSignal,
+            options: request.options ? { ...request.options, signal: deadlineSignal } : undefined,
+          }),
+        signal,
+      )
+    } catch (error) {
+      if (!(error instanceof DictationDeadlineError)) throw error
+      const rawText = request.rawText ?? ''
+      return { text: rawText, rawText, warning: 'post-processing-failed' }
+    }
+  }
+
+  private async processRequest(request: PostProcessRequest): Promise<PostProcessResult> {
     const rawText = request.rawText ?? ''
     const nativeEditedText = request.nativeEditedText
     const mode = request.options?.mode ?? request.mode ?? DEFAULT_POST_PROCESS_MODE

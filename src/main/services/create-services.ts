@@ -43,11 +43,11 @@ import { createNodePty } from './terminal/node-pty-factory'
 import { ShellService } from './terminal/shell-service'
 import { type ShellSpec, TerminalService } from './terminal/terminal-service'
 import {
-  listWslDirectories,
-  listWslDistributions,
-  prepareWslAgent,
+  listWslDirectoriesAsync,
+  listWslDistributionsAsync,
+  prepareWslAgentAsync,
   requireWslSupport,
-  validatedWslProjectPath,
+  validatedWslProjectPathAsync,
   wslSupported,
 } from './terminal/wsl'
 import { UsageService } from './usage/usage-service'
@@ -145,7 +145,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
   }
   /** The project's stored shell choice, resolved to a spawnable spec. */
   const projectShell = (projectId: string) =>
-    shells.resolve(state.get(projectShellKey(projectId)), projects.get(projectId)?.path)
+    shells.resolveAsync(state.get(projectShellKey(projectId)), projects.get(projectId)?.path)
   const chats = new ChatService({
     db,
     // The chat prefix is the compact shell code (spec project-shell-selection
@@ -210,7 +210,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
   // Both profile launch flows resolve the current execution environment only for a new PTY.
   const agentTerminals = {
     create: (chatId: string, cwd: string, command?: ShellSpec) =>
-      terminals.create(
+      terminals.createAsync(
         chatId,
         cwd,
         command === undefined
@@ -218,7 +218,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
           : () => {
               const projectId = chats.get(chatId)?.projectId
               const choice = projectId ? state.get(projectShellKey(projectId)) : null
-              return prepareWslAgent(cwd, command, choice)
+              return prepareWslAgentAsync(cwd, command, choice)
             },
       ),
   }
@@ -334,14 +334,16 @@ export function createServices(options: CreateServicesOptions): AppServices {
       add: (path) => projects.add(path),
       // WSL is a Windows-host integration; on Linux (also inside WSL) it is
       // hidden: no distributions, and directory listing/registration refuse.
-      wslDistributions: () => (wslSupported() ? listWslDistributions() : []),
+      wslDistributions: () => (wslSupported() ? listWslDistributionsAsync() : []),
       wslDirectories: (distribution, linuxPath) => {
         requireWslSupport()
-        return listWslDirectories(distribution, linuxPath)
+        return listWslDirectoriesAsync(distribution, linuxPath)
       },
       addWsl: (distribution, linuxPath) => {
         requireWslSupport()
-        return projects.add(validatedWslProjectPath(distribution, linuxPath))
+        return validatedWslProjectPathAsync(distribution, linuxPath).then((path) =>
+          projects.add(path),
+        )
       },
       remove: (projectId) => projects.remove(projectId),
     },
@@ -373,7 +375,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
           if (location !== null && cwdLocation?.distribution !== location.distribution)
             throw new AppError('validation', 'A WSL terminal must use its project distribution.')
         }
-        return terminals.create(
+        return terminals.createAsync(
           chatId,
           cwd,
           projectId !== null ? () => projectShell(projectId) : undefined,
@@ -385,13 +387,14 @@ export function createServices(options: CreateServicesOptions): AppServices {
         shells.label(state.get(projectShellKey(projectId)), projects.get(projectId)?.path),
       shellList: (projectId) =>
         shells.list(projectId == null ? undefined : requireProjectPath(projectId)),
-      shellDetect: (projectId) => {
+      shellDetect: async (projectId) => {
         const projectPath = projectId == null ? undefined : requireProjectPath(projectId)
         if (projectPath !== undefined && parseWslPath(projectPath) !== null) {
-          const result = shells.detect(
+          const result = await shells.detectAsync(
             readCustomShellPaths(projectWslShellsKey(projectId as string)),
             projectPath,
           )
+          requireProjectPath(projectId as string)
           if (result.prunedCustomPaths.length > 0)
             state.set(
               projectWslShellsKey(projectId as string),
@@ -403,7 +406,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
             )
           return result.shells
         }
-        const result = shells.detect(readCustomShellPaths())
+        const result = await shells.detectAsync(readCustomShellPaths())
         try {
           if (result.prunedCustomPaths.length > 0) {
             writeCustomShellPaths(shells.customPaths())
@@ -413,10 +416,11 @@ export function createServices(options: CreateServicesOptions): AppServices {
           shells.endDetect()
         }
       },
-      shellAddCustom: (path, projectId) => {
+      shellAddCustom: async (path, projectId) => {
         const projectPath = projectId == null ? undefined : requireProjectPath(projectId)
         if (projectPath !== undefined && parseWslPath(projectPath) !== null) {
-          const entry = shells.addCustomPath(path, projectPath)
+          const entry = await shells.addCustomPathAsync(path, projectPath)
+          requireProjectPath(projectId as string)
           const key = projectWslShellsKey(projectId as string)
           state.set(key, JSON.stringify([...new Set([...readCustomShellPaths(key), path])]))
           return entry

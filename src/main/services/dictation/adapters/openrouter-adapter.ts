@@ -1,4 +1,5 @@
 import { AppError } from '@shared/ipc-error'
+import { DictationDeadlineError, withDictationDeadline } from '../request-deadline'
 import {
   type ConnectionTestResult,
   type DiscoveredModel,
@@ -66,7 +67,51 @@ export class OpenRouterAdapter implements SttProviderAdapter {
     this.fetch = deps?.fetch ?? globalThis.fetch
   }
 
-  async testConnection(config: Record<string, unknown>): Promise<ConnectionTestResult> {
+  async testConnection(config?: Record<string, unknown>): Promise<ConnectionTestResult> {
+    try {
+      return await withDictationDeadline((signal) =>
+        this.testConnectionRequest(config ?? {}, signal),
+      )
+    } catch (error) {
+      if (!(error instanceof DictationDeadlineError)) throw error
+      return { ok: false, message: 'Dictation connection request timed out or was cancelled.' }
+    }
+  }
+
+  async discoverModels(config?: Record<string, unknown>): Promise<DiscoveredModel[]> {
+    try {
+      return await withDictationDeadline((signal) => this.discoverModelsRequest(config, signal))
+    } catch (error) {
+      if (!(error instanceof DictationDeadlineError)) throw error
+      throw new AppError('timeout', 'Dictation model discovery timed out.')
+    }
+  }
+
+  async transcribe(
+    request: TranscriptionRequest,
+    config: Record<string, unknown>,
+  ): Promise<TranscriptionResult> {
+    try {
+      return await withDictationDeadline(
+        (signal) => this.transcribeRequest({ ...request, signal }, config),
+        request.signal,
+      )
+    } catch (error) {
+      if (error instanceof DictationDeadlineError)
+        throw new AppError(
+          'timeout',
+          request.signal?.aborted
+            ? 'Dictation transcription cancelled.'
+            : 'Dictation transcription timeout.',
+        )
+      throw error
+    }
+  }
+
+  private async testConnectionRequest(
+    config: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<ConnectionTestResult> {
     const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : ''
     if (!apiKey) {
       return { ok: false, message: 'OpenRouter API key is required.' }
@@ -80,6 +125,7 @@ export class OpenRouterAdapter implements SttProviderAdapter {
     try {
       const response = await this.fetch(`${baseUrl}/auth/key`, {
         method: 'GET',
+        signal,
         headers: {
           Authorization: `Bearer ${apiKey}`,
           Accept: 'application/json',
@@ -128,7 +174,10 @@ export class OpenRouterAdapter implements SttProviderAdapter {
     }
   }
 
-  async discoverModels(config?: Record<string, unknown>): Promise<DiscoveredModel[]> {
+  private async discoverModelsRequest(
+    config: Record<string, unknown> | undefined,
+    signal: AbortSignal,
+  ): Promise<DiscoveredModel[]> {
     const baseUrl =
       typeof config?.baseUrl === 'string' && config.baseUrl.trim()
         ? config.baseUrl.trim().replace(/\/+$/, '')
@@ -143,6 +192,7 @@ export class OpenRouterAdapter implements SttProviderAdapter {
     try {
       const response = await this.fetch(`${baseUrl}/models`, {
         method: 'GET',
+        signal,
         headers,
       })
 
@@ -190,7 +240,7 @@ export class OpenRouterAdapter implements SttProviderAdapter {
     }
   }
 
-  async transcribe(
+  private async transcribeRequest(
     request: TranscriptionRequest,
     config: Record<string, unknown>,
   ): Promise<TranscriptionResult> {

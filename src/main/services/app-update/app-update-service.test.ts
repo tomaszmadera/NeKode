@@ -251,6 +251,84 @@ describe('app update service', () => {
     }
   })
 
+  it('bounds a stalled latest release response body', async () => {
+    vi.useFakeTimers()
+    try {
+      const { io } = harness({
+        fetch: vi.fn(async () => new Response(new ReadableStream({ start() {} }))),
+      })
+      const pending = new AppUpdateService(io).latest()
+      await vi.advanceTimersByTimeAsync(30_000)
+      await expect(pending).resolves.toEqual({
+        canInstall: true,
+        version: null,
+        error: 'Could not read the latest release.',
+      })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('bounds a stalled redirect request and permits a retry', async () => {
+    vi.useFakeTimers()
+    try {
+      const normal = harness()
+      const asset = 'https://release-assets.githubusercontent.com/nekode/sums.txt'
+      let stalled = true
+      const { io, spawned } = harness({
+        fetch: vi.fn((url, init) => {
+          if (stalled && url === SUMS_URL)
+            return Promise.resolve(response('', 302, { location: asset }))
+          if (stalled && url === asset) return new Promise<Response>(() => {})
+          return normal.io.fetch(url, init)
+        }),
+      })
+      const service = new AppUpdateService(io)
+      const pending = service.download()
+      const failure = expect(pending).rejects.toThrow('Could not download the installer.')
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+      await failure
+      await expect(service.launch()).rejects.toThrow('Download the installer before starting it.')
+      expect(spawned).toEqual([])
+      stalled = false
+      await service.download()
+      await service.launch()
+      expect(spawned).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('bounds a stalled installer body and permits a retry', async () => {
+    vi.useFakeTimers()
+    try {
+      const normal = harness()
+      let stalled = true
+      const { io, spawned } = harness({
+        fetch: vi.fn((url, init) => {
+          if (stalled && url === FILE_URL) {
+            return Promise.resolve(new Response(new ReadableStream({ start() {} })))
+          }
+          return normal.io.fetch(url, init)
+        }),
+      })
+      const service = new AppUpdateService(io)
+      const pending = service.download()
+      const failure = expect(pending).rejects.toThrow('Could not download the installer.')
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+      await failure
+      await expect(service.launch()).rejects.toThrow('Download the installer before starting it.')
+      expect(spawned).toEqual([])
+      stalled = false
+      await service.download()
+      await service.launch()
+      expect(spawned).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('compares checksum hex case for a newer release', async () => {
     const bytes = installerBytes()
     const hash = createHash('sha256').update(bytes).digest('hex').toUpperCase()

@@ -1,5 +1,6 @@
 import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
+import { DICTATION_REQUEST_TIMEOUT_MS } from '../request-deadline'
 import { LocalOpenAiAdapter } from './local-openai-adapter'
 
 function createFakeAudioWav(): ArrayBuffer {
@@ -54,6 +55,25 @@ describe('LocalOpenAiAdapter', () => {
   })
 
   describe('discoverModels', () => {
+    it('rejects when discovery times out and retains the fallback for other errors', async () => {
+      vi.useFakeTimers()
+      try {
+        const fetch = vi
+          .fn()
+          .mockImplementationOnce(() => new Promise(() => {}))
+          .mockRejectedValueOnce(new Error('offline'))
+        const adapter = new LocalOpenAiAdapter({
+          fetch: fetch as unknown as typeof globalThis.fetch,
+        })
+        const pending = adapter.discoverModels()
+        const assertion = expect(pending).rejects.toMatchObject({ code: 'timeout' })
+        await vi.advanceTimersByTimeAsync(DICTATION_REQUEST_TIMEOUT_MS)
+        await assertion
+        expect(await adapter.discoverModels()).toEqual([{ id: 'whisper-1', name: 'whisper-1' }])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
     it('returns models list from /models endpoint', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,

@@ -15,6 +15,9 @@ import {
 } from './release-url'
 import { type DetachedChild, startDetached } from './start-detached'
 
+const API_TIMEOUT_MS = 30_000
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000
+
 export interface AppUpdateIo {
   fetch: (url: string, init: RequestInit) => Promise<Response>
   writeFile: (path: string, data: Uint8Array) => Promise<void>
@@ -169,33 +172,67 @@ export class AppUpdateService {
   }
 
   private async readTag(signal: AbortSignal): Promise<string> {
-    const response = await this.request(releaseApiUrl(), 'api', signal)
-    let body: unknown
-    try {
-      body = await response.json()
-    } catch {
-      throw new AppError('validation', 'The latest release is not a numbered version.')
-    }
-    return parseLatestTag(body)
+    return this.request(releaseApiUrl(), 'api', signal, async (response) => {
+      let body: unknown
+      try {
+        body = await response.json()
+      } catch {
+        throw new AppError('validation', 'The latest release is not a numbered version.')
+      }
+      return parseLatestTag(body)
+    })
   }
 
   private async downloadText(url: string, signal: AbortSignal): Promise<string> {
-    const response = await this.request(url, 'download', signal)
-    return response.text()
+    return this.request(url, 'download', signal, (response) => response.text())
   }
 
   private async downloadBytes(url: string, signal: AbortSignal): Promise<Uint8Array> {
-    const response = await this.request(url, 'download', signal)
-    return new Uint8Array(await response.arrayBuffer())
+    return this.request(
+      url,
+      'download',
+      signal,
+      async (response) => new Uint8Array(await response.arrayBuffer()),
+    )
   }
 
-  private async request(
+  private async request<T>(
+    url: string,
+    kind: 'api' | 'download',
+    signal: AbortSignal,
+    consume: (response: Response) => Promise<T>,
+  ): Promise<T> {
+    const controller = new AbortController()
+    let rejectAbort: (reason: Error) => void = () => undefined
+    const aborted = new Promise<never>((_resolve, reject) => {
+      rejectAbort = reject
+    })
+    const abort = () => {
+      controller.abort()
+      rejectAbort(new Error('Update request aborted.'))
+    }
+    const timer = setTimeout(abort, kind === 'api' ? API_TIMEOUT_MS : DOWNLOAD_TIMEOUT_MS)
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    try {
+      return await Promise.race([
+        this.followRedirects(url, kind, controller.signal).then(consume),
+        aborted,
+      ])
+    } finally {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+    }
+  }
+
+  private async followRedirects(
     url: string,
     kind: 'api' | 'download',
     signal: AbortSignal,
   ): Promise<Response> {
     let current = url
     for (let hop = 0; hop < 5; hop++) {
+      signal.throwIfAborted()
       const parsed = new URL(current)
       if (!isAllowedReleaseUrl(parsed, kind)) {
         throw new AppError('validation', 'The download redirected to an unexpected address.')
@@ -208,6 +245,7 @@ export class AppUpdateService {
           Accept: kind === 'api' ? 'application/vnd.github+json' : 'application/octet-stream',
         },
       })
+      signal.throwIfAborted()
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location')
         if (location === null || location.length === 0) {

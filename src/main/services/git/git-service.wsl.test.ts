@@ -47,7 +47,16 @@ describe('WSL Git status', () => {
     await service.sync('\\\\wsl$\\Ubuntu\\home\\user\\My $ Project')
     expect(execFile).toHaveBeenCalledWith(
       'wsl.exe',
-      ['--distribution', 'Ubuntu', '--cd', '/home/user/My $ Project', '--exec', 'git', 'pull'],
+      [
+        '--distribution',
+        'Ubuntu',
+        '--cd',
+        '/home/user/My $ Project',
+        '--exec',
+        'git',
+        'pull',
+        '--no-edit',
+      ],
       expect.objectContaining({
         cwd: process.cwd(),
         windowsHide: true,

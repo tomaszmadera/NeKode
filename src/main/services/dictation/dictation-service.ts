@@ -59,6 +59,18 @@ export interface DictationServiceDeps {
 
 const generatedWav = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\.wav$/
 
+function parseProviderConfig(raw: string | null): Record<string, unknown> {
+  if (raw === null) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
 /** Only ESRCH proves absence. Access denied and reused PIDs retain their files. */
 function ownerExited(pid: number): boolean {
   try {
@@ -221,7 +233,7 @@ export class DictationService {
     const manifests = this.registry.listManifests()
     return manifests.map((manifest) => {
       const raw = this.state.get(dictationProviderConfigKey(manifest.id))
-      const stored: Record<string, unknown> = raw ? JSON.parse(raw) : {}
+      const stored = parseProviderConfig(raw)
       let configured = true
       for (const field of manifest.configSchema) {
         if (field.required) {
@@ -262,7 +274,7 @@ export class DictationService {
       throw new AppError('not_found', `STT provider '${providerId}' not found.`)
     }
     const raw = this.state.get(dictationProviderConfigKey(providerId))
-    const rawConfig: Record<string, unknown> = raw ? JSON.parse(raw) : {}
+    const rawConfig = parseProviderConfig(raw)
     const config: Record<string, unknown> = {}
     for (const field of adapter.manifest.configSchema) {
       let val = rawConfig[field.key]
@@ -286,7 +298,7 @@ export class DictationService {
     }
     adapter.validateConfig?.(newConfig)
     const raw = this.state.get(dictationProviderConfigKey(providerId))
-    const existing: Record<string, unknown> = raw ? JSON.parse(raw) : {}
+    const existing = parseProviderConfig(raw)
     for (const field of adapter.manifest.configSchema) {
       const val = newConfig[field.key]
       if (field.type === 'secret') {
@@ -312,7 +324,7 @@ export class DictationService {
       throw new AppError('not_found', `STT provider '${providerId}' not found.`)
     }
     const raw = this.state.get(dictationProviderConfigKey(providerId))
-    const config: Record<string, unknown> = raw ? JSON.parse(raw) : {}
+    const config = parseProviderConfig(raw)
     for (const field of adapter.manifest.configSchema) {
       if (config[field.key] === undefined && field.defaultValue !== undefined) {
         config[field.key] = field.defaultValue
@@ -598,6 +610,7 @@ export class DictationService {
       const transcription = await adapter.transcribe(
         {
           audioWav: wav,
+          audioPath: session.path,
           language:
             (config.language as string) ||
             (session.settings.language !== 'default' ? session.settings.language : undefined),

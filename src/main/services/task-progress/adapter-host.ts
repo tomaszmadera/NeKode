@@ -13,6 +13,7 @@ import { killTree } from '../kanban/adapter-host'
 export const TASK_PROGRESS_TIMEOUT_MS = 15_000
 export const TASK_PROGRESS_MAX_STDOUT_BYTES = 10 * 1024 * 1024
 const STDERR_TAIL_CHARS = 2000
+const TERMINATION_GRACE_MS = 1000
 
 /** Codes an adapter may report in `error.code` (spec Behaviour 6). */
 const ADAPTER_CODES: readonly TaskProgressErrorCode[] = [
@@ -128,16 +129,17 @@ export class TaskProgressHost {
     }
 
     let startError: Error | null = null
-    child.on('error', (error: Error) => {
+    const onChildError = (error: Error) => {
       startError = error
-    })
+    }
+    child.on('error', onChildError)
 
     const decoder = new TextDecoder('utf-8', { fatal: true })
     let stdout = ''
     let stdoutBytes = 0
     let oversized = false
     let invalidEncoding = false
-    child.stdout?.on('data', (chunk: Buffer) => {
+    const onStdout = (chunk: Buffer) => {
       if (oversized || invalidEncoding) return
       stdoutBytes += chunk.length
       if (stdoutBytes > TASK_PROGRESS_MAX_STDOUT_BYTES) {
@@ -151,37 +153,70 @@ export class TaskProgressHost {
         invalidEncoding = true
         killTree(child, this.#spawn)
       }
-    })
-    child.stderr?.on('data', (chunk: Buffer) => {
+    }
+    const onStderr = (chunk: Buffer) => {
       stderr = (stderr + chunk.toString('utf8')).slice(-STDERR_TAIL_CHARS)
-    })
+    }
+    child.stdout?.on('data', onStdout)
+    child.stderr?.on('data', onStderr)
 
     // A write to an adapter that already exited fails on the stream (EPIPE);
     // the listener turns it into a typed protocol error below.
     let stdinError: Error | null = null
-    child.stdin?.on('error', (error: Error) => {
+    const onStdinError = (error: Error) => {
       stdinError = error
-    })
+    }
+    child.stdin?.on('error', onStdinError)
     child.stdin?.end(Buffer.from(JSON.stringify(request), 'utf8'))
 
     let timedOut = false
-    const timer = setTimeout(() => {
-      timedOut = true
-      killTree(child, this.#spawn)
-    }, this.#timeoutMs)
     let aborted = false
-    const onAbort = () => {
-      aborted = true
-      killTree(child, this.#spawn)
-    }
-    signal?.addEventListener('abort', onAbort, { once: true })
-
     const exitCode = await new Promise<number>((resolve) => {
-      child.once('close', (code) => resolve(code ?? -1))
-      child.once('error', () => resolve(-1))
+      let graceTimer: ReturnType<typeof setTimeout> | undefined
+      const finish = (code: number) => {
+        clearTimeout(timer)
+        clearTimeout(graceTimer)
+        signal?.removeEventListener('abort', onAbort)
+        child.removeListener('close', onClose)
+        child.removeListener('error', onExitError)
+        child.removeListener('error', onChildError)
+        child.stdout?.removeListener('data', onStdout)
+        child.stderr?.removeListener('data', onStderr)
+        child.stdin?.removeListener('error', onStdinError)
+        resolve(code)
+      }
+      const onClose = (code: number | null) => finish(code ?? -1)
+      const onExitError = () => finish(-1)
+      const terminate = () => {
+        clearTimeout(timer)
+        graceTimer = setTimeout(() => {
+          // A child or stdin may still report an error after the grace expires.
+          // Keep error listeners until their respective close events.
+          const ignoreError = () => {}
+          child.on('error', ignoreError)
+          child.once('close', () => child.removeListener('error', ignoreError))
+          if (child.stdin && !child.stdin.closed) {
+            child.stdin.on('error', ignoreError)
+            child.stdin.once('close', () => child.stdin?.removeListener('error', ignoreError))
+          }
+          finish(-1)
+        }, TERMINATION_GRACE_MS)
+        killTree(child, this.#spawn)
+      }
+      const timer = setTimeout(() => {
+        timedOut = true
+        terminate()
+      }, this.#timeoutMs)
+      const onAbort = () => {
+        if (timedOut || aborted) return
+        aborted = true
+        terminate()
+      }
+      child.once('close', onClose)
+      child.once('error', onExitError)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted) onAbort()
     })
-    clearTimeout(timer)
-    signal?.removeEventListener('abort', onAbort)
     if (aborted) {
       throw new TaskProgressCancelledError(`${label}: cancelled`)
     }
@@ -194,13 +229,13 @@ export class TaskProgressHost {
       }
     }
 
+    // The timeout wins over errors caused by our own kill.
+    if (timedOut) {
+      return failWith('timeout', `timed out after ${this.#timeoutMs} ms`)
+    }
     const started = startError as Error | null
     if (started !== null) {
       return failWith('spawn', `cannot start ${adapter.invocation.command}: ${started.message}`)
-    }
-    // The timeout wins over a stdin EPIPE caused by our own kill.
-    if (timedOut) {
-      return failWith('timeout', `timed out after ${this.#timeoutMs} ms`)
     }
     if (oversized) {
       return failWith('protocol', `stdout exceeded ${TASK_PROGRESS_MAX_STDOUT_BYTES} bytes`)

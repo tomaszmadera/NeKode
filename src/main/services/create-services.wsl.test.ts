@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { accessSync, statSync } from 'node:fs'
 import { APP_STATE_KEY, projectShellKey, projectWslShellsKey } from '@shared/ipc-contract'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,7 +5,8 @@ import { isWindowsHost } from '../test-support/host-path'
 import { createServices } from './create-services'
 import { KanbanService } from './kanban/kanban-service'
 import { createNodePty } from './terminal/node-pty-factory'
-import { listWslDirectories, listWslDistributions, runWsl } from './terminal/wsl'
+import { listWslDirectoriesAsync, listWslDistributionsAsync, runWsl } from './terminal/wsl'
+import { runWslAsync } from './terminal/wsl-async'
 
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
@@ -30,15 +30,23 @@ vi.mock('./terminal/node-pty-factory', () => ({
 }))
 vi.mock('./terminal/wsl', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./terminal/wsl')>()),
-  listWslDistributions: vi.fn(() => ['Ubuntu']),
-  listWslDirectories: vi.fn(() => ['/home/user/Project']),
+  listWslDistributionsAsync: vi.fn(async () => ['Ubuntu']),
+  listWslDirectoriesAsync: vi.fn(async () => ['/home/user/Project']),
   runWsl: vi.fn((_distribution: string, args: string[]) =>
+    args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
+  ),
+}))
+vi.mock('./terminal/wsl-async', () => ({
+  runWslAsync: vi.fn(async (_distribution: string, args: string[]) =>
     args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
   ),
 }))
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(runWslAsync).mockImplementation(async (_distribution, args) =>
+    args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
+  )
   vi.mocked(runWsl).mockImplementation((_distribution, args) =>
     args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
   )
@@ -60,7 +68,7 @@ function setup(path = '\\\\wsl.localhost\\Ubuntu\\home\\user\\Project') {
 // WSL integration is Windows-only: projects live on \\wsl.localhost UNC paths
 // and wsl.exe is the launcher, so this suite runs only on a Windows host.
 describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
-  it('rolls back a Local agent chat when its selected WSL cannot resolve the project path', () => {
+  it('rolls back a Local agent chat when its selected WSL cannot resolve the project path', async () => {
     const { services, project } = setup('D:/Project')
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
@@ -74,10 +82,8 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         selectedIds: [profile.id],
         defaultId: null,
       })
-      vi.mocked(execFileSync).mockImplementationOnce(() => {
-        throw new Error('unavailable')
-      })
-      expect(() => services.chats.createWithAgent(project.id, profile.id)).toThrow(
+      vi.mocked(runWslAsync).mockRejectedValueOnce(new Error('unavailable'))
+      await expect(services.chats.createWithAgent(project.id, profile.id)).rejects.toThrow(
         'Unable to resolve the project directory in WSL distribution "Removed".',
       )
       expect(services.chats.list(project.id)).toEqual([])
@@ -106,8 +112,8 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         url: 'https://example.test/DEMO-1',
         updatedAt: null,
       })
-      vi.mocked(execFileSync).mockImplementation((_file, args) =>
-        args?.includes('wslpath') ? '/mnt/d/My Project\n' : 'usable',
+      vi.mocked(runWslAsync).mockImplementation(async (_distribution, args) =>
+        args.includes('wslpath') ? '/mnt/d/My Project\n' : 'usable',
       )
       try {
         services.state.set(projectShellKey(project.id), 'wsl:Ubuntu')
@@ -129,7 +135,7 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         }
         const chat =
           mode === 'new-chat'
-            ? services.chats.createWithAgent(project.id, profile.id)
+            ? await services.chats.createWithAgent(project.id, profile.id)
             : (
                 await services.kanban.launchTask(
                   mode === 'start'
@@ -160,7 +166,7 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         })
         // Reattaching after a settings change keeps the original agent process.
         services.state.set(projectShellKey(project.id), 'powershell')
-        services.terminals.create(chat.id, project.path)
+        await services.terminals.create(chat.id, project.path)
         expect(createNodePty).toHaveBeenCalledTimes(1)
       } finally {
         item.mockRestore()
@@ -170,7 +176,7 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
     },
   )
 
-  it('persists the launched agent identity through profile edits and deletion', () => {
+  it('persists the launched agent identity through profile edits and deletion', async () => {
     const { services, project } = setup()
     try {
       const profile = services.agentProfiles.put({
@@ -182,7 +188,7 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         selectedIds: [profile.id],
         defaultId: null,
       })
-      const chat = services.chats.createWithAgent(project.id, profile.id)
+      const chat = await services.chats.createWithAgent(project.id, profile.id)
       expect(chat).toMatchObject({ name: '[WSL] Code analysis', agentName: 'Claude' })
       services.agentProfiles.put({
         id: profile.id,
@@ -199,25 +205,25 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
     }
   })
 
-  it('lists directories through the existing WSL helper without registering a project', () => {
+  it('lists directories through the asynchronous WSL helper without registering a project', async () => {
     const { services, project } = setup()
     const before = services.projects.list()
-    expect(services.projects.wslDirectories('Ubuntu', '/home/user/')).toEqual([
+    expect(await services.projects.wslDirectories('Ubuntu', '/home/user/')).toEqual([
       '/home/user/Project',
     ])
-    expect(listWslDirectories).toHaveBeenCalledExactlyOnceWith('Ubuntu', '/home/user/')
+    expect(listWslDirectoriesAsync).toHaveBeenCalledExactlyOnceWith('Ubuntu', '/home/user/')
     expect(services.projects.list()).toEqual(before)
     expect(before.map((entry) => entry.id)).toEqual([project.id])
   })
   it.each(['chat', 'bottom'] as const)(
     'reattaches a live %s PTY after its saved Linux shell becomes unavailable',
-    (kind) => {
+    async (kind) => {
       const { services, project } = setup()
       services.state.set(projectShellKey(project.id), 'custom:/bin/fish')
       const sessionId =
         kind === 'chat' ? services.chats.create(project.id).id : `bottom:${project.id}:tab1`
       try {
-        expect(services.terminals.create(sessionId, project.path)).toBe(sessionId)
+        expect(await services.terminals.create(sessionId, project.path)).toBe(sessionId)
         expect(createNodePty).toHaveBeenCalledExactlyOnceWith(
           expect.objectContaining({
             file: 'wsl.exe',
@@ -235,13 +241,13 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
             ],
           }),
         )
-        expect(runWsl).toHaveBeenCalledWith('Ubuntu', expect.arrayContaining(['/bin/fish']))
+        expect(runWslAsync).toHaveBeenCalledWith('Ubuntu', expect.arrayContaining(['/bin/fish']))
 
         // Models a removed executable or lost execute permission after the PTY started.
-        vi.mocked(runWsl).mockReturnValue('')
-        vi.mocked(runWsl).mockClear()
-        expect(services.terminals.create(sessionId, project.path)).toBe(sessionId)
-        expect(runWsl).not.toHaveBeenCalled()
+        vi.mocked(runWslAsync).mockResolvedValue('')
+        vi.mocked(runWslAsync).mockClear()
+        expect(await services.terminals.create(sessionId, project.path)).toBe(sessionId)
+        expect(runWslAsync).not.toHaveBeenCalled()
         expect(createNodePty).toHaveBeenCalledTimes(1)
 
         // Existing sessions still enforce their persisted project's distribution.
@@ -251,14 +257,14 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         expect(() => services.terminals.create(sessionId, '\\\\wsl$\\Debian\\home\\user')).toThrow(
           /project distribution/,
         )
-        expect(runWsl).not.toHaveBeenCalled()
+        expect(runWslAsync).not.toHaveBeenCalled()
 
         const newSessionId =
           kind === 'chat' ? services.chats.create(project.id).id : `bottom:${project.id}:tab2`
-        expect(() => services.terminals.create(newSessionId, project.path)).toThrow(
+        await expect(services.terminals.create(newSessionId, project.path)).rejects.toThrow(
           /Linux shell is unavailable or not executable/,
         )
-        expect(runWsl).toHaveBeenCalledWith('Ubuntu', expect.arrayContaining(['/bin/fish']))
+        expect(runWslAsync).toHaveBeenCalledWith('Ubuntu', expect.arrayContaining(['/bin/fish']))
         expect(createNodePty).toHaveBeenCalledTimes(1)
       } finally {
         services.terminals.terminateAll()
@@ -266,18 +272,18 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
     },
   )
 
-  it('uses project Linux shell settings without reading, probing or pruning host custom shells', () => {
+  it('uses project Linux shell settings without reading, probing or pruning host custom shells', async () => {
     const { services, project } = setup()
     services.state.set(APP_STATE_KEY.customShells, JSON.stringify(['D:/removed.exe']))
     services.state.set(projectWslShellsKey(project.id), JSON.stringify(['/bin/fish']))
     vi.mocked(accessSync).mockClear()
     vi.mocked(statSync).mockClear()
-    expect(services.terminals.shellDetect(project.id).map((entry) => entry.id)).toEqual([
+    expect((await services.terminals.shellDetect(project.id)).map((entry) => entry.id)).toEqual([
       'default',
       'custom:/bin/bash',
       'custom:/bin/fish',
     ])
-    services.terminals.shellAddCustom('/bin/zsh', project.id)
+    await services.terminals.shellAddCustom('/bin/zsh', project.id)
     expect(services.state.get(APP_STATE_KEY.customShells)).toBe('["D:/removed.exe"]')
     expect(JSON.parse(services.state.get(projectWslShellsKey(project.id)) ?? '[]')).toEqual([
       '/bin/fish',
@@ -285,17 +291,17 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
     ])
     expect(accessSync).not.toHaveBeenCalled()
     expect(statSync).not.toHaveBeenCalled()
-    expect(listWslDistributions).not.toHaveBeenCalled()
-    expect(vi.mocked(runWsl).mock.calls.every(([distribution]) => distribution === 'Ubuntu')).toBe(
-      true,
-    )
+    expect(listWslDistributionsAsync).not.toHaveBeenCalled()
+    expect(
+      vi.mocked(runWslAsync).mock.calls.every(([distribution]) => distribution === 'Ubuntu'),
+    ).toBe(true)
   })
 
-  it('routes chat and bottom terminals to the persisted distribution and rejects host or other-distro cwd', () => {
+  it('routes chat and bottom terminals to the persisted distribution and rejects host or other-distro cwd', async () => {
     const { services, project } = setup()
     const chat = services.chats.create(project.id)
-    services.terminals.create(chat.id, project.path)
-    services.terminals.create(`bottom:${project.id}:tab1`, project.path)
+    await services.terminals.create(chat.id, project.path)
+    await services.terminals.create(`bottom:${project.id}:tab1`, project.path)
     const calls = vi
       .mocked(createNodePty)
       .mock.calls.map(([options]) => ({ file: options.file, args: options.args, cwd: options.cwd }))

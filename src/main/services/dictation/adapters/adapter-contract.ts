@@ -18,6 +18,7 @@ export interface TranscriptionWord {
 
 export interface TranscriptionRequest {
   audioWav: ArrayBuffer
+  audioPath?: string
   language?: string
   model?: string
   keyterms?: string[]

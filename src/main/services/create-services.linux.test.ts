@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isWindowsHost } from '../test-support/host-path'
 import { createServices } from './create-services'
-import { listWslDirectories, listWslDistributions } from './terminal/wsl'
+import { listWslDirectoriesAsync, listWslDistributionsAsync } from './terminal/wsl'
 
 vi.mock('./terminal/node-pty-factory', () => ({
   createNodePty: vi.fn(() => ({
@@ -20,8 +20,8 @@ vi.mock('./terminal/node-pty-factory', () => ({
 // gate must come from the host platform, not from wsl.exe availability.
 vi.mock('./terminal/wsl', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./terminal/wsl')>()),
-  listWslDistributions: vi.fn(() => ['Ubuntu-24.04']),
-  listWslDirectories: vi.fn(() => ['/home/user/Project']),
+  listWslDistributionsAsync: vi.fn(async () => ['Ubuntu-24.04']),
+  listWslDirectoriesAsync: vi.fn(async () => ['/home/user/Project']),
 }))
 
 const scratch: string[] = []
@@ -52,7 +52,7 @@ describe.skipIf(isWindowsHost)('WSL wiring on a Linux host', () => {
     expect(() => services.projects.addWsl('Ubuntu-24.04', '/home/user/Project')).toThrow(
       /only when NeKode runs on Windows/,
     )
-    expect(listWslDistributions).not.toHaveBeenCalled()
-    expect(listWslDirectories).not.toHaveBeenCalled()
+    expect(listWslDistributionsAsync).not.toHaveBeenCalled()
+    expect(listWslDirectoriesAsync).not.toHaveBeenCalled()
   })
 })

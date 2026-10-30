@@ -1,5 +1,6 @@
 import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
+import { DICTATION_REQUEST_TIMEOUT_MS } from '../request-deadline'
 import { OpenRouterAdapter } from './openrouter-adapter'
 
 function createFakeAudioWav(): ArrayBuffer {
@@ -72,6 +73,27 @@ describe('OpenRouterAdapter', () => {
   })
 
   describe('discoverModels', () => {
+    it('rejects when discovery times out and retains the fallback for other errors', async () => {
+      vi.useFakeTimers()
+      try {
+        const fetch = vi
+          .fn()
+          .mockImplementationOnce(() => new Promise(() => {}))
+          .mockRejectedValueOnce(new Error('offline'))
+        const adapter = new OpenRouterAdapter({
+          fetch: fetch as unknown as typeof globalThis.fetch,
+        })
+        const pending = adapter.discoverModels()
+        const assertion = expect(pending).rejects.toMatchObject({ code: 'timeout' })
+        await vi.advanceTimersByTimeAsync(DICTATION_REQUEST_TIMEOUT_MS)
+        await assertion
+        expect(await adapter.discoverModels()).toEqual([
+          { id: 'openai/whisper-large-v3-turbo', name: 'Whisper Large v3 Turbo (default)' },
+        ])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
     it('queries /models and filters audio transcription models', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,

@@ -1,7 +1,3 @@
-import { randomUUID } from 'node:crypto'
-import { unlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import type {
   DictationModelSelection,
   DictationSettings,
@@ -110,101 +106,92 @@ export class OpenWhisprAdapter implements SttProviderAdapter {
     request: TranscriptionRequest,
     config: Record<string, unknown>,
   ): Promise<TranscriptionResult> {
-    const tempFile = join(tmpdir(), `nekode-openwhispr-${randomUUID()}.wav`)
-    writeFileSync(tempFile, Buffer.from(request.audioWav))
-
-    try {
-      const baseSettings: DictationSettings =
-        typeof this.client.getSettings === 'function'
-          ? this.client.getSettings()
-          : {
-              enabled: true,
-              language: 'default',
-              model: 'default',
-              timeoutSeconds: 30,
-            }
-
-      const language =
-        request.language ??
-        (typeof config.language === 'string' && config.language.trim()
-          ? config.language.trim()
-          : baseSettings.language)
-
-      const timeoutSeconds =
-        typeof config.timeoutSeconds === 'number'
-          ? config.timeoutSeconds
-          : baseSettings.timeoutSeconds
-
-      const requestedModel =
-        request.model ??
-        (typeof config.model === 'string' && config.model.trim() ? config.model.trim() : undefined)
-
-      const catalog =
-        typeof this.client.status === 'function' ? (this.client.status()?.models ?? []) : []
-
-      let resolvedModel: DictationModelSelection = baseSettings.model
-      let modelId: string =
-        typeof baseSettings.model === 'object' ? baseSettings.model.model : 'default'
-
-      if (requestedModel) {
-        if (requestedModel === 'default') {
-          resolvedModel = 'default'
-          modelId = catalog.find((m) => m.default)?.model ?? 'default'
-        } else {
-          const matched = catalog.find(
-            (m) => m.model === requestedModel || `${m.provider}/${m.model}` === requestedModel,
-          )
-          if (matched) {
-            resolvedModel = { provider: matched.provider, model: matched.model }
-            modelId = matched.model
-          } else if (requestedModel.includes('/')) {
-            const slashIndex = requestedModel.indexOf('/')
-            const provider = requestedModel.slice(0, slashIndex).trim()
-            const model = requestedModel.slice(slashIndex + 1).trim()
-            resolvedModel = { provider: provider || 'openwhispr', model: model || requestedModel }
-            modelId = model || requestedModel
-          } else {
-            resolvedModel = { provider: 'openwhispr', model: requestedModel }
-            modelId = requestedModel
+    if (!request.audioPath) throw new AppError('validation', 'OpenWhispr requires owned audio.')
+    const tempFile = request.audioPath
+    const baseSettings: DictationSettings =
+      typeof this.client.getSettings === 'function'
+        ? this.client.getSettings()
+        : {
+            enabled: true,
+            language: 'default',
+            model: 'default',
+            timeoutSeconds: 30,
           }
+
+    const language =
+      request.language ??
+      (typeof config.language === 'string' && config.language.trim()
+        ? config.language.trim()
+        : baseSettings.language)
+
+    const timeoutSeconds =
+      typeof config.timeoutSeconds === 'number'
+        ? config.timeoutSeconds
+        : baseSettings.timeoutSeconds
+
+    const requestedModel =
+      request.model ??
+      (typeof config.model === 'string' && config.model.trim() ? config.model.trim() : undefined)
+
+    const catalog =
+      typeof this.client.status === 'function' ? (this.client.status()?.models ?? []) : []
+
+    let resolvedModel: DictationModelSelection = baseSettings.model
+    let modelId: string =
+      typeof baseSettings.model === 'object' ? baseSettings.model.model : 'default'
+
+    if (requestedModel) {
+      if (requestedModel === 'default') {
+        resolvedModel = 'default'
+        modelId = catalog.find((m) => m.default)?.model ?? 'default'
+      } else {
+        const matched = catalog.find(
+          (m) => m.model === requestedModel || `${m.provider}/${m.model}` === requestedModel,
+        )
+        if (matched) {
+          resolvedModel = { provider: matched.provider, model: matched.model }
+          modelId = matched.model
+        } else if (requestedModel.includes('/')) {
+          const slashIndex = requestedModel.indexOf('/')
+          const provider = requestedModel.slice(0, slashIndex).trim()
+          const model = requestedModel.slice(slashIndex + 1).trim()
+          resolvedModel = { provider: provider || 'openwhispr', model: model || requestedModel }
+          modelId = model || requestedModel
+        } else {
+          resolvedModel = { provider: 'openwhispr', model: requestedModel }
+          modelId = requestedModel
         }
-      } else if (baseSettings.model === 'default') {
-        const defaultInCatalog = catalog.find((m) => m.default)
-        if (defaultInCatalog) {
-          modelId = defaultInCatalog.model
-        }
       }
+    } else if (baseSettings.model === 'default') {
+      const defaultInCatalog = catalog.find((m) => m.default)
+      if (defaultInCatalog) {
+        modelId = defaultInCatalog.model
+      }
+    }
 
-      const settings: DictationSettings = {
-        ...baseSettings,
-        language,
-        model: resolvedModel,
-        timeoutSeconds,
-      }
+    const settings: DictationSettings = {
+      ...baseSettings,
+      language,
+      model: resolvedModel,
+      timeoutSeconds,
+    }
 
-      const signal = request.signal ?? new AbortController().signal
-      const response = await this.client.transcribe(tempFile, settings, signal)
+    const signal = request.signal ?? new AbortController().signal
+    const response = await this.client.transcribe(tempFile, settings, signal)
 
-      if (response.error) {
-        if (response.error === 'cancelled' || response.error === 'timeout') {
-          throw new AppError('timeout', `Dictation ${response.error}.`)
-        }
-        throw new AppError('adapter', `OpenWhispr transcription failed: ${response.error}`)
+    if (response.error) {
+      if (response.error === 'cancelled' || response.error === 'timeout') {
+        throw new AppError('timeout', `Dictation ${response.error}.`)
       }
+      throw new AppError('adapter', `OpenWhispr transcription failed: ${response.error}`)
+    }
 
-      return {
-        text: response.text,
-        rawText: response.text,
-        providerId: 'openwhispr',
-        modelId,
-        warning: response.warning,
-      }
-    } finally {
-      try {
-        unlinkSync(tempFile)
-      } catch {
-        // Cleanup best effort
-      }
+    return {
+      text: response.text,
+      rawText: response.text,
+      providerId: 'openwhispr',
+      modelId,
+      warning: response.warning,
     }
   }
 }

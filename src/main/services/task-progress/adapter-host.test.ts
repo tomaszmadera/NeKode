@@ -1,7 +1,9 @@
-import { spawn } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import type { TaskProgressErrorCode } from '@shared/ipc-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -269,6 +271,105 @@ describe('TaskProgressHost', () => {
           // Already gone: the expected outcome.
         }
       }
+    }
+  })
+
+  it.each(['timeout', 'cancellation'] as const)(
+    'settles after %s when the child never closes and cleans up',
+    async (reason) => {
+      vi.useFakeTimers()
+      try {
+        const child = Object.assign(new EventEmitter(), {
+          stdin: new PassThrough(),
+          stdout: new PassThrough(),
+          stderr: new PassThrough(),
+          pid: 123456,
+          exitCode: null,
+          kill: vi.fn(),
+        }) as unknown as ChildProcess
+        const killer = Object.assign(new EventEmitter(), { unref: vi.fn() })
+        const spawnMock = vi.fn((command: string) => (command === 'taskkill' ? killer : child))
+        const spawnProcess = spawnMock as unknown as typeof spawn
+        const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
+        const controller = new AbortController()
+        const removeAbort = vi.spyOn(controller.signal, 'removeEventListener')
+        const pending = new TaskProgressHost({ timeoutMs: 100, spawnProcess })
+          .invoke(fixture('stalled.cjs', ''), request, controller.signal)
+          .then(
+            () => null,
+            (error: unknown) => error,
+          )
+        let settled = false
+        void pending.then(() => {
+          settled = true
+        })
+
+        if (reason === 'timeout') {
+          await vi.advanceTimersByTimeAsync(100)
+          controller.abort()
+        } else controller.abort()
+        expect(settled).toBe(false)
+        if (process.platform === 'win32')
+          expect(spawnMock).toHaveBeenCalledWith('taskkill', expect.any(Array), expect.any(Object))
+        else expect(kill).toHaveBeenCalledWith(-123456, 'SIGKILL')
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(settled).toBe(true)
+        const error = await pending
+        if (reason === 'timeout') {
+          expect(error).toBeInstanceOf(TaskProgressAdapterError)
+          expect((error as TaskProgressAdapterError).code).toBe('timeout')
+        } else {
+          expect(error).toBeInstanceOf(TaskProgressCancelledError)
+        }
+        expect(removeAbort).toHaveBeenCalledWith('abort', expect.any(Function))
+        expect(vi.getTimerCount()).toBe(0)
+        expect(child.stdout?.listenerCount('data')).toBe(0)
+        expect(child.stderr?.listenerCount('data')).toBe(0)
+        child.emit('error', new Error('late child error'))
+        child.emit('close', null)
+        expect(child.listenerCount('error')).toBe(0)
+        expect(child.listenerCount('close')).toBe(0)
+      } finally {
+        vi.restoreAllMocks()
+        vi.useRealTimers()
+      }
+    },
+  )
+
+  it('does not retain listeners on stdin closed before termination grace expires', async () => {
+    vi.useFakeTimers()
+    try {
+      const stdin = new PassThrough()
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        pid: 123456,
+        exitCode: null,
+        kill: vi.fn(),
+      }) as unknown as ChildProcess
+      const killer = Object.assign(new EventEmitter(), { unref: vi.fn() })
+      const spawnProcess = vi.fn((command: string) =>
+        command === 'taskkill' ? killer : child,
+      ) as unknown as typeof spawn
+      vi.spyOn(process, 'kill').mockImplementation(() => true)
+      const pending = failure(
+        new TaskProgressHost({ timeoutMs: 100, spawnProcess }).invoke(
+          fixture('closed-stdin.cjs', ''),
+          request,
+        ),
+      )
+      await vi.advanceTimersByTimeAsync(100)
+      stdin.destroy()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(stdin.closed).toBe(true)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect((await pending).code).toBe('timeout')
+      expect(stdin.listenerCount('error')).toBe(0)
+      expect(stdin.listenerCount('close')).toBe(0)
+    } finally {
+      vi.restoreAllMocks()
+      vi.useRealTimers()
     }
   })
 
