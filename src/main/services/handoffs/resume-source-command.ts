@@ -296,6 +296,7 @@ export async function discoverResumeCommand(
     const paths = new Set<string>()
     const candidates: ResumeSourceCandidate[] = []
     const root = await realpath(projectPath)
+    const canonicalContext = resumePathContext(root)
     for (const task of response.data.tasks) {
       checkResumeCancelled(signal)
       if (
@@ -315,10 +316,10 @@ export async function discoverResumeCommand(
         throw new AppError('config', 'Resume discovery reported a path outside the project.')
       try {
         const canonical = await realpath(path)
-        if (!context.contains(root, canonical))
+        if (!canonicalContext.contains(root, canonical))
           throw new AppError('config', 'Resume discovery reported a path outside the project.')
         const identity = task.id.toLowerCase()
-        const pathIdentity = context.pathIdentity(canonical)
+        const pathIdentity = canonicalContext.pathIdentity(canonical)
         if (ids.has(identity) || paths.has(pathIdentity))
           throw new AppError(
             'config',
@@ -330,7 +331,7 @@ export async function discoverResumeCommand(
         candidates.push({
           ...task,
           path: canonical,
-          displayPath: context.display(canonical),
+          displayPath: canonicalContext.display(canonical),
           modifiedAt,
         })
       } catch (error) {

@@ -1,5 +1,5 @@
 import { lstatSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -32,7 +32,7 @@ describe('Resume command sources', () => {
   })
   const signal = () => new AbortController().signal
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), 'nekode-resume-command-'))
+    root = await realpath(await mkdtemp(join(tmpdir(), 'nekode-resume-command-')))
     await writeFile(join(root, 'task.txt'), 'task')
   })
   afterEach(async () => {
@@ -77,6 +77,28 @@ describe('Resume command sources', () => {
         signal(),
       ),
     ).toEqual(argumentsWithQuotes)
+  })
+
+  it('computes displayPath relative to canonical root when projectPath is accessed via an alias or link', async () => {
+    const linkRoot = join(root, 'link-alias')
+    await symlink(root, linkRoot, process.platform === 'win32' ? 'junction' : 'dir')
+    const response = {
+      success: true,
+      tasks: [{ id: 'TASK-1', title: 'Current task', path: 'task.txt', status: 'active' }],
+    }
+    const command = source(
+      'process.stdout.write(process.argv[1])',
+      JSON.stringify(response),
+      linkRoot,
+    )
+    const candidates = await discoverResumeCommand(linkRoot, command, signal())
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        id: 'TASK-1',
+        displayPath: 'task.txt',
+        path: join(root, 'task.txt'),
+      }),
+    ])
   })
 
   it('validates one complete envelope and every optional metadata field', async () => {
