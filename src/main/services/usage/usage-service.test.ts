@@ -678,6 +678,84 @@ describe('global usage service', () => {
     await poll(service)
     expect(read).toHaveBeenCalledTimes(calls + 1)
   })
+  it('keeps automatic reads, the pin and other accounts working after a failed manual refresh (NEKODE-147)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    let refreshFails = true
+    read.mockImplementation(async (_adapter, _config, id, _signal, action) => {
+      if (id === 'account' && action === 'refresh' && refreshFails)
+        throw new AppError('config', 'Personal Data Hub has no quota source for agent "claude".')
+      const document = f.live(action === 'refresh' ? 50 : 42 + read.mock.calls.length)
+      document.subscriptions[0].id = id
+      return adapterResult(document)
+    })
+    service.saveSettings({
+      ...service.getSettings(),
+      connections: [
+        ...service.getSettings().connections,
+        { ...f.settings.connections[0], id: 'other', adapterId: 'fixture', config: {} },
+      ],
+    })
+    await poll(service)
+    service.saveSettings({
+      ...service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'week' },
+    })
+    const connection = (id: string) =>
+      service.read().connections.find((c) => c.connection.id === id)
+    f.advance(60_000)
+    await service.refresh()
+    expect(connection('account')?.error?.code).toBe('config')
+    expect(connection('other')?.error).toBeNull()
+    const automatic = () =>
+      read.mock.calls.filter(([, , id, , action]) => id === 'account' && action === 'read').length
+    const before = automatic()
+    f.advance(60_000)
+    await poll(service)
+    expect(automatic()).toBe(before + 1)
+    expect(connection('account')?.subscription?.metrics[0].receivedAt).toBe(
+      new Date(NOW + 120_000).toISOString(),
+    )
+    // The account keeps showing the refresh failure until a manual refresh succeeds.
+    expect(connection('account')?.error?.code).toBe('config')
+    expect(service.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    await service.refresh()
+    expect(
+      read.mock.calls.filter(([, , id, , action]) => id === 'account' && action === 'refresh'),
+    ).toHaveLength(2)
+    expect(connection('account')?.error?.code).toBe('config')
+    f.advance(60_000)
+    await poll(service)
+    expect(automatic()).toBe(before + 2)
+    refreshFails = false
+    await service.refresh()
+    expect(connection('account')?.error).toBeNull()
+    expect(connection('account')?.subscription?.metrics[0].usedPercent).toBe(50)
+  })
+  it('keeps a manual refresh retry deadline across a successful automatic read (NEKODE-147)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    read.mockImplementation(async (_adapter, _config, _id, _signal, action) => {
+      if (action === 'refresh')
+        throw Object.assign(new AppError('rate_limited', 'Fixture deadline'), {
+          retryAfterSeconds: 600,
+        })
+      return adapterResult(f.live())
+    })
+    await service.refresh()
+    f.advance(60_000)
+    await poll(service)
+    expect(read.mock.calls.map((call) => call[4])).toEqual(['refresh', 'read'])
+    expect(service.read().connections[0].error?.code).toBe('rate_limited')
+    f.advance(60_000)
+    expect((await service.refresh()).refresh?.skipped).toEqual([
+      {
+        connectionId: 'account',
+        until: new Date(NOW + 600_000).toISOString(),
+        reason: 'backoff',
+      },
+    ])
+  })
   it('accepts a healthy source while another source is pending, then isolates its failure', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
@@ -1577,9 +1655,12 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
       expect((await service.refresh()).refresh?.read).toEqual(['account'])
       expect(read).toHaveBeenCalledTimes(attempt)
     }
+    // Only an automatic read failure suspends polling (NEKODE-147).
     read.mockRejectedValue(new AppError('auth', 'Fixture auth'))
     f.advance(60_000)
-    await service.refresh()
+    await poll(service)
+    expect(read).toHaveBeenCalledTimes(6)
+    expect(read.mock.calls[5][4]).toBe('read')
     expect(service.read().connections[0].error?.code).toBe('auth')
     f.advance(3_600_000)
     await poll(service)

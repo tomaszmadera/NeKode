@@ -52,7 +52,13 @@ interface Encryption {
 }
 interface Runtime {
   subscription: UsageSubscription | null
+  /** Last failure of an automatic read; it controls backoff and suspension. */
   error: UsageFailure | null
+  /**
+   * Last failure of a manual refresh. It never changes automatic polling; the next successful
+   * manual refresh or a source change clears it.
+   */
+  refreshError: UsageFailure | null
   refreshing: boolean
   /** Last manual refresh outcome; survives automatic polls and restarts. */
   refreshResult: UsageRefreshResult | null
@@ -314,6 +320,7 @@ export class UsageService {
     return {
       subscription: null,
       error: null,
+      refreshError: null,
       refreshing: false,
       refreshResult: null,
       due: 0,
@@ -724,7 +731,7 @@ export class UsageService {
   }
   /** Spec L7: an account of a removed source always reports the fixed configuration error. */
   private failure(c: UsageConnection, r: Runtime): UsageFailure | null {
-    return removedSource(c) ? { ...REMOVED_SOURCE } : r.error
+    return removedSource(c) ? { ...REMOVED_SOURCE } : (r.error ?? r.refreshError)
   }
   /** All sources blocked by their provider retry deadline: the earliest one, else null. */
   private sourceBlockedUntil(r: Runtime): number | null {
@@ -927,10 +934,14 @@ export class UsageService {
           )
           this.settings = settings
         }
+        // An automatic read keeps a provider retry deadline from a failed manual refresh (L5).
+        if (explicit) {
+          r.refreshError = null
+          r.retryUntil = 0
+        }
         r.error = null
         r.failures = 0
         r.suspended = false
-        r.retryUntil = 0
         this.persistCache()
         this.exportDocument()
       } catch (error) {
@@ -941,21 +952,29 @@ export class UsageService {
           this.stopped
         )
           return
-        r.error = safeFailure(error)
-        r.failures++
-        r.suspended = ['auth', 'unsupported', 'config'].includes(r.error.code)
-        r.retryUntil =
-          r.error.code === 'rate_limited' && r.error.retryAfterSeconds
-            ? this.now() + r.error.retryAfterSeconds * 1000
+        const failure = safeFailure(error)
+        const retryUntil =
+          failure.code === 'rate_limited' && failure.retryAfterSeconds
+            ? this.now() + failure.retryAfterSeconds * 1000
             : 0
-        if (!r.suspended) {
-          r.due =
-            this.now() +
-            Math.max(
-              minimum,
-              Math.min(300, 60 * 2 ** Math.min(r.failures - 1, 3)) * 1000,
-              (r.error.retryAfterSeconds ?? 0) * 1000,
-            )
+        if (explicit || retryUntil > 0) r.retryUntil = retryUntil
+        if (explicit) {
+          // NEKODE-147: a failed manual refresh stays with this account and leaves automatic
+          // reads on their adapter-minimum schedule; only read failures back off or suspend.
+          r.refreshError = failure
+        } else {
+          r.error = failure
+          r.failures++
+          r.suspended = ['auth', 'unsupported', 'config'].includes(failure.code)
+          if (!r.suspended) {
+            r.due =
+              this.now() +
+              Math.max(
+                minimum,
+                Math.min(300, 60 * 2 ** Math.min(r.failures - 1, 3)) * 1000,
+                (failure.retryAfterSeconds ?? 0) * 1000,
+              )
+          }
         }
         this.exportDocument()
         if (explicit) this.persistRefreshResults()
