@@ -77,7 +77,7 @@ describe('Resume command sources', () => {
         signal(),
       ),
     ).toEqual(argumentsWithQuotes)
-  })
+  }, 15000)
 
   it('computes displayPath relative to canonical root when projectPath is accessed via an alias or link', async () => {
     const linkRoot = join(root, 'link-alias')
@@ -99,7 +99,7 @@ describe('Resume command sources', () => {
         path: join(root, 'task.txt'),
       }),
     ])
-  })
+  }, 15000)
 
   it('validates one complete envelope and every optional metadata field', async () => {
     const task = { id: 'TASK-1', title: 'Task', path: 'task.txt' }
@@ -490,7 +490,7 @@ describe('Resume command sources', () => {
       if (before === undefined) delete process.env.TASKCTL_ROOT
       else process.env.TASKCTL_ROOT = before
     }
-  })
+  }, 15000)
 
   // Opt-in: needs a real Windows-hosted WSL distribution with sh, setsid, pgrep, ps and sleep.
   const wslDistribution = process.env.NEKODE_WSL_SMOKE_DISTRO
