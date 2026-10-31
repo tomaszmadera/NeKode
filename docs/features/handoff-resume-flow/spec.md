@@ -188,9 +188,13 @@ The Agent Harness preset is a command source invoking `python .agents/scripts/ta
 
 The preset is available for selection or duplication, not implicitly bound to every project. Custom command sources use the same JSON envelope without requiring Harness-specific metadata. Generic file sources work without Python or Harness. Command sources execute local code configured by the user, like existing adapters; selection and Test make that execution visible.
 
+Decision on 2026-10-30 (NEKODE-145): each project uses one selected template. Its results are task/file contexts, not additional source configurations. Agent Harness owns the independent `taskctl list --json`, `taskctl handoff <task> --reason <reason>` and `taskctl resume <task>` interface. Discovery returns the canonical identity/path and continuation metadata; the agent performs lifecycle transitions using the same CLI, without depending on NeKode settings or a running NeKode application. NeKode consumes discovery through the configured template and composes its saved prompt. It does not perform lifecycle writes. Resume includes all unfinished tasks, including work interrupted without a handoff; `awaiting_resumption` describes an open handoff wait only.
+
 ### Discovery and selection
 
 Resume opens a lazily loaded Resume task picker for the active project and chat. It shows title, identity, display path, and known status/next action for task-aware sources; generic files show file metadata. Distinguish unconfigured source, loading, ready-empty and error. Configure opens the project's template selector. Retry repeats discovery. There is no pathless Resume fallback.
+
+The action-bar picker chooses among tasks/files returned by that single template. Kanban already identifies the task and therefore automatically uses its unique matching context, showing its identity/path as read-only information. Missing or multiple matches block launch, with a visible diagnostic for ambiguity, as defined by the [Kanban modal contract](../kanban-adapter-interface/spec.md#modal-and-launch). Kanban has no source or candidate selector.
 
 Discovery uses the saved source, not the old `project.handoffDir:<projectId>` key. It returns metadata and opaque selection tokens, never file bodies. Selection triggers fresh source validation and verifies the chosen identity, path and content fingerprint before composing a prompt. A changed, moved, completed, missing or unreadable selection requires refresh and delivers nothing. The fingerprint covers the selected file bytes and relevant entry metadata, not unrelated task files. Binding/template revision and request generation are part of the selection token. Invalid or superseded tokens never deliver text.
 

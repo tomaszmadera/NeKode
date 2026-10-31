@@ -4385,7 +4385,7 @@ describe('kanban task resume — removing the project', () => {
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.kanbanResumeDialog)).toBeNull())
 
     // A late scan result for the removed project is never applied: no
-    // candidate row appears and the dialog stays gone.
+    // resume context appears and the dialog stays gone.
     await act(async () => {
       scan.resolve({
         projectId: 'p1',
@@ -4404,7 +4404,7 @@ describe('kanban task resume — removing the project', () => {
       })
       await Promise.resolve()
     })
-    expect(screen.queryByTestId(testIdFor.kanbanResumeCandidate('NEKODE-28'))).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.kanbanResumeContext)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanResumeDialog)).toBeNull()
   })
 

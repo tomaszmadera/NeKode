@@ -4,7 +4,6 @@ import type {
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
   KanbanResumeLaunchInput,
-  ResumeDiscoveryCandidate,
   ResumeSourceDiscovery,
   WorkItem,
 } from '@shared/ipc-contract'
@@ -33,18 +32,14 @@ function errorMessage(error: unknown, fallback: string): string {
   return parseAppErrorPayload(error)?.message ?? fallback
 }
 
-/** The first matching candidate, or null when no candidate matches the ref. */
-function defaultSelection(options: ResumeDiscoveryCandidate[]): string | null {
-  return options[0]?.token ?? null
-}
-
 /**
  * Resume confirmation (Task and file Resume sources, NEKODE-142). The scan
  * runs on open and on Refresh only, never on hover and never on a poll.
  * Without a template selected, offers Configure Resume. A read failure is its own
  * visible state; rejected files/items are named warnings beside valid candidates.
  * Confirm is enabled only after discovery finishes and the user has an agent
- * profile plus a matching candidate. Before chat creation, main revalidates
+ * profile plus exactly one matching context. Multiple matches are an explicit
+ * ambiguity, never a selection. Before chat creation, main revalidates
  * the template binding and candidate fingerprint via prepare.
  */
 export function TaskResumeModal({
@@ -64,7 +59,6 @@ export function TaskResumeModal({
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'not-configured'>('loading')
   const [result, setResult] = useState<ResumeSourceDiscovery | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [selection, setSelection] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [busy, setBusy] = useState(false)
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
@@ -93,15 +87,6 @@ export function TaskResumeModal({
       }
       setResult(next)
       setPhase('ready')
-      setSelection((current) => {
-        const matching = next.candidates.filter((candidate) =>
-          matchesTaskRef(item.ref, candidate.id),
-        )
-        if (current !== null && matching.some((candidate) => candidate.token === current)) {
-          return current
-        }
-        return defaultSelection(matching)
-      })
     } catch (cause) {
       if (requestGeneration !== generation.current || !openRef.current) {
         return
@@ -114,7 +99,7 @@ export function TaskResumeModal({
         setScanning(false)
       }
     }
-  }, [app, projectId, item.ref])
+  }, [app, projectId])
 
   useEffect(() => {
     openRef.current = true
@@ -192,11 +177,7 @@ export function TaskResumeModal({
   }
 
   async function handleConfirm(): Promise<void> {
-    if (busyRef.current || phase !== 'ready' || selection === null || selectedProfileId === null) {
-      return
-    }
-    const chosen = options.find((option) => option.token === selection)
-    if (chosen === undefined) {
+    if (!canConfirm || busyRef.current || chosen === null || selectedProfileId === null) {
       return
     }
     busyRef.current = true
@@ -233,14 +214,14 @@ export function TaskResumeModal({
     result === null
       ? []
       : result.candidates.filter((candidate) => matchesTaskRef(item.ref, candidate.id))
+  const chosen = options.length === 1 ? options[0] : null
   const canConfirm =
     phase === 'ready' &&
     !busy &&
     !scanning &&
-    selection !== null &&
+    chosen !== null &&
     profilePhase === 'ready' &&
-    selectedProfileId !== null &&
-    options.some((option) => option.token === selection)
+    selectedProfileId !== null
 
   return (
     <>
@@ -326,42 +307,33 @@ export function TaskResumeModal({
                   className="mt-3 text-[12.6px] text-ink-secondary"
                   data-testid={TEST_ID.kanbanResumeEmpty}
                 >
-                  No linked handoff
+                  No resume context found for this task.
                 </p>
+              ) : chosen !== null ? (
+                <div
+                  className="mt-3 min-w-0 break-words text-[12.6px] text-ink-secondary"
+                  data-testid={TEST_ID.kanbanResumeContext}
+                >
+                  <p>Resume context: {chosen.id}</p>
+                  <p className="whitespace-pre-wrap">{chosen.displayPath}</p>
+                </div>
               ) : (
-                <fieldset className="mt-3 min-w-0 border-0 p-0" disabled={busy}>
-                  <legend className="text-[12.6px] font-semibold text-ink">Resume source</legend>
-                  <div
-                    className="mt-2 flex flex-col gap-1"
-                    data-testid={TEST_ID.kanbanResumeCandidates}
-                  >
+                <div
+                  className="mt-3 min-w-0 break-words text-[12.6px] text-warning"
+                  role="alert"
+                  data-testid={TEST_ID.kanbanResumeAmbiguous}
+                >
+                  <p>Multiple resume contexts match this task.</p>
+                  <ul className="mt-2 max-h-48 list-none space-y-2 overflow-y-auto">
                     {options.map((option) => (
-                      <label
-                        key={option.token}
-                        className="flex items-center gap-2 text-[12.6px] text-ink"
-                        data-testid={testIdFor.kanbanResumeCandidate(option.id)}
-                      >
-                        <input
-                          type="radio"
-                          name="kanban-resume-candidate"
-                          value={option.token}
-                          checked={selection === option.token}
-                          onChange={() => {
-                            setSelection(option.token)
-                          }}
-                        />
-                        <span className="truncate">
-                          {option.title || option.displayPath || option.id}
-                        </span>
-                        {option.current_phase ? (
-                          <span className="ml-auto text-xs text-ink-secondary">
-                            {option.current_phase}
-                          </span>
-                        ) : null}
-                      </label>
+                      <li key={option.token}>
+                        <p>{option.id}</p>
+                        <p className="whitespace-pre-wrap">{option.displayPath}</p>
+                      </li>
                     ))}
-                  </div>
-                </fieldset>
+                  </ul>
+                  <p className="mt-2">Correct the task records or Resume template, then refresh.</p>
+                </div>
               )}
             </>
           ) : null}

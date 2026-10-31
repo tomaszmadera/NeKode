@@ -297,7 +297,7 @@ export const TEST_ID = {
   kanbanStartCancel: 'kanban-start-cancel',
   kanbanStartConfirm: 'kanban-start-confirm',
   kanbanStartConfigure: 'kanban-start-configure',
-  /** Resume modal (handoff selection, kanban task launch amendment).
+  /** Resume modal (automatic context, kanban task launch amendment).
       Rendered by the app shell, not inside the board. */
   kanbanResumeDialog: 'kanban-resume-dialog',
   kanbanResumeTask: 'kanban-resume-task',
@@ -305,10 +305,12 @@ export const TEST_ID = {
   kanbanResumeError: 'kanban-resume-error',
   kanbanResumeConfigure: 'kanban-resume-configure',
   kanbanResumeRefresh: 'kanban-resume-refresh',
-  /** No handoff file name carries the ref (no candidate to resume). */
+  /** No context matches the full task ref. */
   kanbanResumeEmpty: 'kanban-resume-empty',
-  /** The list of matching handoff files (filename match on the full ref). */
-  kanbanResumeCandidates: 'kanban-resume-candidates',
+  /** Read-only identity and path of the unique matching context. */
+  kanbanResumeContext: 'kanban-resume-context',
+  /** Multiple matches block launch and identify the conflicting records/files. */
+  kanbanResumeAmbiguous: 'kanban-resume-ambiguous',
   /** Rejected files with their visible reason. */
   kanbanResumeWarnings: 'kanban-resume-warnings',
   kanbanResumeCancel: 'kanban-resume-cancel',
@@ -398,8 +400,6 @@ export const testIdFor = {
   kanbanStartProfile: (profileId: string): string => `kanban-start-profile-${profileId}`,
   /** One agent profile item in the New Chat menu. */
   newChatAgentProfile: (profileId: string): string => `new-chat-agent-profile-${profileId}`,
-  /** One handoff candidate row in the Resume modal, keyed by file name. */
-  kanbanResumeCandidate: (name: string): string => `kanban-resume-candidate-${name}`,
   /** One agent profile radio in the Resume modal. */
   kanbanResumeProfile: (profileId: string): string => `kanban-resume-profile-${profileId}`,
   /** One state group in the list view, keyed by the adapter state id. */
