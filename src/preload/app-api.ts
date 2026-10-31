@@ -95,7 +95,7 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
       getSettings: () => invoke(IPC_CHANNEL.usageGetSettings),
       saveSettings: (settings) => invoke(IPC_CHANNEL.usageSaveSettings, settings),
       read: () => invoke(IPC_CHANNEL.usageRead),
-      refresh: () => invoke(IPC_CHANNEL.usageRefresh),
+      refresh: (request) => invoke(IPC_CHANNEL.usageRefresh, request),
       test: (connection) => invoke(IPC_CHANNEL.usageTest, connection),
       pickFile: (output) => invoke(IPC_CHANNEL.usagePickFile, output),
       getEnabled: () => invoke(IPC_CHANNEL.usageGetEnabled),

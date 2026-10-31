@@ -5,6 +5,8 @@ import {
   parseUsageDocument,
   parseUsageRefreshResult,
   USAGE_MAX_BYTES,
+  USAGE_PROVIDER_ID,
+  USAGE_REFRESH_OPTIONS,
   USAGE_REMOVED_ADAPTER_IDS,
   type UsageAdapter,
   type UsageAdapterAction,
@@ -183,7 +185,12 @@ function readManifest(dir: string, name: string): UsageAdapter {
       (m.providerId !== undefined &&
         (typeof m.providerId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(m.providerId))) ||
       !bounded(m.summary, 160) ||
-      (m.experimental !== undefined && typeof m.experimental !== 'boolean')
+      (m.experimental !== undefined && typeof m.experimental !== 'boolean') ||
+      // Spec A7: an unknown refresh option invalidates the manifest, like an unknown capability.
+      (m.refreshOptions !== undefined &&
+        (!Array.isArray(m.refreshOptions) ||
+          new Set(m.refreshOptions).size !== m.refreshOptions.length ||
+          m.refreshOptions.some((o) => !(USAGE_REFRESH_OPTIONS as readonly unknown[]).includes(o))))
     )
       throw new Error('manifest contract')
     const actions = errorActions(m.errorActions)
@@ -223,6 +230,9 @@ function readManifest(dir: string, name: string): UsageAdapter {
       ...(m.providerId === undefined ? {} : { providerId: m.providerId as string }),
       ...(m.summary === undefined ? {} : { summary: m.summary as string }),
       ...(m.experimental === undefined ? {} : { experimental: m.experimental }),
+      ...(m.refreshOptions === undefined
+        ? {}
+        : { refreshOptions: m.refreshOptions as UsageAdapter['refreshOptions'] }),
       directory: dir,
     }
   } catch {
@@ -296,7 +306,7 @@ export class UsageAdapterHost {
     connectionId: string,
     signal: AbortSignal,
     action: UsageAdapterAction = 'read',
-    options: { refreshSources?: string[] } = {},
+    options: { refreshSources?: string[]; refreshProviders?: string[] } = {},
   ): Promise<UsageAdapterResult> {
     if (signal.aborted) throw new AppError('config', 'Usage request was cancelled.')
     if (
@@ -309,6 +319,20 @@ export class UsageAdapterHost {
         ))
     )
       throw new AppError('validation_error', 'Invalid usage refresh source selection.')
+    // Spec A7: agent selection goes only to an adapter that declares it, and only on refresh.
+    if (
+      options.refreshProviders !== undefined &&
+      (action !== 'refresh' ||
+        !adapter.refreshOptions?.includes('providers') ||
+        !Array.isArray(options.refreshProviders) ||
+        options.refreshProviders.length === 0 ||
+        options.refreshProviders.length > 20 ||
+        new Set(options.refreshProviders).size !== options.refreshProviders.length ||
+        options.refreshProviders.some(
+          (id) => typeof id !== 'string' || !USAGE_PROVIDER_ID.test(id),
+        ))
+    )
+      throw new AppError('validation_error', 'Invalid usage refresh agent selection.')
     const child = spawn(adapter.invocation.command, adapter.invocation.args, {
       cwd: adapter.directory,
       env: this.childEnv(adapter),
@@ -362,6 +386,9 @@ export class UsageAdapterHost {
           ...(action === 'refresh' ? { capabilities: [USAGE_PARTIAL_CAPABILITY] } : {}),
           ...(action === 'refresh' && options.refreshSources
             ? { refreshSources: options.refreshSources }
+            : {}),
+          ...(action === 'refresh' && options.refreshProviders
+            ? { refreshProviders: options.refreshProviders }
             : {}),
         },
       }),

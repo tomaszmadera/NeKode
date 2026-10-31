@@ -2834,7 +2834,10 @@ describe('project and chat data flow', () => {
 
     fireEvent.contextMenu(await screen.findByTestId(testIdFor.projectRow('p1')))
     const menu = await screen.findByTestId(TEST_ID.projectContextMenu)
-    expect(menu.textContent).toContain('Open in file explorer')
+    const items = within(menu)
+      .getAllByRole('menuitem')
+      .map((el) => el.textContent?.trim())
+    expect(items).toEqual(['Open in file explorer', 'Project Settings', 'Remove Project'])
 
     fireEvent.click(screen.getByRole('menuitem', { name: 'Open in file explorer' }))
     await waitFor(() => expect(app.files.openRoot).toHaveBeenCalledWith('p1'))

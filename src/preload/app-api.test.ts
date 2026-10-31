@@ -124,7 +124,7 @@ describe('preload app api', () => {
     await api.getSettings()
     await api.saveSettings(settings)
     await api.read()
-    await api.refresh()
+    await api.refresh({ connectionId: 'account' })
     await api.test(connection)
     await api.pickFile(false)
     await api.getEnabled()
@@ -135,7 +135,7 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.usageGetSettings, args: [] },
       { channel: IPC_CHANNEL.usageSaveSettings, args: [settings] },
       { channel: IPC_CHANNEL.usageRead, args: [] },
-      { channel: IPC_CHANNEL.usageRefresh, args: [] },
+      { channel: IPC_CHANNEL.usageRefresh, args: [{ connectionId: 'account' }] },
       { channel: IPC_CHANNEL.usageTest, args: [connection] },
       { channel: IPC_CHANNEL.usagePickFile, args: [false] },
       { channel: IPC_CHANNEL.usageGetEnabled, args: [] },

@@ -93,10 +93,48 @@ export function UsageGraphic({
 function tooltip(source: UsageConnectionSnapshot, metric: UsageMetric, now: number): string {
   return `${source.connection.label}; ${metric.label}; ${value(metric)}; ${source.error?.message ?? usageFreshness(metric, now)}; observation ${metric.observedAt ?? 'unknown'}; collected ${metric.collectedAt ?? source.subscription?.collectedAt ?? 'unknown'}; source ${source.connection.adapterId}; reset ${metric.resetsAt ?? 'unknown'}. Pace compares elapsed allowance slices, not a provider restriction or prediction.`
 }
-function refreshState(source: UsageConnectionSnapshot, now: number): string {
+/** One manual refresh target (spec A6): an account, or one agent of it. */
+interface RefreshTarget {
+  connectionId: string
+  providerId?: string
+}
+const targetKey = (target: RefreshTarget) =>
+  JSON.stringify([target.connectionId, target.providerId ?? null])
+/** Agent name for headings and labels (spec A2): the provider id with a capital first letter. */
+function agentName(providerId: string): string {
+  return providerId.charAt(0).toUpperCase() + providerId.slice(1)
+}
+function targetLabel(source: UsageConnectionSnapshot, providerId?: string): string {
   const label = source.connection.label
-  if (source.refreshing) return `${label} is refreshing`
-  const until = source.nextRefreshAt
+  return providerId === undefined ? label : `${agentName(providerId)} in ${label}`
+}
+function agentOf(source: UsageConnectionSnapshot, metric: UsageMetric): string {
+  return metric.providerId ?? source.connection.providerId
+}
+/** Rows grouped by agent in first-appearance order, or null when the account has no agents. */
+function agentGroups(source: UsageConnectionSnapshot): [string, UsageMetric[]][] | null {
+  const metrics = source.subscription?.metrics ?? []
+  if (!metrics.some((metric) => metric.providerId)) return null
+  const groups = new Map<string, UsageMetric[]>()
+  for (const metric of metrics) {
+    const agent = agentOf(source, metric)
+    groups.set(agent, [...(groups.get(agent) ?? []), metric])
+  }
+  return [...groups]
+}
+/** Spec A4: refreshing, countdown from the absolute deadline, or ready, for one group. */
+function refreshState(
+  source: UsageConnectionSnapshot,
+  now: number,
+  providerId?: string,
+  pending = false,
+): string {
+  const label = targetLabel(source, providerId)
+  if (pending || (providerId === undefined && source.refreshing)) return `${label} is refreshing`
+  const until =
+    providerId === undefined
+      ? source.nextRefreshAt
+      : source.agents?.find((agent) => agent.providerId === providerId)?.nextRefreshAt
   const seconds = until ? Math.ceil((Date.parse(until) - now) / 1000) : 0
   return seconds > 0 ? `${label} can refresh again in ${seconds} s` : `${label} is ready to refresh`
 }
@@ -163,53 +201,51 @@ function refreshWindowLine(
     window.status === 'succeeded' ? '' : ` ${retainedValue(source, window.metricId, now)}`
   return `${window.metricId}: ${status}.${retry ? ` ${retry}` : ''}${retained}`.trim()
 }
-function refreshOutcome(snapshot: UsageSnapshot, current: UsageSnapshot, now: number): string {
+/** Spec A5: the outcome of the last manual request, naming its account or agent. */
+function refreshOutcome(
+  target: RefreshTarget,
+  snapshot: UsageSnapshot,
+  current: UsageSnapshot,
+  now: number,
+): string {
   const result = snapshot.refresh
-  // Only connections read by this request feed the summary. An earlier attempt's stored result
-  // stays visible as per-source detail but must not describe a request that read nothing.
-  const read = new Set(result?.read ?? [])
-  const refreshResults = snapshot.connections.flatMap((c) =>
-    c.refreshResult && read.has(c.connection.id) ? [c.refreshResult] : [],
+  const source =
+    current.connections.find((c) => c.connection.id === target.connectionId) ??
+    snapshot.connections.find((c) => c.connection.id === target.connectionId)
+  const label = source ? targetLabel(source, target.providerId) : target.connectionId
+  const skip = result?.skipped.find((s) => s.connectionId === target.connectionId)
+  if (skip) {
+    const reason = skip.reason === 'backoff' ? 'provider backoff' : '60-second limit'
+    const skipped = `${label} was skipped (${reason}).`
+    return source ? `${skipped} ${refreshState(source, now, target.providerId)}.` : skipped
+  }
+  const read = snapshot.connections.find(
+    (c) => c.connection.id === target.connectionId && result?.read.includes(c.connection.id),
   )
-  const failedSources = refreshResults
-    .flatMap((r) => r.sources)
-    .filter((source) => source.status !== 'succeeded').length
-  const failedWindows = refreshResults
-    .flatMap((r) => r.sources)
-    .flatMap((source) => source.windows)
-    .filter((window) => window.status !== 'succeeded').length
-  // Any connection that did not fully succeed makes the outcome partial, including one that
-  // failed outright while another connection succeeded.
-  const partial = refreshResults.some((r) => r.status !== 'success')
-  const failedRefresh =
-    refreshResults.length > 0 && refreshResults.every((r) => r.status === 'failed')
-  const failed = snapshot.connections.filter(
-    (c) => result?.read.includes(c.connection.id) && c.error,
-  ).length
-  // An all-failed request keeps its explicit message; every other non-success outcome is partial.
-  const summary = failed
-    ? `Usage refresh completed; ${failed} source(s) failed.`
-    : failedRefresh
-      ? 'Usage refresh failed; earlier values were kept.'
-      : partial
-        ? `Usage refresh partially completed; ${failedSources} source(s) and ${failedWindows} window(s) failed.`
-        : result?.read.length
-          ? 'Usage refreshed.'
-          : snapshot.connections.length
-            ? 'Last refresh request read no sources.'
-            : 'No usage accounts enabled.'
-  const skipped =
-    result?.skipped.map((skip) => {
-      const source = current.connections.find((c) => c.connection.id === skip.connectionId)
-      const label =
-        source?.connection.label ??
-        snapshot.connections.find((c) => c.connection.id === skip.connectionId)?.connection.label ??
-        skip.connectionId
-      const reason = skip.reason === 'backoff' ? 'provider backoff' : '60-second limit'
-      const skipped = `${label} was skipped (${reason}).`
-      return source ? `${skipped} ${refreshState(source, now)}.` : skipped
-    }) ?? []
-  return [summary, ...skipped].join(' ')
+  if (!read) return `${label} was not refreshed.`
+  if (read.error) return `${label} refresh failed.`
+  // The operation result excludes earlier attempts retained in per-source detail. A joined
+  // account refresh may also contain other agents, so filter its known windows by the target.
+  const agents = new Map(
+    (read.subscription?.metrics ?? []).map((metric) => [metric.id, agentOf(read, metric)]),
+  )
+  const sources = (result?.result?.sources ?? read.refreshResult?.sources ?? []).filter(
+    (s) =>
+      target.providerId === undefined ||
+      // A source may fail before it reports any windows, so it cannot be assigned to an agent.
+      // Keep that failure visible instead of treating the missing windows as a successful read.
+      s.windows.length === 0 ||
+      s.windows.some((w) => agents.get(w.metricId) === target.providerId),
+  )
+  const failedSources = sources.filter((s) => s.status !== 'succeeded').length
+  const failedWindows = sources
+    .flatMap((s) => s.windows)
+    .filter((w) => w.status !== 'succeeded').length
+  if (sources.length > 0 && failedSources === sources.length)
+    return `${label} refresh failed; earlier values were kept.`
+  if (failedSources > 0 || failedWindows > 0)
+    return `${label} refresh partially completed; ${failedSources} source(s) and ${failedWindows} window(s) failed.`
+  return `${label} refreshed.`
 }
 export function UsageToolbar({
   api,
@@ -225,9 +261,13 @@ export function UsageToolbar({
     [now, setNow] = useState(Date.now()),
     [error, setError] = useState<string | null>(null)
   const [position, setPosition] = useState({ left: 12, top: 46 })
-  const [manualPending, setManualPending] = useState(false),
-    [manualResult, setManualResult] = useState<UsageSnapshot | null>(null)
-  const manualFlight = useRef(false)
+  // Spec A4-A5: pending targets, and the last clicked target with its result.
+  const [pending, setPending] = useState<string[]>([]),
+    [manual, setManual] = useState<{ target: RefreshTarget; result: UsageSnapshot | null } | null>(
+      null,
+    )
+  const manualFlights = useRef(new Set<string>()),
+    manualSequence = useRef(0)
   const trigger = useRef<HTMLButtonElement>(null),
     dialog = useRef<HTMLElement>(null)
   const readFlight = useRef<{ api: UsageApi; promise: Promise<UsageSnapshot> } | null>(null),
@@ -237,7 +277,7 @@ export function UsageToolbar({
     let mounted = true
     let reading = false
     alive.current = true
-    setManualResult(null)
+    setManual(null)
     const read = async () => {
       if (document.hidden || reading) return
       reading = true
@@ -315,31 +355,53 @@ export function UsageToolbar({
     (c) => c.connection.id === snapshot.pin?.connectionId,
   )
   const pinned = pinnedSource?.subscription?.metrics.find((m) => m.id === snapshot.pin?.metricId)
-  const refreshing = manualPending || snapshot.connections.some((c) => c.refreshing)
-  const refreshDescription = snapshot.connections.length
-    ? snapshot.connections.map((c) => `${refreshState(c, now)}.`).join(' ')
-    : 'No usage accounts enabled.'
-  async function refresh(): Promise<void> {
-    if (manualFlight.current) return
-    manualFlight.current = true
-    setManualPending(true)
-    setManualResult(null)
+  const refreshing = pending.length > 0 || snapshot.connections.some((c) => c.refreshing)
+  const isPending = (target: RefreshTarget) =>
+    pending.includes(targetKey({ connectionId: target.connectionId })) ||
+    (target.providerId !== undefined && pending.includes(targetKey(target)))
+  async function refresh(target: RefreshTarget): Promise<void> {
+    const key = targetKey(target)
+    if (manualFlights.current.has(key)) return
+    manualFlights.current.add(key)
+    const sequence = ++manualSequence.current
+    setPending((keys) => [...keys, key])
+    setManual({ target, result: null })
     try {
-      const s = await api.refresh()
+      const s = await api.refresh(target)
       if (alive.current) {
         setSnapshot(s)
-        setManualResult(s)
+        // A newer click owns the status message (spec A5).
+        if (sequence === manualSequence.current) setManual({ target, result: s })
         setNow(Date.now())
         setError(null)
       }
     } catch (e) {
       if (alive.current) {
+        if (sequence === manualSequence.current) setManual(null)
         setError(formatErrorMessage(e))
       }
     } finally {
-      manualFlight.current = false
-      if (alive.current) setManualPending(false)
+      manualFlights.current.delete(key)
+      if (alive.current) setPending((keys) => keys.filter((k) => k !== key))
     }
+  }
+  function refreshButton(source: UsageConnectionSnapshot, providerId?: string) {
+    const target = { connectionId: source.connection.id, providerId }
+    const busy = isPending(target)
+    const state = `${refreshState(source, now, providerId, busy)}.`
+    return (
+      <button
+        type="button"
+        className="usage-group-refresh"
+        aria-label={`Refresh ${targetLabel(source, providerId)}`}
+        title={state}
+        aria-description={state}
+        onClick={() => void refresh(target)}
+        disabled={busy}
+      >
+        ↻
+      </button>
+    )
   }
   async function pin(connectionId: string, metricId: string): Promise<void> {
     try {
@@ -427,29 +489,24 @@ export function UsageToolbar({
                   </span>
                   <button
                     type="button"
-                    aria-label="Refresh usage"
-                    title={refreshDescription}
-                    aria-description={refreshDescription}
-                    onClick={() => void refresh()}
-                    disabled={refreshing}
-                  >
-                    ↻
-                  </button>
-                  <button
-                    type="button"
                     aria-label="Close usage panel"
                     onClick={() => setOpen(false)}
                   >
                     ×
                   </button>
                 </header>
-                {manualPending || manualResult ? (
+                {manual ? (
                   <p role="status" className="usage-message">
-                    {manualPending
-                      ? 'Refreshing usage...'
-                      : manualResult
-                        ? refreshOutcome(manualResult, snapshot, now)
-                        : ''}
+                    {manual.result
+                      ? refreshOutcome(manual.target, manual.result, snapshot, now)
+                      : `Refreshing ${(() => {
+                          const source = snapshot.connections.find(
+                            (c) => c.connection.id === manual.target.connectionId,
+                          )
+                          return source
+                            ? targetLabel(source, manual.target.providerId)
+                            : manual.target.connectionId
+                        })()}...`}
                   </p>
                 ) : null}
                 {error ? (
@@ -473,58 +530,71 @@ export function UsageToolbar({
                 ) : (
                   snapshot.connections.map((source) => {
                     const refreshDetail =
-                      manualResult?.connections.find(
+                      manual?.result?.connections.find(
                         (c) => c.connection.id === source.connection.id,
                       )?.refreshResult ?? source.refreshResult
+                    const groups = agentGroups(source)
+                    const row = (metric: UsageMetric) => {
+                      const selected =
+                        snapshot.pin?.connectionId === source.connection.id &&
+                        snapshot.pin.metricId === metric.id
+                      const freshness = usageFreshness(metric, now),
+                        slices = usageSlices(metric, now)
+                      return (
+                        <button
+                          type="button"
+                          className={`usage-row ${selected ? 'usage-pinned' : ''} ${freshness.startsWith('Stale') || freshness.startsWith('Expired') ? 'usage-old' : ''}`}
+                          key={metric.id}
+                          aria-pressed={selected}
+                          disabled={metric.state === 'unavailable'}
+                          aria-label={`${source.connection.label}, ${metric.label}, ${value(metric)}, ${source.error ? `Error: ${source.error.message}, ` : ''}${freshness}${slices?.pace ? `, ${slices.pace}` : ''}`}
+                          title={tooltip(source, metric, now)}
+                          onClick={() => {
+                            setOpen(false)
+                            void pin(source.connection.id, metric.id)
+                          }}
+                        >
+                          <span className="usage-name">
+                            <span className={`usage-avatar ${badge(source, metric, now)}`}>
+                              {avatar(source, metric)}
+                            </span>
+                            <span>{metric.label}</span>
+                          </span>
+                          <UsageGraphic metric={metric} now={now} />
+                          <strong className={metric.kind === 'balance' ? 'usage-balance' : ''}>
+                            {value(metric)}
+                          </strong>
+                          <span
+                            className={`usage-hint ${slices?.pace?.startsWith('↑') ? 'usage-behind' : ''}`}
+                          >
+                            {slices?.pace?.startsWith('↑') ? slices.pace : reset(metric, now)}
+                          </span>
+                          <span className="usage-row-status">
+                            {source.error ? 'Error; ' : ''}
+                            {freshness}
+                            {slices?.pace === 'Ahead of pace' ? '; Ahead of pace' : ''}
+                          </span>
+                        </button>
+                      )
+                    }
                     return (
                       <div key={source.connection.id} className="usage-source">
-                        <h3>{source.connection.label}</h3>
-                        {source.subscription?.metrics.length ? (
-                          source.subscription.metrics.map((metric) => {
-                            const selected =
-                              snapshot.pin?.connectionId === source.connection.id &&
-                              snapshot.pin.metricId === metric.id
-                            const freshness = usageFreshness(metric, now),
-                              slices = usageSlices(metric, now)
-                            return (
-                              <button
-                                type="button"
-                                className={`usage-row ${selected ? 'usage-pinned' : ''} ${freshness.startsWith('Stale') || freshness.startsWith('Expired') ? 'usage-old' : ''}`}
-                                key={metric.id}
-                                aria-pressed={selected}
-                                disabled={metric.state === 'unavailable'}
-                                aria-label={`${source.connection.label}, ${metric.label}, ${value(metric)}, ${source.error ? `Error: ${source.error.message}, ` : ''}${freshness}${slices?.pace ? `, ${slices.pace}` : ''}`}
-                                title={tooltip(source, metric, now)}
-                                onClick={() => {
-                                  setOpen(false)
-                                  void pin(source.connection.id, metric.id)
-                                }}
-                              >
-                                <span className="usage-name">
-                                  <span className={`usage-avatar ${badge(source, metric, now)}`}>
-                                    {avatar(source, metric)}
-                                  </span>
-                                  <span>{metric.label}</span>
-                                </span>
-                                <UsageGraphic metric={metric} now={now} />
-                                <strong
-                                  className={metric.kind === 'balance' ? 'usage-balance' : ''}
-                                >
-                                  {value(metric)}
-                                </strong>
-                                <span
-                                  className={`usage-hint ${slices?.pace?.startsWith('↑') ? 'usage-behind' : ''}`}
-                                >
-                                  {slices?.pace?.startsWith('↑') ? slices.pace : reset(metric, now)}
-                                </span>
-                                <span className="usage-row-status">
-                                  {source.error ? 'Error; ' : ''}
-                                  {freshness}
-                                  {slices?.pace === 'Ahead of pace' ? '; Ahead of pace' : ''}
-                                </span>
-                              </button>
-                            )
-                          })
+                        <div className="usage-group-head">
+                          <h3>{source.connection.label}</h3>
+                          {refreshButton(source)}
+                        </div>
+                        {groups ? (
+                          groups.map(([agent, metrics]) => (
+                            <div key={agent} className="usage-agent">
+                              <div className="usage-group-head">
+                                <h4>{agentName(agent)}</h4>
+                                {source.agents ? refreshButton(source, agent) : null}
+                              </div>
+                              {metrics.map(row)}
+                            </div>
+                          ))
+                        ) : source.subscription?.metrics.length ? (
+                          source.subscription.metrics.map(row)
                         ) : (
                           <p className="usage-message">
                             {source.subscription?.status === 'unavailable'

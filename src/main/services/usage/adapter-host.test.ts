@@ -107,6 +107,44 @@ describe('usage adapter process boundary', () => {
       refreshSources: ['claude'],
     })
   })
+  it('sends refreshProviders only on refresh and only to adapters declaring the option (A7)', async () => {
+    const script = `let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:r.params.connectionId,providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'params',label:JSON.stringify(r.params),kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1}]}]}}))})`
+    const plain = adapter(script)
+    const selecting = { ...adapter(script), refreshOptions: ['providers' as const] }
+    const params = async (result: Promise<UsageDocument>) =>
+      JSON.parse((await result).subscriptions[0].metrics[0].label)
+    expect(
+      await params(
+        new UsageAdapterHost().read(selecting, {}, 'account', signal(), 'refresh', {
+          refreshSources: ['hub-claude'],
+          refreshProviders: ['claude'],
+        }),
+      ),
+    ).toEqual({
+      connectionId: 'account',
+      capabilities: ['partial-refresh-v1'],
+      refreshSources: ['hub-claude'],
+      refreshProviders: ['claude'],
+    })
+    expect(
+      await params(new UsageAdapterHost().read(selecting, {}, 'account', signal(), 'refresh')),
+    ).not.toHaveProperty('refreshProviders')
+    for (const [a, action, providers] of [
+      [plain, 'refresh', ['claude']],
+      [selecting, 'read', ['claude']],
+      [selecting, 'refresh', []],
+      [selecting, 'refresh', ['claude', 'claude']],
+      [selecting, 'refresh', ['Not Valid']],
+    ] as const)
+      await expect(
+        new UsageAdapterHost().read(a, {}, 'account', signal(), action, {
+          refreshProviders: [...providers],
+        }),
+      ).rejects.toMatchObject({
+        code: 'validation_error',
+        message: 'Invalid usage refresh agent selection.',
+      })
+  })
   it.each([
     [`console.log(JSON.stringify({protocolVersion:1,ok:true,data:{}}))`, 'Unsupported'],
     [`console.log('{} {}')`, 'one valid JSON'],
@@ -308,7 +346,13 @@ describe('usage adapter process boundary', () => {
     write('bad-provider', { providerId: 'Not Valid' })
     write('long-summary', { summary: 'x'.repeat(161) })
     write('bad-experimental', { experimental: 'yes' })
+    write('agents', { refreshOptions: ['providers'] })
+    write('bad-option', { refreshOptions: ['sources'] })
+    write('duplicate-option', { refreshOptions: ['providers', 'providers'] })
+    write('option-shape', { refreshOptions: 'providers' })
     const result = discoverUsageAdapters(root)
+    expect(result.find((r) => r.id === 'agents')?.refreshOptions).toEqual(['providers'])
+    expect(result.find((r) => r.id === 'service')).not.toHaveProperty('refreshOptions')
     expect(result.find((r) => r.id === 'service')).toMatchObject({
       providerId: 'service-provider',
       summary: 'One line.',
@@ -328,6 +372,9 @@ describe('usage adapter process boundary', () => {
       'bad-provider',
       'long-summary',
       'bad-experimental',
+      'bad-option',
+      'duplicate-option',
+      'option-shape',
     ])
       expect(result.find((r) => r.id === `invalid:${name}`)?.error).toContain('Invalid')
   })

@@ -1458,17 +1458,17 @@ function ContextMenuOverlay({
           type="button"
           role="menuitem"
           className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
-          onClick={() => onOpenProjectSettings(state.projectId)}
+          onClick={() => onOpenInFileExplorer(state.projectId)}
         >
-          Project Settings
+          Open in file explorer
         </button>
         <button
           type="button"
           role="menuitem"
           className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
-          onClick={() => onOpenInFileExplorer(state.projectId)}
+          onClick={() => onOpenProjectSettings(state.projectId)}
         >
-          Open in file explorer
+          Project Settings
         </button>
         <button
           type="button"

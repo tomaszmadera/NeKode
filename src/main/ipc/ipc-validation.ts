@@ -42,7 +42,12 @@ import {
   resumeTokenSchema,
 } from '@shared/contracts/resume-sources-schema'
 import { BARE_MESSAGE, safePathSchema, stringValuesSchema } from '@shared/contracts/schema-rules'
-import { parseUsageSettings, type UsageConnection } from '@shared/contracts/usage-contract'
+import {
+  parseUsageRefreshRequest,
+  parseUsageSettings,
+  type UsageConnection,
+  type UsageRefreshRequest,
+} from '@shared/contracts/usage-contract'
 import {
   IPC_CHANNEL,
   isResumeSourcesStateKey,
@@ -273,7 +278,14 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel(IPC_CHANNEL.usageListAdapters, [], () => services.usage.listAdapters()),
     serviceChannel(IPC_CHANNEL.usageGetSettings, [], () => services.usage.getSettings()),
     serviceChannel(IPC_CHANNEL.usageRead, [], () => services.usage.read()),
-    serviceChannel(IPC_CHANNEL.usageRefresh, [], () => services.usage.refresh()),
+    {
+      channel: IPC_CHANNEL.usageRefresh,
+      parse(payload) {
+        requireArgs(payload, 1, IPC_CHANNEL.usageRefresh)
+        return [parseUsageRefreshRequest(payload[0])]
+      },
+      invoke: (args) => services.usage.refresh(args[0] as UsageRefreshRequest),
+    },
     {
       channel: IPC_CHANNEL.usageSaveSettings,
       parse(payload) {

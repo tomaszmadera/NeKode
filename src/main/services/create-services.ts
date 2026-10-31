@@ -265,7 +265,7 @@ export function createServices(options: CreateServicesOptions): AppServices {
       getSettings: () => usage.getSettings(),
       saveSettings: (settings) => usage.saveSettings(settings),
       read: () => usage.read(),
-      refresh: () => usage.refresh(),
+      refresh: (request) => usage.refresh(request),
       test: (connection) => usage.test(connection),
       getEnabled: () => usage.getEnabled(),
       setEnabled: (enabled) => usage.setEnabled(enabled),

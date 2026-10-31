@@ -229,12 +229,12 @@ describe('global usage service', () => {
   it('ignores cache without durable identity and restores restart persistence after a new read', async () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     f.state.delete('usage.connection-revisions')
     const restarted = new UsageService(f.deps)
     services.push(restarted)
     expect(restarted.read().connections[0].subscription).toBeNull()
-    await restarted.refresh()
+    await restarted.refresh({ connectionId: 'account' })
     const next = new UsageService(f.deps)
     services.push(next)
     expect(next.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
@@ -243,7 +243,7 @@ describe('global usage service', () => {
   it('rejects old-account cache after a durable config change even when cache invalidation fails', async () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     f.service.saveSettings({
       ...f.service.getSettings(),
       pin: { connectionId: 'account', metricId: 'week' },
@@ -329,14 +329,14 @@ describe('global usage service', () => {
   it('ignores the cache after a corrupt connection-revisions store and rebuilds it on refresh', async () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     f.state.set('usage.connection-revisions', '{corrupt')
     const restarted = new UsageService(f.deps)
     services.push(restarted)
     expect(restarted.read().cacheError).toContain('cache identity')
     expect(restarted.read().connections[0].subscription).toBeNull()
     expect(restarted.getSettings().connections[0].id).toBe('account')
-    await restarted.refresh()
+    await restarted.refresh({ connectionId: 'account' })
     expect(restarted.read().cacheError).toBeNull()
     expect(() => JSON.parse(f.state.get('usage.connection-revisions') ?? '')).not.toThrow()
     const next = new UsageService(f.deps)
@@ -349,18 +349,21 @@ describe('global usage service', () => {
     f.service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } })
     const unowned = `${f.output}.${process.pid}.tmp`
     writeFileSync(unowned, 'unowned fixture file')
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     expect(readFileSync(unowned, 'utf8')).toBe('unowned fixture file')
   })
   it('reports manual interval skips and reads again at the exact 60-second deadline', async () => {
     const f = fixture(),
       { service, read } = plugin(f, 90)
     expect(service.read().connections[0].nextRefreshAt).toBeNull()
-    expect((await service.refresh()).refresh).toEqual({ read: ['account'], skipped: [] })
+    expect((await service.refresh({ connectionId: 'account' })).refresh).toEqual({
+      read: ['account'],
+      skipped: [],
+    })
     const until = new Date(NOW + 60_000).toISOString()
     expect(service.read().connections[0].nextRefreshAt).toBe(until)
     f.advance(59_999)
-    expect((await service.refresh()).refresh).toEqual({
+    expect((await service.refresh({ connectionId: 'account' })).refresh).toEqual({
       read: [],
       skipped: [{ connectionId: 'account', until, reason: 'interval' }],
     })
@@ -368,7 +371,7 @@ describe('global usage service', () => {
     expect(service.read()).not.toHaveProperty('refresh')
     f.advance(1)
     expect(service.read().connections[0].nextRefreshAt).toBeNull()
-    expect((await service.refresh()).refresh?.read).toEqual(['account'])
+    expect((await service.refresh({ connectionId: 'account' })).refresh?.read).toEqual(['account'])
     expect(read).toHaveBeenCalledTimes(2)
   })
   it('reports a provider retry deadline as backoff, then the 60-second interval', async () => {
@@ -377,23 +380,25 @@ describe('global usage service', () => {
     read.mockRejectedValue(
       Object.assign(new AppError('rate_limited', 'Fixture deadline'), { retryAfterSeconds: 600 }),
     )
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     const until = new Date(NOW + 600_000).toISOString()
     expect(service.read().connections[0].nextRefreshAt).toBe(until)
-    expect((await service.refresh()).refresh?.skipped).toEqual([
+    expect((await service.refresh({ connectionId: 'account' })).refresh?.skipped).toEqual([
       { connectionId: 'account', until, reason: 'backoff' },
     ])
     expect(read).toHaveBeenCalledTimes(1)
     f.advance(600_000)
     read.mockImplementation(async () => adapterResult(f.live()))
-    expect((await service.refresh()).refresh?.read).toEqual(['account'])
+    expect((await service.refresh({ connectionId: 'account' })).refresh?.read).toEqual(['account'])
     expect(service.read().connections[0].error).toBeNull()
-    expect((await service.refresh()).refresh?.skipped[0].reason).toBe('interval')
+    expect((await service.refresh({ connectionId: 'account' })).refresh?.skipped[0].reason).toBe(
+      'interval',
+    )
   })
-  it('reports mixed results for a read account and one inside its 60-second limit', async () => {
+  it('refreshes one account while another stays inside its 60-second limit (A6)', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     f.advance(5000)
     service.saveSettings({
       ...service.getSettings(),
@@ -407,8 +412,12 @@ describe('global usage service', () => {
       document.subscriptions[0].id = id
       return adapterResult(document)
     })
-    expect((await service.refresh()).refresh).toEqual({
+    expect((await service.refresh({ connectionId: 'second' })).refresh).toEqual({
       read: ['second'],
+      skipped: [],
+    })
+    expect((await service.refresh({ connectionId: 'account' })).refresh).toEqual({
+      read: [],
       skipped: [
         {
           connectionId: 'account',
@@ -422,7 +431,7 @@ describe('global usage service', () => {
   it('keeps manual deadlines across a label or enabled save and resets them on a config change (L5)', async () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     f.advance(5000)
     const account = () => f.service.getSettings().connections[0]
     const save = (change: Partial<UsageSettings['connections'][number]>) =>
@@ -433,12 +442,12 @@ describe('global usage service', () => {
     const interval = new Date(NOW + 60_000).toISOString()
     save({ label: 'Renamed account' })
     expect(f.service.read().connections[0].nextRefreshAt).toBe(interval)
-    expect((await f.service.refresh()).refresh?.skipped).toEqual([
+    expect((await f.service.refresh({ connectionId: 'account' })).refresh?.skipped).toEqual([
       { connectionId: 'account', until: interval, reason: 'interval' },
     ])
     save({ enabled: false })
     save({ enabled: true })
-    expect((await f.service.refresh()).refresh?.skipped).toEqual([
+    expect((await f.service.refresh({ connectionId: 'account' })).refresh?.skipped).toEqual([
       { connectionId: 'account', until: interval, reason: 'interval' },
     ])
     expect(f.hostRead).toHaveBeenCalledTimes(1)
@@ -447,10 +456,10 @@ describe('global usage service', () => {
     f.hostRead.mockRejectedValueOnce(
       Object.assign(new AppError('rate_limited', 'Fixture deadline'), { retryAfterSeconds: 600 }),
     )
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     const backoff = new Date(NOW + 60_000 + 600_000).toISOString()
     save({ label: 'Renamed again' })
-    expect((await f.service.refresh()).refresh?.skipped).toEqual([
+    expect((await f.service.refresh({ connectionId: 'account' })).refresh?.skipped).toEqual([
       { connectionId: 'account', until: backoff, reason: 'backoff' },
     ])
     // A changed configuration is a new source: both deadlines reset.
@@ -458,7 +467,9 @@ describe('global usage service', () => {
     writeFileSync(other, readFileSync(f.input))
     save({ config: { path: other } })
     expect(f.service.read().connections[0].nextRefreshAt).toBeNull()
-    expect((await f.service.refresh()).refresh?.read).toEqual(['account'])
+    expect((await f.service.refresh({ connectionId: 'account' })).refresh?.read).toEqual([
+      'account',
+    ])
     expect(f.hostRead).toHaveBeenCalledTimes(3)
   })
   it('keeps scheduled deadlines across a visible label or enabled save and resets them on a source change (L5)', async () => {
@@ -496,7 +507,9 @@ describe('global usage service', () => {
     f.advance(300_000)
     await saves()
     expect(read).toHaveBeenCalledTimes(3)
-    expect((await service.refresh()).refresh?.skipped[0]?.reason).toBe('backoff')
+    expect((await service.refresh({ connectionId: 'account' })).refresh?.skipped[0]?.reason).toBe(
+      'backoff',
+    )
     f.advance(300_000)
     await poll(service)
     expect(read).toHaveBeenCalledTimes(4)
@@ -598,8 +611,8 @@ describe('global usage service', () => {
         }),
     )
     service.setVisible(true)
-    const first = service.refresh(),
-      second = service.refresh()
+    const first = service.refresh({ connectionId: 'account' }),
+      second = service.refresh({ connectionId: 'account' })
     expect(read).toHaveBeenCalledTimes(1)
     finish(adapterResult(f.live()))
     for (const result of await Promise.all([first, second]))
@@ -609,7 +622,7 @@ describe('global usage service', () => {
   it('keeps the completed read outcome when a cached metric is pinned during refresh', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     f.advance(60_000)
     let finish: (value: UsageAdapterResult) => void = () => {}
     read.mockImplementation(
@@ -618,7 +631,7 @@ describe('global usage service', () => {
           finish = resolve
         }),
     )
-    const pending = service.refresh()
+    const pending = service.refresh({ connectionId: 'account' })
     service.saveSettings({
       ...service.getSettings(),
       pin: { connectionId: 'account', metricId: 'week' },
@@ -704,7 +717,7 @@ describe('global usage service', () => {
     const connection = (id: string) =>
       service.read().connections.find((c) => c.connection.id === id)
     f.advance(60_000)
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     expect(connection('account')?.error?.code).toBe('config')
     expect(connection('other')?.error).toBeNull()
     const automatic = () =>
@@ -719,7 +732,7 @@ describe('global usage service', () => {
     // The account keeps showing the refresh failure until a manual refresh succeeds.
     expect(connection('account')?.error?.code).toBe('config')
     expect(service.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     expect(
       read.mock.calls.filter(([, , id, , action]) => id === 'account' && action === 'refresh'),
     ).toHaveLength(2)
@@ -728,7 +741,7 @@ describe('global usage service', () => {
     await poll(service)
     expect(automatic()).toBe(before + 2)
     refreshFails = false
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     expect(connection('account')?.error).toBeNull()
     expect(connection('account')?.subscription?.metrics[0].usedPercent).toBe(50)
   })
@@ -742,13 +755,13 @@ describe('global usage service', () => {
         })
       return adapterResult(f.live())
     })
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     f.advance(60_000)
     await poll(service)
     expect(read.mock.calls.map((call) => call[4])).toEqual(['refresh', 'read'])
     expect(service.read().connections[0].error?.code).toBe('rate_limited')
     f.advance(60_000)
-    expect((await service.refresh()).refresh?.skipped).toEqual([
+    expect((await service.refresh({ connectionId: 'account' })).refresh?.skipped).toEqual([
       {
         connectionId: 'account',
         until: new Date(NOW + 600_000).toISOString(),
@@ -777,8 +790,8 @@ describe('global usage service', () => {
         { ...f.settings.connections[0], id: 'healthy', adapterId: 'fixture', config: {} },
       ],
     })
-    const pending = service.refresh()
-    await new Promise((resolve) => setImmediate(resolve))
+    const pending = service.refresh({ connectionId: 'account' })
+    await service.refresh({ connectionId: 'healthy' })
     expect(
       service.read().connections.find((c) => c.connection.id === 'healthy')?.subscription
         ?.metrics[0].usedPercent,
@@ -826,12 +839,12 @@ describe('global usage service', () => {
     mkdirSync(directory)
     const output = join(directory, 'usage.json')
     f.service.saveSettings({ ...f.settings, export: { enabled: true, path: output } })
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     const previous = readFileSync(output, 'utf8')
     renameSync(directory, join(f.dir, 'retained-exports'))
     f.advance(60_000)
     f.write(75, '2026-10-20T12:01:00Z')
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(75)
     expect(f.service.read().exportError).toContain('previous file is retained')
     expect(readFileSync(join(f.dir, 'retained-exports', 'usage.json'), 'utf8')).toBe(previous)
@@ -841,7 +854,7 @@ describe('global usage service', () => {
     mkdirSync(join(f.dir, 'profile'), { recursive: true })
     writeFileSync(join(f.dir, 'profile', 'usage'), 'blocked cache directory')
     f.service.saveSettings(f.settings)
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     expect(f.service.read().cacheError).toContain('Cannot write usage cache')
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
     f.service.saveSettings({ ...f.settings, pin: { connectionId: 'account', metricId: 'week' } })
@@ -849,7 +862,7 @@ describe('global usage service', () => {
     const document = JSON.parse(readFileSync(f.input, 'utf8'))
     document.subscriptions[0].metrics = []
     writeFileSync(f.input, JSON.stringify(document))
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     expect(f.service.read().pin).toBeNull()
     expect(f.service.getSettings().pin).toBeNull()
   })
@@ -865,7 +878,7 @@ describe('global usage service', () => {
     service.setVisible(true)
     f.advance(30_000)
     await vi.advanceTimersByTimeAsync(30_000)
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     expect(reads).not.toHaveBeenCalled()
     expect(existsSync(f.output)).toBe(false)
     expect(service.read().connections[0].subscription).toBeNull()
@@ -883,7 +896,7 @@ describe('global usage service', () => {
     f.write(75, '2026-10-20T12:00:05Z')
     f.advance(30_000)
     await vi.advanceTimersByTimeAsync(30_000)
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     expect(reads).toHaveBeenCalledTimes(1)
     expect(readFileSync(f.output, 'utf8')).toBe(exported)
     expect(service.getSettings().connections).toHaveLength(1)
@@ -917,7 +930,7 @@ describe('global usage service', () => {
           finish = resolve
         }),
     )
-    const pending = service.refresh()
+    const pending = service.refresh({ connectionId: 'account' })
     expect(read).toHaveBeenCalledTimes(1)
     expect(signal?.aborted).toBe(false)
     service.setEnabled(false)
@@ -942,12 +955,15 @@ describe('global usage service', () => {
   it('does no collection without enabled connections', async () => {
     const f = fixture()
     f.service.setVisible(true)
-    expect((await f.service.refresh()).connections).toEqual([])
+    await expect(f.service.refresh({ connectionId: 'account' })).rejects.toMatchObject({
+      code: 'not_found',
+    })
+    expect(f.service.read().connections).toEqual([])
   })
   it('keeps observation times through repeated reads, export and restart', async () => {
     const f = fixture()
     f.service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } })
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     f.advance(65 * 60_000)
     // A scheduled read may report an unchanged observation (spec L2).
     await poll(f.service)
@@ -985,13 +1001,13 @@ describe('global usage service', () => {
   it('does not reset source cadence when pinning a metric', async () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     f.write(77)
     f.service.saveSettings({
       ...f.service.getSettings(),
       pin: { connectionId: 'account', metricId: 'week' },
     })
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
   })
   it('rejects input/output overlap and existing non-export files without changing settings', () => {
@@ -1021,7 +1037,7 @@ describe('global usage service', () => {
   it('invalidates cache and pin after account identity changes', async () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     f.service.saveSettings({
       ...f.service.getSettings(),
       pin: { connectionId: 'account', metricId: 'week' },
@@ -1065,8 +1081,8 @@ describe('global usage service', () => {
       ...f.settings,
       connections: [{ ...f.settings.connections[0], adapterId: 'fixture', config: {} }],
     })
-    const first = service.refresh(),
-      second = service.refresh()
+    const first = service.refresh({ connectionId: 'account' }),
+      second = service.refresh({ connectionId: 'account' })
     expect(read).toHaveBeenCalledTimes(1)
     service.saveSettings({ ...service.getSettings(), connections: [] })
     finish(adapterResult(JSON.parse(readFileSync(f.input, 'utf8'))))
@@ -1132,7 +1148,7 @@ describe('global usage service', () => {
       },
     })
     services.push(restarted)
-    await restarted.refresh()
+    await restarted.refresh({ connectionId: 'account' })
     expect(restarted.read().connections[0].error?.code).toBe('config')
     expect(restarted.read().connections[0].error?.message).toContain('Cannot decrypt')
     expect(read).not.toHaveBeenCalled()
@@ -1205,7 +1221,7 @@ describe('accounts settings flow (spec rules 21-28)', () => {
       }),
     )
     service.setVisible(true)
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     expect(service.read().connections[0].error?.message).toContain('its provider')
     read.mockResolvedValue(
       adapterResult({
@@ -1227,7 +1243,7 @@ describe('accounts settings flow (spec rules 21-28)', () => {
       }),
     )
     service.setVisible(true)
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     const source = service.read().connections[0]
     expect(source.error).toBeNull()
     expect(source.subscription?.providerId).toBe('declared')
@@ -1334,7 +1350,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
     read.mockResolvedValueOnce(
       adapterResult(doc([metric('week', 40, at0), metric('month', 20, at0)])),
     )
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     const before = service.read().connections[0].subscription?.metrics.find((m) => m.id === 'month')
     if (!before) throw new Error('Expected a seeded metric')
     service.saveSettings({
@@ -1357,7 +1373,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
         ]),
       ),
     )
-    const result = await service.refresh()
+    const result = await service.refresh({ connectionId: 'account' })
     const source = result.connections[0]
     expect(source.error).toBeNull()
     expect(source.refreshResult).toMatchObject({ status: 'partial', requestId: 'request-1' })
@@ -1389,7 +1405,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
         ),
       ),
     )
-    const result = await service.refresh()
+    const result = await service.refresh({ connectionId: 'account' })
     const source = result.connections[0]
     expect(source.error).toBeNull()
     expect(source.refreshResult?.status).toBe('failed')
@@ -1422,7 +1438,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
         ),
       ),
     )
-    const result = await service.refresh()
+    const result = await service.refresh({ connectionId: 'account' })
     const metrics = result.connections[0].subscription?.metrics ?? []
     expect(metrics.map((metric) => [metric.id, metric.label])).toEqual([
       ['claude-weekly', 'Claude weekly'],
@@ -1439,7 +1455,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
     read.mockResolvedValueOnce(
       adapterResult(doc([metric('claude-5h', 10, at0), metric('codex-weekly', 20, at0)])),
     )
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     f.advance(60_000)
     const at1 = new Date(NOW + 60_000).toISOString()
     const deadline = new Date(NOW + 360_000).toISOString()
@@ -1462,7 +1478,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
         ]),
       ),
     )
-    const partial = await service.refresh()
+    const partial = await service.refresh({ connectionId: 'account' })
     expect(partial.connections[0].refreshResult?.status).toBe('partial')
     expect(
       partial.connections[0].subscription?.metrics.find((m) => m.id === 'claude-5h')?.usedPercent,
@@ -1478,7 +1494,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
         }),
       ),
     )
-    const second = await service.refresh()
+    const second = await service.refresh({ connectionId: 'account' })
     expect(read.mock.calls.at(-1)?.[5]).toEqual({ refreshSources: ['codex'] })
     expect(second.connections[0].refreshResult?.status).toBe('partial')
     expect(
@@ -1503,7 +1519,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
         ),
       ),
     )
-    const third = await service.refresh()
+    const third = await service.refresh({ connectionId: 'account' })
     expect(read.mock.calls.at(-1)?.[5]).toEqual({})
     expect(third.connections[0].refreshResult?.status).toBe('success')
     expect(
@@ -1518,7 +1534,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
     read.mockResolvedValueOnce(
       adapterResult(doc([metric('claude-5h', 10, at0), metric('codex-weekly', 20, at0)])),
     )
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     f.advance(60_000)
     const at1 = new Date(NOW + 60_000).toISOString()
     const deadline = new Date(NOW + 360_000).toISOString()
@@ -1533,7 +1549,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
         ]),
       ),
     )
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     const before = service.read().connections[0].refreshResult
     const host = new UsageAdapterHost()
     const restartedRead = vi
@@ -1543,7 +1559,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
     services.push(restarted)
     expect(restarted.read().connections[0].refreshResult).toEqual(before)
     f.advance(60_000)
-    await restarted.refresh()
+    await restarted.refresh({ connectionId: 'account' })
     expect(restartedRead.mock.calls[0][5]).toEqual({ refreshSources: ['codex'] })
   })
 
@@ -1559,7 +1575,7 @@ describe('partial refresh merge and retry (PDH-13)', () => {
         }),
       ),
     )
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     const before = service.read().connections[0].refreshResult
     service.saveSettings({
       ...service.getSettings(),
@@ -1585,7 +1601,10 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     // Spec L5: a scheduled read only reads stored data and never starts the manual limit.
     expect(service.read().connections[0].nextRefreshAt).toBeNull()
     f.advance(1000)
-    expect((await service.refresh()).refresh).toEqual({ read: ['account'], skipped: [] })
+    expect((await service.refresh({ connectionId: 'account' })).refresh).toEqual({
+      read: ['account'],
+      skipped: [],
+    })
     expect(read).toHaveBeenCalledTimes(2)
     expect(read.mock.calls[1][4]).toBe('refresh')
     expect(service.read().connections[0].error).toBeNull()
@@ -1593,7 +1612,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     const until = new Date(NOW + 61_000).toISOString()
     expect(service.read().connections[0].nextRefreshAt).toBe(until)
     f.advance(59_999)
-    expect((await service.refresh()).refresh).toEqual({
+    expect((await service.refresh({ connectionId: 'account' })).refresh).toEqual({
       read: [],
       skipped: [{ connectionId: 'account', until, reason: 'interval' }],
     })
@@ -1620,7 +1639,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     )
     await poll(service)
     expect(read).toHaveBeenCalledTimes(1)
-    const manual = service.refresh()
+    const manual = service.refresh({ connectionId: 'account' })
     await new Promise((resolve) => setImmediate(resolve))
     expect(read).toHaveBeenCalledTimes(1)
     finish()
@@ -1639,7 +1658,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
         }),
     )
     await poll(service)
-    const manual = service.refresh()
+    const manual = service.refresh({ connectionId: 'account' })
     service.shutdown()
     finish()
     expect((await manual).refresh).toEqual({ read: [], skipped: [] })
@@ -1649,10 +1668,12 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     const f = fixture(),
       { service, read } = plugin(f)
     read.mockRejectedValue(new AppError('network', 'Fixture network failure'))
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     for (let attempt = 2; attempt <= 5; attempt++) {
       f.advance(60_000)
-      expect((await service.refresh()).refresh?.read).toEqual(['account'])
+      expect((await service.refresh({ connectionId: 'account' })).refresh?.read).toEqual([
+        'account',
+      ])
       expect(read).toHaveBeenCalledTimes(attempt)
     }
     // Only an automatic read failure suspends polling (NEKODE-147).
@@ -1666,7 +1687,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     await poll(service)
     expect(read).toHaveBeenCalledTimes(6)
     read.mockImplementation(async () => adapterResult(f.live(55)))
-    expect((await service.refresh()).refresh?.read).toEqual(['account'])
+    expect((await service.refresh({ connectionId: 'account' })).refresh?.read).toEqual(['account'])
     expect(read).toHaveBeenCalledTimes(7)
     expect(service.read().connections[0].error).toBeNull()
     expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(55)
@@ -1679,13 +1700,15 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     async (_name, observedAt) => {
       const f = fixture(),
         { service, read } = plugin(f)
-      await service.refresh()
+      await service.refresh({ connectionId: 'account' })
       const previous = service.read().connections[0].subscription?.metrics[0]
       f.advance(60_500)
       const stale = f.live(77)
       stale.subscriptions[0].metrics[0].observedAt = observedAt
       read.mockResolvedValueOnce(adapterResult(stale))
-      expect((await service.refresh()).refresh?.read).toEqual(['account'])
+      expect((await service.refresh({ connectionId: 'account' })).refresh?.read).toEqual([
+        'account',
+      ])
       expect(service.read().connections[0].error).toMatchObject({
         code: 'protocol',
         message: 'Usage adapter did not return a live refresh.',
@@ -1696,7 +1719,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
   it('accepts a refresh observed in the request second and exempts unavailable metrics (L3)', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     f.advance(60_500)
     const document = f.live(77)
     document.subscriptions[0].metrics[0].observedAt = '2026-10-20T12:01:00Z'
@@ -1709,14 +1732,14 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
       reason: 'not_reported',
     })
     read.mockResolvedValueOnce(adapterResult(document))
-    await service.refresh()
+    await service.refresh({ connectionId: 'account' })
     expect(service.read().connections[0].error).toBeNull()
     expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(77)
   })
   it('keeps stored accounts of removed sources listed, uncollected, cached and pinned (LA4)', async () => {
     const f = fixture()
     f.service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } })
-    await f.service.refresh()
+    await f.service.refresh({ connectionId: 'account' })
     f.service.saveSettings({
       ...f.service.getSettings(),
       pin: { connectionId: 'account', metricId: 'week' },
@@ -1752,7 +1775,10 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
     expect(service.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
     f.advance(3_600_000)
-    expect((await service.refresh()).refresh).toEqual({ read: [], skipped: [] })
+    expect((await service.refresh({ connectionId: 'account' })).refresh).toEqual({
+      read: [],
+      skipped: [],
+    })
     await poll(service)
     expect(f.hostRead).not.toHaveBeenCalled()
     await expect(service.test(service.getSettings().connections[0])).rejects.toMatchObject(removed)
@@ -1868,17 +1894,17 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
       ...f.settings,
       connections: [connection({ hubUrl: 'https://hub.test', token: 't', agents: '' })],
     })
-    await service.refresh()
+    await service.refresh({ connectionId: 'hub-account' })
     // UsageToolbar.pin(): getSettings, then saveSettings with the pin.
     service.saveSettings({ ...service.getSettings(), pin })
     expect(service.read().pin).toEqual(pin)
     expect(service.read().connections[0].subscription?.metrics).toHaveLength(2)
-    await service.refresh()
+    await service.refresh({ connectionId: 'hub-account' })
     expect(service.read().pin).toEqual(pin)
     const restarted = new UsageService({ ...f.deps, host, safeStorage })
     services.push(restarted)
     expect(restarted.read().pin).toEqual(pin)
-    await restarted.refresh()
+    await restarted.refresh({ connectionId: 'hub-account' })
     expect(restarted.read().pin).toEqual(pin)
   })
   it('pins an account saved under an older adapter manifest that declared other fields', async () => {
@@ -1889,7 +1915,7 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
       connections: [connection({ token: 't', hubUrl: 'https://hub.test', agent: 'agy' })],
     })
     const { service } = hub(f)
-    await service.refresh()
+    await service.refresh({ connectionId: 'hub-account' })
     service.saveSettings({ ...service.getSettings(), pin })
     expect(service.read().pin).toEqual(pin)
     expect(service.getSettings().connections[0].config).toEqual({ hubUrl: 'https://hub.test' })
@@ -1907,11 +1933,340 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
     expect(() =>
       service.saveSettings({ ...service.getSettings(), pin: { ...pin, metricId: 'claude-5h' } }),
     ).toThrow('reports no value for it')
-    await service.refresh()
+    await service.refresh({ connectionId: 'hub-account' })
     service.saveSettings({ ...service.getSettings(), pin })
     expect(() =>
       service.saveSettings({ ...service.getSettings(), pin: { ...pin, metricId: 'grok-weekly' } }),
     ).toThrow('reports no value for it')
     expect(service.read().pin).toEqual(pin)
+  })
+})
+
+describe('account and agent refresh (NEKODE-148)', () => {
+  /** A hub adapter that aggregates two agents and declares agent refresh support (spec A7). */
+  function agentHub(
+    f: ReturnType<typeof fixture>,
+    refreshOptions: string[] | null = ['providers'],
+  ) {
+    const directory = join(f.deps.userDataPath, 'usage-adapters', 'agents')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(
+      join(directory, 'usage-adapter.json'),
+      JSON.stringify({
+        id: 'agents',
+        name: 'Agents',
+        providerId: 'hub',
+        protocolVersion: 2,
+        invocation: { command: 'node', args: ['fixture.cjs'] },
+        sourceKind: 'api',
+        capabilities: ['window'],
+        minimumRefreshSeconds: 60,
+        configSchema: [],
+        ...(refreshOptions ? { refreshOptions } : {}),
+      }),
+    )
+    let now = NOW
+    const percent: Record<string, number> = { claude: 30, codex: 30 }
+    const metric = (agent: string) => ({
+      id: `${agent}-5h`,
+      label: `${agent} 5h`,
+      providerId: agent,
+      kind: 'window',
+      state: 'available',
+      observedAt: new Date(now).toISOString(),
+      usedPercent: percent[agent],
+      resetsAt: '2026-10-25T00:00:00Z',
+    })
+    const document = (agents: string[]) => ({
+      schemaVersion: 1,
+      subscriptions: [
+        {
+          id: 'hub-account',
+          providerId: 'hub',
+          label: 'Hub',
+          sourceKind: 'api',
+          status: 'available',
+          metrics: agents.map(metric),
+        },
+      ],
+    })
+    const host = new UsageAdapterHost()
+    const read = vi
+      .spyOn(host, 'read')
+      .mockImplementation(async (_adapter, _config, _id, _signal, _action, options = {}) =>
+        adapterResult(document(options.refreshProviders ?? ['claude', 'codex'])),
+      )
+    const service = new UsageService({ ...f.deps, host, now: () => now })
+    services.push(service)
+    service.saveSettings({
+      ...f.settings,
+      connections: [
+        {
+          id: 'hub-account',
+          label: 'PDH',
+          providerId: '',
+          adapterId: 'agents',
+          enabled: true,
+          config: {},
+        },
+      ],
+    })
+    return {
+      service,
+      read,
+      document,
+      percent,
+      advance: (ms: number) => {
+        now += ms
+      },
+      at: (ms: number) => new Date(NOW + ms).toISOString(),
+    }
+  }
+  const account = { connectionId: 'hub-account' }
+  const claude = { connectionId: 'hub-account', providerId: 'claude' }
+  const codex = { connectionId: 'hub-account', providerId: 'codex' }
+  const values = (service: UsageService) =>
+    Object.fromEntries(
+      (service.read().connections[0].subscription?.metrics ?? []).map((m) => [
+        m.id,
+        [m.usedPercent, m.observedAt],
+      ]),
+    )
+
+  it('refreshes one agent and keeps the other agent, its dates and the pin (A7, A11)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    await h.service.refresh(account)
+    expect(h.read.mock.calls[0][5]).toEqual({})
+    h.service.saveSettings({
+      ...h.service.getSettings(),
+      pin: { connectionId: 'hub-account', metricId: 'codex-5h' },
+    })
+    h.advance(60_000)
+    h.percent.claude = 50
+    h.percent.codex = 99
+    const result = await h.service.refresh(claude)
+    expect(h.read.mock.calls[1][4]).toBe('refresh')
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: ['claude'] })
+    expect(result.refresh).toEqual({ read: ['hub-account'], skipped: [] })
+    expect(values(h.service)).toEqual({
+      'claude-5h': [50, h.at(60_000)],
+      'codex-5h': [30, h.at(0)],
+    })
+    expect(h.service.read().pin).toEqual({ connectionId: 'hub-account', metricId: 'codex-5h' })
+    expect(h.service.read().connections[0].agents).toEqual([
+      { providerId: 'claude', nextRefreshAt: h.at(120_000) },
+      { providerId: 'codex', nextRefreshAt: null },
+    ])
+  })
+  it('keeps the 60-second limit per account and agent (A9)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    await h.service.refresh(account)
+    h.advance(59_999)
+    expect((await h.service.refresh(claude)).refresh?.skipped).toEqual([
+      { ...claude, until: h.at(60_000), reason: 'interval' },
+    ])
+    h.advance(1)
+    expect((await h.service.refresh(claude)).refresh?.read).toEqual(['hub-account'])
+    // Another agent of the same account reads 10 seconds later.
+    h.advance(10_000)
+    expect((await h.service.refresh(codex)).refresh?.read).toEqual(['hub-account'])
+    h.advance(10_000)
+    expect((await h.service.refresh(claude)).refresh?.skipped).toEqual([
+      { ...claude, until: h.at(120_000), reason: 'interval' },
+    ])
+    // Both agents are inside their limit: the account waits for the earliest one.
+    expect((await h.service.refresh(account)).refresh?.skipped).toEqual([
+      { ...account, until: h.at(120_000), reason: 'interval' },
+    ])
+    expect(h.service.read().connections[0].nextRefreshAt).toBe(h.at(120_000))
+    // Only claude's limit passed: the account refresh sends only claude.
+    h.advance(45_000)
+    expect((await h.service.refresh(account)).refresh?.read).toEqual(['hub-account'])
+    expect(h.read.mock.calls.at(-1)?.[5]).toEqual({ refreshProviders: ['claude'] })
+    expect(h.read).toHaveBeenCalledTimes(4)
+  })
+  it('keeps the per-account limit for an adapter without agent refresh support', async () => {
+    const f = fixture()
+    const h = agentHub(f, null)
+    await h.service.refresh(account)
+    expect(h.service.read().connections[0].agents).toBeNull()
+    await expect(h.service.refresh(claude)).rejects.toMatchObject({ code: 'validation_error' })
+    h.advance(30_000)
+    expect((await h.service.refresh(account)).refresh?.skipped).toEqual([
+      { ...account, until: h.at(60_000), reason: 'interval' },
+    ])
+    h.advance(30_000)
+    await h.service.refresh(account)
+    expect(h.read.mock.calls.map((call) => call[5])).toEqual([{}, {}])
+  })
+  it('rejects unknown and disabled targets before collection (A6)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    await expect(h.service.refresh(claude)).rejects.toMatchObject({ code: 'not_found' })
+    await h.service.refresh(account)
+    await expect(
+      h.service.refresh({ connectionId: 'hub-account', providerId: 'grok' }),
+    ).rejects.toMatchObject({ code: 'not_found' })
+    await expect(h.service.refresh({ connectionId: 'missing' })).rejects.toMatchObject({
+      code: 'not_found',
+    })
+    const settings = h.service.getSettings()
+    settings.connections[0].enabled = false
+    h.service.saveSettings(settings)
+    await expect(h.service.refresh(account)).rejects.toMatchObject({ code: 'not_found' })
+    expect(h.read).toHaveBeenCalledTimes(1)
+  })
+  it('fails a response with metrics outside the selection and keeps the values (A8)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    await h.service.refresh(account)
+    h.advance(60_000)
+    h.percent.claude = 70
+    h.percent.codex = 70
+    h.read.mockImplementationOnce(async () => adapterResult(h.document(['claude', 'codex'])))
+    await h.service.refresh(claude)
+    expect(h.service.read().connections[0].error).toMatchObject({
+      code: 'protocol',
+      message: 'Usage adapter returned metrics outside the selected agents.',
+    })
+    expect(values(h.service)).toEqual({
+      'claude-5h': [30, h.at(0)],
+      'codex-5h': [30, h.at(0)],
+    })
+  })
+  it('joins a refresh that covers the agent and waits for one that does not (A10)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    await h.service.refresh(account)
+    h.advance(60_000)
+    let release: () => void = () => {}
+    h.read.mockImplementationOnce(async (_a, _c, _i, _s, _action, options = {}) => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return adapterResult(h.document(options.refreshProviders ?? []))
+    })
+    const first = h.service.refresh(claude)
+    const joined = h.service.refresh(claude)
+    const other = h.service.refresh(codex)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(h.read).toHaveBeenCalledTimes(2)
+    release()
+    expect((await first).refresh?.read).toEqual(['hub-account'])
+    expect((await joined).refresh?.read).toEqual(['hub-account'])
+    expect((await other).refresh?.read).toEqual(['hub-account'])
+    expect(h.read).toHaveBeenCalledTimes(3)
+    expect(h.read.mock.calls[2][5]).toEqual({ refreshProviders: ['codex'] })
+  })
+  it('skips an agent whose sources wait for a provider deadline (A9 backoff)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    h.read.mockImplementationOnce(async () =>
+      adapterResult(
+        h.document(['claude', 'codex']),
+        refreshResult([
+          refreshSource(
+            'hub-claude',
+            'rate_limited',
+            [refreshWindow('claude-5h', 'rate_limited')],
+            {
+              nextAllowedAt: h.at(600_000),
+            },
+          ),
+          refreshSource('hub-codex', 'succeeded', [refreshWindow('codex-5h')]),
+        ]),
+      ),
+    )
+    await h.service.refresh(account)
+    h.advance(60_000)
+    expect((await h.service.refresh(claude)).refresh?.skipped).toEqual([
+      { ...claude, until: h.at(600_000), reason: 'backoff' },
+    ])
+    expect((await h.service.refresh(codex)).refresh?.read).toEqual(['hub-account'])
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: ['codex'] })
+  })
+  it('uses the earliest combined agent interval and source deadline for an account (A9)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    await h.service.refresh(account)
+    h.advance(60_000)
+    h.read.mockImplementationOnce(async () =>
+      adapterResult(
+        h.document([]),
+        refreshResult(
+          [
+            refreshSource(
+              'hub-codex',
+              'rate_limited',
+              [refreshWindow('codex-5h', 'rate_limited')],
+              {
+                nextAllowedAt: h.at(600_000),
+              },
+            ),
+          ],
+          { status: 'failed' },
+        ),
+      ),
+    )
+    await h.service.refresh(codex)
+    h.advance(10_000)
+    h.read.mockImplementationOnce(async () =>
+      adapterResult(
+        h.document(['claude']),
+        refreshResult([refreshSource('hub-claude', 'succeeded', [refreshWindow('claude-5h')])], {
+          status: 'success',
+        }),
+      ),
+    )
+    await h.service.refresh(claude)
+    h.advance(10_000)
+    expect(h.service.read().connections[0].nextRefreshAt).toBe(h.at(130_000))
+    expect((await h.service.refresh(account)).refresh?.skipped).toEqual([
+      { ...account, until: h.at(130_000), reason: 'interval' },
+    ])
+    // Codex's interval passes first, but its provider remains blocked longer than Claude.
+    h.advance(40_000)
+    expect(h.service.read().connections[0].nextRefreshAt).toBe(h.at(130_000))
+    expect((await h.service.refresh(account)).refresh?.skipped).toEqual([
+      { ...account, until: h.at(130_000), reason: 'interval' },
+    ])
+    expect(h.read).toHaveBeenCalledTimes(3)
+    h.advance(10_000)
+    expect((await h.service.refresh(account)).refresh?.read).toEqual(['hub-account'])
+    expect(h.read.mock.calls[3][5]).toEqual({ refreshSources: ['hub-claude'] })
+  })
+  it('returns the current attempt separately from retained results of other agents (A5)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    await h.service.refresh(account)
+    h.advance(60_000)
+    const failed = refreshResult([refreshSource('hub-claude', 'failed', [])], { status: 'failed' })
+    let release: () => void = () => {}
+    h.read.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return adapterResult(h.document([]), failed)
+    })
+    const first = h.service.refresh(claude),
+      joined = h.service.refresh(claude)
+    release()
+    expect((await first).refresh?.result).toEqual(failed)
+    expect((await joined).refresh?.result).toEqual(failed)
+    const succeeded = refreshResult(
+      [refreshSource('hub-codex', 'succeeded', [refreshWindow('codex-5h')])],
+      { status: 'success', requestId: 'request-2' },
+    )
+    h.read.mockImplementationOnce(async () => adapterResult(h.document(['codex']), succeeded))
+    const result = await h.service.refresh(codex)
+    expect(result.refresh?.result).toEqual(succeeded)
+    expect(result.connections[0].refreshResult?.sources).toEqual([
+      ...failed.sources,
+      ...succeeded.sources,
+    ])
+    expect(h.service.read().refresh).toBeUndefined()
+    expect(h.read).toHaveBeenCalledTimes(3)
   })
 })

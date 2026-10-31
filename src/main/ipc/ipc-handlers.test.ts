@@ -316,7 +316,7 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
 describe('usage IPC authorization', () => {
   it.each([
     ['read', IPC_CHANNEL.usageRead, []],
-    ['refresh', IPC_CHANNEL.usageRefresh, []],
+    ['refresh', IPC_CHANNEL.usageRefresh, [{ connectionId: 'account' }]],
     ['getSettings', IPC_CHANNEL.usageGetSettings, []],
     ['listAdapters', IPC_CHANNEL.usageListAdapters, []],
     ['pickFile', IPC_CHANNEL.usagePickFile, [false]],

@@ -28,6 +28,7 @@ import {
   type UsageFailure,
   type UsageMetric,
   type UsagePin,
+  type UsageRefreshRequest,
   type UsageRefreshResult,
   type UsageRefreshSkip,
   type UsageRefreshSourceResult,
@@ -69,15 +70,26 @@ interface Runtime {
    * Scheduled reads never set it, so they never block a manual refresh.
    */
   manualStartedAt: number
+  /**
+   * Start of the last manual refresh per agent (spec A9). An agent waits 60 s after the later of
+   * its own start and `manualStartedAt`.
+   */
+  agentManualStartedAt: Map<string, number>
   /** Provider retry deadline of a `rate_limited` failure; a manual refresh honours it (L5). */
   retryUntil: number
   failures: number
   suspended: boolean
   controller?: AbortController
-  flight?: Promise<void>
+  flight?: Promise<UsageRefreshResult | undefined>
   /** Action of the read in flight; a manual refresh joins only a `refresh`. */
   flightAction?: UsageAdapterAction
+  /** Agents of the manual refresh in flight; null when it covers the whole account (A10). */
+  flightProviders?: string[] | null
 }
+/** What one manual refresh reads (spec A9), or why it cannot start yet. */
+type ManualPlan =
+  | { skip: { until: number; reason: UsageRefreshSkip['reason'] } }
+  | { providers: string[] | null; sources: string[] | undefined }
 export interface UsageServiceDeps {
   state: Storage
   userDataPath: string
@@ -98,6 +110,9 @@ const MANUAL_REFRESH_MS = 60_000
 const removedSource = (c: Pick<UsageConnection, 'adapterId'>) =>
   USAGE_REMOVED_ADAPTER_IDS.includes(c.adapterId)
 const REMOVED_SOURCE: UsageFailure = { code: 'config', message: USAGE_REMOVED_ADAPTER_MESSAGE }
+/** The agent of a metric (spec A2): its own provider id, else the account's. */
+const agentOf = (metric: UsageMetric, c: Pick<UsageConnection, 'providerId'>) =>
+  metric.providerId ?? c.providerId
 const empty = (): UsageSettings => ({
   connections: [],
   pin: null,
@@ -210,16 +225,15 @@ function windowLabel(metricId: string): string {
 function mergePartialMetrics(
   previous: UsageSubscription | null,
   next: UsageSubscription,
-  refresh: UsageRefreshResult,
+  windows: UsageRefreshWindowResult[],
   receivedAt: string,
-  keepMissing: boolean,
+  keepMissing: (metric: UsageMetric) => boolean,
 ): UsageMetric[] {
   const incoming = new Map(next.metrics.map((metric) => [metric.id, metric]))
   const previousById = new Map((previous?.metrics ?? []).map((metric) => [metric.id, metric]))
   const failed = new Map<string, UsageRefreshWindowResult>()
-  for (const source of refresh.sources)
-    for (const window of source.windows)
-      if (window.status !== 'succeeded') failed.set(window.metricId, window)
+  for (const window of windows)
+    if (window.status !== 'succeeded') failed.set(window.metricId, window)
   const metrics: UsageMetric[] = []
   for (const old of previous?.metrics ?? []) {
     const updated = incoming.get(old.id)
@@ -228,8 +242,9 @@ function mergePartialMetrics(
       incoming.delete(old.id)
     } else {
       // A failed window keeps every previous date. A source not attempted this time (subset
-      // refresh) also keeps its values; a full refresh drops metrics the operation did not report.
-      if (keepMissing || failed.has(old.id)) metrics.push(old)
+      // refresh) or an agent not selected (A11) also keeps its values; a full refresh drops
+      // metrics the operation did not report.
+      if (keepMissing(old) || failed.has(old.id)) metrics.push(old)
     }
   }
   for (const [metricId, window] of failed) {
@@ -289,7 +304,7 @@ export class UsageService {
       try {
         this.connectionRevisions = connectionRevisions(JSON.parse(savedRevisions))
       } catch {
-        this.cacheError = 'Cannot load usage cache identity. Refresh usage to restore it.'
+        this.cacheError = 'Cannot load usage cache identity. Refresh the account to restore it.'
       }
     }
     if (existsSync(this.cachePath)) {
@@ -307,7 +322,7 @@ export class UsageService {
           if (sub) this.runtimeFor(c.id).subscription = { ...sub, label: c.label }
         }
       } catch {
-        this.cacheError = 'Cannot load usage cache. Refresh usage to restore it.'
+        this.cacheError = 'Cannot load usage cache. Refresh the account to restore it.'
       }
     }
     this.loadRefreshResults()
@@ -325,6 +340,7 @@ export class UsageService {
       refreshResult: null,
       due: 0,
       manualStartedAt: 0,
+      agentManualStartedAt: new Map(),
       retryUntil: 0,
       failures: 0,
       suspended: false,
@@ -632,8 +648,11 @@ export class UsageService {
       // save aborts never completed, so only its provider retry deadline remains.
       if (changed && kept && !invalidated.has(c.id)) {
         r.retryUntil = kept.retryUntil
-        r.manualStartedAt =
-          kept.flight && kept.flightAction === 'refresh' ? 0 : kept.manualStartedAt
+        const aborted = kept.flight !== undefined && kept.flightAction === 'refresh'
+        r.manualStartedAt = aborted && kept.flightProviders === null ? 0 : kept.manualStartedAt
+        r.agentManualStartedAt = new Map(kept.agentManualStartedAt)
+        if (aborted)
+          for (const agent of kept.flightProviders ?? []) r.agentManualStartedAt.delete(agent)
         r.due = kept.flight ? kept.retryUntil : Math.max(kept.due, kept.retryUntil)
       }
       if (r.subscription && r.subscription.label !== c.label)
@@ -647,18 +666,32 @@ export class UsageService {
     return this.getSettings()
   }
   read(): UsageSnapshot {
+    let adapters: UsageAdapter[] = []
+    try {
+      adapters = this.discover()
+    } catch {
+      /* Collection reports an unreadable adapters directory on the account. */
+    }
+    const at = (plan: ManualPlan) =>
+      'skip' in plan ? new Date(plan.skip.until).toISOString() : null
     const connections: UsageConnectionSnapshot[] = this.settings.connections
       .filter((c) => c.enabled)
       .map((c) => {
         const { config: _config, ...connection } = c
         const r = this.runtimeFor(c.id)
-        const until = removedSource(c) ? 0 : this.manualDeadline(r).until
+        const supported = this.agentSupport(c, adapters)
         return {
           connection,
           subscription: r.subscription,
           error: this.failure(c, r),
           refreshing: r.refreshing,
-          nextRefreshAt: this.now() < until ? new Date(until).toISOString() : null,
+          nextRefreshAt: removedSource(c) ? null : at(this.manualPlan(c, r, supported)),
+          agents: supported
+            ? this.agentsOf(c, r).map((providerId) => ({
+                providerId,
+                nextRefreshAt: at(this.manualPlan(c, r, supported, providerId)),
+              }))
+            : null,
           refreshResult: r.refreshResult,
         }
       })
@@ -677,20 +710,58 @@ export class UsageService {
     if (this.visible && !this.stopped && this.enabled)
       for (const c of this.settings.connections) if (c.enabled) void this.collect(c, false)
   }
-  async refresh(): Promise<UsageSnapshot> {
+  /** Spec A6: a manual refresh of one account, or of one agent of an account with support. */
+  async refresh(request: UsageRefreshRequest): Promise<UsageSnapshot> {
     const refresh: NonNullable<UsageSnapshot['refresh']> = { read: [], skipped: [] }
+    const c = this.settings.connections.find((p) => p.id === request.connectionId && p.enabled)
+    if (!c) throw new AppError('not_found', 'Usage source is not configured or is disabled.')
+    const r = this.runtimeFor(c.id)
+    const { providerId } = request
+    if (providerId !== undefined) {
+      if (!this.agentSupport(c))
+        throw new AppError('validation_error', 'This usage source cannot refresh one agent.')
+      if (!this.agentsOf(c, r).includes(providerId))
+        throw new AppError('not_found', 'This usage source reports no such agent.')
+    }
     if (this.enabled) {
-      const connections = this.settings.connections.filter((c) => c.enabled)
-      const runtimes = connections.map((c) => this.runtimeFor(c.id))
-      const results = await Promise.all(connections.map((c) => this.collect(c, true)))
-      results.forEach((result, index) => {
-        // A removed/reconfigured source cannot contribute an obsolete manual outcome.
-        if (!this.enabled || this.runtime.get(connections[index].id) !== runtimes[index]) return
-        if (result === 'read') refresh.read.push(connections[index].id)
-        else if (result) refresh.skipped.push(result)
-      })
+      const result = await this.collect(c, true, providerId)
+      // A removed/reconfigured source cannot contribute an obsolete manual outcome.
+      if (this.enabled && this.runtime.get(c.id) === r) {
+        if (result && 'read' in result) {
+          refresh.read.push(c.id)
+          if (result.result) refresh.result = result.result
+        } else if (result) refresh.skipped.push(result)
+      }
     }
     return { ...this.read(), refresh }
+  }
+  /** Spec A7: the adapter declares `refreshOptions: ["providers"]`. */
+  private agentSupport(c: UsageConnection, adapters?: UsageAdapter[]): boolean {
+    if (removedSource(c)) return false
+    let a: UsageAdapter
+    try {
+      if (adapters) {
+        const matches = adapters.filter((p) => p.id === c.adapterId)
+        if (matches.length !== 1 || matches[0].error) return false
+        a = matches[0]
+      } else a = this.adapter(c)
+    } catch {
+      /* Collection reports an unavailable adapter on the account. */
+      return false
+    }
+    return a.refreshOptions?.includes('providers') === true
+  }
+  /** Agents of the retained metrics, in the order they first appear (spec A2). */
+  private agentsOf(c: UsageConnection, r: Runtime): string[] {
+    const agents: string[] = []
+    for (const metric of r.subscription?.metrics ?? []) {
+      const agent = agentOf(metric, c)
+      if (!agents.includes(agent)) agents.push(agent)
+    }
+    return agents
+  }
+  private agentDeadline(r: Runtime, agent: string): number {
+    return Math.max(r.manualStartedAt, r.agentManualStartedAt.get(agent) ?? 0) + MANUAL_REFRESH_MS
   }
   private readJson(path: string): unknown {
     if (statSync(path).size > USAGE_MAX_BYTES)
@@ -733,23 +804,65 @@ export class UsageService {
   private failure(c: UsageConnection, r: Runtime): UsageFailure | null {
     return removedSource(c) ? { ...REMOVED_SOURCE } : (r.error ?? r.refreshError)
   }
-  /** All sources blocked by their provider retry deadline: the earliest one, else null. */
-  private sourceBlockedUntil(r: Runtime): number | null {
-    const sources = r.refreshResult?.sources ?? []
-    if (sources.length === 0 || sources.some((source) => !source.nextAllowedAt)) return null
-    const deadlines = sources.map((source) => Date.parse(source.nextAllowedAt as string))
-    if (deadlines.some((deadline) => !Number.isFinite(deadline))) return null
-    if (deadlines.some((deadline) => deadline <= this.now())) return null
-    return Math.min(...deadlines)
-  }
-  /** Spec L5: earliest manual refresh start, and whether a provider retry deadline sets it. */
-  private manualDeadline(r: Runtime): { until: number; reason: UsageRefreshSkip['reason'] } {
-    const interval = r.manualStartedAt + MANUAL_REFRESH_MS
-    const sourceUntil = this.sourceBlockedUntil(r) ?? 0
+  /**
+   * Spec L5, A9 and the partial contract: what a manual refresh of the account, or of one agent,
+   * reads now, or the deadline and reason that skip it.
+   */
+  private manualPlan(
+    c: UsageConnection,
+    r: Runtime,
+    supported: boolean,
+    providerId?: string,
+  ): ManualPlan {
+    const now = this.now()
+    const agents = supported ? this.agentsOf(c, r) : []
+    if (providerId === undefined && agents.length > 0) {
+      // A9: compare each agent's combined interval and provider deadline. The first interval
+      // alone may belong to an agent still in backoff, while another agent can read sooner.
+      const plans = agents.map((agent) => this.manualPlan(c, r, supported, agent))
+      if (plans.every((plan) => 'skip' in plan))
+        return plans.reduce((earliest, plan) =>
+          plan.skip.until < earliest.skip.until ? plan : earliest,
+        )
+    }
+    let providers: string[] | null = null
+    let interval: number
+    if (providerId !== undefined) {
+      providers = [providerId]
+      interval = this.agentDeadline(r, providerId)
+    } else if (agents.length > 0) {
+      const ready = agents.filter((agent) => this.agentDeadline(r, agent) <= now)
+      interval = ready.length ? 0 : Math.min(...agents.map((a) => this.agentDeadline(r, a)))
+      if (ready.length > 0 && ready.length < agents.length) providers = ready
+    } else interval = r.manualStartedAt + MANUAL_REFRESH_MS
+    // Retry is per source; an agent selection counts only the sources holding its metrics.
+    const selected = providers
+    const agentByMetric = new Map((r.subscription?.metrics ?? []).map((m) => [m.id, agentOf(m, c)]))
+    const sources = (r.refreshResult?.sources ?? []).filter(
+      (source) =>
+        !selected ||
+        source.windows.some((w) => selected.includes(agentByMetric.get(w.metricId) ?? '')),
+    )
+    const blockedUntil = (source: UsageRefreshSourceResult) => {
+      const until = source.nextAllowedAt ? Date.parse(source.nextAllowedAt) : Number.NaN
+      return Number.isFinite(until) && until > now ? until : 0
+    }
+    const eligible = sources.filter((source) => blockedUntil(source) === 0)
+    const sourceUntil =
+      sources.length > 0 && eligible.length === 0 ? Math.min(...sources.map(blockedUntil)) : 0
     const provider = Math.max(r.retryUntil, sourceUntil)
-    return provider >= interval && provider > 0
-      ? { until: provider, reason: 'backoff' }
-      : { until: interval, reason: 'interval' }
+    if (now < Math.max(interval, provider))
+      return {
+        skip:
+          provider >= interval && provider > 0
+            ? { until: provider, reason: 'backoff' }
+            : { until: interval, reason: 'interval' },
+      }
+    return {
+      providers,
+      sources:
+        eligible.length === sources.length ? undefined : eligible.map((source) => source.sourceId),
+    }
   }
   /**
    * One adapter read. `refresh` (manual) responses must be live (spec L3): every available metric
@@ -761,20 +874,25 @@ export class UsageService {
     action: UsageAdapterAction,
     startedAt: number,
     refreshSources?: string[],
+    refreshProviders?: string[],
   ): Promise<{ subscription: UsageSubscription; refresh: UsageRefreshResult | null }> {
     if (removedSource(c)) throw new AppError('config', USAGE_REMOVED_ADAPTER_MESSAGE)
     const a = this.adapter(c),
       config = this.secrets(c, a)
-    const result = await this.host.read(
-      a,
-      config,
-      c.id,
-      signal,
-      action,
-      refreshSources === undefined ? {} : { refreshSources },
-    )
+    const result = await this.host.read(a, config, c.id, signal, action, {
+      ...(refreshSources === undefined ? {} : { refreshSources }),
+      ...(refreshProviders === undefined ? {} : { refreshProviders }),
+    })
     const document = result
     if (action === 'refresh') assertLiveRefresh(document, startedAt)
+    // Spec A8: an agent refresh may return only metrics of the selected agents.
+    if (
+      refreshProviders &&
+      document.subscriptions.some((sub) =>
+        sub.metrics.some((m) => !refreshProviders.includes(agentOf(m, c))),
+      )
+    )
+      throw new AppError('protocol', 'Usage adapter returned metrics outside the selected agents.')
     // Spec rule 23: the provider id must match only when the service declares one.
     if (
       document.subscriptions.length !== 1 ||
@@ -812,56 +930,44 @@ export class UsageService {
   private async collect(
     c: UsageConnection,
     explicit: boolean,
-  ): Promise<'read' | UsageRefreshSkip | null> {
+    providerId?: string,
+  ): Promise<{ read: true; result: UsageRefreshResult | undefined } | UsageRefreshSkip | null> {
     const r = this.runtimeFor(c.id)
-    // Spec L5: a manual refresh joins a refresh in flight. A scheduled read in flight only reads
-    // stored data, so a manual refresh waits for it and then starts its own refresh.
+    // Spec L5 and A10: a manual refresh joins a refresh in flight that covers its selection. A
+    // scheduled read, or a refresh of other agents, in flight makes it wait and then start its own.
     while (r.flight) {
-      if (!explicit || r.flightAction === 'refresh') {
-        await r.flight
-        return 'read'
+      const covers =
+        r.flightAction === 'refresh' &&
+        (r.flightProviders === null ||
+          (providerId !== undefined && r.flightProviders?.includes(providerId) === true))
+      if (!explicit || covers) {
+        return { read: true, result: await r.flight }
       }
-      const scheduled = r.flight
-      await scheduled
+      const running = r.flight
+      await running
       // An obsolete runtime or a flight not cleared (shutdown) ends the wait without a read.
-      if (this.stopped || this.runtime.get(c.id) !== r || r.flight === scheduled) return null
+      if (this.stopped || this.runtime.get(c.id) !== r || r.flight === running) return null
     }
     // Spec L7: an account of a removed source is never collected.
     if (this.stopped || removedSource(c)) return null
+    // Spec L5, A9 and the partial contract: a manual refresh honours only the 60-second limits and
+    // provider retry deadlines; it ignores the adapter minimum interval, growing backoff and
+    // suspension. Retry is per source, so blocked sources keep their typed result.
+    let refreshSources: string[] | undefined
+    let refreshProviders: string[] | null = null
     if (explicit) {
-      // Spec L5: a manual refresh honours only the 60-second limit and a provider retry deadline;
-      // it ignores the adapter minimum interval, growing backoff and suspension.
-      const deadline = this.manualDeadline(r)
-      if (this.now() < deadline.until)
+      const plan = this.manualPlan(c, r, this.agentSupport(c), providerId)
+      if ('skip' in plan)
         return {
           connectionId: c.id,
-          until: new Date(deadline.until).toISOString(),
-          reason: deadline.reason,
+          ...(providerId === undefined ? {} : { providerId }),
+          until: new Date(plan.skip.until).toISOString(),
+          reason: plan.skip.reason,
         }
+      refreshSources = plan.sources
+      refreshProviders = plan.providers
     } else if (r.suspended || this.now() < r.due) return null
-    // Spec partial contract: retry is per source. Sources whose provider deadline passed are
-    // refreshed now; the remaining sources keep their typed result instead of blocking the rest.
-    let refreshSources: string[] | undefined
-    if (explicit) {
-      const sources = r.refreshResult?.sources ?? []
-      if (sources.length > 0) {
-        const eligible = sources.filter(
-          (source) => !source.nextAllowedAt || Date.parse(source.nextAllowedAt) <= this.now(),
-        )
-        if (eligible.length === 0) {
-          const until = Math.min(
-            ...sources.map((source) => Date.parse(source.nextAllowedAt as string)),
-          )
-          return {
-            connectionId: c.id,
-            until: new Date(until).toISOString(),
-            reason: 'backoff',
-          }
-        }
-        if (eligible.length !== sources.length)
-          refreshSources = eligible.map((source) => source.sourceId)
-      }
-    }
+    const selection = refreshProviders
     const revision = this.revision,
       controller = new AbortController(),
       startedAt = this.now()
@@ -874,9 +980,11 @@ export class UsageService {
     } catch {
       /* Collection reports the actionable configuration failure. */
     }
-    if (explicit) r.manualStartedAt = startedAt
+    if (explicit && selection === null) r.manualStartedAt = startedAt
+    for (const agent of selection ?? []) r.agentManualStartedAt.set(agent, startedAt)
     r.due = startedAt + minimum
     r.flightAction = explicit ? 'refresh' : 'read'
+    r.flightProviders = explicit ? selection : undefined
     r.flight = (async () => {
       try {
         const loaded = await this.load(
@@ -885,6 +993,7 @@ export class UsageService {
           explicit ? 'refresh' : 'read',
           startedAt,
           refreshSources,
+          selection ?? undefined,
         )
         if (
           controller.signal.aborted ||
@@ -899,13 +1008,17 @@ export class UsageService {
         const now = this.now()
         const receivedAt = new Date(now).toISOString()
         const refresh = explicit ? loaded.refresh : null
-        if (refresh) {
+        // Spec A11: metrics of agents outside the selection keep their values and dates.
+        const keepMissing = (metric: UsageMetric) =>
+          refreshSources !== undefined ||
+          (selection !== null && !selection.includes(agentOf(metric, c)))
+        if (refresh || selection) {
           sub.metrics = mergePartialMetrics(
             r.subscription,
             sub,
-            refresh,
+            refresh?.sources.flatMap((source) => source.windows) ?? [],
             receivedAt,
-            refreshSources !== undefined,
+            keepMissing,
           )
           sub.status = sub.metrics.some((metric) => metric.state !== 'unavailable')
             ? 'available'
@@ -922,7 +1035,11 @@ export class UsageService {
         r.subscription = sub
         if (explicit)
           r.refreshResult = refresh
-            ? mergeRefreshResult(r.refreshResult, refresh, refreshSources !== undefined)
+            ? mergeRefreshResult(
+                r.refreshResult,
+                refresh,
+                refreshSources !== undefined || selection !== null,
+              )
             : null
         if (
           this.settings.pin?.connectionId === c.id &&
@@ -944,6 +1061,7 @@ export class UsageService {
         r.suspended = false
         this.persistCache()
         this.exportDocument()
+        return refresh ?? undefined
       } catch (error) {
         if (
           controller.signal.aborted ||
@@ -983,12 +1101,12 @@ export class UsageService {
           r.refreshing = false
           r.flight = undefined
           r.flightAction = undefined
+          r.flightProviders = undefined
           r.controller = undefined
         }
       }
     })()
-    await r.flight
-    return 'read'
+    return { read: true, result: await r.flight }
   }
   private document(): UsageDocument {
     return {
@@ -1054,7 +1172,7 @@ export class UsageService {
         r.refreshResult = parseUsageRefreshResult(value, undefined, this.now())
       }
     } catch {
-      this.cacheError = 'Cannot load usage refresh results. Refresh usage to restore them.'
+      this.cacheError = 'Cannot load usage refresh results. Refresh the account to restore them.'
     }
   }
   /**

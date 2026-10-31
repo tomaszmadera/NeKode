@@ -2,6 +2,7 @@
 
 Status: Delivered (Stages 1-3 implemented, reviewed and fully verified; live provider reads not run). Amendment "accounts settings flow" (task `usage-accounts-ux`, rules 21-28) approved by the user on 2026-10-22; implemented, in review.
 Path: `docs/features/usage-quota/spec.md`.
+Amendment "account and agent refresh" (NEKODE-148): approved by the user on 2026-10-31, see the last section.
 
 NEKODE-116 amendment (approved by the user on 2026-10-24): rules 21-28, acceptance criteria 15 and 18, and their verification text below use Sources and Adapters. For settings terminology these changes supersede the earlier accounts settings wording, including rules 1-3 and the L7 message; the live refresh amendment still owns collection and discovery. No removed reader is restored.
 
@@ -351,3 +352,162 @@ minimum, a deadline above one day, restart persistence, L3, and accessible UI st
 end-to-end proof runs a real adapter process against the test Personal Data Hub and a controlled
 collector, then an isolated Windows Electron profile. A real provider source remains separate
 evidence and requires the separately delivered host collector.
+
+## Amendment: account and agent refresh (NEKODE-148)
+
+Status: approved by the user on 2026-10-31 for task `nekode-148-usage-account-agent-refresh`. User decisions in chat on
+2026-10-31: the panel groups metrics by account and agent, each group has its own refresh button,
+and the global `Refresh usage` button is removed; the 60-second manual limit applies per account and
+agent; agent selection uses the manifest field `refreshOptions: ["providers"]` and the request
+parameter `params.refreshProviders`. This amendment changes rule 5 (header button), rule 6
+(grouping), NEKODE-121 items 4-5 (one global button), L5 (the per-account 60-second limit) and the
+`refresh()` IPC method. Every other rule, including the partial refresh contract (PDH-13) and the
+NEKODE-147 failure rule in rule 13, stays.
+
+Goal: the user refreshes one account, or one agent inside an account that aggregates several agents,
+without asking every other account or agent for a new measurement.
+
+Affected: users of the Usage panel; adapter authors (an optional manifest field and request
+parameter); the Personal Data Hub `nekode-usage` adapter, which implements the parameter in PDH-18.
+
+### Terms
+
+- Account: one configured source (`UsageConnection`), the level-1 group.
+- Agent: the effective provider of a metric, `metric.providerId ?? connection.providerId`. An account
+  aggregates agents when at least one of its retained metrics declares `providerId`.
+- Agent refresh support: the account's adapter manifest declares `refreshOptions: ["providers"]`.
+
+### Panel
+
+A1. The header keeps `Usage`, the source/refreshing summary and `Close usage panel`; it has no
+`Refresh usage` button.
+
+A2. Each account is a level-1 group headed by its label and a button with
+`aria-label="Refresh <account label>"`. In an account that aggregates agents, rows are grouped by
+agent in the order the agent first appears in the retained metrics; each level-2 group is headed by
+the agent name (the provider id with its first letter in upper case, for example `Claude`). Other
+accounts show their rows directly under the account heading, as today. Rows, pin behaviour, row
+accessible names, refresh detail lines and the account error keep rules 6, 9 and the partial
+refresh UI contract.
+
+A3. A level-2 group has a button with `aria-label="Refresh <agent name> in <account label>"` only
+when the account has agent refresh support. Without it the agent headings have no button and the
+account button refreshes the whole account. Agents are known only from retained metrics, so an
+account with no metrics yet shows only its account button.
+
+A4. Each refresh button has a tooltip and accessible description with that group's state:
+refreshing, `can refresh again in N s` from its absolute deadline (A9), or ready. A button is
+disabled only while a refresh that covers its group is pending or in flight (an account refresh
+covers all its agents); it is not disabled during the 60-second limit or a provider deadline. Other
+groups' buttons stay enabled while one group refreshes. Rows and focus stay in place.
+
+A5. The `role="status"` message reports the last manual request (NEKODE-121 item 4) and names its
+target: the account label, or the agent name and account label. Pending text is
+`Refreshing <target>...`. A skipped request names the target, the reason (`60-second limit` or
+`provider backoff`) and the remaining time. Ordinary snapshot polling does not erase it; a new click
+replaces it.
+
+### IPC
+
+A6. `usage:refresh` takes one required argument `{connectionId: string, providerId?: string}` and
+returns the `UsageSnapshot` with its `refresh: {read, skipped}` metadata, as before. Main validates
+the argument before collection: an object with only these keys, `connectionId` bounded like a stored
+connection id (1 to 256 characters, no NUL), `providerId` in the provider id format. A missing, removed or disabled connection fails as
+`not_found`; a `providerId` for an account without agent refresh support fails as
+`validation_error`; a `providerId` that is not an agent of the account's retained metrics fails as
+`not_found`. The no-argument form is removed; only the panel called it. `skipped` entries may carry
+the requested `providerId`. When the operation returns a typed partial-refresh result, the response
+also includes `refresh.result` with that operation's result before merging earlier source outcomes.
+The status message uses this result, including source failures without windows; retained outcomes
+from other operations stay in `UsageConnectionSnapshot.refreshResult` for per-source detail.
+
+### Protocol
+
+A7. A manifest may declare `refreshOptions`, an array of unique strings whose only allowed value is
+`providers`. Any other value or shape makes the manifest invalid, like an unknown capability. When
+the option is declared and the request selects agents (A9), the host sends
+`params.refreshProviders: string[]` (1 to 20 unique provider ids) with `action: "refresh"` only,
+next to `capabilities` and an optional `refreshSources`. The adapter refreshes only metrics of those
+agents; with `refreshSources` it applies both filters (intersection). An agent the adapter cannot
+refresh fails the whole request with a typed `config` error before remote work starts. Scheduled
+`read` requests and adapters without the option never receive the parameter.
+
+A8. A response to a request with `refreshProviders` must contain only metrics whose agent is in the
+selection; otherwise the read fails as `protocol` with "Usage adapter returned metrics outside the
+selected agents." and keeps the previous observations. The L3 live check and the partial refresh
+parser apply unchanged.
+
+### Limits and merge
+
+A9. The 60-second manual limit is kept per account and per agent, in memory, measured from the start
+of the manual refresh. An agent refresh starts only that agent's limit. An account refresh starts the
+account limit and the limit of every agent it requested. For an account with agent refresh support:
+
+- an agent may refresh when 60 seconds have passed since the later of its own last manual start and
+  its account's last manual start;
+- an account refresh selects the agents of its retained metrics whose limit passed. When all may
+  refresh, or the account has no known agents, it sends no `refreshProviders`; when only some may,
+  it sends those in `refreshProviders`; when none may, it is skipped with reason `interval` until the
+  earliest agent deadline.
+
+An account without agent refresh support keeps the L5 per-account limit. The account provider retry
+deadline (`retryAfterSeconds`) and per-source `nextAllowedAt` deadlines still apply; for an agent
+refresh only sources whose windows hold that agent's metrics count, and when all of them are blocked
+the request is skipped with reason `backoff`. `UsageConnectionSnapshot.nextRefreshAt` is the
+earliest time an account refresh can start any read. A new field
+`UsageConnectionSnapshot.agents: {providerId: string, nextRefreshAt: string | null}[] | null` lists
+each known agent's earliest manual start, and is `null` without agent refresh support. L5 rules on
+saves, renames, re-enabling and scheduled reads apply to agent limits as they do to the account
+limit.
+
+A10. Single-flight stays per account. A manual request joins a refresh in flight that covers its
+selection (a full account refresh covers every agent; an agent refresh covers that agent). Otherwise
+it waits for the flight to finish, then applies A9 and starts its own refresh. A scheduled read in
+flight is handled as in L5.
+
+A11. A refresh with `refreshProviders` changes only metrics of the selected agents. Metrics of other
+agents keep their values, dates and pin unchanged. Metrics of selected agents follow the existing
+merge rules: a reported metric is accepted under rule 14 and L3, a failed window keeps its previous
+value, and a metric the operation did not report is dropped only when the request had no
+`refreshSources` subset. The stored `refreshResult` is merged as a subset result. A failed agent
+refresh stores its error on the account (rule 13, NEKODE-147) and does not suspend automatic reads.
+
+### Compatibility
+
+No settings, cache, export, or pin migration. The bundled Claude Code and Codex adapters do not
+declare `refreshOptions` and keep their behaviour with an account button. An older NeKode rejects a
+manifest that declares the option as invalid, so PDH-18 ships the option only for NeKode versions
+with this amendment. Requests without `refreshProviders` keep the earlier contract.
+
+### Acceptance
+
+- NA1. The panel has no `Refresh usage` button; every account has `Refresh <account label>`; every
+  agent of an account with agent refresh support has `Refresh <agent name> in <account label>`;
+  agent headings without support have no button.
+- NA2. An agent refresh sends `refreshProviders` with only that agent and changes only its metrics;
+  values, dates and the pin of other agents stay unchanged.
+- NA3. Limits: an agent refresh 10 seconds after another agent's refresh of the same account reads;
+  a repeat of the same agent within 60 seconds is skipped with `interval`; an account refresh after
+  one agent's refresh sends only the other agents; an account without support keeps the
+  per-account limit.
+- NA4. A response with metrics outside the selection fails as `protocol` and keeps the previous
+  values. A manifest with an unknown `refreshOptions` value is invalid.
+- NA5. IPC rejects a missing argument, unknown keys, an unknown or disabled connection, a malformed
+  provider id, a provider id for an account without support, and an unknown agent.
+- NA6. Group buttons expose their own refreshing, countdown and ready states without colour; one
+  group's refresh leaves other groups' buttons enabled; the status message names the target.
+
+### Verification
+
+- `adapter-host.test.ts`: `refreshOptions` manifest parsing and rejection; `refreshProviders` sent
+  only on `refresh` with the option.
+- `usage-service.test.ts` with an injected clock: A8 rejection; A9 eligibility at 59 and 60 seconds
+  per agent and account, account refresh agent subset, `backoff` for blocked agent sources; A10
+  joining and waiting; A11 merge and pin; `agents` and `nextRefreshAt` in the snapshot; adapters
+  without the option.
+- `ipc-validation.test.ts`: A6 argument validation.
+- `UsageToolbar.test.tsx`: NA1 and NA6, keyboard access to every button, status messages.
+- `docs/features/usage-quota/usage.md` documents `refreshOptions`, `refreshProviders` and the panel.
+- Real Windows Electron check with isolated user data and a fixture adapter that declares the option.
+  The Electron smoke with Personal Data Hub runs after PDH-18 ships; until then it is recorded as not
+  run.

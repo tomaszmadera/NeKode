@@ -564,14 +564,14 @@ process.stdin.on('end', () => {
   report.manualRefresh = { nextRefreshAt }
   await check(
     'a manual refresh inside the 60-second limit is skipped as interval',
-    'window.app.usage.refresh().then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval"&&s.refresh.skipped[0]?.connectionId==="fixture-account")',
+    'window.app.usage.refresh({connectionId:"fixture-account"}).then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval"&&s.refresh.skipped[0]?.connectionId==="fixture-account")',
   )
   const waitMs = Date.parse(nextRefreshAt) - Date.now() + 1000
   if (waitMs > 0) await sleep(waitMs)
   report.manualRefresh.at = new Date().toISOString()
   await check(
     'a manual refresh 60 seconds after the last read sends refresh inside the 300-second adapter interval',
-    'window.app.usage.refresh().then(s=>s.refresh.read.includes("fixture-account")&&s.connections[0].error===null&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===48)',
+    'window.app.usage.refresh({connectionId:"fixture-account"}).then(s=>s.refresh.read.includes("fixture-account")&&s.connections[0].error===null&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===48)',
   )
   const actions = readFileSync(actionsFile, 'utf8').trim().split(/\s+/)
   assert.equal(actions.at(-1), 'refresh', 'the manual read used the refresh action')
@@ -583,7 +583,7 @@ process.stdin.on('end', () => {
   report.assertions.push('scheduled reads send read and the manual read sends refresh')
   await check(
     'an immediate second manual refresh is skipped as interval',
-    'window.app.usage.refresh().then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval")',
+    'window.app.usage.refresh({connectionId:"fixture-account"}).then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval")',
   )
   await check(
     'shipped Claude Code and Codex adapters are listed without copying, on the NeKode runtime',
@@ -599,7 +599,7 @@ process.stdin.on('end', () => {
     config: { configDirectory: claudeConfig },
   })
   await evaluate(`window.app.usage.saveSettings(${JSON.stringify(providers)})`)
-  await evaluate('window.app.usage.refresh()')
+  await evaluate('window.app.usage.refresh({connectionId:"claude-fixture"})')
   // Claude Code (spec L13): both windows with periods; the 7-day window has a 7-day period.
   const claudeOk =
     '(s=>{const c=s.connections.find(x=>x.connection.id==="claude-fixture");const [f,w]=c?.subscription?.metrics??[];return c?.error===null&&f?.id==="five_hour"&&f.usedPercent===37&&f.resetsAt?.length===24&&w?.id==="seven_day"&&w.usedPercent===12&&Date.parse(w.resetsAt)-Date.parse(w.periodStart)===604800000})'

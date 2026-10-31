@@ -68,8 +68,8 @@ export interface UsageConfigField {
   description?: string
 }
 /**
- * Adapter request action (spec L2): `read` for scheduled collection, `refresh` for a manual
- * `Refresh usage`, which must return values obtained from the provider during the request.
+ * Adapter request action (spec L2): `read` for scheduled collection, `refresh` for a
+ * manual refresh, which must return values obtained from the provider during the request.
  */
 export type UsageAdapterAction = 'read' | 'refresh'
 export interface UsageAdapter {
@@ -93,6 +93,8 @@ export interface UsageAdapter {
   summary?: string
   /** Shown as `Experimental` in the service picker. */
   experimental?: boolean
+  /** Manual refresh options; `providers` enables agent refresh (spec A7, NEKODE-148). */
+  refreshOptions?: UsageRefreshOption[]
   directory?: string
   /** Shipped with NeKode (spec rule 17); absent for user-added adapters. */
   bundled?: boolean
@@ -123,10 +125,27 @@ export interface UsageSettings {
   pin: UsagePin | null
   export: { enabled: boolean; path: string | null; replaceExisting?: boolean }
 }
+/** Provider id format, shared by manifests, metrics and refresh requests. */
+export const USAGE_PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
+export const USAGE_REFRESH_OPTIONS = ['providers'] as const
+export type UsageRefreshOption = (typeof USAGE_REFRESH_OPTIONS)[number]
+/** Target of one manual refresh: an account, or one agent of it (spec A6). */
+export interface UsageRefreshRequest {
+  connectionId: string
+  providerId?: string
+}
 export interface UsageRefreshSkip {
   connectionId: string
+  /** The requested agent, when the skipped request named one. */
+  providerId?: string
   until: string
   reason: 'interval' | 'backoff'
+}
+/** Manual refresh state of one agent of an account with agent refresh support (spec A9). */
+export interface UsageAgentRefreshState {
+  providerId: string
+  /** Earliest time a manual refresh of this agent may start, or null when it may start now. */
+  nextRefreshAt: string | null
 }
 /** Terminal result of one operation source, window or the whole refresh. */
 export type UsageRefreshSourceStatus =
@@ -169,6 +188,8 @@ export interface UsageConnectionSnapshot {
   error: UsageFailure | null
   /** Earliest time a manual refresh may start (spec L5), or null when it may start now. */
   nextRefreshAt: string | null
+  /** Known agents and their manual deadlines; null without agent refresh support (spec A9). */
+  agents?: UsageAgentRefreshState[] | null
   /** Last manual refresh outcome, kept across automatic polls and restarts. */
   refreshResult?: UsageRefreshResult | null
 }
@@ -178,14 +199,19 @@ export interface UsageSnapshot {
   cacheError: string | null
   exportError: string | null
   /** Present only on a manual refresh response; read includes joined and failed reads. */
-  refresh?: { read: string[]; skipped: UsageRefreshSkip[] }
+  refresh?: {
+    read: string[]
+    skipped: UsageRefreshSkip[]
+    /** This operation's typed result, before merging retained outcomes from earlier requests. */
+    result?: UsageRefreshResult
+  }
 }
 export interface UsageApi {
   listAdapters(): Promise<UsageAdapter[]>
   getSettings(): Promise<UsageSettings>
   saveSettings(settings: UsageSettings): Promise<UsageSettings>
   read(): Promise<UsageSnapshot>
-  refresh(): Promise<UsageSnapshot>
+  refresh(request: UsageRefreshRequest): Promise<UsageSnapshot>
   test(connection: UsageConnection): Promise<void>
   pickFile(output: boolean): Promise<string | null>
   /** Read the global `Show usage quota` switch. */
@@ -208,6 +234,17 @@ function text(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 256 || value.includes('\0'))
     invalid('Usage text must contain 1 to 256 characters.')
   return value
+}
+/** Spec A6: `{connectionId, providerId?}` with no other keys. */
+export function parseUsageRefreshRequest(value: unknown): UsageRefreshRequest {
+  const raw = usageObject(value)
+  if (Object.keys(raw).some((key) => key !== 'connectionId' && key !== 'providerId'))
+    invalid('Usage refresh request has unknown fields.')
+  const connectionId = text(raw.connectionId)
+  if (raw.providerId === undefined) return { connectionId }
+  if (typeof raw.providerId !== 'string' || !USAGE_PROVIDER_ID.test(raw.providerId))
+    invalid('Invalid usage agent id.')
+  return { connectionId, providerId: raw.providerId }
 }
 function timestamp(value: unknown, future: boolean, now: number): string | null {
   if (value === null || value === undefined) return null

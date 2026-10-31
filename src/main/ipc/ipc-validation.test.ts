@@ -275,9 +275,27 @@ describe('ipc payload validation', () => {
     expect(channel(IPC_CHANNEL.usageSetEnabled).parse([false])).toEqual([false])
     for (const bad of [[], ['true'], [1], [null], [true, false]])
       expect(() => channel(IPC_CHANNEL.usageSetEnabled).parse(bad)).toThrow()
+    // Spec A6: one account, optionally one agent of it, and no other keys.
+    const refresh = channel(IPC_CHANNEL.usageRefresh)
+    expect(refresh.parse([{ connectionId: 'account' }])).toEqual([{ connectionId: 'account' }])
+    expect(refresh.parse([{ connectionId: 'account', providerId: 'claude' }])).toEqual([
+      { connectionId: 'account', providerId: 'claude' },
+    ])
+    for (const bad of [
+      [],
+      [null],
+      ['account'],
+      [{}],
+      [{ connectionId: '' }],
+      [{ connectionId: 'a'.repeat(257) }],
+      [{ connectionId: 'account', providerId: 'Not Valid' }],
+      [{ connectionId: 'account', providerId: 7 }],
+      [{ connectionId: 'account', providers: ['claude'] }],
+      [{ connectionId: 'account' }, 'extra'],
+    ])
+      expect(() => refresh.parse(bad)).toThrow()
     for (const name of [
       IPC_CHANNEL.usageRead,
-      IPC_CHANNEL.usageRefresh,
       IPC_CHANNEL.usageGetSettings,
       IPC_CHANNEL.usageListAdapters,
       IPC_CHANNEL.usageGetEnabled,

@@ -30,9 +30,11 @@ The panel shows fresh through five minutes, aging through sixty minutes, then st
 
 Automatic polling reads each account no more often than every sixty seconds or the adapter's declared longer minimum (`minimumRefreshSeconds`), with the adapter action `read`. The closed panel's pinned metric continues updating. Hidden or minimized app windows pause automatic polling. Automatic polls back off after network, timeout, protocol or validation failures at 60, 120, 240, then 300 seconds, and a declared retry deadline overrides a shorter delay. Auth, configuration and unsupported-version failures of an automatic poll stop automatic polling until a configuration change or a manual refresh. A failed manual refresh does not stop or delay automatic polling: the account shows the refresh error until a later manual refresh succeeds or its configuration changes.
 
-`Refresh usage` asks every enabled account for a live read with the adapter action `refresh`: the adapter must fetch each value it returns from the provider during that request (spec L2-L3). A manual refresh reads an account when at least 60 seconds have passed since the start of its last manual refresh and no provider retry deadline (a `rate_limited` failure's `retryAfterSeconds`) is pending. Automatic polls never start this limit, because they only read data the source already stored. A click during an automatic poll waits for it to finish and then starts the refresh. It ignores the adapter minimum, the growing backoff and the auth/configuration stop. An account inside that limit is reported as waiting, with the remaining time and the reason: the 60-second limit or provider backoff. After any completed read, the next automatic poll is due the adapter minimum after that read started.
+Each account in the panel has its own refresh button (`Refresh <account>`); there is no button that refreshes every account at once. A click asks that account for a live read with the adapter action `refresh`: the adapter must fetch each value it returns from the provider during that request (spec L2-L3). A manual refresh reads an account when at least 60 seconds have passed since the start of its last manual refresh and no provider retry deadline (a `rate_limited` failure's `retryAfterSeconds`) is pending. Automatic polls never start this limit, because they only read data the source already stored. A click during an automatic poll waits for it to finish and then starts the refresh. It ignores the adapter minimum, the growing backoff and the auth/configuration stop. An account inside that limit is reported as waiting, with the remaining time and the reason: the 60-second limit or provider backoff. After any completed read, the next automatic poll is due the adapter minimum after that read started.
 
-The status keeps the outcome of your last manual request and identifies skipped accounts in the past tense. Its countdown and readiness follow each account's current state, including later automatic reads and their new deadlines. A read in progress is shown as refreshing. Reaching a deadline does not start another manual request.
+An account whose metrics declare `providerId` (a hub that reports several agents) groups its rows by agent under headings such as `Claude` and `Codex`. When its adapter declares agent refresh support, each agent heading has `Refresh <agent> in <account>`, which refreshes only that agent's metrics; the other agents keep their values, dates and pin. The 60-second limit then applies per agent: an agent may refresh 60 seconds after its own last manual refresh and after the account's last full refresh, and an account refresh asks only the agents whose limit passed. Without agent refresh support the headings have no button and the account button refreshes the whole account (spec amendment NEKODE-148).
+
+The status keeps the outcome of your last manual request, names its account or agent, and reports a skip in the past tense. It includes failures that return no metric windows; earlier attempts stay in the source details and do not change a later request's outcome. Its countdown and readiness follow each account's current state, including later automatic reads and their new deadlines. A read in progress is shown as refreshing. Reaching a deadline does not start another manual request.
 
 Cached observations carry an opaque connection revision matched against durable settings at startup. An account or configuration change rejects the previous account's cache even if replacing that cache failed. Caches without matching identity metadata are ignored until a successful read rebuilds them.
 
@@ -46,7 +48,7 @@ The `Write usage to a JSON file` section has its own `Save`. Export includes onl
 
 Each immediate child of the adapters directory has `usage-adapter.json`, protocol version 2, invocation command/argument array, source kind (`api` or `cli`), capabilities (`window`, `credits`, `balance`), minimum refresh seconds, and a bounded config schema. A manifest with another protocol version is listed as invalid: "This adapter uses an unsupported protocol version. Update it to protocol version 2, which requires live refresh." Fields support `text`, `secret`, `boolean`, `choice` and `file` types, and an optional field `description` (at most 512 characters) shown as help. An optional manifest `description` (at most 1024 characters) is shown in settings whenever the source is selected, before it can be enabled; use it for required privileges. An optional `errorActions` object maps a supported error code to a fixed next action (at most 256 characters) that replaces the generic one in the displayed error. Optional service metadata: `providerId` (same format as `id`; NeKode assigns it to every account of this adapter and checks it on each read), `summary` (at most 160 characters, shown in `Add account`) and `experimental` (boolean, shown as `Experimental`). Without `providerId`, accounts use the adapter id and accept any reported provider id. The settings panel shows the executable: enabling it permits execution with your user permissions. Plugins are trusted, not sandboxed.
 
-Main starts one process without a shell and writes one stdin request. `action` is `read` for automatic polling and `refresh` only for a manual `Refresh usage`; every adapter must implement both:
+Main starts one process without a shell and writes one stdin request. `action` is `read` for automatic polling and `refresh` only for a manual refresh from the panel; every adapter must implement both:
 
 ```json
 {"protocolVersion":2,"action":"refresh","config":{"region":"default"},"params":{"connectionId":"example-account","capabilities":["partial-refresh-v1"]}}
@@ -106,6 +108,25 @@ previous value and its original observation time, and a failed window without hi
 explicit unavailable. Per-source `nextAllowedAt` is persisted with the usage cache. The next manual
 refresh sends `params.refreshSources` with only the eligible source ids, while the account's
 60-second minimum still applies. The export document never contains this attempt metadata.
+
+### Agent refresh (`refreshOptions`)
+
+A manifest may declare `"refreshOptions": ["providers"]`; `providers` is the only allowed value,
+and any other value or shape makes the manifest invalid. NeKode then offers one refresh button per
+agent, where an agent is a metric's `providerId` (or the account's provider id when a metric has
+none). An agent refresh sends `action: "refresh"` with
+`params.refreshProviders: ["claude"]` (1 to 20 unique provider ids) next to `capabilities` and an
+optional `refreshSources`; apply both filters when both are present. Scheduled `read` requests and
+adapters without the option never receive the parameter.
+
+```json
+{"protocolVersion":2,"action":"refresh","config":{},"params":{"connectionId":"hub","capabilities":["partial-refresh-v1"],"refreshProviders":["claude"]}}
+```
+
+The response may contain only metrics of the requested agents; any other metric fails the read as
+`protocol` and keeps the previous values. An agent the adapter cannot refresh should fail the
+request with a typed `config` error before any remote work. An older NeKode lists a manifest with
+`refreshOptions` as invalid, so ship the option only for NeKode versions that support it.
 
 Secret fields are write-only, stored encrypted through Electron safeStorage and delivered over stdin only. Missing encryption or failed decryption blocks use with a configuration error. Leave the field blank to keep a saved secret or use its explicit clear action.
 

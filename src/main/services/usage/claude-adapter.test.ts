@@ -471,7 +471,7 @@ describe('Claude Code usage adapter through the process host', () => {
       export: { enabled: true, path: output },
     })
     try {
-      await service.refresh()
+      await service.refresh({ connectionId: 'claude-account' })
       const connection = service.read().connections[0]
       expect(connection.error).toBeNull()
       expect(connection.subscription?.metrics.map((m) => [m.id, m.usedPercent])).toEqual([
