@@ -341,15 +341,7 @@ function FileTreeContextMenu({
         >
           Show in file explorer
         </button>
-        <button
-          type="button"
-          role="menuitem"
-          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
-          data-testid={TEST_ID.fileTreeCopyPath}
-          onClick={() => run(onCopyPath)}
-        >
-          Copy path
-        </button>
+        <hr className="my-1 border-edge" />
         <button
           type="button"
           role="menuitem"
@@ -359,6 +351,16 @@ function FileTreeContextMenu({
         >
           Copy relative path
         </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
+          data-testid={TEST_ID.fileTreeCopyAbsolutePath}
+          onClick={() => run(onCopyPath)}
+        >
+          Copy absolute path
+        </button>
+        <hr className="my-1 border-edge" />
         <button
           type="button"
           role="menuitem"

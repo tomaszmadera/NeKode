@@ -98,7 +98,7 @@ export const TEST_ID = {
   /** Context menu of a file or directory row (NEKODE-38). */
   fileTreeContextMenu: 'file-tree-context-menu',
   fileTreeShowInFolder: 'file-tree-show-in-folder',
-  fileTreeCopyPath: 'file-tree-copy-path',
+  fileTreeCopyAbsolutePath: 'file-tree-copy-absolute-path',
   fileTreeCopyRelativePath: 'file-tree-copy-relative-path',
   fileTreeTrash: 'file-tree-trash',
   filePreviewError: 'file-preview-error',

@@ -738,7 +738,7 @@ describe('project files: tree context menu (spec Behaviour 20-24, NEKODE-38)', (
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
-    ).toEqual(['Show in file explorer', 'Copy path', 'Copy relative path', 'Delete'])
+    ).toEqual(['Show in file explorer', 'Copy relative path', 'Copy absolute path', 'Delete'])
     expect(screen.getByTestId(testIdFor.fileEntry('src')).getAttribute('aria-expanded')).toBe(
       'false',
     )
@@ -775,7 +775,7 @@ describe('project files: tree context menu (spec Behaviour 20-24, NEKODE-38)', (
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('README.md'))
 
     fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
-    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeCopyPath))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeCopyAbsolutePath))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('D:/code/demo/README.md'))
   })
 
@@ -784,7 +784,7 @@ describe('project files: tree context menu (spec Behaviour 20-24, NEKODE-38)', (
     fireEvent.click(screen.getByTestId(testIdFor.fileEntry('src')))
     await screen.findByTestId(testIdFor.fileEntry('src/app.ts'))
     fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('src/app.ts')))
-    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeCopyPath))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeCopyAbsolutePath))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('D:/code/demo/src/app.ts'))
 
     writeText.mockRejectedValueOnce(new Error('denied'))
