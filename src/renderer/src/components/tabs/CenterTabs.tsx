@@ -163,7 +163,7 @@ export function CenterTabs({
                   data-testid={testIdFor.filePreviewPane(path)}
                 >
                   <FilePreview
-                    app={app}
+                    files={app.files}
                     projectId={project.id}
                     relativePath={path}
                     markdownView={

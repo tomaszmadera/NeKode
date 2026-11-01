@@ -90,6 +90,7 @@ export * from './contracts/files-contract'
 export * from './contracts/git-contract'
 export * from './contracts/handoffs-contract'
 export * from './contracts/kanban-contract'
+export * from './contracts/preview-contract'
 export * from './contracts/projects-contract'
 export * from './contracts/resume-sources-contract'
 export * from './contracts/shell-contract'
@@ -178,6 +179,7 @@ export const IPC_CHANNEL = {
   filesOpenRoot: 'files:openRoot',
   filesShowInFolder: 'files:showInFolder',
   filesTrash: 'files:trash',
+  filesOpenInWindow: 'files:openInWindow',
   actionsList: 'actions:list',
   actionsCreate: 'actions:create',
   actionsUpdate: 'actions:update',
@@ -400,6 +402,12 @@ export interface AppApi {
      * A failure leaves the file in place. There is no direct-remove fallback.
      */
     trash(projectId: string, relativePath: string): Promise<void>
+    /**
+     * Opens the file in a read-only preview window, or focuses the window
+     * already open for it (file-preview-window Behaviour 2-4). A directory or
+     * a path outside the project: not_found.
+     */
+    openInWindow(projectId: string, relativePath: string): Promise<void>
   }
   actions: {
     list(): Promise<ActionControl[]>

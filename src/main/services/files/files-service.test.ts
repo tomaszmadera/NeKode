@@ -19,7 +19,7 @@ import {
 
 type FakeNode =
   | { type: 'dir' }
-  | { type: 'file'; content: Uint8Array }
+  | { type: 'file'; content: Uint8Array; mtimeMs?: number }
   | { type: 'symlink'; target: string }
 
 interface FakeFsOptions {
@@ -98,10 +98,15 @@ function createFakeFs(options: FakeFsOptions): FilesFsAdapter & {
         return null
       }
       if (node.type === 'dir') {
-        return { size: 0, isFile: false, isDirectory: true }
+        return { size: 0, mtimeMs: 0, isFile: false, isDirectory: true }
       }
       if (node.type === 'file') {
-        return { size: node.content.byteLength, isFile: true, isDirectory: false }
+        return {
+          size: node.content.byteLength,
+          mtimeMs: node.mtimeMs ?? 0,
+          isFile: true,
+          isDirectory: false,
+        }
       }
       return null
     },
@@ -837,5 +842,42 @@ describe('files:showInFolder and files:trash', () => {
     const error = await captureError(() => service.showInFolder('p1', 'doc.pdf'))
     expect(error.code).toBe('unknown')
     expect(error.message).toBe('Failed to show the item in the file explorer.')
+  })
+})
+
+describe('FilesService preview window support (file-preview-window)', () => {
+  function previewFs() {
+    return createFakeFs({
+      nodes: {
+        [ROOT]: { type: 'dir' },
+        [`${ROOT}/docs`]: { type: 'dir' },
+        [`${ROOT}/docs/spec.md`]: { type: 'file', content: encode('# Spec'), mtimeMs: 1000 },
+        'D:/outside': { type: 'dir' },
+        'D:/outside/secret.md': { type: 'file', content: encode('x') },
+        [`${ROOT}/link-out`]: { type: 'symlink', target: 'D:/outside/secret.md' },
+      },
+    })
+  }
+
+  it('resolves a contained file to its file name and rejects other shapes like read', async () => {
+    const service = createService(previewFs())
+    expect(await service.previewTarget('p1', 'docs/spec.md')).toEqual({ fileName: 'spec.md' })
+    for (const path of ['docs', '../outside/secret.md', 'D:/outside/secret.md', 'link-out']) {
+      const error = await captureError(() => service.previewTarget('p1', path))
+      expect(error.code).toBe('not_found')
+      expect(error.channel).toBe('files:openInWindow')
+    }
+    expect((await captureError(() => service.previewTarget('missing', 'docs/spec.md'))).code).toBe(
+      'not_found',
+    )
+  })
+
+  it('fingerprints size and mtime, and returns null for a missing or escaping file', async () => {
+    const service = createService(previewFs())
+    expect(await service.fingerprint('p1', 'docs/spec.md')).toBe('6:1000')
+    expect(await service.fingerprint('p1', 'docs/gone.md')).toBeNull()
+    expect(await service.fingerprint('p1', 'docs')).toBeNull()
+    expect(await service.fingerprint('p1', 'link-out')).toBeNull()
+    expect(await service.fingerprint('missing', 'docs/spec.md')).toBeNull()
   })
 })

@@ -248,6 +248,8 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
         invoke<void>(IPC_CHANNEL.filesShowInFolder, projectId, relativePath),
       trash: (projectId, relativePath) =>
         invoke<void>(IPC_CHANNEL.filesTrash, projectId, relativePath),
+      openInWindow: (projectId, relativePath) =>
+        invoke<void>(IPC_CHANNEL.filesOpenInWindow, projectId, relativePath),
     },
     resumeSources: {
       list: () => invoke<ResumeSourceLibrary>(IPC_CHANNEL.resumeSourcesList),

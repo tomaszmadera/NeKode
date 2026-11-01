@@ -369,6 +369,7 @@ function AppContent({
                 onToggleDirectory={files.handleFilesToggleDirectory}
                 onSelectFile={files.handleFilesSelectFile}
                 onShowInFolder={files.handleFilesShowInFolder}
+                onOpenInWindow={files.handleFilesOpenInWindow}
                 onCopyPath={files.handleFilesCopyPath}
                 onCopyRelativePath={files.handleFilesCopyRelativePath}
                 onTrash={files.handleFilesTrash}

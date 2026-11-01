@@ -53,12 +53,25 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
     copy: () => Promise<boolean>
     selectAll: () => void
   } | null>(null)
+  // The mounted editor and model. A content change on the same language
+  // updates the model in place and keeps the scroll position
+  // (file-preview-window Behaviour 9); a language change recreates both.
+  const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | null>(null)
+  const modelRef = useRef<MonacoApi.editor.ITextModel | null>(null)
+  const contentRef = useRef(content)
+  contentRef.current = content
+  // After a failed Monaco load, new content retries the load.
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const loadFailedRef = useRef(false)
+  loadFailedRef.current = loadFailed
 
   useEffect(() => {
     const host = hostRef.current
     if (host === null) {
       return
     }
+    // A new loadAttempt re-runs this load after a failure.
+    void loadAttempt
     let disposed = false
     let editor: MonacoApi.editor.IStandaloneCodeEditor | null = null
     let model: MonacoApi.editor.ITextModel | null = null
@@ -71,7 +84,7 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
           return
         }
         setLoadFailed(false)
-        model = monaco.editor.createModel(content, language ?? 'plaintext')
+        model = monaco.editor.createModel(contentRef.current, language ?? 'plaintext')
         editor = monaco.editor.create(host, {
           model,
           theme: 'vs-dark',
@@ -88,6 +101,8 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
           links: false,
           contextmenu: false,
         })
+        editorRef.current = editor
+        modelRef.current = model
         editorCommandsRef.current = {
           hasSelection: (): boolean => {
             const selection = editor?.getSelection()
@@ -136,10 +151,31 @@ export function MonacoPreview({ content, language }: MonacoPreviewProps): React.
     return () => {
       disposed = true
       editorCommandsRef.current = null
+      editorRef.current = null
+      modelRef.current = null
       editor?.dispose()
       model?.dispose()
     }
-  }, [content, language])
+  }, [language, loadAttempt])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    const model = modelRef.current
+    if (editor === null || model === null) {
+      if (loadFailedRef.current) {
+        setLoadAttempt((attempt) => attempt + 1)
+      }
+      return
+    }
+    if (model.getValue() === content) {
+      return
+    }
+    const viewState = editor.saveViewState()
+    model.setValue(content)
+    if (viewState !== null) {
+      editor.restoreViewState(viewState)
+    }
+  }, [content])
 
   // Escape closes the menu (window listener, same pattern as the project
   // context menu in LeftNavigation; tests fire Escape on window).

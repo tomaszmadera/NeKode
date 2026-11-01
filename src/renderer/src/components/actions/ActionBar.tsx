@@ -12,6 +12,7 @@ import { cn } from '../../lib/cn'
 import { actionIconGlyph, Icon, type LucideIcon } from '../../lib/icons'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { MarkdownViewToggle } from '../files/MarkdownViewToggle'
 import type { MarkdownViewMode } from '../files/markdown-path'
 import { KanbanSearch } from '../kanban/KanbanSearch'
 import type { KanbanSortBy, KanbanToolbarControls } from '../kanban/kanban-board-logic'
@@ -550,42 +551,7 @@ export function ActionBar({
         {!isKanban && task !== undefined ? <TaskProgressButton task={task} /> : null}
         {visible.map(renderAction)}
         {markdownView !== null ? (
-          <fieldset className="nk-btn-group shrink-0">
-            <legend className="sr-only">Markdown view</legend>
-            <button
-              type="button"
-              className={cn('nk-tb', markdownView.mode === 'code' && 'active')}
-              aria-pressed={markdownView.mode === 'code'}
-              data-testid={TEST_ID.fileMarkdownCode}
-              onClick={() => {
-                markdownView.onChange('code')
-              }}
-            >
-              <Icon.code
-                size={15}
-                aria-hidden
-                className={markdownView.mode === 'code' ? 'text-ink' : 'text-ink-secondary'}
-              />
-              Code
-            </button>
-            <span aria-hidden="true" className="h-4 w-px bg-edge" />
-            <button
-              type="button"
-              className={cn('nk-tb', markdownView.mode === 'preview' && 'active')}
-              aria-pressed={markdownView.mode === 'preview'}
-              data-testid={TEST_ID.fileMarkdownPreview}
-              onClick={() => {
-                markdownView.onChange('preview')
-              }}
-            >
-              <Icon.preview
-                size={15}
-                aria-hidden
-                className={markdownView.mode === 'preview' ? 'text-ink' : 'text-ink-secondary'}
-              />
-              Preview
-            </button>
-          </fieldset>
+          <MarkdownViewToggle mode={markdownView.mode} onChange={markdownView.onChange} />
         ) : null}
       </div>
       {contextMenu !== null ? (

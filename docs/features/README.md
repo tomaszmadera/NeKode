@@ -36,6 +36,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [chat-terminal-activity](chat-terminal-activity/spec.md) | Chat terminal activity | Delivered |
 | [ci-pipeline](ci-pipeline/spec.md) | CI: automatic verification on GitHub Actions | Delivered |
 | [dictation-provider-architecture](dictation-provider-architecture/spec.md) | Dictation provider architecture | Not delivered (parent contract); the OpenWhispr specialization ships desktop V1 |
+| [file-preview-window](file-preview-window/spec.md) | File preview window | Delivered (NEKODE-149) |
 | [global-agent-profiles](global-agent-profiles/spec.md) | Global agent profiles and project opt-in | Delivered |
 | [handoff-resume-flow](handoff-resume-flow/spec.md) | Handoff/Resume flow | Delivered |
 | [in-app-update](in-app-update/spec.md) | In-app update | Delivered (quiet Windows update from App Settings) |

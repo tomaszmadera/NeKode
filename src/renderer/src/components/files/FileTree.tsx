@@ -32,6 +32,7 @@ interface FileTreeProps {
   onToggleDirectory: (relativePath: string) => void
   onSelectFile: (relativePath: string) => void
   onShowInFolder: (relativePath: string) => void
+  onOpenInWindow: (relativePath: string) => void
   onCopyPath: (relativePath: string) => void
   onCopyRelativePath: (relativePath: string) => void
   onTrash: (relativePath: string) => void
@@ -51,6 +52,7 @@ interface FileTreeLevelProps {
 interface FileTreeMenuState {
   relativePath: string
   name: string
+  kind: FileEntry['kind']
   x: number
   y: number
 }
@@ -63,6 +65,7 @@ export function FileTree({
   onToggleDirectory,
   onSelectFile,
   onShowInFolder,
+  onOpenInWindow,
   onCopyPath,
   onCopyRelativePath,
   onTrash,
@@ -89,7 +92,7 @@ export function FileTree({
   }, [menu])
 
   function openContextMenu(entry: FileEntry, x: number, y: number): void {
-    setMenu({ relativePath: entry.relativePath, name: entry.name, x, y })
+    setMenu({ relativePath: entry.relativePath, name: entry.name, kind: entry.kind, x, y })
   }
 
   return (
@@ -110,6 +113,7 @@ export function FileTree({
           state={menu}
           onClose={() => setMenu(null)}
           onShowInFolder={onShowInFolder}
+          onOpenInWindow={onOpenInWindow}
           onCopyPath={onCopyPath}
           onCopyRelativePath={onCopyRelativePath}
           onTrash={onTrash}
@@ -273,6 +277,7 @@ function FileTreeContextMenu({
   state,
   onClose,
   onShowInFolder,
+  onOpenInWindow,
   onCopyPath,
   onCopyRelativePath,
   onTrash,
@@ -280,12 +285,13 @@ function FileTreeContextMenu({
   state: FileTreeMenuState
   onClose: () => void
   onShowInFolder: (relativePath: string) => void
+  onOpenInWindow: (relativePath: string) => void
   onCopyPath: (relativePath: string) => void
   onCopyRelativePath: (relativePath: string) => void
   onTrash: (relativePath: string) => void
 }): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
-  const position = clampMenuPosition(state.x, state.y, { menuWidth: 180, menuHeight: 140 })
+  const position = clampMenuPosition(state.x, state.y, { menuWidth: 180, menuHeight: 190 })
 
   useLayoutEffect(() => {
     const menu = menuRef.current
@@ -332,6 +338,17 @@ function FileTreeContextMenu({
         style={position}
         data-testid={TEST_ID.fileTreeContextMenu}
       >
+        {state.kind === 'file' ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
+            data-testid={TEST_ID.fileTreeOpenInWindow}
+            onClick={() => run(onOpenInWindow)}
+          >
+            Open in new window
+          </button>
+        ) : null}
         <button
           type="button"
           role="menuitem"

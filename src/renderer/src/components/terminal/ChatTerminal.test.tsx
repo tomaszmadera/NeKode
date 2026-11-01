@@ -106,6 +106,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       openRoot: vi.fn().mockResolvedValue(undefined),
       showInFolder: vi.fn().mockResolvedValue(undefined),
       trash: vi.fn().mockResolvedValue(undefined),
+      openInWindow: vi.fn().mockResolvedValue(undefined),
     },
     kanban: {
       adaptersList: vi.fn().mockResolvedValue([]),

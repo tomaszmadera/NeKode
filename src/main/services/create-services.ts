@@ -96,7 +96,22 @@ export interface CreateServicesOptions {
   bundledUsageAdapterDirectories?: readonly string[]
 }
 
-export function createServices(options: CreateServicesOptions): AppServices {
+/**
+ * Main-process-only services beside the IPC surface: the file preview window
+ * registry needs the validated target and the change fingerprint of one file
+ * (docs/features/file-preview-window). Not reachable from any renderer.
+ */
+export interface PreviewFileServices {
+  target(
+    projectId: string,
+    relativePath: string,
+  ): Promise<{ projectId: string; projectName: string; relativePath: string; fileName: string }>
+  fingerprint(projectId: string, relativePath: string): Promise<string | null>
+}
+
+export function createServices(
+  options: CreateServicesOptions,
+): AppServices & { preview: PreviewFileServices } {
   const db = openDatabase(options.dbPath)
   runMigrations(db)
   const projects = new ProjectService({ db, fs: { stat: (path) => safeStat(path) } })
@@ -498,6 +513,17 @@ export function createServices(options: CreateServicesOptions): AppServices {
     },
     dialogs: {
       pickDirectory: (defaultPath) => options.pickDirectory(defaultPath),
+    },
+    preview: {
+      target: async (projectId, relativePath) => {
+        const { fileName } = await files.previewTarget(projectId, relativePath)
+        const project = projects.get(projectId)
+        if (project === null) {
+          throw new AppError('not_found', 'Project not found.', 'files:openInWindow')
+        }
+        return { projectId, projectName: project.name, relativePath, fileName }
+      },
+      fingerprint: (projectId, relativePath) => files.fingerprint(projectId, relativePath),
     },
     closeDatabase: () => {
       if (db.open) db.close()

@@ -743,6 +743,9 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel(IPC_CHANNEL.filesTrash, ['string', 'relativePath'], (args) =>
       services.files.trash(args[0], args[1]),
     ),
+    // Parse-only entry: ipc-handlers serves files:openInWindow with the
+    // main-owned preview window registry (file-preview-window Behaviour 2-4).
+    serviceChannel(IPC_CHANNEL.filesOpenInWindow, ['string', 'relativePath'], () => undefined),
     serviceChannel(IPC_CHANNEL.resumeSourcesList, [], () => services.resumeSources.list()),
     {
       channel: IPC_CHANNEL.resumeSourcesPut,

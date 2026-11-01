@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { allowsMicrophone, allowsRendererClipboard } from './media-permissions'
+import {
+  allowsMicrophone,
+  allowsPreviewClipboard,
+  allowsRendererClipboard,
+} from './media-permissions'
 
 describe('microphone permissions', () => {
   const urls = ['file:///app/index.html']
@@ -20,5 +24,11 @@ describe('microphone permissions', () => {
       false,
     )
     expect(allowsRendererClipboard('geolocation', urls[0], true, urls)).toBe(false)
+  })
+  it('lets a preview window main frame only write to the clipboard', () => {
+    expect(allowsPreviewClipboard('clipboard-sanitized-write', true)).toBe(true)
+    expect(allowsPreviewClipboard('clipboard-sanitized-write', false)).toBe(false)
+    for (const permission of ['clipboard-read', 'deprecated-sync-clipboard-read', 'media'])
+      expect(allowsPreviewClipboard(permission, true)).toBe(false)
   })
 })

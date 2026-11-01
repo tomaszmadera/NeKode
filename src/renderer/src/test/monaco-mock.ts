@@ -28,6 +28,14 @@ export class MockModel {
     this.value = value
   }
 
+  getValue(): string {
+    return this.value
+  }
+
+  setValue(value: string): void {
+    this.value = value
+  }
+
   getValueInRange(range: MockSelection): string {
     const lines = this.value.split('\n')
     if (range.startLineNumber === range.endLineNumber) {
@@ -73,6 +81,19 @@ export class MockEditor {
 
   setSelection(selection: MockSelection): void {
     this.selection = selection
+  }
+
+  /** Scroll offset standing in for Monaco's view state. */
+  scrollTop = 0
+  restoredViewStates: unknown[] = []
+
+  saveViewState(): { scrollTop: number } {
+    return { scrollTop: this.scrollTop }
+  }
+
+  restoreViewState(state: { scrollTop: number }): void {
+    this.restoredViewStates.push(state)
+    this.scrollTop = state.scrollTop
   }
 
   dispose(): void {

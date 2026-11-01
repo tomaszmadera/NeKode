@@ -592,6 +592,15 @@ describe('preload app api', () => {
     ])
   })
 
+  it('routes files:openInWindow through its typed channel', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    await api.files.openInWindow('p1', 'docs/spec.md')
+    expect(ipc.invocations).toEqual([
+      { channel: IPC_CHANNEL.filesOpenInWindow, args: ['p1', 'docs/spec.md'] },
+    ])
+  })
+
   it('routes files:openRoot through its typed channel', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)

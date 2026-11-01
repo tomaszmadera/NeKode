@@ -27,3 +27,12 @@ export function allowsRendererClipboard(
     ) && isTrustedSender({ url: requestingUrl, isMainFrame }, trustedUrls)
   )
 }
+
+/**
+ * A file preview window may only write to the clipboard (Copy in its
+ * read-only Monaco menu), never read it (file-preview-window Authorization).
+ * The caller decides that the requester is a registered preview window.
+ */
+export function allowsPreviewClipboard(permission: string, isMainFrame: boolean): boolean {
+  return permission === 'clipboard-sanitized-write' && isMainFrame
+}

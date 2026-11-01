@@ -40,6 +40,17 @@ export interface RegisterHandlersOptions {
   broadcastResumeSources?: (event: ResumeSourcesChanged) => void
   /** Main-owned window identity. No renderer window/key/path is accepted. */
   desktopWindow?: (event: IpcMainInvokeEvent) => string | null
+  /**
+   * Opens or focuses the read-only preview window of one project file
+   * (file-preview-window Behaviour 2-4). Main validates the path.
+   */
+  openPreviewWindow?: (projectId: string, relativePath: string) => Promise<void>
+  /**
+   * True for the webContents of a file preview window. Those windows never
+   * reach the main-window channels, even when their URL would pass the URL
+   * check (the dev-server root accepts any query).
+   */
+  isPreviewSender?: (webContentsId: number) => boolean
 }
 
 export function registerAppIpcHandlers(
@@ -68,7 +79,10 @@ export function registerAppIpcHandlers(
         senderFrame !== undefined &&
         senderFrame === (event.sender as unknown as { mainFrame?: unknown }).mainFrame,
     }
-    if (!isTrustedSender(info, trustedRendererUrls)) {
+    const senderId = (event.sender as unknown as { id?: unknown }).id
+    const fromPreviewWindow =
+      typeof senderId === 'number' && options.isPreviewSender?.(senderId) === true
+    if (fromPreviewWindow || !isTrustedSender(info, trustedRendererUrls)) {
       throw new AppError('validation', 'Rejected untrusted IPC sender.', channel)
     }
   }
@@ -197,8 +211,23 @@ export function registerAppIpcHandlers(
     return services.dictation.desktopActivate(handle)
   })
 
+  handle(IPC_CHANNEL.filesOpenInWindow, (payload) => {
+    const entry = validated.get(IPC_CHANNEL.filesOpenInWindow)
+    if (!entry) throw new AppError('validation', 'Preview window validation is unavailable.')
+    const [projectId, relativePath] = entry.parse(payload) as [string, string]
+    if (!options.openPreviewWindow) {
+      throw new AppError(
+        'validation',
+        'Preview windows are unavailable.',
+        IPC_CHANNEL.filesOpenInWindow,
+      )
+    }
+    return options.openPreviewWindow(projectId, relativePath)
+  })
+
   for (const [channel, entry] of validated) {
     if (
+      channel === IPC_CHANNEL.filesOpenInWindow ||
       channel === IPC_CHANNEL.dictationDesktopActivate ||
       channel === IPC_CHANNEL.projectsAdd ||
       channel === IPC_CHANNEL.projectsRemove ||

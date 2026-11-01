@@ -730,7 +730,7 @@ describe('project files: tree context menu (spec Behaviour 20-24, NEKODE-38)', (
     await screen.findByTestId(testIdFor.fileEntry('README.md'))
   }
 
-  it('opens the four items on a file and a directory and does not toggle the directory', async () => {
+  it('opens the four directory items and does not toggle the directory', async () => {
     await openFiles()
     fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('src')))
     const menu = await screen.findByTestId(TEST_ID.fileTreeContextMenu)
@@ -766,6 +766,37 @@ describe('project files: tree context menu (spec Behaviour 20-24, NEKODE-38)', (
     fireEvent.contextMenu(screen.getByTestId(TEST_ID.filesProjectName))
     fireEvent.contextMenu(screen.getByTestId(TEST_ID.filesBackButton))
     expect(screen.queryByTestId(TEST_ID.fileTreeContextMenu)).toBeNull()
+  })
+
+  it('lists Open in new window first on a file row and opens the file in a window', async () => {
+    await openFiles()
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    const menu = await screen.findByTestId(TEST_ID.fileTreeContextMenu)
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Open in new window',
+      'Show in file explorer',
+      'Copy relative path',
+      'Copy absolute path',
+      'Delete',
+    ])
+    fireEvent.click(screen.getByTestId(TEST_ID.fileTreeOpenInWindow))
+    expect(app.files.openInWindow).toHaveBeenCalledExactlyOnceWith('p1', 'README.md')
+    expect(screen.queryByTestId(TEST_ID.fileTreeContextMenu)).toBeNull()
+  })
+
+  it('surfaces a rejected Open in new window as a notice', async () => {
+    await openFiles()
+    vi.mocked(app.files.openInWindow).mockRejectedValueOnce(new Error('boom'))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.fileEntry('README.md')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.fileTreeOpenInWindow))
+    expect(await screen.findByTestId(TEST_ID.actionNotice)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.actionNotice).textContent).toContain(
+      'Failed to open the file in a new window.',
+    )
   })
 
   it('copies the relative path and the file-tab absolute path', async () => {

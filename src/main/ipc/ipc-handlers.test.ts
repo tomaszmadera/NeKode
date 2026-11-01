@@ -145,7 +145,13 @@ type Handler = (event: IpcMainInvokeEvent, ...payload: unknown[]) => unknown
 
 function createFakeIpcMain(): {
   ipcMain: IpcMain
-  invoke: (channel: string, payload: unknown[], url?: string, mainFrame?: boolean) => unknown
+  invoke: (
+    channel: string,
+    payload: unknown[],
+    url?: string,
+    mainFrame?: boolean,
+    senderId?: number,
+  ) => unknown
 } {
   const handlers = new Map<string, Handler>()
   const ipcMain = {
@@ -158,6 +164,7 @@ function createFakeIpcMain(): {
     payload: unknown[],
     url = 'file:///renderer/index.html',
     mainFrame = true,
+    senderId = 1,
   ) {
     const handler = handlers.get(channel)
     if (handler === undefined) {
@@ -167,7 +174,7 @@ function createFakeIpcMain(): {
     const frame = { url }
     const event = {
       senderFrame: frame,
-      sender: { mainFrame: mainFrame ? frame : {} },
+      sender: { id: senderId, mainFrame: mainFrame ? frame : {} },
     } as unknown as IpcMainInvokeEvent
     return handler(event, ...payload)
   }
@@ -179,6 +186,7 @@ interface Harness {
   broadcasts: Array<{ channel: string; chatId: string; payload: string | number }>
   invoke: ReturnType<typeof createFakeIpcMain>['invoke']
   showOpenDialog: ReturnType<typeof vi.fn>
+  openPreviewWindow: ReturnType<typeof vi.fn>
 }
 
 function createHarness(desktopHandle: string | null = '123'): Harness {
@@ -297,8 +305,11 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
   const broadcasts: Array<{ channel: string; chatId: string; payload: string | number }> = []
   const { ipcMain, invoke } = createFakeIpcMain()
   const showOpenDialog = vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] as string[] }))
+  const openPreviewWindow = vi.fn((_projectId: string, _relativePath: string) => Promise.resolve())
   registerAppIpcHandlers(ipcMain, services, {
     desktopWindow: () => desktopHandle,
+    openPreviewWindow,
+    isPreviewSender: (webContentsId) => webContentsId === 99,
     showOpenDialog: showOpenDialog as never,
     trustedRendererUrls: ['file:///renderer/index.html'],
     broadcast: (channel, chatId, payload) => {
@@ -310,7 +321,7 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
   ;(services as unknown as { __listeners: typeof terminalListeners }).__listeners =
     terminalListeners
 
-  return { services, broadcasts, invoke, showOpenDialog }
+  return { services, broadcasts, invoke, showOpenDialog, openPreviewWindow }
 }
 
 describe('usage IPC authorization', () => {
@@ -363,6 +374,35 @@ describe('usage IPC authorization', () => {
 })
 
 describe('registered ipc handlers', () => {
+  it('routes files:openInWindow to the main preview registry from the trusted main window only', async () => {
+    const { invoke, openPreviewWindow } = createHarness()
+    expect(() =>
+      invoke(IPC_CHANNEL.filesOpenInWindow, ['p1', 'README.md'], 'https://untrusted.test'),
+    ).toThrow('Rejected untrusted')
+    // A preview window document never passes the main-window sender guard.
+    expect(() =>
+      invoke(
+        IPC_CHANNEL.filesOpenInWindow,
+        ['p1', 'README.md'],
+        'file:///renderer/index.html?view=file-preview',
+      ),
+    ).toThrow('Rejected untrusted')
+    // A registered preview window is rejected even from a trusted URL.
+    expect(() =>
+      invoke(
+        IPC_CHANNEL.filesOpenInWindow,
+        ['p1', 'README.md'],
+        'file:///renderer/index.html',
+        true,
+        99,
+      ),
+    ).toThrow('Rejected untrusted')
+    expect(() => invoke(IPC_CHANNEL.filesOpenInWindow, ['p1'])).toThrow()
+    expect(() => invoke(IPC_CHANNEL.filesOpenInWindow, ['p1', 'a\u0000b'])).toThrow()
+    expect(openPreviewWindow).not.toHaveBeenCalled()
+    await invoke(IPC_CHANNEL.filesOpenInWindow, ['p1', 'docs/spec.md'])
+    expect(openPreviewWindow).toHaveBeenCalledExactlyOnceWith('p1', 'docs/spec.md')
+  })
   it('rejects desktop activation when the owning window is unavailable or unfocused', () => {
     const { invoke, services } = createHarness(null)
     expect(() => invoke(IPC_CHANNEL.dictationDesktopActivate, [])).toThrow('owning NeKode window')

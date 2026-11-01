@@ -1,7 +1,7 @@
 import type { AppApi, FilePreview as FilePreviewData } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 import { MarkdownPreview } from './MarkdownPreview'
@@ -16,10 +16,23 @@ import { isMarkdownPath, type MarkdownViewMode } from './markdown-path'
 // listing and read shows a localized error state inside this tab only; other
 // tabs are unaffected (each tab owns its preview view).
 
+/**
+ * Read source of the preview: the main window's `app.files`, or the bound
+ * file of a preview window (file-preview-window). Keep the object stable
+ * across renders; a new object reads the file again.
+ */
+export type FilePreviewSource = Pick<AppApi['files'], 'read' | 'openExternal'>
+
 interface FilePreviewProps {
-  app: AppApi
+  files: FilePreviewSource
   projectId: string
   relativePath: string
+  /**
+   * Bump to read the same file again (file-preview-window Behaviour 9). The
+   * shown content stays until the new read settles; a stale read never
+   * replaces a newer one.
+   */
+  refreshToken?: number
   /**
    * Code or rendered Markdown. Used only when the path is a markdown file
    * and the read result is text. Other files ignore it.
@@ -39,18 +52,27 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 export function FilePreview({
-  app,
+  files,
   projectId,
   relativePath,
+  refreshToken = 0,
   markdownView,
   onOpenExternalError,
 }: FilePreviewProps): React.JSX.Element {
   const [state, setState] = useState<PreviewState>({ status: 'loading' })
+  const shownKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setState({ status: 'loading' })
-    void app.files
+    // A new file shows the loading state; a refresh of the same file keeps
+    // the current content (and its scroll position) until the read settles.
+    const key = JSON.stringify([projectId, relativePath])
+    if (shownKeyRef.current !== key) {
+      shownKeyRef.current = key
+      setState({ status: 'loading' })
+    }
+    void refreshToken
+    void files
       .read(projectId, relativePath)
       .then((preview) => {
         if (!cancelled) {
@@ -68,13 +90,13 @@ export function FilePreview({
     return () => {
       cancelled = true
     }
-  }, [app, projectId, relativePath])
+  }, [files, projectId, relativePath, refreshToken])
 
   const handleOpenExternal = useCallback((): void => {
-    void app.files.openExternal(projectId, relativePath).catch((error: unknown) => {
+    void files.openExternal(projectId, relativePath).catch((error: unknown) => {
       onOpenExternalError(errorMessage(error, 'Failed to open the file externally.'))
     })
-  }, [app, projectId, relativePath, onOpenExternalError])
+  }, [files, projectId, relativePath, onOpenExternalError])
 
   return (
     <div className="flex h-full min-h-0 flex-col">

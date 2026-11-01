@@ -1597,7 +1597,7 @@ Entering Project Files may transform the left panel into the Project file tree.
 
 Clicking a file opens it in a file tab of the tab strip and shows it in the main surface: the tab label is the file name and the tab tooltip is the path relative to the project root (e.g. `app / Services / Billing.php`). The breadcrumb and the `Files` view label are superseded by the tab model (user decision 2026-09-26) and are not rendered.
 
-A file row and a directory row open a context menu on right-click, the ContextMenu key, and Shift+F10. The items are `Show in file explorer`, `Copy relative path`, `Copy absolute path`, and `Delete`. `Delete` moves the entry to the Windows Recycle Bin and does not ask first (NEKODE-38).
+A file row and a directory row open a context menu on right-click, the ContextMenu key, and Shift+F10. The items are `Show in file explorer`, `Copy relative path`, `Copy absolute path`, and `Delete`; a file row also lists `Open in new window` first, which opens a read-only preview window (NEKODE-149). `Delete` moves the entry to the Windows Recycle Bin and does not ask first (NEKODE-38).
 
 Remember per Project:
 

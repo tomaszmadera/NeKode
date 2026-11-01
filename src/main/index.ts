@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
+import { PREVIEW_VIEW_QUERY, PREVIEW_WINDOW_ARGUMENT } from '@shared/contracts/preview-contract'
 import { IPC_CHANNEL } from '@shared/ipc-contract'
 import { isSafeExternalUrl } from '@shared/safe-url'
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
@@ -9,7 +10,17 @@ import nekodePngIcon from '../../resources/icon.png?asset'
 import { bootstrap } from './bootstrap'
 import { broadcastToTrustedWindows } from './ipc/broadcast'
 import { registerAppIpcHandlers } from './ipc/ipc-handlers'
-import { allowsMicrophone, allowsRendererClipboard } from './security/media-permissions'
+import { registerPreviewIpcHandlers } from './preview/preview-ipc'
+import {
+  type BoundPreview,
+  type PreviewWindowHandle,
+  PreviewWindows,
+} from './preview/preview-windows'
+import {
+  allowsMicrophone,
+  allowsPreviewClipboard,
+  allowsRendererClipboard,
+} from './security/media-permissions'
 import { isTrustedRendererUrl } from './security/sender-guard'
 import { createServices } from './services/create-services'
 import { DesktopShortcutSender, desktopHelperPath } from './services/dictation/desktop-sender'
@@ -18,6 +29,30 @@ import { registerShutdown } from './shutdown'
 import { runPrimaryInstance } from './single-instance'
 
 let currentMainWindow: BrowserWindow | undefined
+/** Read-only file preview windows (docs/features/file-preview-window). */
+let previewWindows: PreviewWindows | undefined
+
+// Frame style shared by the main window and file preview windows.
+// Window and taskbar icon (2026-10-01): the branded cat tile, so dev runs
+// carry the app identity like the packaged exe (electron-builder win.icon).
+// ?asset resolves to a real file path in dev and build. Windows uses the
+// multi-size .ico; Linux window managers need a PNG.
+// Custom title bar (design doc 26.2): the renderer's full-width title bar
+// strip is the drag surface (.drag-region in index.css) and paints the base
+// app background; Windows draws the caption buttons in the top-right corner
+// over that strip with the overlay colors below. backgroundColor prevents a
+// white flash before the first renderer paint.
+const WINDOW_FRAME = {
+  autoHideMenuBar: true,
+  icon: process.platform === 'win32' ? nekodeIcon : nekodePngIcon,
+  titleBarStyle: 'hidden',
+  titleBarOverlay: {
+    color: '#00000000',
+    symbolColor: '#cacbd1',
+    height: 36,
+  },
+  backgroundColor: '#0d1222',
+} as const
 
 // The single trusted renderer document: the dev server root in dev, the
 // built index.html in production. Used for both navigation locking and the
@@ -35,25 +70,7 @@ function createWindow(): void {
     width: 1280,
     height: 800,
     show: false,
-    autoHideMenuBar: true,
-    // Window and taskbar icon (2026-10-01): the branded cat tile, so dev
-    // runs carry the app identity like the packaged exe (electron-builder
-    // win.icon below). ?asset resolves to a real file path in dev and build.
-    // Windows uses the multi-size .ico; Linux window managers need a PNG.
-    icon: process.platform === 'win32' ? nekodeIcon : nekodePngIcon,
-    // Custom title bar (design doc 26.2): the renderer's full-width title
-    // bar strip (brand on the left) is the drag surface (.drag-region in
-    // index.css) and paints the base app background; Windows draws the
-    // caption buttons in the top-right corner over that strip with the
-    // overlay colors below. backgroundColor prevents a white flash before
-    // the first renderer paint.
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#00000000',
-      symbolColor: '#cacbd1',
-      height: 36,
-    },
-    backgroundColor: '#0d1222',
+    ...WINDOW_FRAME,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -66,11 +83,19 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
+  // Preview windows belong to the main window (file-preview-window Behaviour 11).
+  mainWindow.on('closed', () => {
+    previewWindows?.closeAll()
+  })
 
   const permissions = mainWindow.webContents.session
+  // Preview windows share this session; they get clipboard write only
+  // (file-preview-window Authorization).
+  const isPreviewWindow = (contents: Electron.WebContents | null): boolean =>
+    contents !== null && (previewWindows?.targetFor(contents.id) ?? null) !== null
   permissions.setPermissionRequestHandler((contents, permission, callback, details) => {
     callback(
-      contents === mainWindow.webContents &&
+      (contents === mainWindow.webContents &&
         (allowsMicrophone(
           permission,
           details.requestingUrl,
@@ -83,25 +108,27 @@ function createWindow(): void {
             details.requestingUrl,
             details.isMainFrame,
             trustedRendererUrls,
-          )),
+          ))) ||
+        (isPreviewWindow(contents) && allowsPreviewClipboard(permission, details.isMainFrame)),
     )
   })
   permissions.setPermissionCheckHandler(
     (contents, permission, _origin, details) =>
-      contents === mainWindow.webContents &&
-      (allowsMicrophone(
-        permission,
-        details.requestingUrl,
-        details.isMainFrame,
-        details.mediaType ? [details.mediaType] : undefined,
-        trustedRendererUrls,
-      ) ||
-        allowsRendererClipboard(
+      (contents === mainWindow.webContents &&
+        (allowsMicrophone(
           permission,
           details.requestingUrl,
           details.isMainFrame,
+          details.mediaType ? [details.mediaType] : undefined,
           trustedRendererUrls,
-        )),
+        ) ||
+          allowsRendererClipboard(
+            permission,
+            details.requestingUrl,
+            details.isMainFrame,
+            trustedRendererUrls,
+          ))) ||
+      (isPreviewWindow(contents) && allowsPreviewClipboard(permission, details.isMainFrame)),
   )
 
   // New windows are always denied; external opens go through the protocol
@@ -124,6 +151,76 @@ function createWindow(): void {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+// A read-only file preview window (file-preview-window Behaviour 5-6, 13):
+// same frame as the main window, the shared preload in preview mode (only
+// window.preview), no navigation, and no new windows.
+function createPreviewBrowserWindow(target: BoundPreview): PreviewWindowHandle {
+  const window = new BrowserWindow({
+    width: 900,
+    height: 720,
+    show: false,
+    title: `${target.fileName} - NeKode`,
+    ...WINDOW_FRAME,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      additionalArguments: [PREVIEW_WINDOW_ARGUMENT],
+    },
+  })
+  window.on('ready-to-show', () => {
+    window.show()
+  })
+  // The OS title stays `<file> - NeKode`; the shared index.html title must not replace it.
+  window.on('page-title-updated', (event) => {
+    event.preventDefault()
+  })
+  window.webContents.setWindowOpenHandler((details) => {
+    if (isSafeExternalUrl(details.url)) {
+      void shell.openExternal(details.url)
+    }
+    return { action: 'deny' }
+  })
+  window.webContents.on('will-navigate', (event) => {
+    event.preventDefault()
+  })
+
+  if (is.dev && process.env.ELECTRON_RENDERER_URL) {
+    const url = new URL(process.env.ELECTRON_RENDERER_URL)
+    url.searchParams.set('view', PREVIEW_VIEW_QUERY)
+    void window.loadURL(url.toString())
+  } else {
+    void window.loadFile(join(__dirname, '../renderer/index.html'), {
+      query: { view: PREVIEW_VIEW_QUERY },
+    })
+  }
+
+  const webContentsId = window.webContents.id
+  return {
+    webContentsId,
+    focus: () => {
+      if (window.isMinimized()) {
+        window.restore()
+      }
+      window.focus()
+    },
+    close: () => {
+      if (!window.isDestroyed()) {
+        window.close()
+      }
+    },
+    send: (channel) => {
+      if (!window.isDestroyed()) {
+        window.webContents.send(channel)
+      }
+    },
+    onClosed: (listener) => {
+      window.on('closed', listener)
+    },
   }
 }
 
@@ -200,7 +297,33 @@ function startApplication(): void {
               return result.filePaths[0]
             },
           })
+          const previews = new PreviewWindows({
+            resolveTarget: (projectId, relativePath) =>
+              services.preview.target(projectId, relativePath),
+            createWindow: createPreviewBrowserWindow,
+            fingerprint: (projectId, relativePath) =>
+              services.preview.fingerprint(projectId, relativePath),
+            setInterval: (callback, ms) => setInterval(callback, ms),
+            clearInterval: (handle) => {
+              clearInterval(handle as NodeJS.Timeout)
+            },
+          })
+          previewWindows = previews
+          // Main-window broadcasts skip preview windows: in dev their URL passes
+          // the trusted prefix (file-preview-window Business rules).
+          const appWindows = (): BrowserWindow[] =>
+            BrowserWindow.getAllWindows().filter(
+              (window) => previews.targetFor(window.webContents.id) === null,
+            )
+          registerPreviewIpcHandlers(ipcMain, {
+            targetFor: (webContentsId) => previews.targetFor(webContentsId),
+            read: (projectId, relativePath) => services.files.read(projectId, relativePath),
+            openExternal: (projectId, relativePath) =>
+              services.files.openExternal(projectId, relativePath),
+          })
           registerAppIpcHandlers(ipcMain, services, {
+            openPreviewWindow: (projectId, relativePath) => previews.open(projectId, relativePath),
+            isPreviewSender: (webContentsId) => previews.targetFor(webContentsId) !== null,
             desktopWindow: (event) => {
               const window = BrowserWindow.fromWebContents(event.sender)
               if (!window || window.isDestroyed() || !window.isFocused()) return null
@@ -210,10 +333,10 @@ function startApplication(): void {
               ).toString()
             },
             trustedRendererUrls: getTrustedRendererUrls(),
-            // Terminal data/exit events go to every trusted window's webContents.
+            // Terminal data/exit events go to every trusted main window's webContents.
             broadcast: (channel, chatId, payload) => {
               broadcastToTrustedWindows(
-                BrowserWindow.getAllWindows(),
+                appWindows(),
                 getTrustedRendererUrls(),
                 channel,
                 chatId,
@@ -222,7 +345,7 @@ function startApplication(): void {
             },
             broadcastDictation: (result) => {
               broadcastToTrustedWindows(
-                BrowserWindow.getAllWindows(),
+                appWindows(),
                 getTrustedRendererUrls(),
                 IPC_CHANNEL.dictationResult,
                 result,
@@ -230,7 +353,7 @@ function startApplication(): void {
             },
             broadcastTaskProgress: (event) => {
               broadcastToTrustedWindows(
-                BrowserWindow.getAllWindows(),
+                appWindows(),
                 getTrustedRendererUrls(),
                 IPC_CHANNEL.taskProgressChanged,
                 event,
@@ -238,7 +361,7 @@ function startApplication(): void {
             },
             broadcastResumeSources: (event) => {
               broadcastToTrustedWindows(
-                BrowserWindow.getAllWindows(),
+                appWindows(),
                 getTrustedRendererUrls(),
                 IPC_CHANNEL.resumeSourcesChanged,
                 event,

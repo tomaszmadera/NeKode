@@ -164,3 +164,32 @@ describe('MonacoPreview context menu', () => {
     expect(mockModels[0].value).toBe('recovered content')
   })
 })
+
+describe('MonacoPreview content refresh (file-preview-window Behaviour 9)', () => {
+  beforeEach(() => {
+    mockSetupReject = null
+    resetMockMonaco()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('updates the model in place and keeps the scroll position', async () => {
+    const { rerender } = render(<MonacoPreview content="one" language="markdown" />)
+    await waitFor(() => expect(mockEditors).toHaveLength(1))
+    mockEditors[0].scrollTop = 120
+    rerender(<MonacoPreview content="two" language="markdown" />)
+    expect(mockEditors).toHaveLength(1)
+    expect(mockModels[0].value).toBe('two')
+    expect(mockEditors[0].restoredViewStates).toEqual([{ scrollTop: 120 }])
+  })
+
+  it('recreates the editor when the language changes', async () => {
+    const { rerender } = render(<MonacoPreview content="one" language="markdown" />)
+    await waitFor(() => expect(mockEditors).toHaveLength(1))
+    rerender(<MonacoPreview content="one" language="typescript" />)
+    await waitFor(() => expect(mockEditors).toHaveLength(2))
+    expect(mockEditors[0].disposed).toBe(true)
+    expect(mockModels[0].disposed).toBe(true)
+  })
+})

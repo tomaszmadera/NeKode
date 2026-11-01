@@ -5,6 +5,8 @@ export const TEST_ID = {
   appShell: 'app-shell',
   /** Window title bar strip (drag surface); absent in the floating theme. */
   titleBar: 'title-bar',
+  previewTitleBar: 'preview-title-bar',
+  previewNotice: 'preview-notice',
   leftNav: 'region-left',
   tabStrip: 'tab-strip',
   tabTerminal: 'tab-terminal',
@@ -98,6 +100,7 @@ export const TEST_ID = {
   /** Context menu of a file or directory row (NEKODE-38). */
   fileTreeContextMenu: 'file-tree-context-menu',
   fileTreeShowInFolder: 'file-tree-show-in-folder',
+  fileTreeOpenInWindow: 'file-tree-open-in-window',
   fileTreeCopyAbsolutePath: 'file-tree-copy-absolute-path',
   fileTreeCopyRelativePath: 'file-tree-copy-relative-path',
   fileTreeTrash: 'file-tree-trash',

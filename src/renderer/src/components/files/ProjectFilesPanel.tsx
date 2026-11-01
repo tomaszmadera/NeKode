@@ -25,6 +25,7 @@ interface ProjectFilesPanelProps {
   onToggleDirectory: (relativePath: string) => void
   onSelectFile: (relativePath: string) => void
   onShowInFolder: (relativePath: string) => void
+  onOpenInWindow: (relativePath: string) => void
   onCopyPath: (relativePath: string) => void
   onCopyRelativePath: (relativePath: string) => void
   onTrash: (relativePath: string) => void
@@ -47,6 +48,7 @@ export function ProjectFilesPanel({
   onToggleDirectory,
   onSelectFile,
   onShowInFolder,
+  onOpenInWindow,
   onCopyPath,
   onCopyRelativePath,
   onTrash,
@@ -159,6 +161,7 @@ export function ProjectFilesPanel({
             onToggleDirectory={onToggleDirectory}
             onSelectFile={onSelectFile}
             onShowInFolder={onShowInFolder}
+            onOpenInWindow={onOpenInWindow}
             onCopyPath={onCopyPath}
             onCopyRelativePath={onCopyRelativePath}
             onTrash={onTrash}

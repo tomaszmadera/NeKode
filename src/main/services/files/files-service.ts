@@ -136,7 +136,12 @@ export interface FilesFsAdapter {
   /** One directory read; throws when the path is missing or not a directory. */
   readdir(dirPath: string): Promise<FilesFsEntry[]>
   /** Follows symlinks; null when the path does not resolve. */
-  stat(path: string): Promise<{ size: number; isFile: boolean; isDirectory: boolean } | null>
+  stat(path: string): Promise<{
+    size: number
+    mtimeMs: number
+    isFile: boolean
+    isDirectory: boolean
+  } | null>
   /** Canonical path (symlinks resolved); null when the path does not resolve. */
   realpath(path: string): Promise<string | null>
   readFile(path: string): Promise<Uint8Array>
@@ -226,7 +231,12 @@ const nodeFsAdapter: FilesFsAdapter = {
   async stat(path) {
     try {
       const stats = await nodeFs.stat(path)
-      return { size: stats.size, isFile: stats.isFile(), isDirectory: stats.isDirectory() }
+      return {
+        size: stats.size,
+        mtimeMs: stats.mtimeMs,
+        isFile: stats.isFile(),
+        isDirectory: stats.isDirectory(),
+      }
     } catch {
       return null
     }
@@ -341,6 +351,43 @@ export class FilesService {
       // Not decodable as UTF-8 (spec Behaviour 10).
       return { kind: 'binary' }
     }
+  }
+
+  /**
+   * Validates a file for a preview window (file-preview-window Behaviour 3):
+   * the same containment rules as read, and the target must be a file.
+   */
+  async previewTarget(projectId: string, relativePath: string): Promise<{ fileName: string }> {
+    const channel = 'files:openInWindow'
+    const { target } = await this.#locate(projectId, relativePath, channel)
+    const stats = await this.#fs.stat(target)
+    if (stats === null || !stats.isFile) {
+      throw notFound(channel)
+    }
+    return { fileName: posix.basename(toPosix(relativePath)) }
+  }
+
+  /**
+   * Change fingerprint of one file for preview-window polling
+   * (file-preview-window Behaviour 9-10): size and mtime, or null when the
+   * file is missing or no longer resolves inside the project. Only the
+   * service's own not-found errors map to null; other failures propagate.
+   */
+  async fingerprint(projectId: string, relativePath: string): Promise<string | null> {
+    let target: string
+    try {
+      ;({ target } = await this.#locate(projectId, relativePath, 'preview:read'))
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'not_found') {
+        return null
+      }
+      throw error
+    }
+    const stats = await this.#fs.stat(target)
+    if (stats === null || !stats.isFile) {
+      return null
+    }
+    return `${stats.size}:${stats.mtimeMs}`
   }
 
   /** Opens the file with the OS default application (spec Behaviour 11). */

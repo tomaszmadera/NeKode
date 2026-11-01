@@ -401,6 +401,18 @@ export function useProjectFiles(runtime: WorkspaceRuntime) {
     [app, filesProjectId, setNotice],
   )
 
+  const handleFilesOpenInWindow = useCallback(
+    (relativePath: string): void => {
+      if (filesProjectId === null) {
+        return
+      }
+      void app.files.openInWindow(filesProjectId, relativePath).catch((error: unknown) => {
+        setNotice(errorMessage(error, 'Failed to open the file in a new window.'))
+      })
+    },
+    [app, filesProjectId, setNotice],
+  )
+
   const handleFilesCopyRelativePath = useCallback(
     (relativePath: string): void => {
       void navigator.clipboard.writeText(relativePath).catch(() => {
@@ -537,6 +549,7 @@ export function useProjectFiles(runtime: WorkspaceRuntime) {
     handleFilesToggleDirectory,
     handleFilesSelectFile,
     handleFilesShowInFolder,
+    handleFilesOpenInWindow,
     handleFilesCopyPath,
     handleFilesCopyRelativePath,
     handleFilesTrash,
