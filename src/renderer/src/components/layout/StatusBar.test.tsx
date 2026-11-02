@@ -342,7 +342,7 @@ describe('status bar — quick theme switcher', () => {
   })
 })
 
-describe('status bar — git sync (NEKODE-1)', () => {
+describe('status bar — git sync button removed', () => {
   let app: AppApi
 
   beforeEach(() => {
@@ -352,100 +352,23 @@ describe('status bar — git sync (NEKODE-1)', () => {
     cleanup()
   })
 
-  it('renders Sync button next to Git branch when branch is present', async () => {
+  it('does not render a sync button when branch is present', async () => {
     render(<StatusBar app={app} project={projectA} />)
     await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitBranch)).toBeTruthy())
-    const syncButton = screen.getByTestId(TEST_ID.statusGitSync)
-    expect(syncButton).toBeTruthy()
-    expect(syncButton.textContent).toContain('Sync')
-    expect(syncButton.getAttribute('disabled')).toBeNull()
+    expect(screen.queryByRole('button', { name: /sync/i })).toBeNull()
+    expect(screen.queryByText('Sync')).toBeNull()
   })
 
-  it('does not render Sync button when branch is null (no git)', async () => {
+  it('does not render a sync button when branch is null (no git)', async () => {
     app = createAppApiStub({ branch: null })
     render(<StatusBar app={app} project={projectA} />)
     await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitNone)).toBeTruthy())
-    expect(screen.queryByTestId(TEST_ID.statusGitSync)).toBeNull()
+    expect(screen.queryByRole('button', { name: /sync/i })).toBeNull()
   })
 
-  it('does not render Sync button when project is null', () => {
+  it('does not render a sync button when project is null', () => {
     render(<StatusBar app={app} project={null} />)
-    expect(screen.queryByTestId(TEST_ID.statusGitSync)).toBeNull()
-  })
-
-  it('invokes app.git.sync, disables button during sync, and refreshes git status on completion', async () => {
-    let resolveSync!: () => void
-    const syncPromise = new Promise<void>((resolve) => {
-      resolveSync = resolve
-    })
-    app.git.sync = vi.fn().mockImplementation(() => syncPromise)
-
-    render(<StatusBar app={app} project={projectA} />)
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitSync)).toBeTruthy())
-
-    const syncButton = screen.getByTestId(TEST_ID.statusGitSync)
-    expect(syncButton.hasAttribute('disabled')).toBe(false)
-
-    fireEvent.click(syncButton)
-
-    expect(app.git.sync).toHaveBeenCalledWith('p1')
-    expect(syncButton.hasAttribute('disabled')).toBe(true)
-
-    // Settle sync
-    resolveSync()
-    await waitFor(() => expect(syncButton.hasAttribute('disabled')).toBe(false))
-    // Verifies git.getStatus was called again on completion
-    await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledTimes(2))
-  })
-
-  it('calls onError callback when app.git.sync rejects', async () => {
-    const onError = vi.fn()
-    app.git.sync = vi.fn().mockRejectedValue(new Error('git push failed: remote rejected'))
-
-    render(<StatusBar app={app} project={projectA} onError={onError} />)
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitSync)).toBeTruthy())
-
-    const syncButton = screen.getByTestId(TEST_ID.statusGitSync)
-    fireEvent.click(syncButton)
-
-    await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith('git push failed: remote rejected')
-    })
-    await waitFor(() => expect(syncButton.hasAttribute('disabled')).toBe(false))
-  })
-
-  it('preserves syncing state per project when switching projects', async () => {
-    let resolveSync!: () => void
-    const syncPromise = new Promise<void>((resolve) => {
-      resolveSync = resolve
-    })
-    app.git.sync = vi.fn().mockImplementation(() => syncPromise)
-
-    const projectB: ProjectInfo = { id: 'p2', name: 'Project 2', path: 'D:/p2', runtimeLabel: null }
-
-    const { rerender } = render(<StatusBar app={app} project={projectA} />)
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitSync)).toBeTruthy())
-
-    const syncButton = screen.getByTestId(TEST_ID.statusGitSync)
-    fireEvent.click(syncButton)
-    expect(syncButton.hasAttribute('disabled')).toBe(true)
-
-    // Switch to projectB: it is not syncing
-    rerender(<StatusBar app={app} project={projectB} />)
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitSync)).toBeTruthy())
-    const projectBSyncButton = screen.getByTestId(TEST_ID.statusGitSync)
-    expect(projectBSyncButton.hasAttribute('disabled')).toBe(false)
-
-    // Switch back to projectA: still syncing
-    rerender(<StatusBar app={app} project={projectA} />)
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitSync)).toBeTruthy())
-    expect(screen.getByTestId(TEST_ID.statusGitSync).hasAttribute('disabled')).toBe(true)
-
-    // Settle sync
-    resolveSync()
-    await waitFor(() => {
-      expect(screen.getByTestId(TEST_ID.statusGitSync).hasAttribute('disabled')).toBe(false)
-    })
+    expect(screen.queryByRole('button', { name: /sync/i })).toBeNull()
   })
 })
 

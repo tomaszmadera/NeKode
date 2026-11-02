@@ -1,7 +1,10 @@
 # Git Sync Button in Status Bar
 
-Status: Draft (feature specification).
+Status: Superseded (Sync button removed from status bar per user decision 2026-11-02).
 Path: `docs/features/git-sync-button/spec.md`.
+
+> [!NOTE]
+> The status bar Sync button was removed per user decision on 2026-11-02. The underlying GitService.sync backend remains available.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 

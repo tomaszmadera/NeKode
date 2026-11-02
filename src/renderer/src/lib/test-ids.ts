@@ -44,8 +44,6 @@ export const TEST_ID = {
   statusGitBranch: 'status-git-branch',
   statusGitStatus: 'status-git-status',
   statusGitNone: 'status-git-none',
-  /** Git sync button in the status bar (NEKODE-1). */
-  statusGitSync: 'status-git-sync',
   /** Quick theme switcher in the status bar. */
   statusThemeSwitcher: 'status-theme-switcher',
   /** Toggle button for bottom terminal in the status bar. */

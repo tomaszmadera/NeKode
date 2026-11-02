@@ -1,7 +1,6 @@
 import { shortenHomePath } from '@shared/home-path'
 import type { AppApi, GitStatus, GitWorktreeStatus, ProjectInfo } from '@shared/ipc-contract'
 import { emptyGitWorktree } from '@shared/ipc-contract'
-import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useEffect, useState } from 'react'
 import { cn } from '../../lib/cn'
@@ -32,8 +31,6 @@ export interface StatusBarProps {
   quickThemeSwitch?: boolean
   /** Callback when the user switches theme from the status bar. */
   onThemeChange?: (theme: ThemeId) => void
-  /** Optional error callback for git sync failures (surfaced to workspace notice banner). */
-  onError?: (message: string) => void
   /** Whether the bottom panel (terminal) is currently open. */
   bottomOpen?: boolean
   /** Callback to toggle opening and closing the bottom terminal. */
@@ -86,41 +83,12 @@ export function StatusBar({
   theme,
   quickThemeSwitch = false,
   onThemeChange,
-  onError,
   bottomOpen = false,
   onToggleBottom,
 }: StatusBarProps): React.JSX.Element {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
-  const [syncingProjects, setSyncingProjects] = useState<ReadonlySet<string>>(() => new Set())
-  const [syncNonce, setSyncNonce] = useState(0)
 
   const projectId = project?.id ?? null
-  const syncing = projectId !== null && syncingProjects.has(projectId)
-
-  const handleSync = async () => {
-    if (projectId === null || syncingProjects.has(projectId)) return
-    const activeId = projectId
-    setSyncingProjects((prev) => {
-      const next = new Set(prev)
-      next.add(activeId)
-      return next
-    })
-    try {
-      await app.git.sync(activeId)
-    } catch (error) {
-      const message =
-        parseAppErrorPayload(error)?.message ??
-        (error instanceof Error ? error.message : 'Git sync failed.')
-      onError?.(message)
-    } finally {
-      setSyncingProjects((prev) => {
-        const next = new Set(prev)
-        next.delete(activeId)
-        return next
-      })
-      setSyncNonce((n) => n + 1)
-    }
-  }
 
   useEffect(() => {
     if (projectId === null) {
@@ -129,7 +97,6 @@ export function StatusBar({
     }
     let cancelled = false
     void refreshTrigger
-    void syncNonce
 
     const fetchStatus = () => {
       void app.git
@@ -165,7 +132,7 @@ export function StatusBar({
       window.removeEventListener('focus', onFocus)
       clearInterval(interval)
     }
-  }, [app, projectId, refreshTrigger, syncNonce])
+  }, [app, projectId, refreshTrigger])
 
   const labels = runtimeLabels(project?.runtimeLabel ?? null)
   const visibleLabels = labels.slice(0, MAX_RUNTIME_BADGES)
@@ -214,7 +181,7 @@ export function StatusBar({
               ) : null}
             </span>
           ) : null}
-          <GitSection status={gitStatus} syncing={syncing} onSync={handleSync} />
+          <GitSection status={gitStatus} />
         </>
       ) : null}
       {quickThemeSwitch && onThemeChange && theme ? (
@@ -285,15 +252,7 @@ function ThemeSwitchSection({
   )
 }
 
-function GitSection({
-  status,
-  syncing,
-  onSync,
-}: {
-  status: GitStatus | null
-  syncing: boolean
-  onSync: () => void
-}): React.JSX.Element | null {
+function GitSection({ status }: { status: GitStatus | null }): React.JSX.Element | null {
   if (status === null) {
     return null
   }
@@ -329,22 +288,6 @@ function GitSection({
       >
         {gitStatusText(status.worktree)}
       </span>
-      <button
-        type="button"
-        className="status-bar-git-sync flex shrink-0 cursor-pointer select-none items-center gap-1 rounded border border-edge bg-button px-1.5 py-0.5 text-xs text-ink transition-colors hover:bg-button-hover hover:text-ink focus-visible:outline focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50"
-        data-testid={TEST_ID.statusGitSync}
-        aria-label={syncing ? 'Syncing...' : 'Sync'}
-        title={syncing ? 'Syncing repository...' : 'Sync repository (pull, push, push tags)'}
-        disabled={syncing}
-        onClick={onSync}
-      >
-        <Icon.retry
-          size={12}
-          aria-hidden
-          className={syncing ? 'animate-spin text-ink-secondary' : 'text-ink-secondary'}
-        />
-        <span className="font-medium">Sync</span>
-      </button>
     </>
   )
 }

@@ -316,18 +316,6 @@
   border-left-color: var(--float-overlay-edge);
 }
 
-[data-theme="nekode-float"] .status-bar-git-sync {
-  background: var(--float-overlay-soft);
-  border: 1px solid var(--float-overlay-edge);
-  color: var(--color-projects-header);
-  border-radius: 6px;
-}
-
-[data-theme="nekode-float"] .status-bar-git-sync:hover {
-  background: var(--float-overlay-edge);
-  color: var(--float-ink-on-accent);
-}
-
 [data-theme="nekode-float"] .status-bar-theme-switcher {
   border-color: rgba(155, 130, 255, 0.3);
   background: rgba(139, 108, 255, 0.12);

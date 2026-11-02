@@ -627,7 +627,6 @@ function AppContent({
         theme={settings.theme}
         quickThemeSwitch={settings.quickThemeSwitch}
         onThemeChange={settings.setTheme}
-        onError={setNotice}
         bottomOpen={bottom.bottomOpen}
         onToggleBottom={bottom.handleToggleBottom}
       />
