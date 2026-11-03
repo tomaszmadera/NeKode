@@ -653,7 +653,8 @@ describe('bottom auxiliary terminal panel', () => {
     )
     pressChord()
     expect(await screen.findByRole('button', { name: 'PowerShell' })).toBeTruthy()
-    expect(bottomCreateIds(app)).toHaveLength(1)
+    // The tab's create lands in its own effect after the tab renders.
+    await waitFor(() => expect(bottomCreateIds(app)).toHaveLength(1))
   })
 
   it('does not spawn a bottom terminal when an earlier removal fails and a later one succeeds', async () => {
