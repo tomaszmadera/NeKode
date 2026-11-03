@@ -35,6 +35,8 @@ export interface LeftNavigationProps {
   onAddProject: () => void
   onRemoveProject: (projectId: string) => void
   onOpenProjectFiles: (projectId: string) => void
+  /** Two-panel layout opens the tree from this control. Three-panel disables it. */
+  fileTreeEnabled?: boolean
   onOpenProjectKanban?: (projectId: string) => void
   onOpenProjectSettings: (projectId: string) => void
   onCreateChat: (projectId: string) => Promise<boolean>
@@ -129,6 +131,7 @@ export function LeftNavigation({
   onAddProject,
   onRemoveProject,
   onOpenProjectFiles,
+  fileTreeEnabled = true,
   onOpenProjectSettings,
   onCreateChat,
   onCreateAgentChat,
@@ -714,14 +717,22 @@ export function LeftNavigation({
                         {/* Row action 2: File tree */}
                         <button
                           type="button"
-                          aria-label={`Open file tree of ${project.name}`}
+                          aria-label={
+                            fileTreeEnabled
+                              ? `Open file tree of ${project.name}`
+                              : `File tree of ${project.name}`
+                          }
                           title="File tree"
+                          disabled={!fileTreeEnabled}
                           onClick={(event) => {
                             event.stopPropagation()
+                            if (!fileTreeEnabled) {
+                              return
+                            }
                             onOpenProjectFiles(project.id)
                           }}
                           data-testid={testIdFor.projectFiles(project.id)}
-                          className="nk-project-row-action nk-icon-btn flex size-8 shrink-0 items-center justify-center rounded-lg bg-transparent text-ink-muted transition-colors duration-fast ease-standard"
+                          className="nk-project-row-action nk-icon-btn flex size-8 shrink-0 items-center justify-center rounded-lg bg-transparent text-ink-muted transition-colors duration-fast ease-standard disabled:cursor-default disabled:opacity-40"
                           style={{
                             width: 32,
                             height: 32,

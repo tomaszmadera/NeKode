@@ -80,6 +80,28 @@ describe('useResizableRegion', () => {
     expect(region.style.height).toBe('160px')
   })
 
+  it('resizes the right region relative to drag start and persists its width', () => {
+    const resizeEnds: number[] = []
+    render(<XAxisHarness edge="end" onResizeEnd={(size) => resizeEnds.push(size)} />)
+    const region = screen.getByTestId(LEFT_REGION)
+    const handle = getHandle(LEFT_HANDLE)
+
+    firePointer(handle, 'pointerdown', { clientX: 700 })
+    firePointer(handle, 'pointermove', { clientX: 700 })
+    expect(region.style.width).toBe('280px')
+    firePointer(handle, 'pointermove', { clientX: 650 })
+    expect(region.style.width).toBe('330px')
+    expect(resizeEnds).toEqual([])
+    firePointer(handle, 'pointerup', { clientX: 650 })
+    expect(resizeEnds).toEqual([330])
+
+    firePointer(handle, 'pointerdown', { clientX: 650 })
+    firePointer(handle, 'pointermove', { clientX: 900 })
+    expect(region.style.width).toBe('220px')
+    firePointer(handle, 'pointerup', { clientX: 900 })
+    expect(resizeEnds).toEqual([330, 220])
+  })
+
   it('persists (onResizeEnd) only on drag end with an actual size change', () => {
     const resizeEnds: number[] = []
     const { getByTestId } = render(<YAxisHarness onResizeEnd={(size) => resizeEnds.push(size)} />)
@@ -179,15 +201,22 @@ describe('useResizableRegion', () => {
 
 // The x-axis behaviour (clientX against the drag start) drives the left
 // region, starting at its default width (280px).
-function XAxisHarness(): React.JSX.Element {
+function XAxisHarness({
+  edge = 'start',
+  onResizeEnd = () => undefined,
+}: {
+  edge?: 'start' | 'end'
+  onResizeEnd?: (size: number) => void
+}): React.JSX.Element {
   const [size, setSize] = useState(LEFT_REGION_SIZE.default)
   const leftRegion = useResizableRegion({
     axis: 'x',
+    edge,
     minSize: LEFT_REGION_SIZE.min,
     maxSize: LEFT_REGION_SIZE.max,
     size,
     onSizeChange: setSize,
-    onResizeEnd: () => undefined,
+    onResizeEnd,
   })
 
   return (

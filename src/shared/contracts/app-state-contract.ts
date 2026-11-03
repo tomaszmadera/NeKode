@@ -19,6 +19,13 @@ export const APP_STATE_KEY = {
   bottomRegionHeight: 'region.bottom.height',
   /** '1' open, '0' hidden. Missing or any other value means hidden. */
   bottomRegionOpen: 'region.bottom.open',
+  /** `two` or `three`. Missing or any other value means two-panel. */
+  workspaceLayout: 'region.layout',
+  rightRegionWidth: 'region.right.width',
+  /** '1' shown, '0' hidden. Missing or any other value means shown. */
+  leftRegionOpen: 'region.left.open',
+  /** '1' shown, '0' hidden. Missing or any other value means shown. */
+  rightRegionOpen: 'region.right.open',
   /** Last confirmed Add Project dialog directory: the next dialog's defaultPath. */
   projectsLastDirectory: 'projects.lastDirectory',
   /** '1' sends Handoff/Resume commands straight to the PTY; missing means paste-only. */

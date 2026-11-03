@@ -18,6 +18,8 @@ export interface RegionSizeLimits {
 }
 
 export const LEFT_REGION_SIZE: RegionSizeLimits = { default: 280, min: 220, max: 480 }
+/** Same limits as the left panel (workspace-layout spec Behaviour 9). */
+export const RIGHT_REGION_SIZE: RegionSizeLimits = { default: 280, min: 220, max: 480 }
 export const BOTTOM_REGION_SIZE: RegionSizeLimits = { default: 220, min: 160, max: 560 }
 
 /** Clamps a raw or persisted region size to the region's limits. */
@@ -27,6 +29,8 @@ export function clampRegionSize(value: number, limits: RegionSizeLimits): number
 
 export function useResizableRegion(options: {
   axis: 'x' | 'y'
+  /** Horizontal panels measured from the window's start edge, or from the end (right panel). */
+  edge?: 'start' | 'end'
   minSize: number
   maxSize: number
   /** Current region size in px; owned by the caller (hydrate/persist live there). */
@@ -36,7 +40,7 @@ export function useResizableRegion(options: {
   /** Applied when an active drag ends with an actual size change; the caller persists here. */
   onResizeEnd: (size: number) => void
 }): ResizableRegion {
-  const { axis, minSize, maxSize, size, onSizeChange, onResizeEnd } = options
+  const { axis, edge = 'start', minSize, maxSize, size, onSizeChange, onResizeEnd } = options
   const endActiveDragRef = useRef<(() => void) | null>(null)
 
   const startResize = useCallback(
@@ -71,7 +75,7 @@ export function useResizableRegion(options: {
       function onPointerMove(moveEvent: PointerEvent): void {
         const delta =
           axis === 'x'
-            ? startSize + (moveEvent.clientX - startClientX)
+            ? startSize + (moveEvent.clientX - startClientX) * (edge === 'end' ? -1 : 1)
             : startSize + (startClientY - moveEvent.clientY)
         const next = Math.min(maxSize, Math.max(minSize, Math.round(delta)))
         if (next !== currentSize) {
@@ -104,7 +108,7 @@ export function useResizableRegion(options: {
       handle.addEventListener('lostpointercapture', endDrag)
       endActiveDragRef.current = endDrag
     },
-    [axis, minSize, maxSize, size, onSizeChange, onResizeEnd],
+    [axis, edge, minSize, maxSize, size, onSizeChange, onResizeEnd],
   )
 
   const nudge = useCallback(

@@ -10,6 +10,8 @@ interface ResizeHandleProps {
   minSize?: number
   maxSize?: number
   testId: string
+  /** `end` is the region's right edge. `start` is its left edge (right panel). */
+  placement?: 'start' | 'end'
 }
 
 const KEYBOARD_STEP = 16
@@ -22,13 +24,14 @@ export function ResizeHandle({
   minSize,
   maxSize,
   testId,
+  placement = 'end',
 }: ResizeHandleProps): React.JSX.Element {
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
     if (onResizeNudge === undefined) {
       return
     }
-    const decrease = axis === 'x' ? 'ArrowLeft' : 'ArrowDown'
-    const increase = axis === 'x' ? 'ArrowRight' : 'ArrowUp'
+    const decrease = axis === 'y' ? 'ArrowDown' : placement === 'start' ? 'ArrowRight' : 'ArrowLeft'
+    const increase = axis === 'y' ? 'ArrowUp' : placement === 'start' ? 'ArrowLeft' : 'ArrowRight'
     if (event.key !== decrease && event.key !== increase) {
       return
     }
@@ -42,10 +45,10 @@ export function ResizeHandle({
     <div
       className={
         axis === 'x'
-          ? // Width handles sit on the region's right edge (user request
+          ? // Width handles sit on one vertical edge (user request
             // 2026-10-04, 2026-10-18): a transparent strip with 1px border at
             // rest avoids a heavy divider bar while keeping an easy drag target.
-            'absolute inset-y-0 right-0 w-1 cursor-col-resize touch-none bg-transparent hover:bg-highlight active:bg-highlight focus-visible:bg-highlight focus-visible:outline-none transition-colors duration-fast'
+            `absolute inset-y-0 w-1 cursor-col-resize touch-none bg-transparent hover:bg-highlight active:bg-highlight focus-visible:bg-highlight focus-visible:outline-none transition-colors duration-fast ${placement === 'start' ? 'left-0' : 'right-0'}`
           : 'h-1 w-full cursor-row-resize touch-none bg-edge hover:bg-highlight'
       }
       onPointerDown={onResizeStart}

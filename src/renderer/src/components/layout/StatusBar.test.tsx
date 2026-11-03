@@ -439,3 +439,86 @@ describe('status bar — bottom terminal toggle', () => {
     expect(toggle.className).toContain('ml-auto')
   })
 })
+
+describe('status bar — panel toggles', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  function renderCluster(options?: { theme?: boolean; rightEnabled?: boolean }): {
+    onToggleLeft: ReturnType<typeof vi.fn>
+    onToggleRight: ReturnType<typeof vi.fn>
+    onToggleBottom: ReturnType<typeof vi.fn>
+  } {
+    const onToggleLeft = vi.fn()
+    const onToggleRight = vi.fn()
+    const onToggleBottom = vi.fn()
+    render(
+      <StatusBar
+        app={app}
+        project={projectA}
+        theme="nekode-flat"
+        quickThemeSwitch={options?.theme ?? false}
+        onThemeChange={options?.theme ? vi.fn() : undefined}
+        leftOpen
+        rightOpen={false}
+        rightToggleEnabled={options?.rightEnabled ?? true}
+        onToggleLeft={onToggleLeft}
+        onToggleRight={onToggleRight}
+        bottomOpen={false}
+        onToggleBottom={onToggleBottom}
+      />,
+    )
+    return { onToggleLeft, onToggleRight, onToggleBottom }
+  }
+
+  it('orders left, right, and terminal as 20 by 20 buttons with 13 px icons', () => {
+    renderCluster()
+    const left = screen.getByTestId(TEST_ID.statusLeftToggle)
+    const right = screen.getByTestId(TEST_ID.statusRightToggle)
+    const terminal = screen.getByTestId(TEST_ID.statusTerminalToggle)
+    const group = left.parentElement
+    expect(group?.className).toContain('ml-auto')
+    expect(left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(right.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    for (const button of [left, right, terminal]) {
+      expect(button.className).toContain('h-5')
+      expect(button.className).toContain('w-5')
+      expect(button.querySelector('svg')?.getAttribute('width')).toBe('13')
+      expect(button.className).not.toContain('ml-auto')
+    }
+    expect(left.getAttribute('aria-pressed')).toBe('true')
+    expect(left.className).toContain('bg-highlight')
+    expect(right.getAttribute('aria-pressed')).toBe('false')
+    expect(left.getAttribute('aria-label')).toBe('Hide left panel')
+    expect(right.getAttribute('aria-label')).toBe('Show right panel')
+    expect(terminal.getAttribute('aria-label')).toBe('Open bottom terminal')
+    expect(terminal.getAttribute('title')).toBe('Open bottom terminal (Ctrl+`)')
+  })
+
+  it('keeps ml-auto on the theme switcher and not on the icon group', () => {
+    renderCluster({ theme: true })
+    const switcher = screen.getByTestId(TEST_ID.statusThemeSwitcher)
+    const group = screen.getByTestId(TEST_ID.statusLeftToggle).parentElement
+    expect(switcher.className).toContain('ml-auto')
+    expect(group?.className).not.toContain('ml-auto')
+    expect(screen.getByTestId(TEST_ID.statusTerminalToggle).className).not.toContain('ml-auto')
+  })
+
+  it('does not call the right toggle when that icon is disabled', () => {
+    const { onToggleLeft, onToggleRight, onToggleBottom } = renderCluster({ rightEnabled: false })
+    const right = screen.getByTestId(TEST_ID.statusRightToggle)
+    expect(right.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(right)
+    expect(onToggleRight).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId(TEST_ID.statusLeftToggle))
+    fireEvent.click(screen.getByTestId(TEST_ID.statusTerminalToggle))
+    expect(onToggleLeft).toHaveBeenCalledTimes(1)
+    expect(onToggleBottom).toHaveBeenCalledTimes(1)
+  })
+})

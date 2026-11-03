@@ -36,7 +36,7 @@ The central concept of the MVP is the **Chat**: a terminal session assigned to a
    - An auxiliary bottom terminal panel (able to open several terminals/tabs), delivered as a separate task.
 
 4. **Browsing project files:**
-   - A project file tree in the left panel with collapsible and expandable directories.
+   - A project file tree in the left panel in the two-panel layout and in the right panel in the three-panel layout (`docs/features/workspace-layout/spec.md`), with collapsible and expandable directories.
    - Read-only file content preview using the Monaco Editor component. A Markdown file (`md`, `markdown`) has a `Code` | `Preview` toggle in the action bar (user decision 2026-10-06): `Preview` is the default and renders the same text as Markdown, `Code` shows Monaco. The choice is remembered per file for the app session and is not saved.
 
 5. **Project action bar (Action Bar):**

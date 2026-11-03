@@ -5,6 +5,8 @@ export const TEST_ID = {
   appShell: 'app-shell',
   /** Window title bar strip (drag surface); absent in the floating theme. */
   titleBar: 'title-bar',
+  layoutSwitchTwo: 'layout-switch-two',
+  layoutSwitchThree: 'layout-switch-three',
   previewTitleBar: 'preview-title-bar',
   previewNotice: 'preview-notice',
   leftNav: 'region-left',
@@ -46,16 +48,22 @@ export const TEST_ID = {
   statusGitNone: 'status-git-none',
   /** Quick theme switcher in the status bar. */
   statusThemeSwitcher: 'status-theme-switcher',
+  /** Toggle button for the left panel in the status bar. */
+  statusLeftToggle: 'status-left-toggle',
+  /** Toggle button for the right panel in the status bar. */
+  statusRightToggle: 'status-right-toggle',
   /** Toggle button for bottom terminal in the status bar. */
   statusTerminalToggle: 'status-terminal-toggle',
   centerSurface: 'region-center-surface',
   rightRegion: 'region-right',
+  rightFilesEmpty: 'right-files-empty',
   bottomRegion: 'region-bottom',
   bottomNewTerminal: 'bottom-new-terminal',
   bottomEmpty: 'bottom-empty',
   bottomTerminalError: 'bottom-terminal-error',
   bottomTerminalRetry: 'bottom-terminal-retry',
   leftResizeHandle: 'resize-handle-left',
+  rightResizeHandle: 'resize-handle-right',
   bottomResizeHandle: 'resize-handle-bottom',
   projectList: 'project-list',
   projectListArea: 'project-list-area',

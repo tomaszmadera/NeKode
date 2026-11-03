@@ -15,19 +15,25 @@ function normalizeStoredId(value: string | null): string | null {
 
 /**
  * Startup hydration: real project list, persisted selection (dropped when it
- * no longer matches existing records) and persisted region sizes and bottom
- * panel visibility.
+ * no longer matches existing records), region sizes, layout mode, panel open
+ * flags, and bottom panel visibility.
  */
 export function useWorkspaceHydration(
   runtime: WorkspaceRuntime,
   restore: {
     restoreRegionSizes: (savedLeftWidth: string | null, savedBottomHeight: string | null) => void
     restoreBottomOpen: (savedBottomOpen: string | null) => void
+    restoreWorkspaceLayout: (
+      savedLayout: string | null,
+      savedRightWidth: string | null,
+      savedLeftOpen: string | null,
+      savedRightOpen: string | null,
+    ) => void
   },
 ): void {
   const { app, setNotice, removedProjectIdsRef, removedChatIdsRef, chatsByProjectRef } = runtime
   const { applyChatsUpdate } = runtime
-  const { restoreRegionSizes, restoreBottomOpen } = restore
+  const { restoreRegionSizes, restoreBottomOpen, restoreWorkspaceLayout } = restore
   const { setProjects, setExpandedProjectIds, setSelectedProjectId } = useProjectStore(
     useShallow((state) => ({
       setProjects: state.setProjects,
@@ -55,6 +61,10 @@ export function useWorkspaceHydration(
           savedLeftWidth,
           savedBottomHeight,
           savedBottomOpen,
+          savedLayout,
+          savedRightWidth,
+          savedLeftOpen,
+          savedRightOpen,
         ] = await Promise.all([
           app.projects.list(),
           app.state.get(APP_STATE_KEY.selectedProjectId),
@@ -62,6 +72,10 @@ export function useWorkspaceHydration(
           app.state.get(APP_STATE_KEY.leftRegionWidth),
           app.state.get(APP_STATE_KEY.bottomRegionHeight),
           app.state.get(APP_STATE_KEY.bottomRegionOpen),
+          app.state.get(APP_STATE_KEY.workspaceLayout),
+          app.state.get(APP_STATE_KEY.rightRegionWidth),
+          app.state.get(APP_STATE_KEY.leftRegionOpen),
+          app.state.get(APP_STATE_KEY.rightRegionOpen),
         ])
         if (cancelled) {
           return
@@ -70,6 +84,7 @@ export function useWorkspaceHydration(
         setProjects(loadedProjects)
         restoreRegionSizes(savedLeftWidth, savedBottomHeight)
         restoreBottomOpen(savedBottomOpen)
+        restoreWorkspaceLayout(savedLayout, savedRightWidth, savedLeftOpen, savedRightOpen)
 
         // Stale selection falls back to the default empty state (spec Edge
         // cases); the main process deletes the stale keys (cleanupSelection).
@@ -131,6 +146,7 @@ export function useWorkspaceHydration(
     removedProjectIdsRef,
     restoreBottomOpen,
     restoreRegionSizes,
+    restoreWorkspaceLayout,
     setNotice,
     setSelectedChatId,
     setSelectedProjectId,
