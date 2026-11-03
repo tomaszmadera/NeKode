@@ -1,6 +1,6 @@
 # Releases
 
-This is the maintainer's public release procedure. It uses Git, the package manifest, and public pnpm scripts, with no local agent harness. The [branching model](branching-model.md) owns integration; releases are tags on `main`. Perform publication only after explicit authorization for the exact change files, version, branch, remote, and selected tags.
+This is the maintainer's public release procedure. It uses Git, the package manifest, and public pnpm scripts, with no local harness. The [branching model](branching-model.md) owns integration; releases are tags on `main`. Perform publication only after explicit authorization for the exact change files, version, branch, remote, and selected tags.
 
 NeKode releases are GitHub Releases in `tomaszmadera/NeKode` with a Windows installer and a Linux AppImage. Pushing a version tag starts [`.github/workflows/release.yml`](../../.github/workflows/release.yml), which builds both files and creates a draft release; the maintainer publishes the draft by hand. The behavioral contract is [`docs/features/github-releases/spec.md`](../features/github-releases/spec.md).
 

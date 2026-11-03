@@ -7,16 +7,16 @@ Ten plik jest kontraktem zachowania funkcji. Agenci implementują na jego podsta
 
 ## Goal
 
-Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewej nawigacji i pasek segmentów w wierszu akcji) na podstawie danych z adaptera, którego użytkownik świadomie wybrał w ustawieniach projektu. NeKode nie zna żadnego formatu rekordów zadań. Agent Harness, inny harness albo własny format plików podłącza się wyłącznie adapterem. Dane mają być aktualne podczas pracy agenta, a błąd lub stare dane muszą być odróżnialne od braku zadań.
+Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewej nawigacji i pasek segmentów w wierszu akcji) na podstawie danych z adaptera, którego użytkownik świadomie wybrał w ustawieniach projektu. NeKode nie zna żadnego formatu rekordów zadań. Dowolny zewnętrzny harness albo własny format plików podłącza się wyłącznie adapterem. Dane mają być aktualne podczas pracy agenta, a błąd lub stare dane muszą być odróżnialne od braku zadań.
 
 ## Related requirements
 
 - NEKODE-81 (opis karty zaktualizowany 2026-10-23).
-- Decyzje użytkownika z 2026-10-23: każde źródło, także Agent Harness, jest adapterem; osobna zakładka `Task progress` w Project Settings z kopiowaniem konfiguracji z innego projektu; nic nie włącza się automatycznie; NeKode nie dostarcza żadnego adaptera postępu, adapter Agent Harness powstaje w repozytorium agent-harness, a NeKode dokumentuje komendę jego instalacji.
+- Decyzje użytkownika z 2026-10-23: każde źródło jest adapterem; osobna zakładka `Task progress` w Project Settings z kopiowaniem konfiguracji z innego projektu; nic nie włącza się automatycznie; NeKode nie dostarcza żadnego adaptera postępu, zewnętrzny adapter powstaje we własnym repozytorium, a NeKode dokumentuje ogólną komendę jego instalacji.
 - Wzorzec adapterów: [kanban-adapter-interface](../kanban-adapter-interface/spec.md) (Behaviour 1-8) i [usage-quota](../usage-quota/spec.md) (reguły 12-13: harmonogram, single-flight, pauza okna).
 - Projekty WSL: [project-environments](../project-environments/spec.md) (reguła 9) i [ADR WSL](../../architecture/project-environment-adapters.md).
 - Etykiety sesji: [session-labels](../session-labels/spec.md) (reguła 6: zachować wyświetlanie postępu; `task_ref` zapisany przy starcie z kanbanu).
-- Kontrakt źródłowy dla adaptera Agent Harness: `task-status --json`, `schema_version: 2` (HARNESS-37, Done).
+- Kontrakt źródłowy dla zewnętrznego adaptera: `task-status --json`, `schema_version: 2`.
 
 ## Scope
 
@@ -26,11 +26,11 @@ Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewe
 - Znormalizowany model postępu w kontrakcie IPC i zdarzenie aktualizacji dla renderera.
 - Dopasowanie czatu do zadania i zasilenie istniejących wskaźników nowym modelem.
 - Usunięcie `TaskRecordService` (parser `task.md`) oraz pola `task` z `ChatInfo`.
-- Dokumentacja protokołu dla autorów adapterów, z komendą instalacji adaptera Agent Harness, oraz przykładowy adapter protokołu w `adapters/` (nie jest dostarczany z aplikacją).
+- Dokumentacja protokołu dla autorów adapterów, z ogólną komendą instalacji zewnętrznego adaptera, oraz przykładowy adapter protokołu w `adapters/` (nie jest dostarczany z aplikacją).
 
 ## Non-goals
 
-- Dostarczanie jakiegokolwiek adaptera postępu z aplikacją, w tym adaptera Agent Harness. Jego kod powstaje w repozytorium agent-harness.
+- Dostarczanie jakiegokolwiek adaptera postępu z aplikacją. Kod zewnętrznego adaptera powstaje we własnym repozytorium.
 - Finalny widok graficzny postępu, rozwijany panel `TaskProgressButton`, zmiana wyglądu wskaźników poza znacznikiem nieaktualności.
 - Zapis do rekordów zadań, sterowanie workflow, telemetria, model aktywności procesu, stan sesji (NEKODE-4).
 - Ustawienie globalne w App Settings i dziedziczenie konfiguracji między projektami. Kopiowanie jest jednorazowe.
@@ -155,21 +155,19 @@ Klucze `app_state`: `project.taskProgressAdapter:<projectId>`, `project.taskProg
 
 ### Dokumentacja dla autorów adapterów
 
-`adapters/task-progress-example/` zawiera przykładowy adapter protokołu (czyta jeden plik JSON w formacie snapshotu) i `README.md` z opisem protokołu, przykładami oraz komendą instalacji adaptera z innego repozytorium, na przykład adaptera Agent Harness:
+`adapters/task-progress-example/` zawiera przykładowy adapter protokołu (czyta jeden plik JSON w formacie snapshotu) i `README.md` z opisem protokołu, przykładami oraz komendą instalacji zewnętrznego adaptera:
 
 ```powershell
 # Windows
 New-Item -ItemType Directory -Force "$env:APPDATA\nekode\task-progress-adapters" | Out-Null
-Copy-Item -Recurse -Force "<agent-harness>\adapters\nekode-task-progress" "$env:APPDATA\nekode\task-progress-adapters\agent-harness"
+Copy-Item -Recurse -Force "<path-to-adapter>" "$env:APPDATA\nekode\task-progress-adapters\<adapter-name>"
 ```
 
 ```sh
 # Linux
 mkdir -p ~/.config/nekode/task-progress-adapters
-cp -r <agent-harness>/adapters/nekode-task-progress ~/.config/nekode/task-progress-adapters/agent-harness
+cp -r <path-to-adapter> ~/.config/nekode/task-progress-adapters/<adapter-name>
 ```
-
-Ścieżka adaptera w repozytorium agent-harness (`adapters/nekode-task-progress`) jest propozycją do potwierdzenia przy tworzeniu adaptera. README opisuje też dla autora adaptera Agent Harness, że domyślne `task-status --json` pomija zakończone rekordy z archiwum (`.agents/scripts/task-status`, `discover_paths`), więc adapter podaje ścieżki rekordów jawnie, jeśli ma zwracać zadania zakończone.
 
 ## Edge cases
 
@@ -207,7 +205,7 @@ Typowane kody w `TaskProgressSnapshot.error` i w wyniku `Test`: `adapter_missing
 - Harmonogram: debounce serii zmian, single-flight z jednym odczytem następczym, minimalny odstęp, odpytywanie 60 s i 10 s, pauza okna, ponawianie `transient`, wstrzymanie po błędach konfiguracji, potwierdzenie zniknięcia zadania, odrzucenie spóźnionych wyników, sprzątanie przy zmianie powiązania, zwinięciu i usunięciu projektu.
 - Dopasowanie czatu: `taskRef`, token w nazwie z prefiksem powłoki, granica `-` (`NEKODE-8` nie pasuje do `nekode-81-x`), wybór przy kilku dopasowaniach, brak dopasowania.
 - Renderer: zakładka ustawień (wybór, `Test`, `Save`, `None`, kopiowanie, pusta lista adapterów, stan odczytu), wskaźniki z nowego modelu, znacznik nieaktualności, brak wskaźnika bez powiązania i przy `recordState` innym niż `valid`.
-- Integracja: przykładowy adapter uruchamiany jako prawdziwy proces przez host. Gdy zmienna `NEKODE_TASK_PROGRESS_ADAPTER_DIR` wskazuje adapter Agent Harness, test integracyjny uruchamia go na rekordach z fixture (w tym rekord zarchiwizowany i zakończony); bez zmiennej test jest pomijany z jawnym komunikatem.
+- Integracja: przykładowy adapter uruchamiany jako prawdziwy proces przez host. Gdy zmienna `NEKODE_TASK_PROGRESS_ADAPTER_DIR` wskazuje katalog zewnętrznego adaptera, test integracyjny uruchamia go na rekordach z fixture (w tym rekord zarchiwizowany i zakończony); bez zmiennej test jest pomijany z jawnym komunikatem.
 - Regresja: istniejące testy `TaskProgressButton` i `LeftNavigation` zachowują wygląd i etykiety dostępności.
 
 ## Relevant SDD / ADR

@@ -107,7 +107,7 @@ Dowody: C1:44 kod błędnego unpackingu; C1:47 odpowiedź 403; C1:58 poprawka ko
 
 Agent odtworzył wymaganą obsługę paginacji w tymczasowym skrypcie, ponieważ CLI nie udostępnia odczytu komentarzy. Jest to dozwolone obejście opisane w skillu, ale wymaga ręcznego korzystania z wewnętrznego helpera. To jednocześnie błąd wywołania i ograniczenie interfejsu narzędzia.
 
-Zalecenie doraźne: przed składaniem URL odczytać sygnaturę i zwracane wartości helpera. Kandydat do osobnego zadania w agent-harness: komenda odczytu komentarzy z paginacją, bez kopiowania tego samego skryptu do każdej sesji.
+Zalecenie doraźne: przed składaniem URL odczytać sygnaturę i zwracane wartości helpera. Kandydat do osobnego zadania w zewnętrznych narzędziach harnessu: komenda odczytu komentarzy z paginacją, bez kopiowania tego samego skryptu do każdej sesji.
 
 ### F6. Polecenie z filtrami uruchomiło cały zestaw testów
 
@@ -187,7 +187,7 @@ Zalecenie: w kontroli wyglądu rozdzielać wymaganie semantyczne, takie jak wido
 1. Najpierw uszczelnić wykonanie: propagację błędów poleceń, potwierdzanie zakresu testów oraz lifecycle Kanbana. Te luki mogą dać nieprawidłowy sygnał zakończenia pracy.
 2. Dodać do istniejącego przeglądu końcowego sprawdzenie spójności kontraktu po zmianie protokołu. Nie potrzeba kolejnej specyfikacji ani osobnego procesu akceptacji.
 3. Przy zmianach harmonogramu wymagać scenariusza obejmującego widoczność, terminy dostawcy, edycję i zachowanie obserwacji. Celem jest ograniczenie regresji trafiających do kolejnej rundy review.
-4. Osobno zgłosić do agent-harness brak komendy odczytu komentarzy z paginacją. Zmiany harnessu wymagają odrębnego upoważnienia; ta analiza ich nie wprowadza.
+4. Osobno zgłosić do zewnętrznych narzędzi harnessu brak komendy odczytu komentarzy z paginacją. Zmiany harnessu wymagają odrębnego upoważnienia; ta analiza ich nie wprowadza.
 5. Uporządkować wykonanie po stronie agentów: polskie i krótkie pytania, narzędzie interaktywne do decyzji, mniejsze odczyty, potwierdzone ścieżki i konfiguracja lokalna przed inicjalizacją GUI.
 
 Powyższe zalecenia nie są zgodą na implementację. Najbardziej wartościowy następny krok to osobne, ograniczone zadanie dotyczące propagacji błędów i potwierdzania obowiązkowych bramek, z reprodukcjami F2, F3, F5 i F6 jako materiałem wejściowym.

@@ -37,20 +37,20 @@ mkdir -p ~/.config/nekode/task-progress-adapters
 cp -r <nekode>/adapters/task-progress-example ~/.config/nekode/task-progress-adapters/task-progress-example
 ```
 
-An adapter from another repository installs the same way. For the Agent Harness
-adapter (its path in the agent-harness repository, `adapters/nekode-task-progress`,
-is still to be confirmed when that adapter is created):
+If you have your own task-progress adapter, copy its folder to
+`%APPDATA%\nekode\task-progress-adapters\<adapter-name>` on Windows (or
+`~/.config/nekode/task-progress-adapters/<adapter-name>` on Linux):
 
 ```powershell
 # Windows
 New-Item -ItemType Directory -Force "$env:APPDATA\nekode\task-progress-adapters" | Out-Null
-Copy-Item -Recurse -Force "<agent-harness>\adapters\nekode-task-progress" "$env:APPDATA\nekode\task-progress-adapters\agent-harness"
+Copy-Item -Recurse -Force "<path-to-adapter>" "$env:APPDATA\nekode\task-progress-adapters\<adapter-name>"
 ```
 
 ```sh
 # Linux
 mkdir -p ~/.config/nekode/task-progress-adapters
-cp -r <agent-harness>/adapters/nekode-task-progress ~/.config/nekode/task-progress-adapters/agent-harness
+cp -r <path-to-adapter> ~/.config/nekode/task-progress-adapters/<adapter-name>
 ```
 
 The `Task progress` tab rescans the directory each time it opens, so a new
@@ -230,9 +230,3 @@ in the file it watches the directory that holds the file.
 
 NeKode adds its own codes: `adapter_missing`, `environment_unsupported`,
 `timeout`, `protocol`, and `spawn` (the command could not be started).
-
-## Notes for the Agent Harness adapter
-
-The default `task-status --json` (`schema_version: 2`) skips completed records
-in the archive (`.agents/scripts/task-status`, `discover_paths`). An adapter
-that must return finished tasks passes the record paths explicitly.

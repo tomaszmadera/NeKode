@@ -50,6 +50,7 @@ Desktop.ini
 .codex/
 .grok/
 .opencode/
+.playwright-mcp/
 AGENTS.md
 CLAUDE.md
 opencode.json

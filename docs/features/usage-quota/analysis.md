@@ -8,7 +8,7 @@ The panel should belong to NeKode, and the integrations should be optional subsc
 
 The data contract is universal. A reliable, always current reading of every subscription cannot be promised. A closed session, missing permissions or an API change must be visible as the source state. A write in a hook alone does not confirm that the percentage was fetched from the provider again.
 
-I do not recommend an extra no-code system as a mandatory layer. If the current Agent Harness collector can export the agreed format, the file adapter will use its data without a second collection. The collector format was not named or verified; compatibility needs an example without secrets. The plan does not change Agent Harness.
+I do not recommend an extra no-code system as a mandatory layer. If an external collector can export the agreed format, the file adapter will use its data without a second collection. The collector format was not named or verified; compatibility needs an example without secrets. The plan does not change the external collector.
 
 ## Available sources
 

@@ -969,7 +969,7 @@ Poza zakresem: wykrywanie gotowości TUI agenta, zmiana treści polecenia Start,
 
 This amendment was approved by the user on 2026-10-29 with the paired [Resume source contract](../handoff-resume-flow/spec.md#reusable-resume-sources-and-prompts-nekode-142) and three-stage plan. It supersedes Linking a handoff to a task, the handoff-specific parts of Resume, and Resume availability and handoff producer contract (NEKODE-30), including its old directory, file-name-only and no-taskctl restrictions. Historical producer requirements do not apply to every new source. Other board, profile, Start/draft, cache, editing, launch retry and auto-send rules remain in force. The paired contract's staged transition governs temporary legacy behavior.
 
-The current user decision requires reusable application templates selected by project, with configurable source paths/file names and Resume instructions. Agent Harness is one preset; generic file or custom command sources must not depend on it. No Harness sync or upstream edit is included in the product change.
+The current user decision requires reusable application templates selected by project, with configurable source paths/file names and Resume instructions. The Harness template is one preset; generic file or custom command sources must not depend on it. No Harness sync or upstream edit is included in the product change.
 
 ### Matching and availability
 

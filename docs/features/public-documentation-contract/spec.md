@@ -9,7 +9,7 @@ This file is the behavioral contract for a feature. Agents implement from it. Do
 
 Give a contributor a complete, public source of project requirements and contribution rules. A clean clone must contain enough information to build, test, change, and maintain NeKode, and to create a personal `AGENTS.md` suited to the contributor's tools and workflow.
 
-The project's local agent harness and `AGENTS.md` remain local and unchanged. Public documentation owns project rules; personal agent instructions may refer to that documentation without becoming a competing source of truth.
+The project's local harness and `AGENTS.md` remain local and unchanged. Public documentation owns project rules; personal agent instructions may refer to that documentation without becoming a competing source of truth.
 
 ## Related requirements
 
