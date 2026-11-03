@@ -5,8 +5,6 @@ export const TEST_ID = {
   appShell: 'app-shell',
   /** Window title bar strip (drag surface); absent in the floating theme. */
   titleBar: 'title-bar',
-  layoutSwitchTwo: 'layout-switch-two',
-  layoutSwitchThree: 'layout-switch-three',
   previewTitleBar: 'preview-title-bar',
   previewNotice: 'preview-notice',
   leftNav: 'region-left',
@@ -24,7 +22,6 @@ export const TEST_ID = {
   projectHomeLoading: 'project-home-loading',
   /** Home tab when the binding read failed (spec project-home Errors). */
   projectHomeError: 'project-home-error',
-  tabNewChat: 'tab-new-chat',
   /** Project Settings gear button in the tab strip. */
   tabProjectSettings: 'tab-project-settings',
   /** Context menu of a file tab (right click / ContextMenu key / Shift+F10). */
@@ -92,7 +89,6 @@ export const TEST_ID = {
   /** Welcome illustration surface: contextual add-project primary action. */
   welcomeAddProjectButton: 'welcome-add-project-button',
   projectContextMenu: 'project-context-menu',
-  projectFilesPanel: 'project-files-panel',
   filesBackButton: 'files-back-button',
   filesProjectName: 'files-project-name',
   /** Project path in the Files subheader (home shown as `~`). */
@@ -242,7 +238,6 @@ export const TEST_ID = {
   settingsAgentsEmpty: 'settings-agents-empty',
   settingsAgentsError: 'settings-agents-error',
   settingsAgentsDefault: 'settings-agents-default',
-  settingsAgentsDefaultBadge: 'settings-agents-default-badge',
   /** Read-only Kanban board surface (spec kanban-adapter-interface Behaviour 14). */
   kanbanBoard: 'kanban-board',
   kanbanBoardLoading: 'kanban-board-loading',

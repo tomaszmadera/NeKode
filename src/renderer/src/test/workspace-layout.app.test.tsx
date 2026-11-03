@@ -67,8 +67,6 @@ describe('workspace layout modes', () => {
     const titleBar = await screen.findByTestId(TEST_ID.titleBar)
     const toggle = screen.getByTestId(TEST_ID.statusRightToggle)
     expect(within(titleBar).queryByRole('group', { name: 'Workspace layout' })).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.layoutSwitchTwo)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.layoutSwitchThree)).toBeNull()
     expect(toggle.hasAttribute('disabled')).toBe(false)
     expect(toggle.getAttribute('aria-pressed')).toBe('false')
     expect(toggle.getAttribute('aria-label')).toBe('Show right panel')
