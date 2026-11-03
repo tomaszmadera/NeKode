@@ -29,7 +29,7 @@ Accepted user decisions 2026-10-01, owned by this public contract:
 
 - Main process: `projects:add` dialog `defaultPath` plus persistence of the confirmed directory; new typed IPC `handoffs:list(projectId)`; new typed IPC `dialogs:pickDirectory(defaultPath)`; cleanup of the per-project handoff-directory key on `projects:remove`.
 - Shared: IPC contract additions (`handoffs`, `dialogs` namespaces, `HandoffEntry`), new `APP_STATE_KEY` entries and the per-project key helper.
-- Renderer: ActionBar fixed-action behavior (English commands, console paste or direct send), a Resume handoff picker modal, PromptActions external-injection support threaded through ChatWorkspace/ChatTerminal, and a Configuration section in the existing Project Settings modal (auto-send toggle, per-project handoff directory with Browse).
+- Renderer: ActionBar fixed-action behavior (English commands, console paste or direct send), a Resume handoff picker modal, PromptActions external-injection support threaded through ChatWorkspace/ChatTerminal, and a Configuration section in the existing Project Settings modal (auto-send toggle, per-project handoff directory with Browse; the directory control was removed by NEKODE-142).
 
 ## Non-goals
 
@@ -46,7 +46,7 @@ Accepted user decisions 2026-10-01, owned by this public contract:
 3. Delivery (auto-send off, the default): the command text is pasted into the active chat console through xterm without an appended CR; the user reviews and submits with Enter or Send. Delivery (auto-send on): the command text plus CR is written directly to the active chat PTY (the pre-0.4.8 behavior, now English).
 4. Resume click opens a handoff picker modal. The list is loaded lazily at modal open via `handoffs:list` for the active project: regular files only, `README.md` (case-insensitive) excluded, sorted by modification time descending, showing file name, project-root-relative path, and modification time. Selecting an entry applies rule 2 and closes the modal.
 5. Picker empty states: no active project or chat keeps the Resume button disabled (existing rule). Unconfigured directory: the picker shows a "not configured" state with a Configure button that opens Project Settings for the active project, and a "Paste without path" fallback that applies rule 2 with the plain command. Configured but missing directory or read failure: the picker shows the typed error message.
-6. Project Settings modal gains a Configuration section above Actions: an "Auto-send after Handoff/Resume" checkbox (application-level) and, when the modal is bound to a project, a "Handoff directory" input (relative to the project root, or absolute for directories outside it) with a Browse button (`dialogs:pickDirectory`, defaultPath: current value or project root) and Save. Browse stores the confirmed directory project-root-relative when it lies inside the root, absolute otherwise. Empty input clears the setting. Auto-send is stored under `handoffResume.autoSend` as `'1'`/`'0'`; missing means off.
+6. Project Settings modal gains a Configuration section above Actions: an "Auto-send after Handoff/Resume" checkbox (application-level) and, when the modal is bound to a project, a "Handoff directory" input (relative to the project root, or absolute for directories outside it) with a Browse button (`dialogs:pickDirectory`, defaultPath: current value or project root) and Save. Browse stores the confirmed directory project-root-relative when it lies inside the root, absolute otherwise. Empty input clears the setting. Superseded by NEKODE-142: the Handoff directory input, its Browse and Save are removed and Project Settings selects a Resume template instead; the auto-send checkbox and its storage stay. Auto-send is stored under `handoffResume.autoSend` as `'1'`/`'0'`; missing means off.
 7. Console injection is per active chat: a pending injection reaches only the addressed chat's PromptActions, which pastes into its console once the terminal view is available and reports consumption. A new click pastes again even with identical text (nonce). Switching chats with a pending injection for a non-active chat drops it.
 8. `projects:remove` deletes the removed project's `project.handoffDir:<projectId>` key.
 
@@ -92,14 +92,14 @@ Renderer invokes stay behind the existing trusted-sender guard. `handoffs:list` 
 3. With auto-send on, Handoff writes `Write a handoff\r` straight to the PTY.
 4. Resume opens a picker that lists the configured directory's files newest-first (regular files except `README.md`), loaded only at open; selecting one pastes `Resume from handoff <project-relative path, or absolute when outside the root>` into the console (or sends it with CR when auto-send is on).
 5. Unconfigured project: picker shows the not-configured state with Configure (opens Project Settings) and the plain-paste fallback `Resume from handoff`.
-6. Project Settings exposes auto-send and, per project, the handoff directory with Browse; saving persists via app_state and the picker reflects it on next open.
+6. Project Settings exposes auto-send and, per project, the handoff directory with Browse; saving persists via app_state and the picker reflects it on next open. Superseded by NEKODE-142: the per-project control is a Resume template selector, and no handoff directory field remains.
 7. Default Handoff/Resume pasted command text is English. A user-authored Resume template retains its own language.
 8. Removing a project clears its `project.handoffDir` key.
 
 ## Required tests
 
 - Main: `projects:add` passes the stored default path and persists the confirmed directory (cancel persists nothing); `handoffs:list` relative-path resolution, newest-first sort, files-only filtering, README.md exclusion, missing-directory and unknown-project errors; `projects:remove` key cleanup; `dialogs:pickDirectory` null-on-cancel.
-- Renderer: Handoff/Resume injection into the addressed console through PromptActions (and PTY write with CR when auto-send is on); picker open triggers one lazy `handoffs:list` call; picker empty states; Resume command and picker rows use the project-relative path; Configuration section persists both settings; Browse stores the project-relative form; injection is pasted once per nonce.
+- Renderer: Handoff/Resume injection into the addressed console through PromptActions (and PTY write with CR when auto-send is on); picker open triggers one lazy `handoffs:list` call; picker empty states; Resume command and picker rows use the project-relative path; Configuration section persists auto-send and the per-project Resume template selection (the removed directory Browse has no test); injection is pasted once per nonce.
 
 ## Relevant SDD / ADR
 
