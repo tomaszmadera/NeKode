@@ -35,6 +35,16 @@ export interface StatusBarProps {
   bottomOpen?: boolean
   /** Callback to toggle opening and closing the bottom terminal. */
   onToggleBottom?: () => void
+  /** Whether the left panel is shown. */
+  leftOpen?: boolean
+  /** Whether the right panel is shown. */
+  rightOpen?: boolean
+  /** Right-panel icon writes only in the three-panel layout. */
+  rightToggleEnabled?: boolean
+  /** Shows or hides the left panel without changing the layout mode. */
+  onToggleLeft?: () => void
+  /** Shows or hides the right panel without changing the layout mode. */
+  onToggleRight?: () => void
 }
 
 const NEWLINE = String.fromCharCode(10)
@@ -85,6 +95,11 @@ export function StatusBar({
   onThemeChange,
   bottomOpen = false,
   onToggleBottom,
+  leftOpen = true,
+  rightOpen = true,
+  rightToggleEnabled = true,
+  onToggleLeft,
+  onToggleRight,
 }: StatusBarProps): React.JSX.Element {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
 
@@ -187,7 +202,40 @@ export function StatusBar({
       {quickThemeSwitch && onThemeChange && theme ? (
         <ThemeSwitchSection theme={theme} onThemeChange={onThemeChange} />
       ) : null}
-      {onToggleBottom ? (
+      {onToggleLeft !== undefined && onToggleRight !== undefined ? (
+        <div
+          className={cn(
+            'flex shrink-0 items-center',
+            !(quickThemeSwitch && onThemeChange && theme) && 'ml-auto',
+          )}
+        >
+          <PanelToggleButton
+            open={leftOpen}
+            enabled
+            testId={TEST_ID.statusLeftToggle}
+            icon={Icon.panelLeft}
+            showLabel="Show left panel"
+            hideLabel="Hide left panel"
+            onToggle={onToggleLeft}
+          />
+          <PanelToggleButton
+            open={rightOpen}
+            enabled={rightToggleEnabled}
+            testId={TEST_ID.statusRightToggle}
+            icon={Icon.panelRight}
+            showLabel="Show right panel"
+            hideLabel="Hide right panel"
+            onToggle={onToggleRight}
+          />
+          {onToggleBottom ? (
+            <TerminalToggleSection
+              open={bottomOpen}
+              onToggle={onToggleBottom}
+              hasLeadingRightItem
+            />
+          ) : null}
+        </div>
+      ) : onToggleBottom ? (
         <TerminalToggleSection
           open={bottomOpen}
           onToggle={onToggleBottom}
@@ -195,6 +243,46 @@ export function StatusBar({
         />
       ) : null}
     </footer>
+  )
+}
+
+function PanelToggleButton({
+  open,
+  enabled,
+  testId,
+  icon: Glyph,
+  showLabel,
+  hideLabel,
+  onToggle,
+}: {
+  open: boolean
+  enabled: boolean
+  testId: string
+  icon: typeof Icon.panelLeft
+  showLabel: string
+  hideLabel: string
+  onToggle: () => void
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'flex h-5 w-5 shrink-0 select-none items-center justify-center rounded transition-colors focus-visible:outline focus-visible:outline-info',
+        enabled ? 'cursor-pointer' : 'cursor-default opacity-40',
+        open ? 'bg-highlight text-ink' : 'text-ink-muted hover:bg-highlight hover:text-ink',
+      )}
+      data-testid={testId}
+      aria-label={open ? hideLabel : showLabel}
+      aria-pressed={open}
+      disabled={!enabled}
+      onClick={() => {
+        if (enabled) {
+          onToggle()
+        }
+      }}
+    >
+      <Glyph size={13} aria-hidden />
+    </button>
   )
 }
 

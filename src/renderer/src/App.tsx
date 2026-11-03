@@ -16,9 +16,12 @@ import { TaskStartModal } from './components/kanban/TaskStartModal'
 import { AddProject } from './components/layout/AddProject'
 import { AppBrand } from './components/layout/AppBrand'
 import { ConfirmDialog } from './components/layout/ConfirmDialog'
+import { LayoutSwitcher } from './components/layout/LayoutSwitcher'
 import { LeftNavigation } from './components/layout/LeftNavigation'
 import { LeftPanelTrack } from './components/layout/LeftPanelTrack'
+import { NoticeBanner } from './components/layout/NoticeBanner'
 import { PanelFooter } from './components/layout/PanelFooter'
+import { RightPanel } from './components/layout/RightPanel'
 import { StatusBar } from './components/layout/StatusBar'
 import { AppSettings } from './components/settings/AppSettings'
 import { CenterTabs, homeTabStateFor } from './components/tabs/CenterTabs'
@@ -179,8 +182,42 @@ function AppContent({
   useWorkspaceHydration(runtime, {
     restoreRegionSizes: layout.restoreRegionSizes,
     restoreBottomOpen: bottom.restoreBottomOpen,
+    restoreWorkspaceLayout: layout.restoreWorkspaceLayout,
   })
   const files = useProjectFiles(runtime)
+  // Three-panel tree follows the selected session's project, else the selected
+  // project. Two-panel keeps the chevron's project until the user leaves it.
+  useEffect(() => {
+    if (layout.mode !== 'three') {
+      return
+    }
+    if (selectedProjectId === null) {
+      if (files.filesProject !== null) {
+        files.handleCloseProjectFiles()
+      }
+      return
+    }
+    if (!projects.some((project) => project.id === selectedProjectId)) {
+      return
+    }
+    if (files.filesProject?.id !== selectedProjectId) {
+      files.handleOpenProjectFiles(selectedProjectId)
+    }
+  }, [
+    layout.mode,
+    projects,
+    selectedProjectId,
+    files.filesProject,
+    files.handleCloseProjectFiles,
+    files.handleOpenProjectFiles,
+  ])
+  const openProjectFilesFromLeft = useCallback(
+    (projectId: string): void => {
+      layout.setLeftOpen(true)
+      files.handleOpenProjectFiles(projectId)
+    },
+    [files.handleOpenProjectFiles, layout.setLeftOpen],
+  )
   const lifecycle = useProjectLifecycle(runtime, {
     refreshActions,
     dropProjectLaunches: launches.dropProjectLaunches,
@@ -277,6 +314,8 @@ function AppContent({
   // the center content below the tab strip sits in a rounded frame with the
   // tabs attached to its top. Attached themes keep the window-edge shell.
   const floatingTheme = THEMES[settings.theme].layout === 'floating'
+  const treeInLeft = layout.mode === 'two' && files.filesProject !== null
+  const treeInRight = layout.mode === 'three' && layout.rightOpen && files.filesProject !== null
   const panelFooter = (
     <PanelFooter
       onOpenAppSettings={appSettings.openAppSettings}
@@ -285,6 +324,36 @@ function AppContent({
       onToggleMascot={settings.toggleMascot}
     />
   )
+  const projectFilesPanel = (showBack: boolean): React.JSX.Element | null => {
+    const project = files.filesProject
+    if (project === null) {
+      return null
+    }
+    return (
+      <ProjectFilesPanel
+        project={project}
+        projectNamesUppercase={settings.projectNamesUppercase}
+        showProjectIcons={settings.showProjectIcons}
+        projectColor={projectColors?.[project.id]}
+        homeDir={app.homeDir}
+        platform={app.platform}
+        session={files.filesSession}
+        showBack={showBack}
+        onBack={showBack ? files.handleCloseProjectFiles : undefined}
+        onRefresh={files.handleRefreshProjectFiles}
+        onToggleDirectory={files.handleFilesToggleDirectory}
+        onSelectFile={files.handleFilesSelectFile}
+        onShowInFolder={files.handleFilesShowInFolder}
+        onOpenInWindow={files.handleFilesOpenInWindow}
+        onCopyPath={files.handleFilesCopyPath}
+        onCopyRelativePath={files.handleFilesCopyRelativePath}
+        onTrash={files.handleFilesTrash}
+        notice={showBack && !layout.leftOpen ? null : notice}
+      >
+        {showBack ? panelFooter : null}
+      </ProjectFilesPanel>
+    )
+  }
 
   return (
     <div
@@ -309,7 +378,9 @@ function AppContent({
             onConfigure={appSettings.openUsageSettings}
           />
         ) : null}
+        <LayoutSwitcher mode={layout.mode} onChange={layout.setMode} />
       </div>
+      {!layout.leftOpen && !treeInRight ? <NoticeBanner notice={notice} /> : null}
       {/* The hairline under the title bar is owned by the content row
           (border-t, design doc 26.2 convention), not by the strip itself;
           the floating theme drops only the hairline. */}
@@ -318,68 +389,47 @@ function AppContent({
           floatingTheme ? 'flex min-h-0 flex-1' : 'flex min-h-0 flex-1 border-t border-edge'
         }
       >
-        <LeftPanelTrack
-          view={files.filesProject !== null ? 'files' : 'projects'}
-          width={layout.leftWidth}
-          floating={floatingTheme}
-          onResizeStart={layout.leftRegion.startResize}
-          onResizeNudge={layout.leftRegion.nudge}
-          projects={
-            <LeftNavigation
-              app={app}
-              floating={floatingTheme}
-              projectNamesUppercase={settings.projectNamesUppercase}
-              showProjectIcons={settings.showProjectIcons}
-              attentionBadgeEnabled={settings.attentionSettings.badge}
-              attentionActiveIndicatorEnabled={settings.attentionSettings.activeIndicator}
-              onSelectProject={selection.handleOpenProjectKanban}
-              onToggleProject={selection.handleToggleProject}
-              onSelectChat={selection.handleSelectChat}
-              onAddProject={lifecycle.handleAddProject}
-              onRemoveProject={lifecycle.handleRemoveProject}
-              onOpenProjectFiles={files.handleOpenProjectFiles}
-              onOpenProjectKanban={selection.handleOpenProjectKanban}
-              onOpenInFileExplorer={lifecycle.handleOpenInFileExplorer}
-              onOpenProjectSettings={(projectId) =>
-                projectSettings.openProjectSettings(projectId, 'shell')
-              }
-              onCreateChat={selection.handleCreateChat}
-              onCreateAgentChat={selection.handleCreateAgentChat}
-              loadAgentProfiles={selection.loadAgentProfiles}
-              onConfigureAgents={projectSettings.openAgentsSettings}
-              onRequestCloseChat={closing.handleRequestCloseChat}
-              onOpenAppSettings={appSettings.openAppSettings}
-              notice={files.filesProject !== null ? null : notice}
-            >
-              {panelFooter}
-            </LeftNavigation>
-          }
-          files={
-            files.filesProject !== null ? (
-              <ProjectFilesPanel
-                project={files.filesProject}
+        <div className={layout.leftOpen ? 'contents' : 'hidden'}>
+          <LeftPanelTrack
+            view={treeInLeft ? 'files' : 'projects'}
+            width={layout.leftWidth}
+            floating={floatingTheme}
+            onResizeStart={layout.leftRegion.startResize}
+            onResizeNudge={layout.leftRegion.nudge}
+            projects={
+              <LeftNavigation
+                app={app}
+                floating={floatingTheme}
                 projectNamesUppercase={settings.projectNamesUppercase}
                 showProjectIcons={settings.showProjectIcons}
-                projectColor={projectColors?.[files.filesProject.id]}
-                homeDir={app.homeDir}
-                platform={app.platform}
-                session={files.filesSession}
-                onBack={files.handleCloseProjectFiles}
-                onRefresh={files.handleRefreshProjectFiles}
-                onToggleDirectory={files.handleFilesToggleDirectory}
-                onSelectFile={files.handleFilesSelectFile}
-                onShowInFolder={files.handleFilesShowInFolder}
-                onOpenInWindow={files.handleFilesOpenInWindow}
-                onCopyPath={files.handleFilesCopyPath}
-                onCopyRelativePath={files.handleFilesCopyRelativePath}
-                onTrash={files.handleFilesTrash}
-                notice={notice}
+                attentionBadgeEnabled={settings.attentionSettings.badge}
+                attentionActiveIndicatorEnabled={settings.attentionSettings.activeIndicator}
+                onSelectProject={selection.handleOpenProjectKanban}
+                onToggleProject={selection.handleToggleProject}
+                onSelectChat={selection.handleSelectChat}
+                onAddProject={lifecycle.handleAddProject}
+                onRemoveProject={lifecycle.handleRemoveProject}
+                onOpenProjectFiles={openProjectFilesFromLeft}
+                fileTreeEnabled={layout.mode === 'two'}
+                onOpenProjectKanban={selection.handleOpenProjectKanban}
+                onOpenInFileExplorer={lifecycle.handleOpenInFileExplorer}
+                onOpenProjectSettings={(projectId) =>
+                  projectSettings.openProjectSettings(projectId, 'shell')
+                }
+                onCreateChat={selection.handleCreateChat}
+                onCreateAgentChat={selection.handleCreateAgentChat}
+                loadAgentProfiles={selection.loadAgentProfiles}
+                onConfigureAgents={projectSettings.openAgentsSettings}
+                onRequestCloseChat={closing.handleRequestCloseChat}
+                onOpenAppSettings={appSettings.openAppSettings}
+                notice={layout.leftOpen && !treeInLeft && !treeInRight ? notice : null}
               >
                 {panelFooter}
-              </ProjectFilesPanel>
-            ) : null
-          }
-        />
+              </LeftNavigation>
+            }
+            files={treeInLeft ? projectFilesPanel(true) : null}
+          />
+        </div>
         <CenterTabs
           app={app}
           floating={floatingTheme}
@@ -490,10 +540,22 @@ function AppContent({
             />
           )}
         />
-        {/* Right region is a real five-region sibling (SDD §7), hidden by default. */}
-        <div data-testid={TEST_ID.rightRegion} style={{ display: 'none' }}>
-          Right Panel
-        </div>
+        {layout.mode === 'three' && layout.rightOpen ? (
+          <RightPanel
+            width={layout.rightWidth}
+            floating={floatingTheme}
+            onResizeStart={layout.rightRegion.startResize}
+            onResizeNudge={layout.rightRegion.nudge}
+          >
+            {files.filesProject !== null ? (
+              projectFilesPanel(false)
+            ) : (
+              <p className="px-3 py-3 text-sm text-ink-muted" data-testid={TEST_ID.rightFilesEmpty}>
+                Select a project to browse its files.
+              </p>
+            )}
+          </RightPanel>
+        ) : null}
       </div>
       {taskStart !== null ? (
         <TaskStartModal
@@ -629,6 +691,11 @@ function AppContent({
         onThemeChange={settings.setTheme}
         bottomOpen={bottom.bottomOpen}
         onToggleBottom={bottom.handleToggleBottom}
+        leftOpen={layout.leftOpen}
+        rightOpen={layout.rightOpen}
+        rightToggleEnabled={layout.mode === 'three'}
+        onToggleLeft={layout.toggleLeft}
+        onToggleRight={layout.toggleRight}
       />
     </div>
   )

@@ -18,8 +18,11 @@ interface ProjectFilesPanelProps {
   /** Home directory and host platform (AppApi); the subheader shows home as `~`. */
   homeDir?: string
   platform?: string
-  /** Exits Project Files mode (the back affordance, spec Behaviour 12). */
-  onBack: () => void
+  /** Exits Project Files mode (the back affordance, spec Behaviour 12).
+      Omitted when the tree is in the right panel. */
+  onBack?: () => void
+  /** Two-panel left slot shows Back. The right panel does not. */
+  showBack?: boolean
   /** Re-reads the root and every expanded directory (spec Behaviour 25). */
   onRefresh: () => void
   onToggleDirectory: (relativePath: string) => void
@@ -44,6 +47,7 @@ export function ProjectFilesPanel({
   homeDir,
   platform,
   onBack,
+  showBack = true,
   onRefresh,
   onToggleDirectory,
   onSelectFile,
@@ -58,8 +62,10 @@ export function ProjectFilesPanel({
   const backButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    backButtonRef.current?.focus()
-  }, [])
+    if (showBack) {
+      backButtonRef.current?.focus()
+    }
+  }, [showBack])
 
   const color = projectColor ?? getProjectColor(project)
   const initials = getProjectInitials(project.name)
@@ -70,6 +76,8 @@ export function ProjectFilesPanel({
       className="flex h-full min-h-0 w-full flex-col bg-panel"
       onKeyDown={(event) => {
         if (
+          showBack &&
+          onBack !== undefined &&
           event.key === 'Escape' &&
           !event.defaultPrevented &&
           !document.querySelector('[data-testid="file-tree-context-menu"]')
@@ -78,20 +86,21 @@ export function ProjectFilesPanel({
         }
       }}
     >
-      {/* Back row: one full-width labelled button (NEKODE-103) */}
-      <div className="flex h-control shrink-0 items-center px-2 py-1.5">
-        <button
-          type="button"
-          ref={backButtonRef}
-          className="flex h-full w-full items-center justify-center gap-1.5 rounded-md border border-edge bg-panel text-sm text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          data-testid={TEST_ID.filesBackButton}
-          aria-label="Back to projects"
-          onClick={onBack}
-        >
-          <Icon.back size={14} aria-hidden />
-          <span>Back to Projects</span>
-        </button>
-      </div>
+      {showBack && onBack !== undefined ? (
+        <div className="flex h-control shrink-0 items-center px-2 py-1.5">
+          <button
+            type="button"
+            ref={backButtonRef}
+            className="flex h-full w-full items-center justify-center gap-1.5 rounded-md border border-edge bg-panel text-sm text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            data-testid={TEST_ID.filesBackButton}
+            aria-label="Back to projects"
+            onClick={onBack}
+          >
+            <Icon.back size={14} aria-hidden />
+            <span>Back to Projects</span>
+          </button>
+        </div>
+      ) : null}
       {/* Project row: avatar and name in active style, refresh button */}
       <div className="flex h-control shrink-0 items-center px-3 py-1.5">
         {showProjectIcons ? (

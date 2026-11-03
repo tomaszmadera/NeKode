@@ -2253,7 +2253,7 @@ describe('application shell', () => {
     expect(screen.getByTestId(TEST_ID.actionRowSlot)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.centerSurface)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.bottomRegion)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.rightRegion)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
     expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
   })
 
@@ -2263,7 +2263,7 @@ describe('application shell', () => {
     expect(emptyList.textContent).toContain('No projects yet')
     const welcome = getByTestIdString(TEST_ID.welcomeSurface)
     expect(welcome.textContent).toContain('Welcome to NeKode')
-    expect(getByTestIdString(TEST_ID.rightRegion).style.display).toBe('none')
+    expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
     expect(getByTestIdString(TEST_ID.bottomRegion).style.display).toBe('none')
     await Promise.resolve()
     expect(app.projects.list).toHaveBeenCalledTimes(1)

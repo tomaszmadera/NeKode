@@ -297,8 +297,8 @@ The application uses a five-region conceptual layout (user decision 2026-09-26: 
 ```text
 ┌────────────────┬──────────────────────────────────────────┬──────────────┐
 │ LEFT           │ CENTER                                   │ RIGHT        │
-│ Projects       │ Tab Strip                                │ hidden       │
-│ and Chats      │ [chat][files…][+ New chat]               │ by default   │
+│ Projects       │ Tab Strip                                │ layout       │
+│ and Chats      │ [chat][files…][+ New chat]               │ mode         │
 ├────────────────┼──────────────────────────────────────────┼──────────────┤
 │                │ Action Bar                               │              │
 │                │ [Handoff|Resume] [Stop|Continue] ▶ …     │              │
@@ -316,7 +316,7 @@ Semantics:
 
 - **LEFT** — work navigation.
 - **CENTER** — one column, top-down: **tab strip** (the terminal-chat tab is always first, never closable, its label is the active chat's name; then open-file tabs, `+ New chat`), **action bar** (action row), **main surface**.
-- **RIGHT** — secondary tools, hidden by default.
+- **RIGHT** — placement and content follow `docs/features/workspace-layout/spec.md`.
 - **BOTTOM** — auxiliary terminal/tools.
 - **STATUS BAR** — project context (name, path, runtimes, Git branch and worktree status — §9), full window width at the very bottom of the window.
 
@@ -924,24 +924,9 @@ Purpose:
 
 # 20. Right Panel
 
-The right panel exists structurally in the MVP but is hidden by default.
+Where the right panel is shown, and what it contains, is `docs/features/workspace-layout/spec.md`.
 
-No functional right-panel tools are required in the MVP.
-
-Potential future tools:
-
-```text
-Browser
-Second terminal
-Git
-Changes
-Context
-Agent activity
-Documentation
-Preview
-```
-
-The layout implementation should make this panel easy to activate later.
+Browser, a second terminal, and the other tools named in `docs/UX-UI.md` §21 are not this panel's content.
 
 ---
 
@@ -2535,7 +2520,7 @@ The configurable Project Action Bar is the action row below the tab strip in the
 
 ## Decision 9
 
-The right panel is structurally available but hidden by default.
+Right-panel placement follows `docs/features/workspace-layout/spec.md`.
 
 ## Decision 10
 

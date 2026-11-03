@@ -129,8 +129,8 @@ The window has no top action band and no context header above the main surface (
 ```text
 ┌────────────────┬──────────────────────────────────────────┬──────────────┐
 │ LEFT           │ CENTER                                   │ RIGHT        │
-│ Navigation     │ Tab Strip                                │ hidden       │
-│                │ [chat][files…][+ New chat]               │ by default   │
+│ Navigation     │ Tab Strip                                │ layout       │
+│                │ [chat][files…][+ New chat]               │ mode         │
 ├────────────────┼──────────────────────────────────────────┼──────────────┤
 │                │ Action Bar                               │              │
 │                │ [Handoff|Resume] [Stop|Continue] ▶ …     │              │
@@ -149,7 +149,7 @@ Semantics:
 - **Left** — navigation between projects, chats and project contents.
 - **Center** — one column, top-down: **tab strip** (the terminal-chat tab is always first, never closable, its label is the active chat's name; then open-file tabs, `+ New chat`), **action bar** (action row), the main active work surface.
 - **Bottom** — auxiliary terminal and future tool panels.
-- **Right** — secondary tools such as Browser or second Terminal.
+- **Right** — placement and content follow `docs/features/workspace-layout/spec.md`.
 - **Status bar** — project context: name, path, runtimes, Git branch and worktree status (§14–§16).
 
 ---
@@ -164,7 +164,7 @@ On startup, restore the most recent useful state when possible:
 - left panel width,
 - bottom panel state,
 - bottom terminal height,
-- right panel state,
+- right panel state (`docs/features/workspace-layout/spec.md`),
 - active terminal association.
 
 If no prior state exists:
@@ -180,7 +180,7 @@ Center:
 Welcome / empty state
 
 Right:
-Hidden
+No right slot until a saved layout says otherwise (`docs/features/workspace-layout/spec.md`)
 
 Bottom:
 Hidden
@@ -352,7 +352,7 @@ Use compact status markers only when useful.
 
 # 11. Left Navigation Modes
 
-The left column may switch contextually between:
+In the two-panel layout the left column may switch contextually between the views below. Three-panel placement is `docs/features/workspace-layout/spec.md`.
 
 ```text
 Projects / Chats
@@ -683,25 +683,9 @@ The primary chat terminal remains dedicated to the main coding session.
 
 # 21. Right Panel
 
-The right panel is hidden by default.
+Where the right panel is shown, and what it contains, is `docs/features/workspace-layout/spec.md`.
 
-Future tools may include:
-
-- Browser
-- Second Terminal
-- Changes
-- Git
-- Context
-- Documentation
-- Preview
-- Agent Activity
-
-When opened:
-
-- slide in from the right,
-- compress center surface,
-- preserve left panel,
-- preserve previous width.
+Browser, a second terminal, Changes, Git, Context, Documentation, Preview, and Agent Activity are not this panel's content.
 
 ---
 
@@ -1593,7 +1577,7 @@ Saved actions appear in the action bar immediately and survive application resta
 
 # 50. Project File Navigation
 
-Entering Project Files may transform the left panel into the Project file tree.
+Which slot shows the project file tree is `docs/features/workspace-layout/spec.md`.
 
 Clicking a file opens it in a file tab of the tab strip and shows it in the main surface: the tab label is the file name and the tab tooltip is the path relative to the project root (e.g. `app / Services / Billing.php`). The breadcrumb and the `Files` view label are superseded by the tab model (user decision 2026-09-26) and are not rendered.
 
@@ -2347,7 +2331,7 @@ STATUS BAR
 → Project context (name, path, runtimes, Git)
 
 RIGHT
-→ Hidden / future tools
+→ `docs/features/workspace-layout/spec.md`
 ```
 
 ---
@@ -2356,7 +2340,7 @@ RIGHT
 
 1. The application UI is English only.
 2. The left panel defaults to Projects → Chats.
-3. Project navigation can transition into a File Tree view.
+3. File-tree placement follows `docs/features/workspace-layout/spec.md`.
 4. These transitions use subtle, satisfying animations.
 5. Chat selection opens/restores the Chat work surface.
 6. The MVP Chat work surface is primarily a terminal.
@@ -2365,7 +2349,7 @@ RIGHT
 9. Project context exposes path, runtime, branch and worktree/Git status.
 10. The configurable Project Action Bar is the action row below the tab strip in the center column (placement revised by user decision 2026-09-26).
 11. `Ctrl + `` toggles the auxiliary bottom terminal.
-12. The right panel is hidden by default.
+12. Right-panel visibility follows `docs/features/workspace-layout/spec.md`.
 13. A Project's chat/files surface and (when it has a Kanban binding) its Kanban board are the project views; Kanban is reached from the left-navigation tile or the top-tab-strip tab, never a separate view-switch strip.
 14. The MVP Kanban is a visual-only preview using static demonstration cards, not real Tasks.
 15. MVP demonstration cards show the intended future `Implement`, `Resume` and `Open` controls, but those controls do not execute Kanban workflows.
