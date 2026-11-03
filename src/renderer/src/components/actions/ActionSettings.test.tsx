@@ -325,28 +325,6 @@ describe('Kanban tab shell', () => {
   })
 })
 
-describe('legacy handoff directory removal', () => {
-  it('does not render the legacy handoff directory setting', async () => {
-    const app = shellAppMock()
-    render(
-      <ActionSettings
-        app={app}
-        actions={[]}
-        projectId="p1"
-        projectPath="D:/p"
-        autoSend={false}
-        onAutoSendChange={vi.fn()}
-        onRefresh={vi.fn().mockResolvedValue(undefined)}
-        onClose={vi.fn()}
-        initialTab="kanban"
-      />,
-    )
-    expect(screen.queryByTestId(TEST_ID.settingsHandoffDir)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.settingsHandoffDirBrowse)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.settingsHandoffDirSave)).toBeNull()
-  })
-})
-
 describe('action save error handling and duplicate prevention', () => {
   it('clears the form and surfaces refresh failure separately when create succeeds but refresh fails', async () => {
     const create = vi.fn().mockResolvedValue({ id: 'a1' })

@@ -86,30 +86,6 @@ function mockBindings(app: AppApi, boundProjectIds: readonly string[]): void {
   })
 }
 
-describe('kanban nav tile (spec Behaviour 14, AC14)', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-    resetMockTerminals()
-    resetMockFitAddons()
-  })
-  afterEach(() => {
-    cleanup()
-  })
-
-  it('does not render the retired nav tile under the project name row', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    mockBindings(app, ['p1'])
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    expect(screen.queryByTestId(testIdFor.projectKanban('p1'))).toBeNull()
-    expect(screen.queryByTestId(testIdFor.projectKanban('p2'))).toBeNull()
-  })
-})
-
 describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
   let app: AppApi
 

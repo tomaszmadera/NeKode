@@ -176,7 +176,9 @@ describe('status bar — git forms (UX-UI §16)', () => {
       worktree: worktree({ modified: 1, conflicts: 2 }),
     })
     render(<StatusBar app={app} project={projectA} />)
-    await screen.findByTestId(TEST_ID.statusGitStatus)
+    const status = await screen.findByTestId(TEST_ID.statusGitStatus)
+    // Conflicts outrank the plain change count, so the visible form is `! N conflicts`.
+    expect(status.textContent).toBe('! 2 conflicts')
   })
 
   it('degrades to the neutral "no git" state when git fails (never an error banner)', async () => {
@@ -339,36 +341,6 @@ describe('status bar — quick theme switcher', () => {
     expect(switcher).toBeTruthy()
     expect(switcher.textContent).toContain('NeKode Flat')
     expect(switcher.className).toContain('ml-auto')
-  })
-})
-
-describe('status bar — git sync button removed', () => {
-  let app: AppApi
-
-  beforeEach(() => {
-    app = createAppApiStub()
-  })
-  afterEach(() => {
-    cleanup()
-  })
-
-  it('does not render a sync button when branch is present', async () => {
-    render(<StatusBar app={app} project={projectA} />)
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitBranch)).toBeTruthy())
-    expect(screen.queryByRole('button', { name: /sync/i })).toBeNull()
-    expect(screen.queryByText('Sync')).toBeNull()
-  })
-
-  it('does not render a sync button when branch is null (no git)', async () => {
-    app = createAppApiStub({ branch: null })
-    render(<StatusBar app={app} project={projectA} />)
-    await waitFor(() => expect(screen.getByTestId(TEST_ID.statusGitNone)).toBeTruthy())
-    expect(screen.queryByRole('button', { name: /sync/i })).toBeNull()
-  })
-
-  it('does not render a sync button when project is null', () => {
-    render(<StatusBar app={app} project={null} />)
-    expect(screen.queryByRole('button', { name: /sync/i })).toBeNull()
   })
 })
 

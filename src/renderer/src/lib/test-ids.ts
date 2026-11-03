@@ -185,10 +185,6 @@ export const TEST_ID = {
   settingsShortcutsTab: 'settings-shortcuts-tab',
   /** App Settings: shortcut table on the Shortcuts tab. */
   settingsShortcutsTable: 'settings-shortcuts-table',
-  settingsHandoffDir: 'settings-handoff-dir',
-  settingsHandoffDirBrowse: 'settings-handoff-dir-browse',
-  settingsHandoffDirSave: 'settings-handoff-dir-save',
-  settingsHandoffDirSaved: 'settings-handoff-dir-saved',
   /** Project Settings: Shell tab (spec project-shell-selection). */
   settingsShellTab: 'settings-shell-tab',
   /** Project Settings: Actions & Configuration tab. */
@@ -361,8 +357,6 @@ export const testIdFor = {
   projectAvatar: (projectId: string): string => `project-avatar-${projectId}`,
   projectToggle: (projectId: string): string => `project-toggle-${projectId}`,
   projectChats: (projectId: string): string => `project-chats-${projectId}`,
-  /** Left-navigation Kanban tile of a bound project (first expanded element). */
-  projectKanban: (projectId: string): string => `project-kanban-${projectId}`,
   projectFiles: (projectId: string): string => `project-files-${projectId}`,
   removeProject: (projectId: string): string => `remove-project-${projectId}`,
   chatRow: (chatId: string): string => `chat-row-${chatId}`,

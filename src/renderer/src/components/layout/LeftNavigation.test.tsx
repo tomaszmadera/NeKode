@@ -560,9 +560,6 @@ describe('LeftNavigation project avatar and initials', () => {
     }
     render(navigation({ ...props }))
 
-    // Kanban pill under project row is retired
-    expect(screen.queryByTestId(testIdFor.projectKanban('p1'))).toBeNull()
-
     const container = screen.getByTestId(testIdFor.projectChats('p1'))
     expect(container.style.paddingLeft).toBe('28px')
     const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
