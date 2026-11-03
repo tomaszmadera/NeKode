@@ -58,6 +58,9 @@ When you edit a command with this prefix, the checkbox is selected automatically
   running → success while the app keeps running.
 - If the run recorded by `start.ps1` is already active, the script exits with code 1
   ("already running") and the button shows **failed**. Stop that run with `stop.ps1`.
+  The check matches the PID, process name, and saved process creation time, so a
+  reused PID does not block startup. Older state files use the launch-to-save time
+  interval until the next start records the exact process creation time.
 - Dev mode uses `tmp/dev-user-data` by default. Its projects and settings persist
   between starts, separately from the installed app, so both can run at once.
   An explicit `NEKODE_USER_DATA` overrides this default. Choosing the installed

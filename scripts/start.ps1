@@ -33,8 +33,24 @@ $LogDir = Join-Path $RepoRoot 'tmp\logs'
 
 function Test-RunActive {
     if (!(Test-Path $StateFile)) { return $false }
+    $stateWrittenAt = (Get-Item -LiteralPath $StateFile).LastWriteTimeUtc
     $state = Get-Content -Raw $StateFile | ConvertFrom-Json
-    return [bool](Get-Process -Id $state.rootPid -ErrorAction SilentlyContinue)
+    $process = Get-Process -Id $state.rootPid -ErrorAction SilentlyContinue
+    if (!$process) { return $false }
+    $expectedName = switch ($state.mode) {
+        'Dev' { 'cmd' }
+        'Unpacked' { 'nekode' }
+        default { return $false }
+    }
+    if ($process.ProcessName -ne $expectedName) { return $false }
+    $processStartedAt = $process.StartTime.ToUniversalTime()
+    if ($null -ne $state.PSObject.Properties['rootStartedAt']) {
+        return $processStartedAt -eq ([datetimeoffset]$state.rootStartedAt).UtcDateTime
+    }
+    # Legacy records lack the exact process timestamp. The original root must
+    # have been created between starting this run and writing its state file.
+    $runStartedAt = ([datetimeoffset]$state.startedAt).UtcDateTime
+    return $processStartedAt -ge $runStartedAt -and $processStartedAt -le $stateWrittenAt
 }
 
 if (Test-RunActive) {
@@ -45,7 +61,7 @@ if (Test-RunActive) {
 }
 
 if (Test-Path $StateFile) {
-    Write-Host 'Replacing stale run state (previous root process is gone).'
+    Write-Host 'Replacing stale run state (root process no longer matches the recorded run).'
     Remove-Item $StateFile -Force
 }
 
@@ -97,16 +113,17 @@ else {
 }
 
 @{
-    mode      = $Mode
-    rootPid   = $rootPid
-    startedAt = $startedAt
-    logFile   = $logFile
-    repoRoot  = $RepoRoot
+    mode          = $Mode
+    rootPid       = $rootPid
+    rootStartedAt = $proc.StartTime.ToUniversalTime().ToString('o')
+    startedAt     = $startedAt
+    logFile       = $logFile
+    repoRoot      = $RepoRoot
 } | ConvertTo-Json | Set-Content -Path $StateFile -Encoding UTF8
 
 Start-Sleep -Seconds 3
 
-if (Get-Process -Id $rootPid -ErrorAction SilentlyContinue) {
+if (Test-RunActive) {
     Write-Host "NeKode started (mode $Mode, root PID $rootPid)."
     if ($logFile) { Write-Host "Dev output: $logFile" }
     Write-Host 'Stop with: scripts\stop.ps1'
