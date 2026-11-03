@@ -81,7 +81,7 @@ export function DictationDictionary({
   const [entries, setEntries] = useState<DictationDictionaryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [legacyError, setLegacyError] = useState<DictationDictionaryError | null>(null)
   const [activeTab, setActiveTab] = useState<'global' | 'project'>('global')
   const [projects, setProjects] = useState<ProjectInfo[]>(externalProjects ?? [])
@@ -135,7 +135,7 @@ export function DictationDictionary({
     let disposed = false
     setLoading(true)
     setLoadFailed(false)
-    setDeleteError(null)
+    setActionError(null)
     setLegacyError(null)
 
     const queryProjectId =
@@ -231,6 +231,7 @@ export function DictationDictionary({
   // Toggle enabled
   async function handleToggle(entry: DictationDictionaryEntry) {
     const nextEnabled = !entry.enabled
+    setActionError(null)
     try {
       const updated = await api.dictionaryToggle(entry.id, nextEnabled)
       setEntries((prev) =>
@@ -239,6 +240,7 @@ export function DictationDictionary({
         ),
       )
     } catch {
+      setActionError('The dictionary entry could not be updated. Try again.')
       // Revert on error
       setEntries((prev) => [...prev])
     }
@@ -246,12 +248,12 @@ export function DictationDictionary({
 
   // Delete entry
   async function handleDelete(id: string) {
-    setDeleteError(null)
+    setActionError(null)
     try {
       await api.dictionaryDelete(id)
       setEntries((prev) => prev.filter((e) => e.id !== id))
     } catch {
-      setDeleteError('The dictionary entry could not be deleted. Try again.')
+      setActionError('The dictionary entry could not be deleted. Try again.')
     }
   }
 
@@ -557,13 +559,13 @@ export function DictationDictionary({
         ) : null}
 
         {/* Status & Messages */}
-        {deleteError ? (
+        {actionError ? (
           <p
             role="alert"
-            data-testid="dictation-dictionary-delete-error"
+            data-testid="dictation-dictionary-action-error"
             className="border-t border-edge px-4 py-2 text-xs text-error"
           >
-            {deleteError}
+            {actionError}
           </p>
         ) : null}
         <div aria-live="polite">

@@ -1,5 +1,5 @@
 import type { ActionControl, ActionInput, AppApi } from '@shared/ipc-contract'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID } from '../../lib/test-ids'
 import { ActionSettings } from './ActionSettings'
@@ -592,9 +592,7 @@ describe('mutation in-flight guards and duplicate prevention', () => {
     }
   }
 
-  // Original scenario: 'blocks rapid double activation of action remove,
-  // disables button during mutation, and unlocks on error'.
-  async function actionRemoveCase(): Promise<GuardCase> {
+  it('blocks rapid double activation of action remove, disables confirm during mutation, and unlocks on error', async () => {
     let resolveDelete: (val: unknown) => void = () => {}
     const del = vi.fn().mockImplementation(
       () =>
@@ -616,30 +614,84 @@ describe('mutation in-flight guards and duplicate prevention', () => {
     }
     const app = { ...shellAppMock(), actions: { delete: del } } as unknown as AppApi
     render(<ActionSettings {...guardProps(app, null, null, [action])} initialTab="actions" />)
-    const button = screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement
-    return {
-      button,
-      call: del,
-      complete: async () => {
-        resolveDelete(undefined)
-        await waitFor(() => expect(button.disabled).toBe(false))
-      },
-      rearm: () => {
-        del.mockRejectedValueOnce({
-          nekodeAppError: true,
-          code: 'internal',
-          message: 'Delete error',
-        })
-        return screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement
-      },
-      errorMessage: 'Delete error',
-    }
-  }
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    const confirmButton = screen.getByTestId(TEST_ID.confirmDialogConfirm) as HTMLButtonElement
+    expect(confirmButton.getAttribute('aria-disabled')).toBeNull()
 
-  const guardRows: Array<[string, () => Promise<GuardCase>]> = [
-    ['action save', actionSaveCase],
-    ['action remove', actionRemoveCase],
-  ]
+    // First activation starts the mutation.
+    fireEvent.click(confirmButton)
+    expect(del).toHaveBeenCalledTimes(1)
+    expect(confirmButton.getAttribute('aria-disabled')).toBe('true')
+
+    // Rapid second activation is blocked: one call only.
+    fireEvent.click(confirmButton)
+    expect(del).toHaveBeenCalledTimes(1)
+
+    // Resolve: dialog closes.
+    await act(async () => {
+      resolveDelete(undefined)
+    })
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+
+    // Rejection: the error surfaces and unlocks.
+    del.mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'internal',
+      message: 'Delete error',
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    const retryConfirm = screen.getByTestId(TEST_ID.confirmDialogConfirm)
+    fireEvent.click(retryConfirm)
+    await screen.findByText('Delete error')
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    expect((screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+  })
+
+  it('asks for confirmation before deleting an action and deletes upon confirmation', async () => {
+    const del = vi.fn().mockResolvedValue(undefined)
+    const onRefresh = vi.fn().mockResolvedValue(undefined)
+    const action: ActionControl = {
+      id: 'a1',
+      scope: 'global',
+      projectId: null,
+      title: 'Action 1',
+      icon: null,
+      command: 'echo 1',
+      cwd: null,
+      runMode: 'background',
+      confirm: false,
+      sortOrder: 0,
+    }
+    const app = { ...shellAppMock(), actions: { delete: del } } as unknown as AppApi
+    render(
+      <ActionSettings
+        {...guardProps(app, null, null, [action])}
+        onRefresh={onRefresh}
+        initialTab="actions"
+      />,
+    )
+
+    // Click Delete in list: dialog opens, delete has NOT been called
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = screen.getByTestId(TEST_ID.confirmDialog)
+    expect(dialog.textContent).toContain('Delete action "Action 1"?')
+    expect(del).not.toHaveBeenCalled()
+
+    // Cancel closes dialog without deleting
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogCancel))
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    expect(del).not.toHaveBeenCalled()
+
+    // Click Delete again and confirm
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(del).toHaveBeenCalledWith('a1'))
+    expect(onRefresh).toHaveBeenCalled()
+  })
+
+  const guardRows: Array<[string, () => Promise<GuardCase>]> = [['action save', actionSaveCase]]
 
   it.each(guardRows)(
     'blocks rapid double activation of %s, disables button during mutation, and unlocks on error',

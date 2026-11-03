@@ -13,6 +13,7 @@ import {
 } from '../../lib/icons'
 import { getProjectInitials } from '../../lib/project-avatar'
 import { TEST_ID } from '../../lib/test-ids'
+import { ConfirmDialog } from '../layout/ConfirmDialog'
 import { AgentProfilesSettings } from '../settings/AgentProfilesSettings'
 import { KanbanSettings } from '../settings/KanbanSettings'
 import { ProjectResumeSettings } from '../settings/ProjectResumeSettings'
@@ -161,6 +162,7 @@ export function ActionSettings({
   const [form, setForm] = useState<ActionInput | null>(null)
   const [runWithPowerShell, setRunWithPowerShell] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [actionToDelete, setActionToDelete] = useState<ActionControl | null>(null)
   const visible = actions.filter(
     (action) => action.scope === 'global' || action.projectId === projectId,
   )
@@ -384,7 +386,7 @@ export function ActionSettings({
                             disabled={guard.busy}
                             className={cn(quietClass, 'text-error')}
                             onClick={() => {
-                              void remove(action.id)
+                              setActionToDelete(action)
                             }}
                           >
                             <Icon.trash size={13} aria-hidden />
@@ -582,6 +584,24 @@ export function ActionSettings({
           )}
         </div>
       )}
+      {actionToDelete ? (
+        <ConfirmDialog
+          title="Delete action"
+          body={`Delete action "${actionToDelete.title}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          destructive
+          confirmDisabled={guard.busy}
+          onConfirm={async () => {
+            const id = actionToDelete.id
+            try {
+              await remove(id)
+            } finally {
+              setActionToDelete(null)
+            }
+          }}
+          onCancel={() => setActionToDelete(null)}
+        />
+      ) : null}
     </SettingsShell>
   )
 }

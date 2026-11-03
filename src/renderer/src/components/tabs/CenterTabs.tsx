@@ -80,6 +80,7 @@ export interface CenterTabsProps {
   onUseLocalTaskList: (projectId: string) => Promise<void>
   onConnectTracker: () => void
   onOpenExternalError: (message: string) => void
+  onNotice?: (message: string) => void
 }
 
 export function CenterTabs({
@@ -102,6 +103,7 @@ export function CenterTabs({
   onUseLocalTaskList,
   onConnectTracker,
   onOpenExternalError,
+  onNotice,
 }: CenterTabsProps): React.JSX.Element {
   const activeTab = session.active
   return (
@@ -127,6 +129,7 @@ export function CenterTabs({
         onSelectTab={onSelectTab}
         onCloseFile={onCloseFile}
         onSettings={onOpenSettings}
+        onNotice={onNotice ?? onOpenExternalError}
       />
       {/* Floating theme: the content below the tab strip sits in a
           rounded frame (user decision 2026-10-04) that keeps the tabs

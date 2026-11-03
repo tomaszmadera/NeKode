@@ -6,6 +6,7 @@ import {
 import type { AgentProfile } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { TEST_ID } from '../../lib/test-ids'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
 
@@ -208,8 +209,30 @@ describe('global agent library editor', () => {
       channel: 'agentProfiles:delete',
     })
     fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
     expect(await screen.findByText('Deselect in Project one.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Edit Alpha' })).toBeTruthy()
+  })
+
+  it('asks for confirmation before deleting a profile and preserves it on cancel', async () => {
+    const app = harness([alpha])
+    await screen.findByRole('button', { name: 'Delete Alpha' })
+
+    // Clicking delete opens confirm dialog
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha' }))
+    const dialog = screen.getByTestId(TEST_ID.confirmDialog)
+    expect(dialog.textContent).toContain('Delete agent profile "Alpha"?')
+    expect(app.agentProfiles.delete).not.toHaveBeenCalled()
+
+    // Canceling closes dialog without calling delete
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogCancel))
+    expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    expect(app.agentProfiles.delete).not.toHaveBeenCalled()
+
+    // Confirming deletes the profile
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha' }))
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(app.agentProfiles.delete).toHaveBeenCalledWith('a'))
   })
 
   it('renames a legacy multiline-argument profile through a lossless single-line command', async () => {

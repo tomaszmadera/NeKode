@@ -138,10 +138,11 @@ export function ShellTab({
       try {
         await app.state.set(projectColorKey(projectId), color)
         setSavedColor(color)
+        setSaveError(null)
         onProjectColorChange?.(projectId, color.length > 0 ? color : null)
         onSettingsChanged?.()
-      } catch {
-        // ignore
+      } catch (cause) {
+        setSaveError(parseAppErrorPayload(cause)?.message ?? 'Failed to save project color.')
       }
     })
   }

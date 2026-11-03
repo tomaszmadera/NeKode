@@ -437,9 +437,11 @@ export function extraStatusNames(
   itemStateName: string,
   statusValue: string,
 ): string[] {
+  const ids = new Set(states.map((state) => state.id))
   const names = new Set(states.map((state) => state.name))
   return [itemStateName, statusValue].filter(
-    (name, index, all) => !names.has(name) && all.indexOf(name) === index,
+    (name, index, all) =>
+      name !== '' && !ids.has(name) && !names.has(name) && all.indexOf(name) === index,
   )
 }
 
@@ -451,10 +453,19 @@ export interface NewTaskDraft {
   priority: KanbanPriority | null
 }
 
-/** First state named Todo, ignoring case, or '' when the board has none. */
+/** First state named Todo, ignoring case, or '' when the board has none. Returns state.id. */
 export function defaultNewTaskStateRef(states: readonly KanbanState[]): string {
   const match = statesInAdapterOrder(states).find((state) => state.name.toLowerCase() === 'todo')
-  return match?.name ?? ''
+  return match?.id ?? ''
+}
+
+/** Status select value for an item: state.id if state is known on the board, else stateName. */
+export function itemStatusValue(states: readonly KanbanState[], item: WorkItem): string {
+  const nameMatch = states.find((s) => s.name === item.stateName)
+  if (nameMatch !== undefined) return nameMatch.id
+  const idMatch = states.find((s) => s.id === item.stateId)
+  if (idMatch !== undefined && !item.stateName) return idMatch.id
+  return item.stateName || item.stateId
 }
 
 /** Message for a failed create or update: typed payload, then Error message, then fallback. */

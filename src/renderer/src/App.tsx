@@ -397,6 +397,7 @@ function AppContent({
           onUseLocalTaskList={kanban.handleUseLocalTaskList}
           onConnectTracker={handleOpenKanbanSettings}
           onOpenExternalError={setNotice}
+          onNotice={setNotice}
           actionRow={
             <ActionBar
               app={app}

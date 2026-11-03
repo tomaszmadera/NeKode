@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { clampMenuPosition } from '../../lib/menu-position'
 import { TEST_ID } from '../../lib/test-ids'
 
@@ -37,6 +38,12 @@ export function TerminalContextMenu({
 }: Props): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement | null>(null)
   const position = clampMenuPosition(x, y, { menuWidth: 220, menuHeight: 150 })
+
+  useDialogFocusTrap({
+    containerRef: menuRef,
+    onEscape: onClose,
+    autoFocus: true,
+  })
 
   // Escape closes the menu and all keystrokes typed outside the menu are
   // swallowed in the capture phase so they do not leak into the PTY behind

@@ -217,6 +217,35 @@ describe('cached background refresh', () => {
     await waitFor(() => expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull())
     expect(screen.queryByRole('status')).toBeNull()
   })
+
+  it('cleans up in-flight requests when load is superseded by project change', async () => {
+    const p1Deferred = deferred<KanbanBoardData>()
+    const p2Deferred = deferred<KanbanBoardData>()
+    const listBoard = vi
+      .fn()
+      .mockReturnValueOnce(p1Deferred.promise)
+      .mockReturnValueOnce(p2Deferred.promise)
+    const ui = render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
+    expect(listBoard).toHaveBeenCalledWith('p1')
+
+    // Switch project to p2 while p1 load is in flight
+    ui.rerender(<KanbanBoard app={appWith(listBoard)} projectId="p2" onConfigure={vi.fn()} />)
+    expect(listBoard).toHaveBeenCalledWith('p2')
+
+    // p1 load resolves late - should be ignored cleanly without crashing or setting p1 data
+    await act(async () => p1Deferred.resolve(fixture))
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull()
+
+    // p2 load resolves
+    await act(async () =>
+      p2Deferred.resolve({
+        states: [{ id: 'p2-s1', name: 'Todo', group: 'unstarted', order: 1 }],
+        items: [item('P2-1', 'Project 2 Task', 'p2-s1')],
+      }),
+    )
+    expect(await screen.findByTestId(testIdFor.kanbanItem('P2-1'))).toBeTruthy()
+    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull()
+  })
 })
 
 function appWith(listBoard: AppApi['kanban']['listBoard']): AppApi {
@@ -790,7 +819,7 @@ describe('live title filtering (NEKODE-117)', () => {
     expect(screen.getByRole('status').textContent).toBe('No matching tasks.')
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanNewTask))
     fireEvent.change(screen.getByTestId(TEST_ID.kanbanNewTaskStatus), {
-      target: { value: 'Backlog' },
+      target: { value: 's1' },
     })
     fireEvent.change(screen.getByTestId(TEST_ID.kanbanNewTaskTitle), {
       target: { value: created.title },
@@ -1757,10 +1786,10 @@ describe('kanban new task form', () => {
 
     const status = field(form, 'Status') as HTMLSelectElement
     expect(Array.from(status.options).map((option) => option.value)).toEqual([
-      'Backlog',
-      'todo',
-      'TODO',
-      'Done',
+      's-backlog',
+      's-todo',
+      's-todo-late',
+      's-done',
     ])
     expect(Array.from(status.options).map((option) => option.textContent)).toEqual([
       'Backlog',
@@ -1768,7 +1797,7 @@ describe('kanban new task form', () => {
       'TODO',
       'Done',
     ])
-    expect(status.value).toBe('todo')
+    expect(status.value).toBe('s-todo')
 
     const create = within(form).getByRole('button', { name: /^Create$/ }) as HTMLButtonElement
     expect(create.disabled).toBe(true)
@@ -1790,13 +1819,13 @@ describe('kanban new task form', () => {
       Array.from(status.options)
         .map((option) => option.value)
         .filter((value) => value !== ''),
-    ).toEqual(['Backlog', 'In Progress', 'Done'])
+    ).toEqual(['s1', 's2', 's3'])
     fireEvent.change(field(form, 'Title'), { target: { value: 'Needs a status' } })
     const create = within(form).getByRole('button', { name: /^Create$/ }) as HTMLButtonElement
     expect(create.disabled).toBe(true)
     fireEvent.click(create)
-    fireEvent.change(status, { target: { value: 'In Progress' } })
-    expect(status.value).toBe('In Progress')
+    fireEvent.change(status, { target: { value: 's2' } })
+    expect(status.value).toBe('s2')
     expect(create.disabled).toBe(false)
   })
 
@@ -1826,7 +1855,7 @@ describe('kanban new task form', () => {
     expect(createItem).toHaveBeenCalledTimes(1)
     expect(createItem.mock.calls[0]).toEqual([
       'p1',
-      { title: '  Ship the form  ', stateRef: 'todo' },
+      { title: '  Ship the form  ', stateRef: 's-todo' },
     ])
     expect(screen.queryByTestId(testIdFor.kanbanItem('NK-40'))).toBeNull()
     expect(screen.getAllByTestId(/^kanban-item-NK-/)).toHaveLength(1)
@@ -1859,7 +1888,7 @@ describe('kanban new task form', () => {
     await waitFor(() => expect(screen.getByTestId(testIdFor.kanbanItem('NK-41'))).toBeTruthy())
     expect(createItem.mock.calls[1]).toEqual([
       'p1',
-      { title: 'Another', stateRef: 'todo', description: ' Notes ', priority: 'high' },
+      { title: 'Another', stateRef: 's-todo', description: ' Notes ', priority: 'high' },
     ])
     expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
     expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
@@ -1881,7 +1910,7 @@ describe('kanban new task form', () => {
     expect(screen.getByRole('form', { name: 'New task' })).toBe(form)
     expect((field(form, 'Title') as HTMLInputElement).value).toBe('Ship the form')
     expect((field(form, 'Description') as HTMLTextAreaElement).value).toBe('Keep me')
-    expect((field(form, 'Status') as HTMLSelectElement).value).toBe('todo')
+    expect((field(form, 'Status') as HTMLSelectElement).value).toBe('s-todo')
     expect(
       (within(form).getByRole('button', { name: /^Create$/ }) as HTMLButtonElement).disabled,
     ).toBe(false)
@@ -1890,7 +1919,7 @@ describe('kanban new task form', () => {
     expect(createItem).toHaveBeenCalledTimes(1)
     expect(createItem.mock.calls[0]).toEqual([
       'p1',
-      { title: 'Ship the form', stateRef: 'todo', description: 'Keep me' },
+      { title: 'Ship the form', stateRef: 's-todo', description: 'Keep me' },
     ])
   })
 
@@ -1899,7 +1928,7 @@ describe('kanban new task form', () => {
     const form = await openForm()
     fireEvent.change(field(form, 'Title'), { target: { value: 'Draft title' } })
     fireEvent.change(field(form, 'Description'), { target: { value: 'Draft body' } })
-    fireEvent.change(field(form, 'Status'), { target: { value: 'Done' } })
+    fireEvent.change(field(form, 'Status'), { target: { value: 's-done' } })
     fireEvent.change(field(form, 'Priority'), { target: { value: 'urgent' } })
     fireEvent.click(within(form).getByRole('button', { name: /^Cancel$/ }))
     expect(screen.queryByRole('form', { name: 'New task' })).toBeNull()
@@ -1907,7 +1936,7 @@ describe('kanban new task form', () => {
     const reopened = await openForm()
     expect((field(reopened, 'Title') as HTMLInputElement).value).toBe('')
     expect((field(reopened, 'Description') as HTMLTextAreaElement).value).toBe('')
-    expect((field(reopened, 'Status') as HTMLSelectElement).value).toBe('todo')
+    expect((field(reopened, 'Status') as HTMLSelectElement).value).toBe('s-todo')
     expect((field(reopened, 'Priority') as HTMLSelectElement).value).toBe('none')
 
     fireEvent.change(field(reopened, 'Title'), { target: { value: 'Draft title' } })
@@ -2209,12 +2238,12 @@ describe('kanban review status change', () => {
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
     const status = within(review).getByLabelText('Status') as HTMLSelectElement
     expect(status.getAttribute('data-testid')).toBe(TEST_ID.kanbanReviewStatus)
-    expect(Array.from(status.options).map((option) => option.value)).toEqual(['Backlog', 'Done'])
+    expect(Array.from(status.options).map((option) => option.value)).toEqual(['s1', 's2'])
     expect(Array.from(status.options).map((option) => option.textContent)).toEqual([
       'Backlog',
       'Done',
     ])
-    expect(status.value).toBe('Backlog')
+    expect(status.value).toBe('s1')
     expect(within(review).queryByRole('textbox')).toBeNull()
     expect(within(review).getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe(longTitle)
     expect(within(review).getByTestId(TEST_ID.kanbanReviewDescription).textContent).toBe(
@@ -2223,12 +2252,12 @@ describe('kanban review status change', () => {
     expect(review.textContent).toContain('NK-1')
     expect(review.textContent).toContain('High')
 
-    fireEvent.change(status, { target: { value: 'Done' } })
+    fireEvent.change(status, { target: { value: 's2' } })
     await waitFor(() => {
       expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Status saved')
     })
     expect(updateItem).toHaveBeenCalledTimes(1)
-    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { stateRef: 'Done' }])
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { stateRef: 's2' }])
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
     expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('Shipped')
     expect(within(review).getByTestId(TEST_ID.kanbanReviewDescription).textContent).toBe(
@@ -2269,8 +2298,8 @@ describe('kanban review status change', () => {
       'Status',
     ) as HTMLSelectElement
     expect(Array.from(status.options).map((option) => option.value)).toEqual([
-      'Backlog',
-      'Done',
+      's1',
+      's2',
       'Ghost state',
     ])
     expect(Array.from(status.options).map((option) => option.textContent)).toEqual([
@@ -2291,12 +2320,12 @@ describe('kanban review status change', () => {
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
     const status = within(review).getByLabelText('Status') as HTMLSelectElement
-    expect(status.value).toBe('Backlog')
+    expect(status.value).toBe('s1')
 
-    fireEvent.change(status, { target: { value: 'Done' } })
+    fireEvent.change(status, { target: { value: 's2' } })
     expect(updateItem).toHaveBeenCalledTimes(1)
-    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { stateRef: 'Done' }])
-    expect(status.value).toBe('Done')
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { stateRef: 's2' }])
+    expect(status.value).toBe('s2')
 
     await act(async () => {
       pendingUpdate.reject({
@@ -2308,7 +2337,7 @@ describe('kanban review status change', () => {
     const alert = within(review).getByRole('alert')
     expect(alert.textContent).toBe('Plane refused the status.')
     expect(alert.getAttribute('data-testid')).toBe(TEST_ID.kanbanReviewError)
-    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('Backlog')
+    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('s1')
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe(longTitle)
     expect(listBoard).toHaveBeenCalledTimes(1)
 
@@ -2340,21 +2369,21 @@ describe('kanban review status change', () => {
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
     const status = within(review).getByLabelText('Status') as HTMLSelectElement
     expect(status.disabled).toBe(false)
-    expect(status.value).toBe('Backlog')
+    expect(status.value).toBe('s1')
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(listBoard).toHaveBeenCalledTimes(2)
-    fireEvent.change(status, { target: { value: 'Done' } })
+    fireEvent.change(status, { target: { value: 's2' } })
     expect(updateItem).toHaveBeenCalledTimes(1)
-    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { stateRef: 'Done' }])
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { stateRef: 's2' }])
     expect(status.disabled).toBe(true)
-    expect(status.value).toBe('Done')
+    expect(status.value).toBe('s2')
 
-    fireEvent.change(status, { target: { value: 'Backlog' } })
+    fireEvent.change(status, { target: { value: 's1' } })
     expect(updateItem).toHaveBeenCalledTimes(1)
-    expect(updateItem.mock.calls).toEqual([['p1', 'NK-1', { stateRef: 'Done' }]])
+    expect(updateItem.mock.calls).toEqual([['p1', 'NK-1', { stateRef: 's2' }]])
     expect(status.disabled).toBe(true)
-    expect(status.value).toBe('Done')
+    expect(status.value).toBe('s2')
     expect(within(review).queryByRole('alert')).toBeNull()
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe(longTitle)
 
@@ -2363,7 +2392,7 @@ describe('kanban review status change', () => {
     })
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Status saved')
     expect((within(review).getByLabelText('Status') as HTMLSelectElement).disabled).toBe(false)
-    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('Done')
+    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('s2')
     expect(within(review).queryByRole('alert')).toBeNull()
     expect(updateItem).toHaveBeenCalledTimes(1)
 
@@ -2372,7 +2401,7 @@ describe('kanban review status change', () => {
     })
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Status saved')
-    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('Done')
+    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('s2')
     expect(within(review).queryByRole('alert')).toBeNull()
     expect(updateItem).toHaveBeenCalledTimes(1)
 
@@ -2411,22 +2440,22 @@ describe('kanban review status change', () => {
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(listBoard).toHaveBeenCalledTimes(2)
-    fireEvent.change(within(review).getByLabelText('Status'), { target: { value: 'Done' } })
+    fireEvent.change(within(review).getByLabelText('Status'), { target: { value: 's2' } })
     expect(updateItem).toHaveBeenCalledTimes(1)
-    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { stateRef: 'Done' }])
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { stateRef: 's2' }])
 
     await act(async () => {
       updatePending.resolve(updated)
     })
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Status saved')
-    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('Done')
+    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('s2')
 
     await act(async () => {
       overlapping.resolve({ ...initial, items: [staleItem, initial.items[1]] })
     })
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Status saved')
-    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('Done')
+    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('s2')
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
     expect(screen.getAllByTestId(testIdFor.kanbanItem('NK-1'))).toHaveLength(1)
@@ -2477,7 +2506,7 @@ describe('kanban review status change', () => {
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     expect(listBoard).toHaveBeenCalledTimes(2)
-    fireEvent.change(within(review).getByLabelText('Status'), { target: { value: 'Done' } })
+    fireEvent.change(within(review).getByLabelText('Status'), { target: { value: 's2' } })
     await act(async () => {
       updatePending.resolve(updated)
     })
@@ -2490,7 +2519,7 @@ describe('kanban review status change', () => {
 
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
     expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Status saved')
-    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('Done')
+    expect((within(review).getByLabelText('Status') as HTMLSelectElement).value).toBe('s2')
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
     expect(screen.getAllByTestId(testIdFor.kanbanItem('NK-1'))).toHaveLength(1)
     expect(listGroupCount('s2')).toBe(1)
@@ -2578,7 +2607,7 @@ describe('kanban review priority change', () => {
     fireEvent.change(status, { target: { value: 'Done' } })
     expect(updateItem).toHaveBeenCalledTimes(1)
     expect(priority.value).toBe('low')
-    expect(status.value).toBe('Backlog')
+    expect(status.value).toBe('s1')
 
     await act(async () => {
       pendingUpdate.reject({
@@ -2893,7 +2922,7 @@ describe('kanban board - local-file revision (project-home spec Behaviour 9, Dat
     fireEvent.click(await screen.findByRole('button', { name: /^New task$/ }))
     const form = screen.getByRole('form', { name: 'New task' })
     // Todo is the default status of a new task.
-    expect((within(form).getByLabelText('Status') as HTMLSelectElement).value).toBe('Todo')
+    expect((within(form).getByLabelText('Status') as HTMLSelectElement).value).toBe('todo')
     fireEvent.change(within(form).getByLabelText('Title'), { target: { value: title } })
     fireEvent.click(within(form).getByRole('button', { name: /^Create$/ }))
   }
@@ -2921,8 +2950,8 @@ describe('kanban board - local-file revision (project-home spec Behaviour 9, Dat
     await submitNewTask('Two')
     await screen.findByTestId(testIdFor.kanbanItem('T-3'))
     expect(createItem.mock.calls).toEqual([
-      ['p1', { title: 'One', stateRef: 'Todo' }, 4],
-      ['p1', { title: 'Two', stateRef: 'Todo' }, 5],
+      ['p1', { title: 'One', stateRef: 'todo' }, 4],
+      ['p1', { title: 'Two', stateRef: 'todo' }, 5],
     ])
   })
 
@@ -2938,9 +2967,9 @@ describe('kanban board - local-file revision (project-home spec Behaviour 9, Dat
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('T-1')))
     const review = await screen.findByTestId(TEST_ID.kanbanReview)
-    fireEvent.change(within(review).getByLabelText('Status'), { target: { value: 'Done' } })
+    fireEvent.change(within(review).getByLabelText('Status'), { target: { value: 'done' } })
     await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(1))
-    expect(updateItem.mock.calls[0]).toEqual(['p1', 'T-1', { stateRef: 'Done' }, 2])
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'T-1', { stateRef: 'done' }, 2])
   })
 
   it('a conflict shows the error and refetches without merging', async () => {

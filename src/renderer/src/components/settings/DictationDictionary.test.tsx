@@ -219,7 +219,7 @@ describe('DictationDictionary (Modernized CRUD)', () => {
     expect(screen.queryByText('Kubernetes')).toBeNull()
   })
 
-  it('shows a delete-failure alert and keeps the entry', async () => {
+  it('shows an action error alert on delete failure and keeps the entry', async () => {
     const api = createDictationApiStub()
     vi.mocked(api.dictionaryList).mockResolvedValue([sampleGlobalEntry])
     vi.mocked(api.dictionaryDelete).mockRejectedValue(new Error('private transport error'))
@@ -228,9 +228,27 @@ describe('DictationDictionary (Modernized CRUD)', () => {
     await screen.findByText('Kubernetes')
     fireEvent.click(screen.getByTestId(`dictation-delete-${sampleGlobalEntry.id}`))
 
-    const alert = await screen.findByTestId('dictation-dictionary-delete-error')
+    const alert = await screen.findByTestId('dictation-dictionary-action-error')
     expect(alert.getAttribute('role')).toBe('alert')
     expect(alert.textContent).toContain('could not be deleted')
+    expect(screen.getByText('Kubernetes')).toBeTruthy()
+    expect(screen.queryByText('The dictionary could not load. Refresh to try again.')).toBeNull()
+    expect(screen.queryByText(/private transport/)).toBeNull()
+  })
+
+  it('shows an action error alert on toggle failure and keeps the entry', async () => {
+    const api = createDictationApiStub()
+    vi.mocked(api.dictionaryList).mockResolvedValue([sampleGlobalEntry])
+    vi.mocked(api.dictionaryToggle).mockRejectedValue(new Error('private transport error'))
+
+    render(<DictationDictionary api={api} />)
+    await screen.findByText('Kubernetes')
+    const toggle = screen.getByTestId(`dictation-toggle-${sampleGlobalEntry.id}`)
+    fireEvent.click(toggle)
+
+    const alert = await screen.findByTestId('dictation-dictionary-action-error')
+    expect(alert.getAttribute('role')).toBe('alert')
+    expect(alert.textContent).toContain('could not be updated')
     expect(screen.getByText('Kubernetes')).toBeTruthy()
     expect(screen.queryByText('The dictionary could not load. Refresh to try again.')).toBeNull()
     expect(screen.queryByText(/private transport/)).toBeNull()

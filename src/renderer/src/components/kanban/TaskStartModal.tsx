@@ -8,6 +8,7 @@ import type {
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 
 interface TaskStartModalProps {
@@ -55,13 +56,8 @@ export function TaskStartModal({
 
   useEffect(() => {
     openRef.current = true
-    const previousFocus = document.activeElement
-    cancelRef.current?.focus()
     return () => {
       openRef.current = false
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
-        previousFocus.focus()
-      }
     }
   }, [])
 
@@ -99,30 +95,11 @@ export function TaskStartModal({
     onCancel()
   }
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>): void {
-    if (event.key === 'Escape') {
-      event.stopPropagation()
-      requestCancel()
-      return
-    }
-    if (event.key !== 'Tab') {
-      return
-    }
-    event.preventDefault()
-    const controls = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
-      ) ?? [],
-    ).filter((control) => control.tabIndex >= 0)
-    const index = controls.indexOf(document.activeElement as HTMLElement)
-    const next =
-      index < 0
-        ? event.shiftKey
-          ? controls.length - 1
-          : 0
-        : (index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length
-    controls[next]?.focus()
-  }
+  const { onKeyDown: handleKeyDown } = useDialogFocusTrap({
+    containerRef: dialogRef,
+    initialFocusRef: cancelRef,
+    onEscape: requestCancel,
+  })
 
   function handleConfirm(): void {
     if (busyRef.current || selectedId === null || phase !== 'ready') {

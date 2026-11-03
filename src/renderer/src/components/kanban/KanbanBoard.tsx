@@ -20,6 +20,7 @@ import { KanbanItemReview, ReviewTextMenu, useReviewComments } from './KanbanIte
 import { ItemCopyMenu, KanbanListView, useKanbanListPrefs } from './KanbanListView'
 import {
   defaultNewTaskStateRef,
+  itemStatusValue,
   type KanbanBoardPhase,
   type KanbanToolbarControls,
   type NewTaskDraft,
@@ -229,7 +230,11 @@ export function KanbanBoard({
     setError(null)
     try {
       const next = await app.kanban.listBoard(projectId)
-      if (requestGeneration !== generation.current) return
+      if (requestGeneration !== generation.current) {
+        retainedCreates.current.delete(requestId)
+        retainedUpdates.current.delete(requestId)
+        return
+      }
       hasSnapshot.current = true
       revisionRef.current = next.revision
       setSourceMissing(false)
@@ -251,9 +256,9 @@ export function KanbanBoard({
       // board render never waits for it (spec Resume availability item 7).
       void loadHandoff(next.items.map((entry) => ({ itemId: entry.id, ref: entry.ref })))
     } catch (cause) {
-      if (requestGeneration !== generation.current) return
       retainedCreates.current.delete(requestId)
       retainedUpdates.current.delete(requestId)
+      if (requestGeneration !== generation.current) return
       const payload = parseAppErrorPayload(cause)
       if (payload?.code === 'validation' || payload?.code === 'not_found') {
         hasSnapshot.current = false
@@ -520,7 +525,7 @@ export function KanbanBoard({
         <KanbanItemReview
           item={reviewItem}
           states={board.states}
-          statusValue={statusChoice ?? reviewItem.stateName}
+          statusValue={statusChoice ?? itemStatusValue(board.states, reviewItem)}
           statusError={statusError}
           priorityValue={priorityChoice !== undefined ? priorityChoice : reviewItem.priority}
           priorityError={priorityError}

@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
+import { ConfirmDialog } from '../layout/ConfirmDialog'
 import {
   FieldRow,
   GroupBox,
@@ -44,6 +45,7 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
   const [form, setForm] = useState<ProfileForm | null>(null)
   const [templateId, setTemplateId] = useState('custom')
   const [error, setError] = useState<string | null>(null)
+  const [profileToDelete, setProfileToDelete] = useState<AgentProfile | null>(null)
   const guard = useMutationGuard()
 
   useEffect(() => {
@@ -337,7 +339,7 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
                       aria-label={`Delete ${profile.name}`}
                       disabled={guard.busy}
                       className={cn(quietClass, 'text-error')}
-                      onClick={() => void remove(profile.id)}
+                      onClick={() => setProfileToDelete(profile)}
                     >
                       <Icon.trash size={13} aria-hidden />
                       Delete
@@ -363,6 +365,24 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
           )}
         </SettingsGroup>
       )}
+      {profileToDelete ? (
+        <ConfirmDialog
+          title="Delete agent profile"
+          body={`Delete agent profile "${profileToDelete.name}"? This affects future launches in projects that use it.`}
+          confirmLabel="Delete"
+          destructive
+          confirmDisabled={guard.busy}
+          onConfirm={async () => {
+            const id = profileToDelete.id
+            try {
+              await remove(id)
+            } finally {
+              setProfileToDelete(null)
+            }
+          }}
+          onCancel={() => setProfileToDelete(null)}
+        />
+      ) : null}
     </div>
   )
 }

@@ -115,6 +115,13 @@ function detailOf(value: unknown): { detail?: string } {
   return typeof value === 'string' ? { detail: value } : {}
 }
 
+/** Normalizes legacy/alternative error codes to canonical names. */
+export function normalizeAppErrorCode(code: AppErrorCode): AppErrorCode {
+  if (code === 'validation_error') return 'validation'
+  if (code === 'notFound') return 'not_found'
+  return code
+}
+
 /**
  * Recognizes an app error from either form it can take on the renderer side:
  * a plain AppErrorPayload object (produced by the preload bridge) or an
@@ -124,17 +131,19 @@ function detailOf(value: unknown): { detail?: string } {
 export function parseAppErrorPayload(source: unknown): AppErrorPayload | null {
   if (typeof source === 'object' && source !== null && 'nekodeAppError' in source) {
     const candidate = source as Partial<AppErrorPayload> & { kind?: unknown }
-    const resolvedCode = isAppErrorCode(candidate.code)
+    const rawCode = isAppErrorCode(candidate.code)
       ? candidate.code
       : isAppErrorCode(candidate.kind)
         ? candidate.kind
         : null
     if (
       candidate.nekodeAppError === true &&
-      resolvedCode !== null &&
+      rawCode !== null &&
       typeof candidate.message === 'string'
     ) {
-      const resolvedKind = isAppErrorCode(candidate.kind) ? candidate.kind : resolvedCode
+      const rawKind = isAppErrorCode(candidate.kind) ? candidate.kind : rawCode
+      const resolvedCode = normalizeAppErrorCode(rawCode)
+      const resolvedKind = normalizeAppErrorCode(rawKind)
       return {
         nekodeAppError: true,
         code: resolvedCode,
@@ -161,13 +170,15 @@ export function parseAppErrorPayload(source: unknown): AppErrorPayload | null {
       | (Partial<AppErrorPayload> & { kind?: unknown })
       | null
     if (parsed !== null && typeof parsed.message === 'string') {
-      const resolvedCode = isAppErrorCode(parsed.code)
+      const rawCode = isAppErrorCode(parsed.code)
         ? parsed.code
         : isAppErrorCode(parsed.kind)
           ? parsed.kind
           : null
-      if (resolvedCode !== null) {
-        const resolvedKind = isAppErrorCode(parsed.kind) ? parsed.kind : resolvedCode
+      if (rawCode !== null) {
+        const rawKind = isAppErrorCode(parsed.kind) ? parsed.kind : rawCode
+        const resolvedCode = normalizeAppErrorCode(rawCode)
+        const resolvedKind = normalizeAppErrorCode(rawKind)
         return {
           nekodeAppError: true,
           code: resolvedCode,

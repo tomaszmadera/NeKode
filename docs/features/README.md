@@ -50,6 +50,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [project-home](project-home/spec.md) | Project home: Tasks tab, local file, and agent skill | Delivered (one skill file, no per-agent skill folders) |
 | [project-shell-selection](project-shell-selection/spec.md) | Per-project terminal shell selection with system shell detection | Delivered |
 | [public-documentation-contract](public-documentation-contract/spec.md) | Public documentation contract independent of the local harness | Delivered |
+| [renderer-interaction-correctness](renderer-interaction-correctness/spec.md) | Renderer interaction correctness | Not delivered |
 | [session-labels](session-labels/spec.md) | Session labels and agent badges | Delivered |
 | [task-progress-adapters](task-progress-adapters/spec.md) | Postęp zadań przez adaptery źródeł | Delivered (NEKODE-81) |
 | [terminal-font-settings](terminal-font-settings/spec.md) | Terminal font settings | Delivered |

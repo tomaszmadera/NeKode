@@ -2077,11 +2077,11 @@ describe('action row and settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     // The emoji renders literally on the action row, aria-hidden (excluded
-    // from the accessible name); the only svg is the status glyph. The
+    // from the accessible name); no duplicate svg status icon is rendered. The
     // reopen-as-custom form contract lives in ActionSettings.test.tsx.
     const row = screen.getByRole('button', { name: 'Build' })
     expect(row.textContent).toContain('🚀')
-    expect(row.querySelectorAll('svg')).toHaveLength(1)
+    expect(row.querySelectorAll('svg')).toHaveLength(0)
   })
 
   it('validates the form and reflects saved actions immediately', async () => {
@@ -2157,6 +2157,9 @@ describe('action row and settings', () => {
     vi.mocked(app.actions.delete).mockResolvedValue(undefined)
     vi.mocked(app.actions.list).mockResolvedValue([])
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(
+      within(screen.getByTestId(TEST_ID.confirmDialog)).getByRole('button', { name: 'Delete' }),
+    )
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Test' })).toBeNull())
   })
 
@@ -2173,6 +2176,9 @@ describe('action row and settings', () => {
     const goneRow = within(screen.getByRole('dialog')).getByText('Gone').closest('li')
     expect(goneRow).toBeTruthy()
     fireEvent.click(within(goneRow as HTMLElement).getByRole('button', { name: 'Delete' }))
+    fireEvent.click(
+      within(screen.getByTestId(TEST_ID.confirmDialog)).getByRole('button', { name: 'Delete' }),
+    )
     await waitFor(() => expect(within(screen.getByRole('dialog')).queryByText('Gone')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Next' } })

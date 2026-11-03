@@ -466,7 +466,7 @@ describe('kanban board logic - view helpers', () => {
         ...kanbanBoardFixture.states,
         { id: 's0', name: 'TODO', group: 'unstarted', order: 0 },
       ]),
-    ).toBe('TODO')
+    ).toBe('s0')
   })
 
   it('lists unknown review status names once, after the board states', () => {

@@ -231,6 +231,8 @@ export function KanbanItemReview({
 }: KanbanItemReviewProps): React.JSX.Element {
   const ordered = statesInAdapterOrder(states)
   const extras = extraStatusNames(ordered, item.stateName, statusValue)
+  const selectedState = ordered.find((s) => s.id === statusValue || s.name === statusValue)
+  const resolvedStatusValue = selectedState ? selectedState.id : statusValue
   return (
     <article
       className="min-w-0 select-text"
@@ -314,14 +316,14 @@ export function KanbanItemReview({
               id={TEST_ID.kanbanReviewStatus}
               className={`h-control ${KANBAN_FIELD_CLASS} disabled:opacity-50`}
               data-testid={TEST_ID.kanbanReviewStatus}
-              value={statusValue}
+              value={resolvedStatusValue}
               disabled={fieldsDisabled}
               onChange={(event) => {
                 onStatusChange(event.target.value)
               }}
             >
               {ordered.map((state) => (
-                <option key={state.id} value={state.name}>
+                <option key={state.id} value={state.id}>
                   {state.name}
                 </option>
               ))}

@@ -81,15 +81,21 @@ describe('KanbanItemReview', () => {
     fireEvent.change(priority, { target: { value: 'none' } })
     expect(props.onPriorityChange).toHaveBeenCalledWith(null)
     fireEvent.change(screen.getByTestId(TEST_ID.kanbanReviewStatus), {
-      target: { value: 'Done' },
+      target: { value: 's3' },
     })
-    expect(props.onStatusChange).toHaveBeenCalledWith('Done')
+    expect(props.onStatusChange).toHaveBeenCalledWith('s3')
   })
 
   it('offers an unknown state name once and disables the selects during a write', () => {
     renderReview({ item: { ...ITEM, stateName: 'Archived' }, statusValue: 'Archived' })
     const status = screen.getByTestId(TEST_ID.kanbanReviewStatus) as HTMLSelectElement
     expect([...status.options].map((option) => option.value)).toEqual([
+      's1',
+      's2',
+      's3',
+      'Archived',
+    ])
+    expect([...status.options].map((option) => option.textContent)).toEqual([
       'Backlog',
       'In Progress',
       'Done',

@@ -54,6 +54,8 @@ export function useResizableRegion(options: {
       const pointerId = event.pointerId
       const startSize = size
       let currentSize = size
+      const startClientX = event.clientX
+      const startClientY = event.clientY
 
       // Pointer capture retargets every following pointer event to the
       // handle, so pointerup cannot be lost when the pointer leaves the
@@ -67,7 +69,10 @@ export function useResizableRegion(options: {
       }
 
       function onPointerMove(moveEvent: PointerEvent): void {
-        const delta = axis === 'x' ? moveEvent.clientX : window.innerHeight - moveEvent.clientY
+        const delta =
+          axis === 'x'
+            ? startSize + (moveEvent.clientX - startClientX)
+            : startSize + (startClientY - moveEvent.clientY)
         const next = Math.min(maxSize, Math.max(minSize, Math.round(delta)))
         if (next !== currentSize) {
           currentSize = next

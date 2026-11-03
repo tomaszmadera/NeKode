@@ -122,6 +122,30 @@ describe('TaskStartModal', () => {
     expect(onLaunched).not.toHaveBeenCalled()
   })
 
+  it('traps Tab and Shift+Tab focus navigation within the modal', async () => {
+    const app = appMock()
+    render(<Harness app={app} onLaunched={vi.fn()} onConfigureAgents={vi.fn()} />)
+    fireEvent.click(screen.getByTestId('opener'))
+    const cancelBtn = await screen.findByTestId(TEST_ID.kanbanStartCancel)
+    const confirmBtn = screen.getByTestId(TEST_ID.kanbanStartConfirm)
+    const radio = screen.getByRole('radio', { name: 'CodexDefault' })
+
+    // Initial focus on cancel button
+    expect(document.activeElement).toBe(cancelBtn)
+
+    // Tab from cancel moves to confirm button
+    fireEvent.keyDown(cancelBtn, { key: 'Tab' })
+    expect(document.activeElement).toBe(confirmBtn)
+
+    // Tab from confirm (last control) wraps to radio input (first control)
+    fireEvent.keyDown(confirmBtn, { key: 'Tab' })
+    expect(document.activeElement).toBe(radio)
+
+    // Shift+Tab from first control wraps to confirm button (last control)
+    fireEvent.keyDown(radio, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(confirmBtn)
+  })
+
   it('offers Configure agents and creates no chat when the project has no profiles', async () => {
     const app = appMock()
     vi.mocked(app.agentProfiles.get).mockResolvedValue({ defaultId: null, profiles: [] })

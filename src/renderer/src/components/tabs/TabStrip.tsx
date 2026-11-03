@@ -39,6 +39,7 @@ interface TabStripProps {
   onSelectTab: (tab: TabId) => void
   onCloseFile: (relativePath: string) => void
   onSettings: () => void
+  onNotice?: (message: string) => void
 }
 
 /** Project names longer than this many characters are shortened. */
@@ -90,6 +91,7 @@ export function TabStrip({
   onSelectTab,
   onCloseFile,
   onSettings,
+  onNotice,
 }: TabStripProps): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null)
 
@@ -262,6 +264,7 @@ export function TabStrip({
           projectRoot={projectRoot}
           onClose={() => setContextMenu(null)}
           onCloseFile={onCloseFile}
+          onNotice={onNotice}
         />
       ) : null}
     </nav>
@@ -285,14 +288,28 @@ function TabContextMenuOverlay({
   projectRoot,
   onClose,
   onCloseFile,
+  onNotice,
 }: {
   state: TabContextMenuState
   projectRoot: string | null
   onClose: () => void
   onCloseFile: (relativePath: string) => void
+  onNotice?: (message: string) => void
 }): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement | null>(null)
   const position = clampMenuPosition(state.x, state.y, { menuWidth: 200, menuHeight: 120 })
+
+  async function copyText(text: string): Promise<void> {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      onNotice?.('Failed to copy the path.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      onNotice?.('Failed to copy the path.')
+    }
+  }
 
   useLayoutEffect(() => {
     const el = menuRef.current
@@ -345,7 +362,7 @@ function TabContextMenuOverlay({
           className="w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink"
           data-testid={TEST_ID.tabContextCopyRelative}
           onClick={() => {
-            void navigator.clipboard.writeText(state.relativePath).catch(() => {})
+            void copyText(state.relativePath)
             onClose()
           }}
         >
@@ -359,7 +376,7 @@ function TabContextMenuOverlay({
           data-testid={TEST_ID.tabContextCopyAbsolute}
           onClick={() => {
             if (absolutePath !== null) {
-              void navigator.clipboard.writeText(absolutePath).catch(() => {})
+              void copyText(absolutePath)
             }
             onClose()
           }}

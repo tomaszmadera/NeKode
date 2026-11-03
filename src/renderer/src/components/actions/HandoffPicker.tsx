@@ -2,6 +2,7 @@ import type { AppApi, ResumeDiscoveryCandidate } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { Icon } from '../../lib/icons'
 import { TEST_ID } from '../../lib/test-ids'
 import { focusRing, primaryClass, secondaryClass } from '../settings/settings-ui'
@@ -41,9 +42,20 @@ export function HandoffPicker({
   const [pending, setPending] = useState(false)
   const requestRef = useRef<object | null>(null)
   const discoveryIdRef = useRef<string | null>(null)
+  const containerRef = useRef<HTMLElement>(null)
   const onPickRef = useRef(onPick)
   // An in-flight reply must use the current chat's live-session delivery guard.
   onPickRef.current = onPick
+
+  function close(): void {
+    requestRef.current = null
+    onClose()
+  }
+
+  useDialogFocusTrap({
+    containerRef,
+    onEscape: close,
+  })
 
   const load = useCallback(async (): Promise<void> => {
     requestRef.current = null
@@ -83,29 +95,8 @@ export function HandoffPicker({
     }
   }, [app, load])
 
-  // Escape closes the picker from anywhere: the trigger button keeps focus
-  // when the dialog opens, so a dialog-level onKeyDown would never see the
-  // key (same window-level idiom as the context menus).
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        requestRef.current = null
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [onClose])
-
   function pick(text: string): void {
     onPickRef.current(text)
-    onClose()
-  }
-
-  function close(): void {
-    requestRef.current = null
     onClose()
   }
 
@@ -144,6 +135,7 @@ export function HandoffPicker({
         }}
       >
         <section
+          ref={containerRef}
           role="dialog"
           aria-modal="true"
           aria-label="Resume task"

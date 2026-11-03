@@ -203,12 +203,18 @@ export function ActionBar({
     }
   }, [actions, app, dropMissing, onError])
 
+  const runningActionIds = Object.entries(states)
+    .filter(([, state]) => state.status === 'running')
+    .map(([id]) => id)
+    .sort()
+    .join(',')
+
   useEffect(() => {
-    const running = Object.entries(states).filter(([, state]) => state.status === 'running')
-    if (running.length === 0) return
+    if (!runningActionIds) return
+    const ids = runningActionIds.split(',')
     let alive = true
     const poll = window.setInterval(() => {
-      for (const [id] of running) {
+      for (const id of ids) {
         if (forgottenRef.current.has(id)) continue
         const epoch = epochOf(runEpochRef.current, id)
         void app.actions
@@ -236,7 +242,7 @@ export function ActionBar({
       alive = false
       window.clearInterval(poll)
     }
-  }, [app, dropMissing, states, onError])
+  }, [app, dropMissing, runningActionIds, onError])
 
   async function sendFixed(data: string): Promise<void> {
     if (!activeChatId || !chatIsLive) return
@@ -303,7 +309,8 @@ export function ActionBar({
     // glyph: it carries the state color and the running spin. The
     // generic status glyph (idle/run, failed) renders only when no
     // custom icon is set — never both (double-icon fix).
-    const StateIcon = actionIconGlyph(action.icon) ?? statusIcons[status]
+    const PresetIcon = actionIconGlyph(action.icon)
+    const StatusIcon = statusIcons[status]
     const details = [
       action.command,
       state?.exitCode !== null && state?.exitCode !== undefined
@@ -344,16 +351,23 @@ export function ActionBar({
             }
           }}
         >
-          <StateIcon
-            size={15}
-            aria-hidden
-            className={cn(isRunning && 'animate-spin', status === 'idle' && 'text-ink-secondary')}
-          />
-          {!actionIconGlyph(action.icon) && action.icon ? (
+          {PresetIcon ? (
+            <PresetIcon
+              size={15}
+              aria-hidden
+              className={cn(isRunning && 'animate-spin', status === 'idle' && 'text-ink-secondary')}
+            />
+          ) : action.icon ? (
             <span aria-hidden="true" className={cn(isRunning && 'animate-spin')}>
               {action.icon}
             </span>
-          ) : null}
+          ) : (
+            <StatusIcon
+              size={15}
+              aria-hidden
+              className={cn(isRunning && 'animate-spin', status === 'idle' && 'text-ink-secondary')}
+            />
+          )}
           {action.title}
         </button>
       </div>

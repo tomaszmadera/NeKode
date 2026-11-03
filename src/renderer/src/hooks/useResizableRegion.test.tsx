@@ -61,20 +61,19 @@ describe('useResizableRegion', () => {
     expect((leftNav as HTMLElement).style.width).toBe('350px')
   })
 
-  it('resizes the bottom region against window.innerHeight and clamps to min', () => {
+  it('resizes the bottom region relative to drag start and clamps to min', () => {
     const { getByTestId } = render(<YAxisHarness />)
     const region = getByTestId('harness-bottom-region') as HTMLElement
     const handle = getByTestId('harness-handle')
 
     expect(region.style.height).toBe('220px')
 
-    // First move is a real change (768 - 528 = 240 > initial 220): the size
-    // must move, proving the move path is not a no-op at the initial size.
+    // First move is a relative change: 220 + (600 - 528) = 292 px
     firePointer(handle, 'pointerdown', { clientY: 600 })
     firePointer(handle, 'pointermove', { clientY: 528 })
-    expect(region.style.height).toBe('240px')
+    expect(region.style.height).toBe('292px')
 
-    firePointer(handle, 'pointermove', { clientY: 700 }) // 768 - 700 = 68 < 160
+    firePointer(handle, 'pointermove', { clientY: 700 }) // 220 + (600 - 700) = 120 < 160
     expect(region.style.height).toBe('160px')
 
     firePointer(handle, 'pointerup', { clientY: 700 })
@@ -92,12 +91,12 @@ describe('useResizableRegion', () => {
     expect(resizeEnds).toEqual([]) // not during the drag
 
     firePointer(handle, 'pointerup', { clientY: 520 })
-    expect(resizeEnds).toEqual([248]) // 768 - 520, once, on change
+    expect(resizeEnds).toEqual([300]) // 220 + (600 - 520) = 300, once, on change
 
     // Zero-move click: no persistence at all.
     firePointer(handle, 'pointerdown', { clientY: 600 })
     firePointer(handle, 'pointerup', { clientY: 600 })
-    expect(resizeEnds).toEqual([248])
+    expect(resizeEnds).toEqual([300])
   })
 
   it('ignores non-primary and non-left-button pointerdown (multi-touch/button guard)', () => {

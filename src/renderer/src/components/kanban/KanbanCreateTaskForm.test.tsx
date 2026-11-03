@@ -30,15 +30,16 @@ describe('KanbanCreateTaskForm', () => {
   it('lists states in adapter order with a blank first option and edits each draft field', () => {
     const props = renderForm()
     const status = screen.getByTestId(TEST_ID.kanbanNewTaskStatus) as HTMLSelectElement
-    expect([...status.options].map((option) => option.value)).toEqual([
-      '',
+    expect([...status.options].map((option) => option.value)).toEqual(['', 's1', 's2', 's3'])
+    expect([...status.options].map((option) => option.textContent)).toEqual([
+      ' ',
       'Backlog',
       'In Progress',
       'Done',
     ])
 
-    fireEvent.change(status, { target: { value: 'Done' } })
-    expect(props.onChange).toHaveBeenLastCalledWith({ ...EMPTY_DRAFT, stateRef: 'Done' })
+    fireEvent.change(status, { target: { value: 's3' } })
+    expect(props.onChange).toHaveBeenLastCalledWith({ ...EMPTY_DRAFT, stateRef: 's3' })
     fireEvent.change(screen.getByTestId(TEST_ID.kanbanNewTaskPriority), {
       target: { value: 'high' },
     })

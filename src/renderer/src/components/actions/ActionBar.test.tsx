@@ -522,4 +522,67 @@ describe('ActionBar', () => {
     expect(btn).toBeTruthy()
     expect(btn.hasAttribute('disabled')).toBe(false)
   })
+
+  it('renders exactly one icon: emoji when custom emoji is set, without svg status icon', () => {
+    const app = makeAppMock()
+    const emojiAction: ActionControl = {
+      ...customAction,
+      id: 'action-emoji',
+      icon: '🚀',
+      title: 'Deploy',
+    }
+    render(
+      <ActionBar
+        app={app}
+        actions={[emojiAction]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    const button = screen.getByTestId(testIdFor.actionButton('action-emoji'))
+    expect(button.textContent).toContain('🚀')
+    expect(button.textContent).toContain('Deploy')
+    // No svg status icon inside button when emoji is present
+    expect(button.querySelector('svg')).toBeNull()
+  })
+
+  it('renders svg icon when preset icon is chosen, without duplicate spans', () => {
+    const app = makeAppMock()
+    const presetAction: ActionControl = {
+      ...customAction,
+      id: 'action-preset',
+      icon: 'run',
+      title: 'Run Tests',
+    }
+    render(
+      <ActionBar
+        app={app}
+        actions={[presetAction]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+      />,
+    )
+
+    const button = screen.getByTestId(testIdFor.actionButton('action-preset'))
+    expect(button.querySelector('svg')).not.toBeNull()
+    // No extra emoji span
+    expect(button.querySelector('span[aria-hidden="true"]')).toBeNull()
+  })
 })

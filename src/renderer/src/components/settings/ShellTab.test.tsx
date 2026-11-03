@@ -376,4 +376,28 @@ describe('ShellTab', () => {
       expect(onProjectColorChange).toHaveBeenCalledWith('p1', null)
     })
   })
+
+  it('displays saveError when project color saving fails', async () => {
+    const set = vi.fn().mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'internal',
+      message: 'Failed to save project color.',
+    })
+    render(
+      <ShellTab
+        app={appMock({
+          detect: vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
+          set,
+          get: vi.fn().mockResolvedValue(null),
+        })}
+        projectId="p1"
+      />,
+    )
+    await screen.findByTestId(TEST_ID.settingsProjectColorSection)
+
+    const colorBtn = screen.getByTestId('project-color-#5AA9FF')
+    fireEvent.click(colorBtn)
+
+    await screen.findByText('Failed to save project color.')
+  })
 })

@@ -90,6 +90,45 @@ describe('TerminalContextMenu', () => {
     expect(event.defaultPrevented).toBe(false)
   })
 
+  it('focuses first enabled menu item on mount and traps Tab navigation', () => {
+    render(
+      <TerminalContextMenu
+        x={100}
+        y={100}
+        hasSelection={true}
+        canPasteThroughProgram={false}
+        onCopy={vi.fn()}
+        onPaste={vi.fn()}
+        onPasteThroughProgram={vi.fn()}
+        onSelectAll={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const copyBtn = screen.getByTestId(TEST_ID.terminalContextCopy)
+    const pasteBtn = screen.getByTestId(TEST_ID.terminalContextPaste)
+    const selectAllBtn = screen.getByTestId(TEST_ID.terminalContextSelectAll)
+
+    // With hasSelection=true, Copy is first enabled item
+    expect(document.activeElement).toBe(copyBtn)
+
+    // Tab moves to Paste
+    const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    copyBtn.dispatchEvent(tabEvent)
+    expect(document.activeElement).toBe(pasteBtn)
+
+    // Shift+Tab wraps back to SelectAll (last control)
+    const shiftTabEvent = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    copyBtn.focus()
+    copyBtn.dispatchEvent(shiftTabEvent)
+    expect(document.activeElement).toBe(selectAllBtn)
+  })
+
   it('clamps left and top coordinates against viewport boundaries', () => {
     const originalInnerWidth = window.innerWidth
     const originalInnerHeight = window.innerHeight

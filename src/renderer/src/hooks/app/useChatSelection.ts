@@ -25,15 +25,13 @@ export function useChatSelection(
     persistSelection,
     loadChats,
   } = runtime
-  const { expandedProjectIds, setExpandedProjectIds, selectedProjectId, setSelectedProjectId } =
-    useProjectStore(
-      useShallow((state) => ({
-        expandedProjectIds: state.expandedProjectIds,
-        setExpandedProjectIds: state.setExpandedProjectIds,
-        selectedProjectId: state.selectedProjectId,
-        setSelectedProjectId: state.setSelectedProjectId,
-      })),
-    )
+  const { setExpandedProjectIds, selectedProjectId, setSelectedProjectId } = useProjectStore(
+    useShallow((state) => ({
+      setExpandedProjectIds: state.setExpandedProjectIds,
+      selectedProjectId: state.selectedProjectId,
+      setSelectedProjectId: state.setSelectedProjectId,
+    })),
+  )
   const { setSelectedChatId, setSelectionNonce, setLoadedChatProjectIds } = useChatStore(
     useShallow((state) => ({
       setSelectedChatId: state.setSelectedChatId,
@@ -135,23 +133,25 @@ export function useChatSelection(
 
   const handleToggleProject = useCallback(
     (projectId: string): void => {
-      const isExpanded = expandedProjectIds.has(projectId)
+      let shouldLoad = false
       setExpandedProjectIds((previous) => {
+        const isExpanded = previous.has(projectId)
         const next = new Set(previous)
         if (isExpanded) {
           next.delete(projectId)
         } else {
           next.add(projectId)
+          shouldLoad = true
         }
         return next
       })
-      if (!isExpanded) {
+      if (shouldLoad) {
         void loadChats(projectId).catch((error: unknown) => {
           setNotice(errorMessage(error, 'Failed to load chats.'))
         })
       }
     },
-    [expandedProjectIds, loadChats, setExpandedProjectIds, setNotice],
+    [loadChats, setExpandedProjectIds, setNotice],
   )
 
   // New Chat (spec Behaviour 3): created immediately with no naming form —

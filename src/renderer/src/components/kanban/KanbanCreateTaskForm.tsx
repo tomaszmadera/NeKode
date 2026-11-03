@@ -37,6 +37,10 @@ export function KanbanCreateTaskForm({
 }: KanbanCreateTaskFormProps): React.JSX.Element {
   const ordered = statesInAdapterOrder(states)
   const canCreate = draft.title.trim() !== '' && draft.stateRef.trim() !== '' && !busy
+  const selectedState = ordered.find(
+    (state) => state.id === draft.stateRef || state.name === draft.stateRef,
+  )
+  const resolvedStateRef = selectedState ? selectedState.id : draft.stateRef
   return (
     <form
       className="mb-3 flex flex-col gap-3 rounded-md border border-edge p-3"
@@ -61,14 +65,14 @@ export function KanbanCreateTaskForm({
           id={TEST_ID.kanbanNewTaskStatus}
           className={`h-control ${KANBAN_FIELD_CLASS}`}
           data-testid={TEST_ID.kanbanNewTaskStatus}
-          value={draft.stateRef}
+          value={resolvedStateRef}
           onChange={(event) => {
             onChange({ ...draft, stateRef: event.target.value })
           }}
         >
           {draft.stateRef === '' ? <option value=""> </option> : null}
           {ordered.map((state) => (
-            <option key={state.id} value={state.name}>
+            <option key={state.id} value={state.id}>
               {state.name}
             </option>
           ))}

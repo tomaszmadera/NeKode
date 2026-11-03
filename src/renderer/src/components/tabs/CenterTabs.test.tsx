@@ -287,6 +287,41 @@ describe('tab strip - file-tab context menu and middle click (spec Behaviour 20-
     expect(screen.queryByTestId(TEST_ID.tabContextMenu)).toBeNull()
   })
 
+  it('notifies when copying to clipboard fails on rejection', async () => {
+    const onNotice = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn(() => Promise.reject(new Error('Permission denied'))),
+        readText: vi.fn(() => Promise.resolve('')),
+      },
+    })
+    renderCenterTabs({
+      session: sessionWith(['README.md', 'notes.txt']),
+      onNotice,
+    })
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.tabContextCopyRelative))
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('Failed to copy the path.'))
+    expect(screen.queryByTestId(TEST_ID.tabContextMenu)).toBeNull()
+  })
+
+  it('notifies when navigator.clipboard is unavailable', async () => {
+    const onNotice = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    })
+    renderCenterTabs({
+      session: sessionWith(['README.md', 'notes.txt']),
+      onNotice,
+    })
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.tabContextCopyRelative))
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('Failed to copy the path.'))
+    expect(screen.queryByTestId(TEST_ID.tabContextMenu)).toBeNull()
+  })
+
   it('Escape dismisses the menu without closing; the Close Tab item runs the close flow', async () => {
     openTwoTabs()
     fireEvent.contextMenu(screen.getByTestId(testIdFor.tabFile('notes.txt')))

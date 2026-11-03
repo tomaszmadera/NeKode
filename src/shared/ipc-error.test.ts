@@ -77,12 +77,36 @@ describe('typed error transport', () => {
 
   it('keeps the adapter-reported failure codes typed through transport', () => {
     // Finding: toAppError must surface the adapter's own code verbatim.
-    for (const code of ['auth', 'network', 'notFound', 'config', 'internal'] as const) {
+    for (const code of ['auth', 'network', 'config', 'internal'] as const) {
       const transport = toTransportError(new AppError(code, 'adapter said so'), 'kanban:test')
       const parsed = parseAppErrorPayload(transport)
       expect(parsed?.code).toBe(code)
       expect(parsed?.kind).toBe(code)
     }
+  })
+
+  it('normalizes validation_error to validation and notFound to not_found', () => {
+    const validationError = parseAppErrorPayload({
+      nekodeAppError: true,
+      code: 'validation_error',
+      message: 'Invalid task format.',
+    })
+    expect(validationError?.code).toBe('validation')
+    expect(validationError?.kind).toBe('validation')
+
+    const notFoundError = parseAppErrorPayload({
+      nekodeAppError: true,
+      code: 'notFound',
+      message: 'Item not found.',
+    })
+    expect(notFoundError?.code).toBe('not_found')
+    expect(notFoundError?.kind).toBe('not_found')
+
+    const fromTransport = parseAppErrorPayload(
+      toTransportError(new AppError('validation_error', 'Invalid task format.'), 'test:channel'),
+    )
+    expect(fromTransport?.code).toBe('validation')
+    expect(fromTransport?.kind).toBe('validation')
   })
 
   it('transports git_error typed code through the IPC bridge', () => {

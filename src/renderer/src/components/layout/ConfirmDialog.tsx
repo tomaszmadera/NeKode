@@ -1,5 +1,6 @@
 import type React from 'react'
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { TEST_ID } from '../../lib/test-ids'
 
 interface ConfirmDialogProps {
@@ -37,17 +38,14 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps): React.JSX.Element {
+  const dialogRef = useRef<HTMLElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
 
-  useEffect(() => {
-    const previousFocus = document.activeElement
-    confirmRef.current?.focus()
-    return () => {
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
-        previousFocus.focus()
-      }
-    }
-  }, [])
+  const { onKeyDown } = useDialogFocusTrap({
+    containerRef: dialogRef,
+    initialFocusRef: confirmRef,
+    onEscape: confirmDisabled ? undefined : onCancel,
+  })
 
   return (
     <>
@@ -68,17 +66,11 @@ export function ConfirmDialog({
         }}
       >
         <section
+          ref={dialogRef}
+          onKeyDown={onKeyDown}
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-dialog-title"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.stopPropagation()
-              onCancel()
-            }
-            // Enter/Space need no handling: the confirm button holds focus,
-            // so the browser activates it exactly once.
-          }}
           className="w-[min(24rem,90vw)] rounded-lg border border-edge bg-panel p-5 shadow-xl"
           data-testid={TEST_ID.confirmDialog}
         >

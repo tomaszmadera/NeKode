@@ -10,6 +10,7 @@ import type {
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { matchesTaskRef } from './KanbanHandoffNotices'
 
@@ -58,6 +59,8 @@ export function TaskResumeModal({
   const generation = useRef(0)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'not-configured'>('loading')
   const [result, setResult] = useState<ResumeSourceDiscovery | null>(null)
+  const resultRef = useRef<ResumeSourceDiscovery | null>(null)
+  resultRef.current = result
   const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -70,6 +73,9 @@ export function TaskResumeModal({
     const requestGeneration = generation.current
     setError(null)
     setScanning(true)
+    if (resultRef.current === null) {
+      setPhase('loading')
+    }
     try {
       const binding = await app.resumeSources.binding(projectId)
       if (requestGeneration !== generation.current || !openRef.current) {
@@ -103,14 +109,9 @@ export function TaskResumeModal({
 
   useEffect(() => {
     openRef.current = true
-    const previousFocus = document.activeElement
-    cancelRef.current?.focus()
     return () => {
       openRef.current = false
       generation.current += 1
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
-        previousFocus.focus()
-      }
     }
   }, [])
 
@@ -151,30 +152,11 @@ export function TaskResumeModal({
     onCancel()
   }
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>): void {
-    if (event.key === 'Escape') {
-      event.stopPropagation()
-      requestCancel()
-      return
-    }
-    if (event.key !== 'Tab') {
-      return
-    }
-    event.preventDefault()
-    const controls = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
-      ) ?? [],
-    ).filter((control) => control.tabIndex >= 0)
-    const index = controls.indexOf(document.activeElement as HTMLElement)
-    const next =
-      index < 0
-        ? event.shiftKey
-          ? controls.length - 1
-          : 0
-        : (index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length
-    controls[next]?.focus()
-  }
+  const { onKeyDown: handleKeyDown } = useDialogFocusTrap({
+    containerRef: dialogRef,
+    initialFocusRef: cancelRef,
+    onEscape: requestCancel,
+  })
 
   async function handleConfirm(): Promise<void> {
     if (!canConfirm || busyRef.current || chosen === null || selectedProfileId === null) {

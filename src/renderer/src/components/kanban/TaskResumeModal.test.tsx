@@ -494,4 +494,77 @@ describe('TaskResumeModal', () => {
     expect(error.textContent).toBe('The selected candidate has changed. Refresh the Resume list.')
     expect(app.kanban.launchTask).not.toHaveBeenCalled()
   })
+
+  it('transitions back to loading phase on refresh when result is empty', async () => {
+    const app = appMock()
+    let resolveRetry: (value: ResumeSourceDiscovery) => void = () => undefined
+    vi.mocked(app.resumeSources.discover)
+      .mockRejectedValueOnce(new Error('Network failure'))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRetry = resolve
+        }),
+      )
+
+    render(
+      <TaskResumeModal
+        app={app}
+        projectId="p1"
+        item={item}
+        onCancel={vi.fn()}
+        onConfigureHandoffs={vi.fn()}
+      />,
+    )
+
+    // First scan fails, showing error
+    await screen.findByTestId(TEST_ID.kanbanResumeError)
+
+    // Click refresh/retry
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeRefresh))
+
+    // Must return to loading phase while scan is in flight
+    expect(screen.getByTestId(TEST_ID.kanbanResumeLoading)).toBeTruthy()
+
+    // Resolve retry
+    await act(async () => {
+      resolveRetry(discovery({ candidates: [candidate('nekode-28-retried')] }))
+    })
+
+    // Now ready
+    expect(screen.queryByTestId(TEST_ID.kanbanResumeLoading)).toBeNull()
+    expect(await screen.findByText('h/nekode-28-retried.md')).toBeTruthy()
+  })
+
+  it('traps Tab and Shift+Tab focus navigation within the modal', async () => {
+    const app = appMock()
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({ projectId: 'p1', templateId: null })
+    render(
+      <TaskResumeModal
+        app={app}
+        projectId="p1"
+        item={item}
+        onCancel={vi.fn()}
+        onConfigureHandoffs={vi.fn()}
+      />,
+    )
+
+    const cancelBtn = await screen.findByTestId(TEST_ID.kanbanResumeCancel)
+    const refreshBtn = screen.getByTestId(TEST_ID.kanbanResumeRefresh)
+    const configBtn = screen.getByTestId(TEST_ID.kanbanResumeConfigure)
+
+    // Initial focus on cancel button
+    expect(document.activeElement).toBe(cancelBtn)
+
+    // Tab moves to refresh button (next in DOM order)
+    fireEvent.keyDown(cancelBtn, { key: 'Tab' })
+    expect(document.activeElement).toBe(refreshBtn)
+
+    // Tab from last control in DOM (refreshBtn) wraps to first control in DOM (configBtn)
+    fireEvent.keyDown(refreshBtn, { key: 'Tab' })
+    expect(document.activeElement).toBe(configBtn)
+
+    // Shift+Tab from first control in DOM (configBtn) wraps to last control in DOM (refreshBtn)
+    fireEvent.keyDown(configBtn, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(refreshBtn)
+  })
 })
