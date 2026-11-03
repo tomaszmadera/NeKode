@@ -13,6 +13,8 @@ Let the user choose a two-panel or three-panel workspace and keep that choice. I
 
 User decision 2026-11-02 (NEKODE-150). This decision outranks the earlier paragraphs that describe the right panel as hidden future tools and the file tree as only a mode inside the left panel.
 
+User decision 2026-11-03: remove the title-bar layout switcher and use the status-bar right-panel button to select the layout. Opening selects three panels; closing selects two panels and returns the resolved project's tree to the left slot.
+
 ## Related requirements
 
 - `docs/product/requirements.md` §2 item 4 (project file tree) and item 7 (resizable panels, status bar).
@@ -25,7 +27,7 @@ User decision 2026-11-02 (NEKODE-150). This decision outranks the earlier paragr
 
 ## Scope
 
-- A layout switcher in the existing window title bar (`.nk-title-bar`).
+- Layout selection through the status-bar right-panel button, with no title-bar layout switcher.
 - Two remembered layouts: two-panel and three-panel.
 - Two-panel file-tree entry through the existing project-row File tree control, sliding into the left panel.
 - A right panel whose only content is the project file tree of the resolved project.
@@ -44,7 +46,7 @@ User decision 2026-11-02 (NEKODE-150). This decision outranks the earlier paragr
 
 ## Behaviour
 
-1. The workspace has one layout mode, `two` or `three`. The switcher is a two-option control in `.nk-title-bar`, after the brand and after the usage toolbar when that toolbar is shown. It stays on the left side of the strip, clear of the Windows caption buttons. Each option is a button with `no-drag`, visible English label, and `aria-pressed`. The labels are `Two panels` and `Three panels`. The pressed option is the current mode. The control adds no second action band above or below the title bar.
+1. The workspace has one layout mode, `two` or `three`. The status-bar right-panel button selects the layout. Opening the right panel selects `three`; closing it selects `two`. The title bar has no layout switcher. The control adds no second action band.
 
 2. Missing, empty, or any other stored layout value means `two`. The first launch with no saved layout is the two-panel layout. Changing the mode writes the new value immediately. A failed write shows a notice and leaves the in-memory mode in place. A mode change that lands before startup hydration finishes wins over the stored value, using the same touched-before-hydration rule as `region.bottom.open`.
 
@@ -58,7 +60,7 @@ User decision 2026-11-02 (NEKODE-150). This decision outranks the earlier paragr
 
 7. The status bar keeps the project context. At the far right it shows three 20 by 20 buttons, in this order: left panel, right panel, bottom terminal. Each icon is 13 px. The glyphs are `Icon.panelLeft`, `Icon.panelRight`, and `Icon.terminal`. Open uses the terminal toggle's open colors; closed uses its closed colors. Each button exposes `aria-pressed`. The accessible names are `Hide left panel` / `Show left panel`, `Hide right panel` / `Show right panel`, and the existing `Close bottom terminal` / `Open bottom terminal`. The terminal button keeps its `Ctrl+`` title. The theme switcher, when shown, sits immediately to the left of this group. The group's first control carries the right alignment the terminal button has today.
 
-8. A panel icon shows or hides its panel and does not change the layout mode. The left icon works in both layouts. The right icon works only in the three-panel layout. In the two-panel layout the right icon is disabled, writes nothing, and renders no right slot. Hiding the right panel leaves the layout in three-panel mode: the left slot stays on projects and sessions, and the tree does not move there. Showing the right panel again renders the tree for the project resolved at that moment.
+8. The left icon shows or hides the left panel in either layout without changing the mode. The right icon is enabled in both layouts. It is pressed only when the mode is `three` and the right open flag is shown. When unpressed, activating it selects `three` and sets the right open flag to `1`. When pressed, activating it selects `two` and sets the flag to `0`, returning the tree to the left as in Behaviour 6. Both values are persisted by that action. Showing the right panel renders the tree for the project resolved at that moment.
 
 9. The right panel width uses the same limits as the left panel: default 280, minimum 220, maximum 480. The resize handle is on the right slot's inner edge. A finished resize writes the width. A missing or invalid width uses the default. A failed write shows the existing panel-width notice and leaves the in-memory width in place. The float theme gives the right slot the same detached margin, radius, and border treatment the left slot has. The non-float theme gives the right slot a left border, matching the left slot's right border.
 
@@ -68,7 +70,7 @@ User decision 2026-11-02 (NEKODE-150). This decision outranks the earlier paragr
 
 ## Business rules
 
-- The layout mode is independent of panel visibility. Hiding a panel never selects the other mode.
+- Left-panel visibility is independent of the layout. The right-panel button changes both layout and right-panel visibility in one action.
 - The three-panel left slot and the file tree are on screen together. The two-panel left slot still shows one of those two views at a time.
 - Tree listing, preview, refresh, Git decoration, context menu, and path containment stay on the project-files contract. This feature only chooses the slot and the project.
 - The renderer persists layout through the existing state IPC. It does not add a channel.
@@ -94,10 +96,10 @@ Startup hydration reads the new keys with the existing region reads. Cleanup of 
 
 ## Edge cases
 
-- Stored layout `three` with right open `0`: three-panel mode, no right slot, left slot on projects and sessions.
-- Stored layout `two` with right open `1`: two-panel mode, no right slot. The stored open flag remains for a later switch to three-panel.
+- Stored layout `three` with right open `0` remains supported: no right slot, left slot on projects and sessions, right button unpressed. Activating that button opens the right panel.
+- Stored layout `two` with right open `1`: two-panel mode, no right slot, right button unpressed. Activating it selects `three` and shows the right panel.
 - Two-panel with the left slot already in Project Files, then switch to three-panel: the left slot leaves Project Files. The right tree uses Behaviour 5, which can be a different project from the one the left slot was showing.
-- Three-panel with the right slot hidden, then switch to two-panel: the tree still returns to the left slot for the resolved project.
+- Three-panel with the right slot hidden from an older saved state: one right-button activation opens it; another closes it and returns the tree to the left slot.
 - Selected session in project A, then click project B's name: the session selection clears and the tree shows B.
 - Click the already selected project's name: the session stays, and the tree stays on that session's project.
 - No projects: both layouts show the existing empty projects state. Three-panel right slot shows the empty sentence.
@@ -111,12 +113,12 @@ Startup hydration reads the new keys with the existing region reads. Cleanup of 
 
 ## Acceptance criteria
 
-1. The title bar contains the two-option switcher and no new action band. A restart restores the last mode. A database without `region.layout` opens in two-panel mode.
+1. The title bar contains no layout switcher. The status-bar right-panel button opens the three-panel layout and closes it back to two panels. A restart restores the last mode and open flag. A database without `region.layout` opens in two-panel mode with that button unpressed and enabled.
 2. In two-panel mode the File tree chevron slides that project's tree into the left slot, and `Back to Projects` returns to projects and sessions. No right slot is rendered.
 3. In three-panel mode the left slot never shows a file tree. The disabled File tree chevron does not change the view, the selection, or the right tree. The right slot shows the resolved project's tree, including its Refresh control, and has no `Back to Projects` control.
 4. With a selected session, the right tree is that session's project. Clicking another project's name selects it, clears the session, and the tree shows the clicked project.
-5. Hiding the right panel leaves the mode on three-panel and leaves the left slot on projects and sessions. Switching to two-panel is what places the resolved project's tree in the left slot.
-6. The status bar's far-right controls are the left icon, the right icon, and the terminal icon, each a 20 by 20 button with a 13 px icon. The right icon is disabled in two-panel mode. None of the three icons changes the layout mode. The terminal icon still only toggles the bottom panel.
+5. Closing the right panel selects two-panel mode and places the resolved project's tree in the left slot.
+6. The status bar's far-right controls are the left icon, the right icon, and the terminal icon, each a 20 by 20 button with a 13 px icon. The right icon is enabled in both layouts and its pressed state matches actual right-panel visibility. The left icon preserves the layout mode. The terminal icon still only toggles the bottom panel.
 7. Right-panel width survives a restart inside 220 to 480. Left and right open flags survive a restart. Missing open flags leave the left slot shown and, in three-panel mode, the right slot shown.
 8. The bottom terminal's shortcut, height, tabs, and open flag behave as before this feature.
 9. The contract amendments below are applied, and the amended documents point here instead of restating this behaviour.
@@ -137,11 +139,11 @@ Apply these in the same change as the behaviour. Replace the contradicted senten
 
 Renderer tests with a mocked `window.app` bridge:
 
-- Switcher labels, pressed state, persisted `region.layout`, and the missing-value default `two`.
+- No title-bar layout switcher; right-button pressed state, persisted `region.layout` and right open flag, and the missing-value default `two`.
 - Two-panel chevron opens the left tree; back returns to projects. Three-panel chevron is disabled and does not open the left tree.
 - Three-panel tree project follows the selected session, then the selected project, then the empty sentence.
-- Hiding the right panel keeps mode `three` and keeps the left slot on projects. Switching to `two` opens that project's tree in the left slot.
-- Status-bar order, button size, icon size, disabled right icon in two-panel mode, and the terminal toggle still writing only `region.bottom.open`.
+- Closing the right panel selects `two` and opens that project's tree in the left slot. Reopening selects `three` and shows the resolved project's tree on the right.
+- Status-bar order, button size, icon size, enabled right icon in both layouts, and the terminal toggle still writing only `region.bottom.open`.
 - Right width clamp and persist. Left and right open flags persist. A toggle before hydration is not overwritten.
 - Float theme renders the right slot with the left slot's detached treatment.
 

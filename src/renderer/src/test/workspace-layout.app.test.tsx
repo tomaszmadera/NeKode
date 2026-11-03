@@ -62,23 +62,25 @@ describe('workspace layout modes', () => {
     })
   }
 
-  it('puts the switcher in the title bar and defaults to two panels', async () => {
+  it('uses the status-bar right toggle for layout and defaults to two panels', async () => {
     render(<App app={app} />)
     const titleBar = await screen.findByTestId(TEST_ID.titleBar)
-    const two = screen.getByTestId(TEST_ID.layoutSwitchTwo)
-    const three = screen.getByTestId(TEST_ID.layoutSwitchThree)
-    expect(titleBar.contains(two)).toBe(true)
-    expect(two.textContent).toBe('Two panels')
-    expect(three.textContent).toBe('Three panels')
-    expect(two.getAttribute('aria-pressed')).toBe('true')
-    expect(three.getAttribute('aria-pressed')).toBe('false')
+    const toggle = screen.getByTestId(TEST_ID.statusRightToggle)
+    expect(within(titleBar).queryByRole('group', { name: 'Workspace layout' })).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.layoutSwitchTwo)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.layoutSwitchThree)).toBeNull()
+    expect(toggle.hasAttribute('disabled')).toBe(false)
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.getAttribute('aria-label')).toBe('Show right panel')
     expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
 
-    fireEvent.click(three)
+    fireEvent.click(toggle)
     await waitFor(() => {
       expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.workspaceLayout, 'three')
     })
-    expect(three.getAttribute('aria-pressed')).toBe('true')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.rightRegionOpen, '1')
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(toggle.getAttribute('aria-label')).toBe('Hide right panel')
     expect(screen.getByTestId(TEST_ID.rightFilesEmpty).textContent).toBe(
       'Select a project to browse its files.',
     )
@@ -105,7 +107,7 @@ describe('workspace layout modes', () => {
     await screen.findByTestId(TEST_ID.fileTree)
     expect(getByTestIdString(TEST_ID.filesProjectName).textContent).toBe('OTHER')
 
-    fireEvent.click(screen.getByTestId(TEST_ID.layoutSwitchThree))
+    fireEvent.click(screen.getByTestId(TEST_ID.statusRightToggle))
     const right = await screen.findByTestId(TEST_ID.rightRegion)
     await waitFor(() => {
       expect(within(right).getByTestId(TEST_ID.filesProjectName).textContent).toBe('DEMO')
@@ -133,12 +135,10 @@ describe('workspace layout modes', () => {
     await waitFor(() => {
       expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
     })
-    expect(screen.getByTestId(TEST_ID.layoutSwitchThree).getAttribute('aria-pressed')).toBe('true')
-    expect(within(screen.getByTestId(TEST_ID.leftNav)).queryByTestId(TEST_ID.fileTree)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe('false')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.rightRegionOpen, '0')
-    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.workspaceLayout, 'two')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.workspaceLayout, 'two')
 
-    fireEvent.click(screen.getByTestId(TEST_ID.layoutSwitchTwo))
     const leftTree = await screen.findByTestId(TEST_ID.fileTree)
     expect(screen.getByTestId(TEST_ID.leftNav).contains(leftTree)).toBe(true)
     expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
@@ -169,7 +169,7 @@ describe('workspace layout modes', () => {
     })
     render(<App app={app} />)
     await waitFor(() => {
-      expect(screen.getByTestId(TEST_ID.layoutSwitchThree).getAttribute('aria-pressed')).toBe(
+      expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe(
         'true',
       )
     })
@@ -186,37 +186,29 @@ describe('workspace layout modes', () => {
     })
     render(<App app={app} />)
     await waitFor(() => expect(app.projects.list).toHaveBeenCalled())
-    expect(screen.getByTestId(TEST_ID.layoutSwitchTwo).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe('false')
     expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
-    fireEvent.click(screen.getByTestId(TEST_ID.layoutSwitchThree))
+    fireEvent.click(screen.getByTestId(TEST_ID.statusRightToggle))
     await waitFor(() => {
       expect(getByTestIdString(TEST_ID.rightRegion).style.width).toBe('300px')
     })
   })
 
-  it('lets hydration apply a stored layout when the current option is clicked again', async () => {
-    let resolveLayout: (value: string | null) => void = () => undefined
-    const layoutGate = new Promise<string | null>((resolve) => {
-      resolveLayout = resolve
-    })
-    vi.mocked(app.state.get).mockImplementation((key) => {
-      if (key === APP_STATE_KEY.workspaceLayout) return layoutGate
-      return Promise.resolve(null)
+  it('reopens a previously hidden three-panel layout with the same right toggle', async () => {
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.workspaceLayout) return 'three'
+      if (key === APP_STATE_KEY.rightRegionOpen) return '0'
+      return null
     })
     render(<App app={app} />)
-    const two = await screen.findByTestId(TEST_ID.layoutSwitchTwo)
-    fireEvent.click(two)
-    resolveLayout('three')
-    await act(async () => {
-      await layoutGate
-    })
-    await waitFor(() => {
-      expect(screen.getByTestId(TEST_ID.layoutSwitchThree).getAttribute('aria-pressed')).toBe(
-        'true',
-      )
-    })
-    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.workspaceLayout, 'two')
+    await screen.findByTestId(testIdFor.projectSelect('p1'))
+    const toggle = screen.getByTestId(TEST_ID.statusRightToggle)
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByTestId(TEST_ID.rightRegion)).toBeTruthy()
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.rightRegionOpen, '1')
   })
 
   it('shows a failed panel write when the left slot is hidden', async () => {
@@ -236,31 +228,39 @@ describe('workspace layout modes', () => {
   it('does not let hydration overwrite a layout or open toggle that landed first', async () => {
     let resolveLayout: (value: string | null) => void = () => undefined
     let resolveLeft: (value: string | null) => void = () => undefined
+    let resolveRight: (value: string | null) => void = () => undefined
     const layoutGate = new Promise<string | null>((resolve) => {
       resolveLayout = resolve
     })
     const leftGate = new Promise<string | null>((resolve) => {
       resolveLeft = resolve
     })
+    const rightGate = new Promise<string | null>((resolve) => {
+      resolveRight = resolve
+    })
     vi.mocked(app.state.get).mockImplementation((key) => {
       if (key === APP_STATE_KEY.workspaceLayout) return layoutGate
       if (key === APP_STATE_KEY.leftRegionOpen) return leftGate
+      if (key === APP_STATE_KEY.rightRegionOpen) return rightGate
       return Promise.resolve(null)
     })
     render(<App app={app} />)
-    await screen.findByTestId(TEST_ID.layoutSwitchTwo)
-    fireEvent.click(screen.getByTestId(TEST_ID.layoutSwitchThree))
+    await screen.findByTestId(TEST_ID.statusRightToggle)
+    fireEvent.click(screen.getByTestId(TEST_ID.statusRightToggle))
     fireEvent.click(screen.getByTestId(TEST_ID.statusLeftToggle))
     resolveLayout('two')
     resolveLeft('1')
+    resolveRight('0')
     await waitFor(() => expect(app.projects.list).toHaveBeenCalled())
     await act(async () => {
       await layoutGate
       await leftGate
+      await rightGate
     })
-    expect(screen.getByTestId(TEST_ID.layoutSwitchThree).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByTestId(TEST_ID.leftNav).parentElement?.className).toContain('hidden')
     expect(screen.getByTestId(TEST_ID.statusLeftToggle).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByTestId(TEST_ID.rightRegion)).toBeTruthy()
   })
 
   it('keeps the new layout when saving it fails and shows the notice', async () => {
@@ -270,17 +270,17 @@ describe('workspace layout modes', () => {
       }
     })
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(TEST_ID.layoutSwitchThree))
+    fireEvent.click(await screen.findByTestId(TEST_ID.statusRightToggle))
     expect((await screen.findByTestId(TEST_ID.actionNotice)).textContent).toContain(
       'Failed to save the layout.',
     )
-    expect(screen.getByTestId(TEST_ID.layoutSwitchThree).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByTestId(TEST_ID.rightRegion)).toBeTruthy()
   })
 
   it('writes a finished right-edge resize and leaves the bottom terminal flag to its own control', async () => {
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(TEST_ID.layoutSwitchThree))
+    fireEvent.click(await screen.findByTestId(TEST_ID.statusRightToggle))
     const handle = await screen.findByTestId(TEST_ID.rightResizeHandle)
     fireEvent.keyDown(handle, { key: 'ArrowLeft' })
     await waitFor(() => {
@@ -290,11 +290,14 @@ describe('workspace layout modes', () => {
 
     const right = screen.getByTestId(TEST_ID.statusRightToggle)
     expect(right.hasAttribute('disabled')).toBe(false)
-    fireEvent.click(screen.getByTestId(TEST_ID.layoutSwitchTwo))
-    expect(screen.getByTestId(TEST_ID.statusRightToggle).hasAttribute('disabled')).toBe(true)
-    fireEvent.click(screen.getByTestId(TEST_ID.statusRightToggle))
-    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.rightRegionOpen, '0')
-    expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.rightRegionOpen, '1')
+    fireEvent.click(right)
+    expect(right.hasAttribute('disabled')).toBe(false)
+    expect(right.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.workspaceLayout, 'two')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.rightRegionOpen, '0')
+    fireEvent.click(right)
+    expect(screen.getByTestId(TEST_ID.rightRegion).style.width).toBe('296px')
 
     const callsBeforeTerminal = vi.mocked(app.state.set).mock.calls.length
     fireEvent.click(screen.getByTestId(TEST_ID.statusTerminalToggle))
@@ -308,7 +311,7 @@ describe('workspace layout modes', () => {
   it('uses the left slot detached treatment on the right slot in the float theme', async () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'nekode-float')
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(TEST_ID.layoutSwitchThree))
+    fireEvent.click(await screen.findByTestId(TEST_ID.statusRightToggle))
     const right = await screen.findByTestId(TEST_ID.rightRegion)
     const left = screen.getByTestId(TEST_ID.leftNav)
     expect(right.className).toContain('m-2')
@@ -322,7 +325,7 @@ describe('workspace layout modes', () => {
   it('gives the right slot a left border outside the float theme', async () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'nekode-flat')
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(TEST_ID.layoutSwitchThree))
+    fireEvent.click(await screen.findByTestId(TEST_ID.statusRightToggle))
     const right = await screen.findByTestId(TEST_ID.rightRegion)
     expect(right.className).toContain('border-l')
     expect(right.className).not.toContain('m-2')

@@ -16,7 +16,6 @@ import { TaskStartModal } from './components/kanban/TaskStartModal'
 import { AddProject } from './components/layout/AddProject'
 import { AppBrand } from './components/layout/AppBrand'
 import { ConfirmDialog } from './components/layout/ConfirmDialog'
-import { LayoutSwitcher } from './components/layout/LayoutSwitcher'
 import { LeftNavigation } from './components/layout/LeftNavigation'
 import { LeftPanelTrack } from './components/layout/LeftPanelTrack'
 import { NoticeBanner } from './components/layout/NoticeBanner'
@@ -378,7 +377,6 @@ function AppContent({
             onConfigure={appSettings.openUsageSettings}
           />
         ) : null}
-        <LayoutSwitcher mode={layout.mode} onChange={layout.setMode} />
       </div>
       {!layout.leftOpen && !treeInRight ? <NoticeBanner notice={notice} /> : null}
       {/* The hairline under the title bar is owned by the content row
@@ -693,8 +691,7 @@ function AppContent({
         bottomOpen={bottom.bottomOpen}
         onToggleBottom={bottom.handleToggleBottom}
         leftOpen={layout.leftOpen}
-        rightOpen={layout.rightOpen}
-        rightToggleEnabled={layout.mode === 'three'}
+        rightOpen={layout.mode === 'three' && layout.rightOpen}
         onToggleLeft={layout.toggleLeft}
         onToggleRight={layout.toggleRight}
       />

@@ -101,20 +101,6 @@ export function useLayoutRegions(app: AppApi, setNotice: SetNotice) {
     [],
   )
 
-  const setMode = useCallback(
-    (next: WorkspaceLayoutMode): void => {
-      setModeState((current) => {
-        if (current === next) {
-          return current
-        }
-        layoutTouchedRef.current = true
-        persist(APP_STATE_KEY.workspaceLayout, next, 'Failed to save the layout.')
-        return next
-      })
-    },
-    [persist],
-  )
-
   const setLeftOpen = useCallback(
     (open: boolean): void => {
       leftOpenTouchedRef.current = true
@@ -139,13 +125,15 @@ export function useLayoutRegions(app: AppApi, setNotice: SetNotice) {
   }, [persist])
 
   const toggleRight = useCallback((): void => {
+    const next = !(mode === 'three' && rightOpen)
+    const nextMode = next ? 'three' : 'two'
+    layoutTouchedRef.current = true
     rightOpenTouchedRef.current = true
-    setRightOpenState((current) => {
-      const next = !current
-      persist(APP_STATE_KEY.rightRegionOpen, next ? '1' : '0', 'Failed to save the right panel.')
-      return next
-    })
-  }, [persist])
+    setModeState(nextMode)
+    setRightOpenState(next)
+    persist(APP_STATE_KEY.workspaceLayout, nextMode, 'Failed to save the layout.')
+    persist(APP_STATE_KEY.rightRegionOpen, next ? '1' : '0', 'Failed to save the right panel.')
+  }, [mode, rightOpen, persist])
 
   const leftRegion = useResizableRegion({
     axis: 'x',
@@ -183,7 +171,6 @@ export function useLayoutRegions(app: AppApi, setNotice: SetNotice) {
     leftRegion,
     rightRegion,
     bottomRegion,
-    setMode,
     setLeftOpen,
     toggleLeft,
     toggleRight,

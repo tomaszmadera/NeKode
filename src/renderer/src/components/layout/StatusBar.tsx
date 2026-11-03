@@ -39,11 +39,11 @@ export interface StatusBarProps {
   leftOpen?: boolean
   /** Whether the right panel is shown. */
   rightOpen?: boolean
-  /** Right-panel icon writes only in the three-panel layout. */
+  /** Whether the right-panel toggle accepts input. */
   rightToggleEnabled?: boolean
   /** Shows or hides the left panel without changing the layout mode. */
   onToggleLeft?: () => void
-  /** Shows or hides the right panel without changing the layout mode. */
+  /** Shows or hides the right panel. */
   onToggleRight?: () => void
 }
 
