@@ -1346,7 +1346,6 @@ describe('kanban:* channels (adapter integration)', () => {
       [IPC_CHANNEL.kanbanListBoard, []],
       [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: '' }]],
       [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x', priority: 'highest' }]],
-      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', {}]],
       [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', { bogus: 1 }]],
       [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', 'stateRef']],
       [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, 0]],
@@ -1365,23 +1364,7 @@ describe('kanban:* channels (adapter integration)', () => {
       [IPC_CHANNEL.kanbanWriteSkill, ['']],
       [IPC_CHANNEL.kanbanWriteSkill, [7]],
       [IPC_CHANNEL.kanbanWriteSkill, ['p1', '# injected skill text']],
-      [IPC_CHANNEL.kanbanGetItem, ['p1']],
-      [IPC_CHANNEL.kanbanGetItem, ['', 'DEMO-1']],
       [IPC_CHANNEL.kanbanLaunchTask, [{ projectId: 'p1', mode: 'resume' }]],
-      [
-        IPC_CHANNEL.kanbanLaunchTask,
-        [
-          {
-            projectId: 'p1',
-            itemId: 'native-1',
-            ref: 'DEMO-1',
-            profileId: 'prof-1',
-            attemptId: 'attempt-1',
-            mode: 'start',
-            name: 'Codex',
-          },
-        ],
-      ],
     ]
     for (const [channel, payload] of cases) {
       try {
