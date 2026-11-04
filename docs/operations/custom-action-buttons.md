@@ -61,6 +61,12 @@ When you edit a command with this prefix, the checkbox is selected automatically
   The check matches the PID, process name, and saved process creation time, so a
   reused PID does not block startup. Older state files use the launch-to-save time
   interval until the next start records the exact process creation time.
+- `stop.ps1` applies the same identity to the saved PID: it stops the recorded tree
+  only while the live process still matches the saved creation time and executable,
+  and repeats that check immediately before every kill. A process that reuses the
+  PID after the state was written is left running; only leftovers whose command
+  line mentions the clone are swept, and older state files use the same
+  launch-to-save interval.
 - Dev mode uses `tmp/dev-user-data` by default. Its projects and settings persist
   between starts, separately from the installed app, so both can run at once.
   An explicit `NEKODE_USER_DATA` overrides this default. Choosing the installed
