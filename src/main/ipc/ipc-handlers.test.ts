@@ -1336,34 +1336,22 @@ describe('kanban:* channels (adapter integration)', () => {
 
   it('rejects invalid payloads before the service', () => {
     const { services, invoke } = createHarness()
+    // One representative per payload family; the rules themselves belong to
+    // ipc-validation.test.ts. Every row exercises its channel, so each
+    // not-called assertion below proves the parse-before-service order.
     const cases: Array<[string, unknown[]]> = [
+      // Exact arity and string type: getConfig, listBoard.
       [IPC_CHANNEL.kanbanGetConfig, []],
-      [IPC_CHANNEL.kanbanGetConfig, [42]],
-      [IPC_CHANNEL.kanbanSetConfig, ['p1']],
-      [IPC_CHANNEL.kanbanSetConfig, ['p1', { adapterId: 7, values: {} }]],
-      [IPC_CHANNEL.kanbanSetConfig, ['p1', { adapterId: 'demo', values: { k: 1 } }]],
+      // Config object schema: setConfig.
+      [IPC_CHANNEL.kanbanSetConfig, ['p1', []]],
+      // String-map payload: test.
       [IPC_CHANNEL.kanbanTest, ['p1', { k: 1 }]],
-      [IPC_CHANNEL.kanbanListBoard, []],
+      // Item schema with the optional local-file revision: createItem, updateItem.
       [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: '' }]],
-      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x', priority: 'highest' }]],
-      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', { bogus: 1 }]],
-      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'DEMO-1', 'stateRef']],
-      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, 0]],
-      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, 1.5]],
-      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, '2']],
-      [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: 'x' }, 2, 'extra']],
-      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'T-1', { title: 'x' }, -1]],
-      [IPC_CHANNEL.kanbanUpdateItem, ['p1', 'T-1', { title: 'x' }, 2, 'extra']],
-      [IPC_CHANNEL.kanbanBindLocalFile, []],
+      // One non-empty project id and nothing else: bindLocalFile, skillStatus,
+      // writeSkill.
       [IPC_CHANNEL.kanbanBindLocalFile, ['']],
-      [IPC_CHANNEL.kanbanBindLocalFile, [7]],
-      [IPC_CHANNEL.kanbanSkillStatus, []],
-      [IPC_CHANNEL.kanbanSkillStatus, ['']],
-      [IPC_CHANNEL.kanbanSkillStatus, ['p1', 'extra']],
-      [IPC_CHANNEL.kanbanWriteSkill, []],
-      [IPC_CHANNEL.kanbanWriteSkill, ['']],
-      [IPC_CHANNEL.kanbanWriteSkill, [7]],
-      [IPC_CHANNEL.kanbanWriteSkill, ['p1', '# injected skill text']],
+      // The whole payload is one launch object: launchTask.
       [IPC_CHANNEL.kanbanLaunchTask, [{ projectId: 'p1', mode: 'resume' }]],
     ]
     for (const [channel, payload] of cases) {
@@ -1375,13 +1363,12 @@ describe('kanban:* channels (adapter integration)', () => {
         expect((error as Error).message).toContain('validation')
       }
     }
+    expect(services.kanban.getConfig).not.toHaveBeenCalled()
     expect(services.kanban.setConfig).not.toHaveBeenCalled()
-    expect(services.kanban.listBoard).not.toHaveBeenCalled()
+    expect(services.kanban.test).not.toHaveBeenCalled()
     expect(services.kanban.createItem).not.toHaveBeenCalled()
-    expect(services.kanban.updateItem).not.toHaveBeenCalled()
     expect(services.kanban.bindLocalFile).not.toHaveBeenCalled()
-    expect(services.kanban.skillStatus).not.toHaveBeenCalled()
-    expect(services.kanban.writeSkill).not.toHaveBeenCalled()
+    expect(services.kanban.launchTask).not.toHaveBeenCalled()
   })
 
   it('transports adapter failures with their typed codes and messages', async () => {
@@ -1428,18 +1415,16 @@ describe('taskProgress:* channels (task progress adapters)', () => {
 
   it('rejects invalid payloads before the service', () => {
     const { services, invoke } = createHarness()
+    // One representative per payload family; the rules themselves belong to
+    // ipc-validation.test.ts. Every row exercises its channel, so each
+    // not-called assertion below proves the parse-before-service order.
     const cases: Array<[string, unknown[]]> = [
+      // Exact arity and string type: getBinding, get.
       [IPC_CHANNEL.taskProgressGetBinding, []],
-      [IPC_CHANNEL.taskProgressGetBinding, [42]],
-      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', 'demo']],
-      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', 7, {}]],
-      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', '../evil', {}]],
-      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', 'demo', { k: 1 }]],
-      [IPC_CHANNEL.taskProgressSaveBinding, ['p1', 'demo', []]],
+      // Adapter id plus string values: test, saveBinding.
       [IPC_CHANNEL.taskProgressTest, ['p1', null, {}]],
-      [IPC_CHANNEL.taskProgressTest, ['p1', 'C:/adapters/x', {}]],
-      [IPC_CHANNEL.taskProgressTest, ['p1', 'demo', { k: true }]],
-      [IPC_CHANNEL.taskProgressTest, ['p1', 'demo']],
+      // The whole payload is the observed project-id array: observe.
+      [IPC_CHANNEL.taskProgressObserve, ['p1']],
     ]
     for (const [channel, payload] of cases) {
       try {
@@ -1451,8 +1436,8 @@ describe('taskProgress:* channels (task progress adapters)', () => {
       }
     }
     expect(services.taskProgress.getBinding).not.toHaveBeenCalled()
-    expect(services.taskProgress.saveBinding).not.toHaveBeenCalled()
     expect(services.taskProgress.test).not.toHaveBeenCalled()
+    expect(services.taskProgress.observe).not.toHaveBeenCalled()
   })
 
   it('routes observe and get to the service', async () => {
@@ -1463,20 +1448,6 @@ describe('taskProgress:* channels (task progress adapters)', () => {
     expect(services.taskProgress.observe).toHaveBeenLastCalledWith([])
     expect(await invoke(IPC_CHANNEL.taskProgressGet, ['p1'])).toBeNull()
     expect(services.taskProgress.get).toHaveBeenCalledWith('p1')
-  })
-
-  it.each([
-    [IPC_CHANNEL.taskProgressObserve, []],
-    [IPC_CHANNEL.taskProgressObserve, ['p1']],
-    [IPC_CHANNEL.taskProgressObserve, [[1]]],
-    [IPC_CHANNEL.taskProgressObserve, [Array.from({ length: 1001 }, (_, index) => `p${index}`)]],
-    [IPC_CHANNEL.taskProgressGet, []],
-    [IPC_CHANNEL.taskProgressGet, [7]],
-  ])('rejects invalid %s payload %j before the service', (channel, payload) => {
-    const { services, invoke } = createHarness()
-    expect(() => invoke(channel, payload as unknown[])).toThrow(/validation/)
-    expect(services.taskProgress.observe).not.toHaveBeenCalled()
-    expect(services.taskProgress.get).not.toHaveBeenCalled()
   })
 
   it('forwards taskProgress:changed events to the broadcast hook', () => {

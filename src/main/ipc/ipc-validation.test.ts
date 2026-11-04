@@ -1251,6 +1251,151 @@ describe('ipc payload validation', () => {
     expect(services.kanban.launchTask).toHaveBeenCalledTimes(3)
   })
 
+  // Channels whose rejection rule only the handler table used to prove. The
+  // rule belongs here, next to every other parser rule, so the handler table
+  // can keep one representative payload per channel family.
+  it('rejects malformed kanban and taskProgress payloads the handler table no longer owns', () => {
+    const channels = channelMap()
+    const cases: Array<[string, unknown[], string]> = [
+      [IPC_CHANNEL.kanbanGetConfig, [], 'kanban:getConfig: expected 1 argument(s), got 0'],
+      [IPC_CHANNEL.kanbanGetConfig, [42], 'kanban:getConfig arg[0] must be a string'],
+      [IPC_CHANNEL.kanbanListBoard, [], 'kanban:listBoard: expected 1 argument(s), got 0'],
+      [
+        IPC_CHANNEL.kanbanListBoard,
+        ['p1', 'extra'],
+        'kanban:listBoard: expected 1 argument(s), got 2',
+      ],
+      [IPC_CHANNEL.kanbanSetConfig, ['p1'], 'kanban:setConfig: expected 2 argument(s), got 1'],
+      [
+        IPC_CHANNEL.kanbanSetConfig,
+        [7, { adapterId: null, values: {} }],
+        'kanban:setConfig arg[0] must be a string',
+      ],
+      [IPC_CHANNEL.kanbanSetConfig, ['p1', []], 'kanban:setConfig arg[1] must be an object'],
+      [IPC_CHANNEL.kanbanTest, ['p1'], 'kanban:test: expected 2 argument(s), got 1'],
+      [IPC_CHANNEL.kanbanTest, ['p1', { k: 1 }], 'kanban:test arg[1].k must be a string'],
+      [
+        IPC_CHANNEL.kanbanCreateItem,
+        ['p1', { title: '' }],
+        'kanban:createItem arg[1].title must be non-empty',
+      ],
+      [
+        IPC_CHANNEL.kanbanCreateItem,
+        ['p1', { title: 'x' }, 0],
+        'kanban:createItem arg[2] must be a positive integer',
+      ],
+      [
+        IPC_CHANNEL.kanbanCreateItem,
+        ['p1', { title: 'x' }, 2, 'extra'],
+        'kanban:createItem: expected 2 or 3 argument(s), got 4',
+      ],
+      [IPC_CHANNEL.kanbanBindLocalFile, [], 'kanban:bindLocalFile: expected 1 argument(s), got 0'],
+      [
+        IPC_CHANNEL.kanbanBindLocalFile,
+        [''],
+        'kanban:bindLocalFile requires a non-empty projectId',
+      ],
+      [IPC_CHANNEL.kanbanSkillStatus, [''], 'kanban:skillStatus requires a non-empty projectId'],
+      [
+        IPC_CHANNEL.kanbanSkillStatus,
+        ['p1', 'extra'],
+        'kanban:skillStatus: expected 1 argument(s), got 2',
+      ],
+      [IPC_CHANNEL.kanbanWriteSkill, [], 'kanban:writeSkill: expected 1 argument(s), got 0'],
+      // The renderer never sends skill text: main builds it (project-home 11-12).
+      [
+        IPC_CHANNEL.kanbanWriteSkill,
+        ['p1', '# injected skill text'],
+        'kanban:writeSkill: expected 1 argument(s), got 2',
+      ],
+      // updateItem keeps the item arity and the shared revision rule here; its
+      // patch rules stay in the message table and the priority test.
+      [
+        IPC_CHANNEL.kanbanUpdateItem,
+        ['p1', 'DEMO-1'],
+        'kanban:updateItem: expected 3 or 4 argument(s), got 2',
+      ],
+      [
+        IPC_CHANNEL.kanbanUpdateItem,
+        ['p1', 'DEMO-1', 'stateRef'],
+        'kanban:updateItem arg[2] must be an object',
+      ],
+      [
+        IPC_CHANNEL.kanbanUpdateItem,
+        ['p1', 'DEMO-1', { title: 'x' }, -1],
+        'kanban:updateItem arg[3] must be a positive integer',
+      ],
+      [
+        IPC_CHANNEL.kanbanUpdateItem,
+        ['p1', 'DEMO-1', { title: 'x' }, 2, 'extra'],
+        'kanban:updateItem: expected 3 or 4 argument(s), got 5',
+      ],
+      [
+        IPC_CHANNEL.taskProgressGetBinding,
+        [],
+        'taskProgress:getBinding: expected 1 argument(s), got 0',
+      ],
+      [IPC_CHANNEL.taskProgressGetBinding, [42], 'taskProgress:getBinding arg[0] must be a string'],
+      [
+        IPC_CHANNEL.taskProgressTest,
+        ['p1', 'demo'],
+        'taskProgress:test: expected 3 argument(s), got 2',
+      ],
+      [IPC_CHANNEL.taskProgressTest, ['p1', null, {}], 'taskProgress:test arg[1] must be a string'],
+      [
+        IPC_CHANNEL.taskProgressTest,
+        ['p1', 'C:/adapters/x', {}],
+        'taskProgress:test arg[1] must be a kebab-case adapter id',
+      ],
+      [
+        IPC_CHANNEL.taskProgressTest,
+        ['p1', 'demo', { k: true }],
+        'taskProgress:test arg[2].k must be a string',
+      ],
+      // saveBinding keeps its arity and adapter rule here; the values map has
+      // message rows in the schema-label test above.
+      [
+        IPC_CHANNEL.taskProgressSaveBinding,
+        ['p1', 'demo'],
+        'taskProgress:saveBinding: expected 3 argument(s), got 2',
+      ],
+      [
+        IPC_CHANNEL.taskProgressSaveBinding,
+        ['p1', 7, {}],
+        'taskProgress:saveBinding arg[1] must be a string',
+      ],
+      [
+        IPC_CHANNEL.taskProgressSaveBinding,
+        ['p1', '../evil', {}],
+        'taskProgress:saveBinding arg[1] must be a kebab-case adapter id',
+      ],
+      [
+        IPC_CHANNEL.taskProgressSaveBinding,
+        ['p1', 'demo', []],
+        'taskProgress:saveBinding arg[2] must be an object',
+      ],
+      [IPC_CHANNEL.taskProgressObserve, [], 'taskProgress:observe: expected 1 argument(s), got 0'],
+      [
+        IPC_CHANNEL.taskProgressObserve,
+        ['p1'],
+        'taskProgress:observe arg[0] must be an array of at most 1000 ids',
+      ],
+      [IPC_CHANNEL.taskProgressObserve, [[1]], 'taskProgress:observe arg[0][0] must be a string'],
+      [
+        IPC_CHANNEL.taskProgressObserve,
+        [Array.from({ length: 1001 }, (_, index) => `p${index}`)],
+        'taskProgress:observe arg[0] must be an array of at most 1000 ids',
+      ],
+      [IPC_CHANNEL.taskProgressGet, [], 'taskProgress:get: expected 1 argument(s), got 0'],
+      [IPC_CHANNEL.taskProgressGet, [7], 'taskProgress:get arg[0] must be a string'],
+    ]
+    for (const [channel, payload, message] of cases) {
+      expect(() => channels.get(channel)?.parse(payload), channel).toThrow(
+        new ValidationError(message),
+      )
+    }
+  })
+
   it('terminals:create does not start the project shell for an undelivered launch', () => {
     const services = fakeServices()
     vi.mocked(services.kanban.blocksProjectShell).mockReturnValue(true)
