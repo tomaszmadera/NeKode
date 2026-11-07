@@ -284,7 +284,8 @@ export async function runResumeCommand(
   // Reserved codes are meaningful only when a fixed supervisor owns the source process.
   const supervised = windows !== null || context.wsl !== null
   // The supervisor stopped its job because this request asked for it; that is a cancel, never a stop failure.
-  if (supervised && result.code === SUPERVISOR_STOPPED)
+  // Only the Windows supervisor reserves 251; the WSL supervisor propagates the source's own exit status.
+  if (windows !== null && result.code === SUPERVISOR_STOPPED)
     throw new AppError('conflict', 'Resume discovery was cancelled.')
   if (supervised && result.code === SUPERVISOR_CONTAINMENT_FAILED)
     throw new AppError(

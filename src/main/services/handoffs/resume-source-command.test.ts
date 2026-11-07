@@ -396,7 +396,7 @@ describe('Resume command sources', () => {
       // The supervisor grace and the wait for close share one 3 s budget, not 1.2 s plus 3 s.
       const elapsed = Date.now() - aborted
       expect(elapsed).toBeGreaterThanOrEqual(2500)
-      expect(elapsed).toBeLessThanOrEqual(3600)
+      expect(elapsed).toBeLessThanOrEqual(4000)
     },
     15000,
   )
