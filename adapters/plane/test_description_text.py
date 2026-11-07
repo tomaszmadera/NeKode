@@ -1,10 +1,11 @@
-"""Description contract shared by the standalone Plane adapter and harness CLI."""
+"""Description contract of the standalone Plane adapter.
 
-import argparse
-import contextlib
+Only shipped code is asserted here: the harness CLI lives in the untracked
+`.agents/` tree, so its rendering contract cannot be checked from this
+repository and is not part of the adapter contract.
+"""
+
 import importlib.util
-import io
-import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -26,8 +27,9 @@ def load_module(name, path):
 
 
 ADAPTER = load_module("plane_adapter", "adapters/plane/plane_adapter.py")
-CLI = load_module("kanban_cli", ".agents/skills/kanban/scripts/kanban_cli.py")
-MODULES = [m for m in (ADAPTER, CLI) if m is not None]
+if ADAPTER is None:
+    raise RuntimeError("adapters/plane/plane_adapter.py is missing")
+MODULES = [ADAPTER]
 
 
 class UpdatePriorityTests(unittest.TestCase):
@@ -79,23 +81,6 @@ class DescriptionTextTests(unittest.TestCase):
             for issue in ({}, {"description_html": "<p><br></p>"}, {"description": "  "}):
                 with self.subTest(module=module.__name__, issue=issue):
                     self.assertIsNone(module.description_of(issue))
-
-    @unittest.skipIf(CLI is None, "kanban_cli harness script is not available in clean checkouts")
-    def test_cli_get_prints_text_but_json_preserves_api_response(self):
-        issue = {"description_html": "<p>One &amp; two</p><p>Next</p>"}
-        for as_json in (False, True):
-            output = io.StringIO()
-            args = argparse.Namespace(ref="NEKODE-1", project=None, json=as_json)
-            with patch.object(CLI, "resolve_issue_ref", return_value=("id", "project", "NEKODE-1")), \
-                 patch.object(CLI, "ws", return_value="workspace"), \
-                 patch.object(CLI, "api_request", return_value=(200, issue)), \
-                 patch.object(CLI, "print_issues_table"), contextlib.redirect_stdout(output):
-                CLI.cmd_get(args)
-            if as_json:
-                self.assertEqual(json.loads(output.getvalue()), issue)
-            else:
-                self.assertIn("One & two\n\nNext", output.getvalue())
-                self.assertNotIn("<p>", output.getvalue())
 
     def test_nested_lists_and_link_labels(self):
         source = (

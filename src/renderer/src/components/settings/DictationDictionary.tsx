@@ -144,35 +144,36 @@ export function DictationDictionary({
     api
       .dictionaryList(queryProjectId)
       .then(
-        (res) => {
+        // The IPC contract returns entries. Older main processes still answer
+        // with the legacy bridge dictionary, so tolerate that shape here.
+        (res: DictationDictionaryEntry[] | LegacyDictionary | undefined) => {
           if (disposed) return
           if (!res) {
             setEntries([])
             return
           }
-          if ('state' in res) {
-            const legacy = res as LegacyDictionary
-            if (legacy.state === 'unavailable') {
-              setLegacyError(legacy.error)
-              setEntries([])
-            } else if (legacy.state === 'ready') {
-              setEntries(
-                legacy.terms.map((t, idx) => ({
-                  id: `legacy-${idx}`,
-                  term: t,
-                  aliases: [],
-                  description: null,
-                  scope: 'global' as const,
-                  projectId: null,
-                  enabled: true,
-                  createdAt: '',
-                  updatedAt: '',
-                })),
-              )
-            }
-          } else if (Array.isArray(res)) {
+          if (Array.isArray(res)) {
             setEntries(res)
+            return
           }
+          if (res.state === 'unavailable') {
+            setLegacyError(res.error)
+            setEntries([])
+            return
+          }
+          setEntries(
+            res.terms.map((t, idx) => ({
+              id: `legacy-${idx}`,
+              term: t,
+              aliases: [],
+              description: null,
+              scope: 'global' as const,
+              projectId: null,
+              enabled: true,
+              createdAt: '',
+              updatedAt: '',
+            })),
+          )
         },
         () => {
           if (!disposed) {

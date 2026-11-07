@@ -15,7 +15,6 @@ import type {
   AppUpdateLatest,
   ChatInfo,
   CreateDictionaryEntryInput,
-  DictationDictionary,
   DictationDictionaryEntry,
   DictationPostProcessingSettings,
   DictationResult,
@@ -90,10 +89,7 @@ export interface AppServices {
     refreshModels(): Promise<DictationStatusSnapshot>
     dictionaryList(
       projectId?: string,
-    ):
-      | Promise<DictationDictionaryEntry[] | DictationDictionary>
-      | DictationDictionaryEntry[]
-      | DictationDictionary
+    ): DictationDictionaryEntry[] | Promise<DictationDictionaryEntry[]>
     getSettings(): DictationSettings
     setSettings(settings: DictationSettings): DictationSettings
     start(chatId: string, retrySessionId: string | null): DictationStart

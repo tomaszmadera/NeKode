@@ -25,6 +25,7 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // Fallback when context isolation is disabled.
-  ;(window as unknown as Record<string, unknown>)[bridge.key] = bridge.api
+  // Fallback when context isolation is disabled. `globalThis` is the renderer
+  // window here; naming it avoids depending on the DOM lib in the node project.
+  ;(globalThis as unknown as Record<string, unknown>)[bridge.key] = bridge.api
 }

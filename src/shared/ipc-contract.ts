@@ -15,13 +15,13 @@ import type {
 } from './contracts/desktop-dictation-contract'
 import type {
   CreateDictionaryEntryInput,
-  DictationDictionary,
   DictationDictionaryEntry,
   DictationPostProcessingSettings,
   DictationResult,
   DictationSettings,
   DictationStart,
   DictationStatusSnapshot,
+  SetPostProcessingSettingsInput,
   SttProviderSummary,
   UpdateDictionaryEntryInput,
 } from './contracts/dictation-contract'
@@ -255,7 +255,7 @@ export interface AppApi {
     status(): Promise<DictationStatusSnapshot>
     testConnection(): Promise<DictationStatusSnapshot>
     refreshModels(): Promise<DictationStatusSnapshot>
-    dictionaryList(projectId?: string): Promise<DictationDictionaryEntry[] | DictationDictionary>
+    dictionaryList(projectId?: string): Promise<DictationDictionaryEntry[]>
     getSettings(): Promise<DictationSettings>
     setSettings(settings: DictationSettings): Promise<DictationSettings>
     start(chatId: string, retrySessionId: string | null): Promise<DictationStart>
@@ -284,12 +284,7 @@ export interface AppApi {
     dictionaryDelete(id: string): Promise<void>
     dictionaryToggle(id: string, enabled: boolean): Promise<DictationDictionaryEntry>
     postProcessingGetSettings(): Promise<DictationPostProcessingSettings>
-    postProcessingSetSettings(settings: {
-      mode: string
-      level: string
-      model?: string
-      apiKey?: string
-    }): Promise<void>
+    postProcessingSetSettings(settings: SetPostProcessingSettingsInput): Promise<void>
   }
   projects: {
     list(): Promise<ProjectInfo[]>
