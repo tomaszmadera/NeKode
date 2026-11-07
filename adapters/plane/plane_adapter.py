@@ -640,6 +640,10 @@ def map_single_issue(cfg: dict[str, Any], issue: Any, project_id: str) -> dict[s
 
 def resolve_state_ref(cfg: dict[str, Any], project_id: str, ref: str) -> str:
     states = states_for(cfg, project_id)
+    # The renderer sends the state id of the selected status option.
+    for state in states:
+        if str(state.get("id") or "") == ref.strip():
+            return str(state["id"])
     low = ref.strip().lower()
     group = GROUP_ALIASES.get(low, low)
     if group in STATE_GROUPS:

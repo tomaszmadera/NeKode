@@ -121,8 +121,8 @@ NeKode's normalized state group enum is
   written to stderr. A response never carries a group outside the enum.
 
 Where a state is referred to by name (for example when creating or updating an
-item via `stateRef`), the adapter accepts either the concrete state name
-(case-insensitive) or one of these group aliases:
+item via `stateRef`), the adapter accepts the state id, the concrete state
+name (case-insensitive) or one of these group aliases:
 
 | Alias | Group |
 | --- | --- |
