@@ -6,6 +6,8 @@ import { AppError } from '@shared/ipc-error'
 /** Exit codes reserved by both supervisors; a supervised source cannot report them distinctly. */
 export const SUPERVISOR_START_FAILED = 253
 export const SUPERVISOR_CONTAINMENT_FAILED = 254
+/** Reserved: the supervisor stopped the job after the parent asked it to. */
+export const SUPERVISOR_STOPPED = 251
 
 // Fixed supervisor code; source configuration is JSON data and is never evaluated.
 // JOB_LIST associates the process atomically, even if cancellation interrupts creation.
@@ -14,6 +16,7 @@ Add-Type -TypeDefinition @'
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -62,7 +65,17 @@ public static class ResumeSourceJob {
     }
     text.Append('\\', slashes * 2); text.Append('"'); return text.ToString();
   }
-  public static int Run(string application, string executable, string[] arguments) {
+  static int Drain(IntPtr job, int code) {
+    Check(TerminateJobObject(job, 1));
+    var elapsed = Stopwatch.StartNew(); Accounting accounting;
+    do {
+      Check(QueryInformationJobObject(job, 1, out accounting, Marshal.SizeOf(typeof(Accounting)), IntPtr.Zero));
+      if (accounting.Active == 0) return code;
+      if (elapsed.ElapsedMilliseconds > 3000) return ${SUPERVISOR_CONTAINMENT_FAILED};
+      Thread.Sleep(10);
+    } while (true);
+  }
+  public static int Run(string application, string executable, string[] arguments, string stopPath) {
     IntPtr job = IntPtr.Zero, attributes = IntPtr.Zero, jobValue = IntPtr.Zero;
     bool initialized = false; ProcessInfo child = new ProcessInfo();
     try {
@@ -81,17 +94,14 @@ public static class ResumeSourceJob {
       var command = new StringBuilder(Quote(executable)); if (arguments != null) foreach (var arg in arguments) command.Append(" ").Append(Quote(arg));
       if (!CreateProcessW(application, command, IntPtr.Zero, IntPtr.Zero, true, 0x8080004, IntPtr.Zero, null, ref startup, out child)) return ${SUPERVISOR_START_FAILED};
       Check(ResumeThread(child.Thread) != UInt32.MaxValue);
-      Check(WaitForSingleObject(child.Process, UInt32.MaxValue) == 0);
+      // Poll so a stop request reaches the job while the source is still running.
+      uint wait;
+      while ((wait = WaitForSingleObject(child.Process, 100)) == 258) {
+        if (stopPath.Length > 0 && File.Exists(stopPath)) return Drain(job, ${SUPERVISOR_STOPPED});
+      }
+      if (wait != 0) return ${SUPERVISOR_CONTAINMENT_FAILED};
       uint code; Check(GetExitCodeProcess(child.Process, out code));
-      Check(TerminateJobObject(job, 1));
-      var elapsed = Stopwatch.StartNew(); Accounting accounting;
-      do {
-        Check(QueryInformationJobObject(job, 1, out accounting, Marshal.SizeOf(typeof(Accounting)), IntPtr.Zero));
-        if (accounting.Active == 0) break;
-        if (elapsed.ElapsedMilliseconds > 3000) return ${SUPERVISOR_CONTAINMENT_FAILED};
-        Thread.Sleep(10);
-      } while (true);
-      return unchecked((int)code);
+      return Drain(job, unchecked((int)code));
     } finally {
       if (job != IntPtr.Zero) CloseHandle(job);
       if (child.Thread != IntPtr.Zero) CloseHandle(child.Thread);
@@ -151,12 +161,13 @@ export function windowsResumeInvocation(
   source: ResumeCommandSource,
   systemRoot: string | undefined,
   application: string,
+  stopPath: string,
 ) {
   // An absolute path keeps a project-local powershell.exe in the cwd from being started.
   if (!systemRoot)
     throw new AppError('config', 'Windows system directory is unavailable for Resume discovery.')
   const config = Buffer.from(
-    JSON.stringify({ application, executable: source.executable, args: source.args }),
+    JSON.stringify({ application, executable: source.executable, args: source.args, stopPath }),
     'utf8',
   ).toString('base64')
   // Compilation, configuration and Win32 failures all report containment failure.
@@ -164,7 +175,7 @@ export function windowsResumeInvocation(
 try {
 ${windowsSupervisor}
   $config = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${config}')) | ConvertFrom-Json
-  exit [ResumeSourceJob]::Run($config.application, $config.executable, [string[]]$config.args)
+  exit [ResumeSourceJob]::Run($config.application, $config.executable, [string[]]$config.args, [string]$config.stopPath)
 } catch { exit ${SUPERVISOR_CONTAINMENT_FAILED} }
 `
   // Read the fixed script completely first, leaving EOF on the source's inherited stdin.

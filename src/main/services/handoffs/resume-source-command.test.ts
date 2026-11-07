@@ -1,7 +1,9 @@
-import { lstatSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
+import { existsSync, lstatSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import {
   HARNESS_RESUME_SOURCE,
   type ResumeCommandSource,
@@ -166,19 +168,26 @@ describe('Resume command sources', () => {
 
   it('starts the fixed Windows supervisor from the system directory only', () => {
     const command = source('')
-    const invocation = windowsResumeInvocation(command, 'C:\\Windows', 'C:\\node\\node.exe')
+    const stopPath = 'C:\\Windows\\Temp\\nekode-resume-stop-test'
+    const invocation = windowsResumeInvocation(
+      command,
+      'C:\\Windows',
+      'C:\\node\\node.exe',
+      stopPath,
+    )
     expect(invocation.file).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
     const config = {
       application: 'C:\\node\\node.exe',
       executable: command.executable,
       args: command.args,
+      stopPath,
     }
     expect(invocation.stdin).toContain(
       Buffer.from(JSON.stringify(config), 'utf8').toString('base64'),
     )
-    expect(() => windowsResumeInvocation(command, undefined, 'C:\\node\\node.exe')).toThrow(
-      /system directory/,
-    )
+    expect(() =>
+      windowsResumeInvocation(command, undefined, 'C:\\node\\node.exe', stopPath),
+    ).toThrow(/system directory/)
   })
 
   it('resolves Windows executables like Node: cwd, then PATH, exact name, then .com and .exe', () => {
@@ -252,6 +261,48 @@ describe('Resume command sources', () => {
     const rejection = expect(pending).rejects.toThrow(/cancelled/)
     await service.shutdown()
     await rejection
+  }, 15000)
+
+  it('asks the supervisor to stop its job and cleans the marker up', async () => {
+    type SpawnDep = NonNullable<NonNullable<Parameters<typeof runResumeCommand>[3]>['spawnProcess']>
+    const written: string[] = []
+    const stdin = new PassThrough()
+    stdin.on('data', (chunk: Buffer) => written.push(String(chunk)))
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    const child = Object.assign(new EventEmitter(), {
+      pid: 999_998,
+      stdout,
+      stderr,
+      stdin,
+      exitCode: null,
+      kill: () => true,
+    })
+    const killer = Object.assign(new EventEmitter(), { unref: () => undefined })
+    const spawner = vi
+      .fn()
+      .mockReturnValueOnce(child)
+      .mockReturnValue(killer) as unknown as SpawnDep
+    const controller = new AbortController()
+    const pending = runResumeCommand(root, source('setInterval(()=>{},1000)'), controller.signal, {
+      spawnProcess: spawner,
+    })
+    const rejection = expect(pending).rejects.toThrow(/cancelled/)
+    controller.abort(new AppError('conflict', 'Resume discovery was cancelled.'))
+    // The parent names the stop marker in the supervisor configuration on stdin.
+    let stopPath = ''
+    await vi.waitFor(() => {
+      const script = written.join('')
+      const encoded = /FromBase64String\('([^']+)'\)/.exec(script)?.[1]
+      expect(encoded).toBeTruthy()
+      stopPath = JSON.parse(Buffer.from(encoded ?? '', 'base64').toString('utf8')).stopPath
+      expect(stopPath).toBeTruthy()
+      expect(existsSync(stopPath)).toBe(true)
+    })
+    // The supervisor stops the job and exits; the parent must release the marker.
+    child.emit('close', 251)
+    await rejection
+    expect(existsSync(stopPath)).toBe(false)
   }, 15000)
 
   it.each(['complete', 'cancel'])(

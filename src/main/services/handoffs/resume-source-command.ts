@@ -1,6 +1,9 @@
 import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { rmSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   ResumeCommandSource,
@@ -41,6 +44,12 @@ const taskSchema = z.object({
 })
 const envelopeSchema = z.object({ success: z.literal(true), tasks: z.array(taskSchema) })
 const run = promisify(execFile)
+/** How long the supervisor gets to stop its job before the tree-kill fallback runs. */
+const STOP_GRACE_MS = 1200
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms).unref()
+  })
 
 const startFailure = (source: ResumeCommandSource, harness: boolean) =>
   new AppError(
@@ -115,10 +124,13 @@ export async function runResumeCommand(
     harness,
   )
   let windows: ReturnType<typeof windowsResumeInvocation> | null = null
+  // The Windows supervisor owns the job object, so it stops the tree itself.
+  let stopPath: string | null = null
   if (context.wsl === null && process.platform === 'win32') {
     const application = resolveWindowsExecutable(source.executable, projectPath, process.env.PATH)
     if (application === null) throw startFailure(source, harness)
-    windows = windowsResumeInvocation(source, process.env.SystemRoot, application)
+    stopPath = join(tmpdir(), `nekode-resume-stop-${process.pid}-${randomUUID()}`)
+    windows = windowsResumeInvocation(source, process.env.SystemRoot, application, stopPath)
   }
   const invocation = windows === null ? runtimeInvocation : { ...windows, cwd: projectPath }
   const marker = randomUUID()
@@ -170,14 +182,37 @@ export async function runResumeCommand(
     }
     killTree(child, spawner)
   }
+  const requestStop = () => {
+    if (stopPath === null) return
+    try {
+      writeFileSync(stopPath, '')
+    } catch {
+      // The tree kill below remains the fallback when the request cannot be written.
+    }
+  }
+  const cleanupStopFile = () => {
+    if (stopPath === null) return
+    try {
+      rmSync(stopPath, { force: true })
+    } catch {
+      // A stale marker in the temp directory is harmless.
+    }
+  }
   const terminate = () => {
     if (cleanup !== null) return
-    cleanup = (
+    requestStop()
+    const pending = (
       context.wsl === null ? Promise.resolve() : killWslSource(context.wsl.distribution, marker)
-    ).finally(killNative)
-    void cleanup.then(stopped, stopped)
+    )
+      .then(async () => {
+        // Give the supervisor a moment to stop its own job before falling back.
+        if (stopPath !== null) await Promise.race([closed, delay(STOP_GRACE_MS)])
+      })
+      .finally(killNative)
+    cleanup = pending
+    void pending.then(stopped, stopped)
     // The promise is awaited below; attach a handler now to avoid an unhandled rejection.
-    void cleanup.catch(() => undefined)
+    void pending.catch(() => undefined)
   }
   const abort = () => {
     terminate()
@@ -232,6 +267,7 @@ export async function runResumeCommand(
     ])
   } finally {
     signal.removeEventListener('abort', abort)
+    cleanupStopFile()
   }
   if (cleanup !== null) await cleanup
   checkResumeCancelled(signal)
