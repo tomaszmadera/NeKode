@@ -23,6 +23,7 @@ import {
   resolveWindowsExecutable,
   SUPERVISOR_CONTAINMENT_FAILED,
   SUPERVISOR_START_FAILED,
+  SUPERVISOR_STOPPED,
   WSL_RESUME_SUPERVISOR,
   windowsResumeInvocation,
 } from './resume-source-supervisor'
@@ -44,6 +45,8 @@ const taskSchema = z.object({
 })
 const envelopeSchema = z.object({ success: z.literal(true), tasks: z.array(taskSchema) })
 const run = promisify(execFile)
+/** Total budget for one Windows stop request; the supervisor gets the grace, the wait for close the rest. */
+const STOP_BUDGET_MS = 3000
 /** How long the supervisor gets to stop its job before the tree-kill fallback runs. */
 const STOP_GRACE_MS = 1200
 const delay = (ms: number) =>
@@ -126,6 +129,8 @@ export async function runResumeCommand(
   let windows: ReturnType<typeof windowsResumeInvocation> | null = null
   // The Windows supervisor owns the job object, so it stops the tree itself.
   let stopPath: string | null = null
+  // One deadline keeps the supervisor wait and the wait for `close` inside STOP_BUDGET_MS.
+  let stopDeadline: number | null = null
   if (context.wsl === null && process.platform === 'win32') {
     const application = resolveWindowsExecutable(source.executable, projectPath, process.env.PATH)
     if (application === null) throw startFailure(source, harness)
@@ -201,6 +206,7 @@ export async function runResumeCommand(
   const terminate = () => {
     if (cleanup !== null) return
     requestStop()
+    if (stopPath !== null) stopDeadline = Date.now() + STOP_BUDGET_MS
     const pending = (
       context.wsl === null ? Promise.resolve() : killWslSource(context.wsl.distribution, marker)
     )
@@ -253,11 +259,14 @@ export async function runResumeCommand(
       stopping.then(async () => {
         await cleanup
         let timer: ReturnType<typeof setTimeout> | undefined
+        // The supervisor wait already spent part of the budget; only the remainder is left for `close`.
+        const budget =
+          stopDeadline === null ? STOP_BUDGET_MS : Math.max(0, stopDeadline - Date.now())
         try {
           return await Promise.race([
             closed,
             new Promise<never>((_resolve, reject) => {
-              timer = setTimeout(() => reject(stopFailure()), 3000)
+              timer = setTimeout(() => reject(stopFailure()), budget)
             }),
           ])
         } finally {
@@ -274,6 +283,9 @@ export async function runResumeCommand(
   if (failure !== null) throw failure
   // Reserved codes are meaningful only when a fixed supervisor owns the source process.
   const supervised = windows !== null || context.wsl !== null
+  // The supervisor stopped its job because this request asked for it; that is a cancel, never a stop failure.
+  if (supervised && result.code === SUPERVISOR_STOPPED)
+    throw new AppError('conflict', 'Resume discovery was cancelled.')
   if (supervised && result.code === SUPERVISOR_CONTAINMENT_FAILED)
     throw new AppError(
       'config',

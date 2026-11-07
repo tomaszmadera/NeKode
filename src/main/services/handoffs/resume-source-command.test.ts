@@ -263,47 +263,175 @@ describe('Resume command sources', () => {
     await rejection
   }, 15000)
 
-  it('asks the supervisor to stop its job and cleans the marker up', async () => {
-    type SpawnDep = NonNullable<NonNullable<Parameters<typeof runResumeCommand>[3]>['spawnProcess']>
-    const written: string[] = []
-    const stdin = new PassThrough()
-    stdin.on('data', (chunk: Buffer) => written.push(String(chunk)))
-    const stdout = new PassThrough()
-    const stderr = new PassThrough()
-    const child = Object.assign(new EventEmitter(), {
-      pid: 999_998,
-      stdout,
-      stderr,
-      stdin,
-      exitCode: null,
-      kill: () => true,
-    })
-    const killer = Object.assign(new EventEmitter(), { unref: () => undefined })
-    const spawner = vi
-      .fn()
-      .mockReturnValueOnce(child)
-      .mockReturnValue(killer) as unknown as SpawnDep
-    const controller = new AbortController()
-    const pending = runResumeCommand(root, source('setInterval(()=>{},1000)'), controller.signal, {
-      spawnProcess: spawner,
-    })
-    const rejection = expect(pending).rejects.toThrow(/cancelled/)
-    controller.abort(new AppError('conflict', 'Resume discovery was cancelled.'))
-    // The parent names the stop marker in the supervisor configuration on stdin.
-    let stopPath = ''
-    await vi.waitFor(() => {
-      const script = written.join('')
-      const encoded = /FromBase64String\('([^']+)'\)/.exec(script)?.[1]
-      expect(encoded).toBeTruthy()
-      stopPath = JSON.parse(Buffer.from(encoded ?? '', 'base64').toString('utf8')).stopPath
-      expect(stopPath).toBeTruthy()
-      expect(existsSync(stopPath)).toBe(true)
-    })
-    // The supervisor stops the job and exits; the parent must release the marker.
-    child.emit('close', 251)
-    await rejection
-    expect(existsSync(stopPath)).toBe(false)
-  }, 15000)
+  it.skipIf(process.platform !== 'win32')(
+    'asks the supervisor to stop its job and cleans the marker up',
+    async () => {
+      type SpawnDep = NonNullable<
+        NonNullable<Parameters<typeof runResumeCommand>[3]>['spawnProcess']
+      >
+      const written: string[] = []
+      const stdin = new PassThrough()
+      stdin.on('data', (chunk: Buffer) => written.push(String(chunk)))
+      const stdout = new PassThrough()
+      const stderr = new PassThrough()
+      const child = Object.assign(new EventEmitter(), {
+        pid: 999_998,
+        stdout,
+        stderr,
+        stdin,
+        exitCode: null,
+        kill: () => true,
+      })
+      const killer = Object.assign(new EventEmitter(), { unref: () => undefined })
+      const spawner = vi
+        .fn()
+        .mockReturnValueOnce(child)
+        .mockReturnValue(killer) as unknown as SpawnDep
+      const controller = new AbortController()
+      const pending = runResumeCommand(
+        root,
+        source('setInterval(()=>{},1000)'),
+        controller.signal,
+        {
+          spawnProcess: spawner,
+        },
+      )
+      const rejection = expect(pending).rejects.toThrow(/cancelled/)
+      controller.abort(new AppError('conflict', 'Resume discovery was cancelled.'))
+      // The parent names the stop marker in the supervisor configuration on stdin.
+      let stopPath = ''
+      await vi.waitFor(() => {
+        const script = written.join('')
+        const encoded = /FromBase64String\('([^']+)'\)/.exec(script)?.[1]
+        expect(encoded).toBeTruthy()
+        stopPath = JSON.parse(Buffer.from(encoded ?? '', 'base64').toString('utf8')).stopPath
+        expect(stopPath).toBeTruthy()
+        expect(existsSync(stopPath)).toBe(true)
+      })
+      // The marker is the first stop attempt; the tree kill only runs after the grace expires.
+      expect(spawner).not.toHaveBeenCalledWith('taskkill', expect.anything(), expect.anything())
+      // The supervisor stops the job and exits; the parent must release the marker.
+      child.emit('close', 251)
+      await rejection
+      expect(existsSync(stopPath)).toBe(false)
+    },
+    15000,
+  )
+
+  it.skipIf(process.platform !== 'win32')(
+    'falls back to the tree kill when the supervisor misses its grace',
+    async () => {
+      type SpawnDep = NonNullable<
+        NonNullable<Parameters<typeof runResumeCommand>[3]>['spawnProcess']
+      >
+      const child = Object.assign(new EventEmitter(), {
+        pid: 999_998,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        stdin: new PassThrough(),
+        exitCode: null,
+        kill: () => true,
+      })
+      const killer = Object.assign(new EventEmitter(), { unref: () => undefined })
+      const fallbackAt: number[] = []
+      let aborted = 0
+      const spawner = vi.fn((file: string) => {
+        if (file !== 'taskkill') return child
+        fallbackAt.push(Date.now() - aborted)
+        // The tree kill closes the pipes; the request must still report a cancel.
+        setTimeout(() => child.emit('close', 1), 0)
+        return killer
+      }) as unknown as SpawnDep
+      const controller = new AbortController()
+      const pending = runResumeCommand(
+        root,
+        source('setInterval(()=>{},1000)'),
+        controller.signal,
+        {
+          spawnProcess: spawner,
+        },
+      )
+      const rejection = expect(pending).rejects.toThrow(/cancelled/)
+      aborted = Date.now()
+      controller.abort(new AppError('conflict', 'Resume discovery was cancelled.'))
+      await rejection
+      expect(fallbackAt).toHaveLength(1)
+      expect(fallbackAt[0]).toBeGreaterThanOrEqual(1000)
+    },
+    15000,
+  )
+
+  it.skipIf(process.platform !== 'win32')(
+    'bounds a stop that never closes to the stop budget',
+    async () => {
+      type SpawnDep = NonNullable<
+        NonNullable<Parameters<typeof runResumeCommand>[3]>['spawnProcess']
+      >
+      const child = Object.assign(new EventEmitter(), {
+        pid: 999_998,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        stdin: new PassThrough(),
+        exitCode: null,
+        kill: () => true,
+      })
+      const killer = Object.assign(new EventEmitter(), { unref: () => undefined })
+      const spawner = vi
+        .fn()
+        .mockReturnValueOnce(child)
+        .mockReturnValue(killer) as unknown as SpawnDep
+      const controller = new AbortController()
+      const pending = runResumeCommand(
+        root,
+        source('setInterval(()=>{},1000)'),
+        controller.signal,
+        {
+          spawnProcess: spawner,
+        },
+      )
+      const stopped = expect(pending).rejects.toThrow(/Cannot stop owned/)
+      const aborted = Date.now()
+      controller.abort(new AppError('conflict', 'Resume discovery was cancelled.'))
+      await stopped
+      // The supervisor grace and the wait for close share one 3 s budget, not 1.2 s plus 3 s.
+      const elapsed = Date.now() - aborted
+      expect(elapsed).toBeGreaterThanOrEqual(2500)
+      expect(elapsed).toBeLessThanOrEqual(3600)
+    },
+    15000,
+  )
+
+  it.skipIf(process.platform !== 'win32')(
+    'reports the reserved supervisor stop code as a cancellation',
+    async () => {
+      type SpawnDep = NonNullable<
+        NonNullable<Parameters<typeof runResumeCommand>[3]>['spawnProcess']
+      >
+      const child = Object.assign(new EventEmitter(), {
+        pid: 999_998,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        stdin: new PassThrough(),
+        exitCode: null,
+        kill: () => true,
+      })
+      const killer = Object.assign(new EventEmitter(), { unref: () => undefined })
+      const spawner = vi
+        .fn()
+        .mockReturnValueOnce(child)
+        .mockReturnValue(killer) as unknown as SpawnDep
+      const pending = runResumeCommand(
+        root,
+        source('setInterval(()=>{},1000)'),
+        new AbortController().signal,
+        { spawnProcess: spawner },
+      )
+      await Promise.resolve()
+      child.emit('close', 251)
+      await expect(pending).rejects.toThrow(/cancelled/)
+    },
+    15000,
+  )
 
   it.each(['complete', 'cancel'])(
     'reaps the real source tree on %s',
