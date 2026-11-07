@@ -2,7 +2,6 @@ import { KANBAN_PRIORITIES, KANBAN_STATE_GROUPS } from '@shared/ipc-contract'
 import { describe, expect, it } from 'vitest'
 import { AdapterHostError } from './adapter-host'
 import {
-  ADAPTER_ACTIONS,
   normalizeComments,
   normalizeItem,
   normalizeItems,
@@ -327,20 +326,6 @@ describe('adapter-protocol', () => {
       expect(normalizeComments(input, 'listComments')).toEqual([
         { id: 'c1', text: 'First comment', author: 'Alice', createdAt: '2026-10-17T12:00:00Z' },
         { id: 'c2', text: 'Second comment', author: null, createdAt: null },
-      ])
-    })
-  })
-
-  describe('ADAPTER_ACTIONS', () => {
-    it('exposes the expected protocol action list', () => {
-      expect(ADAPTER_ACTIONS).toEqual([
-        'test',
-        'listStates',
-        'listItems',
-        'getItem',
-        'createItem',
-        'updateItem',
-        'listComments',
       ])
     })
   })

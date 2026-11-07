@@ -55,7 +55,7 @@ describe('DictationDictionaryService', () => {
       expect(entry.createdAt).toBeDefined()
       expect(entry.updatedAt).toBeDefined()
 
-      const retrieved = service.get(entry.id)
+      const retrieved = service.list().find((row) => row.id === entry.id)
       expect(retrieved).toEqual(entry)
     })
 
@@ -196,11 +196,6 @@ describe('DictationDictionaryService', () => {
         }),
       ).toThrowError(AppError)
     })
-
-    it('returns null for get with non-existent id or invalid id', () => {
-      expect(service.get('missing-id')).toBeNull()
-      expect(service.get('')).toBeNull()
-    })
   })
 
   describe('list', () => {
@@ -328,10 +323,10 @@ describe('DictationDictionaryService', () => {
   describe('delete', () => {
     it('deletes an existing dictionary entry', () => {
       const entry = service.add({ term: 'Docker', scope: 'global' })
-      expect(service.get(entry.id)).not.toBeNull()
+      expect(service.list().map((row) => row.id)).toContain(entry.id)
 
       service.delete(entry.id)
-      expect(service.get(entry.id)).toBeNull()
+      expect(service.list().map((row) => row.id)).not.toContain(entry.id)
     })
 
     it('throws not_found AppError when deleting non-existent entry', () => {
@@ -353,11 +348,15 @@ describe('DictationDictionaryService', () => {
 
       const toggledOff = service.toggle(entry.id, false)
       expect(toggledOff.enabled).toBe(false)
-      expect(service.get(entry.id)?.enabled).toBe(false)
+      expect(service.list({ scope: 'global' }).find((row) => row.id === entry.id)?.enabled).toBe(
+        false,
+      )
 
       const toggledOn = service.toggle(entry.id, true)
       expect(toggledOn.enabled).toBe(true)
-      expect(service.get(entry.id)?.enabled).toBe(true)
+      expect(service.list({ scope: 'global' }).find((row) => row.id === entry.id)?.enabled).toBe(
+        true,
+      )
     })
 
     it('throws not_found AppError when toggling non-existent entry', () => {
@@ -478,12 +477,6 @@ describe('DictationDictionaryService', () => {
       const effective = service.getEffectiveDictionary()
       expect(effective.terms).toContain('NeKode')
       expect(effective.aliases).toEqual(['ne-code', 'nekod'])
-
-      // AC-007 assertion: effective dictionary provides read-only term/alias lists;
-      // it performs no destructive string replace or regex substitution on user transcripts.
-      const rawTranscript = 'I am testing nekod in NeKode today.'
-      expect(typeof rawTranscript).toBe('string')
-      expect(rawTranscript).toBe('I am testing nekod in NeKode today.')
     })
   })
 })

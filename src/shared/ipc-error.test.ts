@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   APP_ERROR_MARKER,
   AppError,
-  formatError,
   formatErrorMessage,
   isAppErrorCode,
-  isAppErrorKind,
   parseAppErrorPayload,
   serializeAppError,
   toNekodeAppError,
@@ -46,17 +44,17 @@ describe('typed error transport', () => {
     ).not.toHaveProperty('detail')
   })
 
-  it('attaches the channel on AppError without one and keeps typed codes and kinds', () => {
-    const transport = toTransportError(new AppError('not_found', 'Missing.'), 'chats:list')
-    const parsed = parseAppErrorPayload(transport)
-    expect(parsed?.code).toBe('not_found')
-    expect(parsed?.kind).toBe('not_found')
-    expect(parsed?.channel).toBe('chats:list')
-  })
-
-  it('keeps the original channel when already set', () => {
-    const transport = toTransportError(new AppError('sqlite', 'Database error.', 'state:get'), 'x')
-    expect(parseAppErrorPayload(transport)?.channel).toBe('state:get')
+  it('attaches a channel only when the AppError has none', async () => {
+    const attached = parseAppErrorPayload(
+      toTransportError(new AppError('not_found', 'Missing.'), 'chats:list'),
+    )
+    expect(attached?.code).toBe('not_found')
+    expect(attached?.kind).toBe('not_found')
+    expect(attached?.channel).toBe('chats:list')
+    const kept = parseAppErrorPayload(
+      toTransportError(new AppError('sqlite', 'Database error.', 'state:get'), 'x'),
+    )
+    expect(kept?.channel).toBe('state:get')
   })
 
   it('sanitizes unknown errors instead of leaking raw messages', () => {
@@ -185,28 +183,17 @@ describe('typed error transport', () => {
     })
   })
 
-  it('formats errors with machine-readable code/kind and message string', () => {
-    const typed = new AppError('validation', 'Name is required.', 'users:add')
-    const formatted = formatError(typed)
-    expect(formatted.code).toBe('validation')
-    expect(formatted.kind).toBe('validation')
-    expect(formatted.message).toBe('Name is required.')
-    expect(formatted.channel).toBe('users:add')
-    expect(String(formatted)).toBe('Name is required.')
-    expect(formatErrorMessage(typed)).toBe('Name is required.')
-
-    const raw = new Error('Network failure')
-    const formattedRaw = formatError(raw, 'Default failure')
-    expect(formattedRaw.code).toBe('unknown')
-    expect(formattedRaw.kind).toBe('unknown')
-    expect(formattedRaw.message).toBe('Network failure')
-    expect(String(formattedRaw)).toBe('Network failure')
+  it('extracts the renderer message from a typed or unknown error', () => {
+    expect(formatErrorMessage(new AppError('validation', 'Name is required.', 'users:add'))).toBe(
+      'Name is required.',
+    )
+    expect(formatErrorMessage(new Error('Network failure'))).toBe('Network failure')
+    expect(formatErrorMessage(null, 'Default failure')).toBe('Default failure')
   })
 
-  it('validates error codes and kinds with type guards', () => {
+  it('validates error codes with the type guard', () => {
     expect(isAppErrorCode('validation')).toBe(true)
     expect(isAppErrorCode('not-a-code')).toBe(false)
-    expect(isAppErrorKind('timeout')).toBe(true)
-    expect(isAppErrorKind(123)).toBe(false)
+    expect(isAppErrorCode(123)).toBe(false)
   })
 })

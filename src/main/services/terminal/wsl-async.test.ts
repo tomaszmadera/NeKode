@@ -4,7 +4,9 @@ import { runWslAsync } from './wsl-async'
 
 vi.mock('node:child_process', () => ({ execFile: vi.fn() }))
 
-beforeEach(() => vi.mocked(execFile).mockReset())
+beforeEach(() => {
+  vi.mocked(execFile).mockReset()
+})
 
 describe('asynchronous WSL probe', () => {
   it('returns immediately and resolves only when the child completes', async () => {
@@ -24,21 +26,15 @@ describe('asynchronous WSL probe', () => {
     await expect(result).resolves.toBe('/home/user')
   })
 
-  it('maps a timed-out child to the existing unavailable error', async () => {
-    vi.useFakeTimers()
-    try {
-      vi.mocked(execFile).mockImplementation(((_file, _args, _options, callback) => {
-        setTimeout(() => (callback as (error: Error) => void)(new Error('killed')), 5000)
-        return {} as ReturnType<typeof execFile>
-      }) as typeof execFile)
-      const result = runWslAsync('Ubuntu', ['pwd'])
-      const assertion = expect(result).rejects.toThrow(
-        'The WSL distribution or executable is unavailable.',
-      )
-      await vi.advanceTimersByTimeAsync(5000)
-      await assertion
-    } finally {
-      vi.useRealTimers()
-    }
+  it('maps a child error to the existing unavailable error', async () => {
+    vi.mocked(execFile).mockImplementation(((_file, _args, _options, callback) => {
+      queueMicrotask(() => (callback as (error: Error) => void)(new Error('killed')))
+      return {} as ReturnType<typeof execFile>
+    }) as typeof execFile)
+    await expect(runWslAsync('Ubuntu', ['pwd'])).rejects.toThrow(
+      'The WSL distribution or executable is unavailable.',
+    )
+    // The bound of the child itself is asserted above; the child's text never leaks.
+    expect(JSON.stringify(vi.mocked(execFile).mock.calls)).not.toContain('killed')
   })
 })

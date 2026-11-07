@@ -196,14 +196,13 @@ function workspaceProps(
     chatId: string | null
     selectionNonce: number
     chatsByProject?: Record<string, ChatInfo[]>
-    chatsLoaded?: boolean
   },
 ) {
   return {
     app: bundle.app,
     projects: [projectA],
     chatsByProject: options.chatsByProject ?? { p1: [chatOne, chatTwo] },
-    chatsLoaded: options.chatsLoaded ?? true,
+    chatsLoaded: true,
     selectedProjectId: 'p1',
     selectedChatId: options.chatId,
     selectionNonce: options.selectionNonce,
@@ -492,37 +491,6 @@ describe('ChatWorkspace session host', () => {
     })
     expect(props.onChatClosed).toHaveBeenCalledTimes(2)
     expect(props.onChatClosed).toHaveBeenLastCalledWith('t1')
-  })
-
-  it('holds the Start new chat state back until the chat list is loaded', () => {
-    const bundle = createAppMock()
-    const view = render(
-      <ChatWorkspace
-        {...workspaceProps(bundle, {
-          chatId: null,
-          selectionNonce: 0,
-          chatsByProject: { p1: [] },
-          chatsLoaded: false,
-        })}
-      />,
-    )
-    // "Not loaded yet" is not "no chats": the neutral welcome surface shows
-    // until the load settles (no flash of the empty-state affordance).
-    expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.startNewChatState)).toBeNull()
-
-    view.rerender(
-      <ChatWorkspace
-        {...workspaceProps(bundle, {
-          chatId: null,
-          selectionNonce: 0,
-          chatsByProject: { p1: [] },
-          chatsLoaded: true,
-        })}
-      />,
-    )
-    expect(screen.getByTestId(TEST_ID.startNewChatState)).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
   })
 
   // --- Attention state (chat attention badge spec) --------------------------

@@ -74,22 +74,7 @@ describe('ProviderRegistry', () => {
     expect(() => registry.register(incompatibleAdapter)).toThrowError(/protocol version/i)
   })
 
-  it('unregisters an adapter by id', () => {
-    const registry = new ProviderRegistry()
-    const adapter = createMockAdapter('temp-provider')
-
-    registry.register(adapter)
-    expect(registry.has('temp-provider')).toBe(true)
-
-    const removed = registry.unregister('temp-provider')
-    expect(removed).toBe(true)
-    expect(registry.has('temp-provider')).toBe(false)
-    expect(registry.get('temp-provider')).toBeUndefined()
-
-    expect(registry.unregister('temp-provider')).toBe(false)
-  })
-
-  it('lists all manifests and adapters in registration order', () => {
+  it('lists manifests in registration order', () => {
     const registry = new ProviderRegistry()
     const adapter1 = createMockAdapter('prov-1')
     const adapter2 = createMockAdapter('prov-2')
@@ -101,37 +86,5 @@ describe('ProviderRegistry', () => {
     expect(manifests).toHaveLength(2)
     expect(manifests[0].id).toBe('prov-1')
     expect(manifests[1].id).toBe('prov-2')
-
-    const adapters = registry.listAdapters()
-    expect(adapters).toEqual([adapter1, adapter2])
-  })
-
-  it('queries provider capabilities correctly', () => {
-    const registry = new ProviderRegistry()
-    const adapter = createMockAdapter('prov-caps', {
-      capabilities: {
-        keyterms: true,
-        nativeEditing: false,
-        languageSelection: true,
-        modelDiscovery: true,
-        timestamps: false,
-      },
-    })
-
-    registry.register(adapter)
-    expect(registry.hasCapability('prov-caps', 'keyterms')).toBe(true)
-    expect(registry.hasCapability('prov-caps', 'nativeEditing')).toBe(false)
-    expect(registry.hasCapability('prov-caps', 'modelDiscovery')).toBe(true)
-    expect(registry.hasCapability('non-existent', 'keyterms')).toBe(false)
-  })
-
-  it('clears all registered adapters', () => {
-    const registry = new ProviderRegistry()
-    registry.register(createMockAdapter('p1'))
-    registry.register(createMockAdapter('p2'))
-
-    registry.clear()
-    expect(registry.listAdapters()).toHaveLength(0)
-    expect(registry.listManifests()).toHaveLength(0)
   })
 })

@@ -200,6 +200,19 @@ describe('Usage settings', () => {
     fireEvent.click(test)
     expect(app.usage.test).not.toHaveBeenCalled()
   })
+  it('keeps Save disabled while the account name is blank or only whitespace', async () => {
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Kept account' }))
+    const name = screen.getByRole('textbox', { name: 'Name' })
+    const save = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    fireEvent.change(name, { target: { value: '' } })
+    expect(save.disabled).toBe(true)
+    fireEvent.change(name, { target: { value: '   ' } })
+    expect(save.disabled).toBe(true)
+    fireEvent.change(name, { target: { value: 'Renamed account' } })
+    expect(save.disabled).toBe(false)
+  })
   it('removes an account only after confirmation', async () => {
     const app = setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Remove Kept account' }))

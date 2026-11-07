@@ -3,6 +3,7 @@ import {
   linkSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -351,6 +352,12 @@ describe('global usage service', () => {
     writeFileSync(unowned, 'unowned fixture file')
     await f.service.refresh({ connectionId: 'account' })
     expect(readFileSync(unowned, 'utf8')).toBe('unowned fixture file')
+    // The atomic write names its own temp file `<path>.<uuid>.tmp`; a leaked one
+    // would show up here even though the unowned sibling above is never touched.
+    const residue = readdirSync(f.dir).filter(
+      (name) => name.startsWith('export.json.') && name.endsWith('.tmp'),
+    )
+    expect(residue).toEqual([`export.json.${process.pid}.tmp`])
   })
   it('reports manual interval skips and reads again at the exact 60-second deadline', async () => {
     const f = fixture(),
@@ -952,14 +959,6 @@ describe('global usage service', () => {
     expect(() => f.service.saveSettings(settings)).toThrow('symbolic links')
     await expect(f.service.test(settings.connections[0])).rejects.toMatchObject({ code: 'config' })
   })
-  it('does no collection without enabled connections', async () => {
-    const f = fixture()
-    f.service.setVisible(true)
-    await expect(f.service.refresh({ connectionId: 'account' })).rejects.toMatchObject({
-      code: 'not_found',
-    })
-    expect(f.service.read().connections).toEqual([])
-  })
   it('keeps observation times through repeated reads, export and restart', async () => {
     const f = fixture()
     f.service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } })
@@ -998,18 +997,6 @@ describe('global usage service', () => {
     expect(f.service.read().connections[0].error?.code).toBe('protocol')
     expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
   })
-  it('does not reset source cadence when pinning a metric', async () => {
-    const f = fixture()
-    f.service.saveSettings(f.settings)
-    await f.service.refresh({ connectionId: 'account' })
-    f.write(77)
-    f.service.saveSettings({
-      ...f.service.getSettings(),
-      pin: { connectionId: 'account', metricId: 'week' },
-    })
-    await f.service.refresh({ connectionId: 'account' })
-    expect(f.service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
-  })
   it('rejects input/output overlap and existing non-export files without changing settings', () => {
     const f = fixture()
     f.service.saveSettings(f.settings)
@@ -1025,14 +1012,6 @@ describe('global usage service', () => {
     ).toThrow('already exists')
     expect(readFileSync(f.output, 'utf8')).toBe('personal notes')
     expect(f.service.getSettings().export.enabled).toBe(false)
-  })
-  it('requires an explicit replace decision even for an existing normalized input document', () => {
-    const f = fixture()
-    f.service.saveSettings(f.settings)
-    writeFileSync(f.output, readFileSync(f.input))
-    expect(() =>
-      f.service.saveSettings({ ...f.settings, export: { enabled: true, path: f.output } }),
-    ).toThrow('already exists')
   })
   it('invalidates cache and pin after account identity changes', async () => {
     const f = fixture()

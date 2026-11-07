@@ -1,6 +1,7 @@
 import { APP_STATE_KEY } from '@shared/ipc-contract'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../../lib/app-error-message'
+import { isLeftPanelChord, isRightPanelChord } from '../../lib/panel-chords'
 import {
   BOTTOM_REGION_SIZE,
   clampRegionSize,
@@ -134,6 +135,41 @@ export function useLayoutRegions(app: AppApi, setNotice: SetNotice) {
     persist(APP_STATE_KEY.workspaceLayout, nextMode, 'Failed to save the layout.')
     persist(APP_STATE_KEY.rightRegionOpen, next ? '1' : '0', 'Failed to save the right panel.')
   }, [mode, rightOpen, persist])
+
+  const toggleLeftRef = useRef(toggleLeft)
+  toggleLeftRef.current = toggleLeft
+  const toggleRightRef = useRef(toggleRight)
+  toggleRightRef.current = toggleRight
+
+  // Ctrl+B toggles the left panel, Ctrl+Alt+B toggles the right panel,
+  // capture phase so it wins over a focused terminal or editor;
+  // an open modal dialog swallows the chord.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat) {
+        return
+      }
+      const isLeft = isLeftPanelChord(event)
+      const isRight = isRightPanelChord(event)
+      if (!isLeft && !isRight) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      if (document.querySelector('[aria-modal="true"]') !== null) {
+        return
+      }
+      if (isLeft) {
+        toggleLeftRef.current()
+      } else {
+        toggleRightRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [])
 
   const leftRegion = useResizableRegion({
     axis: 'x',

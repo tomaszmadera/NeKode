@@ -2,79 +2,31 @@ import { describe, expect, it } from 'vitest'
 import { clampMenuPosition } from './menu-position'
 
 describe('clampMenuPosition', () => {
-  it('preserves pointer coordinates inside the safe viewport region', () => {
-    const pos = clampMenuPosition(100, 150, {
-      viewportWidth: 1000,
-      viewportHeight: 800,
-      menuWidth: 200,
-      menuHeight: 150,
-      padding: 8,
-    })
-    expect(pos).toEqual({ left: 100, top: 150 })
-  })
+  const viewport = {
+    viewportWidth: 1000,
+    viewportHeight: 800,
+    menuWidth: 200,
+    menuHeight: 150,
+    padding: 8,
+  }
 
-  it('clamps coordinates near or beyond the right edge', () => {
-    const pos = clampMenuPosition(950, 100, {
-      viewportWidth: 1000,
-      viewportHeight: 800,
-      menuWidth: 200,
-      menuHeight: 150,
-      padding: 8,
-    })
-    // 1000 - 200 - 8 = 792
-    expect(pos).toEqual({ left: 792, top: 100 })
-
-    const beyond = clampMenuPosition(1200, 100, {
-      viewportWidth: 1000,
-      viewportHeight: 800,
-      menuWidth: 200,
-      menuHeight: 150,
-      padding: 8,
-    })
-    expect(beyond).toEqual({ left: 792, top: 100 })
-  })
-
-  it('clamps coordinates near or beyond the bottom edge', () => {
-    const pos = clampMenuPosition(100, 750, {
-      viewportWidth: 1000,
-      viewportHeight: 800,
-      menuWidth: 200,
-      menuHeight: 150,
-      padding: 8,
-    })
-    // 800 - 150 - 8 = 642
-    expect(pos).toEqual({ left: 100, top: 642 })
-
-    const beyond = clampMenuPosition(100, 950, {
-      viewportWidth: 1000,
-      viewportHeight: 800,
-      menuWidth: 200,
-      menuHeight: 150,
-      padding: 8,
-    })
-    expect(beyond).toEqual({ left: 100, top: 642 })
-  })
-
-  it('clamps coordinates near or beyond the left and top edges', () => {
-    const pos = clampMenuPosition(-20, -50, {
-      viewportWidth: 1000,
-      viewportHeight: 800,
-      menuWidth: 200,
-      menuHeight: 150,
-      padding: 8,
-    })
-    expect(pos).toEqual({ left: 8, top: 8 })
-  })
-
-  it('handles small viewports gracefully without negative positions', () => {
-    const pos = clampMenuPosition(50, 50, {
-      viewportWidth: 150,
-      viewportHeight: 100,
-      menuWidth: 200,
-      menuHeight: 150,
-      padding: 8,
-    })
-    expect(pos).toEqual({ left: 8, top: 8 })
+  it.each([
+    ['preserves pointer coordinates inside the safe region', 100, 150, viewport, 100, 150],
+    ['clamps near the right edge to width - menu - padding', 950, 100, viewport, 792, 100],
+    ['clamps beyond the right edge', 1200, 100, viewport, 792, 100],
+    ['clamps near the bottom edge to height - menu - padding', 100, 750, viewport, 100, 642],
+    ['clamps beyond the bottom edge', 100, 950, viewport, 100, 642],
+    ['clamps the left and top edges to the padding', -20, -50, viewport, 8, 8],
+    [
+      'never goes negative when the menu is larger than the viewport',
+      50,
+      50,
+      { ...viewport, viewportWidth: 150, viewportHeight: 100 },
+      8,
+      8,
+    ],
+  ])('%s', (_name, x, y, options, left, top) => {
+    expect(clampMenuPosition(x, y, options)).toEqual({ left, top })
   })
 
   it('falls back to window dimensions when viewports are omitted', () => {

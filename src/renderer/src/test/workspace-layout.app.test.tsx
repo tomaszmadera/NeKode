@@ -328,4 +328,81 @@ describe('workspace layout modes', () => {
     expect(right.className).toContain('border-l')
     expect(right.className).not.toContain('m-2')
   })
+
+  it('toggles left panel on Ctrl+B and right panel on Ctrl+Alt+B, and ignores chords when a modal is open', async () => {
+    render(<App app={app} />)
+    await screen.findByTestId(TEST_ID.statusLeftToggle)
+
+    // Initially left is open, right is closed
+    expect(screen.getByTestId(TEST_ID.statusLeftToggle).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe('false')
+
+    // Ctrl+B toggles left panel closed
+    fireEvent.keyDown(window, { code: 'KeyB', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => {
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionOpen, '0')
+    })
+    expect(screen.getByTestId(TEST_ID.statusLeftToggle).getAttribute('aria-pressed')).toBe('false')
+
+    // Ctrl+B toggles left panel open again
+    fireEvent.keyDown(window, { code: 'KeyB', ctrlKey: true, bubbles: true, cancelable: true })
+    await waitFor(() => {
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionOpen, '1')
+    })
+    expect(screen.getByTestId(TEST_ID.statusLeftToggle).getAttribute('aria-pressed')).toBe('true')
+
+    // Ctrl+Alt+B toggles right panel open
+    fireEvent.keyDown(window, {
+      code: 'KeyB',
+      ctrlKey: true,
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await waitFor(() => {
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.workspaceLayout, 'three')
+    })
+    expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe('true')
+
+    // Ctrl+Alt+B toggles right panel closed
+    fireEvent.keyDown(window, {
+      code: 'KeyB',
+      ctrlKey: true,
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await waitFor(() => {
+      expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.workspaceLayout, 'two')
+    })
+    expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe('false')
+
+    // Open modal dialog: chords should be ignored
+    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const dialog = await screen.findByRole('dialog', { name: 'App Settings' })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+
+    const leftPressedBefore = screen
+      .getByTestId(TEST_ID.statusLeftToggle)
+      .getAttribute('aria-pressed')
+    const rightPressedBefore = screen
+      .getByTestId(TEST_ID.statusRightToggle)
+      .getAttribute('aria-pressed')
+
+    fireEvent.keyDown(window, { code: 'KeyB', ctrlKey: true, bubbles: true, cancelable: true })
+    fireEvent.keyDown(window, {
+      code: 'KeyB',
+      ctrlKey: true,
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+
+    expect(screen.getByTestId(TEST_ID.statusLeftToggle).getAttribute('aria-pressed')).toBe(
+      leftPressedBefore,
+    )
+    expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe(
+      rightPressedBefore,
+    )
+  })
 })

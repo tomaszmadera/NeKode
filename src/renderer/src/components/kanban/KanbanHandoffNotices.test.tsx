@@ -18,25 +18,23 @@ afterEach(() => {
 })
 
 describe('matchesTaskRef', () => {
-  it('matches exact equality case-insensitively', () => {
-    expect(matchesTaskRef('NEKODE-2', 'nekode-2')).toBe(true)
-    expect(matchesTaskRef('nekode-2', 'NEKODE-2')).toBe(true)
-  })
-
-  it('matches prefix followed by a hyphen', () => {
-    expect(matchesTaskRef('NEKODE-2', 'nekode-2-stage-3')).toBe(true)
-    expect(matchesTaskRef('demo-1', 'DEMO-1-fix-bug')).toBe(true)
-  })
-
-  it('rejects numbers that continue without a hyphen', () => {
-    expect(matchesTaskRef('NEKODE-2', 'nekode-20')).toBe(false)
-    expect(matchesTaskRef('NEKODE-2', 'nekode-21-slug')).toBe(false)
-  })
-
-  it('rejects non-prefix or suffix candidates', () => {
-    expect(matchesTaskRef('NEKODE-2', 'old-nekode-2')).toBe(false)
-    expect(matchesTaskRef('NEKODE-2', 'prefix-nekode-2-notes')).toBe(false)
-  })
+  // One table for the ref-prefix rule: equality ignores case, a hyphen starts a
+  // suffix, and a longer number or a non-prefix candidate never matches.
+  it.each([
+    ['NEKODE-2', 'nekode-2', true],
+    ['nekode-2', 'NEKODE-2', true],
+    ['NEKODE-2', 'nekode-2-stage-3', true],
+    ['demo-1', 'DEMO-1-fix-bug', true],
+    ['NEKODE-2', 'nekode-20', false],
+    ['NEKODE-2', 'nekode-21-slug', false],
+    ['NEKODE-2', 'old-nekode-2', false],
+    ['NEKODE-2', 'prefix-nekode-2-notes', false],
+  ] as Array<[string, string, boolean]>)(
+    'matches ref %s against candidate %s -> %s',
+    (ref, candidate, expected) => {
+      expect(matchesTaskRef(ref, candidate)).toBe(expected)
+    },
+  )
 })
 
 describe('HandoffNotices', () => {

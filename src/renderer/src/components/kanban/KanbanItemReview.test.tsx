@@ -10,7 +10,6 @@ import {
   ReviewTextMenu,
   useReviewComments,
 } from './KanbanItemReview'
-import { PRIORITY_COLOR } from './kanban-board-logic'
 
 afterEach(() => {
   cleanup()
@@ -76,7 +75,7 @@ describe('KanbanItemReview', () => {
     const props = renderReview({ priorityValue: 'urgent' })
     const priority = screen.getByTestId(TEST_ID.kanbanReviewPriority) as HTMLSelectElement
     expect(priority.value).toBe('urgent')
-    expect(priority.style.color).toBe(PRIORITY_COLOR.urgent)
+    expect(priority.style.color).toBe('rgb(99, 40, 36)')
 
     fireEvent.change(priority, { target: { value: 'none' } })
     expect(props.onPriorityChange).toHaveBeenCalledWith(null)

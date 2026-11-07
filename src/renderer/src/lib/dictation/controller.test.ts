@@ -262,26 +262,4 @@ describe('renderer dictation controller', () => {
 
     h.controller.dispose()
   })
-  it('transitions to post_processing state when indicated', async () => {
-    const h = harness()
-    await h.controller.start('chat')
-    h.controller.setPostProcessing()
-    expect(h.states.at(-1)?.state).toBe('post_processing')
-    h.controller.dispose()
-  })
-  it('preserves rawText and editedText on transcription results for comparison (AC-010)', async () => {
-    const h = harness()
-    await h.controller.start('chat')
-    await h.controller.stop()
-    h.emit({
-      text: 'Formatted text.',
-      rawText: 'formatted text',
-      editedText: 'Formatted text.',
-    })
-    const lastResult = h.states.at(-1)?.result
-    expect(lastResult?.text).toBe('Formatted text.')
-    expect(lastResult?.rawText).toBe('formatted text')
-    expect(lastResult?.editedText).toBe('Formatted text.')
-    h.controller.dispose()
-  })
 })

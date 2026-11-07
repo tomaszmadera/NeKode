@@ -4,11 +4,8 @@ import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
 import type { PtyFactory, PtyProcessLike, PtySpawnOptions } from './terminal-service'
 import {
-  CLOSED_BOTTOM_TAB_TTL_MS,
   commandBaseName,
-  GROK_EXIT_GRACE_MS,
   grokSessionEnded,
-  MAX_CLOSED_BOTTOM_TABS,
   shellDisplayName,
   TerminalService,
 } from './terminal-service'
@@ -88,6 +85,16 @@ interface Harness {
   service: TerminalService
   ptys: FakePty[]
   spawn: ReturnType<typeof vi.fn>
+}
+
+/** Session state as callers observe it: a live write, or the rejection code. */
+function writeCode(service: TerminalService, chatId: string): string {
+  try {
+    service.write(chatId, '')
+    return 'running'
+  } catch (error) {
+    return error instanceof AppError ? (error.code ?? 'unknown') : 'unknown'
+  }
 }
 
 function createHarness(
@@ -239,12 +246,12 @@ describe('terminal service (fake PTY)', () => {
     const { service, ptys, spawn } = createHarness()
     service.create('t1', 'D:/a')
     ptys[0].emitExit(0)
-    expect(service.hasRunningSession('t1')).toBe(false)
+    expect(writeCode(service, 't1')).toBe('conflict')
 
     service.create('t1', 'D:/a')
     expect(spawn).toHaveBeenCalledTimes(2)
     expect(ptys[1].pid).not.toBe(ptys[0].pid)
-    expect(service.hasRunningSession('t1')).toBe(true)
+    expect(writeCode(service, 't1')).toBe('running')
   })
 
   it('writes to unknown chats reject as not_found; writes to ended sessions reject as a typed conflict', () => {
@@ -261,6 +268,11 @@ describe('terminal service (fake PTY)', () => {
     // An exit/write race must not fail the renderer: the write is rejected as
     // a conflict (typed) and the PTY receives nothing.
     expect(() => service.write('t1', 'x')).toThrow(AppError)
+    try {
+      service.write('t1', 'x')
+    } catch (error) {
+      expect((error as AppError).code).toBe('conflict')
+    }
     expect(ptys[0].writes).toEqual([])
   })
 
@@ -272,7 +284,7 @@ describe('terminal service (fake PTY)', () => {
     } catch (error) {
       expect((error as AppError).code).toBe('unknown')
     }
-    expect(service.hasRunningSession('t1')).toBe(false)
+    expect(writeCode(service, 't1')).toBe('not_found')
 
     // A later attempt retries the spawn instead of caching the failure.
     const retry = createHarness()
@@ -303,9 +315,9 @@ describe('terminal service (fake PTY)', () => {
     service.terminate('t1')
 
     expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1, 1])
-    expect(service.hasRunningSession('t1')).toBe(false)
-    expect(service.hasRunningSession('t2')).toBe(false)
-    expect(service.hasRunningSession('t3')).toBe(false)
+    expect(writeCode(service, 't1')).toBe('not_found')
+    expect(writeCode(service, 't2')).toBe('not_found')
+    expect(writeCode(service, 't3')).toBe('not_found')
   })
 
   it('quit teardown emits no exit events (chat removal is suppressed during quit)', () => {
@@ -322,8 +334,8 @@ describe('terminal service (fake PTY)', () => {
 
     expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1])
     expect(exitEvents).toEqual([])
-    expect(service.hasRunningSession('t1')).toBe(false)
-    expect(service.hasRunningSession('t2')).toBe(false)
+    expect(writeCode(service, 't1')).toBe('not_found')
+    expect(writeCode(service, 't2')).toBe('not_found')
 
     // Late exit events after the teardown are dropped as well.
     ptys[0].emitExit(3)
@@ -360,8 +372,8 @@ describe('terminal service (fake PTY)', () => {
       [bottomId, 'from-bottom'],
     ])
     expect(exitEvents).toEqual([[bottomId, 0]])
-    expect(service.hasRunningSession('chat-1')).toBe(true)
-    expect(service.hasRunningSession(bottomId)).toBe(false)
+    expect(writeCode(service, 'chat-1')).toBe('running')
+    expect(writeCode(service, bottomId)).toBe('conflict')
     expect(ptys[0]?.killCount).toBe(0)
   })
 
@@ -378,10 +390,10 @@ describe('terminal service (fake PTY)', () => {
 
     service.terminateProjectBottom('p1')
     expect(ptys.map((pty) => pty.killCount)).toEqual([0, 1, 0, 0])
-    expect(service.hasRunningSession('chat-p1')).toBe(true)
-    expect(service.hasRunningSession(bottomP1)).toBe(false)
-    expect(service.hasRunningSession('chat-p2')).toBe(true)
-    expect(service.hasRunningSession(bottomP2)).toBe(true)
+    expect(writeCode(service, 'chat-p1')).toBe('running')
+    expect(writeCode(service, bottomP1)).toBe('not_found')
+    expect(writeCode(service, 'chat-p2')).toBe('running')
+    expect(writeCode(service, bottomP2)).toBe('running')
     // Project removal is not a chat close: the chat PTY is left for the
     // caller that owns chat ids, and no exit event is raised for the bottom tab.
     expect(exitEvents).toEqual([])
@@ -389,9 +401,9 @@ describe('terminal service (fake PTY)', () => {
     service.terminateAll()
     expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1, 1, 1])
     expect(exitEvents).toEqual([])
-    expect(service.hasRunningSession('chat-p1')).toBe(false)
-    expect(service.hasRunningSession('chat-p2')).toBe(false)
-    expect(service.hasRunningSession(bottomP2)).toBe(false)
+    expect(writeCode(service, 'chat-p1')).toBe('not_found')
+    expect(writeCode(service, 'chat-p2')).toBe('not_found')
+    expect(writeCode(service, bottomP2)).toBe('not_found')
   })
 
   it('a bottom tab closed before create within TTL does not spawn', () => {
@@ -399,13 +411,18 @@ describe('terminal service (fake PTY)', () => {
     const { service, spawn } = createHarness({ now: () => currentTime })
     const bottomId = createBottomTabId('p1')
     service.terminate(bottomId)
-    expect(service.closedBottomTabsCount()).toBe(1)
     expect(spawn).not.toHaveBeenCalled()
-    currentTime += 5_000
-    expect(() => service.create(bottomId, 'D:/a')).toThrow(AppError)
+    // Exactly the 30 s TTL is still inside the guard: a shorter bound spawns here.
+    currentTime += 30_000
+    let refused: string | undefined
+    try {
+      service.create(bottomId, 'D:/a')
+    } catch (error) {
+      refused = error instanceof AppError ? error.code : undefined
+    }
+    expect(refused).toBe('conflict')
     expect(spawn).not.toHaveBeenCalled()
-    expect(service.hasRunningSession(bottomId)).toBe(false)
-    expect(service.closedBottomTabsCount()).toBe(0)
+    expect(writeCode(service, bottomId)).toBe('not_found')
   })
 
   it('a bottom tab closed before create after TTL has expired is allowed to spawn', () => {
@@ -413,43 +430,36 @@ describe('terminal service (fake PTY)', () => {
     const { service, spawn } = createHarness({ now: () => currentTime })
     const bottomId = createBottomTabId('p1')
     service.terminate(bottomId)
-    expect(service.closedBottomTabsCount()).toBe(1)
-    // Advance past TTL (30s)
-    currentTime += CLOSED_BOTTOM_TAB_TTL_MS + 1
-    // create now succeeds because the refusal token has expired
+    // One millisecond past the 30 s TTL the refusal token has expired.
+    currentTime += 30_001
     service.create(bottomId, 'D:/a')
     expect(spawn).toHaveBeenCalledTimes(1)
-    expect(service.hasRunningSession(bottomId)).toBe(true)
-    expect(service.closedBottomTabsCount()).toBe(0)
+    expect(writeCode(service, bottomId)).toBe('running')
   })
 
-  it('closedBottomTabs bounds capacity and evicts oldest entry when exceeding MAX_CLOSED_BOTTOM_TABS', () => {
+  it('keeps at most 100 closed bottom tabs and evicts the oldest', () => {
     let currentTime = 1_000
-    const { service } = createHarness({ now: () => currentTime })
+    const { service, spawn } = createHarness({ now: () => currentTime })
     const ids: string[] = []
-    for (let i = 0; i < MAX_CLOSED_BOTTOM_TABS + 5; i++) {
+    // A lowered capacity would keep the first five and refuse their creates.
+    for (let i = 0; i < 105; i++) {
       currentTime += 10
       const id = createBottomTabId(`p${i}`)
       ids.push(id)
       service.terminate(id)
     }
-    expect(service.closedBottomTabsCount()).toBe(MAX_CLOSED_BOTTOM_TABS)
-    // The first 5 IDs were evicted
     for (let i = 0; i < 5; i++) {
-      // Evicted tabs are no longer in the map, so create does not throw conflict
       service.create(ids[i], 'D:/a')
     }
-    // The 6th ID (ids[5]) was NOT evicted and should throw
-    expect(() => service.create(ids[5], 'D:/a')).toThrow(AppError)
-  })
-
-  it('terminateAll clears closed bottom tabs tracking', () => {
-    const { service } = createHarness()
-    const bottomId = createBottomTabId('p1')
-    service.terminate(bottomId)
-    expect(service.closedBottomTabsCount()).toBe(1)
-    service.terminateAll()
-    expect(service.closedBottomTabsCount()).toBe(0)
+    expect(spawn).toHaveBeenCalledTimes(5)
+    let refused: string | undefined
+    try {
+      service.create(ids[5], 'D:/a')
+    } catch (error) {
+      refused = error instanceof AppError ? error.code : undefined
+    }
+    expect(refused).toBe('conflict')
+    expect(spawn).toHaveBeenCalledTimes(5)
   })
 
   it('unsubscribing stops data/exit delivery', () => {
@@ -479,10 +489,17 @@ describe('shellDisplayName', () => {
   })
 
   it('defaults to the platform shell configuration', () => {
-    // The default follows the same rule the PTY spawn uses (process.platform).
-    const expected = process.platform === 'win32' ? 'PowerShell' : shellDisplayName()
-    expect(shellDisplayName()).toBe(expected)
-    expect(shellDisplayName().length).toBeGreaterThan(0)
+    const platform = process.platform
+    try {
+      vi.stubEnv('SHELL', '/usr/bin/zsh')
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+      expect(shellDisplayName()).toBe('zsh')
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+      expect(shellDisplayName()).toBe('PowerShell')
+    } finally {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+      vi.unstubAllEnvs()
+    }
   })
 })
 
@@ -497,7 +514,7 @@ describe('WSL terminal routing', () => {
       }),
     ).toThrow(/missing-cli.*Ubuntu/)
     expect(spawn).not.toHaveBeenCalled()
-    expect(service.hasRunningSession('missing')).toBe(false)
+    expect(writeCode(service, 'missing')).toBe('not_found')
   })
 
   it('keeps WSL sessions on repeated attach and disposes only owned sessions on close and quit', () => {
@@ -512,7 +529,7 @@ describe('WSL terminal routing', () => {
     expect(spawn).toHaveBeenCalledTimes(2)
     service.terminate(bottom)
     expect(ptys[1].killCount).toBe(1)
-    expect(service.hasRunningSession('chat')).toBe(true)
+    expect(writeCode(service, 'chat')).toBe('running')
     service.terminateAll()
     expect(ptys[0].killCount).toBe(1)
     expect(exits).not.toHaveBeenCalled()
@@ -583,7 +600,10 @@ describe('grok quit closes the chat', () => {
       ptys[0].emitData('before\r\nResume this session with:\r\n  ')
       ptys[0].emitData('grok --resume 9f00caa0-5042-4872-8244-9f4e2c3abc49\r\n')
       expect(ptys[0].killCount).toBe(0)
-      vi.advanceTimersByTime(GROK_EXIT_GRACE_MS)
+      // The 250 ms grace is the contract: a later or earlier kill reds a row.
+      vi.advanceTimersByTime(249)
+      expect(ptys[0].killCount).toBe(0)
+      vi.advanceTimersByTime(1)
       expect(ptys[0].killCount).toBe(1)
       expect(exits).toHaveBeenCalledExactlyOnceWith('t1', 0)
     } finally {
@@ -591,27 +611,27 @@ describe('grok quit closes the chat', () => {
     }
   })
 
-  it('does not kill Grok when the process exits on its own after the banner', () => {
+  it('does not kill Grok when the process exits on its own after the banner', async () => {
     vi.useFakeTimers()
     try {
       const { service, ptys } = createHarness()
       service.create('t1', 'D:/a', { file: 'grok', args: [] })
       ptys[0].emitData('Resume this session with:\r\n  grok --minimal --resume abc\r\n')
       ptys[0].emitExit(0)
-      vi.advanceTimersByTime(GROK_EXIT_GRACE_MS)
+      await vi.runAllTimersAsync()
       expect(ptys[0].killCount).toBe(0)
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('leaves a shell session alone when its output contains the Grok quit banner', () => {
+  it('leaves a shell session alone when its output contains the Grok quit banner', async () => {
     vi.useFakeTimers()
     try {
       const { service, ptys } = createHarness()
       service.create('t1', 'D:/a')
       ptys[0].emitData('Resume this session with:\r\n  grok --resume abc\r\n')
-      vi.advanceTimersByTime(GROK_EXIT_GRACE_MS)
+      await vi.runAllTimersAsync()
       expect(ptys[0].killCount).toBe(0)
     } finally {
       vi.useRealTimers()

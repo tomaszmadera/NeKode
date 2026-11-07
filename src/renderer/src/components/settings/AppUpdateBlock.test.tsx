@@ -63,7 +63,6 @@ describe('AppUpdateBlock', () => {
   })
 
   it('asks to save work and does not download or quit until the close is confirmed', async () => {
-    let releaseDownload: () => void = () => undefined
     const app = appFor(
       'win32',
       vi.fn().mockResolvedValue({
@@ -71,12 +70,6 @@ describe('AppUpdateBlock', () => {
         version: '0.16.0',
         error: null,
       }),
-    )
-    app.appUpdate.download = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          releaseDownload = resolve
-        }),
     )
     render(<AppUpdateBlock app={app} />)
     fireEvent.click(await screen.findByTestId(TEST_ID.appUpdateButton))
@@ -89,15 +82,12 @@ describe('AppUpdateBlock', () => {
     expect(screen.queryByText(/Save your work/)).toBeNull()
     expect(app.appUpdate.download).not.toHaveBeenCalled()
 
+    // Cancel leaves the block usable: the warning opens again.
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Close and update' }))
-    expect(await screen.findByText('Downloading the installer...')).toBeTruthy()
-    expect(app.appUpdate.download).toHaveBeenCalledOnce()
-    fireEvent.click(screen.getByRole('button', { name: 'Close and update' }))
-    expect(app.appUpdate.download).toHaveBeenCalledOnce()
-    releaseDownload()
-    expect(await screen.findByText('Starting the installer...')).toBeTruthy()
-    expect(app.appUpdate.launch).toHaveBeenCalledOnce()
+    expect(
+      screen.getByText('Save your work first. NeKode closes only after you continue.'),
+    ).toBeTruthy()
+    expect(app.appUpdate.download).not.toHaveBeenCalled()
   })
 
   it('downloads, then starts the installer, and ignores a second click', async () => {

@@ -231,31 +231,6 @@ export function toNekodeAppError(
   }
 }
 
-export interface FormattedError {
-  message: string
-  code: AppErrorCode
-  kind: AppErrorKind
-  channel?: string
-}
-
-/**
- * Extracts human-readable message and machine-readable code/kind from any error source.
- */
-export function formatError(
-  source: unknown,
-  fallback = 'Unexpected error.',
-): FormattedError & { toString(): string } {
-  const appError = toNekodeAppError(source, fallback)
-  const message = appError.message
-  return {
-    message,
-    code: appError.code,
-    kind: appError.kind ?? appError.code,
-    channel: appError.channel,
-    toString: () => message,
-  }
-}
-
 export function formatErrorMessage(source: unknown, fallback = 'Unexpected error.'): string {
   return toNekodeAppError(source, fallback).message
 }
@@ -279,5 +254,3 @@ export function toTransportError(error: unknown, channel: string): Error {
 export function isAppErrorCode(value: unknown): value is AppErrorCode {
   return typeof value === 'string' && (APP_ERROR_CODES as readonly string[]).includes(value)
 }
-
-export const isAppErrorKind = isAppErrorCode

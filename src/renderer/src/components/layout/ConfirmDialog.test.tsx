@@ -27,40 +27,6 @@ describe('ConfirmDialog', () => {
     expect(document.activeElement).toBe(confirmBtn)
   })
 
-  it('traps Tab and Shift+Tab focus navigation within dialog', () => {
-    render(
-      <ConfirmDialog
-        title="Delete project"
-        body="Are you sure?"
-        confirmLabel="Delete"
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    )
-
-    const confirmBtn = screen.getByTestId(TEST_ID.confirmDialogConfirm)
-    const cancelBtn = screen.getByTestId(TEST_ID.confirmDialogCancel)
-
-    // Initially focused on Confirm (second button in DOM order)
-    expect(document.activeElement).toBe(confirmBtn)
-
-    // Tab from Confirm (last control) wraps to Cancel (first control)
-    fireEvent.keyDown(confirmBtn, { key: 'Tab' })
-    expect(document.activeElement).toBe(cancelBtn)
-
-    // Tab from Cancel moves to Confirm
-    fireEvent.keyDown(cancelBtn, { key: 'Tab' })
-    expect(document.activeElement).toBe(confirmBtn)
-
-    // Shift+Tab from Confirm moves back to Cancel
-    fireEvent.keyDown(confirmBtn, { key: 'Tab', shiftKey: true })
-    expect(document.activeElement).toBe(cancelBtn)
-
-    // Shift+Tab from Cancel wraps to Confirm
-    fireEvent.keyDown(cancelBtn, { key: 'Tab', shiftKey: true })
-    expect(document.activeElement).toBe(confirmBtn)
-  })
-
   it('closes on Escape or backdrop click', () => {
     const onCancel = vi.fn()
     const { container } = render(

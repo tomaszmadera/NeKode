@@ -10,8 +10,8 @@ import { killTree } from '../kanban/adapter-host'
 // its timeout, error codes, and stderr handling differ, and only its process
 // tree kill is shared.
 
-export const TASK_PROGRESS_TIMEOUT_MS = 15_000
-export const TASK_PROGRESS_MAX_STDOUT_BYTES = 10 * 1024 * 1024
+const TASK_PROGRESS_TIMEOUT_MS = 15_000
+const TASK_PROGRESS_MAX_STDOUT_BYTES = 10 * 1024 * 1024
 const STDERR_TAIL_CHARS = 2000
 const TERMINATION_GRACE_MS = 1000
 

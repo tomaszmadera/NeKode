@@ -1646,5 +1646,12 @@ describe('ChatTerminal lifecycle', () => {
       })
       expect(onInputDelivered).toHaveBeenCalledTimes(1)
     })
+
+    it('swallows panel chords (Ctrl+B and Ctrl+Alt+B) in custom key event handler', () => {
+      const { terminal, bundle } = renderTerminal(vi.fn())
+      expect(pressKey(terminal, { code: 'KeyB', ctrlKey: true })).toBe(false)
+      expect(pressKey(terminal, { code: 'KeyB', ctrlKey: true, altKey: true })).toBe(false)
+      expect(bundle.app.terminals.write).not.toHaveBeenCalled()
+    })
   })
 })

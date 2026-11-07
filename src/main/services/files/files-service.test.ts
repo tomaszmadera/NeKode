@@ -638,7 +638,7 @@ describe('files — drive-root projects and exclusion enforcement', () => {
     expect(preview.kind).toBe('text')
     if (preview.kind === 'text') {
       expect(preview.content).toBe('const a = 1')
-      expect(preview.language).toBe(mapExtensionToLanguage('a.ts'))
+      expect(preview.language).toBe('typescript')
     }
   })
 

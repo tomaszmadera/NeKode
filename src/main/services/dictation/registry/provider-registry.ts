@@ -2,7 +2,6 @@ import { AppError } from '@shared/ipc-error'
 import {
   STT_ADAPTER_PROTOCOL_VERSION,
   type SttProviderAdapter,
-  type SttProviderCapabilities,
   type SttProviderManifest,
 } from '../adapters/adapter-contract'
 
@@ -30,10 +29,6 @@ export class ProviderRegistry {
     this.adapters.set(manifest.id, adapter)
   }
 
-  unregister(id: string): boolean {
-    return this.adapters.delete(id)
-  }
-
   get(id: string): SttProviderAdapter | undefined {
     return this.adapters.get(id)
   }
@@ -44,21 +39,5 @@ export class ProviderRegistry {
 
   listManifests(): SttProviderManifest[] {
     return Array.from(this.adapters.values()).map((adapter) => adapter.manifest)
-  }
-
-  listAdapters(): SttProviderAdapter[] {
-    return Array.from(this.adapters.values())
-  }
-
-  hasCapability(id: string, capability: keyof SttProviderCapabilities): boolean {
-    const adapter = this.adapters.get(id)
-    if (!adapter) {
-      return false
-    }
-    return Boolean(adapter.manifest.capabilities[capability])
-  }
-
-  clear(): void {
-    this.adapters.clear()
   }
 }

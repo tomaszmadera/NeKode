@@ -209,6 +209,13 @@ export function StatusBar({
             !(quickThemeSwitch && onThemeChange && theme) && 'ml-auto',
           )}
         >
+          {onToggleBottom ? (
+            <TerminalToggleSection
+              open={bottomOpen}
+              onToggle={onToggleBottom}
+              hasLeadingRightItem
+            />
+          ) : null}
           <PanelToggleButton
             open={leftOpen}
             enabled
@@ -216,6 +223,7 @@ export function StatusBar({
             icon={Icon.panelLeft}
             showLabel="Show left panel"
             hideLabel="Hide left panel"
+            shortcut="Ctrl+B"
             onToggle={onToggleLeft}
           />
           <PanelToggleButton
@@ -225,15 +233,9 @@ export function StatusBar({
             icon={Icon.panelRight}
             showLabel="Show right panel"
             hideLabel="Hide right panel"
+            shortcut="Ctrl+Alt+B"
             onToggle={onToggleRight}
           />
-          {onToggleBottom ? (
-            <TerminalToggleSection
-              open={bottomOpen}
-              onToggle={onToggleBottom}
-              hasLeadingRightItem
-            />
-          ) : null}
         </div>
       ) : onToggleBottom ? (
         <TerminalToggleSection
@@ -253,6 +255,7 @@ function PanelToggleButton({
   icon: Glyph,
   showLabel,
   hideLabel,
+  shortcut,
   onToggle,
 }: {
   open: boolean
@@ -261,8 +264,11 @@ function PanelToggleButton({
   icon: typeof Icon.panelLeft
   showLabel: string
   hideLabel: string
+  shortcut?: string
   onToggle: () => void
 }): React.JSX.Element {
+  const label = open ? hideLabel : showLabel
+  const title = shortcut ? `${label} (${shortcut})` : label
   return (
     <button
       type="button"
@@ -272,8 +278,9 @@ function PanelToggleButton({
         open ? 'bg-highlight text-ink' : 'text-ink-muted hover:bg-highlight hover:text-ink',
       )}
       data-testid={testId}
-      aria-label={open ? hideLabel : showLabel}
+      aria-label={label}
       aria-pressed={open}
+      title={title}
       disabled={!enabled}
       onClick={() => {
         if (enabled) {

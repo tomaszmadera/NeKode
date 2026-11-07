@@ -21,7 +21,6 @@ interface TabsActions {
   /** Drops a removed project's session; a missing session changes nothing. */
   dropProject: (projectId: string) => void
   setMarkdownView: (key: string, mode: MarkdownViewMode) => void
-  reset: () => void
 }
 
 export type TabsStore = TabsState & TabsActions
@@ -53,7 +52,6 @@ export function createTabsStore() {
           ? state
           : { markdownViewByKey: { ...state.markdownViewByKey, [key]: mode } },
       ),
-    reset: () => set(initialState()),
   }))
 }
 

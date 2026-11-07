@@ -21,7 +21,7 @@ describe('asynchronous terminal creation', () => {
     await expect(result).rejects.toThrow('closed')
     expect(createPty).not.toHaveBeenCalled()
   })
-  it('shares one creation between simultaneous attaches', async () => {
+  it('shares one creation between simultaneous attaches and cancels a create for a closed chat', async () => {
     let finish: (value: { file: string; args: string[] }) => void = () => {}
     const shell = vi.fn(
       () =>
@@ -43,6 +43,15 @@ describe('asynchronous terminal creation', () => {
     finish({ file: 'bash', args: [] })
     await expect(Promise.all([first, second])).resolves.toEqual(['chat', 'chat'])
     expect(shell).toHaveBeenCalledOnce()
+    expect(createPty).toHaveBeenCalledOnce()
+
+    // A create racing the termination of its chat fails before spawning.
+    service.terminate('chat')
+    const third = service.createAsync('chat', 'D:/project', shell)
+    expect(shell).toHaveBeenCalledTimes(2)
+    service.terminate('chat')
+    finish({ file: 'bash', args: [] })
+    await expect(third).rejects.toThrow('closed')
     expect(createPty).toHaveBeenCalledOnce()
     service.terminateAll()
   })
@@ -75,23 +84,6 @@ describe('asynchronous terminal creation', () => {
     await shutdown
     await rollback
     expect(rolledBack).toBe(true)
-    expect(createPty).not.toHaveBeenCalled()
-  })
-
-  it('coalesces simultaneous attaches and refuses to spawn after termination', async () => {
-    let finish: (value: { file: string; args: string[] }) => void = () => {}
-    const shell = () =>
-      new Promise<{ file: string; args: string[] }>((resolve) => {
-        finish = resolve
-      })
-    const createPty = vi.fn()
-    const service = new TerminalService({ createPty, isDirectory: () => true })
-    const first = service.createAsync('chat', 'D:/project', shell)
-    const second = service.createAsync('chat', 'D:/project', shell)
-    service.terminate('chat')
-    finish({ file: 'bash', args: [] })
-    await expect(first).rejects.toThrow('closed')
-    await expect(second).rejects.toThrow('closed')
     expect(createPty).not.toHaveBeenCalled()
   })
 })

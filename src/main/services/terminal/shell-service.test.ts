@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hostPath, isWindowsHost } from '../../test-support/host-path'
-import { customChoice, decodeWslList, ShellService } from './shell-service'
+import { customChoice, ShellService } from './shell-service'
 
 // ShellService unit tests (spec project-shell-selection): everything
 // OS-facing is injected (exists, isFile, WSL runner, env): no real probing
@@ -22,7 +22,7 @@ interface FsShape {
 
 function makeService(
   fs: FsShape,
-  wsl: string[] = [],
+  wsl: string[] | (() => Promise<string[]>) = [],
   env: NodeJS.ProcessEnv = WIN_ENV,
   host: {
     platform?: NodeJS.Platform
@@ -38,7 +38,7 @@ function makeService(
       return fs.exists.includes(path)
     },
     isFile: (path) => fs.files.includes(path),
-    listWslDistributions: () => wsl,
+    listWslDistributionsAsync: typeof wsl === 'function' ? wsl : async () => wsl,
     env,
     platform: host.platform,
     // Never read the test host's real /etc/shells.
@@ -49,88 +49,65 @@ function makeService(
   return { service, existsCalls }
 }
 
-describe('decodeWslList', () => {
-  it("decodes UTF-16LE output with BOM and CRLF (this machine's real shape)", () => {
-    const raw = Buffer.from('\uFEFFUbuntu-24.04\r\nDebian-12\r\n', 'utf16le')
-    expect(decodeWslList(raw)).toEqual(['Ubuntu-24.04', 'Debian-12'])
-  })
-
-  it('returns an empty list for blank output', () => {
-    expect(decodeWslList(Buffer.from('\uFEFF\r\n', 'utf16le'))).toEqual([])
-  })
-})
-
-describe('detect', () => {
-  it.skipIf(!isWindowsHost)('lists default first, then installed candidates in fixed order', () => {
-    const { service } = makeService({
-      exists: [
-        'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
-        'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe',
-        'C:\\Windows\\System32\\cmd.exe',
-      ],
-      files: [],
-    })
-    const { shells } = service.detect([])
-    expect(shells.map((shell) => shell.id)).toEqual(['default', 'powershell', 'pwsh', 'cmd'])
-    expect(shells[0]?.label).toBe('PowerShell')
-  })
-
+describe('detect (async, the entry create-services calls)', () => {
   it.skipIf(!isWindowsHost)(
-    'prefers PowerShell 7 under Program Files over the WindowsApps alias',
-    () => {
+    'lists default first, then installed candidates in fixed order',
+    async () => {
       const { service } = makeService({
         exists: [
-          'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+          'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
           'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe',
+          'C:\\Windows\\System32\\cmd.exe',
         ],
         files: [],
       })
-      const { shells } = service.detect([])
-      // One pwsh entry either way: the probe order only decides the spawn path.
-      expect(shells.filter((shell) => shell.id === 'pwsh')).toHaveLength(1)
-      expect(shells.map((shell) => shell.id)).toContain('pwsh')
+      const { shells } = await service.detectAsync([])
+      expect(shells.map((shell) => shell.id)).toEqual(['default', 'powershell', 'pwsh', 'cmd'])
+      expect(shells[0]?.label).toBe('PowerShell')
     },
   )
 
-  it('adds one WSL entry per distribution with a display label', () => {
+  it.skipIf(!isWindowsHost)(
+    'prefers PowerShell 7 under Program Files over the WindowsApps alias',
+    async () => {
+      const programFiles = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
+      const { service } = makeService({
+        exists: [programFiles, 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe'],
+        files: [],
+      })
+      const { shells } = await service.detectAsync([])
+      // One pwsh entry either way: the probe order decides the spawn path.
+      expect(shells.filter((shell) => shell.id === 'pwsh')).toHaveLength(1)
+      expect(service.resolve('pwsh').file).toBe(programFiles)
+    },
+  )
+
+  it('adds one WSL entry per distribution with a display label', async () => {
     const { service } = makeService({ exists: [], files: [] }, ['Ubuntu-24.04'], WIN_ENV, {
       platform: 'win32',
     })
-    const { shells } = service.detect([])
+    const { shells } = await service.detectAsync([])
     expect(shells).toContainEqual({ id: 'wsl:Ubuntu-24.04', label: 'WSL: Ubuntu-24.04' })
   })
 
   it.skipIf(!isWindowsHost)(
     'keeps only default when nothing is installed and WSL fails to answer',
-    () => {
-      const { service } = makeService({ exists: [], files: [] })
-      const { shells, prunedCustomPaths } = service.detect([])
+    async () => {
+      const { service } = makeService({ exists: [], files: [] }, () =>
+        Promise.reject(new Error('wsl unavailable')),
+      )
+      const { shells, prunedCustomPaths } = await service.detectAsync([])
       expect(shells).toEqual([{ id: 'default', label: 'PowerShell' }])
       expect(prunedCustomPaths).toEqual([])
     },
   )
 
-  it.skipIf(!isWindowsHost)(
-    'detects PowerShell 7 through the MSIX WindowsApps alias (access-based probe)',
-    () => {
-      // existsSync/statSync/openSync all reject the 0-byte reparse point with
-      // EACCES; only accessSync(F_OK) sees it. The service must list pwsh when
-      // its probe (the injected `exists`, standing in for accessSync) succeeds
-      // even though a stricter file check would fail (regression: the Store
-      // PowerShell 7 was invisible to the first existsSync-based detection).
-      const alias = 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe'
-      const { service } = makeService({ exists: [alias], files: [] })
-      const { shells } = service.detect([])
-      expect(shells.map((shell) => shell.id)).toContain('pwsh')
-    },
-  )
-
-  it('merges persisted custom paths and prunes dead ones', () => {
+  it('merges persisted custom paths and prunes dead ones', async () => {
     const { service } = makeService({
       exists: [],
       files: [hostPath('D:\\tools\\nu.exe')],
     })
-    const { shells, prunedCustomPaths } = service.detect([
+    const { shells, prunedCustomPaths } = await service.detectAsync([
       hostPath('D:\\tools\\nu.exe'),
       hostPath('D:\\tools\\gone.exe'),
     ])
@@ -141,30 +118,14 @@ describe('detect', () => {
     expect(prunedCustomPaths).toEqual([hostPath('D:\\tools\\gone.exe')])
   })
 
-  it('coalesces concurrent runs through the pending slot', () => {
+  it('coalesces concurrent runs through the pending slot', async () => {
     const { service } = makeService({ exists: [], files: [] })
-    const first = service.detect(['D:\\kept.exe'])
-    const second = service.detect(['D:\\kept.exe'])
-    expect(second).toBe(first)
+    const first = service.detectAsync(['D:\\kept.exe'])
+    const second = service.detectAsync(['D:\\kept.exe'])
+    expect(await second).toBe(await first)
     service.endDetect()
-    const third = service.detect(['D:\\kept.exe'])
-    expect(third).not.toBe(first)
-  })
-
-  it('frees pending slot when caller wraps post-detect work in try/finally', () => {
-    const { service } = makeService({ exists: [], files: [] })
-    let first: ReturnType<typeof service.detect> | undefined
-    expect(() => {
-      first = service.detect([])
-      try {
-        throw new Error('persisting pruned paths failed')
-      } finally {
-        service.endDetect()
-      }
-    }).toThrow('persisting pruned paths failed')
-
-    const second = service.detect([])
-    expect(second).not.toBe(first)
+    const third = service.detectAsync(['D:\\kept.exe'])
+    expect(await third).not.toBe(await first)
   })
 })
 
@@ -177,18 +138,18 @@ describe('list (cache read, never probes)', () => {
 
   it.skipIf(!isWindowsHost)(
     'after detection: the cached list, unchanged by the environment',
-    () => {
+    async () => {
       const fs: FsShape = { exists: ['C:\\Windows\\System32\\cmd.exe'], files: [] }
       const { service } = makeService(fs)
-      service.detect([])
+      await service.detectAsync([])
       fs.exists.length = 0 // even "uninstalling" must not change the cache
       expect(service.list().map((shell) => shell.id)).toEqual(['default', 'cmd'])
     },
   )
 
-  it('includes custom entries added after detection', () => {
+  it('includes custom entries added after detection', async () => {
     const { service } = makeService({ exists: [], files: [hostPath('D:\\tools\\nu.exe')] })
-    service.detect([])
+    await service.detectAsync([])
     service.addCustomPath(hostPath('D:\\tools\\nu.exe'))
     expect(service.list().map((shell) => shell.id)).toEqual([
       'default',
@@ -291,12 +252,12 @@ describe('label (same fallback rules as resolve)', () => {
     },
   )
 
-  it.skipIf(!isWindowsHost)('labels detected and custom choices', () => {
+  it.skipIf(!isWindowsHost)('labels detected and custom choices', async () => {
     const { service } = makeService({
       exists: ['C:\\Windows\\System32\\cmd.exe'],
       files: ['D:\\tools\\nu.exe'],
     })
-    service.detect([])
+    await service.detectAsync([])
     expect(service.label('cmd')).toBe('cmd')
     expect(service.label('wsl:Ubuntu-24.04')).toBe('WSL: Ubuntu-24.04')
     expect(service.label(customChoice('D:\\tools\\nu.exe'))).toBe('nu.exe')
@@ -363,15 +324,16 @@ describe('chatLabel (compact chat prefix)', () => {
 
 describe('project-scoped WSL shells', () => {
   const project = '\\\\wsl$\\Ubuntu\\home\\u'
-  it('probes only the project distribution and never host candidates, custom files or distributions', () => {
+  it('probes only the project distribution and never host candidates, custom files or distributions', async () => {
     const exists = vi.fn()
     const isFile = vi.fn()
-    const listWslDistributions = vi.fn()
-    const runWsl = vi.fn((_distribution: string, args: string[]) =>
+    const listWslDistributionsAsync = vi.fn(async () => [])
+    const runWslAsync = vi.fn(async (_distribution: string, args: string[]) =>
       args[0] === '/bin/cat' ? '# shells\n/bin/bash\n/bin/zsh\n' : 'usable',
     )
-    const service = new ShellService({ exists, isFile, listWslDistributions, runWsl })
-    expect(service.detect(['/bin/fish'], project).shells.map((entry) => entry.id)).toEqual([
+    const service = new ShellService({ exists, isFile, listWslDistributionsAsync, runWslAsync })
+    const { shells } = await service.detectAsync(['/bin/fish'], project)
+    expect(shells.map((entry) => entry.id)).toEqual([
       'default',
       'custom:/bin/bash',
       'custom:/bin/zsh',
@@ -379,8 +341,8 @@ describe('project-scoped WSL shells', () => {
     ])
     expect(exists).not.toHaveBeenCalled()
     expect(isFile).not.toHaveBeenCalled()
-    expect(listWslDistributions).not.toHaveBeenCalled()
-    expect(runWsl.mock.calls.every(([distribution]) => distribution === 'Ubuntu')).toBe(true)
+    expect(listWslDistributionsAsync).not.toHaveBeenCalled()
+    expect(runWslAsync.mock.calls.every(([distribution]) => distribution === 'Ubuntu')).toBe(true)
     expect(service.resolve('powershell', project)).toEqual({ file: 'wsl.exe', args: [] })
     expect(exists).not.toHaveBeenCalled()
   })
@@ -408,10 +370,10 @@ describe.skipIf(isWindowsHost)('non-Windows host defaults ($SHELL)', () => {
     vi.unstubAllEnvs()
   })
 
-  it('detects only the $SHELL default and never probes Windows candidates', () => {
+  it('detects only the $SHELL default and never probes Windows candidates', async () => {
     vi.stubEnv('SHELL', '/usr/bin/zsh')
     const { service, existsCalls } = makeService({ exists: [], files: [] })
-    const { shells, prunedCustomPaths } = service.detect([])
+    const { shells, prunedCustomPaths } = await service.detectAsync([])
     expect(shells).toEqual([{ id: 'default', label: 'zsh' }])
     expect(prunedCustomPaths).toEqual([])
     expect(existsCalls).toEqual([])
@@ -460,23 +422,23 @@ describe.skipIf(isWindowsHost)('non-Windows host defaults ($SHELL)', () => {
     expect(service.chatLabel(customChoice('/usr/bin/fish'))).toBe('fish')
   })
 
-  it('never lists or resolves WSL on Linux, even when wsl.exe interop answers (inside WSL)', () => {
+  it('never lists or resolves WSL on Linux, even when wsl.exe interop answers (inside WSL)', async () => {
     vi.stubEnv('SHELL', '/bin/bash')
-    const listWsl = vi.fn(() => ['Ubuntu-24.04'])
+    const listWsl = vi.fn(async () => ['Ubuntu-24.04'])
     const service = new ShellService({
       platform: 'linux',
-      listWslDistributions: listWsl,
+      listWslDistributionsAsync: listWsl,
       readEtcShells: () => '',
       isFile: () => false,
     })
-    expect(service.detect([]).shells.map((shell) => shell.id)).toEqual(['default'])
+    expect((await service.detectAsync([])).shells.map((shell) => shell.id)).toEqual(['default'])
     expect(listWsl).not.toHaveBeenCalled()
     expect(service.resolve('wsl:Ubuntu-24.04')).toEqual({ file: '/bin/bash', args: [] })
     expect(service.label('wsl:Ubuntu-24.04')).toBe('bash')
     expect(service.chatLabel('wsl:Ubuntu-24.04')).toBe('bash')
   })
 
-  it('offers installed shells from /etc/shells: executables only, aliases and $SHELL de-duplicated', () => {
+  it('offers installed shells from /etc/shells: executables only, aliases and $SHELL de-duplicated', async () => {
     vi.stubEnv('SHELL', '/bin/bash')
     const etcShells = [
       '# /etc/shells: valid login shells',
@@ -499,7 +461,7 @@ describe.skipIf(isWindowsHost)('non-Windows host defaults ($SHELL)', () => {
         '/bin/bash': '/usr/bin/bash',
       },
     })
-    const { shells, prunedCustomPaths } = service.detect([])
+    const { shells, prunedCustomPaths } = await service.detectAsync([])
     expect(shells).toEqual([
       { id: 'default', label: 'bash' },
       { id: customChoice('/bin/sh'), label: 'sh' },
@@ -514,27 +476,27 @@ describe.skipIf(isWindowsHost)('non-Windows host defaults ($SHELL)', () => {
     expect(service.chatLabel(customChoice('/usr/bin/zsh'))).toBe('zsh')
   })
 
-  it('leaves terminal multiplexers (tmux, screen) out of the /etc/shells list', () => {
+  it('leaves terminal multiplexers (tmux, screen) out of the /etc/shells list', async () => {
     vi.stubEnv('SHELL', '/bin/bash')
     const { service } = makeService({ exists: [], files: [] }, [], WIN_ENV, {
       platform: 'linux',
       etcShells: '/bin/bash\n/usr/bin/tmux\n/usr/bin/screen\n/bin/zsh\n',
       executables: ['/bin/bash', '/usr/bin/tmux', '/usr/bin/screen', '/bin/zsh'],
     })
-    expect(service.detect([]).shells).toEqual([
+    expect((await service.detectAsync([])).shells).toEqual([
       { id: 'default', label: 'bash' },
       { id: customChoice('/bin/zsh'), label: 'zsh' },
     ])
   })
 
-  it('does not duplicate a persisted custom path that /etc/shells also lists', () => {
+  it('does not duplicate a persisted custom path that /etc/shells also lists', async () => {
     vi.stubEnv('SHELL', '/bin/bash')
     const { service } = makeService({ exists: [], files: ['/usr/bin/zsh'] }, [], WIN_ENV, {
       platform: 'linux',
       etcShells: '/usr/bin/zsh\n',
       executables: ['/usr/bin/zsh'],
     })
-    const ids = service.detect(['/usr/bin/zsh']).shells.map((shell) => shell.id)
+    const ids = (await service.detectAsync(['/usr/bin/zsh'])).shells.map((shell) => shell.id)
     expect(ids).toEqual(['default', customChoice('/usr/bin/zsh')])
   })
 })

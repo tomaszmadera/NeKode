@@ -27,7 +27,6 @@ interface ChatActions {
   setChatAttention: (update: StoreUpdate<ChatState['chatAttention']>) => void
   setChatActivity: (update: StoreUpdate<ChatState['chatActivity']>) => void
   setTaskSnapshots: (update: StoreUpdate<ChatState['taskSnapshots']>) => void
-  reset: () => void
 }
 
 function initialState(): ChatState {
@@ -84,7 +83,6 @@ export function createChatStore() {
       set((state) => ({ chatActivity: resolveUpdate(update, state.chatActivity) })),
     setTaskSnapshots: (update) =>
       set((state) => ({ taskSnapshots: resolveUpdate(update, state.taskSnapshots) })),
-    reset: () => set(initialState()),
   }))
 }
 

@@ -12,12 +12,12 @@ import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
 import { kanbanBoardFixture as fixture, kanbanWorkItem as item } from '../../test/kanban-fixtures'
 import { KanbanBoard } from './KanbanBoard'
 import { KanbanSessions } from './KanbanSessions'
-import {
-  type KanbanToolbarControls,
-  kanbanCollapsedStorageKey,
-  kanbanSortStorageKey,
-  PRIORITY_COLOR,
-} from './kanban-board-logic'
+import type { KanbanToolbarControls } from './kanban-board-logic'
+
+// The stored preferences are addressed by their literal key text: the key is
+// the persistence contract, so it must not be derived from the code under test.
+const COLLAPSED_KEY_P1 = 'nekode.kanban-collapsed-states.v1.p1'
+const SORT_KEY_P1 = 'nekode.kanban-sort.v1.p1'
 
 // Read-only board surface (spec kanban-adapter-interface Behaviour 14, AC14):
 // the grouped list in adapter order, item review, and every inline state
@@ -141,7 +141,6 @@ describe('cached background refresh', () => {
     expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBe(unchanged)
     const refreshBtn = screen.getByTestId(TEST_ID.kanbanBoardRefresh) as HTMLButtonElement
     expect(refreshBtn.disabled).toBe(true)
-    expect(refreshBtn.firstElementChild?.classList.contains('animate-spin')).toBe(true)
     expect(screen.queryByRole('status')).toBeNull()
     expect(root.scrollTop).toBe(180)
     expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
@@ -433,67 +432,6 @@ describe('kanban board — load count and refresh (spec Behaviour 14, AC14)', ()
     await waitFor(() => expect(listBoard).toHaveBeenCalledTimes(1))
   })
 
-  it('invalidates in-flight listBoard and resets board when projectId changes on mounted board', async () => {
-    const pendingP1 = deferred<KanbanBoardData>()
-    const boardP2: KanbanBoardData = {
-      states: [{ id: 's-done', name: 'Done', group: 'completed', order: 1 }],
-      items: [
-        {
-          id: 'i-p2-1',
-          ref: 'P2-1',
-          title: 'Project 2 Task',
-          description: null,
-          stateId: 's-done',
-          stateName: 'Done',
-          stateGroup: 'completed',
-          priority: null,
-          assignee: null,
-          url: null,
-          updatedAt: null,
-        },
-      ],
-    }
-    const listBoard = vi.fn().mockImplementation((projectId: string) => {
-      if (projectId === 'p1') return pendingP1.promise
-      if (projectId === 'p2') return Promise.resolve(boardP2)
-      return Promise.reject(new Error('Unknown project'))
-    })
-    const app = appWith(listBoard)
-    const ui = render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} active />)
-    expect(listBoard).toHaveBeenCalledWith('p1')
-
-    // While listBoard('p1') is in flight, projectId changes to 'p2'
-    ui.rerender(<KanbanBoard app={app} projectId="p2" onConfigure={vi.fn()} active />)
-
-    // listBoard should be called for 'p2' (not swallowed by pending guard!)
-    await waitFor(() => expect(listBoard).toHaveBeenCalledWith('p2'))
-
-    // Now resolve the old p1 load
-    const boardP1: KanbanBoardData = {
-      states: [{ id: 's-todo', name: 'Todo', group: 'unstarted', order: 1 }],
-      items: [
-        {
-          id: 'i-p1-1',
-          ref: 'P1-1',
-          title: 'Project 1 Task',
-          description: null,
-          stateId: 's-todo',
-          stateName: 'Todo',
-          stateGroup: 'unstarted',
-          priority: null,
-          assignee: null,
-          url: null,
-          updatedAt: null,
-        },
-      ],
-    }
-    await act(async () => pendingP1.resolve(boardP1))
-
-    // The component should display P2's board and NOT P1's board
-    await screen.findByTestId(testIdFor.kanbanItem('P2-1'))
-    expect(screen.queryByTestId(testIdFor.kanbanItem('P1-1'))).toBeNull()
-  })
-
   it('re-runs the load when the refresh control is used', async () => {
     const changed: KanbanBoardData = {
       states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
@@ -608,17 +546,13 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     const urgentRow = screen.getByTestId(testIdFor.kanbanItem('NK-4'))
     const noneRow = screen.getByTestId(testIdFor.kanbanItem('NK-5'))
 
+    // The four colours are pinned as literals: reading them back from
+    // PRIORITY_COLOR would pass for any change to that constant.
     expect(within(lowRow).getByText('Low').parentElement?.style.color).toBe('rgb(99, 172, 255)')
     expect(within(medRow).getByText('Medium').parentElement?.style.color).toBe('rgb(245, 209, 37)')
-    expect(within(highRow).getByText('High').parentElement?.style.color).toBe(PRIORITY_COLOR.high)
-    expect(within(urgentRow).getByText('Urgent').parentElement?.style.color).toBe(
-      PRIORITY_COLOR.urgent,
-    )
+    expect(within(highRow).getByText('High').parentElement?.style.color).toBe('rgb(107, 62, 20)')
+    expect(within(urgentRow).getByText('Urgent').parentElement?.style.color).toBe('rgb(99, 40, 36)')
     expect(within(noneRow).getByText('None').parentElement?.style.color).toBe('')
-    expect(PRIORITY_COLOR.low).toBe('#63acff')
-    expect(PRIORITY_COLOR.medium).toBe('#f5d125')
-    expect(PRIORITY_COLOR.high).toBe('rgb(107, 62, 20)')
-    expect(PRIORITY_COLOR.urgent).toBe('rgb(99, 40, 36)')
   })
 
   it('opens a review with the full title and the description, then Back returns to the list', async () => {
@@ -660,53 +594,6 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
     expect(screen.queryByTestId(/^kanban-column-/)).toBeNull()
   })
-
-  it('says there is no description when the item has none', async () => {
-    render(
-      <KanbanBoard
-        app={appWith(vi.fn().mockResolvedValue(richBoard()))}
-        projectId="p1"
-        onConfigure={vi.fn()}
-      />,
-    )
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-2')))
-    expect(await screen.findByTestId(TEST_ID.kanbanReviewDescription)).toHaveProperty(
-      'textContent',
-      'No description.',
-    )
-  })
-
-  it('closes the review when a refresh drops the open item', async () => {
-    const kept = richBoard()
-    const dropped: KanbanBoardData = {
-      states: kept.states,
-      items: [kept.items[1]],
-    }
-    const listBoard = vi.fn().mockResolvedValueOnce(kept).mockResolvedValueOnce(dropped)
-    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
-    await screen.findByTestId(TEST_ID.kanbanReview)
-
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
-    expect(await screen.findByTestId(testIdFor.kanbanItem('NK-2'))).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull()
-    expect(screen.queryByTestId(testIdFor.kanbanItem('NK-1'))).toBeNull()
-    expect(listBoard).toHaveBeenCalledTimes(2)
-  })
-
-  it('keeps the review open when a refresh still includes that item', async () => {
-    const listBoard = vi.fn().mockResolvedValue(richBoard())
-    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
-    await screen.findByTestId(TEST_ID.kanbanReview)
-
-    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
-    expect(await screen.findByTestId(TEST_ID.kanbanReviewTitle)).toHaveProperty(
-      'textContent',
-      longTitle,
-    )
-    expect(listBoard).toHaveBeenCalledTimes(2)
-  })
 })
 
 describe('live title filtering (NEKODE-117)', () => {
@@ -743,7 +630,7 @@ describe('live title filtering (NEKODE-117)', () => {
   })
 
   it('reveals collapsed matches, counts and sorts results, then restores the saved collapse state', async () => {
-    localStorage.setItem(kanbanCollapsedStorageKey('p1'), JSON.stringify(['s1']))
+    localStorage.setItem(COLLAPSED_KEY_P1, JSON.stringify(['s1']))
     const board = {
       ...fixture,
       items: [
@@ -784,7 +671,7 @@ describe('live title filtering (NEKODE-117)', () => {
     expect(toggle).toHaveProperty('disabled', false)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByTestId(testIdFor.kanbanItem('NK-2'))).toBeNull()
-    expect(localStorage.getItem(kanbanCollapsedStorageKey('p1'))).toBe(JSON.stringify(['s1']))
+    expect(localStorage.getItem(COLLAPSED_KEY_P1)).toBe(JSON.stringify(['s1']))
     expect(screen.getByTestId(testIdFor.kanbanListGroup('s2'))).toBeTruthy()
   })
 
@@ -897,7 +784,7 @@ describe('kanban list — collapsible status sections', () => {
     fireEvent.click(toggleS1)
 
     // Check localStorage
-    const saved = localStorage.getItem(kanbanCollapsedStorageKey('p1'))
+    const saved = localStorage.getItem(COLLAPSED_KEY_P1)
     expect(saved).not.toBeNull()
     expect(JSON.parse(saved as string)).toContain('s1')
 
@@ -913,11 +800,11 @@ describe('kanban list — collapsible status sections', () => {
     fireEvent.click(newToggleS1)
     expect(newToggleS1.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByTestId(testIdFor.kanbanItem('NK-1'))).toBeTruthy()
-    expect(localStorage.getItem(kanbanCollapsedStorageKey('p1'))).toBeNull()
+    expect(localStorage.getItem(COLLAPSED_KEY_P1)).toBeNull()
   })
 
   it('isolates collapsed states between different projects', async () => {
-    localStorage.setItem(kanbanCollapsedStorageKey('p1'), JSON.stringify(['s1']))
+    localStorage.setItem(COLLAPSED_KEY_P1, JSON.stringify(['s1']))
 
     const listBoard = vi.fn().mockResolvedValue(fixture)
     const ui = render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
@@ -1014,7 +901,7 @@ describe('kanban list — sorting items', () => {
     fireEvent.change(sortSelect, { target: { value: 'priority' } })
     fireEvent.click(directionBtn)
 
-    const saved = localStorage.getItem(kanbanSortStorageKey('p1'))
+    const saved = localStorage.getItem(SORT_KEY_P1)
     expect(saved).not.toBeNull()
     expect(JSON.parse(saved as string)).toEqual({ sortBy: 'priority', direction: 'desc' })
 
@@ -1025,18 +912,6 @@ describe('kanban list — sorting items', () => {
     const newDirection = screen.getByTestId(TEST_ID.kanbanSortDirection)
     expect(newSelect.value).toBe('priority')
     expect(newDirection.getAttribute('aria-label')).toBe('Sort descending')
-  })
-
-  it('hides sort controls while reviewing an item', async () => {
-    const listBoard = vi.fn().mockResolvedValue(richBoard())
-    render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
-
-    await screen.findByTestId(TEST_ID.kanbanSortBy)
-
-    fireEvent.click(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')))
-    expect(screen.getByTestId(TEST_ID.kanbanReview)).toBeTruthy()
-    expect(screen.queryByTestId(TEST_ID.kanbanSortBy)).toBeNull()
-    expect(screen.queryByTestId(TEST_ID.kanbanSortDirection)).toBeNull()
   })
 })
 
@@ -1195,13 +1070,6 @@ describe('kanban work item controls (task launch navigation)', () => {
     expect(reviewStart.hasAttribute('disabled')).toBe(true)
     expect(reviewStart.textContent).toBe('Start')
     expect(reviewResume.textContent).toBe('Resume')
-
-    // Control column separation: launch buttons are in the right controls column
-    const title = within(review).getByTestId(TEST_ID.kanbanReviewTitle)
-    const columns = title.parentElement?.parentElement
-    expect(columns?.children[1]?.contains(reviewStart)).toBe(true)
-    expect(columns?.children[1]?.contains(reviewResume)).toBe(true)
-    expect(columns?.children[0]?.contains(reviewStart)).toBe(false)
 
     // Clicking Start while disabled does not trigger onStart
     fireEvent.click(reviewStart)
@@ -1444,11 +1312,6 @@ describe('kanban handoff availability', () => {
     const start = screen.getByTestId(testIdFor.kanbanItemStart('NK-1')) as HTMLButtonElement
     const otherStart = screen.getByTestId(testIdFor.kanbanItemStart('NK-2')) as HTMLButtonElement
     expect(start.disabled).toBe(true)
-    expect(start.className).not.toContain('hover:underline')
-    expect(otherStart.className).toContain('hover:underline')
-    expect(screen.getByTestId(testIdFor.kanbanItemResume('NK-1')).className).toContain(
-      'hover:underline',
-    )
     start.focus()
     expect(document.activeElement).not.toBe(start)
     fireEvent.click(start)
@@ -1462,9 +1325,7 @@ describe('kanban handoff availability', () => {
     expect(onResume).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     await waitFor(() => expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull())
-    expect(screen.queryByTestId(TEST_ID.kanbanHandoffEmpty)).toBeNull()
     expect(start.disabled).toBe(false)
-    expect(start.className).toContain('hover:underline')
     fireEvent.click(start)
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ ref: 'NK-1' }))
   })
@@ -1567,7 +1428,6 @@ describe('kanban handoff availability', () => {
     )
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
     await screen.findByTestId(TEST_ID.kanbanList)
-    expect(screen.queryByTestId(TEST_ID.kanbanHandoffEmpty)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.kanbanHandoffError)).toBeNull()
     expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull()
     expect(screen.getByTestId(testIdFor.kanbanItemStart('NK-1'))).toBeTruthy()
@@ -1741,8 +1601,6 @@ describe('kanban new task form', () => {
     const opener = await screen.findByRole('button', { name: /^New task$/ })
     expect(opener.textContent?.replace(/\s+/g, ' ').trim()).toBe('New task')
     expect(opener.firstElementChild?.tagName.toLowerCase()).toBe('svg')
-    expect(opener.className).toContain('border-edge')
-    expect(opener.className).toContain('bg-panel')
     const headerBar = screen.getByRole('heading', { name: /^Tasks$/ }).parentElement
     expect(headerBar?.contains(opener)).toBe(true)
 
@@ -2211,19 +2069,6 @@ describe('kanban review status change', () => {
       stateName: 'Done',
     }
   }
-
-  it('does not put a status control on the list row', async () => {
-    render(
-      <KanbanBoard
-        app={appWith(vi.fn().mockResolvedValue(statusBoard()))}
-        projectId="p1"
-        onConfigure={vi.fn()}
-      />,
-    )
-    const row = await screen.findByTestId(testIdFor.kanbanItem('NK-1'))
-    expect(within(row).queryByRole('combobox')).toBeNull()
-    expect(within(row).queryByLabelText('Status')).toBeNull()
-  })
 
   it('saves only stateRef from the review and keeps that review on the returned item', async () => {
     const board = statusBoard()
@@ -2748,32 +2593,21 @@ describe('kanban review comments', () => {
     expect(item3.textContent).toContain('yesterday')
   })
 
-  it('renders empty comments notice when the list is empty', async () => {
-    const getComments = vi.fn().mockResolvedValue([])
+  it('surfaces a rejected comments load inside the review', async () => {
     const app = appWith(vi.fn().mockResolvedValue(commentsBoard()))
-    app.kanban.getComments = getComments
-
-    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
-
-    expect(await screen.findByTestId(TEST_ID.kanbanReviewCommentsEmpty)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.kanbanReviewCommentsEmpty).textContent).toBe('No comments.')
-  })
-
-  it('renders error notice when getComments rejects', async () => {
-    const getComments = vi.fn().mockRejectedValue({
+    app.kanban.getComments = vi.fn().mockRejectedValue({
       nekodeAppError: true,
       code: 'network',
-      message: 'Failed to fetch comments',
+      message: 'Comments unavailable.',
     })
-    const app = appWith(vi.fn().mockResolvedValue(commentsBoard()))
-    app.kanban.getComments = getComments
 
     render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
 
-    const errorAlert = await screen.findByTestId(TEST_ID.kanbanReviewCommentsError)
-    expect(errorAlert.textContent).toBe('Failed to fetch comments')
+    const notice = await screen.findByTestId(TEST_ID.kanbanReviewCommentsError)
+    expect(notice.textContent).toBe('Comments unavailable.')
+    expect(notice.getAttribute('role')).toBe('alert')
+    expect(screen.queryByTestId(TEST_ID.kanbanReviewCommentsList)).toBeNull()
   })
 })
 

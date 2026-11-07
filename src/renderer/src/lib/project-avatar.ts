@@ -40,7 +40,7 @@ export function getProjectInitials(name: string): string {
 /**
  * Stable 32-bit string hash (djb2).
  */
-export function hashString(str: string): number {
+function hashString(str: string): number {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
     hash = (hash * 31 + str.charCodeAt(i)) >>> 0
@@ -51,7 +51,7 @@ export function hashString(str: string): number {
 /**
  * Deterministically computes a color from the 7-color palette for a given identifier.
  */
-export function getDeterministicProjectColor(identifier: string): string {
+function getDeterministicProjectColor(identifier: string): string {
   const hash = hashString(identifier)
   const index = hash % PROJECT_COLOR_PALETTE.length
   return PROJECT_COLOR_PALETTE[index] ?? PROJECT_COLOR_PALETTE[0]

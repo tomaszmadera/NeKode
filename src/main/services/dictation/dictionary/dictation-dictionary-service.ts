@@ -96,16 +96,6 @@ export class DictationDictionaryService {
     this.db = deps.db
   }
 
-  get(id: string): DictationDictionaryEntry | null {
-    if (typeof id !== 'string' || id.trim().length === 0) {
-      return null
-    }
-    const row = this.db.prepare('SELECT * FROM dictation_dictionary WHERE id = ?').get(id) as
-      | DictionaryRow
-      | undefined
-    return row ? rowToEntry(row) : null
-  }
-
   list(filter?: DictionaryFilter): DictationDictionaryEntry[] {
     let query = 'SELECT * FROM dictation_dictionary'
     const conditions: string[] = []

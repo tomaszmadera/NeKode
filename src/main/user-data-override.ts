@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
  * Strips wrapping quotes, trims whitespace, and ensures relative paths are resolved to absolute paths.
  * Returns null if the value is empty, whitespace-only, or undefined.
  */
-export function resolveUserDataPath(rawPath: string | undefined): string | null {
+function resolveUserDataPath(rawPath: string | undefined): string | null {
   if (rawPath === undefined) {
     return null
   }

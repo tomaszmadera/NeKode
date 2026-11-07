@@ -24,7 +24,6 @@ interface ProjectActions {
   setLocalFileProjectIds: (update: StoreUpdate<ProjectState['localFileProjectIds']>) => void
   setSettledKanbanProjects: (update: StoreUpdate<ProjectState['settledKanbanProjects']>) => void
   setKanbanBindingsError: (update: StoreUpdate<ProjectState['kanbanBindingsError']>) => void
-  reset: () => void
 }
 
 function initialState(): ProjectState {
@@ -63,7 +62,6 @@ export function createProjectStore() {
       })),
     setKanbanBindingsError: (update) =>
       set((state) => ({ kanbanBindingsError: resolveUpdate(update, state.kanbanBindingsError) })),
-    reset: () => set(initialState()),
   }))
 }
 

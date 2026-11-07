@@ -28,18 +28,6 @@ export interface CtrlDGateContext {
 }
 
 /**
- * Splits a full row text and cursor column into a CursorLine representation.
- * Columns before cursorX are preserved exactly; columns after cursorX are right-trimmed.
- */
-export function splitCursorLine(fullLine: string, cursorX: number): CursorLine {
-  const clampedX = Math.max(0, Math.min(cursorX, fullLine.length))
-  return {
-    before: fullLine.slice(0, clampedX),
-    after: fullLine.slice(clampedX).trimEnd(),
-  }
-}
-
-/**
  * Determines whether the shell's input line is visually empty (spec Behaviour 11 / AC9).
  * - If nothing has been drawn yet (promptBase === null), it is empty only if no input has arrived (!baseFrozen).
  * - If cursorLine is null, line is unverifiable -> not empty.

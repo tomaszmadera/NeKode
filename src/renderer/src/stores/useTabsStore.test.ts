@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   activateTab,
   emptyTabsSession,
-  fileTab,
   KANBAN_TAB,
   openFileTab,
   TERMINAL_TAB,
@@ -23,8 +22,8 @@ describe('tabs store', () => {
 
     expect(store.getState().tabsByProject.p1).toEqual({
       openFiles: ['a.md', 'b.ts'],
-      active: fileTab('b.ts'),
-      previous: fileTab('a.md'),
+      active: { kind: 'file', path: 'b.ts' },
+      previous: { kind: 'file', path: 'a.md' },
     })
     expect(store.getState().tabsByProject.p2).toEqual({
       ...emptyTabsSession(),
@@ -56,15 +55,13 @@ describe('tabs store', () => {
     expect(listener).toHaveBeenCalledTimes(2)
   })
 
-  it('is session-only: no update writes localStorage, and reset restores a fresh state', () => {
+  it('is session-only: no update writes localStorage', () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
     const store = createTabsStore()
     store.getState().updateTabsSession('p1', (session) => openFileTab(session, 'a.md'))
     store.getState().setMarkdownView('p1:a.md', 'code')
-    store.getState().reset()
     expect(setItem).not.toHaveBeenCalled()
-    expect(store.getState().tabsByProject).toEqual({})
-    expect(store.getState().markdownViewByKey).toEqual({})
-    expect(createTabsStore().getState().tabsByProject).not.toBe(store.getState().tabsByProject)
+    expect(store.getState().tabsByProject.p1.openFiles).toEqual(['a.md'])
+    expect(store.getState().markdownViewByKey).toEqual({ 'p1:a.md': 'code' })
   })
 })

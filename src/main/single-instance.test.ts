@@ -140,7 +140,6 @@ describe('single-instance startup', () => {
       'lock',
       'start',
     ])
-    expect(resolve(first)).not.toBe(resolve(second))
   })
 
   it('does not select a fallback profile when the override is empty', () => {

@@ -4,7 +4,6 @@ import {
   type CtrlDGateContext,
   decideCtrlDAction,
   isInputLineEmpty,
-  splitCursorLine,
 } from './ctrl-d-gate'
 
 describe('ctrl-d-gate — pure decision table (C.4)', () => {
@@ -188,26 +187,5 @@ describe('ctrl-d-gate — pure decision table (C.4)', () => {
       expectedEmpty,
     )
     expect(decideCtrlDAction(context)).toBe(expectedAction)
-  })
-})
-
-describe('ctrl-d-gate — splitCursorLine helper', () => {
-  it('splits line at cursor position and right-trims text behind cursor', () => {
-    expect(splitCursorLine('PS > abc    ', 5)).toEqual({
-      before: 'PS > ',
-      after: 'abc',
-    })
-    expect(splitCursorLine('PS > abc', 8)).toEqual({
-      before: 'PS > abc',
-      after: '',
-    })
-    expect(splitCursorLine('PS > abc', 0)).toEqual({
-      before: '',
-      after: 'PS > abc',
-    })
-    expect(splitCursorLine('PS > abc', 100)).toEqual({
-      before: 'PS > abc',
-      after: '',
-    })
   })
 })

@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { accessSync, constants, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, isAbsolute, posix } from 'node:path'
 import type { ShellChoice, ShellInfo } from '@shared/ipc-contract'
@@ -101,12 +100,6 @@ export interface ShellServiceOptions {
   exists?: (path: string) => boolean
   /** File check for custom paths; injectable for tests. */
   isFile?: (path: string) => boolean
-  /**
-   * WSL distribution enumeration; the real implementation runs
-   * `wsl.exe --list --quiet` (UTF-16LE) with a short timeout and returns []
-   * on any failure. Injectable for tests.
-   */
-  listWslDistributions?: () => string[]
   /** Process environment (SystemRoot / ProgramFiles / LOCALAPPDATA). */
   env?: NodeJS.ProcessEnv
   /**
@@ -121,25 +114,6 @@ export interface ShellServiceOptions {
   isExecutable?: (path: string) => boolean
   /** Canonical path for de-duplicating /etc/shells aliases (/bin vs /usr/bin). */
   realpath?: (path: string) => string
-}
-
-/** Decodes `wsl.exe --list --quiet` output: UTF-16LE, optional BOM, CRLF. */
-export function decodeWslList(raw: Buffer): string[] {
-  const text = raw.toString('utf16le').replace(/^\uFEFF/, '')
-  return text
-    .split(/\r\n|\r|\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-}
-
-function realWslDistributions(): string[] {
-  try {
-    return decodeWslList(execFileSync('wsl.exe', ['--list', '--quiet'], { timeout: 5000 }))
-  } catch {
-    // Missing wsl.exe, no distributions, or a failed call: WSL simply
-    // contributes no entries and detection is not an error (spec Behaviour 2).
-    return []
-  }
 }
 
 function realReadEtcShells(): string {
@@ -211,7 +185,6 @@ function realExists(path: string): boolean {
 export class ShellService {
   readonly #exists: (path: string) => boolean
   readonly #isFile: (path: string) => boolean
-  readonly #listWslDistributions: () => string[]
   readonly #env: NodeJS.ProcessEnv
   readonly #runWsl: WslRun
   readonly #runWslAsync: (distribution: string, args: string[]) => Promise<string>
@@ -232,7 +205,6 @@ export class ShellService {
   constructor(options: ShellServiceOptions = {}) {
     this.#exists = options.exists ?? realExists
     this.#isFile = options.isFile ?? realIsFile
-    this.#listWslDistributions = options.listWslDistributions ?? realWslDistributions
     this.#env = options.env ?? process.env
     this.#runWsl = options.runWsl ?? runWsl
     this.#runWslAsync = options.runWslAsync ?? runWslAsync
@@ -247,35 +219,6 @@ export class ShellService {
    * One detection run: fixed candidates + one WSL enumeration + re-validated
    * custom paths. `customPaths` is the persisted app-level list (shells.custom).
    */
-  detect(customPaths: readonly string[], projectPath?: string): DetectResult {
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
-    if (location !== null) {
-      const output = this.#runWsl(location.distribution, ['/bin/cat', '/etc/shells'])
-      const paths = [
-        ...new Set([
-          ...output.split(/\r?\n/).filter((path) => path.startsWith('/')),
-          ...customPaths,
-        ]),
-      ]
-      const shells: ShellInfo[] = [
-        { id: 'default', label: `Default (WSL: ${location.distribution})` },
-      ]
-      const prunedCustomPaths: string[] = []
-      for (const path of paths) {
-        try {
-          this.#validateLinuxShell(path, location.distribution)
-          shells.push({ id: customChoice(path), label: posix.basename(path) })
-        } catch (error) {
-          if (!(error instanceof AppError) || error.code !== 'validation') throw error
-          if (customPaths.includes(path)) prunedCustomPaths.push(path)
-        }
-      }
-      this.#wslLists.set(projectPath as string, shells)
-      return { shells, prunedCustomPaths }
-    }
-    return this.#detectHost(customPaths, () => this.#listWslDistributions())
-  }
-
   async detectAsync(customPaths: readonly string[], projectPath?: string): Promise<DetectResult> {
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location !== null) {

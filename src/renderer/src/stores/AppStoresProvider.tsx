@@ -4,10 +4,9 @@ import { ProjectChatStoresProvider } from './ProjectChatStoresProvider'
 import {
   createSettingsStore,
   type SettingsPersistence,
-  type SettingsStoreApi,
   SettingsStoreContext,
 } from './useSettingsStore'
-import { createTabsStore, type TabsStoreApi, TabsStoreContext } from './useTabsStore'
+import { createTabsStore, TabsStoreContext } from './useTabsStore'
 
 /**
  * All domain stores of one App mount (projects, chats, tabs, settings). Like
@@ -19,18 +18,12 @@ export function AppStoresProvider({
   children,
   app,
   reportError,
-  settingsStore: suppliedSettingsStore,
-  tabsStore: suppliedTabsStore,
 }: SettingsPersistence & {
   children: React.ReactNode
-  settingsStore?: SettingsStoreApi
-  tabsStore?: TabsStoreApi
 }): React.JSX.Element {
   // `app` is fixed for one App mount; a different bridge needs a remount.
-  const [settingsStore] = useState(
-    () => suppliedSettingsStore ?? createSettingsStore({ app, reportError }),
-  )
-  const [tabsStore] = useState(() => suppliedTabsStore ?? createTabsStore())
+  const [settingsStore] = useState(() => createSettingsStore({ app, reportError }))
+  const [tabsStore] = useState(() => createTabsStore())
   return (
     <ProjectChatStoresProvider>
       <SettingsStoreContext.Provider value={settingsStore}>

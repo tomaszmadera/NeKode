@@ -55,6 +55,16 @@ afterEach(() => {
   validationTestControl.parseOrder = null
 })
 
+/** Session state as callers observe it: a live write, or its rejection code. */
+function writeCode(terminals: TerminalService, chatId: string): string {
+  try {
+    terminals.write(chatId, '')
+    return 'running'
+  } catch (error) {
+    return error instanceof AppError ? (error.code ?? 'unknown') : 'unknown'
+  }
+}
+
 function fakeAgentProfiles(): AppServices['agentProfiles'] {
   return {
     get: vi.fn(() => ({ defaultId: null, profiles: [] })),
@@ -66,6 +76,28 @@ function fakeAgentProfiles(): AppServices['agentProfiles'] {
     selectionSet: vi.fn(() => ({ version: 1 as const, selectedIds: [], defaultId: null })),
     cleanupProject: vi.fn(),
   }
+}
+
+function fakeChats(rows: Array<{ id: string; projectId: string; name: string }> = []) {
+  return {
+    list: vi.fn((projectId: string) => rows.filter((chat) => chat.projectId === projectId)),
+    create: vi.fn(() => rows[0]),
+    createWithAgent: vi.fn(() => rows[0]),
+    remove: vi.fn(),
+  }
+}
+
+/**
+ * A real TerminalService over a fake PTY factory, with the shell-selection
+ * surface the registry reads. One factory for every PTY declaration.
+ */
+function realTerminals(createPty: PtyFactory) {
+  return Object.assign(new TerminalService({ createPty, isDirectory: () => true }), {
+    shellName: vi.fn(() => 'PowerShell'),
+    shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+    shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+    shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
+  })
 }
 
 function fakeActions(): AppServices['actions'] {
@@ -189,11 +221,50 @@ interface Harness {
   openPreviewWindow: ReturnType<typeof vi.fn>
 }
 
-function createHarness(desktopHandle: string | null = '123'): Harness {
+interface HarnessOverrides {
+  terminals?: AppServices['terminals']
+  chats?: AppServices['chats']
+}
+
+/** The desktop-window identity every harness declaration starts from. */
+const HARNESS_DESKTOP_HANDLE = '123'
+
+function createHarness(
+  desktopHandle: string | null = HARNESS_DESKTOP_HANDLE,
+  overrides: HarnessOverrides = {},
+): Harness {
   const terminalListeners: {
     data: Array<(chatId: string, data: string) => void>
     exit: Array<(chatId: string, exitCode: number) => void>
   } = { data: [], exit: [] }
+
+  const chats: AppServices['chats'] = overrides.chats ?? {
+    list: vi.fn(() => []),
+    create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
+    createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
+    remove: vi.fn(),
+  }
+  const terminals: AppServices['terminals'] = overrides.terminals ?? {
+    create: vi.fn(() => 't1'),
+    write: vi.fn(),
+    resize: vi.fn(),
+    shellName: vi.fn(() => 'PowerShell'),
+    shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+    shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
+    shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
+    terminate: vi.fn(),
+    terminateProjectBottom: vi.fn(),
+    terminateAll: vi.fn(),
+    shutdown: vi.fn(async () => {}),
+    onData: (listener) => {
+      terminalListeners.data.push(listener)
+      return () => undefined
+    },
+    onExit: (listener) => {
+      terminalListeners.exit.push(listener)
+      return () => undefined
+    },
+  }
 
   const services: AppServices = {
     resumeSources: resumeSourcesTestStub(),
@@ -218,34 +289,9 @@ function createHarness(desktopHandle: string | null = '123'): Harness {
       })),
       remove: vi.fn(),
     },
-    chats: {
-      list: vi.fn(() => []),
-      create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
-      createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
-      remove: vi.fn(),
-    },
+    chats,
     state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
-    terminals: {
-      create: vi.fn(() => 't1'),
-      write: vi.fn(),
-      resize: vi.fn(),
-      shellName: vi.fn(() => 'PowerShell'),
-      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
-      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
-      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
-      terminate: vi.fn(),
-      terminateProjectBottom: vi.fn(),
-      terminateAll: vi.fn(),
-      shutdown: vi.fn(async () => {}),
-      onData: (listener) => {
-        terminalListeners.data.push(listener)
-        return () => undefined
-      },
-      onExit: (listener) => {
-        terminalListeners.exit.push(listener)
-        return () => undefined
-      },
-    },
+    terminals,
     git: {
       getStatus: vi.fn(() =>
         Promise.resolve({ branch: 'main', dirty: false, worktree: emptyGitWorktree() }),
@@ -750,105 +796,18 @@ describe('registered ipc handlers', () => {
 
   it('projects:remove terminates the removed project’s orphaned PTYs (fake PTY)', () => {
     const ptys: FakePty[] = []
-    const createPty: PtyFactory = (options) => {
+    const terminals = realTerminals((options) => {
       const pty = new FakePty(1000 + ptys.length, options)
       ptys.push(pty)
       return pty
-    }
-    // The registry surface needs the shell-selection methods (spec
-    // project-shell-selection); Object.assign adds them as own properties on
-    // top of the real TerminalService prototype methods.
-    const terminals = Object.assign(new TerminalService({ createPty, isDirectory: () => true }), {
-      shellName: vi.fn(() => 'PowerShell'),
-      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
-      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
-      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
     })
-    const chats = [
-      { id: 't1', projectId: 'p1', name: 'a' },
-      { id: 't2', projectId: 'p1', name: 'b' },
-      { id: 't3', projectId: 'p2', name: 'c' },
-    ]
-    const services: AppServices = {
-      resumeSources: resumeSourcesTestStub(),
-      usage: usageTestStub(),
-      appUpdate: {
-        latest: async () => ({ canInstall: false, version: null, error: null }),
-        download: async () => undefined,
-        launch: async () => undefined,
-      },
-      dictation: fakeDictation(),
-      actions: fakeActions(),
-      projects: {
-        wslDirectories: vi.fn(() => []),
-        wslDistributions: vi.fn(() => []),
-        addWsl: vi.fn(),
-        list: vi.fn(() => []),
-        add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
-        remove: vi.fn(),
-      },
-      chats: {
-        list: vi.fn((projectId: string) => chats.filter((chat) => chat.projectId === projectId)),
-        create: vi.fn(() => chats[0]),
-        createWithAgent: vi.fn(() => chats[0]),
-        remove: vi.fn(),
-      },
-      state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
+    const { services, invoke } = createHarness(HARNESS_DESKTOP_HANDLE, {
       terminals,
-      git: {
-        getStatus: vi.fn(() =>
-          Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
-        ),
-        fileStatuses: vi.fn(() => Promise.resolve({})),
-        sync: vi.fn(() => Promise.resolve()),
-      },
-      files: {
-        list: vi.fn(() => Promise.resolve([])),
-        read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
-        openExternal: vi.fn(() => Promise.resolve()),
-        openRoot: vi.fn(() => Promise.resolve()),
-        showInFolder: vi.fn(() => Promise.resolve()),
-        trash: vi.fn(() => Promise.resolve()),
-      },
-      kanban: {
-        adaptersList: vi.fn(() => []),
-        getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
-        setConfig: vi.fn(),
-        test: vi.fn(() => Promise.resolve()),
-        listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
-        createItem: vi.fn(() => Promise.resolve({} as never)),
-        updateItem: vi.fn(() => Promise.resolve({} as never)),
-        getItem: vi.fn(() => Promise.resolve({} as never)),
-        getComments: vi.fn(() => Promise.resolve([])),
-        bindLocalFile: vi.fn(() => Promise.resolve()),
-        skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
-        writeSkill: vi.fn(() => Promise.resolve()),
-        launchTask: vi.fn(() => Promise.resolve({} as never)),
-        cleanupProject: vi.fn(),
-        dropLaunchProject: vi.fn(),
-        blocksProjectShell: vi.fn(() => false),
-      },
-      taskProgress: {
-        adaptersList: vi.fn(() => ({ adapters: [], warnings: [] })),
-        getBinding: vi.fn(() => ({ adapterId: null, config: {} })),
-        saveBinding: vi.fn(),
-        test: vi.fn(() => Promise.resolve({ ok: true as const, summary: 'ok' })),
-        observe: vi.fn(),
-        get: vi.fn(() => null),
-        onChanged: vi.fn(() => () => undefined),
-        setVisible: vi.fn(),
-        shutdown: vi.fn(),
-        cleanupProject: vi.fn(),
-      },
-      agentProfiles: fakeAgentProfiles(),
-      dialogs: {
-        pickDirectory: vi.fn(() => Promise.resolve(null)),
-      },
-    }
-    const { ipcMain, invoke } = createFakeIpcMain()
-    registerAppIpcHandlers(ipcMain, services, {
-      showOpenDialog: vi.fn() as never,
-      trustedRendererUrls: ['file:///renderer/index.html'],
+      chats: fakeChats([
+        { id: 't1', projectId: 'p1', name: 'a' },
+        { id: 't2', projectId: 'p1', name: 'b' },
+        { id: 't3', projectId: 'p2', name: 'c' },
+      ]),
     })
 
     // Live sessions: two chats of p1 and one chat of another project.
@@ -867,114 +826,27 @@ describe('registered ipc handlers', () => {
     // Only the removed project's orphaned PTYs are terminated; the other
     // project's session survives (terminateAll stays reserved for app quit).
     expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1, 0])
-    expect(terminals.hasRunningSession('t1')).toBe(false)
-    expect(terminals.hasRunningSession('t2')).toBe(false)
-    expect(terminals.hasRunningSession('t3')).toBe(true)
-    expect(terminals.hasRunningSession('ghost')).toBe(false)
+    expect(writeCode(terminals, 't1')).toBe('not_found')
+    expect(writeCode(terminals, 't2')).toBe('not_found')
+    expect(writeCode(terminals, 't3')).toBe('running')
+    expect(writeCode(terminals, 'ghost')).toBe('not_found')
   })
 
   it('projects:remove terminates that project bottom PTYs only, and does not remove chats', () => {
     const ptys: FakePty[] = []
-    const createPty: PtyFactory = (options) => {
+    const terminals = realTerminals((options) => {
       const pty = new FakePty(1000 + ptys.length, options)
       ptys.push(pty)
       return pty
-    }
-    // The registry surface needs the shell-selection methods (spec
-    // project-shell-selection); Object.assign adds them as own properties on
-    // top of the real TerminalService prototype methods.
-    const terminals = Object.assign(new TerminalService({ createPty, isDirectory: () => true }), {
-      shellName: vi.fn(() => 'PowerShell'),
-      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
-      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
-      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
     })
     const bottomP1 = createBottomTabId('p1')
     const bottomP2 = createBottomTabId('p2')
-    const chats = [
-      { id: 't1', projectId: 'p1', name: 'a' },
-      { id: 't3', projectId: 'p2', name: 'c' },
-    ]
-    const services: AppServices = {
-      resumeSources: resumeSourcesTestStub(),
-      usage: usageTestStub(),
-      appUpdate: {
-        latest: async () => ({ canInstall: false, version: null, error: null }),
-        download: async () => undefined,
-        launch: async () => undefined,
-      },
-      dictation: fakeDictation(),
-      actions: fakeActions(),
-      projects: {
-        wslDirectories: vi.fn(() => []),
-        wslDistributions: vi.fn(() => []),
-        addWsl: vi.fn(),
-        list: vi.fn(() => []),
-        add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
-        remove: vi.fn(),
-      },
-      chats: {
-        list: vi.fn((projectId: string) => chats.filter((chat) => chat.projectId === projectId)),
-        create: vi.fn(() => chats[0]),
-        createWithAgent: vi.fn(() => chats[0]),
-        remove: vi.fn(),
-      },
-      state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
+    const { services, invoke } = createHarness(HARNESS_DESKTOP_HANDLE, {
       terminals,
-      git: {
-        getStatus: vi.fn(() =>
-          Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
-        ),
-        fileStatuses: vi.fn(() => Promise.resolve({})),
-        sync: vi.fn(() => Promise.resolve()),
-      },
-      files: {
-        list: vi.fn(() => Promise.resolve([])),
-        read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
-        openExternal: vi.fn(() => Promise.resolve()),
-        openRoot: vi.fn(() => Promise.resolve()),
-        showInFolder: vi.fn(() => Promise.resolve()),
-        trash: vi.fn(() => Promise.resolve()),
-      },
-      kanban: {
-        adaptersList: vi.fn(() => []),
-        getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
-        setConfig: vi.fn(),
-        test: vi.fn(() => Promise.resolve()),
-        listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
-        createItem: vi.fn(() => Promise.resolve({} as never)),
-        updateItem: vi.fn(() => Promise.resolve({} as never)),
-        getItem: vi.fn(() => Promise.resolve({} as never)),
-        getComments: vi.fn(() => Promise.resolve([])),
-        bindLocalFile: vi.fn(() => Promise.resolve()),
-        skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
-        writeSkill: vi.fn(() => Promise.resolve()),
-        launchTask: vi.fn(() => Promise.resolve({} as never)),
-        cleanupProject: vi.fn(),
-        dropLaunchProject: vi.fn(),
-        blocksProjectShell: vi.fn(() => false),
-      },
-      taskProgress: {
-        adaptersList: vi.fn(() => ({ adapters: [], warnings: [] })),
-        getBinding: vi.fn(() => ({ adapterId: null, config: {} })),
-        saveBinding: vi.fn(),
-        test: vi.fn(() => Promise.resolve({ ok: true as const, summary: 'ok' })),
-        observe: vi.fn(),
-        get: vi.fn(() => null),
-        onChanged: vi.fn(() => () => undefined),
-        setVisible: vi.fn(),
-        shutdown: vi.fn(),
-        cleanupProject: vi.fn(),
-      },
-      agentProfiles: fakeAgentProfiles(),
-      dialogs: {
-        pickDirectory: vi.fn(() => Promise.resolve(null)),
-      },
-    }
-    const { ipcMain, invoke } = createFakeIpcMain()
-    registerAppIpcHandlers(ipcMain, services, {
-      showOpenDialog: vi.fn() as never,
-      trustedRendererUrls: ['file:///renderer/index.html'],
+      chats: fakeChats([
+        { id: 't1', projectId: 'p1', name: 'a' },
+        { id: 't3', projectId: 'p2', name: 'c' },
+      ]),
     })
 
     terminals.create('t1', 'D:/a')
@@ -986,10 +858,10 @@ describe('registered ipc handlers', () => {
 
     expect(services.chats.remove).not.toHaveBeenCalled()
     expect(ptys.map((pty) => pty.killCount)).toEqual([1, 1, 0, 0])
-    expect(terminals.hasRunningSession('t1')).toBe(false)
-    expect(terminals.hasRunningSession(bottomP1)).toBe(false)
-    expect(terminals.hasRunningSession('t3')).toBe(true)
-    expect(terminals.hasRunningSession(bottomP2)).toBe(true)
+    expect(writeCode(terminals, 't1')).toBe('not_found')
+    expect(writeCode(terminals, bottomP1)).toBe('not_found')
+    expect(writeCode(terminals, 't3')).toBe('running')
+    expect(writeCode(terminals, bottomP2)).toBe('running')
 
     // Quit is terminateAll in main, not a chat-close. Exit events stay suppressed
     // so the renderer cannot delete chats. Bottom PTYs die with the rest.
@@ -998,8 +870,8 @@ describe('registered ipc handlers', () => {
     terminals.terminateAll()
     expect(exits).toEqual([])
     expect(services.chats.remove).not.toHaveBeenCalled()
-    expect(terminals.hasRunningSession('t3')).toBe(false)
-    expect(terminals.hasRunningSession(bottomP2)).toBe(false)
+    expect(writeCode(terminals, 't3')).toBe('not_found')
+    expect(writeCode(terminals, bottomP2)).toBe('not_found')
   })
 
   it('does not stop action children when project removal fails', () => {
@@ -1015,100 +887,14 @@ describe('registered ipc handlers', () => {
 
   it('chats:remove deletes the chat row and terminates exactly its session (fake PTY)', () => {
     const ptys: FakePty[] = []
-    const createPty: PtyFactory = (options) => {
+    const terminals = realTerminals((options) => {
       const pty = new FakePty(1000 + ptys.length, options)
       ptys.push(pty)
       return pty
-    }
-    // The registry surface needs the shell-selection methods (spec
-    // project-shell-selection); Object.assign adds them as own properties on
-    // top of the real TerminalService prototype methods.
-    const terminals = Object.assign(new TerminalService({ createPty, isDirectory: () => true }), {
-      shellName: vi.fn(() => 'PowerShell'),
-      shellList: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
-      shellDetect: vi.fn(() => [{ id: 'default' as const, label: 'PowerShell' }]),
-      shellAddCustom: vi.fn(() => ({ id: 'custom:D:\\sh.exe' as const, label: 'sh.exe' })),
     })
-    const services: AppServices = {
-      resumeSources: resumeSourcesTestStub(),
-      usage: usageTestStub(),
-      appUpdate: {
-        latest: async () => ({ canInstall: false, version: null, error: null }),
-        download: async () => undefined,
-        launch: async () => undefined,
-      },
-      dictation: fakeDictation(),
-      actions: fakeActions(),
-      projects: {
-        wslDirectories: vi.fn(() => []),
-        wslDistributions: vi.fn(() => []),
-        addWsl: vi.fn(),
-        list: vi.fn(() => []),
-        add: vi.fn(() => ({ id: 'p1', name: 'demo', path: 'D:/a', runtimeLabel: null })),
-        remove: vi.fn(),
-      },
-      chats: {
-        list: vi.fn(() => []),
-        create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'a' })),
-        createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'a' })),
-        remove: vi.fn(),
-      },
-      state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
+    const { services, invoke } = createHarness(HARNESS_DESKTOP_HANDLE, {
       terminals,
-      git: {
-        getStatus: vi.fn(() =>
-          Promise.resolve({ branch: null, dirty: false, worktree: emptyGitWorktree() }),
-        ),
-        fileStatuses: vi.fn(() => Promise.resolve({})),
-        sync: vi.fn(() => Promise.resolve()),
-      },
-      files: {
-        list: vi.fn(() => Promise.resolve([])),
-        read: vi.fn(() => Promise.resolve({ kind: 'text' as const, content: '', language: null })),
-        openExternal: vi.fn(() => Promise.resolve()),
-        openRoot: vi.fn(() => Promise.resolve()),
-        showInFolder: vi.fn(() => Promise.resolve()),
-        trash: vi.fn(() => Promise.resolve()),
-      },
-      kanban: {
-        adaptersList: vi.fn(() => []),
-        getConfig: vi.fn(() => ({ adapterId: null, values: {}, secretKeys: [] })),
-        setConfig: vi.fn(),
-        test: vi.fn(() => Promise.resolve()),
-        listBoard: vi.fn(() => Promise.resolve({ states: [], items: [] })),
-        createItem: vi.fn(() => Promise.resolve({} as never)),
-        updateItem: vi.fn(() => Promise.resolve({} as never)),
-        getItem: vi.fn(() => Promise.resolve({} as never)),
-        getComments: vi.fn(() => Promise.resolve([])),
-        bindLocalFile: vi.fn(() => Promise.resolve()),
-        skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
-        writeSkill: vi.fn(() => Promise.resolve()),
-        launchTask: vi.fn(() => Promise.resolve({} as never)),
-        cleanupProject: vi.fn(),
-        dropLaunchProject: vi.fn(),
-        blocksProjectShell: vi.fn(() => false),
-      },
-      taskProgress: {
-        adaptersList: vi.fn(() => ({ adapters: [], warnings: [] })),
-        getBinding: vi.fn(() => ({ adapterId: null, config: {} })),
-        saveBinding: vi.fn(),
-        test: vi.fn(() => Promise.resolve({ ok: true as const, summary: 'ok' })),
-        observe: vi.fn(),
-        get: vi.fn(() => null),
-        onChanged: vi.fn(() => () => undefined),
-        setVisible: vi.fn(),
-        shutdown: vi.fn(),
-        cleanupProject: vi.fn(),
-      },
-      agentProfiles: fakeAgentProfiles(),
-      dialogs: {
-        pickDirectory: vi.fn(() => Promise.resolve(null)),
-      },
-    }
-    const { ipcMain, invoke } = createFakeIpcMain()
-    registerAppIpcHandlers(ipcMain, services, {
-      showOpenDialog: vi.fn() as never,
-      trustedRendererUrls: ['file:///renderer/index.html'],
+      chats: fakeChats([{ id: 't1', projectId: 'p1', name: 'a' }]),
     })
 
     terminals.create('t1', 'D:/a')
@@ -1121,8 +907,8 @@ describe('registered ipc handlers', () => {
 
     expect(services.chats.remove).toHaveBeenCalledWith('t1')
     expect(ptys.map((pty) => pty.killCount)).toEqual([1, 0])
-    expect(terminals.hasRunningSession('t1')).toBe(false)
-    expect(terminals.hasRunningSession('t2')).toBe(true)
+    expect(writeCode(terminals, 't1')).toBe('not_found')
+    expect(writeCode(terminals, 't2')).toBe('running')
   })
 
   it('rejects a non-string chat id on chats:remove before touching services', () => {

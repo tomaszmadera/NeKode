@@ -11,13 +11,13 @@ import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
 import { focusRing, GroupBox, SwitchControl, secondaryClass } from './settings-ui'
 
-export interface DictationDictionaryErrorEntry {
+interface DictationDictionaryErrorEntry {
   readonly kind: DictationDictionaryError
   readonly code: DictationDictionaryError
   readonly message: string
 }
 
-export const DICTATION_DICTIONARY_ERROR_TABLE: Record<
+const DICTATION_DICTIONARY_ERROR_TABLE: Record<
   DictationDictionaryError,
   DictationDictionaryErrorEntry
 > = {

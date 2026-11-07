@@ -15,7 +15,7 @@ export const TERMINAL_TAB: TabId = { kind: 'terminal' }
 /** The per-project home tab (project-home spec Behaviour 1); the kind keeps its `kanban` id. */
 export const KANBAN_TAB: TabId = { kind: 'kanban' }
 
-export function fileTab(path: string): TabId {
+function fileTab(path: string): TabId {
   return { kind: 'file', path }
 }
 
@@ -31,7 +31,7 @@ export function emptyTabsSession(): ProjectTabsSession {
   return { openFiles: [], active: TERMINAL_TAB, previous: null }
 }
 
-export function tabKey(tab: TabId): string {
+function tabKey(tab: TabId): string {
   if (tab.kind === 'terminal') {
     return 'terminal'
   }

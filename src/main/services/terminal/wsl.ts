@@ -34,19 +34,6 @@ export function requireWslSupport(platform: NodeJS.Platform = process.platform):
   }
 }
 
-export function listWslDistributions(): string[] {
-  try {
-    return execFileSync('wsl.exe', ['--list', '--quiet'], { timeout: 5000, windowsHide: true })
-      .toString('utf16le')
-      .replace(/^\uFEFF/, '')
-      .split(/\r?\n/)
-      .map((name) => name.trim())
-      .filter(Boolean)
-  } catch {
-    throw new AppError('unknown', 'Unable to list WSL distributions. Check that WSL is installed.')
-  }
-}
-
 export function listWslDistributionsAsync(): Promise<string[]> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -74,16 +61,6 @@ export function listWslDistributionsAsync(): Promise<string[]> {
       },
     )
   })
-}
-
-/** Query paths may end in '/' and include the root, unlike registration paths. */
-export function listWslDirectories(distribution: string, query: string): string[] {
-  const location = validateDirectoryQuery(distribution, query)
-  if (location === null) return []
-  const { parent } = location
-  runWsl(distribution, ['/usr/bin/test', '-d', parent])
-  const output = runWsl(distribution, directoryFindArgs(parent))
-  return filterDirectories(distribution, location, output)
 }
 
 export async function listWslDirectoriesAsync(
@@ -144,15 +121,6 @@ function filterDirectories(
     })
     .sort()
     .slice(0, 100)
-}
-
-export function validatedWslProjectPath(distribution: string, linuxPath: string): string {
-  const path = validateWslProjectPath(distribution, linuxPath)
-  if (!listWslDistributions().includes(distribution)) {
-    throw new AppError('validation', 'The WSL distribution is not installed.')
-  }
-  runWsl(distribution, ['/usr/bin/test', '-d', linuxPath])
-  return path
 }
 
 export async function validatedWslProjectPathAsync(
@@ -271,35 +239,6 @@ function wslTerminalSpec(location: WslLocation, shell?: ShellSpec) {
     args.push('--exec', 'bash', '-lc', 'exec "$@"', 'bash', shell.file, ...shell.args)
   }
   return { file: 'wsl.exe', args, cwd: process.cwd() }
-}
-
-/** Agent profiles use the project's WSL choice without changing its host filesystem path. */
-export function prepareWslAgent(
-  path: string,
-  command: ShellSpec,
-  shellChoice: string | null,
-): ShellSpec {
-  // UNC projects already route through TerminalService using their persisted distribution.
-  if (parseWslPath(path) !== null || !shellChoice?.startsWith('wsl:')) return command
-  const distribution = shellChoice.slice('wsl:'.length)
-  if (!distribution) return command // Same unconfigured-choice rule as ShellService.resolve.
-  assertLinuxExecutable(command.file)
-  let location: WslLocation
-  try {
-    wslProjectPath(distribution, '/query')
-    const linuxPath = runWsl(distribution, ['wslpath', '-a', '-u', path]).replace(/\r?\n$/, '')
-    wslProjectPath(distribution, linuxPath)
-    location = { distribution, linuxPath }
-  } catch {
-    throw new AppError(
-      'unknown',
-      `Unable to resolve the project directory in WSL distribution "${distribution}".`,
-    )
-  }
-  validateWslExecutable(location, command)
-  // An explicit location always produces a WSL launch; the host cwd stays the Windows folder.
-  const prepared = wslTerminalSpec(location, command)
-  return { file: prepared.file, args: prepared.args }
 }
 
 export async function prepareWslAgentAsync(

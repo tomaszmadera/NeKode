@@ -581,30 +581,18 @@ describe('preload app api', () => {
     ])
   })
 
-  it('routes files:showInFolder and files:trash through their typed channels', async () => {
+  it('routes the files open, reveal and trash operations through their typed channels', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
     await api.files.showInFolder('p1', 'src/app.ts')
     await api.files.trash('p1', 'src')
+    await api.files.openInWindow('p1', 'docs/spec.md')
+    await api.files.openRoot('p1')
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.filesShowInFolder, args: ['p1', 'src/app.ts'] },
       { channel: IPC_CHANNEL.filesTrash, args: ['p1', 'src'] },
-    ])
-  })
-
-  it('routes files:openInWindow through its typed channel', async () => {
-    const ipc = createIpcMock()
-    const api = createAppApi(ipc)
-    await api.files.openInWindow('p1', 'docs/spec.md')
-    expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.filesOpenInWindow, args: ['p1', 'docs/spec.md'] },
+      { channel: IPC_CHANNEL.filesOpenRoot, args: ['p1'] },
     ])
-  })
-
-  it('routes files:openRoot through its typed channel', async () => {
-    const ipc = createIpcMock()
-    const api = createAppApi(ipc)
-    await api.files.openRoot('p1')
-    expect(ipc.invocations).toEqual([{ channel: IPC_CHANNEL.filesOpenRoot, args: ['p1'] }])
   })
 })

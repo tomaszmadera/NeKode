@@ -1,6 +1,5 @@
 import { AppError } from '@shared/ipc-error'
 import { describe, expect, it, vi } from 'vitest'
-import { DICTATION_REQUEST_TIMEOUT_MS } from '../request-deadline'
 import { OpenRouterAdapter } from './openrouter-adapter'
 
 function createFakeAudioWav(): ArrayBuffer {
@@ -85,7 +84,7 @@ describe('OpenRouterAdapter', () => {
         })
         const pending = adapter.discoverModels()
         const assertion = expect(pending).rejects.toMatchObject({ code: 'timeout' })
-        await vi.advanceTimersByTimeAsync(DICTATION_REQUEST_TIMEOUT_MS)
+        await vi.advanceTimersByTimeAsync(120_000)
         await assertion
         expect(await adapter.discoverModels()).toEqual([
           { id: 'openai/whisper-large-v3-turbo', name: 'Whisper Large v3 Turbo (default)' },

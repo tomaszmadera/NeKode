@@ -293,53 +293,6 @@ describe('ActionBar', () => {
     expect(screen.queryByTestId(TEST_ID.actionContextMenu)).toBeNull()
   })
 
-  it('copies full command including PowerShell prefix when configured on the action', async () => {
-    const app = makeAppMock()
-    const clipboard = stubClipboard()
-    const psAction: ActionControl = {
-      id: 'action-ps',
-      scope: 'global',
-      projectId: null,
-      title: 'Run Script',
-      icon: null,
-      command: 'powershell -NoProfile -ExecutionPolicy Bypass -File .\\script.ps1',
-      cwd: null,
-      runMode: 'background',
-      confirm: false,
-      sortOrder: 0,
-    }
-
-    render(
-      <ActionBar
-        app={app}
-        actions={[psAction]}
-        projectId="p1"
-        activeChatId="c1"
-        chatIsLive={true}
-        onNewTerminal={vi.fn()}
-        onBottomTerminal={vi.fn()}
-        onPromptCommand={vi.fn()}
-        onResume={vi.fn()}
-        onError={vi.fn()}
-        markdownView={null}
-        isKanban={false}
-      />,
-    )
-
-    const actionBtn = screen.getByTestId(testIdFor.actionButton('action-ps'))
-    fireEvent.contextMenu(actionBtn)
-
-    const copyItem = screen.getByTestId(TEST_ID.actionContextCopyCommand)
-    fireEvent.click(copyItem)
-
-    await waitFor(() => {
-      expect(clipboard.writeText).toHaveBeenCalledWith(
-        'powershell -NoProfile -ExecutionPolicy Bypass -File .\\script.ps1',
-      )
-    })
-    expect(screen.queryByTestId(TEST_ID.actionContextMenu)).toBeNull()
-  })
-
   it('opens context menu via ContextMenu and Shift+F10 keyboard shortcuts', () => {
     const app = makeAppMock()
     render(

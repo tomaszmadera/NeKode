@@ -55,7 +55,7 @@ interface TerminalSession {
  * the process stays alive, so the PTY never emits exit and the chat stays
  * open on a dead terminal. Measured with grok 1.0.70 on this host.
  */
-export const GROK_EXIT_GRACE_MS = 250
+const GROK_EXIT_GRACE_MS = 250
 const GROK_EXIT_TAIL = 1024
 const GROK_SESSION_ENDED = /Resume this session with:\r?\n[ \t]+grok(?: --minimal)? --resume \S+/
 
@@ -112,9 +112,9 @@ function stripTerminalControls(text: string): string {
 }
 
 /** Maximum time a terminated bottom tab ID is kept to guard against racing create IPCs. */
-export const CLOSED_BOTTOM_TAB_TTL_MS = 30_000
+const CLOSED_BOTTOM_TAB_TTL_MS = 30_000
 /** Maximum capacity of the closed bottom tab cache. */
-export const MAX_CLOSED_BOTTOM_TABS = 100
+const MAX_CLOSED_BOTTOM_TABS = 100
 
 export interface TerminalServiceOptions {
   /** Injected PTY spawner (node-pty in production, a fake in tests). */
@@ -461,16 +461,6 @@ export class TerminalService {
     return () => {
       this.#exitListeners.delete(listener)
     }
-  }
-
-  /** Test/debug helper: whether a live (running) session exists for a chat. */
-  hasRunningSession(chatId: string): boolean {
-    return this.#sessions.get(chatId)?.status === 'running'
-  }
-
-  /** Test/debug helper: number of tracked closed bottom tabs. */
-  closedBottomTabsCount(): number {
-    return this.#closedBottomTabs.size
   }
 
   #requireRunning(chatId: string): TerminalSession {

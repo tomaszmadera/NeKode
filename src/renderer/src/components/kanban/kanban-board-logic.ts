@@ -25,7 +25,7 @@ export const PRIORITY_RANK: Record<KanbanPriority, number> = {
 
 export const PRIORITY_NONE_RANK = 5
 
-export function compareRefs(a: string, b: string): number {
+function compareRefs(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
 }
 
@@ -103,7 +103,7 @@ export function workItemsMatch(left: WorkItem, right: WorkItem): boolean {
 }
 
 /** Retain unchanged normalized records; React keys retain same-group DOM nodes. */
-export function reconcileBoard(previous: KanbanBoardData, next: KanbanBoardData): KanbanBoardData {
+function reconcileBoard(previous: KanbanBoardData, next: KanbanBoardData): KanbanBoardData {
   const items = new Map(previous.items.map((item) => [item.ref, item]))
   const states = new Map(previous.states.map((state) => [state.id, state]))
   return {
@@ -134,7 +134,7 @@ export function upsertWorkItem(items: WorkItem[], created: WorkItem): WorkItem[]
 }
 
 /** Creates fill omitted refs. Status updates replace that same ref. */
-export function reconcileKeepingCreates(
+function reconcileKeepingCreates(
   previous: KanbanBoardData,
   next: KanbanBoardData,
   keptCreates: readonly WorkItem[],
@@ -229,7 +229,7 @@ export function reconcileBoardResponse({
 
 export const KANBAN_COLLAPSED_STORAGE_KEY_PREFIX = 'nekode.kanban-collapsed-states.v1'
 
-export function kanbanCollapsedStorageKey(projectId: string): string {
+function kanbanCollapsedStorageKey(projectId: string): string {
   return `${KANBAN_COLLAPSED_STORAGE_KEY_PREFIX}.${projectId}`
 }
 
@@ -268,7 +268,7 @@ export function saveCollapsedStateIds(projectId: string, ids: Set<string>): void
 
 export const KANBAN_SORT_STORAGE_KEY_PREFIX = 'nekode.kanban-sort.v1'
 
-export function kanbanSortStorageKey(projectId: string): string {
+function kanbanSortStorageKey(projectId: string): string {
   return `${KANBAN_SORT_STORAGE_KEY_PREFIX}.${projectId}`
 }
 

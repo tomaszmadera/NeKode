@@ -1,7 +1,7 @@
 import type { DictationError } from '@shared/contracts/dictation-contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DictationProviderError } from './dictation-provider-error'
-import { OPENWHISPR_CLOUD_MAX_BYTES, OpenWhisprCloudAdapter } from './openwhispr-cloud-adapter'
+import { OpenWhisprCloudAdapter } from './openwhispr-cloud-adapter'
 
 const config = { apiKey: 'owk_live_test_personal_key', language: 'pl', cloudUploadEnabled: true }
 const audioWav = new ArrayBuffer(44)
@@ -90,10 +90,10 @@ describe('OpenWhispr Cloud adapter', () => {
   it('accepts the exact byte boundary and rejects oversize locally', async () => {
     const { fetch, adapter } = harness()
     await expect(
-      adapter.transcribe({ audioWav: new ArrayBuffer(OPENWHISPR_CLOUD_MAX_BYTES + 1) }, config),
+      adapter.transcribe({ audioWav: new ArrayBuffer(4_000_001) }, config),
     ).rejects.toMatchObject({ error: 'audio-too-large' })
     expect(fetch).not.toHaveBeenCalled()
-    await adapter.transcribe({ audioWav: new ArrayBuffer(OPENWHISPR_CLOUD_MAX_BYTES) }, config)
+    await adapter.transcribe({ audioWav: new ArrayBuffer(4_000_000) }, config)
     expect(fetch).toHaveBeenCalledOnce()
   })
 

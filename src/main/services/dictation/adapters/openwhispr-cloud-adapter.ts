@@ -11,7 +11,7 @@ import {
 import { DictationProviderError } from './dictation-provider-error'
 
 const BASE_URL = 'https://api.openwhispr.com/api/v1'
-export const OPENWHISPR_CLOUD_MAX_BYTES = 4_000_000
+const OPENWHISPR_CLOUD_MAX_BYTES = 4_000_000
 function isPersonalKey(value: unknown): value is string {
   return (
     typeof value === 'string' && value === value.trim() && /^owk_live_[A-Za-z0-9_-]+$/.test(value)

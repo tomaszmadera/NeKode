@@ -5,8 +5,6 @@ import {
   isTerminalFontSize,
   parseTerminalFontFamilies,
   parseTerminalFontSize,
-  TERMINAL_FONT_SIZE_MAX,
-  TERMINAL_FONT_SIZE_MIN,
   terminalFontStack,
 } from './terminal-font'
 
@@ -44,12 +42,8 @@ describe('terminal font preferences', () => {
       expect(parseTerminalFontSize(saved)).toBe(expected)
     },
   )
-  it('validates boundary clamping with isTerminalFontSize', () => {
-    expect(isTerminalFontSize(TERMINAL_FONT_SIZE_MIN - 1)).toBe(false)
-    expect(isTerminalFontSize(TERMINAL_FONT_SIZE_MIN)).toBe(true)
-    expect(isTerminalFontSize(TERMINAL_FONT_SIZE_MAX)).toBe(true)
-    expect(isTerminalFontSize(TERMINAL_FONT_SIZE_MAX + 1)).toBe(false)
-    expect(isTerminalFontSize(15.5)).toBe(false)
+  it('rejects a non-number size in isTerminalFontSize', () => {
+    // Boundary integers are pinned through the parseTerminalFontSize table above.
     expect(isTerminalFontSize('16')).toBe(false)
   })
 })

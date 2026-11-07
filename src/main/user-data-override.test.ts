@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyUserDataOverride, resolveUserDataPath } from './user-data-override'
+import { applyUserDataOverride } from './user-data-override'
 
 const scratch: string[] = []
 
@@ -59,12 +59,6 @@ describe('user-data-override', () => {
 
     expect(result).toBe(resolved)
     expect(electronSetPathMock).toHaveBeenCalledWith('userData', resolved)
-  })
-
-  it('directly resolves paths with resolveUserDataPath helper', () => {
-    expect(resolveUserDataPath(undefined)).toBeNull()
-    expect(resolveUserDataPath('   ')).toBeNull()
-    expect(resolveUserDataPath('  "some-dir"  ')).toBe(resolve('some-dir'))
   })
 
   it('creates a missing directory before setPath', () => {

@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID } from '../../lib/test-ids'
-import { MermaidDiagram, nextDiagramId } from './MermaidDiagram'
+import { MermaidDiagram } from './MermaidDiagram'
 
 // The library is mocked here on purpose: jsdom cannot lay out SVG, so a real
 // render would fail for reasons this component does not own. The drawing
@@ -83,13 +83,6 @@ describe('MermaidDiagram', () => {
     expect(screen.queryByText(/flowchart LR/)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.fileMarkdownDiagramError)).toBeNull()
     expect(mermaid.render).toHaveBeenCalledWith(svg?.getAttribute('id'), 'flowchart LR\n  A --> B')
-  })
-
-  it('gives every diagram its own id', () => {
-    const ids = [nextDiagramId(), nextDiagramId(), nextDiagramId()]
-
-    expect(new Set(ids).size).toBe(3)
-    expect(ids.every((id) => id.startsWith('nekode-mermaid-diagram-'))).toBe(true)
   })
 
   it('mounts two diagrams at once, each in its own id', async () => {
@@ -217,14 +210,6 @@ describe('MermaidDiagram', () => {
 
     expect(panzoom.instance.destroy).toHaveBeenCalledTimes(1)
     expect(panzoom.instance.resetStyle).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows the control bar for a drawn diagram only, outside the diagram markup', async () => {
-    mermaid.render.mockReturnValue(new Promise(() => undefined))
-    render(diagram('flowchart LR'))
-
-    // No diagram yet, so no controls: the bar belongs to the attached helper.
-    expect(screen.queryByTestId(TEST_ID.fileMarkdownDiagramControls)).toBeNull()
   })
 
   it('keeps the diagram in its fit view with no control bar when the helper fails', async () => {

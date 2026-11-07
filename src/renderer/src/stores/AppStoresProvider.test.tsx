@@ -37,6 +37,7 @@ it('gives each App mount fresh project, chat, tabs and settings stores', () => {
     oldActions.tabs.updateTabsSession('p1', (session) => ({ ...session, openFiles: ['a.md'] }))
     oldActions.settings.setChatSwitchEnabled(false)
     oldActions.project.setSelectedProjectId('p1')
+    oldActions.chat.setSelectedChatId('c1')
   })
   first.unmount()
 
@@ -45,11 +46,14 @@ it('gives each App mount fresh project, chat, tabs and settings stores', () => {
     // Like an IPC response completing after the first App unmounted.
     oldActions.tabs.updateTabsSession('late', (session) => session)
     oldActions.settings.setAutoSendHandoff(true)
+    oldActions.project.setSelectedProjectId('late-project')
+    oldActions.chat.setChatsByProject({ p1: [{ id: 'late', projectId: 'p1', name: 'Late' }] })
   })
   expect(second.result.current.tabs.tabsByProject).toEqual({})
   expect(second.result.current.settings.chatSwitchEnabled).toBe(true)
   expect(second.result.current.settings.autoSendHandoff).toBe(false)
   expect(second.result.current.project.selectedProjectId).toBeNull()
+  expect(second.result.current.chat.selectedChatId).toBeNull()
   expect(second.result.current.chat.chatsByProject).toEqual({})
 })
 

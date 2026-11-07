@@ -4,14 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID } from '../../lib/test-ids'
 import { createAppApiStub as appApiStub } from '../../test/app-api-stub'
-import {
-  gitHoverDetails,
-  gitStatusText,
-  MAX_RUNTIME_BADGES,
-  runtimeLabels,
-  STATUS_BAR_GIT_REFRESH_INTERVAL_MS,
-  StatusBar,
-} from './StatusBar'
+import { STATUS_BAR_GIT_REFRESH_INTERVAL_MS, StatusBar } from './StatusBar'
 
 // Status bar (UX-UI §14–16 / center-layout-tabs-actions spec Behaviour 18):
 // project name, visually truncated path (full on hover), runtime badges with
@@ -116,6 +109,11 @@ describe('status bar — project context (UX-UI §14)', () => {
     expect(screen.queryByTestId(TEST_ID.statusRuntimes)).toBeNull()
   })
 
+  it('omits the runtime section for a label list of blanks', () => {
+    render(<StatusBar app={app} project={{ ...projectA, runtimeLabel: '  ,  ' }} />)
+    expect(screen.queryByTestId(TEST_ID.statusRuntimes)).toBeNull()
+  })
+
   it('keeps the bar with an empty project section when no project is active', () => {
     render(<StatusBar app={app} project={null} />)
     const bar = screen.getByTestId(TEST_ID.statusBar)
@@ -165,8 +163,9 @@ describe('status bar — git forms (UX-UI §16)', () => {
   it('renders the clean form for a clean worktree', async () => {
     app = createAppApiStub({ branch: 'main', dirty: false, worktree: worktree({}) })
     render(<StatusBar app={app} project={projectA} />)
-    await screen.findByTestId(TEST_ID.statusGitStatus)
+    const status = await screen.findByTestId(TEST_ID.statusGitStatus)
     expect(screen.getByTestId(TEST_ID.statusGitBranch).textContent).toBe('main')
+    expect(status.textContent).toBe('✓ clean')
   })
 
   it('renders the conflicts form when the worktree has conflicts', async () => {
@@ -228,31 +227,6 @@ describe('status bar — git forms (UX-UI §16)', () => {
 
     rerender(<StatusBar app={app} project={projectA} refreshTrigger={2} />)
     await waitFor(() => expect(app.git.getStatus).toHaveBeenCalledTimes(2))
-  })
-})
-
-describe('status bar helpers (UX-UI §15–16 forms)', () => {
-  it('splits the stored runtime label list and caps visible badges at three', () => {
-    expect(runtimeLabels('PHP 8.5, Node 24, Docker, Python 3.14, Unity 6')).toHaveLength(5)
-    expect(runtimeLabels(null)).toEqual([])
-    expect(runtimeLabels('  ,  ')).toEqual([])
-    expect(MAX_RUNTIME_BADGES).toBe(3)
-  })
-
-  it('builds the three worktree status forms', () => {
-    expect(gitStatusText(worktree({}))).toBe('✓ clean')
-    expect(gitStatusText(worktree({ modified: 4, added: 2, untracked: 1 }))).toBe('● 7 changes')
-    expect(gitStatusText(worktree({ conflicts: 2, modified: 1 }))).toBe('! 2 conflicts')
-  })
-
-  it('builds the hover-details table rows (UX-UI §16)', () => {
-    const details = gitHoverDetails(worktree({ modified: 4, added: 2, untracked: 1, ahead: 3 }))
-    const rows = details.split(String.fromCharCode(10))
-    expect(rows).toHaveLength(7)
-    expect(rows[0]).toContain('Modified')
-    expect(rows[0].endsWith('4')).toBe(true)
-    expect(rows[5]).toContain('Ahead')
-    expect(rows[5].endsWith('3')).toBe(true)
   })
 })
 
@@ -449,15 +423,15 @@ describe('status bar — panel toggles', () => {
     return { onToggleLeft, onToggleRight, onToggleBottom }
   }
 
-  it('orders left, right, and terminal as 20 by 20 buttons with 13 px icons', () => {
+  it('orders terminal, left, and right as 20 by 20 buttons with 13 px icons', () => {
     renderCluster()
     const left = screen.getByTestId(TEST_ID.statusLeftToggle)
     const right = screen.getByTestId(TEST_ID.statusRightToggle)
     const terminal = screen.getByTestId(TEST_ID.statusTerminalToggle)
     const group = left.parentElement
     expect(group?.className).toContain('ml-auto')
+    expect(terminal.compareDocumentPosition(left) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(right.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     for (const button of [left, right, terminal]) {
       expect(button.className).toContain('h-5')
       expect(button.className).toContain('w-5')
@@ -468,7 +442,9 @@ describe('status bar — panel toggles', () => {
     expect(left.className).toContain('bg-highlight')
     expect(right.getAttribute('aria-pressed')).toBe('false')
     expect(left.getAttribute('aria-label')).toBe('Hide left panel')
+    expect(left.getAttribute('title')).toBe('Hide left panel (Ctrl+B)')
     expect(right.getAttribute('aria-label')).toBe('Show right panel')
+    expect(right.getAttribute('title')).toBe('Show right panel (Ctrl+Alt+B)')
     expect(terminal.getAttribute('aria-label')).toBe('Open bottom terminal')
     expect(terminal.getAttribute('title')).toBe('Open bottom terminal (Ctrl+`)')
   })

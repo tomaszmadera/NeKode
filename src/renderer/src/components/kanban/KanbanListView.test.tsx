@@ -1,34 +1,19 @@
 import type { WorkItem } from '@shared/ipc-contract'
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  renderHook,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
-import { kanbanBoardFixture, kanbanWorkItem } from '../../test/kanban-fixtures'
-import {
-  ItemCopyMenu,
-  KanbanListView,
-  type KanbanListViewProps,
-  useKanbanListPrefs,
-} from './KanbanListView'
-import {
-  boardColumns,
-  DEFAULT_KANBAN_SORT,
-  kanbanCollapsedStorageKey,
-  kanbanSortStorageKey,
-} from './kanban-board-logic'
+import { kanbanBoardFixture } from '../../test/kanban-fixtures'
+import { KanbanListView, type KanbanListViewProps, useKanbanListPrefs } from './KanbanListView'
+import { boardColumns, DEFAULT_KANBAN_SORT } from './kanban-board-logic'
+
+// The stored preferences are addressed by their literal key text: the key is
+// the persistence contract, so it must not be derived from the code under test.
+const COLLAPSED_KEY_P1 = 'nekode.kanban-collapsed-states.v1.p1'
+const SORT_KEY_P1 = 'nekode.kanban-sort.v1.p1'
+const COLLAPSED_KEY_P2 = 'nekode.kanban-collapsed-states.v1.p2'
 
 afterEach(() => {
   cleanup()
-  restoreClipboard()
   localStorage.clear()
 })
 
@@ -119,42 +104,9 @@ describe('KanbanListView', () => {
   })
 })
 
-describe('ItemCopyMenu', () => {
-  it('copies the slug and closes, and disables Copy link for a blank url', async () => {
-    const clipboard = stubClipboard()
-    const onClose = vi.fn()
-    render(<ItemCopyMenu item={kanbanWorkItem('NK-1', 'T', 's1')} x={0} y={0} onClose={onClose} />)
-    expect(
-      (screen.getByRole('menuitem', { name: 'Copy link' }) as HTMLButtonElement).disabled,
-    ).toBe(true)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy slug' }))
-    await waitFor(() => {
-      expect(onClose).toHaveBeenCalledTimes(1)
-    })
-    expect(clipboard.writeText).toHaveBeenCalledWith('NK-1')
-  })
-
-  it('copies the url and reports a missing clipboard', async () => {
-    const clipboard = stubClipboard()
-    const onClose = vi.fn()
-    const item = { ...kanbanWorkItem('NK-1', 'T', 's1'), url: 'https://example.test/NK-1' }
-    render(<ItemCopyMenu item={item} x={0} y={0} onClose={onClose} />)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
-    await waitFor(() => {
-      expect(clipboard.writeText).toHaveBeenCalledWith('https://example.test/NK-1')
-    })
-    cleanup()
-
-    stubClipboard({ missing: true })
-    render(<ItemCopyMenu item={item} x={0} y={0} onClose={onClose} />)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy slug' }))
-    expect((await screen.findByRole('alert')).textContent).toBe('Could not copy to the clipboard.')
-  })
-})
-
 describe('useKanbanListPrefs', () => {
   it('loads, persists, and reloads the collapsed groups and the sort per project', () => {
-    localStorage.setItem(kanbanCollapsedStorageKey('p1'), JSON.stringify(['s1']))
+    localStorage.setItem(COLLAPSED_KEY_P1, JSON.stringify(['s1']))
     const { result } = renderHook(() => useKanbanListPrefs('p1'))
     expect([...result.current.collapsedStates]).toEqual(['s1'])
     expect(result.current.sortState).toEqual(DEFAULT_KANBAN_SORT)
@@ -165,14 +117,14 @@ describe('useKanbanListPrefs', () => {
       result.current.onToggleSortDirection()
     })
     expect(result.current.collapsedStates.size).toBe(0)
-    expect(localStorage.getItem(kanbanCollapsedStorageKey('p1'))).toBeNull()
+    expect(localStorage.getItem(COLLAPSED_KEY_P1)).toBeNull()
     expect(result.current.sortState).toEqual({ sortBy: 'priority', direction: 'desc' })
-    expect(JSON.parse(localStorage.getItem(kanbanSortStorageKey('p1')) ?? '')).toEqual({
+    expect(JSON.parse(localStorage.getItem(SORT_KEY_P1) ?? '')).toEqual({
       sortBy: 'priority',
       direction: 'desc',
     })
 
-    localStorage.setItem(kanbanCollapsedStorageKey('p2'), JSON.stringify(['s2']))
+    localStorage.setItem(COLLAPSED_KEY_P2, JSON.stringify(['s2']))
     act(() => {
       result.current.reload('p2')
     })

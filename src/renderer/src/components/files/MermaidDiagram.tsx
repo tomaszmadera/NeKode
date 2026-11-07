@@ -103,7 +103,7 @@ const CONTROL_CLASS =
  * in one file render independently of each other and in any completion order
  * (spec Behaviour 6). The value is not derived from the file content.
  */
-export function nextDiagramId(): string {
+function nextDiagramId(): string {
   diagramCounter += 1
   return `nekode-mermaid-diagram-${diagramCounter}`
 }

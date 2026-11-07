@@ -90,12 +90,12 @@ describe('TerminalContextMenu', () => {
     expect(event.defaultPrevented).toBe(false)
   })
 
-  it('focuses first enabled menu item on mount and traps Tab navigation', () => {
+  it('focuses the first enabled menu item on mount and traps Tab navigation', () => {
     render(
       <TerminalContextMenu
         x={100}
         y={100}
-        hasSelection={true}
+        hasSelection={false}
         canPasteThroughProgram={false}
         onCopy={vi.fn()}
         onPaste={vi.fn()}
@@ -107,25 +107,28 @@ describe('TerminalContextMenu', () => {
 
     const copyBtn = screen.getByTestId(TEST_ID.terminalContextCopy)
     const pasteBtn = screen.getByTestId(TEST_ID.terminalContextPaste)
+    const pasteThroughBtn = screen.getByTestId(TEST_ID.terminalContextPasteThroughProgram)
     const selectAllBtn = screen.getByTestId(TEST_ID.terminalContextSelectAll)
+    expect((copyBtn as HTMLButtonElement).disabled).toBe(true)
+    expect((pasteThroughBtn as HTMLButtonElement).disabled).toBe(true)
 
-    // With hasSelection=true, Copy is first enabled item
-    expect(document.activeElement).toBe(copyBtn)
-
-    // Tab moves to Paste
-    const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
-    copyBtn.dispatchEvent(tabEvent)
+    // Copy and Paste-through are disabled, so mount focus lands on Paste.
     expect(document.activeElement).toBe(pasteBtn)
 
-    // Shift+Tab wraps back to SelectAll (last control)
+    // Tab skips the disabled Paste-through item and reaches Select All.
+    const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    pasteBtn.dispatchEvent(tabEvent)
+    expect(document.activeElement).toBe(selectAllBtn)
+
+    // Shift+Tab from the first enabled item wraps to the last enabled one.
     const shiftTabEvent = new KeyboardEvent('keydown', {
       key: 'Tab',
       shiftKey: true,
       bubbles: true,
       cancelable: true,
     })
-    copyBtn.focus()
-    copyBtn.dispatchEvent(shiftTabEvent)
+    pasteBtn.focus()
+    pasteBtn.dispatchEvent(shiftTabEvent)
     expect(document.activeElement).toBe(selectAllBtn)
   })
 

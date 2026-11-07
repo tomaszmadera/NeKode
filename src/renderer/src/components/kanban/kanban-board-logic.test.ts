@@ -1,86 +1,29 @@
 // Pure-helper unit tests for the Kanban board (Stage 2 W15, Stage 3 C.5):
-// board grouping, defensive storage parsing, sort ordering, and concurrent
-// IPC promise race-ordering reconciliation run without rendering the component.
-// Test names are kept as-is so their spec/regression references survive.
+// defensive storage parsing, sort ordering, and concurrent IPC promise
+// race-ordering reconciliation run without rendering the component. Grouping
+// and the review/format helpers are asserted through the rendered board and
+// the review/list suites instead.
 
 import type { KanbanBoard as KanbanBoardData, WorkItem } from '@shared/ipc-contract'
 import { describe, expect, it } from 'vitest'
-import { kanbanBoardFixture, kanbanWorkItem } from '../../test/kanban-fixtures'
+import { kanbanWorkItem } from '../../test/kanban-fixtures'
 import {
-  blankUrl,
-  boardColumns,
-  commentTimestamp,
-  compareRefs,
   DEFAULT_KANBAN_SORT,
-  defaultNewTaskStateRef,
   descriptionText,
-  extraStatusNames,
   PRIORITY_OPTIONS,
   parseCollapsedStateIds,
   parseKanbanSort,
   priorityFromSelect,
   priorityLabel,
   prioritySelectValue,
-  reconcileBoard,
   reconcileBoardResponse,
-  reconcileKeepingCreates,
   sortWorkItems,
-  statesInAdapterOrder,
   upsertWorkItem,
-  visibleBoardColumns,
   workItemsMatch,
   writeFailureMessage,
 } from './kanban-board-logic'
 
 const item = kanbanWorkItem
-const fixture = kanbanBoardFixture
-
-describe('kanban board logic — reconcileBoard (cached background refresh)', () => {
-  it('reuses unchanged item and state objects while applying updates and order', () => {
-    const next = structuredClone(fixture)
-    next.items.reverse()
-    next.items[0].title = 'Changed'
-    const result = reconcileBoard(fixture, next)
-    expect(result.states[0]).toBe(fixture.states[0])
-    expect(result.items[2]).toBe(fixture.items[0])
-    expect(result.items[0]).not.toBe(fixture.items[2])
-    expect(result.items[0].title).toBe('Changed')
-  })
-})
-
-describe('kanban board logic — boardColumns grouping (spec Behaviour 14, AC14)', () => {
-  it('boardColumns groups items by state id, keeping the adapter item order', () => {
-    const columns = boardColumns(fixture)
-    expect(columns.map((column) => column.name)).toEqual(['Backlog', 'In Progress', 'Done'])
-    expect(columns[0].items.map((entry) => entry.ref)).toEqual(['NK-1', 'NK-3'])
-    expect(columns[2].items).toEqual([])
-  })
-
-  // The spec fixes the WorkItem/KanbanState shapes independently and Stage 1
-  // normalization never cross-checks an item's stateId against the state ids,
-  // so an unmatched state id is possible. Such items must not be dropped.
-  it('boardColumns keeps every item: an unmatched stateId gets a trailing column labelled from the item', () => {
-    const columns = boardColumns({
-      states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
-      items: [
-        item('NK-1', 'Known task', 's1'),
-        { ...item('NK-2', 'Orphan one', 'sx'), stateName: 'Ghost state' },
-        item('NK-3', 'Orphan two', 'sx'),
-      ],
-    })
-    // Matched column first, unmatched trailing; label from the item's stateName.
-    expect(columns.map((column) => column.name)).toEqual(['Backlog', 'Ghost state'])
-    expect(columns[1].stateId).toBe('sx')
-    expect(columns[1].items.map((entry) => entry.ref)).toEqual(['NK-2', 'NK-3'])
-    // Nothing is dropped: every item appears in exactly one column.
-    expect(
-      columns
-        .flatMap((column) => column.items)
-        .map((entry) => entry.ref)
-        .sort(),
-    ).toEqual(['NK-1', 'NK-2', 'NK-3'])
-  })
-})
 
 describe('kanban board logic — parseCollapsedStateIds', () => {
   it('parses collapsed state ids safely', () => {
@@ -102,12 +45,6 @@ describe('kanban board logic — sorting items', () => {
     { ...item('NK-5', 'Task 5', 's1'), priority: 'high' },
     { ...item('NK-4', 'Task 4', 's1'), priority: 'medium' },
   ]
-
-  it('natural sort orders task slugs correctly', () => {
-    expect(compareRefs('NK-2', 'NK-10')).toBeLessThan(0)
-    expect(compareRefs('NK-10', 'NK-2')).toBeGreaterThan(0)
-    expect(compareRefs('NK-1', 'NK-1')).toBe(0)
-  })
 
   it('sorts by slug ascending by default (natural numerical order)', () => {
     const sorted = sortWorkItems(unsortedItems, 'slug', 'asc')
@@ -379,7 +316,7 @@ describe('kanban board logic — concurrent IPC promise race ordering matrix (C.
     })
   })
 
-  describe('workItemsMatch, upsertWorkItem, and reconcileKeepingCreates', () => {
+  describe('workItemsMatch and upsertWorkItem', () => {
     it('detects equal work items and appends or replaces items by ref', () => {
       const item1 = item('NK-1', 'Title 1', 's1')
       const item1Clone = { ...item1 }
@@ -396,29 +333,10 @@ describe('kanban board logic — concurrent IPC promise race ordering matrix (C.
       const appended = upsertWorkItem(list, item('NK-2', 'Title 2', 's1'))
       expect(appended).toHaveLength(2)
     })
-
-    it('reconcileKeepingCreates preserves retained creates and updates without duplicate entries', () => {
-      const next = { ...baseBoard, items: [baseBoard.items[0]] }
-      const result = reconcileKeepingCreates(baseBoard, next, [createdItem], [updatedItem])
-      expect(result.items.map((i) => i.ref)).toEqual(['NK-1', 'NK-40'])
-    })
   })
 })
 
 describe('kanban board logic - view helpers', () => {
-  it('visibleBoardColumns filters by trimmed, case-insensitive title and drops empty columns', () => {
-    const all = visibleBoardColumns(kanbanBoardFixture, '   ')
-    expect(all.isFiltering).toBe(false)
-    expect(all.columns.map((column) => column.stateId)).toEqual(['s1', 's2', 's3'])
-
-    const filtered = visibleBoardColumns(kanbanBoardFixture, '  THIRD ')
-    expect(filtered.isFiltering).toBe(true)
-    expect(filtered.columns.map((column) => column.stateId)).toEqual(['s1'])
-    expect(filtered.columns[0].items.map((entry) => entry.ref)).toEqual(['NK-3'])
-
-    expect(visibleBoardColumns(kanbanBoardFixture, 'missing').columns).toEqual([])
-  })
-
   it('maps priorities to labels and select values both ways', () => {
     expect(priorityLabel(null)).toBe('None')
     expect(priorityLabel('urgent')).toBe('Urgent')
@@ -440,40 +358,6 @@ describe('kanban board logic - view helpers', () => {
     expect(descriptionText(null)).toBe('No description.')
     expect(descriptionText(' \n\t ')).toBe('No description.')
     expect(descriptionText(' body ')).toBe(' body ')
-  })
-
-  it('formats a parseable comment timestamp and keeps an unparseable one', () => {
-    const iso = '2026-01-02T03:04:05Z'
-    expect(commentTimestamp(iso)).toBe(new Date(Date.parse(iso)).toLocaleString())
-    expect(commentTimestamp('not a date')).toBe('not a date')
-  })
-
-  it('treats a null or blank url as blank', () => {
-    expect(blankUrl(null)).toBe(true)
-    expect(blankUrl('  ')).toBe(true)
-    expect(blankUrl('https://example.test/NK-1')).toBe(false)
-  })
-
-  it('orders states by adapter order and defaults a new task to Todo, ignoring case', () => {
-    expect(statesInAdapterOrder(kanbanBoardFixture.states).map((state) => state.id)).toEqual([
-      's1',
-      's2',
-      's3',
-    ])
-    expect(defaultNewTaskStateRef(kanbanBoardFixture.states)).toBe('')
-    expect(
-      defaultNewTaskStateRef([
-        ...kanbanBoardFixture.states,
-        { id: 's0', name: 'TODO', group: 'unstarted', order: 0 },
-      ]),
-    ).toBe('s0')
-  })
-
-  it('lists unknown review status names once, after the board states', () => {
-    const states = kanbanBoardFixture.states
-    expect(extraStatusNames(states, 'Backlog', 'Backlog')).toEqual([])
-    expect(extraStatusNames(states, 'Archived', 'Archived')).toEqual(['Archived'])
-    expect(extraStatusNames(states, 'Archived', 'Gone')).toEqual(['Archived', 'Gone'])
   })
 
   it('prefers the typed error message, then the Error message, then the fallback', () => {

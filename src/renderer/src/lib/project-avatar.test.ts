@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  getDeterministicProjectColor,
-  getProjectColor,
-  getProjectInitials,
-  PROJECT_COLOR_PALETTE,
-} from './project-avatar'
+import { getProjectColor, getProjectInitials } from './project-avatar'
 
 describe('getProjectInitials', () => {
   it('extracts initials according to spec examples', () => {
@@ -32,22 +27,16 @@ describe('getProjectColor', () => {
     expect(getProjectColor(project, '#2DD4BF')).toBe('#2DD4BF')
   })
 
-  it('falls back to deterministic color when custom color is empty or undefined', () => {
-    const project = { id: 'p1', path: '/path/p1' }
-    const deterministic = getDeterministicProjectColor('p1')
-    expect(getProjectColor(project, null)).toBe(deterministic)
-    expect(getProjectColor(project, '')).toBe(deterministic)
-    expect(getProjectColor(project, '   ')).toBe(deterministic)
-    expect(PROJECT_COLOR_PALETTE).toContain(deterministic)
-  })
+  it.each([null, undefined, '', '   '])(
+    'falls back to the id-derived color for custom color %j',
+    (custom) => {
+      expect(getProjectColor({ id: 'proj-alpha', path: '/path/alpha' }, custom)).toBe('#2DD4BF')
+    },
+  )
 
-  it('assigns stable color regardless of call count or order', () => {
-    const color1 = getDeterministicProjectColor('proj-alpha')
-    const color2 = getDeterministicProjectColor('proj-beta')
-    const color1Again = getDeterministicProjectColor('proj-alpha')
-
-    expect(color1).toBe(color1Again)
-    expect(PROJECT_COLOR_PALETTE).toContain(color1)
-    expect(PROJECT_COLOR_PALETTE).toContain(color2)
+  it('keeps each project on the same palette color across releases', () => {
+    // Pinned literals: a changed hash would silently recolor every project.
+    expect(getProjectColor({ id: 'proj-alpha' })).toBe('#2DD4BF')
+    expect(getProjectColor({ id: 'proj-beta' })).toBe('#5AA9FF')
   })
 })

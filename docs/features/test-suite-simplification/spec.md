@@ -106,6 +106,48 @@ Governs the follow-up work on NEKODE-75 resolving open maintainer decisions and 
 - Full suite green: `cmd /c pnpm run test`, `cmd /c pnpm run lint`, and `cmd /c pnpm run typecheck` pass cleanly after each stage.
 - Independent review passes for each stage.
 
+## Junk-test pruning campaign amendment (2026-11-05)
+
+Governs task `test-junk-prune-campaign`: a `test-audit` campaign that removes junk tests from the whole repo. Procedure, value bar, retention bar, and junk patterns come from `.agents/skills/test-audit/SKILL.md` and its `references/campaign.md`; this section adds only the product-level contract.
+
+### Goal
+
+Remove tests that match a junk pattern and have no independent contract, and remove the test-only production seams they keep alive, without losing any observable-behavior or trust-boundary protection. Target user: the maintainer and contributing agents.
+
+### Scope
+
+- Every vitest file under `src/main`, `src/preload`, `src/shared`, `src/renderer`, and `scripts`, split into lanes along production owner boundaries.
+- Deletion, consolidation (table cases, shared fixtures), assertion repair, and moves to the owning boundary.
+- Removal of exports, flags, wrappers, and injection hooks that only tests use, and of production code whose only callers are tests.
+
+### Non-goals
+
+- User-visible behavior change, feature work, or dependency additions.
+- A test-count or line-count target. Confidence per maintenance cost is the only measure.
+- Deleting a test because it is static or slow.
+- Executing architectural changes beyond removing seams a deleted test unlocked.
+- Fixing unrelated product defects found on the way (recorded as follow-ups, except baseline failures, which route to `debug`).
+
+### Behaviour
+
+1. Behaviour 1 to 8 of this contract still apply unchanged, including: trust-boundary suites (IPC input and sender validation, preload surface, media permissions, database integrity and migrations) keep independent verification at every level where it exists.
+2. Each deleted or consolidated test has a ledger entry with the fields of "Candidate evidence" in the `test-audit` skill. A missing field keeps the test.
+3. A test that fails on the baseline is not deleted; it is reported as a possible product defect.
+4. Removing a production seam changes no behavior reachable from a non-test caller.
+5. Tests are never weakened, skipped, or loosened to pass; no coverage or lint threshold moves.
+
+### Acceptance criteria
+
+- Baseline pass or fail state of every in-scope test file is recorded before the first edit.
+- Every stage ends with `cmd /c pnpm run test`, `cmd /c pnpm run lint`, and `cmd /c pnpm run typecheck` green, and an independent review that finds no lost contract.
+- Each contract whose proof the reviewer says was lost is restored, or rejected with source evidence. Each restored contract has one mutation of its production owner that turns the keeper red, with the source restored byte for byte afterward.
+- The final report states test and support lines versus production lines from `git diff --numstat`, the retained false positives, and the follow-ups.
+- Application behavior is unchanged: the full suite and the recorded e2e smoke, where the stage touches terminal or IPC paths, pass on the final head.
+
+### Failure behavior
+
+A stage that cannot keep a contract's proof stops and reports the contract, instead of deleting the test. A required extra session that cannot start stops the stage with a Stopped report.
+
 ## Relevant SDD / ADR
 
 - `docs/architecture/sdd.md` (service architecture, renderer boundaries, layout).

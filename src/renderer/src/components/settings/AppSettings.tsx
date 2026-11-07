@@ -65,6 +65,8 @@ const SHORTCUT_SECTIONS: Array<{ heading: string; rows: Array<[string, string]> 
       ['Ctrl+Tab', 'Switch to the next chat (across projects)'],
       ['Ctrl+Shift+Tab', 'Switch to the previous chat (across projects)'],
       ['Ctrl+`', 'Show or hide the bottom terminal panel'],
+      ['Ctrl+B', 'Show or hide the left panel'],
+      ['Ctrl+Alt+B', 'Show or hide the right panel'],
       ['Escape', 'Close dialogs and menus'],
     ],
   },

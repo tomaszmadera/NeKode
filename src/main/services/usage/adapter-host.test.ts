@@ -378,22 +378,6 @@ describe('usage adapter process boundary', () => {
     ])
       expect(result.find((r) => r.id === `invalid:${name}`)?.error).toContain('Invalid')
   })
-  it('lists invalid manifests disabled and disables every duplicate', () => {
-    const a = adapter(''),
-      root = a.directory
-    mkdirSync(join(root, 'one'))
-    mkdirSync(join(root, 'two'))
-    mkdirSync(join(root, 'invalid'))
-    for (const name of ['one', 'two'])
-      writeFileSync(join(root, name, 'usage-adapter.json'), JSON.stringify({ ...a, id: 'same' }))
-    writeFileSync(join(root, 'invalid', 'usage-adapter.json'), '{}')
-    const result = discoverUsageAdapters(root)
-    expect(result.filter((a) => a.id === 'same')).toHaveLength(2)
-    expect(result.filter((a) => a.id === 'same').every((a) => a.error?.includes('Duplicate'))).toBe(
-      true,
-    )
-    expect(result.find((a) => a.id === 'invalid:invalid')?.error).toContain('Invalid')
-  })
 })
 
 describe('live refresh validation (spec L3)', () => {

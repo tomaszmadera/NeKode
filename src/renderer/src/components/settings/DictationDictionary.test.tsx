@@ -6,7 +6,7 @@ import type { ProjectInfo } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDictationApiStub } from '../../test/dictation-api-stub'
-import { DICTATION_DICTIONARY_ERROR_TABLE, DictationDictionary } from './DictationDictionary'
+import { DictationDictionary } from './DictationDictionary'
 
 const sampleGlobalEntry: DictationDictionaryEntry = {
   id: 'd1',
@@ -295,15 +295,6 @@ describe('DictationDictionary (Modernized CRUD)', () => {
       expect(alert.textContent).toBeTruthy()
     },
   )
-
-  it('verifies that the dictionary error mapping table defines all error codes', () => {
-    for (const error of ALL_DICTIONARY_ERRORS) {
-      const entry = DICTATION_DICTIONARY_ERROR_TABLE[error]
-      expect(entry.kind).toBe(error)
-      expect(entry.code).toBe(error)
-      expect(entry.message.length).toBeGreaterThan(0)
-    }
-  })
 
   it('sanitizes IPC failure and handles unmount cleanly', async () => {
     const api = createDictationApiStub()

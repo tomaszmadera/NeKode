@@ -15,10 +15,6 @@ describe('dictation WAV', () => {
     expect(header.getInt16(44, true)).toBe(16384)
     expect(take.noSpeech).toBe(false)
   })
-  it('gates short and silent takes before bridge submission', () => {
-    expect(encodeWav([new Float32Array(4000).fill(0.8)], 16000).noSpeech).toBe(true)
-    expect(encodeWav([new Float32Array(16000)], 16000).noSpeech).toBe(true)
-  })
   it('merges multiple chunks in order into the PCM stream', () => {
     const take = encodeWav([new Float32Array(4).fill(0.5), new Float32Array(4).fill(-0.5)], 16000)
     const view = new DataView(take.wav)

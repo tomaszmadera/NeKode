@@ -139,32 +139,14 @@ describe('Resume prompt selection', () => {
     vi.mocked(app.resumeSources.binding).mockResolvedValue({ projectId: 'p1', templateId: null })
     render(<HandoffPicker {...props} />)
     await screen.findByTestId(TEST_ID.handoffPickerUnconfigured)
+    // The dialog's container is bound to the focus trap, so mount focus lands
+    // on the picker's first control (the hook owns the Tab cycle itself).
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Close handoff picker' }),
+    )
     expect(screen.queryByTestId(TEST_ID.handoffPickerPlainPaste)).toBeNull()
     fireEvent.click(screen.getByTestId(TEST_ID.handoffPickerConfigure))
     expect(props.onConfigure).toHaveBeenCalledOnce()
     expect(app.resumeSources.discover).not.toHaveBeenCalled()
-  })
-
-  it('traps Tab and Shift+Tab focus navigation within the picker', async () => {
-    const { app, props } = setup()
-    vi.mocked(app.resumeSources.binding).mockResolvedValue({ projectId: 'p1', templateId: null })
-    render(<HandoffPicker {...props} />)
-    const closeBtn = screen.getByRole('button', { name: 'Close handoff picker' })
-    const configBtn = await screen.findByTestId(TEST_ID.handoffPickerConfigure)
-
-    // Initial focus on first element (closeBtn)
-    expect(document.activeElement).toBe(closeBtn)
-
-    // Tab moves to configure button
-    fireEvent.keyDown(closeBtn, { key: 'Tab' })
-    expect(document.activeElement).toBe(configBtn)
-
-    // Tab from last control wraps to close button
-    fireEvent.keyDown(configBtn, { key: 'Tab' })
-    expect(document.activeElement).toBe(closeBtn)
-
-    // Shift+Tab from first control wraps to configure button
-    fireEvent.keyDown(closeBtn, { key: 'Tab', shiftKey: true })
-    expect(document.activeElement).toBe(configBtn)
   })
 })

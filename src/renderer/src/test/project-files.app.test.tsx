@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../App'
 import { TEST_ID, testIdFor } from '../lib/test-ids'
 import { createAppApiStub } from './app-api-stub'
+import { restoreClipboard, stubClipboard } from './clipboard-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
 import { resetMockTerminals } from './xterm-mock'
 
@@ -712,14 +713,11 @@ describe('project files: tree context menu (spec Behaviour 20-24, NEKODE-38)', (
     app = createAppApiStub()
     resetMockTerminals()
     resetMockFitAddons()
-    writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    })
+    ;({ writeText } = stubClipboard())
   })
   afterEach(() => {
     cleanup()
+    restoreClipboard()
   })
 
   async function openFiles(): Promise<void> {

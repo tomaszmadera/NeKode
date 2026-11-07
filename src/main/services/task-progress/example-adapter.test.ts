@@ -95,8 +95,18 @@ describe('example task progress adapter', () => {
   })
 
   it('reports a path outside the project as a config error', async () => {
+    // The escaping path exists, so a missing-file failure cannot satisfy the row:
+    // only the adapter's containment guard can produce this message.
+    writeFileSync(join(root, 'x.json'), '{}')
     const result = await createService().test('p1', 'task-progress-example', { path: '../x.json' })
-    expect(result).toMatchObject({ ok: false, error: { code: 'config' } })
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'config',
+        message:
+          'Adapter "task-progress-example" (test): Field "path" must stay inside the project: ../x.json',
+      },
+    })
   })
 
   it('reports a file of another format as unsupported_source', async () => {

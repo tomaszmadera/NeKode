@@ -7,8 +7,6 @@ import { PassThrough } from 'node:stream'
 import type { TaskProgressErrorCode } from '@shared/ipc-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  TASK_PROGRESS_MAX_STDOUT_BYTES,
-  TASK_PROGRESS_TIMEOUT_MS,
   TaskProgressAdapterError,
   TaskProgressCancelledError,
   TaskProgressHost,
@@ -76,11 +74,6 @@ async function failure(promise: Promise<unknown>): Promise<TaskProgressAdapterEr
 }
 
 describe('TaskProgressHost', () => {
-  it('uses the 15 s limit by default', () => {
-    expect(TASK_PROGRESS_TIMEOUT_MS).toBe(15_000)
-    expect(TASK_PROGRESS_MAX_STDOUT_BYTES).toBe(10 * 1024 * 1024)
-  })
-
   it('writes the request on stdin, closes it, and resolves the ok:true data', async () => {
     const echo = `let raw=''; process.stdin.on('data', (c) => { raw += c }); process.stdin.on('end', () => { console.log(JSON.stringify({ ok: true, data: { received: JSON.parse(raw), cwd: process.cwd() } })) })`
     const data = await new TaskProgressHost().invoke(fixture('echo.cjs', echo), request)
@@ -157,7 +150,7 @@ describe('TaskProgressHost', () => {
   })
 
   it('rejects stdout above 10 MB as a protocol error', async () => {
-    const size = TASK_PROGRESS_MAX_STDOUT_BYTES + 64 * 1024
+    const size = 10 * 1024 * 1024 + 64 * 1024
     const body = `process.stdout.write(Buffer.alloc(${size}, 0x61), () => process.exit(0))`
     const error = await failure(new TaskProgressHost().invoke(fixture('huge.cjs', body), request))
     expect(error.code).toBe('protocol')

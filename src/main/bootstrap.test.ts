@@ -16,42 +16,38 @@ describe('bootstrap', () => {
     expect(logError).not.toHaveBeenCalled()
   })
 
-  it('catches synchronous startup exception, shows error dialog, and quits app', async () => {
-    const startupError = new Error('Database disk image is malformed')
-    const start = vi.fn(() => {
-      throw startupError
-    })
-    const showErrorBox = vi.fn()
-    const quit = vi.fn()
-    const logError = vi.fn()
-
-    await bootstrap(start, { showErrorBox, quit, logError })
-
-    expect(start).toHaveBeenCalledOnce()
-    expect(logError).toHaveBeenCalledWith('[bootstrap] application failed to start', startupError)
-    expect(showErrorBox).toHaveBeenCalledWith(
-      'NeKode failed to start',
+  it.each([
+    [
+      'synchronous throw',
       'Database disk image is malformed',
-    )
-    expect(quit).toHaveBeenCalledOnce()
-  })
+      (error: Error) => () => {
+        throw error
+      },
+    ],
+    [
+      'asynchronous rejection',
+      'Async migration failure',
+      (error: Error) => async () => {
+        throw error
+      },
+    ],
+  ] as const)(
+    'catches a %s from startup, shows error dialog, and quits app',
+    async (_mode, message, fail) => {
+      const startupError = new Error(message)
+      const start = vi.fn(fail(startupError))
+      const showErrorBox = vi.fn()
+      const quit = vi.fn()
+      const logError = vi.fn()
 
-  it('catches asynchronous startup rejection, shows error dialog, and quits app', async () => {
-    const startupError = new Error('Async migration failure')
-    const start = vi.fn(async () => {
-      throw startupError
-    })
-    const showErrorBox = vi.fn()
-    const quit = vi.fn()
-    const logError = vi.fn()
+      await bootstrap(start, { showErrorBox, quit, logError })
 
-    await bootstrap(start, { showErrorBox, quit, logError })
-
-    expect(start).toHaveBeenCalledOnce()
-    expect(logError).toHaveBeenCalledWith('[bootstrap] application failed to start', startupError)
-    expect(showErrorBox).toHaveBeenCalledWith('NeKode failed to start', 'Async migration failure')
-    expect(quit).toHaveBeenCalledOnce()
-  })
+      expect(start).toHaveBeenCalledOnce()
+      expect(logError).toHaveBeenCalledWith('[bootstrap] application failed to start', startupError)
+      expect(showErrorBox).toHaveBeenCalledWith('NeKode failed to start', message)
+      expect(quit).toHaveBeenCalledOnce()
+    },
+  )
 
   it('handles non-Error thrown objects gracefully', async () => {
     const start = vi.fn(() => {

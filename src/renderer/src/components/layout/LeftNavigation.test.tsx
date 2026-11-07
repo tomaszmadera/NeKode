@@ -168,8 +168,8 @@ describe('LeftNavigation session status indicators', () => {
       'Confirm?',
     )
     act(() => {
-      chatStore.getState().reset()
-      projectStore.getState().reset()
+      chatStore.getState().setChatsByProject({})
+      projectStore.getState().setProjects([])
     })
     expect(screen.queryByTestId(testIdFor.projectSelect('p1'))).toBeNull()
   })

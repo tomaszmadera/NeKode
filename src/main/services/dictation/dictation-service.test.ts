@@ -864,20 +864,23 @@ describe('dictation provider architecture orchestration', () => {
   it('delegates dictionary CRUD operations and post-processing settings', async () => {
     const h = createTestHarness()
 
-    h.service.dictionaryList('p1')
+    expect(h.service.dictionaryList('p1').map((row) => row.term)).toEqual(['NeKode'])
     expect(h.dictService.list).toHaveBeenCalledWith({ projectId: 'p1' })
 
-    h.service.dictionaryAdd({ term: 'Vitest', scope: 'global' })
+    const added = h.service.dictionaryAdd({ term: 'Vitest', scope: 'global' })
     expect(h.dictService.add).toHaveBeenCalledWith({ term: 'Vitest', scope: 'global' })
+    expect(added.id).toBe('new-id')
 
-    h.service.dictionaryUpdate('id-1', { term: 'Vitest2' })
+    const updated = h.service.dictionaryUpdate('id-1', { term: 'Vitest2' })
     expect(h.dictService.update).toHaveBeenCalledWith('id-1', { term: 'Vitest2' })
+    expect(updated.term).toBe('updated')
 
     h.service.dictionaryDelete('id-1')
     expect(h.dictService.delete).toHaveBeenCalledWith('id-1')
 
-    h.service.dictionaryToggle('id-1', false)
+    const toggled = h.service.dictionaryToggle('id-1', false)
     expect(h.dictService.toggle).toHaveBeenCalledWith('id-1', false)
+    expect(toggled.enabled).toBe(false)
 
     // Post processing settings
     h.service.postProcessingSetSettings({

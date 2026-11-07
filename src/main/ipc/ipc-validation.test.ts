@@ -697,46 +697,29 @@ describe('ipc payload validation', () => {
     )
   })
 
-  it('validates git:status projectId argument', () => {
-    const entry = channelMap().get('git:status')
-    expect(entry).toBeDefined()
-    if (!entry) {
-      return
-    }
-    expect(entry.parse(['proj-1'])).toEqual(['proj-1'])
-    expect(() => entry.parse([123])).toThrow(ValidationError)
-    expect(() => entry.parse([])).toThrow(/expected 1 argument/)
-    expect(() => entry.parse(['proj-1', 'extra'])).toThrow(/expected 1 argument/)
-  })
-
-  it('validates git:fileStatuses projectId argument', () => {
-    const entry = channelMap().get('git:fileStatuses')
-    expect(entry).toBeDefined()
-    if (!entry) {
-      return
-    }
-    expect(entry.parse(['proj-1'])).toEqual(['proj-1'])
-    expect(() => entry.parse([123])).toThrow(ValidationError)
-    expect(() => entry.parse([])).toThrow(/expected 1 argument/)
-    expect(() => entry.parse(['proj-1', 'extra'])).toThrow(/expected 1 argument/)
-  })
-
-  it('validates git:sync projectId argument and delegates to service', () => {
+  // The three git channels share one rule: exactly one non-empty project id.
+  // Channel names stay literal: these rows also pin the wire strings, which a
+  // renamed IPC_CHANNEL value would silently carry along.
+  it.each([
+    ['git:status', null],
+    ['git:fileStatuses', null],
+    ['git:sync', 'sync'],
+  ] as const)('validates the %s projectId argument', (name, method) => {
     const services = fakeServices()
-    const channels = new Map(
-      buildValidatedChannels(services).map((entry) => [entry.channel, entry]),
-    )
-    const entry = channels.get('git:sync')
+    const entry = buildValidatedChannels(services).find((candidate) => candidate.channel === name)
     expect(entry).toBeDefined()
     if (!entry) {
       return
     }
     expect(entry.parse(['proj-1'])).toEqual(['proj-1'])
-    entry.invoke(entry.parse(['proj-1']))
-    expect(services.git.sync).toHaveBeenCalledWith('proj-1')
     expect(() => entry.parse([123])).toThrow(ValidationError)
     expect(() => entry.parse([])).toThrow(/expected 1 argument/)
     expect(() => entry.parse(['proj-1', 'extra'])).toThrow(/expected 1 argument/)
+    if (method === null) {
+      return
+    }
+    entry.invoke(entry.parse(['proj-1']))
+    expect(services.git[method]).toHaveBeenCalledWith('proj-1')
   })
 
   it('validates the terminal cwd as a safe path', () => {

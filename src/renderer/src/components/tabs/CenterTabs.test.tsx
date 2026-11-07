@@ -131,34 +131,6 @@ afterEach(() => {
 })
 
 describe('tab strip - order and labels (spec Behaviour 1-3, AC1)', () => {
-  it('home tab first, then the terminal-chat tab, file tabs in session order, Project Settings at the right end', () => {
-    renderCenterTabs({ session: sessionWith(['README.md', 'notes.txt', 'src/app.ts']) })
-
-    const strip = screen.getByTestId(TEST_ID.tabStrip)
-    const terminalTab = screen.getByTestId(TEST_ID.tabTerminal)
-    expect(terminalTab.textContent).toBe('First chat')
-    const homeTab = screen.getByTestId(TEST_ID.kanbanTab)
-    expect(homeTab.textContent).toBe('DEMO')
-    expect(homeTab.tagName).toBe('BUTTON')
-    expect(strip.firstElementChild).toBe(homeTab)
-    expect(homeTab.nextElementSibling).toBe(terminalTab)
-    expect(terminalTab.nextElementSibling).toBe(screen.getByTestId(testIdFor.tabFile('README.md')))
-    // Non-closable home tab.
-    expect(within(homeTab).queryByRole('button', { name: /Close/ })).toBeNull()
-
-    expect(tabIds()).toEqual(['tab-file-README.md', 'tab-file-notes.txt', 'tab-file-src/app.ts'])
-    // Labels = file names; tooltips = the path relative to the project root.
-    const appTab = screen.getByTestId(testIdFor.tabFile('src/app.ts'))
-    expect(within(appTab).getByText('app.ts')).toBeTruthy()
-    expect(appTab.getAttribute('title')).toBe('src / app.ts')
-    // The terminal-chat tab is never closable; file tabs carry a close control.
-    expect(within(terminalTab).queryByRole('button', { name: /Close/ })).toBeNull()
-    expect(screen.getByTestId(testIdFor.tabFileClose('README.md'))).toBeTruthy()
-    expect(strip.lastElementChild?.getAttribute('data-testid')).toBe(TEST_ID.tabProjectSettings)
-    // No breadcrumb and no "Files" view label are rendered (tab model).
-    expect(screen.queryByText('Select a file to preview')).toBeNull()
-  })
-
   it('keeps the project name casing when uppercase names are off and shortens a long name', () => {
     renderCenterTabs({
       project: { ...projectA, name: 'Very long project name' },

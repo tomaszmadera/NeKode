@@ -7,6 +7,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActivitySession } from '../../lib/chat-activity'
 import { isNewChatChord } from '../../lib/new-chat-chord'
+import { isLeftPanelChord, isRightPanelChord } from '../../lib/panel-chords'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import {
   DEFAULT_TERMINAL_FONT_FAMILIES,
@@ -511,6 +512,10 @@ export function ChatTerminal({
       // The Ctrl+N new-chat chord is the same: the app consumes it and
       // nothing reaches the shell.
       if (isNewChatChord(event)) {
+        return false
+      }
+      // The panel toggle chords (Ctrl+B / Ctrl+Alt+B) are consumed by the app.
+      if (isLeftPanelChord(event) || isRightPanelChord(event)) {
         return false
       }
       if (event.type !== 'keydown') {

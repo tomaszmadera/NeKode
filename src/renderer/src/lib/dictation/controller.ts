@@ -200,12 +200,6 @@ export class DictationController {
     return found
   }
 
-  setPostProcessing(): void {
-    if (this.active) {
-      this.update({ state: 'post_processing', result: null })
-    }
-  }
-
   reset(): void {
     this.stopTimer()
     this.update({ state: 'idle', result: null })

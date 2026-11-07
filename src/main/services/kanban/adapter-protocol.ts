@@ -153,24 +153,3 @@ export function normalizeComments(data: unknown, what: string): KanbanComment[] 
     }
   })
 }
-
-/**
- * Valid action names of protocol v1 (the service is the only caller).
- *
- * `getItem` and `listComments` stay in this allowlist. `KanbanService.getItem`
- * invokes it with `{ ref }` for the `kanban:getItem` channel and for task launch,
- * and `KanbanService.getComments` invokes `listComments` with `{ ref }` for the
- * `kanban:getComments` channel. Protocol version stays 1. This is app IPC,
- * not a protocol change.
- */
-export const ADAPTER_ACTIONS = [
-  'test',
-  'listStates',
-  'listItems',
-  'getItem',
-  'createItem',
-  'updateItem',
-  'listComments',
-] as const
-
-export type AdapterAction = (typeof ADAPTER_ACTIONS)[number]

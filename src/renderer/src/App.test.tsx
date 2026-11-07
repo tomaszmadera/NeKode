@@ -617,7 +617,7 @@ describe('app settings and themes', () => {
     // one expectation for the documented chord surface; the prose descriptions
     // are deliberately not pinned (no handler comparison guards them).
     const DOCUMENTED_SHORTCUT_CHORDS = {
-      global: ['Ctrl+N', 'Ctrl+Tab', 'Ctrl+Shift+Tab', 'Ctrl+`'],
+      global: ['Ctrl+N', 'Ctrl+Tab', 'Ctrl+Shift+Tab', 'Ctrl+`', 'Ctrl+B', 'Ctrl+Alt+B'],
       terminal: ['Ctrl+C', 'Ctrl+V / Ctrl+Shift+V', 'Ctrl+D', 'Ctrl+U'],
     } as const
 
@@ -2252,8 +2252,10 @@ describe('application shell', () => {
     cleanup()
   })
 
-  it('renders the shell regions with the tab strip, action-row slot and status bar', () => {
+  it('renders the default shell: every region, the empty state and the resize affordances', async () => {
     render(<App app={app} />)
+    // Region contract: the shell mounts each region once; the right slot
+    // exists only in three-panel mode.
     expect(screen.getByTestId(TEST_ID.leftNav)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.tabStrip)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.actionRowSlot)).toBeTruthy()
@@ -2261,22 +2263,15 @@ describe('application shell', () => {
     expect(screen.getByTestId(TEST_ID.bottomRegion)).toBeTruthy()
     expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
     expect(screen.getByTestId(TEST_ID.statusBar)).toBeTruthy()
-  })
-
-  it('shows the default empty state (UX-UI §6)', async () => {
-    render(<App app={app} />)
+    // Default empty state (UX-UI §6): one project load, no bottom panel.
     const emptyList = getByTestIdString(TEST_ID.emptyProjectList)
     expect(emptyList.textContent).toContain('No projects yet')
     const welcome = getByTestIdString(TEST_ID.welcomeSurface)
     expect(welcome.textContent).toContain('Welcome to NeKode')
-    expect(screen.queryByTestId(TEST_ID.rightRegion)).toBeNull()
     expect(getByTestIdString(TEST_ID.bottomRegion).style.display).toBe('none')
     await Promise.resolve()
     expect(app.projects.list).toHaveBeenCalledTimes(1)
-  })
-
-  it('offers an Add Project affordance and resizable handles', () => {
-    render(<App app={app} />)
+    // Add-project affordance and the two resize handles.
     expect(getByTestIdString(TEST_ID.projectsHeader).textContent).toBe('Projects')
     const addProject = getByTestIdString(TEST_ID.addProjectButton)
     expect(addProject.getAttribute('aria-label')).toBe('Add Project')
@@ -2753,6 +2748,30 @@ describe('project and chat data flow', () => {
     expect(chatRow.getAttribute('data-selected')).toBe('true')
     expect(screen.getByTestId(testIdFor.projectChats('p1'))).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
+  })
+
+  it('shows the welcome while the chat list is unloaded, then Start new chat once it loads empty', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    let resolveChats: (chats: ChatInfo[]) => void = () => undefined
+    vi.mocked(app.chats.list).mockImplementation(
+      () =>
+        new Promise<ChatInfo[]>((resolve) => {
+          resolveChats = resolve
+        }),
+    )
+
+    render(<App app={app} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    await waitFor(() => expect(app.chats.list).toHaveBeenCalledWith('p1'))
+    // Unanswered list: "no chats" is unknown, so the neutral welcome shows and
+    // the empty-project affordance does not.
+    expect(screen.getByTestId(TEST_ID.welcomeSurface)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.startNewChatState)).toBeNull()
+
+    await act(async () => resolveChats([]))
+    // Loaded empty: the same selection now proves the project has no chats.
+    await screen.findByTestId(TEST_ID.startNewChatState)
+    expect(screen.queryByTestId(TEST_ID.welcomeSurface)).toBeNull()
   })
 
   it.each([false, true])(
@@ -3286,20 +3305,6 @@ describe('project and chat data flow', () => {
     })
   })
 
-  it('writes the selection keys on every selection change', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
-
-    fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't1')
-  })
-
   it('hydrates the persisted selection without rewriting it', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
@@ -3391,7 +3396,7 @@ describe('project and chat data flow', () => {
     expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('280px')
   })
 
-  it('resizes the left region by dragging through the App shell', () => {
+  it('resizes the left region by dragging and persists the width only when the drag ends', () => {
     render(<App app={app} />)
     const leftNav = screen.getByTestId(TEST_ID.leftNav)
     expect((leftNav as HTMLElement).style.width).toBe('280px')
@@ -3399,19 +3404,12 @@ describe('project and chat data flow', () => {
     const handle = screen.getByTestId(TEST_ID.leftResizeHandle)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 350 })
-    firePointer(handle, 'pointerup', { clientX: 350 })
-
+    // The live drag follows the pointer; the stored width waits for the release.
     expect((leftNav as HTMLElement).style.width).toBe('350px')
-  })
-
-  it('persists the left region width when the resize ends', () => {
-    render(<App app={app} />)
-    const handle = screen.getByTestId(TEST_ID.leftResizeHandle)
-    firePointer(handle, 'pointerdown', { clientX: 280 })
-    firePointer(handle, 'pointermove', { clientX: 350 })
     expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, expect.anything())
 
     firePointer(handle, 'pointerup', { clientX: 350 })
+    expect((leftNav as HTMLElement).style.width).toBe('350px')
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, '350')
   })
 })

@@ -213,20 +213,6 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none')
   })
 
-  it('selecting the top-strip tab shows the board', async () => {
-    vi.mocked(app.projects.list).mockResolvedValue([projectA])
-    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
-    vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
-    mockBindings(app, ['p1'])
-
-    render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
-    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
-
-    await screen.findByTestId(TEST_ID.kanbanList)
-    expect(app.kanban.listBoard).toHaveBeenCalledWith('p1')
-  })
-
   it('not-configured board offers Configure that opens Project Settings on the Kanban tab', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])

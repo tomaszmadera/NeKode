@@ -1,4 +1,4 @@
-export const DICTATION_REQUEST_TIMEOUT_MS = 120_000
+const DICTATION_REQUEST_TIMEOUT_MS = 120_000
 export class DictationDeadlineError extends Error {}
 
 export async function withDictationDeadline<T>(

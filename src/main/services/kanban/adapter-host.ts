@@ -10,7 +10,7 @@ import { AppError } from '@shared/ipc-error'
 
 export const ADAPTER_TIMEOUT_MS = 30_000
 /** Hard cap on adapter stdout (spec: more than 10 MB is a protocol violation). */
-export const MAX_STDOUT_BYTES = 10 * 1024 * 1024
+const MAX_STDOUT_BYTES = 10 * 1024 * 1024
 /** How much stderr tail a failure message carries. */
 const STDERR_TAIL_CHARS = 2000
 

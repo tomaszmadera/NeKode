@@ -9,7 +9,6 @@ import {
   type AdapterHostError,
   type AdapterRequest,
   killTree,
-  MAX_STDOUT_BYTES,
 } from './adapter-host'
 
 // Adapter host protocol matrix (spec kanban-adapter-interface Required tests,
@@ -148,8 +147,8 @@ describe('AdapterHost', () => {
     })
   })
 
-  it('rejects stdout above MAX_STDOUT_BYTES as a typed protocol error', async () => {
-    const size = MAX_STDOUT_BYTES + 64 * 1024
+  it('rejects stdout above the 10 MiB cap as a typed protocol error', async () => {
+    const size = 10 * 1024 * 1024 + 64 * 1024
     const adapter = fixture(
       'huge.cjs',
       // Exit only once the write is flushed: POSIX pipes are asynchronous, so

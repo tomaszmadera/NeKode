@@ -89,21 +89,6 @@ function createHarness(options: HarnessOptions = {}) {
 }
 
 describe('AgentChatLaunchService', () => {
-  it('rolls back a chat when asynchronous terminal creation fails', async () => {
-    const { service, chats, project, terminals } = createHarness()
-    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    terminals.create.mockImplementationOnce(
-      () => Promise.reject(new AppError('not_found', 'Unavailable')) as unknown as string,
-    )
-    try {
-      await expect(service.createWithAgent(project.id, codexProfile.id)).rejects.toThrow(
-        'Unavailable',
-      )
-      expect(chats.list(project.id)).toEqual([])
-    } finally {
-      log.mockRestore()
-    }
-  })
   it('stores the launched CLI name separately from the profile name', async () => {
     const { service, chats, project } = createHarness({
       profiles: [{ ...codexProfile, name: 'Code analysis', executable: 'claude.cmd' }],
@@ -149,17 +134,6 @@ describe('AgentChatLaunchService', () => {
     expect(spawns[0].args).not.toBe(selected.interactiveArgs)
   })
 
-  it.each(['codex', 'grok'])(
-    'keeps positional-prompt behavior for %s without an override',
-    async (executable) => {
-      const { service, project, spawns } = createHarness({
-        profiles: [{ ...codexProfile, executable, args: ['--model', 'my model', '{prompt}'] }],
-      })
-      await service.createWithAgent(project.id, codexProfile.id)
-      expect(spawns).toEqual([{ file: executable, args: ['--model', 'my model'] }])
-    },
-  )
-
   it('rejects a globally existing unselected profile before chat creation and reads the current definition on later launch', async () => {
     const { db, projects, chats, terminals, project, spawns } = createHarness()
     const profiles = new AgentProfilesService({ projects, state: new AppStateService({ db }) })
@@ -204,51 +178,72 @@ describe('AgentChatLaunchService', () => {
     expect(spawns).toEqual([{ file: 'codex.exe', args: ['--flag', '--keep'] }])
   })
 
-  it('removes exactly the prompt argv element and starts the agent interactively', async () => {
-    const { service, spawns, project } = createHarness({
-      profiles: [{ id: 'prof-1', name: 'Codex', executable: 'codex.exe', args: ['{prompt}'] }],
+  it.each([
+    ['the only prompt element is dropped', 'codex.exe', ['{prompt}'], []],
+    [
+      'the other argv elements keep their order',
+      'codex.exe',
+      ['-a', '{prompt}', '--model', 'gpt', '--'],
+      ['-a', '--model', 'gpt', '--'],
+    ],
+    [
+      'a trailing prompt is not substituted (codex)',
+      'codex',
+      ['--model', 'my model', '{prompt}'],
+      ['--model', 'my model'],
+    ],
+    [
+      'a trailing prompt is not substituted (grok)',
+      'grok',
+      ['--model', 'my model', '{prompt}'],
+      ['--model', 'my model'],
+    ],
+  ] as const)('builds the prompt-free argv when %s', async (_case, executable, args, expected) => {
+    const { service, chats, spawns, project } = createHarness({
+      profiles: [{ id: 'prof-1', name: 'Codex', executable, args: [...args] }],
     })
 
     await service.createWithAgent(project.id, 'prof-1')
 
-    // No prompt is typed anywhere: the agent gets an empty argv.
-    expect(spawns).toEqual([{ file: 'codex.exe', args: [] }])
+    expect(chats.list(project.id)).toHaveLength(1)
+    // No prompt is typed anywhere: the agent gets its argv without the slot.
+    expect(spawns).toEqual([{ file: executable, args: expected }])
   })
 
-  it('keeps the other argv elements in order and never substitutes the prompt', async () => {
-    const { service, spawns, project } = createHarness({
-      profiles: [
-        {
-          id: 'prof-1',
-          name: 'Codex',
-          executable: 'codex.exe',
-          args: ['-a', '{prompt}', '--model', 'gpt', '--'],
-        },
-      ],
-    })
-
-    await service.createWithAgent(project.id, 'prof-1')
-
-    expect(spawns).toEqual([{ file: 'codex.exe', args: ['-a', '--model', 'gpt', '--'] }])
-  })
-
-  it('rolls the chat back and surfaces the classified spawn error', async () => {
+  it('rolls the chat back and surfaces the classified spawn error for a throw and a rejection', async () => {
     const spawnError = new AppError(
       'not_found',
       'The project directory does not exist. Terminal sessions need an existing project directory.',
       'terminals:create',
     )
-    const { service, chats, project } = createHarness({ spawnError })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const { service, chats, project } = createHarness({ spawnError })
 
-    const error = await expectAppError(
-      () => service.createWithAgent(project.id, 'prof-1'),
-      'not_found',
-    )
+      const error = await expectAppError(
+        () => service.createWithAgent(project.id, 'prof-1'),
+        'not_found',
+      )
 
-    expect(error.message).toContain('project directory does not exist')
-    // No half-chat survives the failed launch, and no fallback shell chat is
-    // ever started in its place (spec Errors).
-    expect(chats.list(project.id)).toEqual([])
+      expect(error.message).toContain('project directory does not exist')
+      // No half-chat survives the failed launch, and no fallback shell chat is
+      // ever started in its place (spec Errors).
+      expect(chats.list(project.id)).toEqual([])
+      expect(log).toHaveBeenCalledWith('[agent-chat] failed to start the agent process')
+
+      // A rejected terminal creation is the same catch as a synchronous throw.
+      const rejected = createHarness()
+      rejected.terminals.create.mockImplementationOnce(
+        () => Promise.reject(new AppError('not_found', 'Unavailable')) as unknown as string,
+      )
+      await expect(
+        rejected.service.createWithAgent(rejected.project.id, codexProfile.id),
+      ).rejects.toThrow('Unavailable')
+      expect(rejected.chats.list(rejected.project.id)).toEqual([])
+      expect(log).toHaveBeenCalledTimes(2)
+    } finally {
+      log.mockRestore()
+    }
   })
 
   it('rolls the chat back and reports the launch failure for an unclassified spawn error', async () => {

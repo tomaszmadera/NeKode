@@ -2,7 +2,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef } from 'react'
 
 /** Returns all tab-focusable elements within container in DOM order. */
-export function getFocusableElements(container: HTMLElement): HTMLElement[] {
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
   const elements = Array.from(
     container.querySelectorAll<HTMLElement>(
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]',
@@ -19,7 +19,7 @@ export function getFocusableElements(container: HTMLElement): HTMLElement[] {
  * Traps Tab and Shift+Tab navigation within a container.
  * Returns true if Tab key event was handled and prevented, false otherwise.
  */
-export function trapDialogFocus(
+function trapDialogFocus(
   event: KeyboardEvent | React.KeyboardEvent<HTMLElement>,
   container: HTMLElement | null,
 ): boolean {

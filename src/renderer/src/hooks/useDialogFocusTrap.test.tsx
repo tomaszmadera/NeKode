@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type React from 'react'
 import { useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getFocusableElements, trapDialogFocus, useDialogFocusTrap } from './useDialogFocusTrap'
+import { useDialogFocusTrap } from './useDialogFocusTrap'
 
 function TrapHarness({
   onEscape,
@@ -54,17 +54,6 @@ describe('useDialogFocusTrap', () => {
     cleanup()
   })
 
-  it('collects focusable elements excluding disabled controls', () => {
-    render(<TrapHarness />)
-    const container = screen.getByTestId('trap-container')
-    const focusable = getFocusableElements(container)
-    expect(focusable.map((el) => el.getAttribute('data-testid'))).toEqual([
-      'btn-1',
-      'input-2',
-      'btn-3',
-    ])
-  })
-
   it('focuses first control on mount by default', () => {
     render(<TrapHarness />)
     expect(document.activeElement).toBe(screen.getByTestId('btn-1'))
@@ -108,7 +97,7 @@ describe('useDialogFocusTrap', () => {
     expect(document.activeElement).toBe(btn3)
   })
 
-  it('invokes onEscape and stops propagation when Escape is pressed', () => {
+  it('invokes onEscape once for Escape, despite the window and React listeners', () => {
     const onEscape = vi.fn()
     render(<TrapHarness onEscape={onEscape} />)
     const btn1 = screen.getByTestId('btn-1')
@@ -143,10 +132,5 @@ describe('useDialogFocusTrap', () => {
     fireEvent.keyDown(screen.getByTestId('btn-1'), { key: 'Escape' })
     expect(screen.queryByTestId('trap-container')).toBeNull()
     expect(document.activeElement).toBe(opener)
-  })
-
-  it('trapDialogFocus returns false for non-Tab keys or missing container', () => {
-    const event = new KeyboardEvent('keydown', { key: 'Enter' })
-    expect(trapDialogFocus(event, null)).toBe(false)
   })
 })
