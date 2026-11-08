@@ -544,11 +544,18 @@ describe('Resume command sources', () => {
           controller.abort(new AppError('conflict', 'cancelled'))
           await rejection
         } else await expect(pending).resolves.toEqual({ success: true, tasks: [] })
+        // Product latency: measured before the reap polls below, which are test
+        // bookkeeping rather than stop time.
+        const elapsed = Date.now() - started
         descendant = Number(await readFile(pidPath, 'utf8'))
         const leader = Number(await readFile(readyPath, 'utf8'))
-        expect(() => process.kill(leader, 0)).toThrow()
-        expect(Date.now() - started).toBeLessThan(6000)
-        expect(() => process.kill(descendant, 0)).toThrow()
+        // SIGKILL delivery and OS reaping are asynchronous, more so for a
+        // grandchild on a loaded runner; the process must still be gone.
+        await vi.waitFor(() => expect(() => process.kill(leader, 0)).toThrow(), { timeout: 2000 })
+        await vi.waitFor(() => expect(() => process.kill(descendant, 0)).toThrow(), {
+          timeout: 2000,
+        })
+        expect(elapsed).toBeLessThan(6000)
       } finally {
         if (descendant === 0) descendant = Number(await readFile(pidPath, 'utf8'))
         try {
