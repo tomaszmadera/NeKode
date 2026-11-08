@@ -66,7 +66,7 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
    - `getItem` `{ ref }`.
    - `createItem` `{ title, description?, stateRef?, priority? }`.
    - `updateItem` `{ ref, title?, description?, stateRef?, priority? }` — patch semantics: only provided fields change. `priority: null` clears the priority. An omitted `priority` leaves it unchanged.
-   - `stateRef` accepts a concrete state name (case-insensitive) or a group alias (`backlog`, `todo`/`unstarted`, `in progress`/`started`, `done`/`completed`, `cancelled`) and is resolved by the adapter against its own states.
+   - `stateRef` accepts a concrete state id, a concrete state name (case-insensitive) or a group alias (`backlog`, `todo`/`unstarted`, `in progress`/`started`, `done`/`completed`, `cancelled`) and is resolved by the adapter against its own states.
 5. Timeout: main enforces a per-invocation timeout (30 s default) and kills the adapter's process tree; expiry produces a typed `timeout` error naming the adapter and action.
 6. Config delivery: the request `config` object carries all stored field values, secrets included. No config values are placed on the command line (argv is world-readable on Windows) and no secrets go into environment variables or the manifest.
 7. Project binding: the Project Settings Kanban section lists discovered adapters (name, id). Selecting one renders its `configSchema` as a form: `secret` inputs are masked and never rendered back after save, `select` renders a dropdown from `options`, `boolean` a checkbox, required fields are marked. Save stores the adapter id and field values; an empty non-secret field clears the stored value; a left-empty secret field keeps the stored secret. Deselecting (none) clears the binding but keeps stored field values. No selection = not configured.
@@ -756,8 +756,8 @@ on Start, Resume, the priority and the card background, and changing the sorting
 2. The form under the header has the Status, Title and Description fields and
    the Create and Cancel buttons. There is no separate column field: the chosen status
    is the board column.
-3. Status lists `board.states` in the adapter's order. The label and the value
-   `stateRef` are `state.name`.
+3. Status lists `board.states` in the adapter's order. The label is
+   `state.name` and the value sent as `stateRef` is `state.id`.
 4. The default status is the first state named `Todo`, ignoring letter
    case. When there is no such state, nothing is selected and Create is
    inactive.
@@ -785,7 +785,7 @@ on Start, Resume, the priority and the card background, and changing the sorting
 2. When the current name is not among `board.states`, it stays an extra
    selected option.
 3. A change calls the existing `kanban:updateItem` with only `stateRef` equal to
-   the chosen name.
+   the chosen state's `state.id`.
 4. Success replaces this item with the returned `WorkItem` and keeps the preview
    open.
 5. An error restores the confirmed state name and shows the error text.
