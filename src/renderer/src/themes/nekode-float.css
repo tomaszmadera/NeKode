@@ -132,7 +132,6 @@
 [data-theme="nekode-float"] .nk-workspace-row {
   padding: 10px 10px 6px;
   gap: 6px;
-  background: var(--color-app);
 }
 
 [data-theme="nekode-float"] .nk-workspace-row > aside {
