@@ -22,6 +22,13 @@ const validationTestControl = vi.hoisted(() => ({
   parseOrder: null as string[] | null,
 }))
 
+// ipc-handlers.ts imports dialog at runtime. Mocking electron keeps the suite
+// independent of the lazily downloaded Electron binary (electron/index.js runs
+// install.js on import when dist is absent, which fails on CI runners).
+vi.mock('electron', () => ({
+  dialog: { showOpenDialog: vi.fn() },
+}))
+
 vi.mock('./ipc-validation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./ipc-validation')>()
   return {
@@ -84,6 +91,7 @@ function fakeChats(rows: Array<{ id: string; projectId: string; name: string }> 
     create: vi.fn(() => rows[0]),
     createWithAgent: vi.fn(() => rows[0]),
     remove: vi.fn(),
+    contextUsage: vi.fn(() => ({})),
   }
 }
 
@@ -243,6 +251,7 @@ function createHarness(
     create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
     createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
     remove: vi.fn(),
+    contextUsage: vi.fn(() => ({})),
   }
   const terminals: AppServices['terminals'] = overrides.terminals ?? {
     create: vi.fn(() => 't1'),

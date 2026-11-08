@@ -38,7 +38,8 @@ describe('Resume command sources', () => {
     await writeFile(join(root, 'task.txt'), 'task')
   })
   afterEach(async () => {
-    await rm(root, { recursive: true, force: true })
+    // A child that just exited can still hold the cwd on Windows for a moment.
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   })
 
   it('executes argv literally in the project cwd and accepts strict JSON without exposing bodies', async () => {
@@ -79,7 +80,9 @@ describe('Resume command sources', () => {
         signal(),
       ),
     ).toEqual(argumentsWithQuotes)
-  }, 15000)
+    // Three Windows supervisor launches compile the C# job helper each time;
+    // a loaded CI runner needs more than the original 15 s.
+  }, 60_000)
 
   it('computes displayPath relative to canonical root when projectPath is accessed via an alias or link', async () => {
     const linkRoot = join(root, 'link-alias')

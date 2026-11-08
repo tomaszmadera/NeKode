@@ -126,7 +126,9 @@ describe('ActionService', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+    // Two file-backed migration runs plus WAL syncs; a Windows CI runner with
+    // real-time scanning needs more than the default 5 s.
+  }, 30_000)
   it('persists ordered project and global actions, edits, and deletes', () => {
     const { db, service } = setup()
     try {
