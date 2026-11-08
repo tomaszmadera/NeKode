@@ -715,6 +715,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     // Terminal-exit close flow (spec Behaviour 11): the renderer-driven chat
     // removal; never invoked on application quit.
     serviceChannel(IPC_CHANNEL.chatsRemove, ['string'], (args) => services.chats.remove(args[0])),
+    serviceChannel(IPC_CHANNEL.chatsContextUsage, [], () => services.chats.contextUsage()),
     serviceChannel(IPC_CHANNEL.stateGet, ['stateKey'], (args) => services.state.get(args[0])),
     serviceChannel(IPC_CHANNEL.stateSet, ['stateKey', 'string'], (args) =>
       services.state.set(args[0], args[1]),

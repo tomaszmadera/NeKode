@@ -159,6 +159,8 @@ export const IPC_CHANNEL = {
   /** Creates a chat with one agent profile running in its terminal. */
   chatsCreateWithAgent: 'chats:createWithAgent',
   chatsRemove: 'chats:remove',
+  /** Current context tokens per agent chat (left-panel session tiles). */
+  chatsContextUsage: 'chats:contextUsage',
   stateGet: 'state:get',
   stateSet: 'state:set',
   terminalsCreate: 'terminals:create',
@@ -326,6 +328,13 @@ export interface AppApi {
      * Application quit never goes through this path.
      */
     remove(chatId: string): Promise<void>
+    /**
+     * Context tokens currently in use per agent chat (spec left-panel
+     * Behaviour): read from the agent CLI's own transcript, keyed by chat id.
+     * Chats without a readable transcript are absent, so the tile shows no
+     * number rather than a guess.
+     */
+    contextUsage(): Promise<Record<string, number>>
   }
   state: {
     get(key: string): Promise<string | null>

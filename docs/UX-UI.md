@@ -569,10 +569,11 @@ exist only while a project is bound.
 - The home tab is present for every selected project, bound or not. It is not
   closable. Its label is the project name (shortened); its tooltip is
   `Tasks: {full project name}`.
-- Clicking the project row's chevron, avatar, or name toggles its session list.
-  `Open project tasks` in the project context menu activates the home tab.
-  For the already selected project the open chat stays selected; another
-  project is selected with its chat selection cleared. See the
+- Clicking the project row's name selects the project and opens its home tab;
+  the chevron and avatar toggle its session list. `Open project tasks` in the
+  project context menu does the same as the name click. For the already
+  selected project the open chat stays selected; another project is selected
+  with its chat selection cleared. See the
   [left-panel contract](features/left-panel/spec.md).
 - On launch, a restored chat opens on the chat tab; a restored project without
   a chat opens on the home tab.

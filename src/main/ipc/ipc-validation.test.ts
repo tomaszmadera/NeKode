@@ -69,6 +69,7 @@ function fakeServices(): AppServices {
       create: () => ({ id: 't1', projectId: 'p1', name: 'n' }),
       createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
       remove: vi.fn(),
+      contextUsage: () => ({}),
     },
     state: { get: vi.fn(() => null), set: vi.fn(), delete: vi.fn() },
     terminals: {
@@ -304,6 +305,7 @@ describe('ipc payload validation', () => {
       IPC_CHANNEL.appUpdateLatest,
       IPC_CHANNEL.appUpdateDownload,
       IPC_CHANNEL.appUpdateLaunch,
+      IPC_CHANNEL.chatsContextUsage,
     ])
       expect(() => channel(name).parse(['extra'])).toThrow()
     expect(() => channel(IPC_CHANNEL.stateSet).parse(['usage.enabled', 'true'])).toThrow(

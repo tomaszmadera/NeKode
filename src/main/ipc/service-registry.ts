@@ -173,6 +173,12 @@ export interface AppServices {
     createWithAgent(projectId: string, profileId: string): ChatInfo | Promise<ChatInfo>
     /** Removes one chat row (terminal-exit close flow, spec Behaviour 11). */
     remove(chatId: string): void
+    /**
+     * Context tokens in use per agent chat, read from the agent's transcript
+     * (spec left-panel Behaviour). Chats with no readable transcript are
+     * absent, so their tile shows no number.
+     */
+    contextUsage(): Record<string, number>
   }
   state: {
     get(key: string): string | null

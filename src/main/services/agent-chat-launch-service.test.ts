@@ -7,6 +7,7 @@ import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import { AgentChatLaunchService } from './agent-chat-launch-service'
 import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
+import { AgentSessionRegistry } from './agent-session-registry'
 import { AppStateService } from './app-state-service'
 import { ChatService } from './chat-service'
 import { ProjectService } from './project-service'
@@ -63,6 +64,8 @@ function createHarness(options: HarnessOptions = {}) {
     fs: { stat: () => ({ isDirectory: () => true }) },
   })
   const chats = new ChatService({ db, chatNameForProject: () => 'PowerShell' })
+  const sessions = new AgentSessionRegistry()
+  const created: string[] = []
   const spawns: ShellSpec[] = []
   const terminals = {
     create: vi.fn((chatId: string, _cwd: string, shell?: ShellSpec) => {
@@ -79,13 +82,17 @@ function createHarness(options: HarnessOptions = {}) {
   const service = new AgentChatLaunchService({
     projects,
     profiles: { get: () => ({ defaultId: null, profiles: options.profiles ?? [codexProfile] }) },
-    createChat: (projectId, name, identity) =>
-      chats.createNamed(projectId, name, 'chats:createWithAgent', identity),
+    createChat: (projectId, name, identity) => {
+      const chat = chats.createNamed(projectId, name, 'chats:createWithAgent', identity)
+      created.push(chat.id)
+      return chat
+    },
     removeChat: (chatId) => chats.remove(chatId),
+    sessions,
     terminals,
   })
   const project = projects.add(demoPath)
-  return { service, projects, chats, spawns, terminals, project, db }
+  return { service, projects, chats, spawns, terminals, project, db, sessions, created }
 }
 
 describe('AgentChatLaunchService', () => {
@@ -97,6 +104,75 @@ describe('AgentChatLaunchService', () => {
     expect(chat).toMatchObject({ name: '[PowerShell] Code analysis', agentName: 'Claude' })
     expect(chat.taskRef).toBeUndefined()
     expect(chats.get(chat.id)).toEqual(chat)
+  })
+
+  it('hands Claude its session id after a Node script and before the prompt', async () => {
+    const nodeClaude: AgentProfile = {
+      ...codexProfile,
+      name: 'Claude',
+      executable: 'node.exe',
+      args: ['C:\\app\\node_modules\\@anthropic-ai\\claude-code\\cli.js', '{prompt}'],
+    }
+    const { service, project, spawns, sessions } = createHarness({ profiles: [nodeClaude] })
+    const chat = await service.createWithAgent(project.id, nodeClaude.id)
+    const sessionId = sessions.launch(chat.id)?.sessionId
+    expect(sessionId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(spawns[0].args).toEqual([
+      'C:\\app\\node_modules\\@anthropic-ai\\claude-code\\cli.js',
+      '--session-id',
+      sessionId,
+    ])
+  })
+
+  it('points a resume profile at the session it names, without injecting a flag', async () => {
+    const resuming: AgentProfile = {
+      ...codexProfile,
+      name: 'Claude resume',
+      executable: 'claude.cmd',
+      args: ['--resume', 'abc', '{prompt}'],
+    }
+    const { service, project, spawns, sessions } = createHarness({ profiles: [resuming] })
+    const chat = await service.createWithAgent(project.id, resuming.id)
+    expect(spawns[0].args).toEqual(['--resume', 'abc'])
+    expect(sessions.launch(chat.id)?.sessionId).toBe('abc')
+  })
+
+  it('records no session id for --continue or --fork-session, which name none', async () => {
+    for (const args of [['--continue'], ['-c'], ['--resume', 'abc', '--fork-session']]) {
+      const profile: AgentProfile = {
+        ...codexProfile,
+        name: 'Claude named',
+        executable: 'claude.cmd',
+        args: [...args, '{prompt}'],
+      }
+      const { service, project, sessions } = createHarness({ profiles: [profile] })
+      const chat = await service.createWithAgent(project.id, profile.id)
+      expect(sessions.launch(chat.id)?.sessionId).toBeNull()
+    }
+  })
+
+  it('forgets the launch record on chat removal and on a failed spawn', async () => {
+    const claude: AgentProfile = {
+      ...codexProfile,
+      name: 'Claude',
+      executable: 'claude.cmd',
+      args: ['{prompt}'],
+    }
+    const ok = createHarness({ profiles: [claude] })
+    const chat = await ok.service.createWithAgent(ok.project.id, claude.id)
+    expect(ok.sessions.launch(chat.id)).not.toBeNull()
+    ok.service.removeChat(chat.id)
+    expect(ok.sessions.launch(chat.id)).toBeNull()
+    expect(ok.chats.get(chat.id)).toBeNull()
+
+    const failing = createHarness({ profiles: [claude], spawnError: new Error('refused') })
+    await expectAppError(
+      () => failing.service.createWithAgent(failing.project.id, claude.id),
+      'unknown',
+    )
+    expect(failing.created).toHaveLength(1)
+    expect(failing.sessions.launch(failing.created[0])).toBeNull()
+    expect(failing.chats.list(failing.project.id)).toEqual([])
   })
 
   it.each(
@@ -142,6 +218,7 @@ describe('AgentChatLaunchService', () => {
     const launch = new AgentChatLaunchService({
       projects,
       profiles,
+      sessions: new AgentSessionRegistry(),
       terminals,
       createChat: (id, name, identity) =>
         chats.createNamed(id, name, 'chats:createWithAgent', identity),

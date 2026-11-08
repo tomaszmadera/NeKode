@@ -411,6 +411,7 @@ describe('preload app api', () => {
     await api.chats.create('p1')
     await api.chats.createWithAgent('p1', 'prof-1')
     await api.chats.remove('t1')
+    await api.chats.contextUsage()
     expect(ipc.invocations.map((i) => i.channel)).toEqual([
       IPC_CHANNEL.projectsList,
       IPC_CHANNEL.projectsAdd,
@@ -419,6 +420,7 @@ describe('preload app api', () => {
       IPC_CHANNEL.chatsCreate,
       IPC_CHANNEL.chatsCreateWithAgent,
       IPC_CHANNEL.chatsRemove,
+      IPC_CHANNEL.chatsContextUsage,
     ])
     // The create payload is the project id only — no name travels over IPC.
     expect(ipc.invocations[4].args).toEqual(['p1'])

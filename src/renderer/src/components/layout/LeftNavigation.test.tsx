@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ChatStoreContext, createChatStore } from '../../stores/useChatStore'
 import { createProjectStore, ProjectStoreContext } from '../../stores/useProjectStore'
+import { createAppApiStub } from '../../test/app-api-stub'
 import { LeftNavigation, SESSION_CAPTION_CLASS } from './LeftNavigation'
 
 afterEach(cleanup)
@@ -312,6 +313,25 @@ describe('LeftNavigation session status indicators', () => {
     expect(screen.getByTestId(testIdFor.chatRow('t1')).textContent).not.toContain('now')
   })
 
+  it('shows the context count reported by main and colours it near the limit', async () => {
+    const app = createAppApiStub()
+    app.chats.contextUsage = vi.fn().mockResolvedValue({ t1: 170_500 })
+    const props = {
+      ...defaultProps(),
+      chatsByProject: { p1: [{ id: 't1', projectId: 'p1', name: 'Agent', agentName: 'Claude' }] },
+      app,
+    }
+    render(navigation(props))
+
+    const meter = await screen.findByTestId(testIdFor.chatContext('t1'))
+    expect(meter.textContent).toBe('170k')
+    expect(meter.getAttribute('data-level')).toBe('warning')
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('aria-label')).toBe(
+      'Agent, Claude, NEKODE, idle',
+    )
+    expect(meter.getAttribute('aria-label')).toBe('Agent, Claude, context 170,500 tokens in use')
+  })
+
   it('keeps a separate accessible close button without removing the status indicator', () => {
     const props = {
       ...defaultProps(),
@@ -365,13 +385,16 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(screen.queryByTestId(testIdFor.projectAvatar('p2'))).toBeNull()
   })
 
-  it('toggles the whole project row and retains a real home action in its context menu', () => {
+  it('selects and opens the project home from its name while the row button toggles expansion', () => {
     const props = defaultProps()
     render(navigation(props))
     fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p2')))
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
-    expect(props.onToggleProject.mock.calls).toEqual([['p2'], ['p1']])
+    expect(props.onToggleProject.mock.calls).toEqual([['p2']])
     expect(props.onSelectProject).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    expect(props.onSelectProject).toHaveBeenCalledWith('p1')
+    // The name click never collapses or expands through the row button.
+    expect(props.onToggleProject.mock.calls).toEqual([['p2']])
     fireEvent.contextMenu(screen.getByTestId(testIdFor.projectSelect('p2')))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Open project tasks' }))
     expect(props.onSelectProject).toHaveBeenCalledWith('p2')
@@ -556,7 +579,7 @@ describe('LeftNavigation project avatar and initials', () => {
     // Add project button is hidden in Sessions view
     expect(screen.queryByTestId(TEST_ID.addProjectButton)).toBeNull()
 
-    // Flat sessions are ordered waiting, running, idle.
+    // Flat sessions keep their source order.
     const flatRows = screen.getAllByTestId(/^chat-row-/)
     expect(flatRows.length).toBe(3)
     expect(flatRows[0].textContent).toContain('Chat 1')
@@ -582,7 +605,7 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(props.onSelectChat).toHaveBeenCalledWith('p1', 'c1')
   })
 
-  it('preserves status ordering and does not change idle status when an idle session is selected or has terminal activity', () => {
+  it('keeps idle sessions in place when one is selected or has terminal activity', () => {
     const props = {
       ...defaultProps(),
       chatsByProject: {
@@ -621,6 +644,41 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(rows[0].textContent).toContain('Chat 1')
     expect(rows[1].textContent).toContain('Chat 2')
     expect(rows[2].textContent).toContain('Chat 3')
+  })
+
+  it('keeps a waiting session in place when selecting it clears its attention badge', () => {
+    const props = {
+      ...defaultProps(),
+      chatsByProject: {
+        p1: [
+          { id: 'c1', projectId: 'p1', name: 'Chat 1' },
+          { id: 'c2', projectId: 'p1', name: 'Chat 2' },
+        ],
+      },
+      sessionStatuses: { c2: 'running' as const },
+      attention: { c1: { message: 'Input required' } },
+    }
+    const view = render(navigation({ ...props }))
+
+    const group = screen.getByRole('group', { name: 'Sidebar view' })
+    fireEvent.click(within(group).getByRole('button', { name: /^Sessions/ }))
+
+    // The attention badge marks c1 waiting, and the source order keeps it first.
+    let rows = screen.getAllByTestId(/^chat-row-/)
+    expect(rows[0].textContent).toContain('Chat 1')
+    expect(screen.getByTestId(testIdFor.chatStatusDot('c1')).getAttribute('data-status')).toBe(
+      'waiting',
+    )
+
+    // Selecting c1 clears its attention (Behaviour 6), so its status falls to idle.
+    view.rerender(navigation({ ...props, selectedChatId: 'c1', attention: {} }))
+
+    expect(screen.getByTestId(testIdFor.chatStatusDot('c1')).getAttribute('data-status')).toBe(
+      'idle',
+    )
+    rows = screen.getAllByTestId(/^chat-row-/)
+    expect(rows[0].textContent).toContain('Chat 1')
+    expect(rows[1].textContent).toContain('Chat 2')
   })
 
   it('new session agent menu renders in a portal with clamped positioning and block items', async () => {
@@ -671,7 +729,7 @@ describe('LeftNavigation approved design', () => {
     expect(screen.queryByRole('button', { name: 'Collapse all projects' })).toBeNull()
   })
 
-  it('uses the same tile in both views and puts waiting sessions first across projects', () => {
+  it('uses the same tile in both views and keeps the source order across projects', () => {
     const props = {
       ...defaultProps(),
       chatsByProject: {
@@ -688,13 +746,13 @@ describe('LeftNavigation approved design', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Sessions/ }))
     const rows = screen.getAllByTestId(/^chat-row-/)
     expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
-      'chat-row-wait',
-      'chat-row-run',
       'chat-row-idle',
+      'chat-row-run',
+      'chat-row-wait',
     ])
     expect(rows.every((row) => row.className === projectTile.className)).toBe(true)
-    expect(within(rows[0]).getByText('agent-harness')).toBeTruthy()
+    expect(within(rows[0]).getByText('NeKode')).toBeTruthy()
     fireEvent.click(rows[0])
-    expect(props.onSelectChat).toHaveBeenCalledWith('p2', 'wait')
+    expect(props.onSelectChat).toHaveBeenCalledWith('p1', 'idle')
   })
 })

@@ -11,6 +11,7 @@ import type React from 'react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useShallow } from 'zustand/react/shallow'
+import { useContextUsage } from '../../hooks/app/useContextUsage'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'
 import { getProjectColor, getProjectInitials } from '../../lib/project-avatar'
@@ -141,6 +142,9 @@ export function LeftNavigation({
     })),
   )
   const sessionTasks = useSessionTasks()
+  // Context tokens per chat (spec left-panel Behaviour): the meter is a real
+  // count from the agent's transcript, absent when it cannot be read.
+  const contextUsage = useContextUsage(app)
   const [sidebarView, setSidebarView] = useState<SidebarView>('projects')
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [newChatMenu, setNewChatMenu] = useState<NewChatMenuState | null>(null)
@@ -264,6 +268,7 @@ export function LeftNavigation({
         active={item.isChatSelected && terminalTabActive}
         flat={flat}
         task={item.task}
+        contextTokens={contextUsage[item.chat.id]}
         attentionVisible={attentionVisible}
         attentionMessage={attentionState?.message}
         recentOutput={activity.has(item.chat.id)}
@@ -589,8 +594,14 @@ export function LeftNavigation({
                           ) : null}
 
                           {/* 3. Name */}
+                          {/* biome-ignore lint/a11y/noStaticElementInteractions: the name selects the project and opens its home tab; the surrounding row button owns expansion */}
+                          {/* biome-ignore lint/a11y/useKeyWithClickEvents: the surrounding row button handles keyboard events */}
                           <span
                             data-testid={testIdFor.projectSelect(project.id)}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onSelectProject(project.id)
+                            }}
                             className={
                               isExpanded || isSelected
                                 ? 'text-project-title'
@@ -887,12 +898,10 @@ export function LeftNavigation({
                 No active sessions
               </p>
             ) : (
-              [...allSessions]
-                .sort((a, b) => {
-                  const order: Record<SessionStatus, number> = { waiting: 0, running: 1, idle: 2 }
-                  return order[a.status] - order[b.status]
-                })
-                .map((item) => <div key={item.chat.id}>{renderSession(item, true)}</div>)
+              // Keep the source order (spec left-panel Behaviour). Sorting by
+              // status moved a tile the moment selecting it cleared its
+              // attention badge, so a waiting session dropped to the bottom.
+              allSessions.map((item) => <div key={item.chat.id}>{renderSession(item, true)}</div>)
             )}
           </div>
         )}

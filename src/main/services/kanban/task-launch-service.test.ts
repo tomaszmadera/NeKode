@@ -13,6 +13,7 @@ import { openDatabase } from '../../db/connection'
 import { runMigrations } from '../../db/migrations'
 import { isWindowsHost } from '../../test-support/host-path'
 import { AgentProfilesService } from '../agent-profiles/agent-profiles-service'
+import { AgentSessionRegistry } from '../agent-session-registry'
 import { AppStateService } from '../app-state-service'
 import { ChatService } from '../chat-service'
 import { ProjectService } from '../project-service'
@@ -148,6 +149,7 @@ function harness(
     kanban: { getItem },
     createChat: (projectId, name, identity) =>
       chats.createNamed(projectId, name, 'kanban:launchTask', identity),
+    sessions: new AgentSessionRegistry(),
     terminals,
   })
   return {
@@ -166,6 +168,22 @@ function harness(
 }
 
 describe('project opt-in at Kanban launch', () => {
+  it('hands a Claude task its session id before the prompt', async () => {
+    const claude: AgentProfile = {
+      id: 'claude-1',
+      name: 'Claude',
+      executable: 'claude.cmd',
+      args: ['--model', 'claude-x', '{prompt}'],
+    }
+    const h = harness({ profile: claude })
+    await h.service.launch(input({ projectId: h.project.id, profileId: claude.id }))
+    const args = h.spawns[0].args
+    expect(args[0]).toBe('--session-id')
+    expect(args[1]).toMatch(/^[0-9a-f-]{36}$/)
+    expect(args.slice(2, 4)).toEqual(['--model', 'claude-x'])
+    expect(args[4]).toContain('DEMO-1')
+  })
+
   it('rejects a removed project while terminal creation is pending', async () => {
     const bundle = harness()
     let finish: () => void = () => {}

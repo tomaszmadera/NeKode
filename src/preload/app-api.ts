@@ -191,6 +191,9 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
       createWithAgent: (projectId, profileId) =>
         invoke<ChatInfo>(IPC_CHANNEL.chatsCreateWithAgent, projectId, profileId),
       remove: (chatId) => invoke<void>(IPC_CHANNEL.chatsRemove, chatId),
+      // Context tokens in use per agent chat; empty object when no transcript
+      // can be read, so the tile renders no number instead of a guess.
+      contextUsage: () => invoke<Record<string, number>>(IPC_CHANNEL.chatsContextUsage),
     },
     state: {
       get: (key) => invoke<string | null>(IPC_CHANNEL.stateGet, key),

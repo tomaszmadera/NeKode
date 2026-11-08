@@ -1,6 +1,7 @@
 import type { ChatInfo, SessionStatus, SessionTaskProgress } from '@shared/ipc-contract'
 import type React from 'react'
 import { getAgentColor } from '../../lib/agent-colors'
+import { contextLevel, describeContextTokens, formatContextTokens } from '../../lib/context-meter'
 import { Icon } from '../../lib/icons'
 import { testIdFor } from '../../lib/test-ids'
 
@@ -21,6 +22,12 @@ interface SessionTileProps {
   active: boolean
   flat?: boolean
   task?: SessionTaskProgress
+  /**
+   * Context tokens in use, read from this chat's own agent transcript. Absent
+   * when the transcript is unavailable (shell chats, other agents), which
+   * hides the meter instead of showing a guess.
+   */
+  contextTokens?: number
   attentionMessage?: string | null
   attentionVisible: boolean
   recentOutput: boolean
@@ -39,6 +46,7 @@ export function SessionTile({
   active,
   flat = false,
   task,
+  contextTokens,
   attentionMessage,
   attentionVisible,
   recentOutput,
@@ -54,8 +62,8 @@ export function SessionTile({
     ...(chat.agentName ? { '--agent-color': getAgentColor(chat.agentName) } : {}),
   } as React.CSSProperties
 
-  // TODO(NEKODE-160): ChatInfo has no token usage or last-activity timestamp.
-  // Hide context and time until the session API supplies real telemetry.
+  // TODO(NEKODE-160): ChatInfo has no real last-activity timestamp.
+  // The time stays hidden until the session API supplies real telemetry.
   return (
     <div className="nk-session-wrapper" style={style}>
       <button
@@ -94,6 +102,18 @@ export function SessionTile({
               style={{ opacity: task.stale ? 0.5 : undefined }}
             >
               {task.step}/{task.totalSteps}
+            </span>
+          ) : null}
+          {contextTokens !== undefined ? (
+            <span
+              role="img"
+              className="nk-session-context"
+              data-level={contextLevel(contextTokens)}
+              data-testid={testIdFor.chatContext(chat.id)}
+              title={`Context in use: ${describeContextTokens(contextTokens)}. Warning from 160,000, critical from 180,000.`}
+              aria-label={`${identity}, context ${describeContextTokens(contextTokens)} in use`}
+            >
+              {formatContextTokens(contextTokens)}
             </span>
           ) : null}
         </span>

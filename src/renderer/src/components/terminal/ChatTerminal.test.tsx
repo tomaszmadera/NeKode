@@ -64,6 +64,7 @@ function createAppMock(options: { createError?: unknown } = {}): AppMockBundle {
       create: vi.fn().mockResolvedValue({ id: 't1', projectId: 'p1', name: 'n' }),
       createWithAgent: vi.fn().mockResolvedValue({ id: 't1', projectId: 'p1', name: 'n' }),
       remove: vi.fn().mockResolvedValue(undefined),
+      contextUsage: vi.fn().mockResolvedValue({}),
     },
     state: {
       get: vi.fn().mockResolvedValue(null),

@@ -65,3 +65,27 @@ export function agentDisplayName(executable: string, args: readonly string[]): s
   const key = name.toLowerCase()
   return Object.hasOwn(AGENT_NAMES, key) ? AGENT_NAMES[key] : name
 }
+
+/**
+ * Index of the first argument the AGENT owns. A direct CLI owns its whole argv;
+ * a Node launch owns what follows the script (`node <script> …`), so a flag for
+ * the agent must never be placed in front of the script, which Node would read
+ * as one of its own options.
+ */
+export function agentArgIndex(executable: string, args: readonly string[]): number {
+  const name = commandName(executable).toLowerCase()
+  if (name !== 'node' && name !== 'nodejs') return 0
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]
+    // `node -- <script> …`: the first program argument after `--` is the script.
+    if (arg === '--') return Math.min(index + 2, args.length)
+    // No script at all (eval/print/stdin): append rather than risk a node option.
+    if (arg === '-' || /^(?:-e|-p|--eval|--print)(?:=|$)/.test(arg)) return args.length
+    if (NODE_VALUE_OPTIONS.has(arg)) {
+      index++
+    } else if (!arg.startsWith('-')) {
+      return index + 1
+    }
+  }
+  return args.length
+}

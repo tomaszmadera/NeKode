@@ -80,6 +80,7 @@ export function createAppApiStub(): AppApi {
       create: vi.fn().mockResolvedValue({ id: 't9', projectId: 'p1', name: 'PowerShell' }),
       createWithAgent: vi.fn().mockResolvedValue({ id: 't9', projectId: 'p1', name: 'PowerShell' }),
       remove: vi.fn().mockResolvedValue(undefined),
+      contextUsage: vi.fn().mockResolvedValue({}),
     },
     state: {
       get: vi.fn().mockResolvedValue(null),

@@ -133,6 +133,20 @@
   font: 11px var(--font-mono);
   color: var(--color-info);
 }
+/* Context in use (spec left-panel Behaviour): a count only, no denominator.
+   Quiet ink below 160k, warning amber from 160k, error red from 180k. */
+.nk-session-context {
+  flex: none;
+  font: 11px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-muted);
+}
+.nk-session-context[data-level="warning"] {
+  color: var(--color-warning);
+}
+.nk-session-context[data-level="critical"] {
+  color: var(--color-error);
+}
 .nk-session-meta {
   padding-left: 26px;
   box-sizing: border-box;

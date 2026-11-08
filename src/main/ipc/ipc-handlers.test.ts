@@ -91,6 +91,7 @@ function fakeChats(rows: Array<{ id: string; projectId: string; name: string }> 
     create: vi.fn(() => rows[0]),
     createWithAgent: vi.fn(() => rows[0]),
     remove: vi.fn(),
+    contextUsage: vi.fn(() => ({})),
   }
 }
 
@@ -250,6 +251,7 @@ function createHarness(
     create: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
     createWithAgent: vi.fn(() => ({ id: 't1', projectId: 'p1', name: 'n' })),
     remove: vi.fn(),
+    contextUsage: vi.fn(() => ({})),
   }
   const terminals: AppServices['terminals'] = overrides.terminals ?? {
     create: vi.fn(() => 't1'),

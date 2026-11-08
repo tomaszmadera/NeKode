@@ -22,9 +22,11 @@ import type { AppServices } from '../ipc/service-registry'
 import { ActionService } from './action-service'
 import { AgentChatLaunchService } from './agent-chat-launch-service'
 import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
+import { AgentSessionRegistry } from './agent-session-registry'
 import { AppStateService } from './app-state-service'
 import { AppUpdateService, createAppUpdateIo } from './app-update/app-update-service'
 import { ChatService } from './chat-service'
+import { ContextUsageService } from './context-usage/context-usage-service'
 import { ElevenLabsAdapter } from './dictation/adapters/elevenlabs-adapter'
 import { LocalOpenAiAdapter } from './dictation/adapters/local-openai-adapter'
 import { OpenRouterAdapter } from './dictation/adapters/openrouter-adapter'
@@ -321,6 +323,7 @@ export function createServices(
       )
     },
   }
+  const agentSessions = new AgentSessionRegistry()
   const agentChats = new AgentChatLaunchService({
     projects,
     profiles: agentProfiles,
@@ -328,6 +331,7 @@ export function createServices(
     createChat: (projectId, name, identity) =>
       chats.createNamed(projectId, name, IPC_CHANNEL.chatsCreateWithAgent, identity),
     removeChat: (chatId) => chats.remove(chatId),
+    sessions: agentSessions,
     terminals: agentTerminals,
   })
   const taskLaunch = new TaskLaunchService({
@@ -336,7 +340,18 @@ export function createServices(
     kanban,
     createChat: (projectId, name, identity) =>
       chats.createNamed(projectId, name, IPC_CHANNEL.kanbanLaunchTask, identity),
+    sessions: agentSessions,
     terminals: agentTerminals,
+  })
+  const contextUsage = new ContextUsageService({
+    projects,
+    chats,
+    launch: (chatId) => agentSessions.launch(chatId),
+    // The agents' own config roots: the CLI env override wins, else the home default.
+    claudeConfigDir: () =>
+      process.env.CLAUDE_CONFIG_DIR?.trim() || join(options.homeDir ?? homedir(), '.claude'),
+    codexConfigDir: () =>
+      process.env.CODEX_HOME?.trim() || join(options.homeDir ?? homedir(), '.codex'),
   })
   const appUpdate = new AppUpdateService(
     createAppUpdateIo({
@@ -467,7 +482,10 @@ export function createServices(
       list: (projectId) => chats.list(projectId),
       create: (projectId) => chats.create(projectId),
       createWithAgent: (projectId, profileId) => agentChats.createWithAgent(projectId, profileId),
-      remove: (chatId) => chats.remove(chatId),
+      remove: (chatId) => {
+        agentChats.removeChat(chatId)
+      },
+      contextUsage: () => contextUsage.usage(),
     },
     state: {
       get: (key) => state.get(key),

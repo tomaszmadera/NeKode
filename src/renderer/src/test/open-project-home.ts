@@ -1,7 +1,7 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent } from '@testing-library/react'
 
-// Project rows toggle expansion; the context menu retains the home action.
+// Project names select the project and open its home tab; the row's chevron
+// and avatar toggle expansion (project-home spec Behaviour 4).
 export function openProjectHome(element: HTMLElement): void {
-  fireEvent.contextMenu(element)
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Open project tasks' }))
+  fireEvent.click(element)
 }

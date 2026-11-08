@@ -362,6 +362,8 @@ export const testIdFor = {
   chatActivity: (chatId: string): string => `chat-activity-${chatId}`,
   chatStatusDot: (chatId: string): string => `chat-status-dot-${chatId}`,
   chatTaskProgress: (chatId: string): string => `chat-task-progress-${chatId}`,
+  /** Context-token readout on a session tile (Claude Code sessions). */
+  chatContext: (chatId: string): string => `chat-context-${chatId}`,
   chatTime: (chatId: string): string => `chat-time-${chatId}`,
   terminalView: (chatId: string): string => `terminal-view-${chatId}`,
   bottomTab: (tabId: string): string => `bottom-tab-${tabId}`,

@@ -11,6 +11,12 @@ import { AGENT_PROMPT_PLACEHOLDER } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { agentArgs } from '../agent-chat-launch-service'
 import { agentDisplayName } from '../agent-identity'
+import {
+  type AgentSessionRegistry,
+  choosesOwnSession,
+  profileSessionId,
+  withSessionId,
+} from '../agent-session-registry'
 import type { ShellSpec } from '../terminal/terminal-service'
 import { validateWslExecutableAsync } from '../terminal/wsl'
 
@@ -48,6 +54,8 @@ export interface TaskLaunchDeps {
   profiles: TaskLaunchProfiles
   kanban: TaskLaunchKanban
   createChat: (projectId: string, name: string, identity: ChatLaunchIdentity) => ChatInfo
+  /** Claude session ids for the context meter (spec left-panel Behaviour). */
+  sessions: AgentSessionRegistry
   terminals: {
     create(chatId: string, cwd: string, shell?: ShellSpec): string | Promise<string>
   }
@@ -145,6 +153,7 @@ export class TaskLaunchService {
   readonly #profiles: TaskLaunchProfiles
   readonly #kanban: TaskLaunchKanban
   readonly #createChat: TaskLaunchDeps['createChat']
+  readonly #sessions: AgentSessionRegistry
   readonly #terminals: TaskLaunchDeps['terminals']
   readonly #attempts = new Map<string, Attempt>()
   readonly #droppedProjects = new Set<string>()
@@ -154,6 +163,7 @@ export class TaskLaunchService {
     this.#profiles = deps.profiles
     this.#kanban = deps.kanban
     this.#createChat = deps.createChat
+    this.#sessions = deps.sessions
     this.#terminals = deps.terminals
   }
 
@@ -382,8 +392,28 @@ export class TaskLaunchService {
       throw new AppError('not_found', 'Project not found.', CHANNEL)
     }
     try {
-      await this.#terminals.create(attempt.chat.id, cwd, prepared.shell)
+      // A Claude chat launches with its own session id, so the context meter
+      // reads exactly this chat's transcript (a retried attempt gets a new id).
+      const executable = prepared.shell.file
+      const launch = this.#sessions.register(
+        attempt.chat.id,
+        agentDisplayName(executable, prepared.shell.args),
+        cwd,
+      )
+      if (choosesOwnSession(executable, prepared.shell.args)) {
+        const named = profileSessionId(executable, prepared.shell.args)
+        this.#sessions.setSessionId(
+          attempt.chat.id,
+          prepared.shell.args.includes('--fork-session') ? null : named,
+        )
+      }
+      const shell: ShellSpec = {
+        file: executable,
+        args: withSessionId(executable, prepared.shell.args, launch.sessionId),
+      }
+      await this.#terminals.create(attempt.chat.id, cwd, shell)
     } catch {
+      this.#sessions.forget(attempt.chat.id)
       if (attempt.dropped || this.#droppedProjects.has(attempt.projectId)) {
         throw new AppError('not_found', 'Project not found.', CHANNEL)
       }

@@ -6,6 +6,12 @@ import {
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { agentDisplayName } from './agent-identity'
+import {
+  type AgentSessionRegistry,
+  choosesOwnSession,
+  profileSessionId,
+  withSessionId,
+} from './agent-session-registry'
 import type { ShellSpec } from './terminal/terminal-service'
 
 // Agent chat launch (spec new-chat-agent-menu): the profile menu of the left
@@ -35,6 +41,11 @@ export interface AgentChatLaunchDeps {
   createChat: (projectId: string, name: string, identity: ChatLaunchIdentity) => ChatInfo
   /** Removes the chat row again when the agent process cannot start. */
   removeChat: (chatId: string) => void
+  /**
+   * Session ids handed to Claude launches, so the chat's own transcript can be
+   * read for the context meter (spec left-panel Behaviour).
+   */
+  sessions: AgentSessionRegistry
   terminals: {
     create(chatId: string, cwd: string, shell?: ShellSpec): string | Promise<string>
   }
@@ -75,6 +86,7 @@ export class AgentChatLaunchService {
   readonly #profiles: AgentChatProfiles
   readonly #createChat: AgentChatLaunchDeps['createChat']
   readonly #removeChat: AgentChatLaunchDeps['removeChat']
+  readonly #sessions: AgentSessionRegistry
   readonly #terminals: AgentChatLaunchDeps['terminals']
 
   constructor(deps: AgentChatLaunchDeps) {
@@ -82,6 +94,7 @@ export class AgentChatLaunchService {
     this.#profiles = deps.profiles
     this.#createChat = deps.createChat
     this.#removeChat = deps.removeChat
+    this.#sessions = deps.sessions
     this.#terminals = deps.terminals
   }
 
@@ -100,19 +113,39 @@ export class AgentChatLaunchService {
       .profiles.find((candidate) => candidate.id === profileId)
     if (profile === undefined)
       throw new AppError('not_found', 'The selected agent profile is no longer available.', CHANNEL)
+    const args = agentArgs(profile.args, profile.interactiveArgs)
+    const agentName = agentDisplayName(profile.executable, args)
+    const chat = this.#createChat(projectId, profile.name, { agentName })
+    // The launch record ties this chat to its own transcript: Claude gets a
+    // session id in argv, and every agent records its launch moment for
+    // correlation (Codex has no session-id flag). A profile that resumes a
+    // specific session is pointed at that id; `--continue` and
+    // `--fork-session` name no transcript, so they keep none.
+    const launch = this.#sessions.register(chat.id, agentName, project.path)
+    if (choosesOwnSession(profile.executable, args)) {
+      const named = profileSessionId(profile.executable, args)
+      this.#sessions.setSessionId(chat.id, args.includes('--fork-session') ? null : named)
+    }
     const shell: ShellSpec = {
       file: profile.executable,
-      args: agentArgs(profile.args, profile.interactiveArgs),
+      args: withSessionId(profile.executable, args, launch.sessionId),
     }
-    const chat = this.#createChat(projectId, profile.name, {
-      agentName: agentDisplayName(shell.file, shell.args),
-    })
     try {
       await this.#terminals.create(chat.id, project.path, shell)
     } catch (error) {
-      this.#removeChat(chat.id)
+      this.removeChat(chat.id)
       throw spawnFailure(error)
     }
     return chat
+  }
+
+  /**
+   * Chat removal from the tree (close flow): forgets the launch record so no
+   * later poll reads a removed chat's transcript, then drops the row. Main
+   * removes the terminal session on the same flow.
+   */
+  removeChat(chatId: string): void {
+    this.#sessions.forget(chatId)
+    this.#removeChat(chatId)
   }
 }
