@@ -17,8 +17,8 @@ export interface RegionSizeLimits {
   max: number
 }
 
-export const LEFT_REGION_SIZE: RegionSizeLimits = { default: 280, min: 220, max: 480 }
-/** Same limits as the left panel (workspace-layout spec Behaviour 9). */
+export const LEFT_REGION_SIZE: RegionSizeLimits = { default: 320, min: 220, max: 340 }
+/** Right panel limits are independent of the compact left sidebar. */
 export const RIGHT_REGION_SIZE: RegionSizeLimits = { default: 280, min: 220, max: 480 }
 export const BOTTOM_REGION_SIZE: RegionSizeLimits = { default: 220, min: 160, max: 560 }
 

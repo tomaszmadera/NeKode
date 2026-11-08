@@ -186,10 +186,10 @@ describe('LeftNavigation session status indicators', () => {
     render(navigation({ ...props, chatsByProject: { p1: [chat] } }))
     const row = screen.getByTestId(testIdFor.chatRow(chat.id))
     expect(within(row).getByText('NEKODE-42')).toBeTruthy()
-    expect(within(row).getByText('Codex')).toBeTruthy()
+    expect(within(row).getByText('codex')).toBeTruthy()
     expect(row.textContent).not.toContain('[PS7]')
     expect(row.textContent).not.toContain('Analysis')
-    expect(row.getAttribute('aria-label')).toBe('NEKODE-42, Codex, idle, now')
+    expect(row.getAttribute('aria-label')).toBe('NEKODE-42, Codex, NEKODE, idle')
     expect(row.getAttribute('title')).toContain('NEKODE-42')
     fireEvent.click(row)
     expect(props.onSelectChat).toHaveBeenCalledWith('p1', 'task')
@@ -208,7 +208,7 @@ describe('LeftNavigation session status indicators', () => {
     render(navigation({ ...defaultProps(), chatsByProject: { p1: chats } }))
     const agent = screen.getByTestId(testIdFor.chatRow('agent'))
     expect(within(agent).getByText('Code analysis')).toBeTruthy()
-    expect(within(agent).getByText('Claude')).toBeTruthy()
+    expect(within(agent).getByText('claude')).toBeTruthy()
     expect(
       within(screen.getByTestId(testIdFor.chatRow('shell'))).getByText('Terminal'),
     ).toBeTruthy()
@@ -234,58 +234,33 @@ describe('LeftNavigation session status indicators', () => {
     expect(within(screen.getByTestId(testIdFor.projectSelect('p2'))).queryByText('WSL')).toBeNull()
   })
 
-  it('renders state dot for every session with correct color, label, and accessibility', () => {
-    const props = {
-      ...defaultProps(),
-      selectedChatId: 't1',
-      chatsByProject: {
-        p1: [
-          { id: 't1', projectId: 'p1', name: 'Chat 1' },
-          { id: 't2', projectId: 'p1', name: 'Chat 2' },
-          { id: 't3', projectId: 'p1', name: 'Chat 3' },
-        ],
-      },
-      sessionStatuses: { t1: 'running' as const },
-      attention: { t2: { message: 'Approval required' } }, // waiting
-      // t3 has neither -> idle
+  it('renders every session status and includes project identity in its accessible name', () => {
+    render(
+      navigation({
+        ...defaultProps(),
+        selectedChatId: 'running',
+        chatsByProject: {
+          p1: [
+            { id: 'running', projectId: 'p1', name: 'Working', status: 'running' },
+            { id: 'waiting', projectId: 'p1', name: 'Question', status: 'waiting' },
+            { id: 'idle', projectId: 'p1', name: 'Resting' },
+          ],
+        },
+      }),
+    )
+    for (const [id, label, status] of [
+      ['running', 'Working', 'running'],
+      ['waiting', 'Question', 'waiting for input'],
+      ['idle', 'Resting', 'idle'],
+    ]) {
+      expect(screen.getByTestId(testIdFor.chatStatusDot(id)).getAttribute('data-status')).toBe(id)
+      expect(screen.getByTestId(testIdFor.chatRow(id)).getAttribute('aria-label')).toBe(
+        `${label}, NEKODE, ${status}`,
+      )
+      expect(screen.getByTestId(testIdFor.chatRow(id)).getAttribute('aria-current')).toBe(
+        id === 'running' ? 'true' : 'false',
+      )
     }
-    render(navigation({ ...props }))
-
-    // Running session (t1)
-    const row1 = screen.getByTestId(testIdFor.chatRow('t1'))
-    const dot1 = screen.getByTestId(testIdFor.chatStatusDot('t1'))
-    expect(dot1.getAttribute('aria-hidden')).toBe('true')
-    expect(dot1.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80
-    expect(row1.getAttribute('title')).toBe('Chat 1: running')
-    expect(row1.getAttribute('aria-label')).toBe('Chat 1, running, now')
-    // Active session: 1px accent border, 8% accent fill (spec §4.3)
-    expect(row1.getAttribute('data-selected')).toBe('true')
-    expect(row1.getAttribute('aria-current')).toBe('true')
-    expect(row1.style.border).toContain('var(--color-accent)')
-    expect(row1.style.backgroundColor).toContain('8%')
-
-    // Waiting session (t2)
-    const row2 = screen.getByTestId(testIdFor.chatRow('t2'))
-    const dot2 = screen.getByTestId(testIdFor.chatStatusDot('t2'))
-    expect(dot2.getAttribute('aria-hidden')).toBe('true')
-    expect(dot2.style.backgroundColor).toBe('rgb(245, 158, 11)') // #F59E0B
-    expect(row2.getAttribute('title')).toBe('Chat 2: waiting for input')
-    expect(row2.getAttribute('aria-label')).toBe('Chat 2, waiting for input, now')
-    // Inactive session: 1px border, card surface background
-    expect(row2.getAttribute('aria-current')).toBe('false')
-    expect(row2.style.border).toContain('var(--color-edge)')
-    expect(row2.style.backgroundColor).toBe('var(--color-group)')
-
-    // Idle session (t3)
-    const row3 = screen.getByTestId(testIdFor.chatRow('t3'))
-    const dot3 = screen.getByTestId(testIdFor.chatStatusDot('t3'))
-    expect(dot3.getAttribute('aria-hidden')).toBe('true')
-    expect(dot3.style.backgroundColor).toBe('rgb(138, 144, 166)') // #8A90A6
-    expect(row3.getAttribute('title')).toBe('Chat 3: idle')
-    expect(row3.getAttribute('aria-label')).toBe('Chat 3, idle, now')
-    expect(row3.getAttribute('aria-current')).toBe('false')
-    expect(row3.style.border).toContain('var(--color-edge)')
-    expect(row3.style.backgroundColor).toBe('var(--color-group)')
   })
 
   it('renders task progress badge only when normalized progress is supplied', () => {
@@ -313,76 +288,42 @@ describe('LeftNavigation session status indicators', () => {
     const badge1 = screen.getByTestId(testIdFor.chatTaskProgress('t1'))
     expect(badge1.textContent).toBe('5/8')
     expect(badge1.getAttribute('title')).toBe('Task NEKODE-42: step 5 of 8')
-    expect(badge1.style.color).toBe('rgb(90, 169, 255)') // #5AA9FF
-    expect(badge1.style.backgroundColor).toContain('rgba(90, 169, 255, 0.12)')
-    expect(badge1.className).toContain('font-mono')
+    expect(badge1.className).toBe('nk-session-progress')
 
     expect(screen.queryByTestId(testIdFor.chatTaskProgress('t2'))).toBeNull()
   })
 
-  it('immediately updates dot color and resets time upon status change', () => {
+  it('updates status immediately and hides unavailable time and context telemetry', () => {
     const props = {
       ...defaultProps(),
-      chatsByProject: {
-        p1: [{ id: 't1', projectId: 'p1', name: 'Chat 1' }],
-      },
+      chatsByProject: { p1: [{ id: 't1', projectId: 'p1', name: 'Agent', agentName: 'Codex' }] },
     }
-    const view = render(navigation({ ...props }))
-    const row = screen.getByTestId(testIdFor.chatRow('t1'))
-    const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
-
-    // Starts idle
-    expect(dot.style.backgroundColor).toBe('rgb(138, 144, 166)')
-    expect(row.getAttribute('title')).toBe('Chat 1: idle')
-    expect(screen.getByTestId(testIdFor.chatTime('t1')).textContent).toBe('now')
-
-    // Becomes running via sessionStatuses
+    const view = render(navigation(props))
     view.rerender(navigation({ ...props, sessionStatuses: { t1: 'running' } }))
-    expect(dot.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80
-    expect(row.getAttribute('title')).toBe('Chat 1: running')
-    expect(screen.getByTestId(testIdFor.chatTime('t1')).textContent).toBe('now')
-
-    // Becomes waiting via attention
-    view.rerender(
-      navigation({
-        ...props,
-        sessionStatuses: { t1: 'running' as const },
-        attention: { t1: { message: 'Confirm?' } },
-      }),
+    expect(screen.getByTestId(testIdFor.chatStatusDot('t1')).getAttribute('data-status')).toBe(
+      'running',
     )
-    expect(dot.style.backgroundColor).toBe('rgb(245, 158, 11)') // #F59E0B
-    expect(row.getAttribute('title')).toBe('Chat 1: waiting for input')
-    expect(screen.getByTestId(testIdFor.chatTime('t1')).textContent).toBe('now')
+    view.rerender(navigation({ ...props, attention: { t1: { message: 'Confirm?' } } }))
+    expect(screen.getByTestId(testIdFor.chatStatusDot('t1')).getAttribute('data-status')).toBe(
+      'waiting',
+    )
+    expect(screen.queryByTestId(testIdFor.chatTime('t1'))).toBeNull()
+    expect(screen.queryByTitle(/^Context:/)).toBeNull()
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).textContent).not.toContain('now')
   })
 
-  it('reveals close control on hover and focus without removing the state dot', () => {
+  it('keeps a separate accessible close button without removing the status indicator', () => {
     const props = {
       ...defaultProps(),
-      chatsByProject: {
-        p1: [{ id: 't1', projectId: 'p1', name: 'Chat 1' }],
-      },
+      chatsByProject: { p1: [{ id: 't1', projectId: 'p1', name: 'Chat 1' }] },
     }
-    render(navigation({ ...props }))
+    render(navigation(props))
     const row = screen.getByTestId(testIdFor.chatRow('t1'))
-    const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
-    const closeBtn = screen.getByTestId(testIdFor.chatClose('t1'))
-    const timeSpan = screen.getByTestId(testIdFor.chatTime('t1'))
-
-    expect(closeBtn.className).toContain('hidden')
-    expect(timeSpan.className).not.toContain('invisible')
-    expect(dot).toBeTruthy()
-
-    // Hover reveals close button and hides time
-    fireEvent.mouseEnter(row)
-    expect(closeBtn.className).toContain('flex')
-    expect(timeSpan.className).toContain('invisible')
-    expect(dot).toBeTruthy() // Dot on the left remains visible
-
-    // Leave restores time and hides close button
-    fireEvent.mouseLeave(row.closest('li') as HTMLElement)
-    expect(closeBtn.className).toContain('hidden')
-    expect(timeSpan.className).not.toContain('invisible')
-    expect(dot).toBeTruthy()
+    const close = screen.getByRole('button', { name: 'Close chat Chat 1' })
+    expect(row.contains(close)).toBe(false)
+    fireEvent.click(close)
+    expect(props.onRequestCloseChat).toHaveBeenCalledWith('t1')
+    expect(screen.getByTestId(testIdFor.chatStatusDot('t1'))).toBeTruthy()
   })
 })
 
@@ -424,36 +365,16 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(screen.queryByTestId(testIdFor.projectAvatar('p2'))).toBeNull()
   })
 
-  it('folds with the chevron only and opens the project only from its icon and name (NEKODE-96)', () => {
+  it('toggles the whole project row and retains a real home action in its context menu', () => {
     const props = defaultProps()
-    render(navigation({ ...props }))
-
-    // The chevron of an unselected project unfolds it without selecting it.
-    const toggle2 = screen.getByTestId(testIdFor.projectToggle('p2'))
-    expect(toggle2.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle2.getAttribute('aria-label')).toBe('Expand AGENT-HARNESS')
-    fireEvent.click(toggle2)
-    expect(props.onToggleProject).toHaveBeenCalledWith('p2')
-    expect(props.onSelectProject).not.toHaveBeenCalled()
-
-    // The chevron of the selected project folds it, still without selecting.
-    const toggle1 = screen.getByTestId(testIdFor.projectToggle('p1'))
-    expect(toggle1.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.click(toggle1)
-    expect(props.onToggleProject).toHaveBeenLastCalledWith('p1')
-    expect(props.onSelectProject).not.toHaveBeenCalled()
-
-    // The name of an unselected project opens it and does not toggle.
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
-    expect(props.onSelectProject).toHaveBeenCalledWith('p2')
-    expect(props.onToggleProject).toHaveBeenCalledTimes(2)
-
-    // The name of the already-open project still reaches the host, which
-    // opens its home tab and keeps the chat (project-home spec Behaviour 4).
+    render(navigation(props))
+    fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p2')))
     fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
-    expect(props.onSelectProject).toHaveBeenCalledTimes(2)
-    expect(props.onSelectProject).toHaveBeenLastCalledWith('p1')
-    expect(props.onToggleProject).toHaveBeenCalledTimes(2)
+    expect(props.onToggleProject.mock.calls).toEqual([['p2'], ['p1']])
+    expect(props.onSelectProject).not.toHaveBeenCalled()
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.projectSelect('p2')))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open project tasks' }))
+    expect(props.onSelectProject).toHaveBeenCalledWith('p2')
   })
 
   it('applies bold font to expanded or active projects and regular to collapsed projects', () => {
@@ -464,12 +385,10 @@ describe('LeftNavigation project avatar and initials', () => {
     render(navigation({ ...props }))
 
     const btn1 = screen.getByTestId(testIdFor.projectSelect('p1'))
-    const nameSpan1 = btn1.querySelector('span.truncate')
-    expect(nameSpan1?.className).toContain('font-semibold')
+    expect(btn1.style.fontWeight).toBe('700')
 
     const btn2 = screen.getByTestId(testIdFor.projectSelect('p2'))
-    const nameSpan2 = btn2.querySelector('span.truncate')
-    expect(nameSpan2?.className).toContain('font-normal')
+    expect(btn2.style.fontWeight).toBe('500')
   })
 
   it('applies lighter font color on hover to collapsed projects matching active project color', () => {
@@ -502,7 +421,7 @@ describe('LeftNavigation project avatar and initials', () => {
 
     const active = screen.getByTestId(testIdFor.projectRow('p1'))
     const inactive = screen.getByTestId(testIdFor.projectRow('p2'))
-    expect(active.className).toContain('bg-selected')
+    expect(active.style.backgroundColor).toContain('12%')
     expect(inactive.className).not.toContain('bg-selected')
     expect(screen.getAllByText('Recent sessions')).toHaveLength(2)
     expect(active.closest('li')?.textContent).toContain('Recent sessions')
@@ -518,13 +437,13 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(screen.getByTestId(testIdFor.projectRow('p2')).closest('li')?.textContent).toContain(
       'Recent sessions',
     )
-    expect(screen.getByTestId(testIdFor.projectRow('p1')).className).toContain('bg-selected')
+    expect(screen.getByTestId(testIdFor.projectRow('p1')).style.backgroundColor).toContain('12%')
   })
 
-  it('shows only No active sessions when an open project has no sessions', () => {
+  it('shows the empty state and new-session action under the expanded project label', () => {
     render(navigation({ ...defaultProps() }))
     const empty = screen.getByText('No active sessions')
-    expect(screen.queryByText('Recent sessions')).toBeNull()
+    expect(screen.getByText('Recent sessions')).toBeTruthy()
     expect(empty.className).toBe(SESSION_CAPTION_CLASS)
   })
 
@@ -563,14 +482,12 @@ describe('LeftNavigation project avatar and initials', () => {
     const container = screen.getByTestId(testIdFor.projectChats('p1'))
     expect(container.style.paddingLeft).toBe('28px')
     const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
-    expect(dot.style.width).toBe('8px')
-    expect(dot.style.height).toBe('8px')
+    expect(dot.className).toContain('nk-session-status')
 
-    const timeSpan = screen.getByTestId(testIdFor.chatTime('t1'))
-    expect(timeSpan).toBeTruthy()
+    expect(screen.queryByTestId(testIdFor.chatTime('t1'))).toBeNull()
 
     const closeBtn = screen.getByTestId(testIdFor.chatClose('t1'))
-    expect(closeBtn.className).toContain('absolute')
+    expect(closeBtn.className).toContain('nk-chat-close')
   })
 
   it('dims stale progress and exposes its error in the title and accessible label', () => {
@@ -639,8 +556,8 @@ describe('LeftNavigation project avatar and initials', () => {
     // Add project button is hidden in Sessions view
     expect(screen.queryByTestId(TEST_ID.addProjectButton)).toBeNull()
 
-    // Flat list of sessions remains in project and start order (never re-sorted by attention/status)
-    const flatRows = screen.getAllByRole('button', { name: /Chat/ })
+    // Flat sessions are ordered waiting, running, idle.
+    const flatRows = screen.getAllByTestId(/^chat-row-/)
     expect(flatRows.length).toBe(3)
     expect(flatRows[0].textContent).toContain('Chat 1')
     expect(flatRows[1].textContent).toContain('Chat 2')
@@ -652,11 +569,8 @@ describe('LeftNavigation project avatar and initials', () => {
     const dot3 = screen.getByTestId(testIdFor.chatStatusDot('c3'))
 
     expect(dot1.getAttribute('data-status')).toBe('waiting')
-    expect(dot1.style.backgroundColor).toBe('rgb(245, 158, 11)') // #F59E0B amber
     expect(dot2.getAttribute('data-status')).toBe('running')
-    expect(dot2.style.backgroundColor).toBe('rgb(74, 222, 128)') // #4ADE80 green
     expect(dot3.getAttribute('data-status')).toBe('idle')
-    expect(dot3.style.backgroundColor).toBe('rgb(138, 144, 166)') // #8A90A6 gray
 
     // No fake SVG sparklines in flat session rows
     expect(flatRows[0].querySelector('svg')).toBeNull()
@@ -668,7 +582,7 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(props.onSelectChat).toHaveBeenCalledWith('p1', 'c1')
   })
 
-  it('does not re-sort the sessions view or change idle status when an idle session is selected or has terminal activity', () => {
+  it('preserves status ordering and does not change idle status when an idle session is selected or has terminal activity', () => {
     const props = {
       ...defaultProps(),
       chatsByProject: {
@@ -688,7 +602,7 @@ describe('LeftNavigation project avatar and initials', () => {
     fireEvent.click(sessionsBtn)
 
     // c1 is running (first), c2 is idle (second), c3 is idle (third)
-    let rows = screen.getAllByRole('button', { name: /Chat/ })
+    let rows = screen.getAllByTestId(/^chat-row-/)
     expect(rows[0].textContent).toContain('Chat 1')
     expect(rows[1].textContent).toContain('Chat 2')
     expect(rows[2].textContent).toContain('Chat 3')
@@ -703,7 +617,7 @@ describe('LeftNavigation project avatar and initials', () => {
     )
 
     // c3 remains idle and its position does not jump to the top
-    rows = screen.getAllByRole('button', { name: /Chat/ })
+    rows = screen.getAllByTestId(/^chat-row-/)
     expect(rows[0].textContent).toContain('Chat 1')
     expect(rows[1].textContent).toContain('Chat 2')
     expect(rows[2].textContent).toContain('Chat 3')
@@ -745,5 +659,42 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(projectRow.textContent).toContain('NEKODE')
     expect(projectRow.textContent).not.toContain('main')
     expect(projectRow.textContent).not.toContain('master')
+  })
+})
+
+describe('LeftNavigation approved design', () => {
+  it('collapses all expanded projects and removes the control when none remain', () => {
+    const store = createProjectStore()
+    render(navigation({ ...defaultProps(), expandedProjectIds: new Set(['p1', 'p2']) }, store))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all projects' }))
+    expect(store.getState().expandedProjectIds.size).toBe(0)
+    expect(screen.queryByRole('button', { name: 'Collapse all projects' })).toBeNull()
+  })
+
+  it('uses the same tile in both views and puts waiting sessions first across projects', () => {
+    const props = {
+      ...defaultProps(),
+      chatsByProject: {
+        p1: [
+          { id: 'idle', projectId: 'p1', name: 'Idle' },
+          { id: 'run', projectId: 'p1', name: 'Working', status: 'running' as const },
+        ],
+        p2: [{ id: 'wait', projectId: 'p2', name: 'Question', status: 'waiting' as const }],
+      },
+    }
+    render(navigation(props))
+    const projectTile = screen.getByTestId(testIdFor.chatRow('idle'))
+    expect(projectTile.className).toBe('nk-session-tile')
+    fireEvent.click(screen.getByRole('button', { name: /^Sessions/ }))
+    const rows = screen.getAllByTestId(/^chat-row-/)
+    expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
+      'chat-row-wait',
+      'chat-row-run',
+      'chat-row-idle',
+    ])
+    expect(rows.every((row) => row.className === projectTile.className)).toBe(true)
+    expect(within(rows[0]).getByText('agent-harness')).toBeTruthy()
+    fireEvent.click(rows[0])
+    expect(props.onSelectChat).toHaveBeenCalledWith('p2', 'wait')
   })
 })

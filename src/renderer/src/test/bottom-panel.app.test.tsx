@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App, TEST_ID, testIdFor } from '../App'
 import { createAppApiStub as appApiStub } from './app-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
+import { openProjectHome } from './open-project-home'
 import { mockTerminalInstances, resetMockTerminals } from './xterm-mock'
 
 vi.mock('@xterm/xterm', () => import('./xterm-mock'))
@@ -310,7 +311,7 @@ describe('bottom auxiliary terminal panel', () => {
       expect(screen.getAllByRole('button', { name: 'PowerShell' })).toHaveLength(2),
     )
     const projectOneIds = bottomTabIds()
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p2')))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'PowerShell' })).toBeNull())
     expect(screen.getByTestId(TEST_ID.bottomEmpty)).toBeTruthy()
     for (const id of projectOneIds) {
@@ -326,7 +327,7 @@ describe('bottom auxiliary terminal panel', () => {
       expect(bottomCreateIds(app).some((id) => id.startsWith('bottom:p2:'))).toBe(true),
     )
     const createsAfterSwitch = vi.mocked(app.terminals.create).mock.calls.length
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() =>
       expect(screen.getAllByRole('button', { name: 'PowerShell' })).toHaveLength(2),
     )

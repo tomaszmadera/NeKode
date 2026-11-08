@@ -58,7 +58,7 @@ describe('useResizableRegion', () => {
     firePointer(handle, 'pointermove', { clientX: 350 })
     firePointer(handle, 'pointerup', { clientX: 350 })
 
-    expect((leftNav as HTMLElement).style.width).toBe('350px')
+    expect((leftNav as HTMLElement).style.width).toBe('340px')
   })
 
   it('resizes the bottom region relative to drag start and clamps to min', () => {
@@ -200,7 +200,7 @@ describe('useResizableRegion', () => {
 })
 
 // The x-axis behaviour (clientX against the drag start) drives the left
-// region, starting at its default width (280px).
+// region, starting at a fixed fixture width (280px); App covers the default.
 function XAxisHarness({
   edge = 'start',
   onResizeEnd = () => undefined,
@@ -208,7 +208,7 @@ function XAxisHarness({
   edge?: 'start' | 'end'
   onResizeEnd?: (size: number) => void
 }): React.JSX.Element {
-  const [size, setSize] = useState(LEFT_REGION_SIZE.default)
+  const [size, setSize] = useState(280)
   const leftRegion = useResizableRegion({
     axis: 'x',
     edge,

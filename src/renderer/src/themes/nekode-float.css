@@ -129,6 +129,16 @@
   background-color: transparent;
 }
 
+[data-theme="nekode-float"] .nk-workspace-row {
+  padding: 10px 10px 6px;
+  gap: 6px;
+  background: var(--color-app);
+}
+
+[data-theme="nekode-float"] .nk-workspace-row > aside {
+  margin: 0;
+}
+
 /* Tab strip: offset first tab so active state never overlaps the card's top-left rounded corner */
 [data-theme="nekode-float"] .nk-tab-strip {
   background-color: transparent;
@@ -144,6 +154,10 @@
     radial-gradient(ellipse 110% 95% at 50% 40%, transparent 55%, rgba(4, 6, 14, 0.38) 100%),
     radial-gradient(700px 360px at 50% 42%, rgba(110, 80, 240, 0.12), transparent 70%),
     linear-gradient(180deg, var(--color-panel) 0%, var(--float-panel-bottom) 100%);
+}
+
+[data-theme="nekode-float"] .nk-workspace-row .nk-content-frame {
+  margin: 0;
 }
 
 /* Tab styling from prototype */
@@ -347,39 +361,6 @@
   color: var(--float-ink-on-accent);
 }
 
-/* Session cards (spec §4.3) */
-.nk-session-card {
-  border: 1px solid var(--color-edge);
-  background-color: var(--color-group);
-  transition:
-    border-color 0.12s,
-    background-color 0.12s;
-}
-.nk-session-card:hover:not([aria-current="true"]) {
-  border-color: color-mix(in srgb, var(--color-edge) 50%, var(--color-ink-muted));
-  background-color: color-mix(in srgb, var(--color-group), var(--color-ink) 5%);
-}
-.nk-session-card[aria-current="true"] {
-  border-color: var(--color-accent);
-  background-color: color-mix(in srgb, var(--color-accent) 8%, transparent);
-}
-
-/* Sessions view flat rows (spec §5) */
-.nk-flat-session-row {
-  border: 1px solid transparent;
-  background-color: transparent;
-  transition:
-    border-color 0.12s,
-    background-color 0.12s;
-}
-.nk-flat-session-row:hover:not([aria-current="true"]) {
-  background-color: color-mix(in srgb, var(--color-ink) 6%, transparent);
-}
-.nk-flat-session-row[aria-current="true"] {
-  border-color: var(--color-accent);
-  background-color: color-mix(in srgb, var(--color-accent) 8%, transparent);
-}
-
 /* Icon button hover helper */
 .nk-icon-btn {
   transition:
@@ -428,21 +409,6 @@
 }
 
 [data-theme="nekode-float"] .nk-project-settings:hover {
-  background: var(--float-overlay-hover);
-  color: var(--color-ink);
-}
-
-/* Footer action buttons: App Settings & Mascot toggle (.ibtn style) */
-[data-theme="nekode-float"] .nk-footer-action {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid var(--float-overlay-edge);
-  color: var(--float-ink-control);
-  background: transparent;
-}
-
-[data-theme="nekode-float"] .nk-footer-action:hover {
   background: var(--float-overlay-hover);
   color: var(--color-ink);
 }

@@ -27,6 +27,7 @@ import { TERMINAL_CTRL_V_PASTE_STORAGE_KEY } from './lib/terminal-paste'
 import { QUICK_THEME_SWITCH_STORAGE_KEY, THEME_STORAGE_KEY } from './lib/theme'
 import { createAppApiStub as appApiStub } from './test/app-api-stub'
 import { resetMockFitAddons } from './test/fit-addon-mock'
+import { openProjectHome } from './test/open-project-home'
 import { mockTerminalInstances, resetMockTerminals } from './test/xterm-mock'
 
 // xterm.js needs a real canvas; mock it at the module boundary so App renders
@@ -159,7 +160,7 @@ describe('app settings and themes', () => {
   it('toggles the mascot independently of App Settings and restores its saved visibility', () => {
     const app = createAppApiStub()
     const view = render(<App app={app} />)
-    const toggle = screen.getByRole('button', { name: 'Show mascot', pressed: true })
+    const toggle = screen.getByRole('button', { name: 'Hide mascot', pressed: true })
     expect(screen.getByTestId(TEST_ID.panelMascot)).toBeTruthy()
     fireEvent.click(toggle)
     expect(screen.queryByTestId(TEST_ID.panelMascot)).toBeNull()
@@ -174,9 +175,9 @@ describe('app settings and themes', () => {
     restored.unmount()
 
     render(<App app={app} />)
-    expect(screen.getByRole('button', { name: 'Show mascot', pressed: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Hide mascot', pressed: true })).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.panelMascot)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     expect(screen.getByRole('dialog', { name: 'App Settings' })).toBeTruthy()
   })
 
@@ -186,7 +187,7 @@ describe('app settings and themes', () => {
     await waitFor(() => expect(app.usage.getEnabled).toHaveBeenCalled())
     expect(screen.queryByRole('button', { name: /^Usage quota/ })).toBeNull()
     expect(app.usage.read).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Usage' }))
     const toggle = await screen.findByRole('switch', { name: 'Show usage quota' })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
@@ -199,7 +200,7 @@ describe('app settings and themes', () => {
   it('opens the global Agents library without a project', async () => {
     const app = createAppApiStub()
     render(<App app={app} />)
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Agents' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Add agent' }))
     expect(screen.getByLabelText('Command')).toBeTruthy()
@@ -268,7 +269,7 @@ describe('app settings and themes', () => {
           : null,
     )
     render(<App app={app} />)
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     expect(app.dictation.dictionaryList).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('tab', { name: 'Dictation' }))
     // Observe the lazy load before the dictionary's separate project-picker
@@ -338,7 +339,7 @@ describe('app settings and themes', () => {
       [APP_STATE_KEY.selectedProjectId, 'p1'],
       [APP_STATE_KEY.selectedChatId, 't2'],
     ])
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p2')))
     expect(selectionWrites().slice(-2)).toEqual([
       [APP_STATE_KEY.selectedProjectId, 'p2'],
       [APP_STATE_KEY.selectedChatId, ''],
@@ -351,7 +352,7 @@ describe('app settings and themes', () => {
     const view = render(<App app={app} />)
     const row = await screen.findByTestId(testIdFor.projectSelect('p1'))
     expect(row.querySelector('span.truncate')?.textContent).toBe('DEMO')
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const toggle = screen.getByRole('switch', {
       name: 'Uppercase project names in the tree',
     })
@@ -370,7 +371,7 @@ describe('app settings and themes', () => {
           ?.textContent,
       ).toBe('Demo'),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     fireEvent.click(screen.getByRole('switch', { name: 'Uppercase project names in the tree' }))
     expect(
       screen.getByTestId(testIdFor.projectSelect('p1')).querySelector('span.truncate')?.textContent,
@@ -383,7 +384,7 @@ describe('app settings and themes', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     const view = render(<App app={app} />)
     await screen.findByTestId(testIdFor.projectAvatar('p1'))
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const toggle = screen.getByRole('switch', {
       name: 'Project icons',
     })
@@ -397,7 +398,7 @@ describe('app settings and themes', () => {
     )
     render(<App app={app} />)
     await waitFor(() => expect(screen.queryByTestId(testIdFor.projectAvatar('p1'))).toBeNull())
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     fireEvent.click(screen.getByRole('switch', { name: 'Project icons' }))
     expect(await screen.findByTestId(testIdFor.projectAvatar('p1'))).toBeTruthy()
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.showProjectIcons, '1')
@@ -464,7 +465,7 @@ describe('app settings and themes', () => {
     view.unmount()
     render(<App app={app} />)
     expect(document.documentElement.dataset.theme).toBe('nekode-flat')
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const restored = screen.getByRole('combobox', { name: 'Theme' })
     expect((restored as HTMLSelectElement).value).toBe('nekode-flat')
     fireEvent.change(restored, { target: { value: 'nekode-float' } })
@@ -497,7 +498,7 @@ describe('app settings and themes', () => {
     // (user requests 2026-10-08, 2026-10-13) is keyed the same way: both themes
     // sit on the darker app background (bg-app), while attached keeps the
     // hairline under the row (border-b border-edge) that floating drops.
-    const FLOATING_PANEL_FRAME = 'm-2'
+    const FLOATING_PANEL_FRAME = 'rounded-[10px]'
     const ATTACHED_PANEL_FRAME = 'border-r'
     const ATTACHED_TAB_FRAME = 'border-b border-edge'
 
@@ -600,7 +601,7 @@ describe('app settings and themes', () => {
       expect(scroll).toHaveBeenCalled()
       fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
       scroll.mockClear()
-      fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+      fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
       expect(scroll).not.toHaveBeenCalled()
     } finally {
       HTMLElement.prototype.scrollIntoView = previous
@@ -622,7 +623,7 @@ describe('app settings and themes', () => {
     } as const
 
     render(<App app={createAppApiStub()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
 
     // General is the initial tab and keeps the live controls.
@@ -668,7 +669,7 @@ describe('app settings and themes', () => {
       })
     }
     render(<App app={createAppApiStub()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     if (phase === 'save') {
       vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
         throw new Error('Storage unavailable')
@@ -696,7 +697,7 @@ describe('app settings and themes', () => {
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(2))
     const terminals = [...mockTerminalInstances]
     const toggle = () => screen.getByRole('switch', { name: 'Show Dictation and Send buttons' })
-    const openSettings = () => fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    const openSettings = () => fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const closeSettings = () =>
       fireEvent.click(screen.getByRole('button', { name: 'Close app settings' }))
     expect(screen.getAllByTestId(TEST_ID.terminalPromptSend)).toHaveLength(1)
@@ -760,7 +761,7 @@ describe('app settings and themes', () => {
     act(() => {
       for (const terminal of terminals) expect(pressCtrlV(terminal)).toBe(false)
     })
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const checkbox = within(dialog).getByRole('switch', {
       name: 'Paste with Ctrl+V in terminals',
@@ -778,7 +779,7 @@ describe('app settings and themes', () => {
     resetMockFitAddons()
 
     await renderTwoChats(app)
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const restoredCheckbox = screen.getByRole('switch', {
       name: 'Paste with Ctrl+V in terminals',
     })
@@ -794,7 +795,7 @@ describe('app settings and themes', () => {
   it('validates, persists and resets font families and restores them on remount', () => {
     const app = createAppApiStub()
     const view = render(<App app={app} />)
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     expect(screen.queryByLabelText('Text font')).toBeNull()
     fireEvent.click(screen.getByRole('tab', { name: 'Fonts' }))
     fireEvent.change(screen.getByLabelText('Text font'), {
@@ -816,7 +817,7 @@ describe('app settings and themes', () => {
     })
     view.unmount()
     render(<App app={app} />)
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Fonts' }))
     expect((screen.getByLabelText('Text font') as HTMLInputElement).value).toBe('Cascadia Mono')
     expect((screen.getByLabelText('Icon font') as HTMLInputElement).value).toBe('Custom Symbols')
@@ -840,7 +841,7 @@ describe('app settings and themes', () => {
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
     expect(aliveFontSizeOptions()).toEqual([15, 15])
 
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     fireEvent.click(within(dialog).getByRole('tab', { name: 'Fonts' }))
     const select = within(dialog).getByTestId(TEST_ID.settingsTerminalFontSize)
@@ -858,7 +859,7 @@ describe('app settings and themes', () => {
     await renderTwoChats(app)
     expect(aliveFontSizeOptions()).toEqual([16])
 
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     fireEvent.click(within(dialog).getByRole('tab', { name: 'Fonts' }))
     expect(
@@ -908,7 +909,7 @@ describe('app settings and themes', () => {
     )
     render(<App app={app} />)
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p2')))
     await screen.findByTestId(testIdFor.chatRow('u1'))
     fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
     await waitFor(() =>
@@ -1015,7 +1016,7 @@ describe('app settings and themes', () => {
     const app = createAppApiStub()
     await renderTwoProjectsWithChats(app)
 
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const checkbox = within(dialog).getByTestId(TEST_ID.settingsChatSwitch)
     expect(checkbox.getAttribute('aria-checked')).toBe('true')
@@ -1064,9 +1065,9 @@ describe('app settings and themes', () => {
     expect(app.chats.create).not.toHaveBeenCalled()
 
     // The App Settings dialog is a modal: the chord does nothing while open.
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() => expect(app.chats.list).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     fireEvent.keyDown(window, { code: 'KeyN', ctrlKey: true, bubbles: true, cancelable: true })
     expect(app.chats.create).not.toHaveBeenCalled()
@@ -2012,7 +2013,7 @@ describe('action row and settings', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA, projectNoRuntime])
     vi.mocked(app.actions.list).mockResolvedValue([lint, buildAction, other])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() =>
       expect(
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
@@ -2020,7 +2021,7 @@ describe('action row and settings', () => {
         ),
       ).toEqual(['New session', 'Handoff', 'Resume', 'Stop', 'Continue', 'Lint', 'Build']),
     )
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p2')))
     await waitFor(() =>
       expect(
         [...screen.getByTestId(TEST_ID.actionRowSlot).querySelectorAll('button')].map(
@@ -2033,7 +2034,7 @@ describe('action row and settings', () => {
   it('action bar new session button creates a chat in the selected project', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
     const newSessionBtn = screen.getByTestId(TEST_ID.actionNewChat)
     expect(newSessionBtn).toBeTruthy()
@@ -2044,7 +2045,7 @@ describe('action row and settings', () => {
   it('derives the icon picker mode from the stored icon and saves presets and emoji', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
@@ -2073,7 +2074,7 @@ describe('action row and settings', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.actions.list).mockResolvedValue([{ ...buildAction, icon: '🚀' }])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     // The emoji renders literally on the action row, aria-hidden (excluded
@@ -2087,7 +2088,7 @@ describe('action row and settings', () => {
   it('validates the form and reflects saved actions immediately', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
@@ -2109,7 +2110,7 @@ describe('action row and settings', () => {
   it('offers Bottom terminal in Run In and saves the bottom-terminal mode', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
@@ -2145,7 +2146,7 @@ describe('action row and settings', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.actions.list).mockResolvedValue([buildAction])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
@@ -2169,7 +2170,7 @@ describe('action row and settings', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     vi.mocked(app.actions.list).mockResolvedValueOnce([gone, keep]).mockResolvedValue([keep])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     // 'Gone' also names the action-bar button; the row lives in the dialog.
@@ -2193,7 +2194,7 @@ describe('action row and settings', () => {
     vi.mocked(app.projects.list).mockResolvedValueOnce([projectA]).mockResolvedValue([])
     vi.mocked(app.actions.list).mockResolvedValueOnce([buildAction]).mockResolvedValue([])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByRole('button', { name: 'Build' })
     expect(app.actions.list).toHaveBeenCalledTimes(1)
     fireEvent.contextMenu(getByTestIdString(testIdFor.projectRow('p1')))
@@ -2274,7 +2275,7 @@ describe('application shell', () => {
     // Add-project affordance and the two resize handles.
     expect(getByTestIdString(TEST_ID.projectsHeader).textContent).toBe('Projects')
     const addProject = getByTestIdString(TEST_ID.addProjectButton)
-    expect(addProject.getAttribute('aria-label')).toBe('Add Project')
+    expect(addProject.getAttribute('aria-label')).toBe('Add project')
     expect(screen.getByTestId(TEST_ID.leftResizeHandle)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.bottomResizeHandle)).toBeTruthy()
   })
@@ -2340,9 +2341,9 @@ describe('project and chat data flow', () => {
     expect(row.textContent).toContain('DEMO')
     expect(screen.queryByTestId(TEST_ID.emptyProjectList)).toBeNull()
 
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const chatRow = await screen.findByTestId(testIdFor.chatRow('t1'))
-    expect(chatRow.querySelector('span.truncate')?.textContent).toBe('First chat')
+    expect(chatRow.querySelector('.nk-session-name')?.textContent).toBe('First chat')
     expect(app.chats.list).toHaveBeenCalledWith('p1')
     // The active project gets the New Chat button (UX-UI §10): no naming form.
     expect(screen.getByTestId(TEST_ID.newChatButton)).toBeTruthy()
@@ -2356,7 +2357,7 @@ describe('project and chat data flow', () => {
     await screen.findByTestId(testIdFor.projectRow('p1'))
     await waitFor(() => expect(app.taskProgress.observe).toHaveBeenLastCalledWith([]))
 
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() => expect(app.taskProgress.observe).toHaveBeenLastCalledWith(['p1']))
 
     fireEvent.click(screen.getByTestId(testIdFor.projectToggle('p2')))
@@ -2419,7 +2420,7 @@ describe('project and chat data flow', () => {
       return vi.fn()
     })
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('p1-chat')))
     await waitFor(() =>
       expect(screen.getByTestId(TEST_ID.taskProgressButton).textContent).toContain('Plan'),
@@ -2576,7 +2577,7 @@ describe('project and chat data flow', () => {
         })
       },
       action: async () => {
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
         fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
       },
       assert: async () => {
@@ -2679,7 +2680,7 @@ describe('project and chat data flow', () => {
     vi.mocked(app.chats.create).mockResolvedValue(chatTwo)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     // No name is typed anywhere: the button creates the chat right away and
     // main derives the name from the shell (spec Behaviour 3).
     fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
@@ -2702,9 +2703,9 @@ describe('project and chat data flow', () => {
       .mockResolvedValueOnce({ id: 't2', projectId: 'p1', name: 'PowerShell' })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const chats = await screen.findByTestId(testIdFor.projectChats('p1'))
-    expect(chats.textContent).toBe('No active sessions')
+    expect(within(chats).getByText('No active sessions')).toBeTruthy()
     expect(within(chats).queryByRole('list')).toBeNull()
     fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
     await screen.findByTestId(testIdFor.chatRow('t1'))
@@ -2713,10 +2714,10 @@ describe('project and chat data flow', () => {
     await screen.findByTestId(testIdFor.chatRow('t2'))
 
     expect(
-      screen.getByTestId(testIdFor.chatRow('t1')).querySelector('span.truncate')?.textContent,
+      screen.getByTestId(testIdFor.chatRow('t1')).querySelector('.nk-session-name')?.textContent,
     ).toBe('PowerShell')
     expect(
-      screen.getByTestId(testIdFor.chatRow('t2')).querySelector('span.truncate')?.textContent,
+      screen.getByTestId(testIdFor.chatRow('t2')).querySelector('.nk-session-name')?.textContent,
     ).toBe('PowerShell')
     expect(getByTestIdString(testIdFor.chatRow('t2')).getAttribute('data-selected')).toBe('true')
   })
@@ -2731,7 +2732,7 @@ describe('project and chat data flow', () => {
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     // An empty selected project shows the "Start new chat" empty state
     // (spec Behaviour 11)…
     await screen.findByTestId(TEST_ID.startNewChatState)
@@ -2761,7 +2762,7 @@ describe('project and chat data flow', () => {
     )
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() => expect(app.chats.list).toHaveBeenCalledWith('p1'))
     // Unanswered list: "no chats" is unknown, so the neutral welcome shows and
     // the empty-project affordance does not.
@@ -2841,7 +2842,7 @@ describe('project and chat data flow', () => {
     expect(screen.getByRole('menuitem', { name: 'Project Settings' })).toBeTruthy()
     expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
     fireEvent.keyDown(window, { key: 'Escape' })
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p1')))
     fireEvent.contextMenu(await screen.findByTestId(testIdFor.chatRow('t1')))
     expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
     fireEvent.contextMenu(screen.getByTestId(TEST_ID.newChatButton))
@@ -2862,7 +2863,12 @@ describe('project and chat data flow', () => {
     const items = within(menu)
       .getAllByRole('menuitem')
       .map((el) => el.textContent?.trim())
-    expect(items).toEqual(['Open in file explorer', 'Project Settings', 'Remove Project'])
+    expect(items).toEqual([
+      'Open project tasks',
+      'Open in file explorer',
+      'Project Settings',
+      'Remove Project',
+    ])
 
     fireEvent.click(screen.getByRole('menuitem', { name: 'Open in file explorer' }))
     await waitFor(() => expect(app.files.openRoot).toHaveBeenCalledWith('p1'))
@@ -2887,7 +2893,7 @@ describe('project and chat data flow', () => {
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.contextMenu(await screen.findByTestId(TEST_ID.newChatButton), {
       clientX: 40,
       clientY: 60,
@@ -2917,7 +2923,7 @@ describe('project and chat data flow', () => {
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const button = await screen.findByTestId(TEST_ID.newChatButton)
     // jsdom reports a zero rect; the button's real geometry decides the
     // keyboard position (below the button).
@@ -2957,7 +2963,7 @@ describe('project and chat data flow', () => {
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     // The project-row menu is open (spec Behaviour 7: one menu at a time)…
     fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
     expect(await screen.findByTestId(TEST_ID.projectContextMenu)).toBeTruthy()
@@ -2989,7 +2995,7 @@ describe('project and chat data flow', () => {
       agentName: 'Codex',
     })
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const button = await screen.findByTestId(TEST_ID.actionNewChat)
     fireEvent.contextMenu(button, { clientX: 40, clientY: 60 })
     expect(await screen.findByTestId(testIdFor.newChatAgentProfile('prof-1'))).toBeTruthy()
@@ -3030,8 +3036,9 @@ describe('project and chat data flow', () => {
     // tab active.
     const row = await screen.findByTestId(testIdFor.chatRow('a7'))
     expect(row.getAttribute('data-selected')).toBe('true')
-    expect(row.getAttribute('aria-label')).toContain('Codex, Codex, idle')
-    expect(within(row).getAllByText('Codex')).toHaveLength(2)
+    expect(row.getAttribute('aria-label')).toContain('Codex, Codex, Demo, idle')
+    expect(within(row).getByText('Codex')).toBeTruthy()
+    expect(within(row).getByText('codex')).toBeTruthy()
     expect(screen.getByTestId(testIdFor.projectChats('p1'))).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('[PowerShell] Codex')
     expect(screen.getByTestId(TEST_ID.tabTerminal).getAttribute('data-selected')).toBe('true')
@@ -3050,10 +3057,10 @@ describe('project and chat data flow', () => {
       },
     ])
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const row = await screen.findByTestId(testIdFor.chatRow('restored'))
     expect(within(row).getByText('NEKODE-42')).toBeTruthy()
-    expect(within(row).getByText('Claude')).toBeTruthy()
+    expect(within(row).getByText('claude')).toBeTruthy()
     expect(row.textContent).not.toContain('Old profile name')
   })
 
@@ -3180,7 +3187,7 @@ describe('project and chat data flow', () => {
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(testIdFor.chatRow('t1'))
 
     // Removal is reachable only from the row context menu (spec Behaviour 3).
@@ -3204,7 +3211,7 @@ describe('project and chat data flow', () => {
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(testIdFor.chatRow('t1'))
     fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedProjectId, 'p1')
@@ -3237,7 +3244,7 @@ describe('project and chat data flow', () => {
     )
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(testIdFor.chatRow('t1'))
     expect(getByTestIdString(testIdFor.projectRow('p1')).getAttribute('data-selected')).toBe('true')
 
@@ -3247,7 +3254,7 @@ describe('project and chat data flow', () => {
     await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
 
     // While removal is in flight, user selects p2
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p2')))
     expect(getByTestIdString(testIdFor.projectRow('p2')).getAttribute('data-selected')).toBe('true')
 
     // Now removal of p1 settles
@@ -3279,7 +3286,7 @@ describe('project and chat data flow', () => {
 
     render(<App app={app} />)
     // Initially select p2
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p2')))
     await screen.findByTestId(testIdFor.chatRow('u1'))
     expect(getByTestIdString(testIdFor.projectRow('p2')).getAttribute('data-selected')).toBe('true')
 
@@ -3289,7 +3296,7 @@ describe('project and chat data flow', () => {
     await waitFor(() => expect(app.projects.remove).toHaveBeenCalledWith('p1'))
 
     // While removal is in flight, user selects p1
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p1')))
     expect(getByTestIdString(testIdFor.projectRow('p1')).getAttribute('data-selected')).toBe('true')
 
     // Now removal of p1 settles
@@ -3363,7 +3370,7 @@ describe('project and chat data flow', () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
     expect(screen.getByTestId(TEST_ID.statusProjectName).textContent).toBe('Demo')
     expect(screen.getByTestId(TEST_ID.statusProjectPath).textContent).toBe('D:/code/demo')
@@ -3393,24 +3400,24 @@ describe('project and chat data flow', () => {
 
     render(<App app={app} />)
     await waitFor(() => expect(app.projects.list).toHaveBeenCalledTimes(1))
-    expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('280px')
+    expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('320px')
   })
 
   it('resizes the left region by dragging and persists the width only when the drag ends', () => {
     render(<App app={app} />)
     const leftNav = screen.getByTestId(TEST_ID.leftNav)
-    expect((leftNav as HTMLElement).style.width).toBe('280px')
+    expect((leftNav as HTMLElement).style.width).toBe('320px')
 
     const handle = screen.getByTestId(TEST_ID.leftResizeHandle)
     firePointer(handle, 'pointerdown', { clientX: 280 })
     firePointer(handle, 'pointermove', { clientX: 350 })
     // The live drag follows the pointer; the stored width waits for the release.
-    expect((leftNav as HTMLElement).style.width).toBe('350px')
+    expect((leftNav as HTMLElement).style.width).toBe('340px')
     expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, expect.anything())
 
     firePointer(handle, 'pointerup', { clientX: 350 })
-    expect((leftNav as HTMLElement).style.width).toBe('350px')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, '350')
+    expect((leftNav as HTMLElement).style.width).toBe('340px')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, '340')
   })
 })
 
@@ -3430,7 +3437,7 @@ describe('chat workspace (Stage 3)', () => {
     vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
 
     const workspace = getByTestIdString(TEST_ID.chatWorkspace)
@@ -3448,7 +3455,7 @@ describe('chat workspace (Stage 3)', () => {
     vi.mocked(app.chats.list).mockResolvedValue([chatOne, chatTwo])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
 
@@ -3478,7 +3485,7 @@ describe('chat workspace (Stage 3)', () => {
     vi.mocked(app.git.getStatus).mockResolvedValue(status)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
     // App-level wiring only: the fetched git status reaches the status bar.
     // The worktree form strings are owned by StatusBar.test.tsx.
@@ -3505,14 +3512,14 @@ describe('resize persistence refinements (Stage 3 carry-over)', () => {
     render(<App app={app} />)
     const handle = screen.getByTestId(TEST_ID.leftResizeHandle)
     expect(handle.getAttribute('role')).toBe('separator')
-    expect(handle.getAttribute('aria-valuenow')).toBe('280')
+    expect(handle.getAttribute('aria-valuenow')).toBe('320')
 
     fireEvent.keyDown(handle, { key: 'ArrowRight' })
-    expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('296px')
-    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, '296')
+    expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('336px')
+    expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.leftRegionWidth, '336')
 
     fireEvent.keyDown(handle, { key: 'ArrowLeft' })
-    expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('280px')
+    expect(getByTestIdString(TEST_ID.leftNav).style.width).toBe('320px')
   })
 
   it('surfaces state.set rejections in the notice banner (spec Errors)', async () => {
@@ -3524,7 +3531,7 @@ describe('resize persistence refinements (Stage 3 carry-over)', () => {
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const notice = await screen.findByTestId(TEST_ID.actionNotice)
     expect(notice.textContent).toContain('Database is locked.')
   })
@@ -3805,17 +3812,8 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
     expect(app.state.set).toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
   })
 
-  /**
-   * jsdom computes no Tailwind styles, so the close control's reveal state is
-   * visible only through the display utility the chat row toggles
-   * (LeftNavigation.tsx: `flex` revealed, `hidden` otherwise). One named pair
-   * centralizes that jsdom limitation; a computed-style or E2E check would
-   * observe the real visibility instead.
-   */
-  const CLOSE_REVEALED_CLASS = 'flex'
-  const CLOSE_HIDDEN_CLASS = 'hidden'
-
-  it('moving the pointer onto the revealed close control does not flicker it', async () => {
+  // CSS hover/focus visibility is checked in the real Electron smoke.
+  it('moving the pointer from the row onto close opens confirmation without selecting another chat', async () => {
     await renderWithChats([chatOne, chatTwo], 't1')
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
 
@@ -3824,41 +3822,32 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
     const row = screen.getByTestId(testIdFor.chatRow('t1'))
     fireEvent.mouseOver(row)
     const closeButton = screen.getByTestId(testIdFor.chatClose('t1'))
-    expect(closeButton.className).toContain(CLOSE_REVEALED_CLASS)
 
     // The pointer lands on the overlay control itself: the reveal must hold.
     // The X is a sibling of the row button, so the leave boundary is the whole
     // tile; a row-level leave would hide the X, re-enter the row and loop.
     fireEvent.mouseOut(row, { relatedTarget: closeButton })
-    expect(closeButton.className).toContain(CLOSE_REVEALED_CLASS)
-
-    // Leaving the tile entirely still hides it.
-    fireEvent.mouseOut(row, { relatedTarget: document.body })
-    expect(closeButton.className).toContain(CLOSE_HIDDEN_CLASS)
+    fireEvent.mouseOver(closeButton, { relatedTarget: row })
+    fireEvent.click(closeButton)
+    expect((await screen.findByTestId(TEST_ID.confirmDialog)).textContent).toContain('First chat')
+    expect(app.chats.remove).not.toHaveBeenCalled()
+    expect(row.getAttribute('data-selected')).toBe('true')
   })
 
-  it('reveals close control on row focus and keeps it revealed when focus shifts to close control (review 7.4)', async () => {
+  it('keeps the close control focusable after row focus and opens confirmation on activation', async () => {
     await renderWithChats([chatOne, chatTwo], 't1')
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
 
     const row = screen.getByTestId(testIdFor.chatRow('t1'))
     const closeButton = screen.getByTestId(testIdFor.chatClose('t1'))
-    const li = row.closest('li')
-    expect(li).not.toBeNull()
-    if (li === null) return
-
-    // Focus row button: reveals close control.
-    fireEvent.focus(row)
-    expect(closeButton.className).toContain(CLOSE_REVEALED_CLASS)
-
-    // Shift focus to close control inside the same li: remains revealed.
-    fireEvent.blur(row, { relatedTarget: closeButton })
-    fireEvent.focus(closeButton)
-    expect(closeButton.className).toContain(CLOSE_REVEALED_CLASS)
-
-    // Shift focus outside the li: hides close control.
-    fireEvent.blur(li, { relatedTarget: document.body })
-    expect(closeButton.className).toContain(CLOSE_HIDDEN_CLASS)
+    act(() => row.focus())
+    expect(document.activeElement).toBe(row)
+    act(() => closeButton.focus())
+    expect(document.activeElement).toBe(closeButton)
+    expect(closeButton.getAttribute('type')).toBe('button')
+    fireEvent.click(closeButton)
+    expect((await screen.findByTestId(TEST_ID.confirmDialog)).textContent).toContain('First chat')
+    expect(app.chats.remove).not.toHaveBeenCalled()
   })
 
   it('cancel keeps the chat and the dialog does not linger', async () => {
@@ -3907,7 +3896,7 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
     expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, 't2')
   })
 
-  it('the attention badge yields the corner while the close control is revealed', async () => {
+  it('keeps attention available while the separate close control receives focus', async () => {
     const dataListenersByChat = new Map<string, Set<(data: string) => void>>()
     vi.mocked(app.terminals.onData).mockImplementation(
       (chatId: string, callback: (data: string) => void) => {
@@ -3931,12 +3920,12 @@ describe('chat row close control with confirmation (2026-10-04)', () => {
     })
     await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
 
-    // Keyboard focus reveals the close control: the badge yields the corner…
+    // Attention belongs to the leading status; closing uses a separate button.
     fireEvent.focus(screen.getByTestId(testIdFor.chatRow('t1')))
-    expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
+    expect(screen.getByTestId(testIdFor.chatAttentionBadge('t1'))).toBeTruthy()
     expect(screen.getByTestId(testIdFor.chatClose('t1'))).toBeTruthy()
 
-    // …and returns when the row loses focus again.
+    // Leaving focus does not clear attention.
     fireEvent.blur(screen.getByTestId(testIdFor.chatRow('t1')))
     expect(screen.getByTestId(testIdFor.chatAttentionBadge('t1'))).toBeTruthy()
   })
@@ -3989,7 +3978,7 @@ describe('stale chat list responses', () => {
     vi.mocked(app.chats.create).mockResolvedValue(chatTwo)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() => expect(app.chats.list).toHaveBeenCalledTimes(1))
     // The create lands (optimistic add plus a live session) while the list
     // request is still in flight.
@@ -4168,7 +4157,7 @@ describe('chat attention badge (end to end through App)', () => {
     emitData('t1', '\x07')
     await screen.findByTestId(testIdFor.chatAttentionBadge('t1'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     const badgeToggle = within(dialog).getByTestId(TEST_ID.settingsAttentionBadge)
     expect(badgeToggle.getAttribute('aria-checked')).toBe('true')
@@ -4222,7 +4211,7 @@ describe('chat attention badge (end to end through App)', () => {
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t2', projectA.path))
 
     // The hydrated off state is observable on the toggles themselves.
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = screen.getByRole('dialog', { name: 'App Settings' })
     expect(
       within(dialog).getByTestId(TEST_ID.settingsAttentionBadge).getAttribute('aria-checked'),
@@ -4374,7 +4363,7 @@ describe('kanban task resume — removing the project', () => {
 
     render(<App app={app} />)
     // Select the project (its subtree expands), then open its Kanban board.
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
 
     // Open the Resume modal for the project's item.
@@ -4441,7 +4430,7 @@ describe('kanban task resume — removing the project', () => {
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
     // Open Project Settings via context menu and close it to trigger second refreshKanbanBindings
     fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
@@ -4476,7 +4465,7 @@ describe('kanban task resume — removing the project', () => {
       key === projectKanbanAdapterKey('p1') ? 'demo' : null,
     )
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     await screen.findByTestId(testIdFor.kanbanItem('NEKODE-999'))
     const search = screen.getByRole('textbox', { name: 'Search titles' })
@@ -4505,7 +4494,7 @@ describe('kanban task resume — removing the project', () => {
     expect(screen.getByRole('button', { name: 'Handoff' })).toBeTruthy()
 
     // Switch to kanban tab
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     const kanbanBoard = await screen.findByTestId(TEST_ID.kanbanBoard)
 

@@ -12,6 +12,7 @@ import { TEST_ID, testIdFor } from '../lib/test-ids'
 import { createAppApiStub } from './app-api-stub'
 import { restoreClipboard, stubClipboard } from './clipboard-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
+import { openProjectHome } from './open-project-home'
 import { resetMockTerminals } from './xterm-mock'
 
 // Project Files view tests (spec Required tests — renderer): the "Files"
@@ -129,8 +130,8 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
     expect(filesButton.getAttribute('title')).toBe('File tree')
     expect(filesButton.getAttribute('aria-label')).toBe('Open file tree of Demo')
 
-    // Row click keeps its meaning: select + expand the chat list (Behaviour 2).
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    // Open project tasks selects and expands without entering Project Files.
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(testIdFor.chatRow('t1'))
     expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull()
     expect(screen.queryAllByTestId(/^tab-file-/)).toEqual([])
@@ -454,7 +455,7 @@ describe('project files — mode round-trips (spec Behaviour 12, 14–15)', () =
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
     const workspace = getByTestIdString(TEST_ID.chatWorkspace)

@@ -6,6 +6,7 @@ import { App } from '../App'
 import { TEST_ID, testIdFor } from '../lib/test-ids'
 import { createAppApiStub } from './app-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
+import { openProjectHome } from './open-project-home'
 import { resetMockTerminals } from './xterm-mock'
 
 // Center tab wiring through the App shell (center-layout-tabs-actions spec
@@ -113,7 +114,7 @@ describe('tab strip — order and labels (spec Behaviour 1–3, AC1)', () => {
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
 
     const strip = screen.getByTestId(TEST_ID.tabStrip)
@@ -212,7 +213,7 @@ describe('tab strip — per-project retention (spec Behaviour 5, AC4)', () => {
     // Back to the first project: its own tabs, order and active tab return.
     fireEvent.click(screen.getByTestId(TEST_ID.filesBackButton))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.fileTree)).toBeNull())
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     expect(tabIds()).toEqual(['tab-file-src/app.ts', 'tab-file-README.md'])
     // The name click opens the home tab (project-home spec Behaviour 4); the
     // file tabs stay open and selecting one shows its retained pane.
@@ -235,7 +236,7 @@ describe('tab strip — per-project retention (spec Behaviour 5, AC4)', () => {
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await enterFilesMode(app, 'p1')
     fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
     await screen.findByTestId(testIdFor.filePreviewPane('README.md'))
@@ -273,7 +274,7 @@ describe('tab strip — terminal tab, + New chat and session survival (spec Beha
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
 
     fireEvent.click(screen.getByTestId(TEST_ID.tabProjectSettings))
     expect(await screen.findByRole('dialog', { name: 'Project Settings' })).toBeTruthy()
@@ -285,10 +286,17 @@ describe('tab strip — terminal tab, + New chat and session survival (spec Beha
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
     const workspace = screen.getByTestId(TEST_ID.chatWorkspace)
+    const row = screen.getByTestId(testIdFor.chatRow('t1'))
+    expect(row.getAttribute('aria-current')).toBe('true')
+
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanTab))
+    expect(row.getAttribute('aria-current')).toBe('false')
+    fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
+    expect(row.getAttribute('aria-current')).toBe('true')
 
     // A file tab hides the chat surface but keeps the session host mounted.
     await enterFilesMode(app, 'p1')
@@ -297,6 +305,8 @@ describe('tab strip — terminal tab, + New chat and session survival (spec Beha
       expect(screen.getByTestId(TEST_ID.chatSurfaceHost).style.display).toBe('none'),
     )
     expect(screen.getByTestId(TEST_ID.chatWorkspace)).toBe(workspace)
+    fireEvent.click(screen.getByTestId(TEST_ID.filesBackButton))
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('aria-current')).toBe('false')
     expect(app.terminals.create).toHaveBeenCalledTimes(1)
 
     // Back to the terminal-chat tab: same session, same scrollback (AC2).
@@ -314,7 +324,7 @@ describe('tab strip — terminal tab, + New chat and session survival (spec Beha
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledTimes(1))
 
@@ -349,7 +359,7 @@ describe('Files mode in left panel acts as an independent sidebar', () => {
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
     expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
@@ -384,7 +394,7 @@ describe('Files mode in left panel acts as an independent sidebar', () => {
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await enterFilesMode(app, 'p2')
 
@@ -404,7 +414,7 @@ describe('Files mode in left panel acts as an independent sidebar', () => {
     mockListings(app)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', 'D:/code/demo'))
     await enterFilesMode(app, 'p1')
@@ -448,7 +458,7 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
         mockListings(app)
 
         render(<App app={app} />)
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
         fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
         await enterFilesMode(app, 'p1')
         fireEvent.click(await screen.findByTestId(testIdFor.fileEntry('README.md')))
@@ -489,7 +499,7 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
         mockListings(app)
 
         render(<App app={app} />)
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
         fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
         await enterFilesMode(app, 'p1')
         await waitFor(() =>
@@ -516,7 +526,7 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
         vi.mocked(app.chats.list).mockResolvedValue([chatOne])
 
         render(<App app={app} />)
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
         fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
         await screen.findByTestId(TEST_ID.kanbanBoard)
       },
@@ -563,7 +573,7 @@ describe('Kanban board vs the Files surfaces (spec kanban-adapter-interface Beha
         mockListings(app)
 
         render(<App app={app} />)
-        fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+        openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
         fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
         await screen.findByTestId(TEST_ID.kanbanBoard)
       },

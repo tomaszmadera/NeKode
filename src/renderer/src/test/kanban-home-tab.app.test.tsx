@@ -10,6 +10,7 @@ import { App } from '../App'
 import { TEST_ID, testIdFor } from '../lib/test-ids'
 import { createAppApiStub } from './app-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
+import { openProjectHome } from './open-project-home'
 import { resetMockTerminals } from './xterm-mock'
 
 // Project home tab (project-home spec Behaviour 1-5, AC1-4; replaces the
@@ -104,7 +105,7 @@ describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
     mockBindings(app, ['p1'])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const homeTab = await screen.findByTestId(TEST_ID.kanbanTab)
     const strip = screen.getByTestId(TEST_ID.tabStrip)
     const chatTab = screen.getByTestId(TEST_ID.tabTerminal)
@@ -121,7 +122,7 @@ describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
     await screen.findByTestId(TEST_ID.kanbanList)
 
     // Unbound project: the same home tab, first in the strip, shows the welcome.
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p2')))
     await screen.findByTestId(TEST_ID.projectHomeWelcome)
     const otherTab = screen.getByTestId(TEST_ID.kanbanTab)
     expect(screen.getByTestId(TEST_ID.tabStrip).firstElementChild).toBe(otherTab)
@@ -138,7 +139,7 @@ describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
     mockBindings(app, [])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p2')))
     const homeTab = await screen.findByTestId(TEST_ID.kanbanTab)
     expect(homeTab.textContent).toBe('VERY LONG…')
     expect(homeTab.getAttribute('title')).toBe('Tasks: VERY LONG PROJECT NAME')
@@ -157,7 +158,7 @@ describe('kanban top-strip tab (spec Behaviour 14, AC14)', () => {
     mockBindings(app, ['p1'])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(TEST_ID.kanbanTab)
     expect(screen.queryByTestId('project-surface-tabs')).toBeNull()
     expect(screen.queryByTestId('project-surface-files')).toBeNull()
@@ -197,7 +198,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     expect(screen.queryByTestId(TEST_ID.kanbanBoard)).toBeNull()
 
     // The project name opens the home tab; clicking the tab again is a no-op.
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     // The default view is the list; the load fires once either way.
     await screen.findByTestId(TEST_ID.kanbanList)
@@ -224,7 +225,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     mockBindings(app, ['p1'])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
 
     await screen.findByTestId(TEST_ID.kanbanBoardUnconfigured)
@@ -246,7 +247,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
 
     render(<App app={app} />)
     // Select the project, then its chat: the terminal surface shows it.
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const chatRow = await screen.findByTestId(testIdFor.chatRow('t1'))
     fireEvent.click(chatRow)
     await waitFor(() =>
@@ -257,7 +258,7 @@ describe('kanban entry points open and leave the board (spec Behaviour 14, AC14)
     // Opening the board of the already-selected project must NOT discard its chat selection.
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     await screen.findByTestId(TEST_ID.kanbanBoard)
-    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('false')
 
     // Returning via the chat tab shows the same chat, not an empty surface.
     fireEvent.click(screen.getByTestId(TEST_ID.tabTerminal))
@@ -306,7 +307,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
       .mockReturnValueOnce(pending)
       .mockResolvedValueOnce({ ...fixture, items: [item('OTHER-1', 'Other project', 's1')] })
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle(fixture.items[0].ref)))
     const board = screen.getByTestId(TEST_ID.kanbanBoard)
@@ -322,7 +323,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     expect(refreshBtn.disabled).toBe(true)
     expect(refreshBtn.firstElementChild?.classList.contains('animate-spin')).toBe(true)
     expect(board.scrollTop).toBe(80)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p2')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     const other = await screen.findByTestId(testIdFor.kanbanItem('OTHER-1'))
     expect(other.closest('[data-testid="kanban-board"]')?.parentElement?.style.display).toBe('flex')
@@ -341,7 +342,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     )
     expect(app.kanban.listBoard).toHaveBeenCalledTimes(3)
     vi.mocked(app.kanban.listBoard).mockReturnValue(new Promise(() => {}))
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p1')))
     expect(board.parentElement?.style.display).toBe('flex')
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
   })
@@ -365,7 +366,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
       .mockReturnValueOnce(pending)
       .mockResolvedValueOnce({ states: [], items: [] })
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     await screen.findByTestId(testIdFor.kanbanItem(fixture.items[0].ref))
     // The board commits before its toolbar controls reach the host.
@@ -395,7 +396,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
       }),
     )
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     await screen.findByTestId(TEST_ID.kanbanBoardLoading)
     fireEvent.contextMenu(screen.getByTestId(testIdFor.projectRow('p1')))
@@ -413,7 +414,7 @@ describe('kanban binding reactivity (spec Behaviour 14, AC14)', () => {
     vi.mocked(app.kanban.listBoard).mockResolvedValue(fixture)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     await screen.findByTestId(TEST_ID.kanbanBoard)
     expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
@@ -453,7 +454,7 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     mockBindings(app, [])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const welcome = await screen.findByTestId(TEST_ID.projectHomeWelcome)
     expect(within(welcome).getByRole('heading', { name: 'No task list yet' })).toBeTruthy()
     expect(welcome.textContent).toContain(
@@ -493,7 +494,7 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(TEST_ID.projectHomeLoading)
     expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
     await act(async () => settle(null))
@@ -511,7 +512,7 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const error = await screen.findByTestId(TEST_ID.projectHomeError)
     expect(error.getAttribute('role')).toBe('alert')
     expect(error.textContent).toBe('Failed to load task sources.')
@@ -519,7 +520,7 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     expect(screen.queryByTestId(TEST_ID.projectHomeWelcome)).toBeNull()
     expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
     // A later action that clears the shell notice keeps the inline error.
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p1')))
     expect(screen.getByTestId(TEST_ID.projectHomeError).textContent).toBe(
       'Failed to load task sources.',
     )
@@ -542,7 +543,7 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     mockBindings(app, [])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.projectHomeConnectTracker))
     await screen.findByRole('dialog', { name: 'Project Settings' })
     const tasksTab = screen.getByTestId(TEST_ID.settingsKanbanTab)
@@ -552,7 +553,7 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     await waitFor(() => expect(app.kanban.getConfig).toHaveBeenCalledWith('p1'))
   })
 
-  it('name click on the current project keeps the chat; on another project clears it and opens its home tab', async () => {
+  it('Open project tasks keeps the current project chat; another project clears it and opens its home tab', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA, projectB])
     vi.mocked(app.chats.list).mockImplementation(async (projectId) =>
       projectId === 'p1' ? [chatOne] : [],
@@ -560,22 +561,22 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     mockBindings(app, [])
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => expect(isSelected(TEST_ID.tabTerminal)).toBe(true))
     expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
 
     // Current project: the home tab opens and the chat stays selected.
     vi.mocked(app.state.set).mockClear()
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p1')))
     await waitFor(() => expect(isSelected(TEST_ID.kanbanTab)).toBe(true))
-    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
+    expect(screen.getByTestId(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('false')
     expect(app.state.set).not.toHaveBeenCalledWith(APP_STATE_KEY.selectedChatId, '')
     // The chat tab still names the same chat.
     expect(screen.getByTestId(TEST_ID.tabTerminal).textContent).toBe('First chat')
 
     // Another project: selected, chat cleared, its home tab active.
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p2')))
     await waitFor(() =>
       expect(screen.getByTestId(testIdFor.projectRow('p2')).getAttribute('data-selected')).toBe(
         'true',
@@ -659,7 +660,7 @@ describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)'
     vi.mocked(app.kanban.listBoard).mockResolvedValue(emptyLocalBoard)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(TEST_ID.projectHomeWelcome)
     expect(app.kanban.listBoard).not.toHaveBeenCalled()
     fireEvent.click(screen.getByTestId(TEST_ID.projectHomeUseLocal))
@@ -683,7 +684,7 @@ describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)'
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.projectHomeUseLocal))
     const error = await screen.findByTestId(TEST_ID.projectHomeUseLocalError)
     expect(error.textContent).toBe('Could not create .nekode/tasks.json.')
@@ -705,7 +706,7 @@ describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)'
       .mockResolvedValue(emptyLocalBoard)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const error = await screen.findByTestId(TEST_ID.kanbanBoardError)
     expect(error.textContent).toContain('.nekode/tasks.json was not found')
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardUseLocal))
@@ -730,7 +731,7 @@ describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)'
       })
 
       render(<App app={app} />)
-      fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+      openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
       const error = await screen.findByTestId(TEST_ID.kanbanBoardError)
       expect(error.textContent).toBe(message)
       // Creating the task file cannot fix this, so the action is not offered.
@@ -751,7 +752,7 @@ describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)'
       .mockResolvedValue(fixture)
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     await screen.findByTestId(TEST_ID.kanbanBoardError)
     // A missing process adapter is not a missing task file.
     expect(screen.queryByTestId(TEST_ID.kanbanBoardUseLocal)).toBeNull()

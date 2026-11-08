@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App, TEST_ID, testIdFor } from '../App'
 import { createAppApiStub } from './app-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
+import { openProjectHome } from './open-project-home'
 import { mockTerminalInstances, resetMockTerminals } from './xterm-mock'
 
 // Start without sending (NEKODE-99, spec kanban-adapter-interface): a draft
@@ -73,7 +74,7 @@ describe('kanban Start without sending', () => {
     })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     const start = await screen.findByTestId(testIdFor.kanbanItemStart('NEKODE-99'))
     fireEvent.contextMenu(start)
@@ -118,7 +119,7 @@ describe('kanban Start without sending', () => {
       .mockResolvedValueOnce({ chat, delivered: true, draftPrompt: DRAFT })
 
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
     fireEvent.contextMenu(await screen.findByTestId(testIdFor.kanbanItemStart('NEKODE-99')))
     fireEvent.click(await screen.findByTestId(TEST_ID.kanbanStartMenuDraft))

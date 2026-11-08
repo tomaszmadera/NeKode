@@ -66,7 +66,7 @@ export function useChatSelection(
     ],
   )
 
-  // Project name or icon click in the left navigation (project-home spec
+  // Open project tasks in the left-navigation context menu (project-home spec
   // Behaviour 4): makes the project the tab-strip project and activates its
   // home tab. Switching projects selects, expands and clears the chat
   // selection; clicking the already selected project keeps its chat

@@ -384,7 +384,9 @@ function AppContent({
           the floating theme drops only the hairline. */}
       <div
         className={
-          floatingTheme ? 'flex min-h-0 flex-1' : 'flex min-h-0 flex-1 border-t border-edge'
+          floatingTheme
+            ? 'nk-workspace-row flex min-h-0 flex-1'
+            : 'flex min-h-0 flex-1 border-t border-edge'
         }
       >
         <div className={layout.leftOpen ? 'contents' : 'hidden'}>
@@ -396,6 +398,7 @@ function AppContent({
             onResizeNudge={layout.leftRegion.nudge}
             projects={
               <LeftNavigation
+                terminalTabActive={activeTab.kind === 'terminal'}
                 app={app}
                 floating={floatingTheme}
                 projectNamesUppercase={settings.projectNamesUppercase}

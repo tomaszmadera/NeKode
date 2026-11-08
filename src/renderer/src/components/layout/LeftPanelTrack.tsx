@@ -163,7 +163,7 @@ export function LeftPanelTrack({
     <aside
       className={cn(
         'relative min-h-0 shrink-0 overflow-hidden bg-panel',
-        floating ? 'm-2 rounded-[10px] border border-edge' : 'border-r border-edge rounded-none',
+        floating ? 'rounded-[10px] border border-edge' : 'border-r border-edge rounded-none',
       )}
       style={{ width }}
       data-testid={TEST_ID.leftNav}
@@ -191,6 +191,7 @@ export function LeftPanelTrack({
           style={{ width: '50%', minWidth: 0 }}
           aria-label="Files"
           aria-hidden={shown !== 'files'}
+          inert={view !== 'files'}
         >
           {showFiles && filesNode != null ? filesNode : null}
         </section>
@@ -199,6 +200,7 @@ export function LeftPanelTrack({
           style={{ width: '50%', minWidth: 0 }}
           aria-label="Projects"
           aria-hidden={shown !== 'projects'}
+          inert={view !== 'projects'}
         >
           {showProjects ? projects : null}
         </section>

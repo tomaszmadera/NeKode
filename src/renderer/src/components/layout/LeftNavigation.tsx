@@ -19,6 +19,9 @@ import { useChatStore } from '../../stores/useChatStore'
 import { useProjectStore } from '../../stores/useProjectStore'
 import { useSessionTasks } from '../../stores/useSessionTasks'
 import { NoticeBanner } from './NoticeBanner'
+import { ProjectGitLabel } from './ProjectGitLabel'
+import { SessionTile } from './SessionTile'
+import './LeftNavigation.css'
 
 export type SidebarView = 'projects' | 'sessions'
 
@@ -29,6 +32,7 @@ export interface LeftNavigationProps {
   floating?: boolean
   attentionBadgeEnabled?: boolean
   attentionActiveIndicatorEnabled?: boolean
+  terminalTabActive?: boolean
   onSelectProject: (projectId: string) => void
   onToggleProject: (projectId: string) => void
   onSelectChat: (projectId: string, chatId: string) => void
@@ -62,33 +66,6 @@ interface NewChatMenuState {
   projectId: string
   x: number
   y: number
-}
-
-export const SESSION_STATUS_CONFIG: Record<SessionStatus, { label: string; color: string }> = {
-  running: { label: 'running', color: '#4ADE80' },
-  waiting: { label: 'waiting for input', color: '#F59E0B' },
-  idle: { label: 'idle', color: '#8A90A6' },
-}
-
-export function formatTimeSince(seconds: number): string {
-  if (seconds < 60) return 'now'
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes} min`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} h`
-  const days = Math.floor(hours / 24)
-  return `${days} d`
-}
-
-export function getAgentOrShell(chat: ChatInfo): string {
-  if (chat.agentName) {
-    return chat.agentName.toLowerCase()
-  }
-  const match = chat.name.match(/^\[([^\]]+)\]/)
-  if (match) {
-    return match[1].toLowerCase()
-  }
-  return 'pwsh'
 }
 
 export function getChatLabel(chat: ChatInfo): string {
@@ -125,6 +102,7 @@ export function LeftNavigation({
   floating = true,
   attentionBadgeEnabled = true,
   attentionActiveIndicatorEnabled = true,
+  terminalTabActive = true,
   onSelectProject,
   onToggleProject,
   onSelectChat,
@@ -142,16 +120,18 @@ export function LeftNavigation({
   onOpenAppSettings,
   notice,
   children,
-  app: _app,
+  app,
 }: LeftNavigationProps): React.JSX.Element {
-  const { projects, projectColors, expandedProjectIds, selectedProjectId } = useProjectStore(
-    useShallow((state) => ({
-      projects: state.projects,
-      projectColors: state.projectColors,
-      expandedProjectIds: state.expandedProjectIds,
-      selectedProjectId: state.selectedProjectId,
-    })),
-  )
+  const { projects, projectColors, expandedProjectIds, selectedProjectId, setExpandedProjectIds } =
+    useProjectStore(
+      useShallow((state) => ({
+        setExpandedProjectIds: state.setExpandedProjectIds,
+        projects: state.projects,
+        projectColors: state.projectColors,
+        expandedProjectIds: state.expandedProjectIds,
+        selectedProjectId: state.selectedProjectId,
+      })),
+    )
   const { chatsByProject, selectedChatId, attention, activity } = useChatStore(
     useShallow((state) => ({
       chatsByProject: state.chatsByProject,
@@ -164,29 +144,6 @@ export function LeftNavigation({
   const [sidebarView, setSidebarView] = useState<SidebarView>('projects')
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [newChatMenu, setNewChatMenu] = useState<NewChatMenuState | null>(null)
-  const [revealedChatId, setRevealedChatId] = useState<string | null>(null)
-  const [now, setNow] = useState(() => Date.now())
-  const statusTimestampsRef = useRef<Record<string, { status: SessionStatus; timestamp: number }>>(
-    {},
-  )
-
-  function getSessionTime(chatId: string, status: SessionStatus): string {
-    const record = statusTimestampsRef.current[chatId]
-    if (!record || record.status !== status) {
-      statusTimestampsRef.current[chatId] = { status, timestamp: now }
-      return 'now'
-    }
-    const elapsedSeconds = Math.max(0, Math.floor((now - record.timestamp) / 1000))
-    return formatTimeSince(elapsedSeconds)
-  }
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now())
-    }, 10_000)
-    return () => clearInterval(timer)
-  }, [])
-
   // Escape closes any open menu
   useEffect(() => {
     if (contextMenu === null && newChatMenu === null) {
@@ -230,7 +187,6 @@ export function LeftNavigation({
       status: SessionStatus
       task?: SessionTaskProgress
       label: string
-      agentOrShell: string
       projectColor: string
       initials: string
       folderName: string
@@ -261,7 +217,6 @@ export function LeftNavigation({
           task,
         )
         const label = getChatLabel(chat)
-        const agentOrShell = getAgentOrShell(chat)
 
         list.push({
           project,
@@ -269,7 +224,6 @@ export function LeftNavigation({
           status,
           task,
           label,
-          agentOrShell,
           projectColor,
           initials,
           folderName,
@@ -293,13 +247,39 @@ export function LeftNavigation({
     sessionTasks,
   ])
 
+  function renderSession(item: (typeof allSessions)[number], flat = false): React.JSX.Element {
+    const attentionState = attention[item.chat.id]
+    const attentionVisible =
+      attentionState !== undefined &&
+      (item.isChatSelected ? attentionActiveIndicatorEnabled : attentionBadgeEnabled)
+    return (
+      <SessionTile
+        chat={item.chat}
+        label={item.label}
+        projectName={item.project.name}
+        folderName={item.folderName}
+        projectColor={item.projectColor}
+        initials={item.initials}
+        status={item.status}
+        active={item.isChatSelected && terminalTabActive}
+        flat={flat}
+        task={item.task}
+        attentionVisible={attentionVisible}
+        attentionMessage={attentionState?.message}
+        recentOutput={activity.has(item.chat.id)}
+        onSelect={() => onSelectChat(item.project.id, item.chat.id)}
+        onClose={onRequestCloseChat ? () => onRequestCloseChat(item.chat.id) : undefined}
+      />
+    )
+  }
+
   return (
-    <div className="flex h-full min-h-0 w-full flex-col bg-panel">
+    <div className="nk-projects-pane flex h-full min-h-0 w-full flex-col bg-panel">
       <NoticeBanner notice={notice} />
 
       {/* Header (spec §3): Segmented control on left, Add project on right */}
       <div
-        className="flex shrink-0 items-center justify-between"
+        className="nk-sidebar-header flex shrink-0 items-center justify-between"
         style={{ padding: '16px 14px 8px 20px' }}
       >
         {/* biome-ignore lint/a11y/useSemanticElements: spec §3.1 requires role="group" and aria-label="Sidebar view" */}
@@ -331,7 +311,8 @@ export function LeftNavigation({
               display: 'flex',
               alignItems: 'center',
               backgroundColor: sidebarView === 'projects' ? 'var(--color-selected)' : 'transparent',
-              color: sidebarView === 'projects' ? '#ffffff' : 'var(--color-ink-muted)',
+              color:
+                sidebarView === 'projects' ? 'var(--color-switch-knob)' : 'var(--color-ink-muted)',
               cursor: 'pointer',
             }}
           >
@@ -352,7 +333,8 @@ export function LeftNavigation({
               display: 'flex',
               alignItems: 'center',
               backgroundColor: sidebarView === 'sessions' ? 'var(--color-selected)' : 'transparent',
-              color: sidebarView === 'sessions' ? '#ffffff' : 'var(--color-ink-muted)',
+              color:
+                sidebarView === 'sessions' ? 'var(--color-switch-knob)' : 'var(--color-ink-muted)',
               cursor: 'pointer',
             }}
           >
@@ -371,34 +353,58 @@ export function LeftNavigation({
         </div>
 
         {sidebarView === 'projects' ? (
-          <button
-            type="button"
-            className="nk-add-project nk-icon-btn flex size-8 shrink-0 items-center justify-center bg-transparent transition-colors duration-fast ease-standard"
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: '1px solid var(--color-edge)',
-              color: 'var(--color-ink-secondary)',
-            }}
-            data-testid={TEST_ID.addProjectButton}
-            aria-label="Add Project"
-            title="Add Project"
-            onClick={onAddProject}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              aria-hidden="true"
+          <div className="nk-header-actions">
+            {expandedProjectIds.size > 0 ? (
+              <button
+                type="button"
+                className="nk-collapse-all nk-icon-btn"
+                aria-label="Collapse all projects"
+                onClick={() => setExpandedProjectIds(new Set())}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M7 20l5-5 5 5M7 4l5 5 5-5" />
+                </svg>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="nk-add-project nk-icon-btn flex size-8 shrink-0 items-center justify-center bg-transparent transition-colors duration-fast ease-standard"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                border: '1px solid var(--color-edge)',
+                color: 'var(--color-ink-secondary)',
+              }}
+              data-testid={TEST_ID.addProjectButton}
+              aria-label="Add project"
+              title="Add Project"
+              onClick={onAddProject}
             >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -479,7 +485,7 @@ export function LeftNavigation({
                       {/* Project row: 34px, rounded (8px) inset tint when active */}
                       {/* biome-ignore lint/a11y/noStaticElementInteractions: project row wrapper handles context menu and shortcut gestures */}
                       <div
-                        className={`nk-project-row ${isSelected ? 'bg-selected' : ''}`}
+                        className="nk-project-row"
                         data-testid={testIdFor.projectRow(project.id)}
                         data-selected={isSelected ? 'true' : 'false'}
                         onContextMenu={(event) => {
@@ -538,6 +544,7 @@ export function LeftNavigation({
                         >
                           {/* 1. Chevron */}
                           <svg
+                            className="nk-project-chevron"
                             width="14"
                             height="14"
                             viewBox="0 0 24 24"
@@ -548,7 +555,6 @@ export function LeftNavigation({
                             strokeLinejoin="round"
                             style={{
                               transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                              transition: 'transform .15s',
                               flexShrink: 0,
                             }}
                             aria-hidden="true"
@@ -583,14 +589,8 @@ export function LeftNavigation({
                           ) : null}
 
                           {/* 3. Name */}
-                          {/* biome-ignore lint/a11y/noStaticElementInteractions: inner name element handles project selection click */}
-                          {/* biome-ignore lint/a11y/useKeyWithClickEvents: outer toggle button handles keyboard events */}
                           <span
                             data-testid={testIdFor.projectSelect(project.id)}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onSelectProject(project.id)
-                            }}
                             className={
                               isExpanded || isSelected
                                 ? 'text-project-title'
@@ -614,15 +614,13 @@ export function LeftNavigation({
                               alignItems: 'center',
                             }}
                           >
-                            <span
-                              className={`truncate ${isExpanded || isSelected ? 'font-semibold' : 'font-normal'}`}
-                            >
+                            <span className="truncate">
                               {projectNamesUppercase ? project.name.toUpperCase() : project.name}
                             </span>
                             {wslLocation !== null ? (
                               <span
                                 style={{
-                                  borderRadius: 4,
+                                  borderRadius: floating ? 4 : 0,
                                   border: '1px solid var(--color-edge)',
                                   backgroundColor: 'var(--color-highlight)',
                                   padding: '2px 4px',
@@ -639,6 +637,10 @@ export function LeftNavigation({
                               </span>
                             ) : null}
                           </span>
+
+                          {isExpanded && app ? (
+                            <ProjectGitLabel app={app} projectId={project.id} />
+                          ) : null}
 
                           {/* 5. Status badges (collapsed only) */}
                           {!isExpanded && (runningCount > 0 || waitingCount > 0) ? (
@@ -758,27 +760,21 @@ export function LeftNavigation({
                         </button>
                       </div>
 
-                      {/* Expanded content */}
                       {isExpanded ? (
                         <div>
-                          {/* Recent sessions label */}
-                          {chats.length > 0 ? (
-                            <div
-                              style={{
-                                margin: '8px 0 2px 0',
-                                paddingLeft: 28,
-                                fontSize: 11,
-                                fontWeight: 600,
-                                letterSpacing: '0.08em',
-                                textTransform: 'uppercase',
-                                color: 'var(--color-ink-muted)',
-                              }}
-                            >
-                              Recent sessions
-                            </div>
-                          ) : null}
-
-                          {/* Session cards container */}
+                          <div
+                            style={{
+                              margin: '8px 0 2px 0',
+                              paddingLeft: 28,
+                              fontSize: 11,
+                              fontWeight: 600,
+                              letterSpacing: '0.08em',
+                              textTransform: 'uppercase',
+                              color: 'var(--color-ink-muted)',
+                            }}
+                          >
+                            Recent sessions
+                          </div>
                           <div
                             data-testid={testIdFor.projectChats(project.id)}
                             style={{
@@ -800,285 +796,74 @@ export function LeftNavigation({
                                 No active sessions
                               </div>
                             ) : (
-                              <>
-                                <ul
-                                  style={{
-                                    listStyle: 'none',
-                                    margin: 0,
-                                    padding: 0,
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 6,
-                                  }}
-                                >
-                                  {chats.map((chat) => {
-                                    const isChatSelected = chat.id === selectedChatId && isSelected
-                                    const attentionState = attention[chat.id]
-                                    const badgeVisible =
-                                      attentionState !== undefined &&
-                                      (isChatSelected
-                                        ? attentionActiveIndicatorEnabled
-                                        : attentionBadgeEnabled)
-
-                                    const task = sessionTasks?.[chat.id]
-                                    const status = resolveChatStatus(
-                                      chat,
-                                      sessionStatuses,
-                                      attention,
-                                      activity,
-                                      badgeVisible,
-                                      task,
-                                    )
-                                    const label = getChatLabel(chat)
-                                    const agentOrShell = getAgentOrShell(chat)
-                                    const config = SESSION_STATUS_CONFIG[status]
-                                    const timeFormatted = getSessionTime(chat.id, status)
-                                    const accessibleName = chat.agentName
-                                      ? `${label}, ${chat.agentName}`
-                                      : label
-                                    const isRevealed = revealedChatId === chat.id
-
-                                    return (
-                                      <li
-                                        key={chat.id}
-                                        className="relative"
-                                        style={{ listStyle: 'none' }}
-                                        onMouseEnter={() => setRevealedChatId(chat.id)}
-                                        onMouseLeave={() => {
-                                          if (revealedChatId === chat.id) {
-                                            setRevealedChatId(null)
-                                          }
-                                        }}
-                                        onFocus={(event) => {
-                                          if (event.currentTarget.contains(event.target)) {
-                                            setRevealedChatId(chat.id)
-                                          }
-                                        }}
-                                        onBlur={(event) => {
-                                          if (
-                                            !event.currentTarget.contains(
-                                              event.relatedTarget as Node | null,
-                                            )
-                                          ) {
-                                            if (revealedChatId === chat.id) {
-                                              setRevealedChatId(null)
-                                            }
-                                          }
-                                        }}
-                                      >
-                                        <button
-                                          type="button"
-                                          aria-current={isChatSelected ? 'true' : 'false'}
-                                          onClick={() => onSelectChat(project.id, chat.id)}
-                                          data-testid={testIdFor.chatRow(chat.id)}
-                                          data-selected={isChatSelected ? 'true' : 'false'}
-                                          title={`${accessibleName}: ${config.label}`}
-                                          aria-label={`${accessibleName}, ${config.label}, ${timeFormatted}`}
-                                          className="nk-session-card"
-                                          style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 4,
-                                            width: '100%',
-                                            boxSizing: 'border-box',
-                                            padding: '8px 10px 8px 12px',
-                                            borderRadius: 8,
-                                            textAlign: 'left',
-                                            border: isChatSelected
-                                              ? '1px solid var(--color-accent)'
-                                              : '1px solid var(--color-edge)',
-                                            backgroundColor: isChatSelected
-                                              ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)'
-                                              : 'var(--color-group)',
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          {/* Line 1 */}
-                                          <div
-                                            style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: 8,
-                                              width: '100%',
-                                            }}
-                                          >
-                                            <span
-                                              aria-hidden="true"
-                                              data-testid={testIdFor.chatStatusDot(chat.id)}
-                                              data-status={status}
-                                              style={{
-                                                width: 8,
-                                                height: 8,
-                                                minWidth: 8,
-                                                borderRadius: '50%',
-                                                backgroundColor: config.color,
-                                                boxShadow: `0 0 6px ${config.color}99`,
-                                                flexShrink: 0,
-                                              }}
-                                            />
-                                            <span
-                                              className="truncate"
-                                              style={{
-                                                minWidth: 0,
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                                fontSize: 13,
-                                                fontWeight: isChatSelected ? 600 : 500,
-                                                color: isChatSelected
-                                                  ? '#ffffff'
-                                                  : 'var(--color-ink)',
-                                              }}
-                                            >
-                                              {label}
-                                            </span>
-                                            <span style={{ flex: 1 }} />
-                                            <span
-                                              data-testid={testIdFor.chatTime(chat.id)}
-                                              className={isRevealed ? 'invisible' : ''}
-                                              style={{
-                                                fontSize: 11,
-                                                color: 'var(--color-ink-muted)',
-                                                flexShrink: 0,
-                                                whiteSpace: 'nowrap',
-                                              }}
-                                            >
-                                              {timeFormatted}
-                                            </span>
-                                          </div>
-
-                                          {/* Line 2 */}
-                                          <div
-                                            style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: 8,
-                                              paddingLeft: 16,
-                                              fontFamily: 'var(--font-mono)',
-                                              fontSize: 11,
-                                              color: 'var(--color-ink-muted)',
-                                            }}
-                                          >
-                                            <span className="lowercase">
-                                              {chat.agentName ?? agentOrShell}
-                                            </span>
-                                            {task !== undefined ? (
-                                              <span
-                                                role="img"
-                                                data-testid={testIdFor.chatTaskProgress(chat.id)}
-                                                title={`${task.stale ? `Out of date: ${task.staleReason}. ` : ''}Task ${task.taskId}: step ${task.step} of ${task.totalSteps}`}
-                                                aria-label={task.ariaLabel}
-                                                className="font-mono rounded-[3px] px-1.5 py-0.5 leading-none"
-                                                style={{
-                                                  color: '#5AA9FF',
-                                                  backgroundColor: 'rgba(90, 169, 255, 0.12)',
-                                                  opacity: task.stale ? 0.5 : undefined,
-                                                }}
-                                              >
-                                                {task.step}/{task.totalSteps}
-                                              </span>
-                                            ) : null}
-                                          </div>
-
-                                          {/* Screen reader indicators */}
-                                          {badgeVisible && !isRevealed ? (
-                                            <span
-                                              role="img"
-                                              className="sr-only"
-                                              data-testid={testIdFor.chatAttentionBadge(chat.id)}
-                                              title={attentionState?.message ?? 'Needs attention'}
-                                              aria-label={`${accessibleName} needs attention`}
-                                            />
-                                          ) : null}
-                                          {activity?.has(chat.id) &&
-                                          !badgeVisible &&
-                                          !isRevealed ? (
-                                            <span
-                                              className="sr-only"
-                                              data-testid={testIdFor.chatActivity(chat.id)}
-                                              role="img"
-                                              aria-label={`${accessibleName}: recent terminal output`}
-                                              title="Recent terminal output. This is not agent status; silence does not mean completion."
-                                            />
-                                          ) : null}
-                                        </button>
-
-                                        {/* Close chat button */}
-                                        {onRequestCloseChat ? (
-                                          <button
-                                            type="button"
-                                            className={`nk-chat-close absolute right-2.5 top-2.5 z-10 size-5 items-center justify-center rounded bg-transparent text-ink-muted transition-colors hover:text-ink ${
-                                              isRevealed ? 'flex' : 'hidden'
-                                            }`}
-                                            data-testid={testIdFor.chatClose(chat.id)}
-                                            aria-label={`Close chat ${accessibleName}`}
-                                            onClick={(event) => {
-                                              event.stopPropagation()
-                                              onRequestCloseChat(chat.id)
-                                            }}
-                                          >
-                                            <Icon.close size={12} aria-hidden strokeWidth={1.8} />
-                                          </button>
-                                        ) : null}
-                                      </li>
-                                    )
-                                  })}
-                                </ul>
-
-                                {/* "New session" action button */}
-                                <button
-                                  type="button"
-                                  aria-label={`New session in ${project.name}`}
-                                  onClick={() => void onCreateChat(project.id)}
-                                  onContextMenu={(event) => {
-                                    event.preventDefault()
-                                    event.stopPropagation()
-                                    openNewChatMenu(project.id, event.clientX, event.clientY)
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (
-                                      event.key === 'ContextMenu' ||
-                                      (event.key === 'F10' && event.shiftKey)
-                                    ) {
-                                      event.preventDefault()
-                                      event.stopPropagation()
-                                      const rect = event.currentTarget.getBoundingClientRect()
-                                      openNewChatMenu(project.id, rect.left, rect.bottom)
-                                    }
-                                  }}
-                                  className="nk-new-session-action nk-icon-btn"
-                                  style={{
-                                    alignSelf: 'flex-start',
-                                    height: 32,
-                                    padding: '0 12px',
-                                    gap: 8,
-                                    border: 0,
-                                    borderRadius: 8,
-                                    background: 'transparent',
-                                    fontSize: 13,
-                                    fontWeight: 500,
-                                    color: 'var(--color-accent)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  <svg
-                                    width="14"
-                                    height="14"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2.2"
-                                    strokeLinecap="round"
-                                    aria-hidden="true"
-                                  >
-                                    <path d="M12 5v14M5 12h14" />
-                                  </svg>
-                                  <span>New session</span>
-                                </button>
-                              </>
+                              <ul
+                                style={{
+                                  listStyle: 'none',
+                                  margin: 0,
+                                  padding: 0,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 6,
+                                }}
+                              >
+                                {allSessions
+                                  .filter((item) => item.project.id === project.id)
+                                  .map((item) => (
+                                    <li key={item.chat.id}>{renderSession(item)}</li>
+                                  ))}
+                              </ul>
                             )}
+                            <button
+                              type="button"
+                              aria-label={`New session in ${project.name}`}
+                              onClick={() => void onCreateChat(project.id)}
+                              onContextMenu={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                openNewChatMenu(project.id, event.clientX, event.clientY)
+                              }}
+                              onKeyDown={(event) => {
+                                if (
+                                  event.key === 'ContextMenu' ||
+                                  (event.key === 'F10' && event.shiftKey)
+                                ) {
+                                  event.preventDefault()
+                                  event.stopPropagation()
+                                  const rect = event.currentTarget.getBoundingClientRect()
+                                  openNewChatMenu(project.id, rect.left, rect.bottom)
+                                }
+                              }}
+                              className="nk-new-session-action nk-icon-btn"
+                              style={{
+                                alignSelf: 'flex-start',
+                                height: 32,
+                                padding: '0 12px',
+                                gap: 8,
+                                border: 0,
+                                borderRadius: 8,
+                                background: 'transparent',
+                                fontSize: 13,
+                                fontWeight: 500,
+                                color: 'var(--color-accent)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M12 5v14M5 12h14" />
+                              </svg>
+                              <span>New session</span>
+                            </button>
                           </div>
                         </div>
                       ) : null}
@@ -1089,13 +874,12 @@ export function LeftNavigation({
             )}
           </ul>
         ) : (
-          /* Sessions view (spec §5): flat list sorted by status */
           <div
             style={{
               padding: '4px 10px 12px 10px',
               display: 'flex',
               flexDirection: 'column',
-              gap: 2,
+              gap: 6,
             }}
           >
             {allSessions.length === 0 ? (
@@ -1103,157 +887,12 @@ export function LeftNavigation({
                 No active sessions
               </p>
             ) : (
-              allSessions.map((item) => {
-                const timeFormatted = getSessionTime(item.chat.id, item.status)
-                const statusConfig = SESSION_STATUS_CONFIG[item.status]
-
-                return (
-                  <button
-                    key={`${item.project.id}:${item.chat.id}`}
-                    type="button"
-                    aria-current={item.isChatSelected ? 'true' : 'false'}
-                    onClick={() => onSelectChat(item.project.id, item.chat.id)}
-                    data-testid={testIdFor.chatRow(item.chat.id)}
-                    className="nk-flat-session-row"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 3,
-                      padding: '7px 12px 6px 12px',
-                      border: item.isChatSelected
-                        ? '1px solid var(--color-accent)'
-                        : '1px solid transparent',
-                      borderRadius: floating ? 8 : 0,
-                      textAlign: 'left',
-                      backgroundColor: item.isChatSelected
-                        ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)'
-                        : 'transparent',
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {/* Line 1 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-                      <span
-                        style={{
-                          position: 'relative',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <span
-                          aria-hidden="true"
-                          style={{
-                            width: 18,
-                            height: 18,
-                            minWidth: 18,
-                            borderRadius: floating ? 5 : 0,
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: 9,
-                            fontWeight: 700,
-                            color: item.projectColor,
-                            backgroundColor: `color-mix(in srgb, ${item.projectColor} 18%, transparent)`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          {item.initials}
-                        </span>
-                        <span
-                          aria-hidden="true"
-                          data-testid={testIdFor.chatStatusDot(item.chat.id)}
-                          data-status={item.status}
-                          style={{
-                            position: 'absolute',
-                            bottom: -2,
-                            right: -2,
-                            width: 7,
-                            height: 7,
-                            minWidth: 7,
-                            borderRadius: '50%',
-                            backgroundColor: statusConfig.color,
-                            boxShadow: `0 0 0 1.5px var(--color-panel), 0 0 4px ${statusConfig.color}99`,
-                          }}
-                        />
-                      </span>
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 12,
-                          color: item.isChatSelected ? '#ffffff' : 'var(--color-ink-secondary)',
-                          fontWeight: item.isChatSelected ? 600 : 400,
-                          minWidth: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {item.label}
-                      </span>
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 11,
-                          color: 'var(--color-ink-disabled)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {item.agentOrShell}
-                      </span>
-                      <span style={{ flex: 1 }} />
-                      {item.task ? (
-                        <span
-                          style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: 11,
-                            color: 'var(--color-info)',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {item.task.step}/{item.task.totalSteps}
-                        </span>
-                      ) : null}
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--color-ink-muted)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {timeFormatted}
-                      </span>
-                    </div>
-
-                    {/* Line 2 */}
-                    <div
-                      style={{
-                        paddingLeft: 26,
-                        display: 'flex',
-                        alignItems: 'center',
-                        width: '100%',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 11,
-                          color: item.projectColor,
-                          minWidth: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {item.folderName}
-                      </span>
-                    </div>
-                  </button>
-                )
-              })
+              [...allSessions]
+                .sort((a, b) => {
+                  const order: Record<SessionStatus, number> = { waiting: 0, running: 1, idle: 2 }
+                  return order[a.status] - order[b.status]
+                })
+                .map((item) => <div key={item.chat.id}>{renderSession(item, true)}</div>)
             )}
           </div>
         )}
@@ -1319,6 +958,10 @@ export function LeftNavigation({
           onOpenProjectSettings={(projectId) => {
             setContextMenu(null)
             onOpenProjectSettings(projectId)
+          }}
+          onOpenProject={(projectId) => {
+            setContextMenu(null)
+            onSelectProject(projectId)
           }}
         />
       ) : null}
@@ -1414,6 +1057,7 @@ function ContextMenuOverlay({
   onRemoveProject,
   onOpenInFileExplorer,
   onOpenProjectSettings,
+  onOpenProject,
 }: {
   state: ContextMenuState & { projectId: string }
   projectName: string
@@ -1421,6 +1065,7 @@ function ContextMenuOverlay({
   onRemoveProject: (projectId: string) => void
   onOpenInFileExplorer: (projectId: string) => void
   onOpenProjectSettings: (projectId: string) => void
+  onOpenProject: (projectId: string) => void
 }): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
   const position = clampMenuPosition(state.x, state.y, { menuWidth: 160, menuHeight: 120 })
@@ -1465,6 +1110,14 @@ function ContextMenuOverlay({
         style={position}
         data-testid={TEST_ID.projectContextMenu}
       >
+        <button
+          type="button"
+          role="menuitem"
+          className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
+          onClick={() => onOpenProject(state.projectId)}
+        >
+          Open project tasks
+        </button>
         <button
           type="button"
           role="menuitem"

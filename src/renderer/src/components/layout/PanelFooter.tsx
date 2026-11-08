@@ -36,46 +36,46 @@ export function PanelFooter({
           {mascotError}
         </p>
       ) : null}
-      <div className="flex items-center gap-1 border-t border-edge px-3 py-1.5">
+      <div className="nk-panel-footer">
         <button
           type="button"
-          className="nk-app-settings nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
+          className="nk-app-settings nk-footer-action"
           data-testid={TEST_ID.appSettingsButton}
-          aria-label="App Settings"
+          aria-label="App settings"
+          aria-haspopup="dialog"
           title="App Settings"
           onClick={() => {
             onOpenAppSettings()
           }}
         >
-          <Icon.settings size={16} aria-hidden />
+          <Icon.settings size={18} strokeWidth={1.8} aria-hidden />
         </button>
         <button
           type="button"
-          className="nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info aria-pressed:text-ink"
+          className="nk-footer-action nk-mascot-toggle"
           data-testid={TEST_ID.mascotToggle}
-          aria-label="Show mascot"
+          aria-label={mascotVisible ? 'Hide mascot' : 'Show mascot'}
           aria-pressed={mascotVisible}
           title={mascotVisible ? 'Hide mascot' : 'Show mascot'}
           onClick={onToggleMascot}
         >
-          <Icon.mascot size={16} aria-hidden />
+          <Icon.mascot size={18} strokeWidth={1.8} aria-hidden />
         </button>
         {/* target=_blank reaches setWindowOpenHandler, which opens allowlisted
             URLs in the system browser (src/main/index.ts). */}
-        <a
-          className="nk-footer-action flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-info"
-          data-testid={TEST_ID.reportIssueLink}
-          href={REPORT_ISSUE_URL}
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Report an issue on GitHub"
-          title="Report an issue on GitHub"
-        >
-          <Icon.bug size={16} aria-hidden />
-        </a>
         <button
           type="button"
-          className="ml-auto cursor-pointer border-0 bg-transparent p-0 font-mono text-xs text-ink-muted select-none hover:text-ink focus-visible:outline focus-visible:outline-info"
+          className="nk-footer-action"
+          data-testid={TEST_ID.reportIssueLink}
+          onClick={() => window.open(REPORT_ISSUE_URL, '_blank', 'noopener,noreferrer')}
+          aria-label="Report a bug"
+          title="Report a bug"
+        >
+          <Icon.bug size={18} strokeWidth={1.8} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="ml-auto cursor-pointer border-0 bg-transparent p-0 font-mono text-[13px] text-ink-muted select-none hover:text-ink focus-visible:outline focus-visible:outline-info"
           data-testid={TEST_ID.panelAppVersion}
           title={`NeKode v${__APP_VERSION__}`}
           aria-label="Open app settings"

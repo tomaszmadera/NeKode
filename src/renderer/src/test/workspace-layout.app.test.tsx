@@ -6,6 +6,7 @@ import { TEST_ID, testIdFor } from '../lib/test-ids'
 import { THEME_STORAGE_KEY } from '../lib/theme'
 import { createAppApiStub } from './app-api-stub'
 import { resetMockFitAddons } from './fit-addon-mock'
+import { openProjectHome } from './open-project-home'
 import { resetMockTerminals } from './xterm-mock'
 
 // Workspace layout modes (docs/features/workspace-layout/spec.md). xterm is
@@ -55,7 +56,7 @@ describe('workspace layout modes', () => {
 
   async function selectSessionInDemo(): Promise<void> {
     render(<App app={app} />)
-    fireEvent.click(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(testIdFor.chatRow('t1')))
     await waitFor(() => {
       expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
@@ -123,7 +124,7 @@ describe('workspace layout modes', () => {
     expect(within(right).getByTestId(TEST_ID.filesProjectName).textContent).toBe('DEMO')
     expect(getByTestIdString(testIdFor.chatRow('t1')).getAttribute('data-selected')).toBe('true')
 
-    fireEvent.click(screen.getByTestId(testIdFor.projectSelect('p2')))
+    openProjectHome(screen.getByTestId(testIdFor.projectSelect('p2')))
     await waitFor(() => {
       expect(within(right).getByTestId(TEST_ID.filesProjectName).textContent).toBe('OTHER')
     })
@@ -315,7 +316,7 @@ describe('workspace layout modes', () => {
     expect(right.className).toContain('m-2')
     expect(right.className).toContain('rounded-[10px]')
     expect(right.className).toContain('border')
-    expect(left.className).toContain('m-2')
+    expect(left.closest('.nk-workspace-row')).not.toBeNull()
     expect(left.className).toContain('rounded-[10px]')
     expect(right.className).not.toContain('border-l')
   })
@@ -378,7 +379,7 @@ describe('workspace layout modes', () => {
     expect(screen.getByTestId(TEST_ID.statusRightToggle).getAttribute('aria-pressed')).toBe('false')
 
     // Open modal dialog: chords should be ignored
-    fireEvent.click(screen.getByRole('button', { name: 'App Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'App settings' }))
     const dialog = await screen.findByRole('dialog', { name: 'App Settings' })
     expect(dialog.getAttribute('aria-modal')).toBe('true')
 
