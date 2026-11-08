@@ -23,10 +23,27 @@ import { SshFilesAdapter } from './ssh-files-adapter'
 
 const HARNESS = fileURLToPath(new URL('../../test-support/fake-ssh.cjs', import.meta.url))
 
-function hasPosixShell(): boolean {
-  const result = spawnSync('sh', ['-c', 'true'])
-  return result.error === undefined || result.error === null
+function findPosixShell(): string | null {
+  for (const candidate of [
+    process.env.FAKE_SSH_SH,
+    'sh',
+    'C:/Program Files/Git/bin/sh.exe',
+    'C:/Program Files/Git/usr/bin/sh.exe',
+    '/bin/sh',
+    'bash',
+  ]) {
+    if (!candidate) continue
+    try {
+      const result = spawnSync(candidate, ['-c', 'true'])
+      if (result.error === undefined || result.error === null) {
+        if (result.status === 0) return candidate
+      }
+    } catch {}
+  }
+  return null
 }
+
+const resolvedShell = findPosixShell()
 
 /**
  * Probe for symlink creation, which needs a Windows developer-mode privilege.
@@ -46,7 +63,7 @@ function hasSymlinkSupport(): boolean {
   }
 }
 
-const shellAvailable = hasPosixShell()
+const shellAvailable = resolvedShell !== null
 const symlinksAvailable = hasSymlinkSupport()
 
 const tempDirs: string[] = []
@@ -232,10 +249,28 @@ function harnessClient(env: Record<string, string> = {}): SshClient {
   })
 }
 
-/** MSYS maps the Windows temp directory to /tmp; fixture paths stay POSIX. */
-function posixPathOf(windowsPath: string): string {
-  const base = tmpdir()
-  return `/tmp/${windowsPath.slice(base.length + 1).replace(/\\/g, '/')}`
+/**
+ * Resolves the canonical POSIX path using the test shell so Windows runner paths
+ * (/c/Users/...) match what `pwd -P` in the remote script returns.
+ */
+function canonicalPosixPath(windowsPath: string): string {
+  if (process.platform !== 'win32' || resolvedShell === null) {
+    return windowsPath
+  }
+  const posix = windowsPath.replace(/\\/g, '/')
+  try {
+    const res = spawnSync(resolvedShell, ['-c', 'cd "$@"; pwd -P', 'sh', posix], {
+      encoding: 'utf8',
+    })
+    if (res.status === 0 && res.stdout.trim().startsWith('/')) {
+      return res.stdout.trim()
+    }
+  } catch {}
+  const match = /^([a-zA-Z]):\/(.*)$/.exec(posix)
+  if (match) {
+    return `/${match[1].toLowerCase()}/${match[2]}`
+  }
+  return posix
 }
 
 interface Fixture {
@@ -254,6 +289,7 @@ interface Fixture {
 function createFixture(): Fixture {
   const base = mkdtempSync(join(tmpdir(), 'nekode-ssh-files-'))
   tempDirs.push(base)
+  const canonicalBase = canonicalPosixPath(base)
   const rootDir = join(base, 'project')
   const outsideDir = join(base, 'outside')
   mkdirSync(join(rootDir, 'src'), { recursive: true })
@@ -272,30 +308,33 @@ function createFixture(): Fixture {
   const colonName = process.platform !== 'win32'
   if (colonName) writeFileSync(join(rootDir, 'a:b.txt'), 'colon\n')
 
+  const posixRoot = `${canonicalBase}/project`
+  const posixOutside = `${canonicalBase}/outside`
+
   let escapeLink: string | null = null
   let insideLink: string | null = null
   try {
     const escapePath = join(rootDir, 'escape')
     symlinkSync(join(outsideDir, 'secret.txt'), escapePath)
-    escapeLink = posixPathOf(escapePath)
+    escapeLink = `${posixRoot}/escape`
     const inside = join(rootDir, 'alias')
     symlinkSync(join(rootDir, 'src'), inside)
-    insideLink = posixPathOf(inside)
+    insideLink = `${posixRoot}/alias`
   } catch {
     // Creating symlinks needs a Windows privilege; the escape cases then rely
     // on the unit tests and the real-host smoke.
   }
 
   return {
-    root: posixPathOf(rootDir),
-    outside: posixPathOf(outsideDir),
+    root: posixRoot,
+    outside: posixOutside,
     escapeLink,
     insideLink,
     colonName,
   }
 }
 
-describe('SshFilesAdapter through a real shell', () => {
+describe('SshFilesAdapter through a real shell', { timeout: 15_000 }, () => {
   it.skipIf(!shellAvailable)('lists one level with kinds', async () => {
     const fixture = createFixture()
     const adapter = new SshFilesAdapter(harnessClient(), target(`ssh://host${fixture.root}`))

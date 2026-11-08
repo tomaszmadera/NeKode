@@ -10,7 +10,7 @@
 //   FAKE_SSH_EXIT     exit with this code instead of running the command
 //   FAKE_SSH_SH       POSIX shell used to run the command
 
-const { appendFileSync } = require('node:fs')
+const { appendFileSync, writeSync } = require('node:fs')
 const { spawnSync } = require('node:child_process')
 
 const argv = process.argv.slice(2)
@@ -58,6 +58,15 @@ if (result === undefined) {
   process.stderr.write('fake-ssh: no POSIX shell available\n')
   process.exit(90)
 }
-if (result.stdout) process.stdout.write(result.stdout)
-if (result.stderr) process.stderr.write(result.stderr)
+function writeAll(fd, buffer) {
+  if (!buffer || buffer.length === 0) return
+  const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
+  let offset = 0
+  while (offset < buf.length) {
+    offset += writeSync(fd, buf, offset, buf.length - offset)
+  }
+}
+
+if (result.stdout) writeAll(1, result.stdout)
+if (result.stderr) writeAll(2, result.stderr)
 process.exit(result.status === null ? 1 : result.status)

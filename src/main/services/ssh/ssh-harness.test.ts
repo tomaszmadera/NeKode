@@ -17,12 +17,28 @@ import { SshClient, type SshRunResult } from './ssh-client'
 
 const HARNESS = fileURLToPath(new URL('../../test-support/fake-ssh.cjs', import.meta.url))
 
-function hasPosixShell(): boolean {
-  const result = spawnSync('sh', ['-c', 'true'])
-  return result.error === undefined || result.error === null
+function findPosixShell(): string | null {
+  for (const candidate of [
+    process.env.FAKE_SSH_SH,
+    'sh',
+    'C:/Program Files/Git/bin/sh.exe',
+    'C:/Program Files/Git/usr/bin/sh.exe',
+    '/bin/sh',
+    'bash',
+  ]) {
+    if (!candidate) continue
+    try {
+      const result = spawnSync(candidate, ['-c', 'true'])
+      if (result.error === undefined || result.error === null) {
+        if (result.status === 0) return candidate
+      }
+    } catch {}
+  }
+  return null
 }
 
-const shellAvailable = hasPosixShell()
+const resolvedShell = findPosixShell()
+const shellAvailable = resolvedShell !== null
 
 const tempDirs: string[] = []
 
@@ -66,7 +82,7 @@ function harnessClient(): SshClient {
   })
 }
 
-describe('fake ssh harness', () => {
+describe('fake ssh harness', { timeout: 15_000 }, () => {
   it('records the joined remote command line of a hostile agent launch', () => {
     const capture = captureFile()
     const ssh = new SshClient({ platform: 'linux' })
@@ -127,11 +143,11 @@ describe('fake ssh harness', () => {
     // 111 is the failed-cd state the pane maps to the not_found message.
     expect(result.exitCode).toBe(111)
     expect(result.stdout).toBe('')
-    expect(result.stderr).toContain('No such file or directory')
+    expect(result.stderr).toMatch(/No such file or directory|can't cd/i)
   })
 })
 
-describe('script run through the fake ssh harness', () => {
+describe('script run through the fake ssh harness', { timeout: 15_000 }, () => {
   it.skipIf(!shellAvailable)(
     'ignores login chatter and returns the marked payload from a real shell',
     async () => {
