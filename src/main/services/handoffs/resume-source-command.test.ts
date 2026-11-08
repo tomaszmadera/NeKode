@@ -159,6 +159,53 @@ describe('Resume command sources', () => {
     ).rejects.toThrow(/Cannot start/)
   }, 15000)
 
+  it('reports the Agent Harness command JSON diagnostics instead of the version advice', async () => {
+    const harness = (program: string, ...args: string[]) => ({
+      ...source(program, ...args),
+      protocol: 'agent-harness' as const,
+    })
+    const message = async (payload: string) => {
+      try {
+        await runResumeCommand(
+          root,
+          harness('process.stdout.write(process.argv[1]);process.exit(2)', payload),
+          signal(),
+        )
+      } catch (error) {
+        return (error as AppError).message
+      }
+      throw new Error('A non-zero exit must reject the discovery command.')
+    }
+    const diagnostics = await message(
+      JSON.stringify({
+        success: false,
+        diagnostics: [
+          {
+            owner_root: root,
+            code: 'invalid-worktree',
+            error: 'registered worktree is unavailable; restore access and retry',
+          },
+          { owner_root: root, code: 'unavailable-store', error: 'cannot enumerate the task store' },
+        ],
+      }),
+    )
+    expect(diagnostics).toContain('invalid-worktree')
+    expect(diagnostics).toContain('registered worktree is unavailable')
+    expect(diagnostics).toContain('unavailable-store')
+    expect(diagnostics).toContain('exit 2')
+    expect(diagnostics).not.toContain('update Agent Harness')
+    const bounded = await message(JSON.stringify({ success: false, error: 'x'.repeat(5000) }))
+    expect(bounded).toContain('error: ')
+    expect(bounded.length).toBeLessThan(1000)
+    const controls = await message(
+      JSON.stringify({ success: false, error: 'first line\n\u001b[2Jsecond line' }),
+    )
+    expect(controls).toContain('first line [2Jsecond line')
+    expect(controls).not.toContain('\u001b')
+    // Without a JSON payload there is nothing to quote, so the fixed advice stays.
+    expect(await message('not json')).toContain('update Agent Harness')
+  }, 15000)
+
   it('reserves supervisor exit codes only for supervised sources', async () => {
     // The Windows Job-object supervisor owns native Windows sources; elsewhere 254 is the source's own code.
     await expect(runResumeCommand(root, source('process.exit(254)'), signal())).rejects.toThrow(

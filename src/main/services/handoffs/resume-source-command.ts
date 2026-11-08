@@ -44,6 +44,44 @@ const taskSchema = z.object({
   awaiting_resumption: z.boolean().optional(),
 })
 const envelopeSchema = z.object({ success: z.literal(true), tasks: z.array(taskSchema) })
+/** The producer's own failed payload: taskctl list --json exits 2 with this on stdout. */
+const failureSchema = z.object({
+  success: z.literal(false),
+  error: z.string().optional(),
+  diagnostics: z
+    .array(z.object({ code: z.string().optional(), error: z.string().optional() }))
+    .optional(),
+})
+/** Upper bound on the producer's own failure detail quoted in one message. */
+const MAX_FAILURE_DETAIL_CHARS = 400
+const clamp = (text: string, limit: number) => {
+  // Collapse whitespace and drop control characters so producer text stays one line.
+  const line = text
+    .replace(/\p{Cc}/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return line.length > limit ? `${line.slice(0, limit)}...` : line
+}
+/** The producer's diagnostics explain a non-zero exit better than any fixed hint. */
+const failureDetail = (output: string): string | null => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(output)
+  } catch {
+    return null
+  }
+  const failure = failureSchema.safeParse(parsed)
+  if (!failure.success) return null
+  const detail = [
+    ...(failure.data.diagnostics ?? []).map(({ code, error }) =>
+      [code, error === undefined ? '' : `(${clamp(error, 200)})`].filter(Boolean).join(' '),
+    ),
+    ...(failure.data.error === undefined ? [] : [`error: ${failure.data.error}`]),
+  ]
+    .filter((part) => part !== '')
+    .join('; ')
+  return detail === '' ? null : clamp(detail, MAX_FAILURE_DETAIL_CHARS)
+}
 const run = promisify(execFile)
 /** Total budget for one Windows stop request; the supervisor gets the grace, the wait for close the rest. */
 const STOP_BUDGET_MS = 3000
@@ -294,7 +332,19 @@ export async function runResumeCommand(
     )
   if (result.error !== undefined || (windows !== null && result.code === SUPERVISOR_START_FAILED))
     throw startFailure(source, harness)
-  if (result.code !== 0)
+  if (result.code !== 0) {
+    let tail = ''
+    try {
+      tail = decoder.decode()
+    } catch {
+      // A truncated final code point cannot complete a JSON payload.
+    }
+    const detail = harness ? failureDetail(output + tail) : null
+    if (detail !== null)
+      throw new AppError(
+        'config',
+        `Agent Harness discovery failed (exit ${result.code}). ${detail}`,
+      )
     throw new AppError(
       'config',
       harness
@@ -303,6 +353,7 @@ export async function runResumeCommand(
           ? 'WSL Resume discovery failed. Install setsid (util-linux), pgrep and ps (procps), sh and kill in the distribution, and check the saved executable and arguments.'
           : 'Resume discovery command failed. Run the saved executable and arguments in the project runtime to diagnose it.',
     )
+  }
   try {
     return JSON.parse(output + decoder.decode())
   } catch {
