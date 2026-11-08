@@ -168,7 +168,8 @@ describe('Resume command sources', () => {
       try {
         await runResumeCommand(
           root,
-          harness('process.stdout.write(process.argv[1]);process.exit(2)', payload),
+          // A synchronous write survives the immediate exit; the parent must see the whole payload.
+          harness('require("node:fs").writeSync(1,process.argv[1]);process.exit(2)', payload),
           signal(),
         )
       } catch (error) {
@@ -812,4 +813,64 @@ describe('Resume command sources', () => {
       ['--distribution', 'Ubuntu', '--exec', 'kill', '-KILL', '--', '11'],
     ])
   })
+
+  it.skipIf(process.platform !== 'win32')(
+    'stops a WSL source through killWslSource before falling back to the tree kill',
+    async () => {
+      type SpawnDep = NonNullable<
+        NonNullable<Parameters<typeof runResumeCommand>[3]>['spawnProcess']
+      >
+      const child = Object.assign(new EventEmitter(), {
+        pid: 999_996,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        stdin: new PassThrough(),
+        exitCode: null,
+        kill: () => true,
+      })
+      const killer = Object.assign(new EventEmitter(), { unref: () => undefined })
+      const order: string[] = []
+      const stopWslSource = vi.fn(async () => {
+        order.push('wsl')
+      })
+      let argv: string[] = []
+      const spawner = vi.fn((file: string, args: string[]) => {
+        if (file !== 'taskkill') {
+          argv = args
+          return child
+        }
+        order.push('taskkill')
+        // The tree kill closes the pipes; the request must still report a cancel.
+        setTimeout(() => child.emit('close', 1), 0)
+        return killer
+      }) as unknown as SpawnDep
+      const controller = new AbortController()
+      const pending = runResumeCommand(
+        '\\\\wsl.localhost\\Ubuntu\\home\\user\\repo',
+        { kind: 'command', protocol: 'generic', executable: 'sh', args: ['-c', 'sleep 10'] },
+        controller.signal,
+        { spawnProcess: spawner, stopWslSource },
+      )
+      const stopped = expect(pending).rejects.toMatchObject({
+        kind: 'conflict',
+        message: 'Resume discovery was cancelled.',
+      })
+      controller.abort(new AppError('conflict', 'Resume discovery was cancelled.'))
+      await stopped
+      expect(argv.slice(0, 5)).toEqual([
+        '--distribution',
+        'Ubuntu',
+        '--cd',
+        '/home/user/repo',
+        '--exec',
+      ])
+      // The stopped group is the request marker the supervisor argv carries.
+      const prefix = 'NEKODE_RESUME_REQUEST='
+      const marker = argv.find((argument) => argument.startsWith(prefix))
+      expect(marker).toBeDefined()
+      expect(stopWslSource).toHaveBeenCalledWith('Ubuntu', marker?.slice(prefix.length))
+      expect(order).toEqual(['wsl', 'taskkill'])
+    },
+    15000,
+  )
 })

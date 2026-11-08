@@ -153,7 +153,12 @@ export async function runResumeCommand(
   projectPath: string,
   source: ResumeCommandSource,
   signal: AbortSignal,
-  deps: { spawnProcess?: typeof spawn; maxBytes?: number } = {},
+  deps: {
+    spawnProcess?: typeof spawn
+    maxBytes?: number
+    /** Tests inject the WSL stop so it can be observed without invoking wsl.exe. */
+    stopWslSource?: typeof killWslSource
+  } = {},
 ): Promise<unknown> {
   checkResumeCancelled(signal)
   const harness = source.protocol === 'agent-harness'
@@ -246,7 +251,9 @@ export async function runResumeCommand(
     requestStop()
     if (stopPath !== null) stopDeadline = Date.now() + STOP_BUDGET_MS
     const pending = (
-      context.wsl === null ? Promise.resolve() : killWslSource(context.wsl.distribution, marker)
+      context.wsl === null
+        ? Promise.resolve()
+        : (deps.stopWslSource ?? killWslSource)(context.wsl.distribution, marker)
     )
       .then(async () => {
         // Give the supervisor a moment to stop its own job before falling back.
