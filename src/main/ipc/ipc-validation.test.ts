@@ -59,6 +59,7 @@ function fakeServices(): AppServices {
       wslDirectories: vi.fn(() => []),
       wslDistributions: vi.fn(() => []),
       addWsl: vi.fn(),
+      addSsh: vi.fn(),
       list: () => [],
       add: () => ({ id: 'p1', name: 'demo', path: 'D:/code/demo', runtimeLabel: null }),
       remove: () => {},
@@ -614,6 +615,45 @@ describe('ipc payload validation', () => {
       channels.get('terminals:shellAddCustom')?.parse(['/bin/fish', 'p1', 'extra']),
     ).toThrow(ValidationError)
   })
+  it('validates the SSH registration object payload and rejects hostile fields', () => {
+    const channels = channelMap()
+    const input = { host: 'Minipc', user: 'tomek', port: 2222, path: '/srv/My $ Project' }
+    expect(channels.get('projects:addSsh')?.parse([input])).toEqual([input])
+    expect(
+      channels
+        .get('projects:addSsh')
+        ?.parse([{ host: 'host', user: null, port: null, path: '/p' }]),
+    ).toEqual([{ host: 'host', user: null, port: null, path: '/p' }])
+    for (const payload of [
+      [],
+      [input, 'extra'],
+      ['ssh://host/p'],
+      [{}],
+      [{ ...input, extra: true }],
+      [{ host: 'host', user: null, port: null }],
+      [{ ...input, host: 42 }],
+      [{ ...input, user: 42 }],
+      [{ ...input, port: '2222' }],
+      [{ ...input, port: 22.5 }],
+      [{ ...input, path: null }],
+      [{ ...input, host: '-oProxyCommand=evil' }],
+      [{ ...input, user: 'to mek' }],
+      [{ ...input, port: 0 }],
+      [{ ...input, path: 'relative' }],
+      [{ ...input, path: '/' }],
+    ]) {
+      expect(() => channels.get('projects:addSsh')?.parse(payload)).toThrow(ValidationError)
+    }
+    const fieldMessage = (() => {
+      try {
+        channels.get('projects:addSsh')?.parse([{ ...input, host: '-oProxyCommand=evil' }])
+      } catch (error) {
+        return error instanceof Error ? error.message : ''
+      }
+      return ''
+    })()
+    expect(fieldMessage).toBe('The host name is invalid.')
+  })
   it('validates action inputs and confirmation before service calls', () => {
     const channels = channelMap()
     const input = {
@@ -722,10 +762,40 @@ describe('ipc payload validation', () => {
     expect(services.git[method]).toHaveBeenCalledWith('proj-1')
   })
 
-  it('validates the terminal cwd as a safe path', () => {
+  it('validates the terminal cwd as a project path and keeps local-only paths local', () => {
     const entry = channelMap().get('terminals:create')
     expect(() => entry?.parse(['t1', 'relative/cwd'])).toThrow(ValidationError)
     expect(entry?.parse(['t1', hostPath('D:/code/demo')])).toEqual(['t1', hostPath('D:/code/demo')])
+    // An SSH project path is the renderer's cwd for a remote terminal.
+    expect(entry?.parse(['t1', 'ssh://tomek@minipc/srv/My Project'])).toEqual([
+      't1',
+      'ssh://tomek@minipc/srv/My Project',
+    ])
+    expect(() => entry?.parse(['t1', 'ssh://host/srv/../etc'])).toThrow(ValidationError)
+
+    // Every local-only path consumer keeps rejecting an SSH URL.
+    const channels = channelMap()
+    expect(() => channels.get('dialogs:pickDirectory')?.parse(['ssh://host/p'])).toThrow(
+      /absolute path/,
+    )
+    expect(() => channels.get('terminals:shellAddCustom')?.parse(['ssh://host/p', 'p1'])).toThrow(
+      /absolute path/,
+    )
+    expect(() =>
+      channels.get('actions:create')?.parse([
+        {
+          scope: 'project',
+          projectId: 'p1',
+          title: 'Build',
+          icon: null,
+          command: 'make',
+          cwd: 'ssh://host/p',
+          runMode: 'background',
+          confirm: false,
+          sortOrder: 0,
+        },
+      ]),
+    ).toThrow(/absolute path/)
   })
 
   it('validates files relative paths by shape only (containment is the service’s job)', () => {

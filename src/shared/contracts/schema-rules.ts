@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path'
+import { parseSshTarget } from '@shared/ssh-target'
 import { z } from 'zod'
 
 // Reusable rules for the IPC payload schemas (agent-friendly-architecture spec
@@ -86,7 +87,24 @@ export const nonBlankSchema = z
 export const safePathSchema = z
   .string({ error: 'must be a string' })
   .refine((path) => !path.includes(NUL), { error: 'must not contain NUL characters' })
-  .refine((path) => isAbsolute(path), { error: 'must be an absolute path' })
+  .refine((path) => isAbsolute(path), {
+    error: 'must be an absolute path',
+  })
+  .refine((path) => !path.split(/[\\/]+/).includes('..'), {
+    error: 'must not contain ".." segments',
+  })
+
+/**
+ * Project paths: a local absolute path or a valid `ssh://` project location.
+ * Only the terminal cwd carries a project path; every local-only surface keeps
+ * `safePathSchema` and never accepts an SSH URL.
+ */
+export const projectPathSchema = z
+  .string({ error: 'must be a string' })
+  .refine((path) => !path.includes(NUL), { error: 'must not contain NUL characters' })
+  .refine((path) => isAbsolute(path) || parseSshTarget(path) !== null, {
+    error: 'must be an absolute path',
+  })
   .refine((path) => !path.split(/[\\/]+/).includes('..'), {
     error: 'must not contain ".." segments',
   })

@@ -2,6 +2,7 @@ import { accessSync, constants, readFileSync, realpathSync, statSync } from 'nod
 import { basename, isAbsolute, posix } from 'node:path'
 import type { ShellChoice, ShellInfo } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import { parseSshTarget } from '@shared/ssh-target'
 import { parseWslPath } from '@shared/wsl-path'
 import { listWslDistributionsAsync, runWsl, type WslRun } from './wsl'
 import { runWslAsync } from './wsl-async'
@@ -52,6 +53,14 @@ interface Candidate {
 
 /** Chat-prefix code for every WSL choice; the distribution is omitted. */
 const WSL_SHORT_LABEL = 'WSL'
+
+/**
+ * SSH project shell (spec ssh-projects Behaviour 9): the remote user's login
+ * shell. It is never probed, so the entry and its label are fixed; the
+ * terminal runtime spawns the local ssh client instead of this spec.
+ */
+const SSH_SHELL_LABEL = 'Default (remote login shell)'
+const SSH_SHORT_LABEL = 'SSH'
 
 const WINDOWS_CANDIDATES: readonly Candidate[] = [
   {
@@ -220,6 +229,10 @@ export class ShellService {
    * custom paths. `customPaths` is the persisted app-level list (shells.custom).
    */
   async detectAsync(customPaths: readonly string[], projectPath?: string): Promise<DetectResult> {
+    if (this.#isSshProject(projectPath)) {
+      // No host or WSL probe for an SSH project (spec ssh-projects Behaviour 9).
+      throw new AppError('unsupported', 'This action is not available for SSH projects.')
+    }
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location !== null) {
       const output = await this.#runWslAsync(location.distribution, ['/bin/cat', '/etc/shells'])
@@ -309,6 +322,9 @@ export class ShellService {
    * tab has not run detection yet in this app run.
    */
   list(projectPath?: string): ShellInfo[] {
+    if (this.#isSshProject(projectPath)) {
+      return [{ id: 'default', label: SSH_SHELL_LABEL }]
+    }
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location !== null)
       return (
@@ -325,6 +341,9 @@ export class ShellService {
    * `custom:<path>` entry. Storage (shells.custom) is owned by the caller.
    */
   addCustomPath(path: string, projectPath?: string): ShellInfo {
+    if (this.#isSshProject(projectPath)) {
+      throw new AppError('unsupported', 'This action is not available for SSH projects.')
+    }
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location !== null) {
       this.#validateLinuxShell(path, location.distribution)
@@ -351,6 +370,9 @@ export class ShellService {
   }
 
   async addCustomPathAsync(path: string, projectPath?: string): Promise<ShellInfo> {
+    if (this.#isSshProject(projectPath)) {
+      throw new AppError('unsupported', 'This action is not available for SSH projects.')
+    }
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location === null) return this.addCustomPath(path, projectPath)
     await this.#validateLinuxShellAsync(path, location.distribution)
@@ -373,6 +395,12 @@ export class ShellService {
    * unavailable Linux choices fail explicitly. `null`/empty/absent is default.
    */
   resolve(choice: string | null | undefined, projectPath?: string): ShellSpec {
+    if (this.#isSshProject(projectPath)) {
+      // An SSH terminal spawns the local ssh client instead (prepareSshTerminal),
+      // so no local spec exists. Returning one would spawn `ssh` without a
+      // destination if any caller ever used it.
+      throw new AppError('unsupported', 'This action is not available for SSH projects.')
+    }
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location !== null) {
       // Historic host choices are visibly represented by the distribution default.
@@ -404,6 +432,7 @@ export class ShellService {
   }
 
   async resolveAsync(choice: string | null | undefined, projectPath?: string): Promise<ShellSpec> {
+    if (this.#isSshProject(projectPath)) return this.resolve(choice, projectPath)
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location === null || !choice?.startsWith('custom:/'))
       return this.resolve(choice, projectPath)
@@ -417,6 +446,7 @@ export class ShellService {
    * chat name and the spawned shell can never disagree.
    */
   label(choice: string | null | undefined, projectPath?: string): string {
+    if (this.#isSshProject(projectPath)) return SSH_SHELL_LABEL
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location !== null)
       return choice?.startsWith('custom:/')
@@ -455,6 +485,7 @@ export class ShellService {
    * `label()` keeps serving the Shell settings list and the bottom-tab text.
    */
   chatLabel(choice: string | null | undefined, projectPath?: string): string {
+    if (this.#isSshProject(projectPath)) return SSH_SHORT_LABEL
     const location = projectPath === undefined ? null : parseWslPath(projectPath)
     if (location !== null)
       return choice?.startsWith('custom:/') ? posix.basename(customPathOf(choice)) : WSL_SHORT_LABEL
@@ -477,6 +508,15 @@ export class ShellService {
     }
     const path = candidate.paths(this.#env).find((item) => this.#exists(item))
     return path !== undefined ? candidate.shortLabel : this.defaultShortLabel()
+  }
+
+  /**
+   * True for an SSH project path. Those never probe host or WSL shells: the
+   * single Default entry is the remote login shell (spec ssh-projects
+   * Behaviour 9).
+   */
+  #isSshProject(projectPath: string | undefined): boolean {
+    return projectPath !== undefined && parseSshTarget(projectPath) !== null
   }
 
   /**

@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '@shared/bottom-tab-id'
 import {
@@ -9,6 +9,12 @@ import {
   projectWslShellsKey,
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import {
+  parseSshTarget,
+  type SshTarget,
+  sshTargetFromInput,
+  validateSshLocation,
+} from '@shared/ssh-target'
 import { parseWslPath } from '@shared/wsl-path'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
@@ -31,12 +37,15 @@ import { OpenWhisprClient } from './dictation/openwhispr-client'
 import { PostProcessor } from './dictation/post-processing/post-processor'
 import { ProviderRegistry } from './dictation/registry/provider-registry'
 import { FilesService } from './files/files-service'
+import { SshFilesAdapter } from './files/ssh-files-adapter'
 import { GitService } from './git/git-service'
+import { createSshGitRunner } from './git/git-ssh-runner'
 import { ResumeSourcesService } from './handoffs/resume-sources-service'
 import { ResumeTemplateService } from './handoffs/resume-template-service'
 import { KanbanService, type SafeStorageLike } from './kanban/kanban-service'
 import { TaskLaunchService } from './kanban/task-launch-service'
 import { ProjectService } from './project-service'
+import { SshClient } from './ssh/ssh-client'
 import { TASK_PROGRESS_ADAPTERS_DIR_NAME } from './task-progress/adapter-manifest'
 import { TaskProgressService } from './task-progress/task-progress-service'
 import { createNodePty } from './terminal/node-pty-factory'
@@ -94,6 +103,24 @@ export interface CreateServicesOptions {
   subscribeAppQuit?: (listener: () => void) => () => void
   /** Shipped usage adapter directories (`bundledUsageAdapterDirectories`, main/index.ts). */
   bundledUsageAdapterDirectories?: readonly string[]
+  /**
+   * SSH client of the service graph (spec ssh-projects Business rules).
+   * Injectable so tests substitute a fake runner; production uses the real
+   * system OpenSSH client.
+   */
+  ssh?: SshClient
+  /** Local directory of an SSH terminal PTY (`os.homedir()` by default). */
+  homeDir?: string
+}
+
+/** The transport a spawn entry point resolves from the project row. */
+interface ProjectLaunch {
+  transport: 'local' | 'ssh'
+  projectId: string | null
+  /** Registered project path; null when the caller has no project. */
+  path: string | null
+  /** Parsed SSH location of an SSH project. */
+  target: SshTarget | null
 }
 
 /**
@@ -115,6 +142,7 @@ export function createServices(
   const db = openDatabase(options.dbPath)
   runMigrations(db)
   const projects = new ProjectService({ db, fs: { stat: (path) => safeStat(path) } })
+  const sshClient = options.ssh ?? new SshClient()
   const state = new AppStateService({ db })
   const usage = new UsageService({
     state,
@@ -161,6 +189,44 @@ export function createServices(
   /** The project's stored shell choice, resolved to a spawnable spec. */
   const projectShell = (projectId: string) =>
     shells.resolveAsync(state.get(projectShellKey(projectId)), projects.get(projectId)?.path)
+
+  /**
+   * One launch resolver for every spawn entry point (spec ssh-projects
+   * Behaviour 5 and Data/API). The persisted project path alone selects the
+   * transport: an SSH project requires the renderer cwd to equal its path, and
+   * a foreign `ssh://` cwd is rejected before any process starts. A null cwd
+   * means the caller has no renderer-supplied directory (actions, Kanban) and
+   * only the transport is resolved.
+   */
+  function resolveLaunch(projectId: string | null, cwd: string | null): ProjectLaunch {
+    if (projectId === null) {
+      if (cwd !== null && parseSshTarget(cwd) !== null) {
+        throw new AppError('validation', 'The working directory does not belong to this project.')
+      }
+      return { transport: 'local', projectId: null, path: null, target: null }
+    }
+    const project = projects.get(projectId)
+    if (project === null) throw new AppError('not_found', 'Project not found.')
+    const target = parseSshTarget(project.path)
+    if (target !== null) {
+      if (cwd !== null && cwd !== project.path) {
+        throw new AppError('validation', 'The working directory does not belong to this project.')
+      }
+      return { transport: 'ssh', projectId, path: project.path, target }
+    }
+    if (cwd !== null && parseSshTarget(cwd) !== null) {
+      throw new AppError('validation', 'The working directory does not belong to this project.')
+    }
+    return { transport: 'local', projectId, path: project.path, target: null }
+  }
+
+  /** `unsupported` for a surface an SSH project does not have in this stage. */
+  function requireLocalProject(projectId: string | null, channel: string): void {
+    if (resolveLaunch(projectId, null).transport === 'ssh') {
+      throw new AppError('unsupported', 'This action is not available for SSH projects.', channel)
+    }
+  }
+
   const chats = new ChatService({
     db,
     // The chat prefix is the compact shell code (spec project-shell-selection
@@ -189,10 +255,19 @@ export function createServices(
     safeStorage: options.safeStorage,
     resolveChatProjectId: (chatId) => chats.get(chatId)?.projectId ?? null,
   })
-  const terminals = new TerminalService({ createPty: createNodePty })
-  const git = new GitService({ projects })
+  const terminals = new TerminalService({
+    createPty: createNodePty,
+    ssh: { client: sshClient, localCwd: options.homeDir ?? homedir() },
+  })
+  // Read-only Git over SSH: the same porcelain commands on the remote host,
+  // one invocation per call, with sanitized logging (spec ssh-projects
+  // Behaviour 12).
+  const git = new GitService({ projects, remote: createSshGitRunner(sshClient) })
   const files = new FilesService({
     projects,
+    // The stored path selects the transport: an SSH project gets the remote
+    // adapter, a Local or WSL project keeps node:fs (spec Behaviour 10).
+    remote: (target) => new SshFilesAdapter(sshClient, target),
     openExternal: options.openExternal,
     showInFolder: options.showInFolder,
     trashItem: options.trashItem,
@@ -224,18 +299,27 @@ export function createServices(
   const agentProfiles = new AgentProfilesService({ projects, state })
   // Both profile launch flows resolve the current execution environment only for a new PTY.
   const agentTerminals = {
-    create: (chatId: string, cwd: string, command?: ShellSpec) =>
-      terminals.createAsync(
+    create: (chatId: string, cwd: string, command?: ShellSpec) => {
+      const projectId = chats.get(chatId)?.projectId ?? null
+      const launch = resolveLaunch(projectId, cwd)
+      if (launch.transport === 'ssh') {
+        // The agent executable and argv run on the remote host as positional
+        // arguments; there is no local fallback and no remote preflight
+        // (spec ssh-projects Behaviour 7).
+        return terminals.createAsync(chatId, cwd, command)
+      }
+      return terminals.createAsync(
         chatId,
         cwd,
         command === undefined
           ? undefined
           : () => {
-              const projectId = chats.get(chatId)?.projectId
-              const choice = projectId ? state.get(projectShellKey(projectId)) : null
+              const id = chats.get(chatId)?.projectId
+              const choice = id ? state.get(projectShellKey(id)) : null
               return prepareWslAgentAsync(cwd, command, choice)
             },
-      ),
+      )
+    },
   }
   const agentChats = new AgentChatLaunchService({
     projects,
@@ -333,7 +417,12 @@ export function createServices(
       create: (input) => actions.create(input),
       update: (id, input) => actions.update(id, input),
       delete: (id) => actions.delete(id),
-      execute: (id, projectId, confirmed) => actions.execute(id, projectId, confirmed),
+      // Actions stay local-only: an SSH project has no local shell, no local
+      // cwd and no background child (spec ssh-projects Data/API).
+      execute: (id, projectId, confirmed) => {
+        requireLocalProject(projectId, IPC_CHANNEL.actionsExecute)
+        return actions.execute(id, projectId, confirmed)
+      },
       status: (id) => actions.status(id),
       stopForProject: (projectId) => actions.stopForProject(projectId),
       stopAll: () => actions.stopAll(),
@@ -360,6 +449,18 @@ export function createServices(
           projects.add(path),
         )
       },
+      // SSH registration (spec ssh-projects Data/API): validate, prove the
+      // host answers and the remote directory exists, then insert. The check
+      // is asynchronous and runs before any row is written.
+      addSsh: async (input) => {
+        const invalid = validateSshLocation(input)
+        if (invalid !== null) {
+          throw new AppError('validation', invalid.message, IPC_CHANNEL.projectsAddSsh)
+        }
+        const target = sshTargetFromInput(input)
+        const remotePath = await sshClient.requireDirectory(target)
+        return projects.addSsh(target, remotePath)
+      },
       remove: (projectId) => projects.remove(projectId),
     },
     chats: {
@@ -383,9 +484,14 @@ export function createServices(
         const projectId = isBottomTabId(chatId)
           ? bottomTabProjectId(chatId)
           : (chats.get(chatId)?.projectId ?? null)
-        if (projectId !== null) {
-          const path = requireProjectPath(projectId)
-          const location = parseWslPath(path)
+        const launch = resolveLaunch(projectId, cwd)
+        if (launch.transport === 'ssh') {
+          // The SSH project path alone selects the remote login shell; the
+          // renderer supplies no shell, host, user or port (Behaviour 5-6).
+          return terminals.createAsync(chatId, cwd)
+        }
+        if (projectId !== null && launch.path !== null) {
+          const location = parseWslPath(launch.path)
           const cwdLocation = parseWslPath(cwd)
           if (location !== null && cwdLocation?.distribution !== location.distribution)
             throw new AppError('validation', 'A WSL terminal must use its project distribution.')
@@ -404,6 +510,14 @@ export function createServices(
         shells.list(projectId == null ? undefined : requireProjectPath(projectId)),
       shellDetect: async (projectId) => {
         const projectPath = projectId == null ? undefined : requireProjectPath(projectId)
+        if (projectPath !== undefined && parseSshTarget(projectPath) !== null) {
+          // No host or WSL probe for an SSH project (spec Behaviour 9).
+          throw new AppError(
+            'unsupported',
+            'This action is not available for SSH projects.',
+            IPC_CHANNEL.terminalsShellDetect,
+          )
+        }
         if (projectPath !== undefined && parseWslPath(projectPath) !== null) {
           const result = await shells.detectAsync(
             readCustomShellPaths(projectWslShellsKey(projectId as string)),
@@ -433,6 +547,15 @@ export function createServices(
       },
       shellAddCustom: async (path, projectId) => {
         const projectPath = projectId == null ? undefined : requireProjectPath(projectId)
+        if (projectPath !== undefined && parseSshTarget(projectPath) !== null) {
+          // No custom remote shell path and no host custom-shell write
+          // (spec Behaviour 9).
+          throw new AppError(
+            'unsupported',
+            'This action is not available for SSH projects.',
+            IPC_CHANNEL.terminalsShellAddCustom,
+          )
+        }
         if (projectPath !== undefined && parseWslPath(projectPath) !== null) {
           const entry = await shells.addCustomPathAsync(path, projectPath)
           requireProjectPath(projectId as string)
@@ -478,12 +601,26 @@ export function createServices(
       createItem: (projectId, input, revision) => kanban.createItem(projectId, input, revision),
       updateItem: (projectId, ref, patch, revision) =>
         kanban.updateItem(projectId, ref, patch, revision),
-      bindLocalFile: (projectId) => kanban.bindLocalFile(projectId),
+      // Local-file surfaces (spec ssh-projects Non-goals): an SSH project has
+      // no local task file or agent-skill file, and no local path is derived
+      // from the SSH URL.
+      bindLocalFile: (projectId) => {
+        requireLocalProject(projectId, IPC_CHANNEL.kanbanBindLocalFile)
+        return kanban.bindLocalFile(projectId)
+      },
       skillStatus: (projectId) => kanban.skillStatus(projectId),
-      writeSkill: (projectId) => kanban.writeSkill(projectId),
+      writeSkill: (projectId) => {
+        requireLocalProject(projectId, IPC_CHANNEL.kanbanWriteSkill)
+        return kanban.writeSkill(projectId)
+      },
       getItem: (projectId, ref) => kanban.getItem(projectId, ref),
       getComments: (projectId, ref) => kanban.getComments(projectId, ref),
-      launchTask: (input) => taskLaunch.launch(input),
+      // Kanban launch is a local-only surface (spec ssh-projects Non-goals):
+      // an SSH project has no local task files or agent-skill files.
+      launchTask: async (input) => {
+        requireLocalProject(input.projectId, IPC_CHANNEL.kanbanLaunchTask)
+        return taskLaunch.launch(input)
+      },
       cleanupProject: (projectId) => kanban.cleanupProject(projectId),
       dropLaunchProject: (projectId) => taskLaunch.dropProject(projectId),
       blocksProjectShell: (chatId) => taskLaunch.blocksProjectShell(chatId),
@@ -491,9 +628,15 @@ export function createServices(
     taskProgress: {
       adaptersList: () => taskProgress.adaptersList(),
       getBinding: (projectId) => taskProgress.getBinding(projectId),
-      saveBinding: (projectId, adapterId, config) =>
-        taskProgress.saveBinding(projectId, adapterId, config),
-      test: (projectId, adapterId, config) => taskProgress.test(projectId, adapterId, config),
+      // Task progress sidecars are local files (spec ssh-projects Non-goals).
+      saveBinding: (projectId, adapterId, config) => {
+        requireLocalProject(projectId, IPC_CHANNEL.taskProgressSaveBinding)
+        return taskProgress.saveBinding(projectId, adapterId, config)
+      },
+      test: (projectId, adapterId, config) => {
+        requireLocalProject(projectId, IPC_CHANNEL.taskProgressTest)
+        return taskProgress.test(projectId, adapterId, config)
+      },
       observe: (projectIds) => taskProgress.observe(projectIds),
       get: (projectId) => taskProgress.get(projectId),
       onChanged: (callback) => taskProgress.onChanged(callback),

@@ -12,6 +12,7 @@ afterEach(cleanup)
 
 function appMock(options?: {
   detect?: ReturnType<typeof vi.fn>
+  list?: ReturnType<typeof vi.fn>
   get?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
   addCustom?: ReturnType<typeof vi.fn>
@@ -20,6 +21,8 @@ function appMock(options?: {
     terminals: {
       shellDetect:
         options?.detect ?? vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
+      shellList:
+        options?.list ?? vi.fn().mockResolvedValue([{ id: 'default', label: 'PowerShell' }]),
       shellAddCustom:
         options?.addCustom ?? vi.fn().mockResolvedValue({ id: 'custom:D:\\n.exe', label: 'n.exe' }),
     },
@@ -55,6 +58,29 @@ describe('ShellTab', () => {
     await waitFor(() => expect(addCustom).toHaveBeenCalledWith('/bin/fish', 'wsl'))
     expect(screen.getByText(/WSL uses its distribution default/)).toBeTruthy()
   })
+  it('shows the single Default entry for an SSH project without an error banner', async () => {
+    // The project row holds an ssh:// path, so main reports detection as
+    // unsupported (spec ssh-projects Behaviour 9) and the tab must not treat
+    // that as a failure.
+    const detect = vi.fn().mockRejectedValue({
+      nekodeAppError: true,
+      code: 'unsupported',
+      message: 'This action is not available for SSH projects.',
+    })
+    const list = vi
+      .fn()
+      .mockResolvedValue([{ id: 'default', label: 'Default (remote login shell)' }])
+    render(<ShellTab app={appMock({ detect, list })} projectId="p-ssh" />)
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsShellSelect)).toBeTruthy())
+    expect(detect).toHaveBeenCalledWith('p-ssh')
+    expect(list).toHaveBeenCalledWith('p-ssh')
+    const options = (screen.getByTestId(TEST_ID.settingsShellSelect) as HTMLSelectElement).options
+    expect(Array.from(options).map((option) => option.label)).toEqual([
+      'Default (remote login shell)',
+    ])
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('runs exactly one detection on entry and shows the pending indicator until it lands', async () => {
     let resolveDetect: (value: Array<{ id: string; label: string }>) => void = () => {}
     const detect = vi.fn().mockImplementation(

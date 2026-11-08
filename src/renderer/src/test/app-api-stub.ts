@@ -70,6 +70,7 @@ export function createAppApiStub(): AppApi {
       wslDirectories: vi.fn(() => Promise.resolve([])),
       wslDistributions: vi.fn().mockResolvedValue([]),
       addWsl: vi.fn(),
+      addSsh: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
       add: vi.fn().mockResolvedValue(null),
       remove: vi.fn().mockResolvedValue(undefined),

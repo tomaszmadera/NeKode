@@ -2,6 +2,7 @@ import { promises as nodeFs } from 'node:fs'
 import { posix, win32 } from 'node:path'
 import type { FileEntry, FilePreview } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import { parseSshTarget, type SshTarget } from '@shared/ssh-target'
 import { joinProjectPath } from '../project-path'
 
 // Project file listing and read-only preview classification (spec Data/API,
@@ -128,6 +129,36 @@ export interface FilesFsEntry {
   kind: 'file' | 'directory' | 'symlink'
 }
 
+/** One remote directory level: canonical paths plus the entries of that level. */
+export interface FilesRemoteListing {
+  /** `pwd -P` of the registered project root on the remote host. */
+  realRoot: string
+  /** `pwd -P` of the requested directory. */
+  realTarget: string
+  entries: FilesFsEntry[]
+}
+
+/** One remote file read: canonical paths, full size and the capped content. */
+export interface FilesRemoteFile {
+  realRoot: string
+  realTarget: string
+  /** Full `wc -c` size, which may exceed the capped content. */
+  size: number
+  /** At most PREVIEW_MAX_BYTES + 1 bytes. */
+  content: Uint8Array
+}
+
+/**
+ * Optional per-request batch capability of a remote adapter (spec ssh-projects
+ * Behaviour 10 and Data/API): one SSH invocation answers containment, stat and
+ * payload together, so one listing is one remote call. A null result means the
+ * path is missing, unreadable or not a regular file.
+ */
+export interface FilesRemoteAdapter {
+  list(dir: string): Promise<FilesRemoteListing | null>
+  read(path: string): Promise<FilesRemoteFile | null>
+}
+
 /**
  * Filesystem surface used by the service (node:fs/promises by default).
  * Injectable so tests run deterministic size/binary/symlink fixtures.
@@ -150,6 +181,12 @@ export interface FilesFsAdapter {
 export interface FilesServiceDeps {
   projects: FilesProjectLookup
   fs?: FilesFsAdapter
+  /**
+   * Remote adapter factory, selected from the stored project path for an SSH
+   * project (spec ssh-projects Behaviour 10). Absent means the SSH transport is
+   * not wired and remote projects report `unsupported`.
+   */
+  remote?: (target: SshTarget) => FilesRemoteAdapter
   /**
    * OS default-application open (shell.openPath in main). Resolves '' on
    * success and an error description on failure (the Electron contract).
@@ -187,8 +224,25 @@ function notFound(channel: string): AppError {
   return new AppError('not_found', 'File not found.', channel)
 }
 
+/** Local-only and not-yet-remote surfaces of an SSH project (spec Errors). */
+function unsupportedSsh(channel: string): AppError {
+  return new AppError('unsupported', 'This action is not available for SSH projects.', channel)
+}
+
 function toPosix(path: string): string {
   return path.replace(/\\/g, '/')
+}
+
+/**
+ * Canonical containment: the target equals the root or sits below it. Drive
+ * roots carry a trailing separator ('D:/') while child paths do not, so both
+ * sides are compared stripped ('D:', '' for '/'); a bare POSIX root strips to
+ * '' and the resulting '/' prefix keeps every absolute path contained.
+ */
+function isContained(root: string, target: string): boolean {
+  const rootPrefix = root.replace(/\/+$/, '')
+  const targetPrefix = target.replace(/\/+$/, '')
+  return targetPrefix === rootPrefix || targetPrefix.startsWith(`${rootPrefix}/`)
 }
 
 /** Absolute inputs are rejected up front: requests are project-relative only. */
@@ -218,6 +272,27 @@ function hasNulByte(content: Uint8Array, window: number): boolean {
     }
   }
   return false
+}
+
+/**
+ * Text/binary/too-large classification shared by the local and the remote
+ * read (spec Behaviour 10): NUL in the sniff window or a non-UTF-8 body is
+ * binary, above 2 MB is too-large, everything else is text.
+ */
+function classifyPreview(content: Uint8Array, size: number, fileName: string): FilePreview {
+  if (size > PREVIEW_MAX_BYTES) {
+    return { kind: 'too-large', size }
+  }
+  if (hasNulByte(content, BINARY_SNIFF_BYTES)) {
+    return { kind: 'binary' }
+  }
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(content)
+    return { kind: 'text', content: text, language: mapExtensionToLanguage(fileName) }
+  } catch {
+    // Not decodable as UTF-8 (spec Behaviour 10).
+    return { kind: 'binary' }
+  }
 }
 
 const nodeFsAdapter: FilesFsAdapter = {
@@ -256,6 +331,7 @@ const nodeFsAdapter: FilesFsAdapter = {
 export class FilesService {
   readonly #projects: FilesProjectLookup
   readonly #fs: FilesFsAdapter
+  readonly #remote?: (target: SshTarget) => FilesRemoteAdapter
   readonly #openExternal: (absolutePath: string) => Promise<string>
   readonly #showInFolder: (absolutePath: string) => void
   readonly #trashItem: (absolutePath: string) => Promise<void>
@@ -264,6 +340,7 @@ export class FilesService {
   constructor(deps: FilesServiceDeps) {
     this.#projects = deps.projects
     this.#fs = deps.fs ?? nodeFsAdapter
+    this.#remote = deps.remote
     this.#openExternal = deps.openExternal
     this.#showInFolder = deps.showInFolder
     this.#trashItem = deps.trashItem
@@ -273,11 +350,16 @@ export class FilesService {
   /** One directory level of the project tree (null = project root). */
   async list(projectId: string, relativePath: string | null): Promise<FileEntry[]> {
     const channel = 'files:list'
-    const { target, requestRel } = await this.#locate(projectId, relativePath, channel)
+    const projectPath = this.#projectPath(projectId, channel)
+    const target = parseSshTarget(projectPath)
+    if (target !== null) {
+      return this.#listRemote(target, relativePath, channel)
+    }
+    const { target: dir, requestRel } = await this.#locate(projectPath, relativePath, channel)
 
     let listed: FilesFsEntry[]
     try {
-      listed = await this.#fs.readdir(target)
+      listed = await this.#fs.readdir(dir)
     } catch {
       throw notFound(channel)
     }
@@ -289,7 +371,7 @@ export class FilesService {
         // Symlink entries are classified by their target; broken links are
         // skipped and links leaving the root stay name-only (opening them
         // fails with the containment error).
-        const stats = await this.#fs.stat(joinProjectPath(target, entry.name))
+        const stats = await this.#fs.stat(joinProjectPath(dir, entry.name))
         if (stats === null) {
           continue
         }
@@ -319,9 +401,14 @@ export class FilesService {
   /** Read-only preview classification of one project file. */
   async read(projectId: string, relativePath: string): Promise<FilePreview> {
     const channel = 'files:read'
-    const { target } = await this.#locate(projectId, relativePath, channel)
+    const projectPath = this.#projectPath(projectId, channel)
+    const target = parseSshTarget(projectPath)
+    if (target !== null) {
+      return this.#readRemote(target, relativePath, channel)
+    }
+    const { target: file } = await this.#locate(projectPath, relativePath, channel)
 
-    const stats = await this.#fs.stat(target)
+    const stats = await this.#fs.stat(file)
     if (stats === null || !stats.isFile) {
       throw notFound(channel)
     }
@@ -333,24 +420,11 @@ export class FilesService {
 
     let content: Uint8Array
     try {
-      content = await this.#fs.readFile(target)
+      content = await this.#fs.readFile(file)
     } catch {
       throw notFound(channel)
     }
-    if (hasNulByte(content, BINARY_SNIFF_BYTES)) {
-      return { kind: 'binary' }
-    }
-    try {
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(content)
-      return {
-        kind: 'text',
-        content: text,
-        language: mapExtensionToLanguage(posix.basename(target)),
-      }
-    } catch {
-      // Not decodable as UTF-8 (spec Behaviour 10).
-      return { kind: 'binary' }
-    }
+    return classifyPreview(content, stats.size, posix.basename(file))
   }
 
   /**
@@ -359,7 +433,11 @@ export class FilesService {
    */
   async previewTarget(projectId: string, relativePath: string): Promise<{ fileName: string }> {
     const channel = 'files:openInWindow'
-    const { target } = await this.#locate(projectId, relativePath, channel)
+    const projectPath = this.#projectPath(projectId, channel)
+    // A remote preview window is a local-only surface (spec ssh-projects
+    // Behaviour 11): rejected before any local path is derived.
+    this.#requireLocal(projectPath, channel)
+    const { target } = await this.#locate(projectPath, relativePath, channel)
     const stats = await this.#fs.stat(target)
     if (stats === null || !stats.isFile) {
       throw notFound(channel)
@@ -376,7 +454,13 @@ export class FilesService {
   async fingerprint(projectId: string, relativePath: string): Promise<string | null> {
     let target: string
     try {
-      ;({ target } = await this.#locate(projectId, relativePath, 'preview:read'))
+      // The project lookup sits inside the guard as well: an unknown project
+      // fingerprints as missing, like a missing file (file-preview-window
+      // Behaviour 9-10). A local-only rejection of an SSH project stays an
+      // error because its code is `unsupported`, not `not_found`.
+      const projectPath = this.#projectPath(projectId, 'preview:read')
+      this.#requireLocal(projectPath, 'preview:read')
+      ;({ target } = await this.#locate(projectPath, relativePath, 'preview:read'))
     } catch (error) {
       if (error instanceof AppError && error.code === 'not_found') {
         return null
@@ -393,7 +477,9 @@ export class FilesService {
   /** Opens the file with the OS default application (spec Behaviour 11). */
   async openExternal(projectId: string, relativePath: string): Promise<void> {
     const channel = 'files:openExternal'
-    const { target } = await this.#locate(projectId, relativePath, channel)
+    const projectPath = this.#projectPath(projectId, channel)
+    this.#requireLocal(projectPath, channel)
+    const { target } = await this.#locate(projectPath, relativePath, channel)
     const failure = await this.#openExternal(target)
     if (failure !== '') {
       throw new AppError('unknown', 'Failed to open the file externally.', channel)
@@ -408,11 +494,9 @@ export class FilesService {
    */
   async openRoot(projectId: string): Promise<void> {
     const channel = 'files:openRoot'
-    const project = this.#projects.get(projectId)
-    if (project === null) {
-      throw new AppError('not_found', 'Project not found.', channel)
-    }
-    const root = toPosix(project.path)
+    const projectPath = this.#projectPath(projectId, channel)
+    this.#requireLocal(projectPath, channel)
+    const root = toPosix(projectPath)
     const stats = await this.#fs.stat(root)
     if (stats === null || !stats.isDirectory) {
       throw notFound(channel)
@@ -426,7 +510,9 @@ export class FilesService {
   /** Reveals the entry in Explorer (spec Behaviour 21). */
   async showInFolder(projectId: string, relativePath: string): Promise<void> {
     const channel = 'files:showInFolder'
-    const { lexicalTarget } = await this.#locate(projectId, relativePath, channel)
+    const projectPath = this.#projectPath(projectId, channel)
+    this.#requireLocal(projectPath, channel)
+    const { lexicalTarget } = await this.#locate(projectPath, relativePath, channel)
     try {
       this.#showInFolder(toShellPath(lexicalTarget, this.#platform))
     } catch {
@@ -440,7 +526,9 @@ export class FilesService {
    */
   async trash(projectId: string, relativePath: string): Promise<void> {
     const channel = 'files:trash'
-    const { lexicalTarget } = await this.#locate(projectId, relativePath, channel)
+    const projectPath = this.#projectPath(projectId, channel)
+    this.#requireLocal(projectPath, channel)
+    const { lexicalTarget } = await this.#locate(projectPath, relativePath, channel)
     try {
       await this.#trashItem(toShellPath(lexicalTarget, this.#platform))
     } catch {
@@ -448,20 +536,137 @@ export class FilesService {
     }
   }
 
+  /** The stored project path, or the not-found error for an unknown project. */
+  #projectPath(projectId: string, channel: string): string {
+    const project = this.#projects.get(projectId)
+    if (project === null) {
+      throw new AppError('not_found', 'Project not found.', channel)
+    }
+    return project.path
+  }
+
+  /** Rejects a local-only surface of an SSH project (spec Behaviour 11). */
+  #requireLocal(projectPath: string, channel: string): void {
+    if (parseSshTarget(projectPath) !== null) {
+      throw unsupportedSsh(channel)
+    }
+  }
+
+  /** One remote directory level through the transport-selected adapter. */
+  async #listRemote(
+    target: SshTarget,
+    relativePath: string | null,
+    channel: string,
+  ): Promise<FileEntry[]> {
+    const { adapter, remoteTarget, requestRel } = this.#locateRemote(target, relativePath, channel)
+    const leaf = requestRel === '' ? null : requestRel.slice(requestRel.lastIndexOf('/') + 1)
+    if (leaf !== null && EXCLUDED_DIRECTORY_NAMES.has(leaf.toLowerCase())) {
+      // A listing of an excluded directory is unreachable, exactly like the
+      // local branch (spec Behaviour 5).
+      throw notFound(channel)
+    }
+    const listing = await adapter.list(remoteTarget)
+    if (listing === null || !isContained(listing.realRoot, listing.realTarget)) {
+      throw notFound(channel)
+    }
+    const entries: FileEntry[] = []
+    for (const entry of listing.entries) {
+      // A broken symlink or a special file has no usable kind, matching the
+      // local stat-based classification.
+      if (entry.kind === 'symlink') {
+        continue
+      }
+      if (entry.kind === 'directory' && EXCLUDED_DIRECTORY_NAMES.has(entry.name.toLowerCase())) {
+        continue
+      }
+      entries.push({
+        name: entry.name,
+        relativePath: requestRel === '' ? entry.name : `${requestRel}/${entry.name}`,
+        kind: entry.kind,
+      })
+    }
+    entries.sort(compareEntries)
+    return entries
+  }
+
+  /** One remote file read through the transport-selected adapter. */
+  async #readRemote(
+    target: SshTarget,
+    relativePath: string,
+    channel: string,
+  ): Promise<FilePreview> {
+    const { adapter, remoteTarget } = this.#locateRemote(target, relativePath, channel)
+    const file = await adapter.read(remoteTarget)
+    if (file === null || !isContained(file.realRoot, file.realTarget)) {
+      throw notFound(channel)
+    }
+    // The remote script caps its read at 2 MB plus one byte, so a file that
+    // grew between `wc -c` and `head -c` still cannot exceed the limit.
+    const size = Math.max(file.size, file.content.byteLength)
+    return classifyPreview(file.content, size, posix.basename(file.realTarget))
+  }
+
+  /**
+   * Resolves a request against an SSH project. No local path is derived from
+   * the SSH URL: the remote root is the stored target path, lexical escapes
+   * are rejected here and canonical escapes by the adapter's `pwd -P` result.
+   */
+  #locateRemote(
+    target: SshTarget,
+    relativePath: string | null,
+    channel: string,
+  ): { adapter: FilesRemoteAdapter; root: string; remoteTarget: string; requestRel: string } {
+    const adapter = this.#remote?.(target)
+    if (adapter === undefined) {
+      throw unsupportedSsh(channel)
+    }
+    const root = target.path
+    if (relativePath === null) {
+      return { adapter, root, remoteTarget: root, requestRel: '' }
+    }
+    const input = relativePath
+    if (input.startsWith('/') || input.includes('\u0000')) {
+      // Absolute forms and NUL are rejected before any remote call, and the
+      // path is otherwise passed through unchanged: a backslash is an ordinary
+      // POSIX name character, so the local Windows conversion must not run here
+      // (spec Behaviour 10). Unlike the local branch, `:` is a valid remote
+      // name.
+      throw notFound(channel)
+    }
+    // A backslash is an ordinary POSIX name character, so the registered root
+    // may contain one. Only the request is joined to it: the Windows-to-POSIX
+    // conversion of joinProjectPath would rewrite the root too, and every
+    // descent would then miss the registered directory (spec Behaviour 10).
+    const remoteTarget = posix.join(root, input)
+    if (remoteTarget !== root && !remoteTarget.startsWith(`${root}/`)) {
+      // A crafted `..` form never reaches the host (spec Errors).
+      throw notFound(channel)
+    }
+    const requestRel = posix.relative(root, remoteTarget)
+    const segments = requestRel === '' ? [] : requestRel.split('/')
+    for (const segment of segments.slice(0, -1)) {
+      if (EXCLUDED_DIRECTORY_NAMES.has(segment.toLowerCase())) {
+        throw notFound(channel)
+      }
+    }
+    return { adapter, root, remoteTarget, requestRel }
+  }
+
   /**
    * Resolves a request path against the registered project root and enforces
    * containment on the canonical (symlink-resolved) path.
    */
   async #locate(
-    projectId: string,
+    projectPath: string,
     relativePath: string | null,
     channel: string,
   ): Promise<{ root: string; target: string; requestRel: string; lexicalTarget: string }> {
-    const project = this.#projects.get(projectId)
-    if (project === null) {
-      throw new AppError('not_found', 'Project not found.', channel)
+    if (parseSshTarget(projectPath) !== null) {
+      // Invariant: an SSH path never becomes a local path (spec ssh-projects
+      // Behaviour 11). Callers branch on the transport before reaching here.
+      throw unsupportedSsh(channel)
     }
-    const root = toPosix(project.path)
+    const root = toPosix(projectPath)
     if (relativePath === null) {
       return { root, target: root, requestRel: '', lexicalTarget: root }
     }
@@ -481,13 +686,7 @@ export class FilesService {
     }
     const rootPosix = toPosix(realRoot)
     const targetPosix = toPosix(realTarget)
-    // Drive roots carry a trailing separator ('D:/') while child paths do
-    // not — compare stripped forms ('D:', '' for '/') so children of a
-    // root-level project resolve; a bare POSIX root strips to '' and the
-    // resulting '/' prefix keeps every absolute path contained.
-    const rootPrefix = rootPosix.replace(/\/+$/, '')
-    const targetPrefix = targetPosix.replace(/\/+$/, '')
-    if (targetPrefix !== rootPrefix && !targetPrefix.startsWith(`${rootPrefix}/`)) {
+    if (!isContained(rootPosix, targetPosix)) {
       // `..` escapes and symlinks leaving the root land here — the same
       // error as a missing path (spec Errors).
       throw notFound(channel)

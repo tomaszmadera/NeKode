@@ -2,6 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import type { ProjectInfo } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import {
+  canonicalRemotePath,
+  formatSshTarget,
+  type SshTarget,
+  sshTargetName,
+} from '@shared/ssh-target'
 import { parseWslPath, wslProjectPath } from '@shared/wsl-path'
 import type Database from 'better-sqlite3'
 import { projectDirectoryName, projectPathIdentity } from '../db/project-identity'
@@ -82,6 +88,42 @@ export class ProjectService {
       throw wrapSqliteError(error, 'projects:add')
     }
     return { id, name, path: normalized, runtimeLabel: null }
+  }
+
+  /**
+   * Registers a validated SSH location (spec ssh-projects Behaviour 3-4). The
+   * remote directory check already ran in the composition root; `remotePath`
+   * is its `pwd -P` result, so two spellings of one directory share the path
+   * identity and conflict. The stored path stays the canonical URL of the
+   * entered spelling.
+   */
+  addSsh(target: SshTarget, remotePath: string): ProjectInfo {
+    const channel = 'projects:addSsh'
+    const name = sshTargetName(target)
+    if (name.length === 0) {
+      throw new AppError('validation', 'Cannot add a filesystem root as a project.', channel)
+    }
+    const path = formatSshTarget(target)
+    const identityPath = canonicalRemotePath(remotePath) ?? target.path
+    const pathIdentity = formatSshTarget({ ...target, path: identityPath })
+    const id = randomUUID()
+    try {
+      this.db
+        .prepare(
+          'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(id, name, path, pathIdentity, null, new Date().toISOString())
+    } catch (error) {
+      if (isUniquePathViolation(error)) {
+        throw new AppError(
+          'conflict',
+          'This remote directory is already registered as a project.',
+          channel,
+        )
+      }
+      throw wrapSqliteError(error, channel)
+    }
+    return { id, name, path, runtimeLabel: null }
   }
 
   remove(projectId: string): void {

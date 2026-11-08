@@ -60,6 +60,25 @@ describe('projectPathIdentity', () => {
     expect(projectPathIdentity('\\\\wsl$\\Debian\\home\\User\\App', 'win32')).not.toBe(canonical)
   })
 
+  it('canonicalizes an SSH location instead of normalizing it like a local path', () => {
+    // Lowercase host, omitted port 22 and no trailing slash (spec ssh-projects
+    // Behaviour 3), on either host platform.
+    expect(projectPathIdentity('ssh://Host:22/p/', 'win32')).toBe('ssh://host/p')
+    expect(projectPathIdentity('ssh://Host/p', 'linux')).toBe('ssh://host/p')
+    expect(projectPathIdentity('ssh://Host:22/p/', 'win32')).toBe(
+      projectPathIdentity('ssh://host/p', 'linux'),
+    )
+    // The user and the remote path keep their case; a non-default port stays.
+    expect(projectPathIdentity('ssh://Tomek@Host:2222/Srv/App', 'linux')).toBe(
+      'ssh://Tomek@host:2222/Srv/App',
+    )
+  })
+
+  it('leaves a local path unaffected by the SSH branch', () => {
+    expect(projectPathIdentity('D:/Code/Demo', 'win32')).toBe('d:\\code\\demo')
+    expect(projectPathIdentity('/Code/Demo', 'linux')).toBe('/Code/Demo')
+  })
+
   it('rejects a malformed WSL path through the existing parser', () => {
     expect(() => projectPathIdentity('\\\\wsl$\\Ubuntu\\home\\..\\user', 'win32')).toThrow(
       /absolute Linux project directory/i,

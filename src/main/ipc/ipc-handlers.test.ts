@@ -280,6 +280,7 @@ function createHarness(
       wslDirectories: vi.fn(() => []),
       wslDistributions: vi.fn(() => []),
       addWsl: vi.fn(),
+      addSsh: vi.fn(),
       list: vi.fn(() => []),
       add: vi.fn((path: string) => ({
         id: 'p1',
@@ -584,6 +585,19 @@ describe('registered ipc handlers', () => {
     ).toThrow(/untrusted/)
     expect(services.projects.wslDistributions).toHaveBeenCalledOnce()
     expect(services.projects.addWsl).toHaveBeenCalledOnce()
+  })
+  it('routes SSH registration only for trusted senders with a valid payload', () => {
+    const { invoke, services } = createHarness()
+    const input = { host: 'Minipc', user: 'tomek', port: 2222, path: '/srv/My Project' }
+    invoke(IPC_CHANNEL.projectsAddSsh, [input])
+    expect(services.projects.addSsh).toHaveBeenCalledExactlyOnceWith(input)
+    expect(() => invoke(IPC_CHANNEL.projectsAddSsh, [input], 'https://untrusted.example')).toThrow(
+      /untrusted/,
+    )
+    expect(() => invoke(IPC_CHANNEL.projectsAddSsh, [{ ...input, host: '-evil' }])).toThrow(
+      /validation/,
+    )
+    expect(services.projects.addSsh).toHaveBeenCalledOnce()
   })
   it('routes action CRUD and execution, rejecting malformed inputs before services', () => {
     const { services, invoke } = createHarness()

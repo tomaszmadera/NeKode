@@ -179,6 +179,7 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
         invoke<string[]>(IPC_CHANNEL.projectsWslDirectories, distribution, linuxPath),
       addWsl: (distribution, linuxPath) =>
         invoke<ProjectInfo>(IPC_CHANNEL.projectsAddWsl, distribution, linuxPath),
+      addSsh: (input) => invoke<ProjectInfo>(IPC_CHANNEL.projectsAddSsh, input),
       remove: (projectId) => invoke<void>(IPC_CHANNEL.projectsRemove, projectId),
     },
     chats: {

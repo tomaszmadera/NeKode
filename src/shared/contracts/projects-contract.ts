@@ -5,6 +5,18 @@ export interface ProjectInfo {
   runtimeLabel: string | null
 }
 
+/**
+ * Add Project payload of an SSH location (spec ssh-projects Behaviour 1):
+ * fields only, never a destination or a command line. `user` and `port` are
+ * optional; an absent port means 22.
+ */
+export interface SshProjectInput {
+  host: string
+  user: string | null
+  port: number | null
+  path: string
+}
+
 function toPosixSlashes(path: string): string {
   return path.replace(/\\/g, '/')
 }

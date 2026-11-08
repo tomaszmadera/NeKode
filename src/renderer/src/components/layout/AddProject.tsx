@@ -1,5 +1,6 @@
-import type { AppApi, ProjectInfo } from '@shared/ipc-contract'
+import type { AppApi, ProjectInfo, SshProjectInput } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
+import { type SshField, validateSshLocation } from '@shared/ssh-target'
 import { wslProjectPath } from '@shared/wsl-path'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
@@ -17,6 +18,10 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
   const dialog = useRef<HTMLDialogElement>(null)
   const locationInput = useRef<HTMLSelectElement>(null)
   const pathInput = useRef<HTMLInputElement>(null)
+  const sshHostInput = useRef<HTMLInputElement>(null)
+  const sshUserInput = useRef<HTMLInputElement>(null)
+  const sshPortInput = useRef<HTMLInputElement>(null)
+  const sshPathInput = useRef<HTMLInputElement>(null)
   const primaryAction = useRef<HTMLButtonElement>(null)
   const alive = useRef(true)
   const requestId = useRef(0)
@@ -29,6 +34,11 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
   const [distributions, setDistributions] = useState<string[]>([])
   const [distribution, setDistribution] = useState('')
   const [path, setPath] = useState('')
+  const [sshHost, setSshHost] = useState('')
+  const [sshUser, setSshUser] = useState('')
+  const [sshPort, setSshPort] = useState('')
+  const [sshRemotePath, setSshRemotePath] = useState('')
+  const [sshFieldErrors, setSshFieldErrors] = useState<Partial<Record<SshField, string>>>({})
   const [discovery, setDiscovery] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [discoveryError, setDiscoveryError] = useState<string | null>(null)
   const [pathError, setPathError] = useState<string | null>(null)
@@ -43,6 +53,8 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
   const [directoriesOpen, setDirectoriesOpen] = useState(false)
   const [activeDirectory, setActiveDirectory] = useState(0)
   const wsl = location === 'wsl'
+  const ssh = location === 'ssh'
+  const remote = wsl || ssh
   const fieldsDisabled = busy || registeredProject !== null
 
   useEffect(() => {
@@ -126,6 +138,28 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
     }
   }
 
+  function focusSshField(field: SshField): void {
+    const input =
+      field === 'host'
+        ? sshHostInput.current
+        : field === 'user'
+          ? sshUserInput.current
+          : field === 'port'
+            ? sshPortInput.current
+            : sshPathInput.current
+    input?.focus()
+  }
+
+  function sshInput(): SshProjectInput {
+    const portText = sshPort.trim()
+    return {
+      host: sshHost,
+      user: sshUser.length === 0 ? null : sshUser,
+      port: portText.length === 0 ? null : Number(portText),
+      path: sshRemotePath,
+    }
+  }
+
   async function add(): Promise<void> {
     if (busyRef.current) return
     if (!registeredProject && location === 'wsl') {
@@ -140,6 +174,25 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
         return
       }
     }
+    if (!registeredProject && ssh) {
+      // Number() would accept `0x16` or `1e3` as a port, so the port text must
+      // be digits before it is converted.
+      const portText = sshPort.trim()
+      if (portText.length > 0 && !/^\d+$/u.test(portText)) {
+        setSshFieldErrors({ port: 'The port must be a number from 1 to 65535.' })
+        setError(null)
+        focusSshField('port')
+        return
+      }
+      const invalid = validateSshLocation(sshInput())
+      if (invalid !== null) {
+        setSshFieldErrors({ [invalid.field]: invalid.message })
+        setError(null)
+        focusSshField(invalid.field)
+        return
+      }
+      setSshFieldErrors({})
+    }
     busyRef.current = true
     setBusy(true)
     setError(null)
@@ -149,7 +202,9 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
         project =
           location === 'local'
             ? await app.projects.add()
-            : await app.projects.addWsl(distribution, path)
+            : location === 'wsl'
+              ? await app.projects.addWsl(distribution, path)
+              : await app.projects.addSsh(sshInput())
         if (!alive.current) return
         if (project === null) {
           requestAnimationFrame(() => {
@@ -179,10 +234,10 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
       ? 'Opening project...'
       : 'Retry opening project'
     : busy
-      ? wsl
+      ? remote
         ? 'Adding project...'
         : 'Choosing folder...'
-      : wsl
+      : remote
         ? 'Add Project'
         : 'Choose folder...'
 
@@ -237,6 +292,8 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
           {app.platform === undefined || app.platform === 'win32' ? (
             <option value="wsl">WSL</option>
           ) : null}
+          {/* SSH projects work on every platform through the system OpenSSH client. */}
+          <option value="ssh">SSH</option>
         </select>
         {wsl ? (
           <>
@@ -394,6 +451,110 @@ export function AddProject({ app, onAdded, onClose }: Props): React.JSX.Element 
                 {pathError}
               </p>
             ) : null}
+          </>
+        ) : ssh ? (
+          <>
+            <label className="mt-4 block text-sm" htmlFor="ssh-host">
+              Host
+            </label>
+            <input
+              ref={sshHostInput}
+              id="ssh-host"
+              placeholder="[2001:db8::1]"
+              value={sshHost}
+              autoComplete="off"
+              disabled={fieldsDisabled}
+              aria-invalid={sshFieldErrors.host !== undefined}
+              aria-describedby={sshFieldErrors.host ? 'ssh-host-error' : 'ssh-help'}
+              onChange={(event) => {
+                setSshHost(event.target.value)
+                setSshFieldErrors((previous) => ({ ...previous, host: undefined }))
+                setError(null)
+              }}
+              className={controlClass}
+            />
+            {sshFieldErrors.host ? (
+              <p id="ssh-host-error" role="alert" className="mt-2 text-sm text-ink">
+                {sshFieldErrors.host}
+              </p>
+            ) : null}
+            <label className="mt-4 block text-sm" htmlFor="ssh-user">
+              User
+            </label>
+            <input
+              ref={sshUserInput}
+              id="ssh-user"
+              placeholder="Optional"
+              value={sshUser}
+              autoComplete="off"
+              disabled={fieldsDisabled}
+              aria-invalid={sshFieldErrors.user !== undefined}
+              aria-describedby={sshFieldErrors.user ? 'ssh-user-error' : 'ssh-help'}
+              onChange={(event) => {
+                setSshUser(event.target.value)
+                setSshFieldErrors((previous) => ({ ...previous, user: undefined }))
+                setError(null)
+              }}
+              className={controlClass}
+            />
+            {sshFieldErrors.user ? (
+              <p id="ssh-user-error" role="alert" className="mt-2 text-sm text-ink">
+                {sshFieldErrors.user}
+              </p>
+            ) : null}
+            <label className="mt-4 block text-sm" htmlFor="ssh-port">
+              Port
+            </label>
+            <input
+              ref={sshPortInput}
+              id="ssh-port"
+              placeholder="22"
+              inputMode="numeric"
+              value={sshPort}
+              autoComplete="off"
+              disabled={fieldsDisabled}
+              aria-invalid={sshFieldErrors.port !== undefined}
+              aria-describedby={sshFieldErrors.port ? 'ssh-port-error' : 'ssh-help'}
+              onChange={(event) => {
+                setSshPort(event.target.value)
+                setSshFieldErrors((previous) => ({ ...previous, port: undefined }))
+                setError(null)
+              }}
+              className={controlClass}
+            />
+            {sshFieldErrors.port ? (
+              <p id="ssh-port-error" role="alert" className="mt-2 text-sm text-ink">
+                {sshFieldErrors.port}
+              </p>
+            ) : null}
+            <label className="mt-4 block text-sm" htmlFor="ssh-directory">
+              Remote directory
+            </label>
+            <input
+              ref={sshPathInput}
+              id="ssh-directory"
+              placeholder="/home/user/project"
+              value={sshRemotePath}
+              autoComplete="off"
+              disabled={fieldsDisabled}
+              aria-invalid={sshFieldErrors.path !== undefined}
+              aria-describedby={sshFieldErrors.path ? 'ssh-path-error ssh-help' : 'ssh-help'}
+              onChange={(event) => {
+                setSshRemotePath(event.target.value)
+                setSshFieldErrors((previous) => ({ ...previous, path: undefined }))
+                setError(null)
+              }}
+              className={controlClass}
+            />
+            {sshFieldErrors.path ? (
+              <p id="ssh-path-error" role="alert" className="mt-2 text-sm text-ink">
+                {sshFieldErrors.path}
+              </p>
+            ) : null}
+            <p id="ssh-help" className="mt-2 text-xs text-ink-secondary">
+              Use an absolute POSIX path on that host. The host must be trusted once outside NeKode
+              (run ssh in a terminal for it) before it can be added.
+            </p>
           </>
         ) : (
           <p className="mt-4 text-sm leading-relaxed text-ink-secondary">

@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   EXCLUDED_DIRECTORY_NAMES,
   type FilesFsAdapter,
+  type FilesFsEntry,
   type FilesProjectLookup,
+  type FilesRemoteAdapter,
+  type FilesRemoteFile,
+  type FilesRemoteListing,
   FilesService,
   mapExtensionToLanguage,
   PREVIEW_MAX_BYTES,
@@ -879,5 +883,351 @@ describe('FilesService preview window support (file-preview-window)', () => {
     expect(await service.fingerprint('p1', 'docs')).toBeNull()
     expect(await service.fingerprint('p1', 'link-out')).toBeNull()
     expect(await service.fingerprint('missing', 'docs/spec.md')).toBeNull()
+  })
+})
+
+// Remote contract (spec ssh-projects Behaviour 10-11): the stored `ssh://`
+// path selects the remote adapter, the service-level rules stay the same as
+// for a local project, canonical remote paths enforce containment, and every
+// local-only surface answers the explicit unsupported error. The adapter is a
+// fake: the real scripts are covered in ssh-files-adapter.test.ts.
+
+const SSH_PROJECT_PATH = 'ssh://tomek@minipc/srv/app'
+const SSH_ROOT_PATH = '/srv/app'
+
+interface RemoteStub {
+  adapter: FilesRemoteAdapter
+  listCalls: string[]
+  readCalls: string[]
+}
+
+interface RemoteStubOptions {
+  /** Directory listings by requested remote path. */
+  listings?: Record<string, FilesFsEntry[]>
+  /** File payloads by requested remote path. */
+  files?: Record<string, { size: number; content: Uint8Array }>
+  /** Canonical target the adapter reports, modelling a symlink jump. */
+  canonicalTargets?: Record<string, string>
+}
+
+function createRemote(options: RemoteStubOptions = {}): RemoteStub {
+  const listCalls: string[] = []
+  const readCalls: string[] = []
+  const listings = options.listings ?? {}
+  const files = options.files ?? {}
+  const canonicalTargets = options.canonicalTargets ?? {}
+  return {
+    listCalls,
+    readCalls,
+    adapter: {
+      async list(dir: string): Promise<FilesRemoteListing | null> {
+        listCalls.push(dir)
+        const entries = listings[dir]
+        if (entries === undefined) {
+          return null
+        }
+        return { realRoot: SSH_ROOT_PATH, realTarget: canonicalTargets[dir] ?? dir, entries }
+      },
+      async read(path: string): Promise<FilesRemoteFile | null> {
+        readCalls.push(path)
+        const file = files[path]
+        if (file === undefined) {
+          return null
+        }
+        return {
+          realRoot: SSH_ROOT_PATH,
+          realTarget: canonicalTargets[path] ?? path,
+          size: file.size,
+          content: file.content,
+        }
+      },
+    },
+  }
+}
+
+const sshProjects: FilesProjectLookup = {
+  get: (projectId) => (projectId === 'ssh-1' ? { path: SSH_PROJECT_PATH } : null),
+}
+
+function remoteService(remote: FilesRemoteAdapter): {
+  service: FilesService
+  openExternal: ReturnType<typeof vi.fn>
+  showInFolder: ReturnType<typeof vi.fn>
+  trashItem: ReturnType<typeof vi.fn>
+} {
+  const openExternal = vi.fn(async (_path: string) => '')
+  const showInFolder = vi.fn()
+  const trashItem = vi.fn(async () => undefined)
+  const service = new FilesService({
+    projects: sshProjects,
+    fs: createFakeFs({ nodes: {} }),
+    remote: () => remote,
+    openExternal,
+    showInFolder,
+    trashItem,
+    platform: 'win32',
+  })
+  return { service, openExternal, showInFolder, trashItem }
+}
+
+describe('files over SSH', () => {
+  it('filters the default exclusions at any depth and keeps a same-named file', async () => {
+    const remote = createRemote({
+      listings: {
+        [SSH_ROOT_PATH]: [
+          { name: 'src', kind: 'directory' },
+          { name: 'node_modules', kind: 'directory' },
+          { name: 'vendor', kind: 'directory' },
+          { name: '.git', kind: 'directory' },
+          { name: 'dist', kind: 'directory' },
+          { name: 'coverage', kind: 'file' },
+          { name: 'README.md', kind: 'file' },
+        ],
+        [`${SSH_ROOT_PATH}/src`]: [
+          { name: 'node_modules', kind: 'directory' },
+          { name: 'keep.ts', kind: 'file' },
+        ],
+      },
+    })
+    const { service } = remoteService(remote.adapter)
+    expect(await service.list('ssh-1', null)).toEqual([
+      { name: 'src', relativePath: 'src', kind: 'directory' },
+      { name: 'coverage', relativePath: 'coverage', kind: 'file' },
+      { name: 'README.md', relativePath: 'README.md', kind: 'file' },
+    ])
+    expect(await service.list('ssh-1', 'src')).toEqual([
+      { name: 'keep.ts', relativePath: 'src/keep.ts', kind: 'file' },
+    ])
+    expect(remote.listCalls).toEqual([SSH_ROOT_PATH, `${SSH_ROOT_PATH}/src`])
+  })
+
+  it('accepts a ":" in a remote name and passes the joined remote path', async () => {
+    // The `:` name is a normal POSIX name on the remote host; only the NTFS
+    // alternate-data-stream rule rejects it, and that rule stays local.
+    const remote = createRemote({
+      listings: { [`${SSH_ROOT_PATH}/odd:dir`]: [{ name: 'thing:file.txt', kind: 'file' }] },
+      files: {
+        [`${SSH_ROOT_PATH}/odd:dir/thing:file.txt`]: { size: 5, content: encode('colon') },
+      },
+    })
+    const { service } = remoteService(remote.adapter)
+    expect((await service.list('ssh-1', 'odd:dir')).map((entry) => entry.relativePath)).toEqual([
+      'odd:dir/thing:file.txt',
+    ])
+    expect(await service.read('ssh-1', 'odd:dir/thing:file.txt')).toEqual({
+      kind: 'text',
+      content: 'colon',
+      language: null,
+    })
+    expect(remote.listCalls).toEqual([`${SSH_ROOT_PATH}/odd:dir`])
+    expect(remote.readCalls).toEqual([`${SSH_ROOT_PATH}/odd:dir/thing:file.txt`])
+  })
+
+  it('lists and reads a remote name that contains a backslash', async () => {
+    // A backslash is an ordinary POSIX name character: the SSH-relative path is
+    // passed through unchanged instead of the local Windows conversion, so a
+    // name that lists can also be opened (spec Behaviour 10).
+    const remote = createRemote({
+      listings: { [`${SSH_ROOT_PATH}/odd\\dir`]: [{ name: 'a\\b.txt', kind: 'file' }] },
+      files: {
+        [`${SSH_ROOT_PATH}/odd\\dir/a\\b.txt`]: { size: 4, content: encode('back') },
+      },
+    })
+    const { service } = remoteService(remote.adapter)
+    expect((await service.list('ssh-1', 'odd\\dir')).map((entry) => entry.relativePath)).toEqual([
+      'odd\\dir/a\\b.txt',
+    ])
+    expect(await service.read('ssh-1', 'odd\\dir/a\\b.txt')).toEqual({
+      kind: 'text',
+      content: 'back',
+      language: null,
+    })
+    expect(remote.listCalls).toEqual([`${SSH_ROOT_PATH}/odd\\dir`])
+    expect(remote.readCalls).toEqual([`${SSH_ROOT_PATH}/odd\\dir/a\\b.txt`])
+  })
+
+  it('builds remote targets from a registered root whose own name contains a backslash', async () => {
+    // The registered root is a POSIX path, so a backslash in it is an ordinary
+    // name character and `projects.path` keeps it. A target built with the
+    // Windows-to-POSIX conversion rewrote the root as well, so the root listing
+    // worked while every descent and read missed the registered directory
+    // (spec Behaviour 10).
+    const root = '/srv/odd\\root'
+    const listCalls: string[] = []
+    const readCalls: string[] = []
+    const adapter: FilesRemoteAdapter = {
+      async list(dir): Promise<FilesRemoteListing | null> {
+        listCalls.push(dir)
+        const entries: FilesFsEntry[] = dir === root ? [{ name: 'a\\b.txt', kind: 'file' }] : []
+        return { realRoot: root, realTarget: dir, entries }
+      },
+      async read(path): Promise<FilesRemoteFile | null> {
+        readCalls.push(path)
+        if (path !== `${root}/a\\b.txt`) {
+          return null
+        }
+        return { realRoot: root, realTarget: path, size: 4, content: encode('back') }
+      },
+    }
+    const service = new FilesService({
+      projects: {
+        get: (projectId) => (projectId === 'ssh-1' ? { path: `ssh://tomek@minipc${root}` } : null),
+      },
+      fs: createFakeFs({ nodes: {} }),
+      remote: () => adapter,
+      openExternal: async () => '',
+      showInFolder: () => undefined,
+      trashItem: async () => undefined,
+      platform: 'win32',
+    })
+    expect(await service.list('ssh-1', null)).toEqual([
+      { name: 'a\\b.txt', relativePath: 'a\\b.txt', kind: 'file' },
+    ])
+    expect(await service.list('ssh-1', 'sub')).toEqual([])
+    expect(await service.read('ssh-1', 'a\\b.txt')).toEqual({
+      kind: 'text',
+      content: 'back',
+      language: null,
+    })
+    expect(listCalls).toEqual([root, `${root}/sub`])
+    expect(readCalls).toEqual([`${root}/a\\b.txt`])
+    // Containment still holds for a `..` request from such a root: the escape
+    // never reaches the adapter (spec Errors).
+    expect((await captureError(() => service.read('ssh-1', '../outside.txt'))).code).toBe(
+      'not_found',
+    )
+    expect(readCalls).toEqual([`${root}/a\\b.txt`])
+  })
+
+  it('keeps a nested excluded directory unreachable', async () => {
+    const remote = createRemote({
+      listings: { [SSH_ROOT_PATH]: [{ name: 'src', kind: 'directory' }] },
+    })
+    const { service } = remoteService(remote.adapter)
+    expect((await captureError(() => service.list('ssh-1', 'node_modules'))).code).toBe('not_found')
+    expect((await captureError(() => service.read('ssh-1', 'src/node_modules/pkg.js'))).code).toBe(
+      'not_found',
+    )
+    expect((await captureError(() => service.list('ssh-1', 'NODE_MODULES/pkg'))).code).toBe(
+      'not_found',
+    )
+    expect(remote.listCalls).toEqual([])
+    expect(remote.readCalls).toEqual([])
+  })
+
+  it('rejects absolute, NUL and ".." requests before any adapter call', async () => {
+    const remote = createRemote({ listings: { [SSH_ROOT_PATH]: [] } })
+    const { service } = remoteService(remote.adapter)
+    for (const request of [
+      '/etc/passwd',
+      'a\u0000b',
+      '../outside.txt',
+      '../../etc',
+      'src/../../etc',
+    ]) {
+      const error = await captureError(() => service.read('ssh-1', request))
+      expect(error.code).toBe('not_found')
+      expect(error.message).toBe('File not found.')
+    }
+    for (const request of ['/etc', '..', 'a\u0000b']) {
+      expect((await captureError(() => service.list('ssh-1', request))).code).toBe('not_found')
+    }
+    expect(remote.listCalls).toEqual([])
+    expect(remote.readCalls).toEqual([])
+  })
+
+  it('maps canonical remote paths outside the root to not_found', async () => {
+    const remote = createRemote({
+      listings: { [`${SSH_ROOT_PATH}/link`]: [{ name: 'secret.txt', kind: 'file' }] },
+      files: { [`${SSH_ROOT_PATH}/link`]: { size: 6, content: encode('secret') } },
+      canonicalTargets: {
+        [`${SSH_ROOT_PATH}/link`]: '/srv/outside/secret.txt',
+        [`${SSH_ROOT_PATH}/dir-link`]: '/srv/outside',
+      },
+    })
+    const { service } = remoteService(remote.adapter)
+    // The adapter resolves a symlink; the canonical target is what the
+    // service checks, so content outside the project never reaches the tree.
+    expect((await captureError(() => service.list('ssh-1', 'dir-link'))).code).toBe('not_found')
+    expect((await captureError(() => service.read('ssh-1', 'link'))).code).toBe('not_found')
+    expect(remote.listCalls).toEqual([`${SSH_ROOT_PATH}/dir-link`])
+    expect(remote.readCalls).toEqual([`${SSH_ROOT_PATH}/link`])
+  })
+
+  it('classifies too-large from the size field and binary from NUL and invalid UTF-8', async () => {
+    const nul = new Uint8Array(32).fill(0x41)
+    nul[3] = 0x00
+    const remote = createRemote({
+      files: {
+        [`${SSH_ROOT_PATH}/huge.bin`]: { size: PREVIEW_MAX_BYTES + 2, content: new Uint8Array(3) },
+        [`${SSH_ROOT_PATH}/binary.bin`]: { size: 32, content: nul },
+        [`${SSH_ROOT_PATH}/invalid.txt`]: {
+          size: 3,
+          content: Uint8Array.from([0x41, 0xff, 0xfe]),
+        },
+      },
+    })
+    const { service } = remoteService(remote.adapter)
+    expect(await service.read('ssh-1', 'huge.bin')).toEqual({
+      kind: 'too-large',
+      size: PREVIEW_MAX_BYTES + 2,
+    })
+    expect(await service.read('ssh-1', 'binary.bin')).toEqual({ kind: 'binary' })
+    expect(await service.read('ssh-1', 'invalid.txt')).toEqual({ kind: 'binary' })
+  })
+
+  it('previews remote text with the language mapping', async () => {
+    const remote = createRemote({
+      files: {
+        [`${SSH_ROOT_PATH}/src/app.ts`]: { size: 11, content: encode('const a = 1') },
+      },
+    })
+    const { service } = remoteService(remote.adapter)
+    expect(await service.read('ssh-1', 'src/app.ts')).toEqual({
+      kind: 'text',
+      content: 'const a = 1',
+      language: 'typescript',
+    })
+    expect(remote.readCalls).toEqual([`${SSH_ROOT_PATH}/src/app.ts`])
+  })
+
+  it('rejects every local-only action as unsupported with its own channel', async () => {
+    const remote = createRemote({ listings: { [SSH_ROOT_PATH]: [] } })
+    const { service, openExternal, showInFolder, trashItem } = remoteService(remote.adapter)
+    const cases: Array<[() => Promise<unknown>, string]> = [
+      [() => service.openExternal('ssh-1', 'notes.md'), 'files:openExternal'],
+      [() => service.openRoot('ssh-1'), 'files:openRoot'],
+      [() => service.showInFolder('ssh-1', 'notes.md'), 'files:showInFolder'],
+      [() => service.trash('ssh-1', 'notes.md'), 'files:trash'],
+      [() => service.previewTarget('ssh-1', 'notes.md'), 'files:openInWindow'],
+      [() => service.fingerprint('ssh-1', 'notes.md'), 'preview:read'],
+    ]
+    for (const [run, channel] of cases) {
+      const error = await captureError(run)
+      expect(error.code).toBe('unsupported')
+      expect(error.channel).toBe(channel)
+      expect(error.message).toBe('This action is not available for SSH projects.')
+    }
+    expect(openExternal).not.toHaveBeenCalled()
+    expect(showInFolder).not.toHaveBeenCalled()
+    expect(trashItem).not.toHaveBeenCalled()
+    expect(remote.listCalls).toEqual([])
+    expect(remote.readCalls).toEqual([])
+  })
+
+  it('reports list and read as unsupported when no remote adapter is wired', async () => {
+    const service = new FilesService({
+      projects: sshProjects,
+      fs: createFakeFs({ nodes: {} }),
+      openExternal: async () => '',
+      showInFolder: () => undefined,
+      trashItem: async () => undefined,
+    })
+    const listError = await captureError(() => service.list('ssh-1', null))
+    expect(listError.code).toBe('unsupported')
+    expect(listError.channel).toBe('files:list')
+    const readError = await captureError(() => service.read('ssh-1', 'notes.md'))
+    expect(readError.code).toBe('unsupported')
+    expect(readError.channel).toBe('files:read')
   })
 })

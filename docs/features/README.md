@@ -52,6 +52,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [public-documentation-contract](public-documentation-contract/spec.md) | Public documentation contract independent of the local harness | Delivered |
 | [renderer-interaction-correctness](renderer-interaction-correctness/spec.md) | Renderer interaction correctness | Not delivered |
 | [session-labels](session-labels/spec.md) | Session labels and agent badges | Delivered |
+| [ssh-projects](ssh-projects/spec.md) | SSH projects: opening a project on a remote host | Delivered (registration, terminals, agent launches, remote files, read-only Git and typed errors; transport ADR: [ssh-project-transport](../architecture/ssh-project-transport.md)) |
 | [task-progress-adapters](task-progress-adapters/spec.md) | Postęp zadań przez adaptery źródeł | Delivered (NEKODE-81) |
 | [terminal-font-settings](terminal-font-settings/spec.md) | Terminal font settings | Delivered |
 | [test-suite-simplification](test-suite-simplification/spec.md) | Test suite audit and simplification | Delivered |

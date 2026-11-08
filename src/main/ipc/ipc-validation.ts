@@ -35,13 +35,19 @@ import {
   kanbanSetConfigInputSchema,
   kanbanUpdatePatchSchema,
 } from '@shared/contracts/kanban-schema'
+import type { SshProjectInput } from '@shared/contracts/projects-contract'
 import {
   resumeIdSchema,
   resumeRevisionSchema,
   resumeSourcePutSchema,
   resumeTokenSchema,
 } from '@shared/contracts/resume-sources-schema'
-import { BARE_MESSAGE, safePathSchema, stringValuesSchema } from '@shared/contracts/schema-rules'
+import {
+  BARE_MESSAGE,
+  projectPathSchema,
+  safePathSchema,
+  stringValuesSchema,
+} from '@shared/contracts/schema-rules'
 import {
   parseUsageRefreshRequest,
   parseUsageSettings,
@@ -55,6 +61,7 @@ import {
   isTaskProgressStateKey,
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import { validateSshLocation } from '@shared/ssh-target'
 import { wslProjectPath } from '@shared/wsl-path'
 import type { z } from 'zod'
 import type { AppServices } from './service-registry'
@@ -88,9 +95,17 @@ const assertFiniteNumber: Validator = (value, label) => {
   }
 }
 
-/** Absolute path without NUL or '..' segments; the rule lives in `safePathSchema`. */
+/** Absolute local path without NUL or '..' segments; the rule lives in `safePathSchema`. */
 const assertSafePath: Validator = (value, label) => {
   parsePayload(safePathSchema, value, label)
+}
+
+/**
+ * Project path argument (terminal cwd): an absolute local path or a valid
+ * `ssh://` project location. The local-only surfaces keep `assertSafePath`.
+ */
+const assertProjectPath: Validator = (value, label) => {
+  parsePayload(projectPathSchema, value, label)
 }
 
 /**
@@ -210,7 +225,14 @@ export interface ValidatedChannel {
 }
 
 /** Type list for each positional argument of a channel payload. */
-type ArgType = 'string' | 'stateKey' | 'number' | 'path' | 'relativePath' | 'relativePath?'
+type ArgType =
+  | 'string'
+  | 'stateKey'
+  | 'number'
+  | 'path'
+  | 'projectPath'
+  | 'relativePath'
+  | 'relativePath?'
 
 /**
  * Channel backed by a real service. Payloads must match the declared arity
@@ -233,6 +255,8 @@ function serviceChannel(
           assertStateKey(payload[index], label)
         } else if (type === 'path') {
           assertSafePath(payload[index], label)
+        } else if (type === 'projectPath') {
+          assertProjectPath(payload[index], label)
         } else if (type === 'relativePath') {
           assertRelativePath(payload[index], label)
         } else if (type === 'relativePath?') {
@@ -605,6 +629,48 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       },
       invoke: (args) => services.projects.addWsl(args[0] as string, args[1] as string),
     },
+    // SSH registration (spec ssh-projects Data/API): the renderer sends the
+    // four dialog fields as one object, never a destination or a command
+    // line. Shape is checked here, field rules by the shared validator, and
+    // the remote directory check runs in the service graph.
+    {
+      channel: IPC_CHANNEL.projectsAddSsh,
+      parse(payload) {
+        const channel = IPC_CHANNEL.projectsAddSsh
+        requireArgs(payload, 1, channel)
+        const value = payload[0]
+        if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+          fail(channel, 'requires an object with host, user, port and path')
+        }
+        const record = value as Record<string, unknown>
+        const fields = ['host', 'user', 'port', 'path'] as const
+        const keys = Object.keys(record)
+        if (keys.length !== fields.length || fields.some((field) => !keys.includes(field))) {
+          fail(channel, 'requires host, user, port and path')
+        }
+        if (typeof record.host !== 'string') fail(`${channel} host`, 'must be a string')
+        if (record.user !== null && typeof record.user !== 'string') {
+          fail(`${channel} user`, 'must be a string or null')
+        }
+        if (
+          record.port !== null &&
+          (typeof record.port !== 'number' || !Number.isInteger(record.port))
+        ) {
+          fail(`${channel} port`, 'must be an integer or null')
+        }
+        if (typeof record.path !== 'string') fail(`${channel} path`, 'must be a string')
+        const input: SshProjectInput = {
+          host: record.host,
+          user: record.user as string | null,
+          port: record.port as number | null,
+          path: record.path,
+        }
+        const invalid = validateSshLocation(input)
+        if (invalid !== null) throw new ValidationError(invalid.message)
+        return [input]
+      },
+      invoke: (args) => services.projects.addSsh(args[0] as SshProjectInput),
+    },
     // The Add Project flow opens the native dialog in main (ipc-handlers);
     // the channel payload is empty and the path comes from the dialog.
     // The entry's invoke is unreachable through normal routing; throwing protects
@@ -656,7 +722,7 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     // Chat terminals: one PTY per chat, spawned lazily on create. A failed
     // task launch owns that chat until argv is delivered; the renderer must
     // not start the project shell in its place.
-    serviceChannel(IPC_CHANNEL.terminalsCreate, ['string', 'path'], (args) => {
+    serviceChannel(IPC_CHANNEL.terminalsCreate, ['string', 'projectPath'], (args) => {
       const chatId = args[0] as string
       if (services.kanban.blocksProjectShell(chatId)) {
         throw new AppError(

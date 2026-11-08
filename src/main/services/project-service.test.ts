@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os'
 import { basename, join, parse } from 'node:path'
 import { AppError, type AppErrorCode } from '@shared/ipc-error'
+import { sshTargetFromInput } from '@shared/ssh-target'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
@@ -232,5 +233,44 @@ describe('ProjectService', () => {
   it('get returns null for an unknown id', () => {
     const service = createService(fakeFileSystem({}))
     expect(service.get('missing-project')).toBeNull()
+  })
+
+  it('addSsh stores the canonical path, the POSIX name and the remote identity', () => {
+    // No filesystem entry exists for the URL: registration never stats locally.
+    const service = createService(fakeFileSystem({}))
+    const target = sshTargetFromInput({
+      host: 'My-Host',
+      user: 'Tomek',
+      port: null,
+      path: '/srv/App/',
+    })
+    const created = service.addSsh(target, '/srv/real')
+    expect(created).toMatchObject({
+      name: 'App',
+      path: 'ssh://Tomek@my-host/srv/App',
+      runtimeLabel: null,
+    })
+    expect(service.list()).toEqual([created])
+
+    // The identity is the pwd -P result, so another spelling conflicts.
+    const same = sshTargetFromInput({
+      host: 'my-host',
+      user: 'Tomek',
+      port: null,
+      path: '/srv/real',
+    })
+    const error = expectAppError(() => service.addSsh(same, '/srv/real'), 'conflict')
+    expect(error.message).toBe('This remote directory is already registered as a project.')
+    expect(error.channel).toBe('projects:addSsh')
+    expect(service.list()).toHaveLength(1)
+  })
+
+  it('addSsh keeps two different remote directories on one host distinct', () => {
+    const service = createService(fakeFileSystem({}))
+    const first = sshTargetFromInput({ host: 'host', user: null, port: 22, path: '/srv/a' })
+    const second = sshTargetFromInput({ host: 'host', user: null, port: 22, path: '/srv/b' })
+    service.addSsh(first, '/srv/a')
+    service.addSsh(second, '/srv/b')
+    expect(service.list().map((project) => project.name)).toEqual(['a', 'b'])
   })
 })

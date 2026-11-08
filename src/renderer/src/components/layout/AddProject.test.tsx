@@ -27,16 +27,28 @@ function setup(platform?: string) {
   const project = { id: 'project', name: 'My Project', path: 'D:/project', runtimeLabel: null }
   const add = vi.fn().mockResolvedValue(project)
   const addWsl = vi.fn().mockResolvedValue(project)
+  const addSsh = vi.fn().mockResolvedValue(project)
   const wslDistributions = vi.fn().mockResolvedValue(['Ubuntu', 'Debian'])
   const wslDirectories = vi.fn().mockResolvedValue([])
   const app = {
     platform,
-    projects: { add, addWsl, wslDistributions, wslDirectories },
+    projects: { add, addWsl, addSsh, wslDistributions, wslDirectories },
   } as unknown as AppApi
   const onAdded = vi.fn()
   const onClose = vi.fn()
   const view = render(<AddProject app={app} onAdded={onAdded} onClose={onClose} />)
-  return { ...view, app, add, addWsl, wslDistributions, wslDirectories, onAdded, onClose, project }
+  return {
+    ...view,
+    app,
+    add,
+    addWsl,
+    addSsh,
+    wslDistributions,
+    wslDirectories,
+    onAdded,
+    onClose,
+    project,
+  }
 }
 
 function selectWsl() {
@@ -63,23 +75,28 @@ describe('Add Project', () => {
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
       'Local',
       'WSL',
+      'SSH',
     ])
     expect(screen.getByRole('button', { name: 'Choose folder...' })).toBeTruthy()
     expect(add).not.toHaveBeenCalled()
     expect(wslDistributions).not.toHaveBeenCalled()
   })
 
-  it('offers only Local when NeKode runs on Linux (no WSL choice, no discovery)', () => {
+  it('offers Local and SSH but no WSL choice when NeKode runs on Linux', () => {
     const { wslDistributions } = setup('linux')
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Local'])
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Local',
+      'SSH',
+    ])
     expect(wslDistributions).not.toHaveBeenCalled()
   })
 
-  it('keeps the WSL choice on Windows', () => {
+  it('keeps the WSL choice on Windows and offers SSH beside it', () => {
     setup('win32')
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
       'Local',
       'WSL',
+      'SSH',
     ])
   })
 
@@ -462,5 +479,177 @@ describe('WSL directory combobox', () => {
     await act(async () => pending.resolve(['/home/late']))
     expect(screen.queryByRole('listbox')).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
+  })
+})
+
+describe('SSH location', () => {
+  function selectSsh() {
+    fireEvent.change(screen.getByLabelText('Project location'), { target: { value: 'ssh' } })
+  }
+
+  function fill(label: string, value: string) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } })
+  }
+
+  function enterValidLocation() {
+    selectSsh()
+    fill('Host', 'minipc')
+    fill('Remote directory', '/srv/app')
+  }
+
+  it('shows the four fields without WSL discovery or a folder picker', () => {
+    const { wslDistributions } = setup()
+    selectSsh()
+    expect((screen.getByLabelText('Host') as HTMLInputElement).value).toBe('')
+    expect(screen.getByLabelText('User')).toBeTruthy()
+    expect(screen.getByLabelText('Port')).toBeTruthy()
+    expect(screen.getByLabelText('Remote directory')).toBeTruthy()
+    expect(screen.queryByLabelText('Distribution')).toBeNull()
+    expect(screen.getByText(/must be trusted once outside/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add Project' })).toBeTruthy()
+    expect(wslDistributions).not.toHaveBeenCalled()
+  })
+
+  it('advertises the bracketed IPv6 form in the host placeholder', () => {
+    setup()
+    selectSsh()
+    expect((screen.getByLabelText('Host') as HTMLInputElement).placeholder).toBe('[2001:db8::1]')
+  })
+
+  it.each(['0x16', '1e3', '22.5', '2 2'])(
+    'rejects a non-decimal port text %j before IPC',
+    async (port) => {
+      const { addSsh, onAdded } = setup()
+      enterValidLocation()
+      fill('Port', port)
+      fireEvent.click(screen.getByRole('button', { name: 'Add Project' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert.id).toBe('ssh-port-error')
+      expect(alert.textContent).toBe('The port must be a number from 1 to 65535.')
+      const input = screen.getByLabelText('Port') as HTMLInputElement
+      expect(input.getAttribute('aria-invalid')).toBe('true')
+      expect(document.activeElement).toBe(input)
+      expect(addSsh).not.toHaveBeenCalled()
+      expect(onAdded).not.toHaveBeenCalled()
+    },
+  )
+
+  it('adds the exact location fields and opens the project', async () => {
+    const { addSsh, add, addWsl, onAdded, onClose, project } = setup()
+    selectSsh()
+    fill('Host', 'Minipc')
+    fill('User', 'tomek')
+    fill('Port', '2222')
+    fill('Remote directory', '/srv/My $ Project')
+    fireEvent.click(screen.getByRole('button', { name: 'Add Project' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(addSsh).toHaveBeenCalledExactlyOnceWith({
+      host: 'Minipc',
+      user: 'tomek',
+      port: 2222,
+      path: '/srv/My $ Project',
+    })
+    expect(onAdded).toHaveBeenCalledWith(project)
+    expect(add).not.toHaveBeenCalled()
+    expect(addWsl).not.toHaveBeenCalled()
+  })
+
+  it('sends null for an empty optional user and port', async () => {
+    const { addSsh, onClose } = setup()
+    enterValidLocation()
+    fireEvent.click(screen.getByRole('button', { name: 'Add Project' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(addSsh).toHaveBeenCalledExactlyOnceWith({
+      host: 'minipc',
+      user: null,
+      port: null,
+      path: '/srv/app',
+    })
+  })
+
+  it.each([
+    ['empty host', { Host: '' }, 'ssh-host-error', 'Enter a host name.'],
+    [
+      'host with an option prefix',
+      { Host: '-oProxyCommand=evil' },
+      'ssh-host-error',
+      'The host name is invalid.',
+    ],
+    [
+      'user with an option prefix',
+      { User: '-oProxyCommand=evil' },
+      'ssh-user-error',
+      'The user name is invalid.',
+    ],
+    ['port zero', { Port: '0' }, 'ssh-port-error', 'The port must be a number from 1 to 65535.'],
+    ['port text', { Port: 'abc' }, 'ssh-port-error', 'The port must be a number from 1 to 65535.'],
+    [
+      'relative directory',
+      { 'Remote directory': 'srv/app' },
+      'ssh-path-error',
+      'The remote directory must be an absolute POSIX path.',
+    ],
+    [
+      'filesystem root',
+      { 'Remote directory': '/' },
+      'ssh-path-error',
+      'Cannot add a filesystem root as a project.',
+    ],
+  ])(
+    'blocks %s before IPC and focuses the field error',
+    async (_label, fields, errorId, message) => {
+      const { addSsh, onAdded } = setup()
+      enterValidLocation()
+      for (const [label, value] of Object.entries(fields)) fill(label, value)
+      fireEvent.click(screen.getByRole('button', { name: 'Add Project' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert.id).toBe(errorId)
+      expect(alert.textContent).toBe(message)
+      const [label] = Object.keys(fields)
+      const input = screen.getByLabelText(label) as HTMLInputElement
+      expect(input.getAttribute('aria-invalid')).toBe('true')
+      expect(document.activeElement).toBe(input)
+      expect(addSsh).not.toHaveBeenCalled()
+      expect(onAdded).not.toHaveBeenCalled()
+    },
+  )
+
+  it('blocks duplicate submission and Escape while the registration is pending', async () => {
+    const { addSsh, onClose, project } = setup()
+    const pending = deferred<typeof project>()
+    addSsh.mockReturnValue(pending.promise)
+    enterValidLocation()
+    const form = screen.getByRole('button', { name: 'Add Project' }).closest('form')
+    if (!form) throw new Error('Missing project form')
+    fireEvent.submit(form)
+    fireEvent.submit(form)
+    cancelEscape()
+    expect(screen.getByRole('status').textContent).toContain('Wait for this step')
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect((screen.getByLabelText('Host') as HTMLInputElement).disabled).toBe(true)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(addSsh).toHaveBeenCalledOnce()
+    await act(async () => pending.resolve(project))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a main-side connection failure inline with the fields intact', async () => {
+    const { addSsh, onAdded, onClose } = setup()
+    addSsh.mockRejectedValueOnce({
+      nekodeAppError: true,
+      code: 'auth',
+      message: 'The SSH host key is not trusted. Verify the host key in known_hosts.',
+    })
+    enterValidLocation()
+    fireEvent.click(screen.getByRole('button', { name: 'Add Project' }))
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'The SSH host key is not trusted. Verify the host key in known_hosts.',
+    )
+    expect((screen.getByLabelText('Host') as HTMLInputElement).value).toBe('minipc')
+    expect((screen.getByLabelText('Remote directory') as HTMLInputElement).value).toBe('/srv/app')
+    expect(onAdded).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

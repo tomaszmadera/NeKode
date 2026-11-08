@@ -44,6 +44,7 @@ import type {
   ResumeSourcePut,
   ResumeSourcesChanged,
   ShellInfo,
+  SshProjectInput,
   SttProviderSummary,
   TaskProgressAdapterList,
   TaskProgressBinding,
@@ -156,6 +157,8 @@ export interface AppServices {
     wslDistributions(): Promise<string[]> | string[]
     wslDirectories(distribution: string, linuxPath: string): Promise<string[]> | string[]
     addWsl(distribution: string, linuxPath: string): Promise<ProjectInfo> | ProjectInfo
+    /** SSH registration: the remote directory check runs before the insert. */
+    addSsh(input: SshProjectInput): Promise<ProjectInfo> | ProjectInfo
     remove(projectId: string): void
   }
   chats: {

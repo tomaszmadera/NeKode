@@ -41,7 +41,7 @@ import type {
   KanbanUpdatePatch,
   WorkItem,
 } from './contracts/kanban-contract'
-import type { ProjectInfo } from './contracts/projects-contract'
+import type { ProjectInfo, SshProjectInput } from './contracts/projects-contract'
 import type {
   ResumeSourceBinding,
   ResumeSourceDiscovery,
@@ -152,6 +152,7 @@ export const IPC_CHANNEL = {
   projectsWslDistributions: 'projects:wslDistributions',
   projectsWslDirectories: 'projects:wslDirectories',
   projectsAddWsl: 'projects:addWsl',
+  projectsAddSsh: 'projects:addSsh',
   projectsRemove: 'projects:remove',
   chatsList: 'chats:list',
   chatsCreate: 'chats:create',
@@ -294,6 +295,12 @@ export interface AppApi {
     /** Advisory directory completions in the selected distribution; never registers a project. */
     wslDirectories(distribution: string, linuxPath: string): Promise<string[]>
     addWsl(distribution: string, linuxPath: string): Promise<ProjectInfo>
+    /**
+     * Registers an SSH project: main validates the fields, checks that the
+     * host answers and that the remote directory exists, then writes the
+     * canonical `ssh://` path. Nothing is stored when the check fails.
+     */
+    addSsh(input: SshProjectInput): Promise<ProjectInfo>
     remove(projectId: string): Promise<void>
   }
   chats: {

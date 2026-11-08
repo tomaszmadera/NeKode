@@ -276,7 +276,7 @@ with the "Projects" section header carrying an icon-only Add Project button
 on the right.
 
 `Add Project` opens one modal with a `Project location` selector: `Local`
-(initial choice) or `WSL`. The welcome action opens the same modal. Local
+(initial choice), `WSL` or `SSH`. The welcome action opens the same modal. Local
 uses `Choose folder...` and the native directory picker; cancelling the
 picker keeps this modal open. WSL uses installed `Distribution` and
 `Linux project directory`, then `Add Project`. Discovery has loading,
@@ -285,6 +285,13 @@ modal. Focus starts on the location selector and returns to the invoking
 control on close. No separate WSL navigation button or unavailable future
 location is shown. The [project environment contract](features/project-environments/spec.md#unified-project-add-ui-nekode-34)
 owns the full behavior (NEKODE-34, approved 2026-10-09).
+
+SSH uses `Host`, optional `User`, optional `Port` (22 when empty) and an
+absolute `Remote directory`, then `Add Project`. Main validates the fields
+again and checks the remote directory before any row is written, so a host
+must be trusted once outside NeKode. The
+[SSH projects contract](features/ssh-projects/spec.md) owns this behavior
+(NEKODE-33).
 
 The WSL directory field suggests matching directories after a short typing
 pause. Up/Down moves the active choice; Enter, Tab or a click fills the field

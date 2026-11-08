@@ -7,6 +7,7 @@ import {
   type GitWorktreeStatus,
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import { parseSshTarget, type SshTarget } from '@shared/ssh-target'
 import { parseWslPath } from '@shared/wsl-path'
 
 // Read-only git status for the status bar (UX-UI §14–16) and, since
@@ -15,6 +16,11 @@ import { parseWslPath } from '@shared/wsl-path'
 // CLI. No watchers, no mutations. Any failure (not a repo, git missing,
 // permission errors) degrades to the "no git" state instead of failing the
 // workspace (spec Errors).
+//
+// An SSH project runs the same read-only commands on the remote host in the
+// project directory (spec ssh-projects Behaviour 12), one invocation per call
+// with optional locks disabled, through an injected runner. The parsers stay
+// shared, and a failure degrades to the same no-git state.
 
 export interface GitStatusRunResult {
   stdout: string
@@ -24,6 +30,20 @@ export interface GitStatusRunResult {
 
 /** Injectable command runner so tests never spawn real processes. */
 export type GitStatusRunner = (args: string[], cwd: string) => Promise<GitStatusRunResult>
+
+/** One read-only git call on the remote host of an SSH project. */
+export interface GitRemoteRequest {
+  target: SshTarget
+  /** Remote project directory the command runs in. */
+  cwd: string
+  args: string[]
+}
+
+/** Injectable remote runner so tests never spawn an ssh client. */
+export type GitRemoteRunner = (request: GitRemoteRequest) => Promise<GitStatusRunResult>
+
+/** The status-bar read: branch header plus worktree counts. */
+const STATUS_ARGS = ['status', '--porcelain=v2', '--branch']
 
 /** The per-path status read behind the file-tree decoration (NEKODE-31). */
 const FILE_STATUS_ARGS = ['status', '--porcelain=v2', '--ignored=traditional']
@@ -258,16 +278,20 @@ export interface GitProjectLookup {
 export interface GitServiceOptions {
   run?: GitStatusRunner
   projects?: GitProjectLookup
+  /** Remote read-only runner for an SSH project; absent means no-git. */
+  remote?: GitRemoteRunner
 }
 
 export class GitService {
   readonly #run: GitStatusRunner
   readonly #projects?: GitProjectLookup
+  readonly #remote?: GitRemoteRunner
   readonly #syncingProjects = new Set<string>()
 
   constructor(options: GitServiceOptions = {}) {
     this.#run = options.run ?? execFileRunner
     this.#projects = options.projects
+    this.#remote = options.remote
   }
 
   #resolveProjectPath(target: string, channel: string): string {
@@ -281,10 +305,31 @@ export class GitService {
     return target
   }
 
+  /**
+   * One remote read-only call. Any failure degrades to the no-git state; the
+   * runner owns the sanitized logging, so no remote path, command line or raw
+   * stderr is written here (spec ssh-projects Business rules).
+   */
+  async #remoteRead(target: SshTarget, args: string[]): Promise<GitStatusRunResult | null> {
+    if (this.#remote === undefined) return null
+    try {
+      return await this.#remote({ target, cwd: target.path, args })
+    } catch {
+      return null
+    }
+  }
+
   async getStatus(projectId: string): Promise<GitStatus> {
     const projectPath = this.#resolveProjectPath(projectId, 'git:status')
+    const target = parseSshTarget(projectPath)
+    if (target !== null) {
+      const result = await this.#remoteRead(target, STATUS_ARGS)
+      return result === null || result.exitCode !== 0
+        ? degradedGitStatus()
+        : parseGitStatus(result.stdout)
+    }
     try {
-      const result = await this.#run(['status', '--porcelain=v2', '--branch'], projectPath)
+      const result = await this.#run(STATUS_ARGS, projectPath)
       if (result.exitCode !== 0) {
         if (result.exitCode !== 128) {
           console.warn(
@@ -310,6 +355,11 @@ export class GitService {
    */
   async getFileStatuses(projectId: string): Promise<GitFileStatuses> {
     const projectPath = this.#resolveProjectPath(projectId, 'git:fileStatuses')
+    const target = parseSshTarget(projectPath)
+    if (target !== null) {
+      const result = await this.#remoteRead(target, FILE_STATUS_ARGS)
+      return result === null || result.exitCode !== 0 ? {} : parseGitFileStatuses(result.stdout)
+    }
     try {
       const result = await this.#run(FILE_STATUS_ARGS, projectPath)
       if (result.exitCode !== 0) {
@@ -338,6 +388,13 @@ export class GitService {
     this.#syncingProjects.add(projectId)
     try {
       const projectPath = this.#resolveProjectPath(projectId, 'git:sync')
+      if (parseSshTarget(projectPath) !== null) {
+        throw new AppError(
+          'unsupported',
+          'This action is not available for SSH projects.',
+          'git:sync',
+        )
+      }
       const steps: Array<{ name: string; args: string[] }> = [
         { name: 'git pull', args: ['pull', '--no-edit'] },
         { name: 'git push', args: ['push'] },

@@ -98,15 +98,25 @@ export function ShellTab({
           }
         }
       })
-      .catch((cause: unknown) => {
-        if (alive) {
-          setShells([{ id: 'default', label: 'Default' }])
+      .catch(async (cause: unknown) => {
+        if (!alive) return
+        if (parseAppErrorPayload(cause)?.code === 'unsupported' && projectId !== null) {
+          // An SSH project has no host or WSL shells to detect (spec
+          // ssh-projects Behaviour 9): the single Default entry comes from the
+          // non-probing list and no error banner is shown.
+          const list = await app.terminals.shellList(projectId).catch(() => null)
+          if (!alive) return
+          setShells(list ?? [{ id: 'default', label: 'Default (remote login shell)' }])
           setSelected('default')
           setDetecting(false)
-          setDetectError(
-            parseAppErrorPayload(cause)?.message ?? 'Shell detection failed. Showing Default only.',
-          )
+          return
         }
+        setShells([{ id: 'default', label: 'Default' }])
+        setSelected('default')
+        setDetecting(false)
+        setDetectError(
+          parseAppErrorPayload(cause)?.message ?? 'Shell detection failed. Showing Default only.',
+        )
       })
     return () => {
       alive = false

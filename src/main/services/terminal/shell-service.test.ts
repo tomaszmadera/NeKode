@@ -1,3 +1,4 @@
+import { AppError } from '@shared/ipc-error'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hostPath, isWindowsHost } from '../../test-support/host-path'
 import { customChoice, ShellService } from './shell-service'
@@ -498,5 +499,52 @@ describe.skipIf(isWindowsHost)('non-Windows host defaults ($SHELL)', () => {
     })
     const ids = (await service.detectAsync(['/usr/bin/zsh'])).shells.map((shell) => shell.id)
     expect(ids).toEqual(['default', customChoice('/usr/bin/zsh')])
+  })
+})
+
+// SSH projects (spec ssh-projects Behaviour 9): one Default entry meaning the
+// remote login shell, no host or WSL probe, and no custom remote shell path.
+describe('SSH project shell', () => {
+  const SSH = 'ssh://tomek@minipc/srv/app'
+
+  it('answers one Default entry and never probes host or WSL shells', () => {
+    const { service, existsCalls } = makeService({
+      exists: ['C:\\Windows\\System32\\cmd.exe'],
+      files: ['D:/sh.exe'],
+    })
+    expect(service.list(SSH)).toEqual([{ id: 'default', label: 'Default (remote login shell)' }])
+    expect(service.label('default', SSH)).toBe('Default (remote login shell)')
+    // A historic host choice is not represented for an SSH project.
+    expect(service.label('custom:D:/sh.exe', SSH)).toBe('Default (remote login shell)')
+    // AC7: the chat label identifies the session as SSH, not the remote shell.
+    expect(service.chatLabel('powershell', SSH)).toBe('SSH')
+    // No local spawn spec exists for an SSH project: the terminal runtime
+    // spawns the ssh client instead (prepareSshTerminal).
+    expect(() => service.resolve('powershell', SSH)).toThrow(
+      'This action is not available for SSH projects.',
+    )
+    expect(() => service.resolve('powershell', SSH)).toThrow(AppError)
+    expect(existsCalls).toEqual([])
+  })
+
+  it('reports unsupported detection and custom shells without a WSL probe', async () => {
+    const runWsl = vi.fn(() => '')
+    const runWslAsync = vi.fn(async () => '')
+    const service = new ShellService({
+      runWsl,
+      runWslAsync,
+      listWslDistributionsAsync: vi.fn(async () => ['Ubuntu']),
+      exists: () => false,
+      isFile: () => false,
+    })
+    await expect(service.detectAsync([], SSH)).rejects.toMatchObject({ code: 'unsupported' })
+    await expect(service.addCustomPathAsync('/bin/fish', SSH)).rejects.toMatchObject({
+      code: 'unsupported',
+    })
+    expect(() => service.addCustomPath('/bin/fish', SSH)).toThrow(
+      'This action is not available for SSH projects.',
+    )
+    expect(runWsl).not.toHaveBeenCalled()
+    expect(runWslAsync).not.toHaveBeenCalled()
   })
 })

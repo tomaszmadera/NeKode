@@ -3,6 +3,9 @@ import { basename } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '@shared/bottom-tab-id'
 import type { Unsubscribe } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import { parseSshTarget } from '@shared/ssh-target'
+import { SSH_CD_FAILED_EXIT, sshFailure } from '../ssh/ssh-client'
+import { prepareSshTerminal, type SshTerminalDeps } from './ssh-terminal'
 import { prepareWslTerminal, validateWslExecutable, validateWslExecutableAsync } from './wsl'
 
 // Chat terminal sessions (spec Data/API, SDD §17): one PTY process per chat,
@@ -35,7 +38,7 @@ export interface ShellSpec {
   args: string[]
 }
 
-type SessionStatus = 'running' | 'exited'
+type SessionStatus = 'running' | 'exited' | 'failed'
 
 interface TerminalSession {
   chatId: string
@@ -46,6 +49,14 @@ interface TerminalSession {
   exitCode: number | null
   /** Recent PTY bytes, kept so a quit banner split across reads still matches. */
   rawTail: string
+  /**
+   * SSH session: a failed exit keeps the pane open with a typed message
+   * instead of closing the chat (spec ssh-projects Behaviour 8): 255 is a
+   * connection failure, 111 a missing remote directory, and 127 or 126 a
+   * missing or non-executable remote command whose own output is the
+   * explanation.
+   */
+  remote: boolean
   grokExitTimer: ReturnType<typeof setTimeout> | null
   subscriptions: Array<{ dispose(): void }>
 }
@@ -123,6 +134,11 @@ export interface TerminalServiceOptions {
   isDirectory?: (path: string) => boolean
   /** Shell to spawn; defaults to PowerShell on Windows. */
   shell?: ShellSpec
+  /**
+   * SSH project runtime: the injected client and the local PTY directory.
+   * Absent means an SSH project path cannot start a terminal.
+   */
+  ssh?: SshTerminalDeps
   /** Initial PTY geometry; the renderer resizes on attach. */
   cols?: number
   rows?: number
@@ -161,6 +177,7 @@ export class TerminalService {
   readonly #createPty: PtyFactory
   readonly #isDirectory: (path: string) => boolean
   readonly #shell: ShellSpec
+  readonly #ssh: SshTerminalDeps | undefined
   readonly #cols: number
   readonly #rows: number
   readonly #sessions = new Map<string, TerminalSession>()
@@ -179,6 +196,7 @@ export class TerminalService {
     this.#createPty = options.createPty
     this.#isDirectory = options.isDirectory ?? defaultIsDirectory
     this.#shell = options.shell ?? defaultShell()
+    this.#ssh = options.ssh
     this.#cols = options.cols ?? 80
     this.#rows = options.rows ?? 24
     this.#now = options.now ?? Date.now
@@ -216,7 +234,7 @@ export class TerminalService {
         )
       }
     }
-    if (!this.#isDirectory(cwd)) {
+    if (parseSshTarget(cwd) === null && !this.#isDirectory(cwd)) {
       return Promise.reject(
         new AppError(
           'not_found',
@@ -263,7 +281,7 @@ export class TerminalService {
       this.#disposeSession(existing)
       this.#sessions.delete(chatId)
     }
-    if (!this.#isDirectory(cwd)) {
+    if (parseSshTarget(cwd) === null && !this.#isDirectory(cwd)) {
       throw new AppError(
         'not_found',
         'The project directory does not exist. Terminal sessions need an existing project directory.',
@@ -271,15 +289,20 @@ export class TerminalService {
     }
 
     const resolvedShell = typeof shell === 'function' ? shell() : shell
-    const wsl = prepareWslTerminal(cwd, resolvedShell)
-    if (resolvedShell !== undefined && !validated) validateWslExecutable(cwd, resolvedShell)
-    const shellSpec = wsl ?? resolvedShell ?? this.#shell
+    const sshTarget = parseSshTarget(cwd)
+    const sshSpec =
+      sshTarget === null ? null : prepareSshTerminal(sshTarget, this.#ssh, resolvedShell)
+    const wsl = sshSpec === null ? prepareWslTerminal(cwd, resolvedShell) : null
+    if (sshSpec === null && resolvedShell !== undefined && !validated) {
+      validateWslExecutable(cwd, resolvedShell)
+    }
+    const shellSpec = sshSpec ?? wsl ?? resolvedShell ?? this.#shell
     let pty: PtyProcessLike
     try {
       pty = this.#createPty({
         file: shellSpec.file,
         args: [...shellSpec.args],
-        cwd: wsl?.cwd ?? cwd,
+        cwd: sshSpec?.cwd ?? wsl?.cwd ?? cwd,
         cols: this.#cols,
         rows: this.#rows,
         env: { ...process.env } as Record<string, string>,
@@ -298,11 +321,17 @@ export class TerminalService {
       status: 'running',
       exitCode: null,
       rawTail: '',
+      remote: sshSpec !== null,
       grokExitTimer: null,
       subscriptions: [],
     }
     session.subscriptions.push(
       pty.onData((data) => {
+        if (session.remote) {
+          // Kept for the failed-state message: ssh reports its own errors on
+          // this stream, and they are classified, never forwarded.
+          session.rawTail = (session.rawTail + data).slice(-GROK_EXIT_TAIL)
+        }
         for (const listener of this.#dataListeners) {
           listener(chatId, data)
         }
@@ -316,7 +345,31 @@ export class TerminalService {
         // dropped, so the renderer's chat-close flow (spec Behaviour 11) is
         // never triggered by application quit (spec Behaviour 8).
         this.#clearGrokExitTimer(session)
-        if (session.status === 'exited' || this.#quitting) {
+        if (session.status !== 'running' || this.#quitting) {
+          return
+        }
+        // An SSH child that fails before or shortly after start keeps the
+        // pane open with the typed message (spec ssh-projects Behaviour 8):
+        // 255 is a connection failure, 111 the remote directory is gone, and
+        // 127/126 keep the remote error output as the explanation.
+        if (
+          session.remote &&
+          (event.exitCode === 255 ||
+            event.exitCode === SSH_CD_FAILED_EXIT ||
+            event.exitCode === 127 ||
+            event.exitCode === 126)
+        ) {
+          session.status = 'failed'
+          session.exitCode = event.exitCode
+          if (event.exitCode === 255) {
+            const failure = sshFailure(255, session.rawTail)
+            this.#emitData(chatId, `\r\n${failure?.message ?? 'The SSH connection failed.'}\r\n`)
+          } else if (event.exitCode === SSH_CD_FAILED_EXIT) {
+            this.#emitData(
+              chatId,
+              '\r\nThe remote directory does not exist or is not accessible.\r\n',
+            )
+          }
           return
         }
         session.status = 'exited'
@@ -468,12 +521,19 @@ export class TerminalService {
     if (session === undefined) {
       throw new AppError('not_found', 'No terminal session exists for this chat.')
     }
-    if (session.status === 'exited') {
+    if (session.status !== 'running') {
       // Writes racing a session exit are expected during fast chat switches;
       // they reject as a typed conflict and the renderer drops the input.
       throw new AppError('conflict', 'The terminal session has ended.')
     }
     return session
+  }
+
+  /** One data delivery to every listener (used by the failed-state message). */
+  #emitData(chatId: string, data: string): void {
+    for (const listener of this.#dataListeners) {
+      listener(chatId, data)
+    }
   }
 
   /**

@@ -357,6 +357,13 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.terminalsShellAddCustom, args: ['/bin/fish', 'p1'] },
     ])
   })
+  it('forwards the SSH registration object unchanged', async () => {
+    const ipc = createIpcMock()
+    const api = createAppApi(ipc)
+    const input = { host: 'Minipc', user: null, port: null, path: '/srv/My Project' }
+    await api.projects.addSsh(input)
+    expect(ipc.invocations).toEqual([{ channel: IPC_CHANNEL.projectsAddSsh, args: [input] }])
+  })
   it('routes action CRUD, execution, and state queries through typed channels', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)

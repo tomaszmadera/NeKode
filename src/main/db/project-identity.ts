@@ -1,4 +1,5 @@
 import { posix, win32 } from 'node:path'
+import { sshProjectPathIdentity } from '@shared/ssh-target'
 import { parseWslPath, wslProjectPath } from '@shared/wsl-path'
 
 // String identity only. No symlink or filesystem lookup: WSL Linux case must
@@ -17,6 +18,11 @@ function normalizedLocalPath(projectPath: string, platform: NodeJS.Platform): st
 }
 
 export function projectPathIdentity(projectPath: string, platform: NodeJS.Platform): string {
+  // SSH locations must be checked before the local branch: a local path
+  // normalizer would rewrite the URL instead of canonicalizing it (lowercase
+  // host, omitted port 22, preserved user and remote path).
+  const ssh = sshProjectPathIdentity(projectPath)
+  if (ssh !== null) return ssh
   const wsl = parseWslPath(projectPath)
   if (wsl !== null) return wslProjectPath(wsl.distribution, wsl.linuxPath)
   const normalized = normalizedLocalPath(projectPath, platform)
