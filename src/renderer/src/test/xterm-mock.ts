@@ -70,10 +70,22 @@ export class MockTerminal {
   rows = 24
   options: unknown
   openedElement: HTMLElement | null = null
+  /** Real xterm keeps the `.xterm` root element here once opened. */
+  element: HTMLElement | null = null
+  /** Real xterm exposes DEC mode state; tests set `mouseTrackingMode`. */
+  modes = { mouseTrackingMode: 'none' as 'none' | 'x10' | 'vt200' | 'drag' | 'any' }
   written: unknown[] = []
   loadedAddons: unknown[] = []
   disposed = false
   buffer = { active: new MockBuffer() }
+  /** Scroll calls made through the public API (wheel path, tests). */
+  scrollLines = vi.fn((_amount: number): void => undefined)
+  scrollToBottom = vi.fn((): void => undefined)
+  /** The registered custom wheel handler (NeKode's wheel ownership). */
+  wheelHandler: ((event: WheelEvent) => boolean) | null = null
+  attachCustomWheelEventHandler = vi.fn((handler: (event: WheelEvent) => boolean): void => {
+    this.wheelHandler = handler
+  })
   /** Real xterm exposes parser callbacks on `terminal.parser` (IParser). */
   parser = {
     registerOscHandler: (id: number, handler: (data: string) => boolean): { dispose(): void } =>
@@ -106,6 +118,14 @@ export class MockTerminal {
 
   open = vi.fn((element: HTMLElement): void => {
     this.openedElement = element
+    this.element = element
+    // Real xterm renders a `.xterm-screen` inside the root whose height is
+    // rows * cell height. NeKode's wheel path reads that box for the row
+    // height; jsdom has no layout, so tests stub `clientHeight`
+    // (setMockScreenHeight).
+    const screen = element.ownerDocument.createElement('div')
+    screen.className = 'xterm-screen'
+    element.appendChild(screen)
   })
 
   write = vi.fn((data: unknown): void => {
@@ -361,6 +381,19 @@ export class MockTerminal {
 }
 
 export const mockTerminalInstances: MockTerminal[] = []
+
+/**
+ * Gives the mocked terminal a measurable screen box. jsdom reports every
+ * element as 0 px tall, while the real wheel path derives its row height from
+ * `.xterm-screen` (rows * cell height).
+ */
+export function setMockScreenHeight(terminal: MockTerminal, heightPx: number): void {
+  const screen = terminal.element?.querySelector<HTMLElement>('.xterm-screen')
+  if (!screen) {
+    throw new Error('mock terminal has no .xterm-screen element')
+  }
+  Object.defineProperty(screen, 'clientHeight', { configurable: true, value: heightPx })
+}
 
 export function resetMockTerminals(): void {
   mockTerminalInstances.length = 0

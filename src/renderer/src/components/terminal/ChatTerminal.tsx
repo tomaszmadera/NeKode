@@ -16,6 +16,7 @@ import {
   type TerminalFontFamilies,
   terminalFontStack,
 } from '../../lib/terminal-font'
+import { ownsWheel, planWheelScroll } from '../../lib/terminal-wheel'
 import { themeColor } from '../lib/theme-color'
 import { isBottomPanelChord } from './bottom-panel-chord'
 import { chatSwitchDirection } from './chat-switch-chord'
@@ -607,6 +608,55 @@ export function ChatTerminal({
       }
       if (hasAttributableInputLine()) {
         sendToPty('\x01\x7f')
+      }
+      return false
+    })
+
+    // --- Mouse wheel (task 2026-11-08-terminal-wheel-scroll-bottom) ---------
+    // xterm's own wheel path writes `.xterm-viewport.scrollTop` and converts
+    // the scroll event it causes back into lines. While a program streams
+    // output, xterm writes scrollTop itself on every refresh and marks the next
+    // scroll event as ignorable, so notches that land in that window are
+    // dropped: measured against this xterm, a ten-notch gesture applied 100% at
+    // 10 lines/s, 46-54% at 25 lines/s and 0-10% at 100 lines/s. Scrolling up
+    // still feels usable because xterm's scrollback pin moves the same way,
+    // while scrolling down also has to beat the incoming lines, which is why
+    // the view stays short of the newest output. Applying the delta through the
+    // public scrollLines() API removes that round-trip and every notch counts.
+    // The row height comes from xterm's own screen box (rows * cell height), so
+    // one notch still moves the same distance. Everything the program owns
+    // keeps xterm's path: an alternate-screen program gets arrow keys, a
+    // mouse-tracking program (Codex, Claude Code) gets wheel reports and scrolls
+    // its own transcript.
+    let wheelPendingPixels = 0
+    terminal.attachCustomWheelEventHandler((event: WheelEvent): boolean => {
+      const screen = terminal.element?.querySelector<HTMLElement>('.xterm-screen')
+      const rowHeight =
+        screen === undefined || screen === null ? 0 : screen.clientHeight / terminal.rows
+      if (
+        !ownsWheel({
+          bufferType: terminal.buffer.active.type,
+          mouseTrackingMode: terminal.modes.mouseTrackingMode,
+          shiftKey: event.shiftKey,
+          rows: terminal.rows,
+          rowHeight,
+        })
+      ) {
+        return true
+      }
+      const plan = planWheelScroll({
+        deltaY: event.deltaY,
+        deltaMode: event.deltaMode,
+        rows: terminal.rows,
+        rowHeight,
+        pendingPixels: wheelPendingPixels,
+      })
+      wheelPendingPixels = plan.pendingPixels
+      // Returning false only stops xterm's handler; the browser would still
+      // scroll the viewport natively and apply the notch a second time.
+      event.preventDefault()
+      if (plan.lines !== 0) {
+        terminal.scrollLines(plan.lines)
       }
       return false
     })

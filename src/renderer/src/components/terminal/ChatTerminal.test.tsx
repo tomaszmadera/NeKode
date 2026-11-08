@@ -7,7 +7,11 @@ import { TEST_ID } from '../../lib/test-ids'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { createDictationApiStub } from '../../test/dictation-api-stub'
 import { mockFitAddonInstances, resetMockFitAddons } from '../../test/fit-addon-mock'
-import { mockTerminalInstances, resetMockTerminals } from '../../test/xterm-mock'
+import {
+  mockTerminalInstances,
+  resetMockTerminals,
+  setMockScreenHeight,
+} from '../../test/xterm-mock'
 import { ChatTerminal } from './ChatTerminal'
 
 // xterm.js is mocked at the module boundary (no real canvas in jsdom); these
@@ -547,6 +551,108 @@ describe('ChatTerminal lifecycle', () => {
     for (const token of FIT_HOST_LAYOUT.slot) {
       expect(host.parentElement?.classList.contains(token)).toBe(true)
     }
+  })
+
+  /**
+   * Wheel ownership (task 2026-11-08-terminal-wheel-scroll-bottom). xterm's
+   * own wheel path writes `.xterm-viewport.scrollTop` and turns the resulting
+   * scroll event into lines; while a CLI streams output xterm writes
+   * scrollTop itself on every refresh and marks the next scroll event
+   * ignorable, so a wheel notch that lands in that window is dropped (measured
+   * on this host at 25 lines/s: 5 notches moved 14 of the nominal 29 lines).
+   * The view therefore applies the wheel through the public scrollLines() API
+   * for the case the program leaves to the terminal, and leaves xterm's path
+   * alone for alternate buffers and mouse-tracking programs.
+   */
+  describe('mouse wheel', () => {
+    function wheelEvent(options: WheelEventInit): WheelEvent {
+      return new WheelEvent('wheel', { bubbles: true, cancelable: true, ...options })
+    }
+
+    it('applies a wheel notch through scrollLines and suppresses the native viewport scroll', async () => {
+      const { app } = createAppMock()
+      render(
+        <ChatTerminal
+          app={app}
+          chatId="t1"
+          cwd="D:/code/demo"
+          visible
+          onExit={() => undefined}
+          onClose={() => undefined}
+          onSpawnError={() => undefined}
+        />,
+      )
+      await waitFor(() => expect(mockTerminalInstances[0].openedElement).not.toBeNull())
+      const terminal = mockTerminalInstances[0]
+      // 24 rows over 480 px: one row is 20 px, so a 100 px notch is 5 rows.
+      setMockScreenHeight(terminal, 480)
+      const event = wheelEvent({ deltaY: 100, deltaMode: WheelEvent.DOM_DELTA_PIXEL })
+
+      const handled = terminal.wheelHandler?.(event)
+
+      expect(handled).toBe(false)
+      expect(event.defaultPrevented).toBe(true)
+      expect(terminal.scrollLines).toHaveBeenCalledWith(5)
+    })
+
+    it('scrolls up for a negative notch and keeps sub-row remainders', async () => {
+      const { app } = createAppMock()
+      render(
+        <ChatTerminal
+          app={app}
+          chatId="t1"
+          cwd="D:/code/demo"
+          visible
+          onExit={() => undefined}
+          onClose={() => undefined}
+          onSpawnError={() => undefined}
+        />,
+      )
+      await waitFor(() => expect(mockTerminalInstances[0].openedElement).not.toBeNull())
+      const terminal = mockTerminalInstances[0]
+      setMockScreenHeight(terminal, 480)
+
+      terminal.wheelHandler?.(wheelEvent({ deltaY: -100, deltaMode: WheelEvent.DOM_DELTA_PIXEL }))
+      terminal.wheelHandler?.(wheelEvent({ deltaY: 20, deltaMode: WheelEvent.DOM_DELTA_PIXEL }))
+
+      expect(terminal.scrollLines.mock.calls.map((call) => call[0])).toEqual([-5, 1])
+    })
+
+    it.each([
+      [
+        'an alternate-screen program owns the wheel',
+        { bufferType: 'alternate' as const, mouse: 'none' },
+      ],
+      [
+        'a mouse-tracking program receives wheel reports',
+        { bufferType: 'normal' as const, mouse: 'vt200' },
+      ],
+    ])('leaves the wheel to xterm when %s', async (_name, scenario) => {
+      const { app } = createAppMock()
+      render(
+        <ChatTerminal
+          app={app}
+          chatId="t1"
+          cwd="D:/code/demo"
+          visible
+          onExit={() => undefined}
+          onClose={() => undefined}
+          onSpawnError={() => undefined}
+        />,
+      )
+      await waitFor(() => expect(mockTerminalInstances[0].openedElement).not.toBeNull())
+      const terminal = mockTerminalInstances[0]
+      setMockScreenHeight(terminal, 480)
+      terminal.buffer.active.type = scenario.bufferType
+      terminal.modes.mouseTrackingMode = scenario.mouse as 'none' | 'vt200'
+      const event = wheelEvent({ deltaY: 100, deltaMode: WheelEvent.DOM_DELTA_PIXEL })
+
+      const handled = terminal.wheelHandler?.(event)
+
+      expect(handled).toBe(true)
+      expect(event.defaultPrevented).toBe(false)
+      expect(terminal.scrollLines).not.toHaveBeenCalled()
+    })
   })
 
   it('detaches on unmount: unsubscribes, disposes xterm, never kills the session here', async () => {
