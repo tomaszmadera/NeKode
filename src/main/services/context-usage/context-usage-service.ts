@@ -21,10 +21,14 @@ import type { AgentLaunch } from '../agent-session-registry'
  * - Codex CLI: `<config>/sessions/<Y>/<M>/<D>/rollout-*.jsonl`; the last
  *   `token_count` event's `last_token_usage.input_tokens`. Codex has no
  *   session-id flag, so rollouts are correlated by their `session_meta` cwd and
- *   start time, under three rules: a rollout that started more than
- *   `MAX_START_AFTER_MS` after the launch is not this chat's, a rollout belongs
- *   to one chat, and when two chats compete for one rollout the closer start
- *   wins.
+ *   start time: a rollout must have started no earlier than
+ *   `START_TOLERANCE_MS` before the launch and no later than
+ *   `MAX_START_AFTER_MS` after it, a rollout belongs to one chat, and the
+ *   accepted pairing is the assignment with the smallest total distance over
+ *   every remaining chat and rollout. Two guards withhold a guess: pending
+ *   chats in one directory launched within the tolerance of each other, and,
+ *   when the best assignment is not better than the next one by a full margin,
+ *   the chats whose pairing flips between those two readings.
  *
  * Numbers come from the transcript, never from a guess: a chat whose
  * transcript cannot be read is absent from the result and its tile renders no
@@ -46,8 +50,19 @@ const START_TOLERANCE_MS = 2_000
  * session's rollout and keep it.
  */
 const MAX_START_AFTER_MS = 30_000
-/** A rollout written within this window may be a resumed, still-live session. */
-const RESUME_WINDOW_MS = 60_000
+/**
+ * Two candidate assignments whose total distance differs by less than this are
+ * indistinguishable: the launch moment is recorded before the CLI starts and
+ * session_meta is stamped when it writes, so both timestamps already carry up
+ * to a second of noise. Below one margin the pairing is a guess, not a match.
+ */
+const AMBIGUITY_MARGIN_MS = 1_000
+/** Cost of leaving a chat without a transcript; above any accepted distance. */
+const UNMATCHED_PENALTY = START_TOLERANCE_MS + MAX_START_AFTER_MS + 1
+/** Cost of a chat x rollout pair that is not a candidate at all. */
+const FORBIDDEN_COST = 1e9
+/** A rollout written within this window belongs to a session that still writes. */
+const LIVE_WINDOW_MS = 60_000
 /** How long a failed one-level transcript scan is trusted before retrying. */
 const SCAN_TTL_MS = 30_000
 
@@ -57,10 +72,9 @@ interface CachedTokens {
   tokens: number
 }
 
-interface CodexProposal {
-  chatId: string
+interface CodexCandidate {
   file: string
-  /** Distance from the launch; resumed rollouts are ranked last. */
+  /** Distance between the rollout start and the launch. */
   distance: number
 }
 
@@ -227,10 +241,69 @@ function normalizePath(path: string): string {
 /** A rollout this fresh belongs to a session that is still writing. */
 function isRecentlyWritten(file: string): boolean {
   try {
-    return Date.now() - statSync(file).mtimeMs <= RESUME_WINDOW_MS
+    return Date.now() - statSync(file).mtimeMs <= LIVE_WINDOW_MS
   } catch {
     return false
   }
+}
+
+/**
+ * Minimum-cost assignment of every row to a distinct column (Hungarian method
+ * over shortest augmenting paths). Rows must not outnumber columns, and every
+ * row is assigned, so a chat that may stay unmatched needs its own column.
+ */
+function minCostAssignment(cost: ReadonlyArray<ReadonlyArray<number>>): number[] {
+  const rows = cost.length
+  const columns = cost[0].length
+  const rowPotential = new Array<number>(rows + 1).fill(0)
+  const columnPotential = new Array<number>(columns + 1).fill(0)
+  /** matchedRow[column] is the 1-based row held by that column, 0 when free. */
+  const matchedRow = new Array<number>(columns + 1).fill(0)
+  const cameFrom = new Array<number>(columns + 1).fill(0)
+  for (let row = 1; row <= rows; row++) {
+    matchedRow[0] = row
+    let column = 0
+    const slack = new Array<number>(columns + 1).fill(Number.POSITIVE_INFINITY)
+    const used = new Array<boolean>(columns + 1).fill(false)
+    do {
+      used[column] = true
+      const current = matchedRow[column]
+      let delta = Number.POSITIVE_INFINITY
+      let next = 0
+      for (let candidate = 1; candidate <= columns; candidate++) {
+        if (used[candidate]) continue
+        const reduced =
+          cost[current - 1][candidate - 1] - rowPotential[current] - columnPotential[candidate]
+        if (reduced < slack[candidate]) {
+          slack[candidate] = reduced
+          cameFrom[candidate] = column
+        }
+        if (slack[candidate] < delta) {
+          delta = slack[candidate]
+          next = candidate
+        }
+      }
+      for (let candidate = 0; candidate <= columns; candidate++) {
+        if (used[candidate]) {
+          rowPotential[matchedRow[candidate]] += delta
+          columnPotential[candidate] -= delta
+        } else {
+          slack[candidate] -= delta
+        }
+      }
+      column = next
+    } while (matchedRow[column] !== 0)
+    do {
+      const prior = cameFrom[column]
+      matchedRow[column] = matchedRow[prior]
+      column = prior
+    } while (column !== 0)
+  }
+  const assignment = new Array<number>(rows).fill(-1)
+  for (let column = 1; column <= columns; column++) {
+    if (matchedRow[column] !== 0) assignment[matchedRow[column] - 1] = column - 1
+  }
+  return assignment
 }
 
 export class ContextUsageService {
@@ -371,11 +444,16 @@ export class ContextUsageService {
   }
 
   /**
-   * Assigns rollouts to the chats that have none yet. Every chat proposes its
-   * closest bounded candidate; proposals are accepted from the closest start
-   * outwards, so when two chats compete for one rollout the one whose start
-   * matches best wins and the other stays without a number. A rollout already
-   * claimed, or a chat already served, is skipped.
+   * Assigns rollouts to the chats that have none yet.
+   *
+   * Every chat x rollout pair inside the identity bounds is a candidate, and the
+   * accepted pairing is the one with the smallest total distance: a per-chat
+   * nearest pick hands the closer chat a rollout that belongs to an earlier
+   * launch and leaves its real owner without a number. Two guards keep a guess
+   * off the tile: pending chats in one directory launched within the tolerance
+   * of each other cannot be told apart, and when the next-best assignment is
+   * less than one margin away only the chats whose pairing flips between the
+   * two readings stay silent. A rollout already claimed is not a candidate.
    */
   #assignCodex(
     configDir: string,
@@ -383,52 +461,89 @@ export class ContextUsageService {
     result: Record<string, number>,
   ): void {
     if (pending.length === 0) return
-    const proposals: CodexProposal[] = []
-    for (const { chatId, launch } of pending) {
+    const ambiguous = this.#ambiguousLaunches(pending)
+    const chats = pending.filter((entry) => !ambiguous.has(entry.chatId))
+    if (chats.length === 0) return
+    const claimed = new Set(this.#codexClaims.keys())
+    const rollouts = this.#codexRollouts(configDir)
+    const columns: string[] = []
+    const candidates = chats.map(({ launch }) => {
       const wanted = normalizePath(launch.projectPath)
-      let best: { file: string; distance: number } | null = null
-      let resumable: { file: string; mtimeMs: number } | null = null
-      for (const file of this.#codexRollouts(configDir)) {
+      const found: CodexCandidate[] = []
+      for (const file of rollouts) {
+        if (claimed.has(file)) continue
         const meta = this.#codexMetaFor(file)
         if (meta === null || normalizePath(meta.cwd) !== wanted) continue
-        let mtimeMs: number
-        try {
-          mtimeMs = statSync(file).mtimeMs
-        } catch {
+        const distance = meta.startedAt - launch.startedAt
+        if (distance < -START_TOLERANCE_MS || distance > MAX_START_AFTER_MS) continue
+        found.push({ file, distance: Math.abs(distance) })
+        if (!columns.includes(file)) columns.push(file)
+      }
+      return found
+    })
+    if (columns.length === 0) return
+    const cost = candidates.map((found) => {
+      const pairs = columns.map((file) => {
+        const match = found.find((entry) => entry.file === file)
+        return match === undefined ? FORBIDDEN_COST : match.distance
+      })
+      // One dummy column per chat keeps it unmatched at a cost above any
+      // accepted distance, so a clear pairing still wins over no pairing.
+      return [...pairs, ...Array.from({ length: chats.length }, () => UNMATCHED_PENALTY)]
+    })
+    const total = (matrix: ReadonlyArray<ReadonlyArray<number>>, rows: readonly number[]): number =>
+      rows.reduce((sum, column, row) => sum + matrix[row][column], 0)
+    const best = minCostAssignment(cost)
+    const bestTotal = total(cost, best)
+    // The next-best solution is the best one that changes at least one pairing,
+    // which is the cheapest optimum found after forbidding one accepted pair.
+    // Only the chats whose pairing changes between the two solutions are
+    // ambiguous; every other chat keeps the number its own start supports.
+    const withheld = new Set<number>()
+    for (let row = 0; row < best.length; row++) {
+      if (best[row] >= columns.length) continue
+      const raised = cost.map((line) => [...line])
+      raised[row][best[row]] = FORBIDDEN_COST
+      const alternative = minCostAssignment(raised)
+      if (total(raised, alternative) - bestTotal >= AMBIGUITY_MARGIN_MS) continue
+      for (let other = 0; other < alternative.length; other++) {
+        if (alternative[other] !== best[other]) withheld.add(other)
+      }
+    }
+    for (let row = 0; row < best.length; row++) {
+      if (withheld.has(row)) continue
+      const column = best[row]
+      if (column >= columns.length) continue
+      const chatId = chats[row].chatId
+      const file = columns[column]
+      this.#codexFiles.set(chatId, file)
+      this.#codexClaims.set(file, chatId)
+      const tokens = this.#tokens(file)
+      if (tokens !== null) result[chatId] = tokens
+    }
+  }
+
+  /**
+   * Pending chats in one directory launched closer to each other than the start
+   * tolerance cannot be told apart by time, so the whole group stays silent.
+   */
+  #ambiguousLaunches(pending: ReadonlyArray<{ chatId: string; launch: AgentLaunch }>): Set<string> {
+    const ambiguous = new Set<string>()
+    for (let left = 0; left < pending.length; left++) {
+      for (let right = left + 1; right < pending.length; right++) {
+        const first = pending[left]
+        const second = pending[right]
+        if (normalizePath(first.launch.projectPath) !== normalizePath(second.launch.projectPath)) {
           continue
         }
-        // A session resumed by `codex resume` appends to a rollout that started
-        // BEFORE this launch; a file that started later and merely happens to be
-        // written now belongs to another session and is never adopted.
-        if (
-          meta.startedAt < launch.startedAt - START_TOLERANCE_MS &&
-          mtimeMs >= launch.startedAt - RESUME_WINDOW_MS
-        ) {
-          if (resumable === null || mtimeMs > resumable.mtimeMs) resumable = { file, mtimeMs }
+        if (Math.abs(first.launch.startedAt - second.launch.startedAt) >= START_TOLERANCE_MS) {
+          continue
         }
-        if (meta.startedAt < launch.startedAt - START_TOLERANCE_MS) continue
-        if (meta.startedAt > launch.startedAt + MAX_START_AFTER_MS) continue
-        const distance = Math.abs(meta.startedAt - launch.startedAt)
-        if (best === null || distance < best.distance) best = { file, distance }
-      }
-      if (best !== null) {
-        proposals.push({ chatId, file: best.file, distance: best.distance })
-      } else if (resumable !== null) {
-        proposals.push({ chatId, file: resumable.file, distance: Number.MAX_SAFE_INTEGER })
+        ambiguous.add(first.chatId)
+        ambiguous.add(second.chatId)
       }
     }
-    proposals.sort((left, right) => left.distance - right.distance)
-    const taken = new Set(this.#codexClaims.keys())
-    const served = new Set<string>()
-    for (const proposal of proposals) {
-      if (served.has(proposal.chatId) || taken.has(proposal.file)) continue
-      served.add(proposal.chatId)
-      taken.add(proposal.file)
-      this.#codexFiles.set(proposal.chatId, proposal.file)
-      this.#codexClaims.set(proposal.file, proposal.chatId)
-      const tokens = this.#tokens(proposal.file)
-      if (tokens !== null) result[proposal.chatId] = tokens
-    }
+    return ambiguous
   }
 
   /** Null is never cached: a torn read must be retried on the next poll. */

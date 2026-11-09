@@ -218,7 +218,7 @@ describe('ContextUsageService', () => {
     expect(usage.usage()).toEqual({})
   })
 
-  it('gives each Codex chat its own rollout and never shares one', () => {
+  it('matches each Codex chat to the rollout whose start matches its launch', () => {
     const root = tempRoot()
     const cwd = join(root, 'project')
     mkdirSync(cwd, { recursive: true })
@@ -261,7 +261,7 @@ describe('ContextUsageService', () => {
     expect(usage.usage()).toEqual({})
   })
 
-  it('accepts an older rollout that a resumed Codex session is still writing', () => {
+  it('never adopts a rollout that started before its launch, even while it is being written', () => {
     const root = tempRoot()
     const cwd = join(root, 'project')
     mkdirSync(cwd, { recursive: true })
@@ -277,10 +277,12 @@ describe('ContextUsageService', () => {
     utimesSync(file, touched, touched)
     expect(statSync(file).mtimeMs).toBeGreaterThan(startedAt - 60_000)
 
+    // The foreign rollout belongs to a session that is still live; this chat
+    // started afterwards, so it has no transcript of its own to show.
     const usage = service(root, [project('p1', cwd)], [chat('c1', 'p1', 'Codex')], {
       c1: launch('Codex', 'F:\\projects\\demo', startedAt),
     })
-    expect(usage.usage()).toEqual({ c1: 176_000 })
+    expect(usage.usage()).toEqual({})
   })
 
   it('does not adopt a rollout that started long after the launch', () => {
@@ -341,5 +343,149 @@ describe('ContextUsageService', () => {
 
     writeFileSync(file, codexRollout('F:\\projects\\demo', startedAt, 151_000))
     expect(usage.usage()).toEqual({ c1: 151_000 })
+  })
+
+  it('keeps both chats on their own rollout when the nearest pick would swap them', () => {
+    const root = tempRoot()
+    const cwd = join(root, 'project')
+    mkdirSync(cwd, { recursive: true })
+    const day = join(root, 'codex', 'sessions', '2026', '11', '08')
+    mkdirSync(day, { recursive: true })
+    const c1Launch = Date.parse('2026-11-08T12:00:00.000Z')
+    const c2Launch = c1Launch + 2_000
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-01-aaaa.jsonl'),
+      codexRollout('F:\\projects\\demo', c1Launch + 1_500, 121_000),
+    )
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-03-bbbb.jsonl'),
+      codexRollout('F:\\projects\\demo', c2Launch + 1_000, 163_000),
+    )
+
+    // Distances: c1 to rollout 1 is 1.5 s and to rollout 2 is 3 s; c2 to
+    // rollout 1 is 0.5 s and to rollout 2 is 1 s. A per-chat nearest pick hands
+    // rollout 1 to c2 (0.5 s) and leaves c1 without a transcript, while the two
+    // own pairs (1.5 s + 1 s = 2.5 s) beat the swap (3 s + 0.5 s = 3.5 s).
+    const chats = [chat('c1', 'p1', 'Codex'), chat('c2', 'p1', 'Codex')]
+    const launches: Record<string, AgentLaunch> = {
+      c1: launch('Codex', 'F:\\projects\\demo', c1Launch),
+      c2: launch('Codex', 'F:\\projects\\demo', c2Launch),
+    }
+    const usage = service(root, [project('p1', cwd)], chats, launches)
+    expect(usage.usage()).toEqual({ c1: 121_000, c2: 163_000 })
+    // A second poll reuses the cached claims instead of choosing again.
+    expect(usage.usage()).toEqual({ c1: 121_000, c2: 163_000 })
+    // A chat that appears later starts 0.1 s from rollout 1, but rollout 1 is
+    // already this chat's and a claim is not up for grabs.
+    chats.push(chat('c3', 'p1', 'Codex'))
+    launches.c3 = launch('Codex', 'F:\\projects\\demo', c1Launch + 1_600)
+    expect(usage.usage()).toEqual({ c1: 121_000, c2: 163_000 })
+  })
+
+  it('shows no number when the best assignment is inside one margin of the alternative', () => {
+    const root = tempRoot()
+    const cwd = join(root, 'project')
+    mkdirSync(cwd, { recursive: true })
+    const day = join(root, 'codex', 'sessions', '2026', '11', '08')
+    mkdirSync(day, { recursive: true })
+    const c1Launch = Date.parse('2026-11-08T12:00:00.000Z')
+    const c2Launch = c1Launch + 5_000
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-03-cccc.jsonl'),
+      codexRollout('F:\\projects\\demo', c1Launch + 3_000, 111_000),
+    )
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-03-dddd.jsonl'),
+      codexRollout('F:\\projects\\demo', c1Launch + 3_200, 133_000),
+    )
+
+    // Distances: c1 3.0 s and 3.2 s; c2 2.0 s and 1.8 s. The own pairs total
+    // 3.0 + 1.8 = 4.8 s and the swap 3.2 + 2.0 = 5.2 s, so the starts cannot
+    // tell the two rollouts apart and neither chat shows a number.
+    const usage = service(
+      root,
+      [project('p1', cwd)],
+      [chat('c1', 'p1', 'Codex'), chat('c2', 'p1', 'Codex')],
+      {
+        c1: launch('Codex', 'F:\\projects\\demo', c1Launch),
+        c2: launch('Codex', 'F:\\projects\\demo', c2Launch),
+      },
+    )
+    expect(usage.usage()).toEqual({})
+  })
+
+  it('shows no number for two chats launched within the start tolerance of each other', () => {
+    const root = tempRoot()
+    const cwd = join(root, 'project')
+    mkdirSync(cwd, { recursive: true })
+    const day = join(root, 'codex', 'sessions', '2026', '11', '08')
+    mkdirSync(day, { recursive: true })
+    const c1Launch = Date.parse('2026-11-08T12:00:00.000Z')
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-01-eeee.jsonl'),
+      codexRollout('F:\\projects\\demo', c1Launch + 1_200, 145_000),
+    )
+
+    // One rollout, two chats launched 1 s apart in one directory: the closer
+    // launch would take the only rollout, but nothing proves it is that chat's.
+    const usage = service(
+      root,
+      [project('p1', cwd)],
+      [chat('c1', 'p1', 'Codex'), chat('c2', 'p1', 'Codex')],
+      {
+        c1: launch('Codex', 'F:\\projects\\demo', c1Launch),
+        c2: launch('Codex', 'F:\\projects\\demo', c1Launch + 1_000),
+      },
+    )
+    expect(usage.usage()).toEqual({})
+  })
+
+  it('keeps an unambiguous chat when another pairing is ambiguous', () => {
+    const root = tempRoot()
+    const cwd = join(root, 'project')
+    const other = join(root, 'other')
+    mkdirSync(cwd, { recursive: true })
+    mkdirSync(other, { recursive: true })
+    const day = join(root, 'codex', 'sessions', '2026', '11', '08')
+    mkdirSync(day, { recursive: true })
+    const base = Date.parse('2026-11-08T12:00:00.000Z')
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-03-ffff.jsonl'),
+      codexRollout('F:\\projects\\demo', base + 3_000, 111_000),
+    )
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-03-gggg.jsonl'),
+      codexRollout('F:\\projects\\demo', base + 3_200, 133_000),
+    )
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-20-hhhh.jsonl'),
+      codexRollout('F:\\projects\\other', base + 20_100, 99_000),
+    )
+    writeFileSync(
+      join(day, 'rollout-2026-11-08T12-00-30-iiii.jsonl'),
+      codexRollout('F:\\projects\\demo', base + 30_100, 150_000),
+    )
+
+    // The two early chats of `demo` are inside one margin of each other and stay
+    // silent, but the late `demo` chat is 100 ms from its own rollout and so is
+    // the `other` chat: one ambiguous pair cannot blind an unrelated session,
+    // whether it sits in the same directory or another one.
+    const usage = service(
+      root,
+      [project('p1', cwd), project('p2', other)],
+      [
+        chat('c1', 'p1', 'Codex'),
+        chat('c2', 'p1', 'Codex'),
+        chat('c3', 'p2', 'Codex'),
+        chat('c4', 'p1', 'Codex'),
+      ],
+      {
+        c1: launch('Codex', 'F:\\projects\\demo', base),
+        c2: launch('Codex', 'F:\\projects\\demo', base + 5_000),
+        c3: launch('Codex', 'F:\\projects\\other', base + 20_000),
+        c4: launch('Codex', 'F:\\projects\\demo', base + 30_000),
+      },
+    )
+    expect(usage.usage()).toEqual({ c3: 99_000, c4: 150_000 })
   })
 })
