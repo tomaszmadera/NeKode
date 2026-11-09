@@ -822,7 +822,7 @@ describe('ChatWorkspace recent terminal output', () => {
     act(() => vi.advanceTimersByTime(250))
     expect(publish.mock.lastCall?.[0]).toEqual(new Set(['t1']))
     expect(screen.getByTestId(testIdFor.terminalView('t1')).style.display).toBe('none')
-    act(() => vi.advanceTimersByTime(1750))
+    act(() => vi.advanceTimersByTime(299_250))
     view.rerender(<ChatWorkspace {...props} selectionNonce={3} />)
     act(() => mockTerminalInstances[0].emitInput('typed input'))
     expect(bundle.app.terminals.write).toHaveBeenCalledWith('t1', 'typed input')

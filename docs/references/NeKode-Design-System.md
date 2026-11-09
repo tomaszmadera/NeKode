@@ -579,7 +579,7 @@ letter-spacing: 0.05em;
 color: var(--color-project-title);
 ```
 
-Every expanded project with at least one session shows `Recent sessions` directly under its row, including after the selection moves to another project (user decision 2026-10-27). An expanded project with no sessions shows `No active sessions` on that same left edge and does not show the heading. A collapsed project shows neither.
+Every expanded project with at least one session shows `Recent sessions` directly under its row, including after the selection moves to another project. An expanded project with no sessions shows only `New session`, with no heading or `No active sessions` caption (user decision 2026-11-09, NEKODE-165). The heading aligns with the project avatar; status dots and plus icons share a center axis, and session names align with the `New session` label. Session rows and the create action use the same height and spacing. A collapsed project shows none of these elements. Exact dimensions are owned by the [left-panel contract](../features/left-panel/spec.md).
 
 Chat items must use a **chat bubble icon**, not document/file icons.
 

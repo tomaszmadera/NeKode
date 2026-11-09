@@ -3,7 +3,7 @@ export interface ActivitySession {
   dispose: () => void
 }
 
-const SILENCE_MS = 2500
+const SILENCE_MS = 300_000
 const PUBLICATION_MS = 250
 
 /** One scheduler per workspace. Output mutates timestamps without React updates. */

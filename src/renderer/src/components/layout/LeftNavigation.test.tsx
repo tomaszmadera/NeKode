@@ -6,7 +6,7 @@ import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ChatStoreContext, createChatStore } from '../../stores/useChatStore'
 import { createProjectStore, ProjectStoreContext } from '../../stores/useProjectStore'
 import { createAppApiStub } from '../../test/app-api-stub'
-import { LeftNavigation, SESSION_CAPTION_CLASS } from './LeftNavigation'
+import { LeftNavigation } from './LeftNavigation'
 
 afterEach(cleanup)
 
@@ -294,6 +294,46 @@ describe('LeftNavigation session status indicators', () => {
     expect(screen.queryByTestId(testIdFor.chatTaskProgress('t2'))).toBeNull()
   })
 
+  it.each(['Projects', 'Sessions'])(
+    'restores output-driven status with attention priority in %s, without treating task progress as activity',
+    (viewName) => {
+      const props = {
+        ...defaultProps(),
+        chatsByProject: {
+          p1: [
+            { id: 't1', projectId: 'p1', name: 'Agent', taskRef: 'NEKODE-42', agentName: 'Codex' },
+            { id: 't2', projectId: 'p1', name: 'Other' },
+          ],
+        },
+        taskSnapshots: { p1: progressSnapshot('NEKODE-42') },
+      }
+      const view = render(navigation(props))
+      fireEvent.click(
+        viewName === 'Projects'
+          ? screen.getByTestId(TEST_ID.projectsHeader)
+          : screen.getByRole('button', { name: /^Sessions/ }),
+      )
+      const status = (id: string) =>
+        screen.getByTestId(testIdFor.chatStatusDot(id)).getAttribute('data-status')
+      expect(screen.getByTestId(testIdFor.chatTaskProgress('t1')).textContent).toBe('5/8')
+      expect(status('t1')).toBe('idle')
+      const active = { ...props, activity: new Set(['t1']) }
+      view.rerender(navigation(active))
+      expect(status('t1')).toBe('running')
+      expect(status('t2')).toBe('idle')
+      const waiting = { ...active, attention: { t1: { message: 'Confirm?' } } }
+      view.rerender(navigation(waiting))
+      expect(status('t1')).toBe('waiting')
+      view.rerender(navigation({ ...waiting, attentionBadgeEnabled: false }))
+      expect(status('t1')).toBe('running')
+      view.rerender(navigation(active))
+      expect(status('t1')).toBe('running')
+      view.rerender(navigation(props))
+      expect(status('t1')).toBe('idle')
+      expect(screen.getByTestId(testIdFor.chatTaskProgress('t1')).textContent).toBe('5/8')
+    },
+  )
+
   it('updates status immediately and hides unavailable time and context telemetry', () => {
     const props = {
       ...defaultProps(),
@@ -463,11 +503,30 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(screen.getByTestId(testIdFor.projectRow('p1')).style.backgroundColor).toContain('12%')
   })
 
-  it('shows the empty state and new-session action under the expanded project label', () => {
-    render(navigation({ ...defaultProps() }))
-    const empty = screen.getByText('No active sessions')
+  it('shows only the create action for an empty expanded project, then labels its first session', () => {
+    const props = defaultProps()
+    const view = render(navigation(props))
+    const sessions = screen.getByTestId(testIdFor.projectChats('p1'))
+    expect(within(sessions).queryByRole('list')).toBeNull()
+    expect(screen.queryByText('No active sessions')).toBeNull()
+    expect(screen.queryByText('Recent sessions')).toBeNull()
+    fireEvent.click(within(sessions).getByRole('button', { name: 'New session in NEKODE' }))
+    expect(props.onCreateChat).toHaveBeenCalledWith('p1')
+
+    view.rerender(
+      navigation({
+        ...props,
+        chatsByProject: { p1: [{ id: 't1', projectId: 'p1', name: 'First session' }] },
+      }),
+    )
     expect(screen.getByText('Recent sessions')).toBeTruthy()
-    expect(empty.className).toBe(SESSION_CAPTION_CLASS)
+    expect(within(sessions).getByRole('list')).toBeTruthy()
+    expect(within(sessions).getByText('First session')).toBeTruthy()
+
+    view.rerender(navigation(props))
+    expect(screen.queryByText('Recent sessions')).toBeNull()
+    expect(screen.queryByText('No active sessions')).toBeNull()
+    expect(within(sessions).getByRole('button', { name: 'New session in NEKODE' })).toBeTruthy()
   })
 
   it('renders 34px project row with 32x32 action buttons (spec §4.1)', () => {
@@ -492,7 +551,7 @@ describe('LeftNavigation project avatar and initials', () => {
     expect(projectFilesIcon?.getAttribute('height')).toBe('16')
   })
 
-  it('indents session cards 28px on the left (spec §4.3)', () => {
+  it('groups project sessions and their create action under the shared layout', () => {
     const props = {
       ...defaultProps(),
       kanbanProjectIds: new Set(['p1']),
@@ -503,7 +562,7 @@ describe('LeftNavigation project avatar and initials', () => {
     render(navigation({ ...props }))
 
     const container = screen.getByTestId(testIdFor.projectChats('p1'))
-    expect(container.style.paddingLeft).toBe('28px')
+    expect(container.className).toBe('nk-project-sessions')
     const dot = screen.getByTestId(testIdFor.chatStatusDot('t1'))
     expect(dot.className).toContain('nk-session-status')
 

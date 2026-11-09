@@ -56,8 +56,6 @@ export interface LeftNavigationProps {
   app?: AppApi
 }
 
-export const SESSION_CAPTION_CLASS = 'text-xs text-ink-muted'
-
 type ContextMenuState = {
   x: number
   y: number
@@ -76,10 +74,8 @@ export function getChatLabel(chat: ChatInfo): string {
 function resolveChatStatus(
   chat: ChatInfo,
   sessionStatuses: Record<string, SessionStatus> | undefined,
-  _attention: Record<string, { message: string | null }>,
-  _activity: ReadonlySet<string> | undefined,
+  activity: ReadonlySet<string> | undefined,
   badgeVisible: boolean,
-  task?: SessionTaskProgress,
 ): SessionStatus {
   if (badgeVisible) {
     return 'waiting'
@@ -90,7 +86,7 @@ function resolveChatStatus(
   if (chat.status) {
     return chat.status
   }
-  if (task !== undefined && !task.stale) {
+  if (activity?.has(chat.id)) {
     return 'running'
   }
   return 'idle'
@@ -212,14 +208,7 @@ export function LeftNavigation({
           (isChatSelected ? attentionActiveIndicatorEnabled : attentionBadgeEnabled)
 
         const task = sessionTasks?.[chat.id]
-        const status = resolveChatStatus(
-          chat,
-          sessionStatuses,
-          attention,
-          activity,
-          badgeVisible,
-          task,
-        )
+        const status = resolveChatStatus(chat, sessionStatuses, activity, badgeVisible)
         const label = getChatLabel(chat)
 
         list.push({
@@ -471,22 +460,14 @@ export function LeftNavigation({
                   const badgeVisible =
                     attentionState !== undefined &&
                     (isChatSelected ? attentionActiveIndicatorEnabled : attentionBadgeEnabled)
-                  const task = sessionTasks?.[chat.id]
-                  const st = resolveChatStatus(
-                    chat,
-                    sessionStatuses,
-                    attention,
-                    activity,
-                    badgeVisible,
-                    task,
-                  )
+                  const st = resolveChatStatus(chat, sessionStatuses, activity, badgeVisible)
                   if (st === 'running') runningCount++
                   if (st === 'waiting') waitingCount++
                 }
 
                 return (
                   <li key={project.id} style={{ listStyle: 'none' }}>
-                    <section style={{ padding: isExpanded ? '0 0 10px 0' : 0 }}>
+                    <section className="nk-project-section" data-expanded={isExpanded}>
                       {/* Project row: 34px, rounded (8px) inset tint when active */}
                       {/* biome-ignore lint/a11y/noStaticElementInteractions: project row wrapper handles context menu and shortcut gestures */}
                       <div
@@ -773,57 +754,22 @@ export function LeftNavigation({
 
                       {isExpanded ? (
                         <div>
+                          {chats.length > 0 ? (
+                            <div className="nk-recent-sessions-heading">Recent sessions</div>
+                          ) : null}
                           <div
-                            style={{
-                              margin: '8px 0 2px 0',
-                              paddingLeft: 28,
-                              fontSize: 11,
-                              fontWeight: 600,
-                              letterSpacing: '0.08em',
-                              textTransform: 'uppercase',
-                              color: 'var(--color-ink-muted)',
-                            }}
-                          >
-                            Recent sessions
-                          </div>
-                          <div
+                            className="nk-project-sessions"
                             data-testid={testIdFor.projectChats(project.id)}
-                            style={{
-                              padding: '2px 0 0 28px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 6,
-                            }}
                           >
-                            {chats.length === 0 ? (
-                              <div
-                                className={SESSION_CAPTION_CLASS}
-                                style={{
-                                  fontSize: 12,
-                                  color: 'var(--color-ink-disabled)',
-                                  padding: '4px 12px',
-                                }}
-                              >
-                                No active sessions
-                              </div>
-                            ) : (
-                              <ul
-                                style={{
-                                  listStyle: 'none',
-                                  margin: 0,
-                                  padding: 0,
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: 6,
-                                }}
-                              >
+                            {chats.length > 0 ? (
+                              <ul className="nk-project-session-list">
                                 {allSessions
                                   .filter((item) => item.project.id === project.id)
                                   .map((item) => (
                                     <li key={item.chat.id}>{renderSession(item)}</li>
                                   ))}
                               </ul>
-                            )}
+                            ) : null}
                             <button
                               type="button"
                               aria-label={`New session in ${project.name}`}
@@ -845,25 +791,10 @@ export function LeftNavigation({
                                 }
                               }}
                               className="nk-new-session-action nk-icon-btn"
-                              style={{
-                                alignSelf: 'flex-start',
-                                height: 32,
-                                padding: '0 12px',
-                                gap: 8,
-                                border: 0,
-                                borderRadius: 8,
-                                background: 'transparent',
-                                fontSize: 13,
-                                fontWeight: 500,
-                                color: 'var(--color-accent)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                cursor: 'pointer',
-                              }}
                             >
                               <svg
-                                width="14"
-                                height="14"
+                                width="18"
+                                height="18"
                                 viewBox="0 0 24 24"
                                 fill="none"
                                 stroke="currentColor"

@@ -2705,10 +2705,13 @@ describe('project and chat data flow', () => {
     render(<App app={app} />)
     openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     const chats = await screen.findByTestId(testIdFor.projectChats('p1'))
-    expect(within(chats).getByText('No active sessions')).toBeTruthy()
+    expect(within(chats).queryByText('No active sessions')).toBeNull()
+    expect(screen.queryByText('Recent sessions')).toBeNull()
+    expect(within(chats).getByRole('button', { name: 'New session in Demo' })).toBeTruthy()
     expect(within(chats).queryByRole('list')).toBeNull()
     fireEvent.click(await screen.findByTestId(TEST_ID.newChatButton))
     await screen.findByTestId(testIdFor.chatRow('t1'))
+    expect(screen.getByText('Recent sessions')).toBeTruthy()
     expect(within(chats).queryByText('No active sessions')).toBeNull()
     fireEvent.click(screen.getByTestId(TEST_ID.newChatButton))
     await screen.findByTestId(testIdFor.chatRow('t2'))
@@ -4094,15 +4097,27 @@ describe('chat attention badge (end to end through App)', () => {
       act(() => vi.advanceTimersByTime(250))
       expect(screen.getByTestId(testIdFor.chatActivity('t1'))).toBeTruthy()
       expect(screen.queryByTestId(testIdFor.chatActivity('t2'))).toBeNull()
+      expect(screen.getByTestId(testIdFor.chatStatusDot('t1')).getAttribute('data-status')).toBe(
+        'running',
+      )
       emitData('t1', '\x07')
       expect(screen.getByTestId(testIdFor.chatAttentionBadge('t1'))).toBeTruthy()
+      expect(screen.getByTestId(testIdFor.chatStatusDot('t1')).getAttribute('data-status')).toBe(
+        'waiting',
+      )
       expect(screen.queryByTestId(testIdFor.chatActivity('t1'))).toBeNull()
-      act(() => vi.advanceTimersByTime(2000))
+      act(() => vi.advanceTimersByTime(299_500))
       fireEvent.click(screen.getByTestId(testIdFor.chatRow('t1')))
       expect(screen.queryByTestId(testIdFor.chatAttentionBadge('t1'))).toBeNull()
       expect(screen.getByTestId(testIdFor.chatActivity('t1'))).toBeTruthy()
+      expect(screen.getByTestId(testIdFor.chatStatusDot('t1')).getAttribute('data-status')).toBe(
+        'running',
+      )
       act(() => vi.advanceTimersByTime(500))
       expect(screen.queryByTestId(testIdFor.chatActivity('t1'))).toBeNull()
+      expect(screen.getByTestId(testIdFor.chatStatusDot('t1')).getAttribute('data-status')).toBe(
+        'idle',
+      )
       const stateKeys = vi.mocked(app.state.set).mock.calls.map(([key]) => key)
       expect(stateKeys.some((key) => key.startsWith('activity.'))).toBe(false)
     } finally {
