@@ -64,6 +64,7 @@ The central concept of the MVP is the **Chat**: a terminal session assigned to a
 - No LSP (Language Server Protocol) engine and no IntelliSense.
 - No automatic creation or management of Git worktrees per task.
 - No cloud sync and no user accounts (data is stored only locally).
+- No screen-reader or other accessibility support, now or later (user decision 2026-11-09): no accessible names, announcements, ARIA requirements or accessibility reviews. Existing `aria-label` and screen-reader-only markup stays as it is, is not a requirement, and is not extended.
 - Post-MVP: the **Task** entity, a unit of work pinned to a chat, with a panel for recording work progress (the `.agents/tasks/*/task.md` records from project-template can serve as a pattern, but the app must not depend on a specific harness).
 - Post-MVP: work handoff snapshots linked to tasks.
 - Post-MVP: manual chat renaming (the `name` field in the database is prepared). New chats are named `[shell] profile name`, and without a profile just `[shell]`. The prefix is the shell abbreviation: `PS5`, `PS7`, `cmd`, `bash`, `WSL`, and for a custom shell the file name. The shell comes from the project configuration at the moment the chat is created; the full label (`PowerShell 7`, `WSL: Ubuntu-24.04`) stays in Project Settings and on the bottom terminal tab. Existing chats keep their saved names.
