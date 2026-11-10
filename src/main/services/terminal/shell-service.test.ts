@@ -231,10 +231,12 @@ describe('resolve (fallback rules)', () => {
     expect(service.effectiveChoice('wsl:Removed')).toBe('wsl:Removed')
     await service.detectAsync([])
     expect(service.effectiveChoice('wsl:Removed')).toBe('default')
-    // The stale id now resolves and reads as the host shell, like any other stale choice.
-    expect(service.resolve('wsl:Removed')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
-    expect(service.label('wsl:Removed')).toBe('PowerShell')
-    expect(service.chatLabel('wsl:Removed')).toBe('PS5')
+    // The stale id now resolves and reads as the host shell, like any other stale
+    // choice. The host default itself differs per platform, so compare against it
+    // instead of a literal (CI runs this file on Linux too).
+    expect(service.resolve('wsl:Removed')).toEqual(service.resolve(null))
+    expect(service.label('wsl:Removed')).toBe(service.label(null))
+    expect(service.chatLabel('wsl:Removed')).toBe(service.chatLabel(null))
     // A distribution detection lists still runs in WSL.
     expect(service.resolve('wsl:Ubuntu-24.04')).toEqual({
       file: 'wsl.exe',
