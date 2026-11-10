@@ -426,4 +426,109 @@ describe('ShellTab', () => {
 
     await screen.findByText('Failed to save project color.')
   })
+
+  // Environment group (spec project-environment-clarity Behaviour 9-13).
+  describe('Environment group', () => {
+    const localDetection = [
+      { id: 'default', label: 'PowerShell' },
+      { id: 'wsl:Ubuntu-24.04', label: 'WSL: Ubuntu-24.04' },
+    ]
+
+    it('states a Local project on a host shell', async () => {
+      render(<ShellTab app={appMock()} projectId="p1" projectPath={'C:\\code\\app'} />)
+      await screen.findByTestId(TEST_ID.settingsShellSelect)
+      const group = screen.getByTestId(TEST_ID.settingsShellEnvironment)
+      expect(group.textContent).toContain('Local folder on this computer')
+      expect(group.textContent).toContain('Terminals and agents run on this computer.')
+    })
+
+    it('states a Local project whose shell choice runs in WSL', async () => {
+      render(
+        <ShellTab
+          app={appMock({
+            detect: vi.fn().mockResolvedValue(localDetection),
+            get: vi.fn().mockResolvedValue('wsl:Ubuntu-24.04'),
+          })}
+          projectId="p1"
+          projectPath={'C:\\code\\app'}
+        />,
+      )
+      await screen.findByTestId(TEST_ID.settingsShellSelect)
+      expect(screen.getByTestId(TEST_ID.settingsShellEnvironment).textContent).toContain(
+        'Terminals and agents run in WSL: Ubuntu-24.04. Files stay in the Windows folder.',
+      )
+    })
+
+    it('reads a stale wsl: choice that detection no longer lists as a host shell', async () => {
+      render(
+        <ShellTab
+          app={appMock({ get: vi.fn().mockResolvedValue('wsl:Removed') })}
+          projectId="p1"
+          projectPath={'C:\\code\\app'}
+        />,
+      )
+      await screen.findByTestId(TEST_ID.settingsShellSelect)
+      expect(screen.getByTestId(TEST_ID.settingsShellEnvironment).textContent).toContain(
+        'Terminals and agents run on this computer.',
+      )
+    })
+
+    it('states a WSL project with its location and distribution', async () => {
+      const detect = vi
+        .fn()
+        .mockResolvedValue([{ id: 'default', label: 'Default (WSL: Ubuntu-24.04)' }])
+      render(
+        <ShellTab
+          app={appMock({ detect })}
+          projectId="p-wsl"
+          projectPath={'\\\\wsl.localhost\\Ubuntu-24.04\\home\\tomek\\app'}
+        />,
+      )
+      await screen.findByTestId(TEST_ID.settingsShellSelect)
+      const group = screen.getByTestId(TEST_ID.settingsShellEnvironment)
+      expect(group.textContent).toContain('WSL project: Ubuntu-24.04, /home/tomek/app')
+      expect(group.textContent).toContain('Terminals and agents run in Ubuntu-24.04.')
+    })
+
+    it('states an SSH project, lists what is unavailable and hides the custom path input', async () => {
+      const detect = vi.fn()
+      render(
+        <ShellTab
+          app={appMock({
+            detect,
+            list: vi
+              .fn()
+              .mockResolvedValue([{ id: 'default', label: 'Default (remote login shell)' }]),
+          })}
+          projectId="p-ssh"
+          projectPath="ssh://tomek@minipc:2222/srv/app"
+        />,
+      )
+      await screen.findByTestId(TEST_ID.settingsShellSelect)
+      const group = screen.getByTestId(TEST_ID.settingsShellEnvironment)
+      expect(group.textContent).toContain('SSH project: tomek@minipc:2222, /srv/app')
+      expect(group.textContent).toContain('Terminals and agents run on that host.')
+      expect(group.textContent).toContain(
+        'Read-only files and Git. Not available: Actions, Kanban Start and Resume, task progress, handoff files, opening files in other apps.',
+      )
+      expect(detect).not.toHaveBeenCalled()
+      expect(screen.queryByTestId(TEST_ID.settingsShellCustomInput)).toBeNull()
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('keeps the location line while detection is still running', () => {
+      const detect = vi.fn().mockImplementation(() => new Promise(() => {}))
+      render(<ShellTab app={appMock({ detect })} projectId="p1" projectPath={'C:\\code\\app'} />)
+      expect(screen.getByTestId(TEST_ID.settingsShellDetecting)).toBeTruthy()
+      const group = screen.getByTestId(TEST_ID.settingsShellEnvironment)
+      expect(group.textContent).toContain('Local folder on this computer')
+      expect(group.textContent).toContain('Terminals and agents run on this computer.')
+    })
+
+    it('renders no group without a project path', async () => {
+      render(<ShellTab app={appMock()} projectId="p1" />)
+      await screen.findByTestId(TEST_ID.settingsShellSelect)
+      expect(screen.queryByTestId(TEST_ID.settingsShellEnvironment)).toBeNull()
+    })
+  })
 })

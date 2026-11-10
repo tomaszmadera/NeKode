@@ -95,6 +95,33 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
     }
   })
 
+  it('launches a Local agent chat on the host when detection no longer lists its WSL choice', async () => {
+    const { services, project } = setup('D:/My Project')
+    try {
+      services.state.set(projectShellKey(project.id), 'wsl:Removed')
+      const profile = services.agentProfiles.put({
+        id: null,
+        name: 'Codex',
+        command: 'codex --flag "{prompt}"',
+      }).profiles[0]
+      services.agentProfiles.selectionSet(project.id, {
+        selectedIds: [profile.id],
+        defaultId: null,
+      })
+      // Detection lists Ubuntu only, so the stored distribution is a stale id.
+      await services.terminals.shellDetect(project.id)
+      const chat = await services.chats.createWithAgent(project.id, profile.id)
+      // Chat name, Environment text and the spawn all read the same fallback.
+      expect(chat).toMatchObject({ name: '[PS5] Codex', agentName: 'Codex' })
+      expect(createNodePty).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(createNodePty).mock.calls[0][0].file).not.toBe('wsl.exe')
+      expect(vi.mocked(runWslAsync)).not.toHaveBeenCalled()
+    } finally {
+      services.terminals.terminateAll()
+      services.closeDatabase?.()
+    }
+  })
+
   it.each(['new-chat', 'start', 'resume'] as const)(
     'runs a Local project profile in its selected WSL distribution for %s',
     async (mode) => {
@@ -199,6 +226,65 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
       services.agentProfiles.selectionSet(project.id, { selectedIds: [], defaultId: null })
       services.agentProfiles.delete(profile.id)
       expect(services.chats.list(project.id)).toEqual([chat])
+    } finally {
+      services.terminals.terminateAll()
+      services.closeDatabase?.()
+    }
+  })
+
+  it('rejects a terminal whose cwd names another WSL distribution', () => {
+    const { services, project } = setup()
+    try {
+      const chat = services.chats.create(project.id)
+      expect(() =>
+        services.terminals.create(chat.id, '\\\\wsl.localhost\\Debian\\home\\user\\Project'),
+      ).toThrow('A WSL terminal must use its project distribution.')
+      expect(createNodePty).not.toHaveBeenCalled()
+    } finally {
+      services.terminals.terminateAll()
+      services.closeDatabase?.()
+    }
+  })
+
+  it('keeps a WSL project usable for a transport-only call that supplies no cwd', () => {
+    const { services, project } = setup()
+    try {
+      // R3: a null cwd has no distribution to compare; the guard must not invent one.
+      expect(() => services.actions.execute('missing-action', project.id, true)).toThrow(
+        'Action not found.',
+      )
+      expect(createNodePty).not.toHaveBeenCalled()
+    } finally {
+      services.terminals.terminateAll()
+      services.closeDatabase?.()
+    }
+  })
+
+  it('keeps the WSL parser error for a malformed cwd instead of the distribution message', () => {
+    const { services, project } = setup()
+    const malformed = '\\\\wsl.localhost\\Ubuntu'
+    const parserError =
+      'Use an absolute Linux project directory without traversal or empty components.'
+    try {
+      const chat = services.chats.create(project.id)
+      expect(() => services.terminals.create(chat.id, malformed)).toThrow(parserError)
+      expect(createNodePty).not.toHaveBeenCalled()
+    } finally {
+      services.terminals.terminateAll()
+      services.closeDatabase?.()
+    }
+  })
+
+  it('keeps the WSL parser error for a malformed cwd on a Local project', () => {
+    const { services, project } = setup('D:/Project')
+    const parserError =
+      'Use an absolute Linux project directory without traversal or empty components.'
+    try {
+      const chat = services.chats.create(project.id)
+      expect(() => services.terminals.create(chat.id, '\\\\wsl.localhost\\Ubuntu')).toThrow(
+        parserError,
+      )
+      expect(createNodePty).not.toHaveBeenCalled()
     } finally {
       services.terminals.terminateAll()
       services.closeDatabase?.()

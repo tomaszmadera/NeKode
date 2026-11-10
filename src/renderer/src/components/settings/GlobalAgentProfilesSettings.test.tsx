@@ -251,3 +251,84 @@ describe('global agent library editor', () => {
     })
   })
 })
+
+// Host-program warning below Command (spec project-environment-clarity
+// Behaviour 14): advice only, the save path and the stored command never change.
+describe('host program warning', () => {
+  async function openNewAgent(): Promise<HTMLInputElement> {
+    fireEvent.click(await screen.findByRole('button', { name: 'Add agent' }))
+    return screen.getByLabelText('Command') as HTMLInputElement
+  }
+
+  it.each([
+    ['ssh host "{prompt}"'],
+    ['ssh.exe -p 2222 host "{prompt}"'],
+    ['wsl -d Ubuntu claude "{prompt}"'],
+    ['WSL.EXE -d Ubuntu claude "{prompt}"'],
+    ['"C:\\Windows\\System32\\wsl.exe" -d Ubuntu claude "{prompt}"'],
+    ['C:\\tools/bin/wsl.exe -d Ubuntu claude "{prompt}"'],
+  ])('warns for %j', async (command) => {
+    harness([])
+    fireEvent.change(await openNewAgent(), { target: { value: command } })
+    expect(screen.getByTestId(TEST_ID.settingsAgentCommandWarning)).toBeTruthy()
+  })
+
+  it.each([['sshpass -p pw ssh host "{prompt}"'], ['claude "{prompt}"'], ['"unclosed']])(
+    'does not warn for %j',
+    async (command) => {
+      harness([])
+      fireEvent.change(await openNewAgent(), { target: { value: command } })
+      expect(screen.queryByTestId(TEST_ID.settingsAgentCommandWarning)).toBeNull()
+    },
+  )
+
+  it('states the cause and the alternative for each host program', async () => {
+    harness([])
+    const input = await openNewAgent()
+    fireEvent.change(input, { target: { value: 'wsl -d Ubuntu "{prompt}"' } })
+    expect(screen.getByTestId(TEST_ID.settingsAgentCommandWarning).textContent).toContain(
+      "This starts WSL as a host program, so NeKode does not choose the distribution or map the project directory. To run agents inside WSL, set the project's shell to WSL or add a WSL project.",
+    )
+    fireEvent.change(input, { target: { value: 'ssh host "{prompt}"' } })
+    expect(screen.getByTestId(TEST_ID.settingsAgentCommandWarning).textContent).toContain(
+      'This starts ssh as a host program, so NeKode does not change into the project directory on the remote host. To work on a remote host, add the project as an SSH project.',
+    )
+  })
+
+  it('follows edits live and disappears when the command changes', async () => {
+    harness([])
+    const input = await openNewAgent()
+    fireEvent.change(input, { target: { value: 'ssh host "{prompt}"' } })
+    expect(screen.getByTestId(TEST_ID.settingsAgentCommandWarning)).toBeTruthy()
+    fireEvent.change(input, { target: { value: 'claude "{prompt}"' } })
+    expect(screen.queryByTestId(TEST_ID.settingsAgentCommandWarning)).toBeNull()
+  })
+
+  it('saves the unchanged command with the warning shown', async () => {
+    const app = harness([])
+    const input = await openNewAgent()
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Remote' } })
+    fireEvent.change(input, { target: { value: 'ssh host "{prompt}"' } })
+    expect(screen.getByTestId(TEST_ID.settingsAgentCommandWarning)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
+    await waitFor(() =>
+      expect(app.agentProfiles.put).toHaveBeenCalledWith({
+        id: null,
+        name: 'Remote',
+        command: 'ssh host "{prompt}"',
+      }),
+    )
+    expect(screen.queryByTestId(TEST_ID.settingsAgentCommandWarning)).toBeNull()
+  })
+
+  it('keeps the parse error and shows no warning for an unparsable command', async () => {
+    const app = harness([])
+    const input = await openNewAgent()
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Broken' } })
+    fireEvent.change(input, { target: { value: '"unclosed {prompt}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
+    expect((await screen.findByRole('alert')).textContent).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.settingsAgentCommandWarning)).toBeNull()
+    expect(app.agentProfiles.put).not.toHaveBeenCalled()
+  })
+})

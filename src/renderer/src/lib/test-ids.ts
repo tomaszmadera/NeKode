@@ -338,6 +338,10 @@ export const TEST_ID = {
   settingsShowProjectIcons: 'settings-show-project-icons',
   /** Project Settings: project color section. */
   settingsProjectColorSection: 'settings-project-color-section',
+  /** Project Settings Shell tab: read-only Environment group (spec project-environment-clarity 9). */
+  settingsShellEnvironment: 'settings-shell-environment',
+  /** Global Agents form: host-program warning below Command (spec project-environment-clarity 14). */
+  settingsAgentCommandWarning: 'settings-agent-command-warning',
   terminalContextMenu: 'terminal-context-menu',
   terminalContextCopy: 'terminal-context-copy',
   terminalContextPaste: 'terminal-context-paste',
@@ -350,6 +354,8 @@ export const testIdFor = {
   projectRow: (projectId: string): string => `project-row-${projectId}`,
   projectSelect: (projectId: string): string => `project-select-${projectId}`,
   projectAvatar: (projectId: string): string => `project-avatar-${projectId}`,
+  /** Environment badge of a project row (spec project-environment-clarity 7). */
+  projectEnvironmentBadge: (projectId: string): string => `project-environment-badge-${projectId}`,
   projectToggle: (projectId: string): string => `project-toggle-${projectId}`,
   projectChats: (projectId: string): string => `project-chats-${projectId}`,
   projectFiles: (projectId: string): string => `project-files-${projectId}`,

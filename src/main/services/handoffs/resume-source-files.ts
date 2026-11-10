@@ -6,7 +6,7 @@ import type {
   ResumeSourcePreview,
 } from '@shared/contracts/resume-sources-contract'
 import { AppError } from '@shared/ipc-error'
-import { parseWslPath } from '@shared/wsl-path'
+import { projectWslLocation } from '@shared/project-environment'
 
 export const MAX_RESUME_FILE_BYTES = 1024 * 1024
 export const MAX_RESUME_VISITED = 10000
@@ -38,14 +38,15 @@ export function resumePathContext(
   projectPath: string,
   platform: NodeJS.Platform = process.platform,
 ) {
-  const wsl = parseWslPath(projectPath)
+  const wsl = projectWslLocation(projectPath)
   if (wsl !== null && platform !== 'win32')
     throw new AppError('config', 'WSL Resume sources require NeKode running on Windows.')
   const native = platform === 'win32' ? win32 : posix
   const linuxLocation = (path: string) => {
     // A source may use the distribution root even though a registered project may not.
     const root = /^\/\/(?:wsl\$|wsl\.localhost)\/([^/]+)\/?$/i.exec(path.replaceAll('\\', '/'))
-    const location = root === null ? parseWslPath(path) : { distribution: root[1], linuxPath: '/' }
+    const location =
+      root === null ? projectWslLocation(path) : { distribution: root[1], linuxPath: '/' }
     if (
       location === null ||
       location.distribution.toLowerCase() !== wsl?.distribution.toLowerCase()

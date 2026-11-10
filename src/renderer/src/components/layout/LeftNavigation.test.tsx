@@ -235,6 +235,32 @@ describe('LeftNavigation session status indicators', () => {
     expect(within(screen.getByTestId(testIdFor.projectSelect('p2'))).queryByText('WSL')).toBeNull()
   })
 
+  it.each([
+    ['ssh://minipc/srv/app', 'SSH: minipc'],
+    ['ssh://tomek@minipc/srv/app', 'SSH: tomek@minipc'],
+    ['ssh://tomek@minipc:2222/srv/app', 'SSH: tomek@minipc:2222'],
+    ['ssh://tomek@[2001:db8::1]:2200/srv/app', 'SSH: tomek@[2001:db8::1]:2200'],
+  ])('marks an SSH project location with its destination and port: %s', (path, title) => {
+    const props = defaultProps()
+    props.projects[0].path = path
+    props.projects[1].runtimeLabel = 'SSH: misleading legacy label'
+    render(navigation({ ...props }))
+    const project = screen.getByTestId(testIdFor.projectSelect('p1'))
+    const badge = within(project).getByText('SSH')
+    expect(badge.getAttribute('title')).toBe(title)
+    expect(badge).toBe(screen.getByTestId(testIdFor.projectEnvironmentBadge('p1')))
+    expect(within(project).queryByText('WSL')).toBeNull()
+    expect(within(screen.getByTestId(testIdFor.projectSelect('p2'))).queryByText('SSH')).toBeNull()
+  })
+
+  it('shows no environment badge for a Local project', () => {
+    render(navigation({ ...defaultProps() }))
+    const project = screen.getByTestId(testIdFor.projectSelect('p1'))
+    expect(within(project).queryByText('SSH')).toBeNull()
+    expect(within(project).queryByText('WSL')).toBeNull()
+    expect(screen.queryByTestId(testIdFor.projectEnvironmentBadge('p1'))).toBeNull()
+  })
+
   it('renders every session status and includes project identity in its accessible name', () => {
     render(
       navigation({

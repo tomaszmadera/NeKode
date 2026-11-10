@@ -1,6 +1,7 @@
 import { posix, win32 } from 'node:path'
+import { projectWslLocation } from '@shared/project-environment'
 import { sshProjectPathIdentity } from '@shared/ssh-target'
-import { parseWslPath, wslProjectPath } from '@shared/wsl-path'
+import { wslProjectPath } from '@shared/wsl-path'
 
 // String identity only. No symlink or filesystem lookup: WSL Linux case must
 // survive even when the host platform is win32.
@@ -23,7 +24,7 @@ export function projectPathIdentity(projectPath: string, platform: NodeJS.Platfo
   // host, omitted port 22, preserved user and remote path).
   const ssh = sshProjectPathIdentity(projectPath)
   if (ssh !== null) return ssh
-  const wsl = parseWslPath(projectPath)
+  const wsl = projectWslLocation(projectPath)
   if (wsl !== null) return wslProjectPath(wsl.distribution, wsl.linuxPath)
   const normalized = normalizedLocalPath(projectPath, platform)
   return platform === 'win32' ? normalized.toLowerCase() : normalized

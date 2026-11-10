@@ -10,7 +10,7 @@ import {
   type TaskProgressTestResult,
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { parseWslPath } from '@shared/wsl-path'
+import { projectWslLocation } from '@shared/project-environment'
 import {
   type TaskProgressAction,
   TaskProgressAdapterError,
@@ -388,7 +388,7 @@ function actionLabel(adapterId: string, action: TaskProgressAction): string {
 }
 
 function projectContext(root: string): TaskProgressProjectContext {
-  const wsl = parseWslPath(root)
+  const wsl = projectWslLocation(root)
   return wsl === null
     ? { root, environment: 'local' }
     : { root, environment: 'wsl', distribution: wsl.distribution, linuxRoot: wsl.linuxPath }

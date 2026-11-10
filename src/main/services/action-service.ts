@@ -5,7 +5,7 @@ import { isAbsolute } from 'node:path'
 import { createBottomTabId } from '@shared/bottom-tab-id'
 import type { ActionControl, ActionExecution, ActionInput, ChatInfo } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { parseWslPath } from '@shared/wsl-path'
+import { projectWslLocation } from '@shared/project-environment'
 import type Database from 'better-sqlite3'
 import { wrapSqliteError } from './project-service'
 
@@ -289,8 +289,8 @@ export class ActionService {
         'actions:execute',
       )
     const projectPath = projectId === null ? null : this.#projectPath(projectId)
-    const location = projectPath === null ? null : parseWslPath(projectPath)
-    const cwdLocation = parseWslPath(cwd)
+    const location = projectPath === null ? null : projectWslLocation(projectPath)
+    const cwdLocation = projectWslLocation(cwd)
     if (action.runMode === 'background' && (location !== null || cwdLocation !== null)) {
       throw new AppError(
         'validation',

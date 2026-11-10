@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../lib/icons'
+import { TEST_ID } from '../../lib/test-ids'
 import { ConfirmDialog } from '../layout/ConfirmDialog'
 import {
   FieldRow,
@@ -38,6 +39,33 @@ import {
 } from './settings-ui'
 
 type ProfileForm = Omit<AgentProfilePut, 'interactiveArgs'> & { interactiveArguments?: string }
+
+/**
+ * Non-blocking advice for a command that starts `ssh` or `wsl` as a host
+ * program (spec project-environment-clarity Behaviour 14). Base name only,
+ * case-insensitive, without a `.exe` extension; an unparsable command shows
+ * its own error elsewhere and no warning here.
+ */
+function hostProgramWarning(command: string): string | null {
+  let executable: string
+  try {
+    executable = parseAgentCommand(command).executable
+  } catch {
+    return null
+  }
+  const separator = Math.max(executable.lastIndexOf('\\'), executable.lastIndexOf('/'))
+  const name = executable
+    .slice(separator + 1)
+    .toLowerCase()
+    .replace(/\.exe$/u, '')
+  if (name === 'wsl') {
+    return "This starts WSL as a host program, so NeKode does not choose the distribution or map the project directory. To run agents inside WSL, set the project's shell to WSL or add a WSL project."
+  }
+  if (name === 'ssh') {
+    return 'This starts ssh as a host program, so NeKode does not change into the project directory on the remote host. To work on a remote host, add the project as an SSH project.'
+  }
+  return null
+}
 
 export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX.Element {
   const [library, setLibrary] = useState<AgentProfilesLibrary | null>(null)
@@ -125,6 +153,7 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
   }
 
   const overrideOn = form?.interactiveArguments !== undefined
+  const commandWarning = form === null ? null : hostProgramWarning(form.command)
   return (
     <div className="flex max-w-[660px] flex-col gap-7">
       <PageIntro
@@ -216,6 +245,14 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
               <span id="agent-command-help" className="sr-only">
                 {AGENT_COMMAND_HELP}
               </span>
+              {commandWarning !== null ? (
+                <p
+                  className="text-xs text-warning"
+                  data-testid={TEST_ID.settingsAgentCommandWarning}
+                >
+                  {commandWarning}
+                </p>
+              ) : null}
             </StackedRow>
             <SettingsSwitch
               id="agent-override"

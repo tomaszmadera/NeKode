@@ -1,6 +1,6 @@
 # Per-project terminal shell selection with system shell detection
 
-Status: Delivered (per-project shell selection with system shell detection).
+Status: Delivered (per-project shell selection with system shell detection). Amended by [project environment clarity](../project-environment-clarity/spec.md) on 2026-11-08: the Shell tab gains a read-only Environment group and an SSH-aware layout.
 Path: `docs/features/project-shell-selection/spec.md`.
 
 This file is the behavioral contract for the feature. Agents implement from it. Execution progress, file checklists, and architecture history live in the task record, not here.
@@ -72,6 +72,8 @@ User decisions 2026-10-04 (chat, plan review):
 7. New terminal spawn (chat or bottom tab) resolves the project's shell setting in main at spawn time: a detected/custom id resolves to the executable path and arguments recorded by detection (e.g. `-NoLogo` for PowerShell, `-d <distro>` for WSL); unknown or stale ids (shell uninstalled, distribution removed, detection never run this app session) fall back to the platform default without an error — a terminal always opens.
 8. `terminals:shellName(projectId)` returns the display label of the project's resolved shell: bottom-tab labels use it. The new-chat prefix uses the compact code instead (`chatLabel()`).
 9. `projects:remove` deletes `project.shell:<projectId>` together with the existing handoff-dir cleanup.
+10. The Shell tab starts with a read-only `Environment` group, visible before and during detection, with two lines: `Location` and `Runs in` ([project environment clarity](../project-environment-clarity/spec.md) Behaviour 9-11). It reads only the stored project path, the saved shell choice and the detection list the tab already loads; it never probes, adds no IPC channel and shows no new error. The lines are: `Local folder on this computer` with `Terminals and agents run on this computer.`; a Local project with a `WSL: <distribution>` shell with `Terminals and agents run in WSL: <distribution>. Files stay in the Windows folder.`; `WSL project: <distribution>, <linuxPath>` with `Terminals and agents run in <distribution>.`; `SSH project: [user@]host[:port], <path>` with `Terminals and agents run on that host.` plus `Read-only files and Git. Not available: Actions, Kanban Start and Resume, task progress, handoff files, opening files in other apps.` A Local project's `Runs in` line follows the shell new terminals will actually use, so a `wsl:<distribution>` choice the detection list does not contain reads as a host shell; while detection runs it shows the default-shell line, and it updates after the choice is saved. A project without a path, or a stored path the parsers reject, shows no group.
+11. For an SSH project the tab shows the single `Default (remote login shell)` entry from the non-probing list and hides `Add a shell by absolute path`, because that action always fails there. The tab decides this from the stored project path, not from an `unsupported` error, and shows no error banner. Other environments keep their current controls.
 
 ## Business rules
 
@@ -81,6 +83,7 @@ User decisions 2026-10-04 (chat, plan review):
 - Default remains `powershell.exe -NoLogo` on win32 (unchanged from the mvp-core-shell spec), `$SHELL`/`/bin/bash` elsewhere.
 - The detection cache lives in main per app run; it is never persisted (except the user-added custom paths) and is refreshed only by entering the Shell tab. Detection cost: a handful of `fs.existsSync` calls plus at most one short WSL subprocess per tab entry.
 - The `shells.custom` list is validated lazily: stored paths are shown after restart without probing, re-validated on the next detection run (dead paths pruned) and at spawn time (dead path → default shell).
+- The `Environment` group states only what this contract and [SSH project transport](../../architecture/ssh-project-transport.md) guarantee: no Git routing claim for a WSL project and no promise that an agent profile command works in a given environment.
 
 ## Authorization
 

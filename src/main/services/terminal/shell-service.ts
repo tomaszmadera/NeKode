@@ -2,8 +2,7 @@ import { accessSync, constants, readFileSync, realpathSync, statSync } from 'nod
 import { basename, isAbsolute, posix } from 'node:path'
 import type { ShellChoice, ShellInfo } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { parseSshTarget } from '@shared/ssh-target'
-import { parseWslPath } from '@shared/wsl-path'
+import { projectEnvironment, projectWslLocation } from '@shared/project-environment'
 import { listWslDistributionsAsync, runWsl, type WslRun } from './wsl'
 import { runWslAsync } from './wsl-async'
 
@@ -233,7 +232,7 @@ export class ShellService {
       // No host or WSL probe for an SSH project (spec ssh-projects Behaviour 9).
       throw new AppError('unsupported', 'This action is not available for SSH projects.')
     }
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
     if (location !== null) {
       const output = await this.#runWslAsync(location.distribution, ['/bin/cat', '/etc/shells'])
       const paths = [
@@ -325,7 +324,7 @@ export class ShellService {
     if (this.#isSshProject(projectPath)) {
       return [{ id: 'default', label: SSH_SHELL_LABEL }]
     }
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
     if (location !== null)
       return (
         this.#wslLists.get(projectPath as string) ?? [
@@ -344,7 +343,7 @@ export class ShellService {
     if (this.#isSshProject(projectPath)) {
       throw new AppError('unsupported', 'This action is not available for SSH projects.')
     }
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
     if (location !== null) {
       this.#validateLinuxShell(path, location.distribution)
       const entry: ShellInfo = { id: customChoice(path), label: posix.basename(path) }
@@ -373,7 +372,7 @@ export class ShellService {
     if (this.#isSshProject(projectPath)) {
       throw new AppError('unsupported', 'This action is not available for SSH projects.')
     }
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
     if (location === null) return this.addCustomPath(path, projectPath)
     await this.#validateLinuxShellAsync(path, location.distribution)
     const entry: ShellInfo = { id: customChoice(path), label: posix.basename(path) }
@@ -401,7 +400,7 @@ export class ShellService {
       // destination if any caller ever used it.
       throw new AppError('unsupported', 'This action is not available for SSH projects.')
     }
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
     if (location !== null) {
       // Historic host choices are visibly represented by the distribution default.
       if (!choice?.startsWith('custom:/')) return { file: 'wsl.exe', args: [] }
@@ -421,6 +420,10 @@ export class ShellService {
       if (distro.length === 0 || this.#platform !== 'win32') {
         return this.defaultShellSpec()
       }
+      // A distribution detection no longer lists is a stale id: the terminal
+      // opens on the host default instead of failing in wsl.exe (Behaviour 7),
+      // which is what the Environment group tells the user it will do.
+      if (this.#isStaleDetectedChoice(choice)) return this.defaultShellSpec()
       return { file: 'wsl.exe', args: ['-d', distro] }
     }
     const candidate = WINDOWS_CANDIDATES.find((item) => item.id === choice)
@@ -433,7 +436,7 @@ export class ShellService {
 
   async resolveAsync(choice: string | null | undefined, projectPath?: string): Promise<ShellSpec> {
     if (this.#isSshProject(projectPath)) return this.resolve(choice, projectPath)
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
     if (location === null || !choice?.startsWith('custom:/'))
       return this.resolve(choice, projectPath)
     const path = customPathOf(choice)
@@ -447,7 +450,7 @@ export class ShellService {
    */
   label(choice: string | null | undefined, projectPath?: string): string {
     if (this.#isSshProject(projectPath)) return SSH_SHELL_LABEL
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
     if (location !== null)
       return choice?.startsWith('custom:/')
         ? posix.basename(customPathOf(choice))
@@ -461,9 +464,11 @@ export class ShellService {
     }
     if (choice.startsWith('wsl:')) {
       const distro = choice.slice('wsl:'.length)
-      return distro.length > 0 && this.#platform === 'win32'
-        ? `WSL: ${distro}`
-        : this.defaultLabel()
+      if (distro.length === 0 || this.#platform !== 'win32') return this.defaultLabel()
+      // Same stale rule as resolve(): the label must never promise a WSL shell
+      // the spawn no longer uses (Behaviour 6).
+      if (this.#isStaleDetectedChoice(choice)) return this.defaultLabel()
+      return `WSL: ${distro}`
     }
     const detected = this.#detected?.find((entry) => entry.id === choice)
     if (detected !== undefined) {
@@ -486,7 +491,7 @@ export class ShellService {
    */
   chatLabel(choice: string | null | undefined, projectPath?: string): string {
     if (this.#isSshProject(projectPath)) return SSH_SHORT_LABEL
-    const location = projectPath === undefined ? null : parseWslPath(projectPath)
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
     if (location !== null)
       return choice?.startsWith('custom:/') ? posix.basename(customPathOf(choice)) : WSL_SHORT_LABEL
     if (choice === null || choice === undefined || choice.length === 0 || choice === 'default') {
@@ -498,9 +503,10 @@ export class ShellService {
     }
     if (choice.startsWith('wsl:')) {
       const distro = choice.slice('wsl:'.length)
-      return distro.length > 0 && this.#platform === 'win32'
-        ? WSL_SHORT_LABEL
-        : this.defaultShortLabel()
+      if (distro.length === 0 || this.#platform !== 'win32') return this.defaultShortLabel()
+      // Same stale rule as resolve(), so the chat prefix never promises WSL.
+      if (this.#isStaleDetectedChoice(choice)) return this.defaultShortLabel()
+      return WSL_SHORT_LABEL
     }
     const candidate = WINDOWS_CANDIDATES.find((item) => item.id === choice)
     if (candidate === undefined) {
@@ -516,7 +522,32 @@ export class ShellService {
    * Behaviour 9).
    */
   #isSshProject(projectPath: string | undefined): boolean {
-    return projectPath !== undefined && parseSshTarget(projectPath) !== null
+    return projectPath !== undefined && projectEnvironment(projectPath).kind === 'ssh'
+  }
+
+  /**
+   * True when a completed detection run does not list `choice`, i.e. the shell
+   * or distribution is gone (spec project-shell-selection Behaviour 7). Before
+   * the first run of the app session nothing is known, so a stored `wsl:<distro>`
+   * keeps spawning that distribution: resolve must not probe on its own.
+   */
+  #isStaleDetectedChoice(choice: string): boolean {
+    return this.#detected !== null && !this.#detected.some((entry) => entry.id === choice)
+  }
+
+  /**
+   * The stored choice reduced to what the next spawn will use: a choice a
+   * completed detection run no longer lists becomes `default` (spec
+   * project-shell-selection Behaviour 7). Every consumer that decides from the
+   * choice outside `resolve` - agent preparation above all - reads this, so no
+   * launch path can promise a shell the resolver would not spawn.
+   */
+  effectiveChoice(choice: string | null | undefined, projectPath?: string): string | null {
+    if (choice === null || choice === undefined) return null
+    if (this.#isSshProject(projectPath)) return choice
+    const location = projectPath === undefined ? null : projectWslLocation(projectPath)
+    if (location !== null) return choice
+    return this.#isStaleDetectedChoice(choice) ? 'default' : choice
   }
 
   /**

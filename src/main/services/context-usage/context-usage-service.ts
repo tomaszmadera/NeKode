@@ -2,8 +2,7 @@ import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from
 import { join } from 'node:path'
 import type { ChatInfo } from '@shared/contracts/chats-contract'
 import type { ProjectInfo } from '@shared/contracts/projects-contract'
-import { parseSshTarget } from '@shared/ssh-target'
-import { parseWslPath } from '@shared/wsl-path'
+import { projectEnvironment, projectWslLocation } from '@shared/project-environment'
 import type { AgentLaunch } from '../agent-session-registry'
 
 /**
@@ -341,7 +340,13 @@ export class ContextUsageService {
     this.#rollouts = null
     try {
       for (const project of this.#deps.projects.list()) {
-        if (parseSshTarget(project.path) !== null || parseWslPath(project.path) !== null) continue
+        // Remote projects have no local rollout directory. The WSL lookup keeps
+        // the parser's error for a malformed stored path, as before.
+        if (
+          projectEnvironment(project.path).kind === 'ssh' ||
+          projectWslLocation(project.path) !== null
+        )
+          continue
         let chats: ChatInfo[]
         try {
           chats = this.#deps.chats.list(project.id)

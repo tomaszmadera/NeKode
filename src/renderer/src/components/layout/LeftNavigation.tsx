@@ -6,7 +6,7 @@ import type {
   SessionStatus,
   SessionTaskProgress,
 } from '@shared/ipc-contract'
-import { parseWslPath } from '@shared/wsl-path'
+import { projectEnvironment, sshEnvironmentTarget } from '@shared/project-environment'
 import type React from 'react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -450,7 +450,11 @@ export function LeftNavigation({
                 const chats = chatsByProject[project.id] ?? []
                 const projectColor = getProjectColor(project, projectColors?.[project.id])
                 const initials = getProjectInitials(project.name)
-                const wslLocation = parseWslPath(project.path)
+                // The stored path alone decides the badge (spec
+                // project-environment-clarity Behaviour 7).
+                const environment = projectEnvironment(project.path)
+                const wslLocation = environment.kind === 'wsl' ? environment : null
+                const sshTarget = environment.kind === 'ssh' ? environment.target : null
 
                 let runningCount = 0
                 let waitingCount = 0
@@ -626,6 +630,26 @@ export function LeftNavigation({
                                 title={`WSL: ${wslLocation.distribution}`}
                               >
                                 WSL
+                              </span>
+                            ) : null}
+                            {sshTarget !== null ? (
+                              <span
+                                style={{
+                                  borderRadius: floating ? 4 : 0,
+                                  border: '1px solid var(--color-edge)',
+                                  backgroundColor: 'var(--color-highlight)',
+                                  padding: '2px 4px',
+                                  marginLeft: 6,
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: 10,
+                                  lineHeight: 1,
+                                  color: 'var(--color-ink-muted)',
+                                  flexShrink: 0,
+                                }}
+                                title={`SSH: ${sshEnvironmentTarget(sshTarget)}`}
+                                data-testid={testIdFor.projectEnvironmentBadge(project.id)}
+                              >
+                                SSH
                               </span>
                             ) : null}
                           </span>

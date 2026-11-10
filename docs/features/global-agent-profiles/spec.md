@@ -1,6 +1,6 @@
 # Global agent profiles and project opt-in
 
-Status: Delivered (global profile library, project opt-in, one-line command, and the interactive-argument override).
+Status: Delivered (global profile library, project opt-in, one-line command, and the interactive-argument override). Amended by [project environment clarity](../project-environment-clarity/spec.md) on 2026-11-08: the `Command` field warns about starting `ssh` or `wsl` as a host program.
 Path: `docs/features/global-agent-profiles/spec.md`.
 
 This document is the behavioral contract of the feature. It does not describe implementation progress.
@@ -78,6 +78,7 @@ The decision of 2026-10-14 replaces the per-project storage of profile definitio
 5. Format examples: `claude "{prompt}"` and `"C:\Tools\my-agent.exe" --model "my model" "{prompt}"`. They are syntax examples, not a promise that any CLI supports this interface.
 6. Moving saved argv into the form and saving again without edits must give an identical executable and arguments, also for spaces, empty values, quotes and trailing backslashes.
 7. A custom provider/model is configured according to what the chosen CLI supports: through parameters, its configuration file or a custom wrapper. NeKode does not interpret model names and does not promise that any provider works with any agent. A wrapper with a suitable interface can be started with the same single line. API keys are not put in the command; logging in stays on the CLI side.
+8. When the parsed executable's base name, case-insensitive and without a `.exe` suffix, is exactly `ssh` or `wsl`, the form shows a non-blocking warning below the field ([project environment clarity](../project-environment-clarity/spec.md) Behaviour 14). For `wsl` it states that NeKode does not choose the distribution or map the project directory, and names the project shell and WSL projects as the alternatives. For `ssh` it states that NeKode does not change into the project directory on the remote host, and names an SSH project as the alternative. The warning follows edits, disappears when the command changes, does not block saving, does not change the stored command and does not appear in the profile list. Names that only contain these words (`sshpass`, `wsl-helper`) and an unparsable command show no warning; the command's own parse error stays. The library stays global and no profile is rejected because of its command.
 
 ### Interactive arguments (NEKODE-78)
 

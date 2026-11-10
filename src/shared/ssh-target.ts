@@ -5,7 +5,7 @@
 // filesystem, process or credential access lives here.
 
 const SSH_SCHEME = 'ssh://'
-const DEFAULT_SSH_PORT = 22
+export const DEFAULT_SSH_PORT = 22
 
 /** Letters, digits, `.`, `_`, `-`: DNS labels, IPv4 and ssh_config aliases. */
 const HOST_BODY = /^[A-Za-z0-9._-]+$/u

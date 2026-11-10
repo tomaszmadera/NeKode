@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import type { ProjectInfo } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import { projectWslLocation } from '@shared/project-environment'
 import {
   canonicalRemotePath,
   formatSshTarget,
   type SshTarget,
   sshTargetName,
 } from '@shared/ssh-target'
-import { parseWslPath, wslProjectPath } from '@shared/wsl-path'
+import { wslProjectPath } from '@shared/wsl-path'
 import type Database from 'better-sqlite3'
 import { projectDirectoryName, projectPathIdentity } from '../db/project-identity'
 
@@ -55,9 +56,9 @@ export class ProjectService {
   }
 
   add(path: string): ProjectInfo {
-    let location: ReturnType<typeof parseWslPath>
+    let location: ReturnType<typeof projectWslLocation>
     try {
-      location = parseWslPath(path)
+      location = projectWslLocation(path)
     } catch {
       throw new AppError('validation', 'Invalid WSL project path.', 'projects:add')
     }

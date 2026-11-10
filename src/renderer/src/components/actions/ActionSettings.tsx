@@ -138,7 +138,7 @@ export function ActionSettings({
   app,
   actions,
   projectId,
-  projectPath: _projectPath,
+  projectPath,
   autoSend,
   onAutoSendChange,
   onRefresh,
@@ -274,7 +274,12 @@ export function ActionSettings({
       keyboard="window"
     >
       {activeTab === 'shell' ? (
-        <ShellTab app={app} projectId={projectId} onProjectColorChange={onProjectColorChange} />
+        <ShellTab
+          app={app}
+          projectId={projectId}
+          projectPath={projectPath}
+          onProjectColorChange={onProjectColorChange}
+        />
       ) : activeTab === 'kanban' ? (
         <div className="flex max-w-[660px] flex-col gap-7">
           <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />

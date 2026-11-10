@@ -3,7 +3,7 @@ import { basename } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '@shared/bottom-tab-id'
 import type { Unsubscribe } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { parseSshTarget } from '@shared/ssh-target'
+import { projectEnvironment } from '@shared/project-environment'
 import { SSH_CD_FAILED_EXIT, sshFailure } from '../ssh/ssh-client'
 import { prepareSshTerminal, type SshTerminalDeps } from './ssh-terminal'
 import { prepareWslTerminal, validateWslExecutable, validateWslExecutableAsync } from './wsl'
@@ -234,7 +234,7 @@ export class TerminalService {
         )
       }
     }
-    if (parseSshTarget(cwd) === null && !this.#isDirectory(cwd)) {
+    if (projectEnvironment(cwd).kind !== 'ssh' && !this.#isDirectory(cwd)) {
       return Promise.reject(
         new AppError(
           'not_found',
@@ -281,7 +281,7 @@ export class TerminalService {
       this.#disposeSession(existing)
       this.#sessions.delete(chatId)
     }
-    if (parseSshTarget(cwd) === null && !this.#isDirectory(cwd)) {
+    if (projectEnvironment(cwd).kind !== 'ssh' && !this.#isDirectory(cwd)) {
       throw new AppError(
         'not_found',
         'The project directory does not exist. Terminal sessions need an existing project directory.',
@@ -289,7 +289,8 @@ export class TerminalService {
     }
 
     const resolvedShell = typeof shell === 'function' ? shell() : shell
-    const sshTarget = parseSshTarget(cwd)
+    const environment = projectEnvironment(cwd)
+    const sshTarget = environment.kind === 'ssh' ? environment.target : null
     const sshSpec =
       sshTarget === null ? null : prepareSshTerminal(sshTarget, this.#ssh, resolvedShell)
     const wsl = sshSpec === null ? prepareWslTerminal(cwd, resolvedShell) : null

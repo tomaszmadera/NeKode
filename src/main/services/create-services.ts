@@ -10,12 +10,11 @@ import {
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import {
-  parseSshTarget,
-  type SshTarget,
-  sshTargetFromInput,
-  validateSshLocation,
-} from '@shared/ssh-target'
-import { parseWslPath } from '@shared/wsl-path'
+  type ProjectEnvironment,
+  projectEnvironment,
+  projectWslLocation,
+} from '@shared/project-environment'
+import { type SshTarget, sshTargetFromInput, validateSshLocation } from '@shared/ssh-target'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import type { AppServices } from '../ipc/service-registry'
@@ -118,6 +117,8 @@ export interface CreateServicesOptions {
 /** The transport a spawn entry point resolves from the project row. */
 interface ProjectLaunch {
   transport: 'local' | 'ssh'
+  /** Environment the stored project path resolves to (spec project-environment-clarity 5). */
+  environment: ProjectEnvironment
   projectId: string | null
   /** Registered project path; null when the caller has no project. */
   path: string | null
@@ -194,32 +195,59 @@ export function createServices(
 
   /**
    * One launch resolver for every spawn entry point (spec ssh-projects
-   * Behaviour 5 and Data/API). The persisted project path alone selects the
-   * transport: an SSH project requires the renderer cwd to equal its path, and
-   * a foreign `ssh://` cwd is rejected before any process starts. A null cwd
-   * means the caller has no renderer-supplied directory (actions, Kanban) and
-   * only the transport is resolved.
+   * Behaviour 5 and Data/API; spec project-environment-clarity 5-6). The
+   * persisted project path alone selects the transport and the environment: an
+   * SSH project requires the renderer cwd to equal its path, a WSL project
+   * requires its own distribution in the cwd, and a foreign `ssh://` cwd is
+   * rejected before any process starts. A null cwd means the caller has no
+   * renderer-supplied directory (actions, Kanban) and only the transport is
+   * resolved.
    */
   function resolveLaunch(projectId: string | null, cwd: string | null): ProjectLaunch {
     if (projectId === null) {
-      if (cwd !== null && parseSshTarget(cwd) !== null) {
+      if (cwd !== null && projectEnvironment(cwd).kind === 'ssh') {
         throw new AppError('validation', 'The working directory does not belong to this project.')
       }
-      return { transport: 'local', projectId: null, path: null, target: null }
+      return {
+        transport: 'local',
+        environment: { kind: 'local' },
+        projectId: null,
+        path: null,
+        target: null,
+      }
     }
     const project = projects.get(projectId)
     if (project === null) throw new AppError('not_found', 'Project not found.')
-    const target = parseSshTarget(project.path)
-    if (target !== null) {
+    const environment = projectEnvironment(project.path)
+    if (environment.kind === 'ssh') {
       if (cwd !== null && cwd !== project.path) {
         throw new AppError('validation', 'The working directory does not belong to this project.')
       }
-      return { transport: 'ssh', projectId, path: project.path, target }
+      return {
+        transport: 'ssh',
+        environment,
+        projectId,
+        path: project.path,
+        target: environment.target,
+      }
     }
-    if (cwd !== null && parseSshTarget(cwd) !== null) {
+    if (cwd !== null && projectEnvironment(cwd).kind === 'ssh') {
       throw new AppError('validation', 'The working directory does not belong to this project.')
     }
-    return { transport: 'local', projectId, path: project.path, target: null }
+    // Both paths go through the throwing helper: this site called `parseWslPath`
+    // before the resolver existed, so a malformed WSL path keeps the parser's own
+    // error instead of surfacing as a distribution mismatch or falling through to
+    // Local (spec project-environment-clarity Errors).
+    const location = projectWslLocation(project.path)
+    // A null cwd is a transport-only call (Actions, Kanban, task progress): it has
+    // no directory to compare, so only a supplied path can mismatch.
+    if (cwd !== null) {
+      const cwdLocation = projectWslLocation(cwd)
+      if (location !== null && cwdLocation?.distribution !== location.distribution) {
+        throw new AppError('validation', 'A WSL terminal must use its project distribution.')
+      }
+    }
+    return { transport: 'local', environment, projectId, path: project.path, target: null }
   }
 
   /** `unsupported` for a surface an SSH project does not have in this stage. */
@@ -317,7 +345,12 @@ export function createServices(
           ? undefined
           : () => {
               const id = chats.get(chatId)?.projectId
-              const choice = id ? state.get(projectShellKey(id)) : null
+              // The effective choice, not the raw one: a stored `wsl:<distro>`
+              // that detection no longer lists must not wrap the agent either
+              // (spec project-shell-selection Behaviour 7).
+              const choice = id
+                ? shells.effectiveChoice(state.get(projectShellKey(id)), projects.get(id)?.path)
+                : null
               return prepareWslAgentAsync(cwd, command, choice)
             },
       )
@@ -508,12 +541,6 @@ export function createServices(
           // renderer supplies no shell, host, user or port (Behaviour 5-6).
           return terminals.createAsync(chatId, cwd)
         }
-        if (projectId !== null && launch.path !== null) {
-          const location = parseWslPath(launch.path)
-          const cwdLocation = parseWslPath(cwd)
-          if (location !== null && cwdLocation?.distribution !== location.distribution)
-            throw new AppError('validation', 'A WSL terminal must use its project distribution.')
-        }
         return terminals.createAsync(
           chatId,
           cwd,
@@ -528,7 +555,7 @@ export function createServices(
         shells.list(projectId == null ? undefined : requireProjectPath(projectId)),
       shellDetect: async (projectId) => {
         const projectPath = projectId == null ? undefined : requireProjectPath(projectId)
-        if (projectPath !== undefined && parseSshTarget(projectPath) !== null) {
+        if (projectPath !== undefined && projectEnvironment(projectPath).kind === 'ssh') {
           // No host or WSL probe for an SSH project (spec Behaviour 9).
           throw new AppError(
             'unsupported',
@@ -536,7 +563,7 @@ export function createServices(
             IPC_CHANNEL.terminalsShellDetect,
           )
         }
-        if (projectPath !== undefined && parseWslPath(projectPath) !== null) {
+        if (projectPath !== undefined && projectWslLocation(projectPath) !== null) {
           const result = await shells.detectAsync(
             readCustomShellPaths(projectWslShellsKey(projectId as string)),
             projectPath,
@@ -565,7 +592,7 @@ export function createServices(
       },
       shellAddCustom: async (path, projectId) => {
         const projectPath = projectId == null ? undefined : requireProjectPath(projectId)
-        if (projectPath !== undefined && parseSshTarget(projectPath) !== null) {
+        if (projectPath !== undefined && projectEnvironment(projectPath).kind === 'ssh') {
           // No custom remote shell path and no host custom-shell write
           // (spec Behaviour 9).
           throw new AppError(
@@ -574,7 +601,7 @@ export function createServices(
             IPC_CHANNEL.terminalsShellAddCustom,
           )
         }
-        if (projectPath !== undefined && parseWslPath(projectPath) !== null) {
+        if (projectPath !== undefined && projectWslLocation(projectPath) !== null) {
           const entry = await shells.addCustomPathAsync(path, projectPath)
           requireProjectPath(projectId as string)
           const key = projectWslShellsKey(projectId as string)

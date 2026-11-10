@@ -1,6 +1,7 @@
 import { execFile, execFileSync } from 'node:child_process'
 import { AppError } from '@shared/ipc-error'
-import { parseWslPath, type WslLocation, wslProjectPath } from '@shared/wsl-path'
+import { projectWslLocation } from '@shared/project-environment'
+import { type WslLocation, wslProjectPath } from '@shared/wsl-path'
 import type { ShellSpec } from './shell-service'
 import { runWslAsync } from './wsl-async'
 
@@ -148,7 +149,7 @@ function validateWslProjectPath(distribution: string, linuxPath: string): string
 
 /** Check the project's Linux PATH before a launch is reported as delivered. */
 export function validateWslExecutable(path: string | WslLocation, shell: ShellSpec): void {
-  const location = typeof path === 'string' ? parseWslPath(path) : path
+  const location = typeof path === 'string' ? projectWslLocation(path) : path
   if (location === null || (shell.file === 'wsl.exe' && shell.args.length === 0)) return
   assertLinuxExecutable(shell.file)
   let result: string
@@ -179,7 +180,7 @@ export async function validateWslExecutableAsync(
   path: string | WslLocation,
   shell: ShellSpec,
 ): Promise<void> {
-  const location = typeof path === 'string' ? parseWslPath(path) : path
+  const location = typeof path === 'string' ? projectWslLocation(path) : path
   if (location === null || (shell.file === 'wsl.exe' && shell.args.length === 0)) return
   assertLinuxExecutable(shell.file)
   let result: string
@@ -225,7 +226,7 @@ export function prepareWslTerminal(
   path: string | WslLocation,
   shell?: ShellSpec,
 ): { file: string; args: string[]; cwd: string } | null {
-  const location = typeof path === 'string' ? parseWslPath(path) : path
+  const location = typeof path === 'string' ? projectWslLocation(path) : path
   if (location === null) return null
   return wslTerminalSpec(location, shell)
 }
@@ -246,7 +247,7 @@ export async function prepareWslAgentAsync(
   command: ShellSpec,
   shellChoice: string | null,
 ): Promise<ShellSpec> {
-  if (parseWslPath(path) !== null || !shellChoice?.startsWith('wsl:')) return command
+  if (projectWslLocation(path) !== null || !shellChoice?.startsWith('wsl:')) return command
   const distribution = shellChoice.slice('wsl:'.length)
   if (!distribution) return command
   assertLinuxExecutable(command.file)

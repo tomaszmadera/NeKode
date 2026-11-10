@@ -1,6 +1,11 @@
 import type { AppApi, ShellInfo } from '@shared/ipc-contract'
 import { projectColorKey, projectShellKey } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
+import {
+  type ProjectEnvironment,
+  projectEnvironment,
+  sshEnvironmentTarget,
+} from '@shared/project-environment'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
@@ -33,14 +38,55 @@ import {
 interface ShellTabProps {
   app: AppApi
   projectId: string | null
+  /** Stored path of the open project; its environment decides the tab layout. */
+  projectPath?: string | null
   /** Reload parent-held state after a settings change (parent wiring). */
   onSettingsChanged?: () => void
   onProjectColorChange?: (projectId: string, color: string | null) => void
 }
 
+/**
+ * Read-only Environment group text (spec project-environment-clarity
+ * Behaviour 9-11). Null for a project without a path and for a stored path the
+ * parsers reject: those render no group instead of guessing.
+ */
+function environmentText(
+  environment: ProjectEnvironment,
+  choice: string,
+): { location: string; runsIn: string; notice: string | null } | null {
+  if (environment.kind === 'local') {
+    const distribution = choice.startsWith('wsl:') ? choice.slice('wsl:'.length) : ''
+    return {
+      location: 'Local folder on this computer',
+      runsIn:
+        distribution.length > 0
+          ? `Terminals and agents run in WSL: ${distribution}. Files stay in the Windows folder.`
+          : 'Terminals and agents run on this computer.',
+      notice: null,
+    }
+  }
+  if (environment.kind === 'wsl') {
+    return {
+      location: `WSL project: ${environment.distribution}, ${environment.linuxPath}`,
+      runsIn: `Terminals and agents run in ${environment.distribution}.`,
+      notice: null,
+    }
+  }
+  if (environment.kind === 'ssh') {
+    return {
+      location: `SSH project: ${sshEnvironmentTarget(environment.target)}, ${environment.target.path}`,
+      runsIn: 'Terminals and agents run on that host.',
+      notice:
+        'Read-only files and Git. Not available: Actions, Kanban Start and Resume, task progress, handoff files, opening files in other apps.',
+    }
+  }
+  return null
+}
+
 export function ShellTab({
   app,
   projectId,
+  projectPath = null,
   onSettingsChanged,
   onProjectColorChange,
 }: ShellTabProps): React.JSX.Element {
@@ -56,6 +102,10 @@ export function ShellTab({
   const [customError, setCustomError] = useState<string | null>(null)
   const selectRef = useRef<HTMLSelectElement>(null)
   const guard = useMutationGuard()
+  // The stored path decides the environment and the tab layout (spec
+  // project-environment-clarity Behaviour 13): an SSH project never probes.
+  const environment = projectPath === null ? null : projectEnvironment(projectPath)
+  const sshProject = environment?.kind === 'ssh'
 
   // One detection + per-project choice load per tab entry (the modal mounts
   // this component fresh on each entry, so a plain mount effect is the
@@ -86,7 +136,12 @@ export function ShellTab({
               return 'default'
             })
         : Promise.resolve('default')
-    void Promise.all([saved, app.terminals.shellDetect(projectId)])
+    void Promise.all([
+      saved,
+      sshProject
+        ? app.terminals.shellList(projectId as string)
+        : app.terminals.shellDetect(projectId),
+    ])
       .then(([choice, list]) => {
         if (alive) {
           setSavedChoice(choice)
@@ -121,7 +176,7 @@ export function ShellTab({
     return () => {
       alive = false
     }
-  }, [app, projectId])
+  }, [app, projectId, sshProject])
 
   async function save(): Promise<void> {
     if (projectId === null) return
@@ -175,10 +230,38 @@ export function ShellTab({
   const colorNames = ['Violet', 'Blue', 'Salmon', 'Green', 'Yellow', 'Pink', 'Teal']
   const shellNote =
     'Applies to chats and bottom terminals created after the change. A shell that is later uninstalled falls back to the default for Local projects. WSL uses its distribution default for old host choices; an unavailable Linux shell shows an error.'
+  // Where new terminals will actually start: a stale `wsl:` choice that
+  // detection no longer lists runs as a host shell (spec
+  // project-environment-clarity Behaviour 11).
+  const effectiveChoice = shells.some((shell) => shell.id === savedChoice) ? savedChoice : 'default'
+  const environmentLines =
+    environment === null ? null : environmentText(environment, effectiveChoice)
 
   return (
     <div className="flex max-w-[660px] flex-col gap-7">
       <PageIntro title="Shell" description="Terminal setup and colour for this project." />
+      {environmentLines !== null ? (
+        <SettingsGroup label="Environment">
+          <SectionLabel title="Environment" />
+          <GroupBox>
+            <div className="flex flex-col" data-testid={TEST_ID.settingsShellEnvironment}>
+              <div className="flex flex-col gap-0.5 border-b border-edge px-4 py-3">
+                <span className="text-[13px] font-medium text-ink">Location</span>
+                <span className="text-xs text-ink-secondary">{environmentLines.location}</span>
+              </div>
+              <div className="flex flex-col gap-0.5 px-4 py-3">
+                <span className="text-[13px] font-medium text-ink">Runs in</span>
+                <span className="text-xs text-ink-secondary">{environmentLines.runsIn}</span>
+              </div>
+              {environmentLines.notice !== null ? (
+                <p className="border-t border-edge px-4 py-3 text-xs text-ink-muted">
+                  {environmentLines.notice}
+                </p>
+              ) : null}
+            </div>
+          </GroupBox>
+        </SettingsGroup>
+      ) : null}
       {detecting ? (
         <p
           className="flex items-center gap-2 text-xs text-ink-secondary"
@@ -226,49 +309,53 @@ export function ShellTab({
                 </FieldRow>
               ) : null}
               <InfoStrip>{shellNote}</InfoStrip>
-              <StackedRow
-                label="Add a shell by absolute path"
-                htmlFor="settings-shell-custom"
-                divided
-              >
-                <span className="flex gap-2">
-                  <input
-                    id="settings-shell-custom"
-                    value={customPath}
-                    placeholder={
-                      shells[0]?.label.includes('WSL:')
-                        ? '/bin/bash'
-                        : app.platform === undefined || app.platform === 'win32'
-                          ? 'C:\\tools\\nu.exe'
-                          : '/usr/bin/fish'
-                    }
-                    spellCheck={false}
-                    data-testid={TEST_ID.settingsShellCustomInput}
-                    onChange={(event) => {
-                      setCustomPath(event.target.value)
-                      setCustomError(null)
-                    }}
-                    className={cn(monoClass, 'min-w-0 flex-1')}
-                  />
-                  <button
-                    type="button"
-                    data-testid={TEST_ID.settingsShellCustomAdd}
-                    disabled={guard.busy || customPath.trim().length === 0}
-                    className={secondaryClass}
-                    onClick={() => {
-                      void addCustom()
-                    }}
+              {sshProject ? null : (
+                <>
+                  <StackedRow
+                    label="Add a shell by absolute path"
+                    htmlFor="settings-shell-custom"
+                    divided
                   >
-                    Add
-                  </button>
-                </span>
-                <span>The shell is added to the list above.</span>
-              </StackedRow>
-              {customError ? (
-                <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
-                  {customError}
-                </p>
-              ) : null}
+                    <span className="flex gap-2">
+                      <input
+                        id="settings-shell-custom"
+                        value={customPath}
+                        placeholder={
+                          shells[0]?.label.includes('WSL:')
+                            ? '/bin/bash'
+                            : app.platform === undefined || app.platform === 'win32'
+                              ? 'C:\\tools\\nu.exe'
+                              : '/usr/bin/fish'
+                        }
+                        spellCheck={false}
+                        data-testid={TEST_ID.settingsShellCustomInput}
+                        onChange={(event) => {
+                          setCustomPath(event.target.value)
+                          setCustomError(null)
+                        }}
+                        className={cn(monoClass, 'min-w-0 flex-1')}
+                      />
+                      <button
+                        type="button"
+                        data-testid={TEST_ID.settingsShellCustomAdd}
+                        disabled={guard.busy || customPath.trim().length === 0}
+                        className={secondaryClass}
+                        onClick={() => {
+                          void addCustom()
+                        }}
+                      >
+                        Add
+                      </button>
+                    </span>
+                    <span>The shell is added to the list above.</span>
+                  </StackedRow>
+                  {customError ? (
+                    <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
+                      {customError}
+                    </p>
+                  ) : null}
+                </>
+              )}
               {projectId !== null ? (
                 <GroupFooter
                   status={

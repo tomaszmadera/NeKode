@@ -7,8 +7,8 @@ import {
   type GitWorktreeStatus,
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { parseSshTarget, type SshTarget } from '@shared/ssh-target'
-import { parseWslPath } from '@shared/wsl-path'
+import { projectEnvironment, projectWslLocation } from '@shared/project-environment'
+import type { SshTarget } from '@shared/ssh-target'
 
 // Read-only git status for the status bar (UX-UI §14–16) and, since
 // NEKODE-31, the per-path map behind the file-tree decoration (spec
@@ -321,9 +321,9 @@ export class GitService {
 
   async getStatus(projectId: string): Promise<GitStatus> {
     const projectPath = this.#resolveProjectPath(projectId, 'git:status')
-    const target = parseSshTarget(projectPath)
-    if (target !== null) {
-      const result = await this.#remoteRead(target, STATUS_ARGS)
+    const environment = projectEnvironment(projectPath)
+    if (environment.kind === 'ssh') {
+      const result = await this.#remoteRead(environment.target, STATUS_ARGS)
       return result === null || result.exitCode !== 0
         ? degradedGitStatus()
         : parseGitStatus(result.stdout)
@@ -355,9 +355,9 @@ export class GitService {
    */
   async getFileStatuses(projectId: string): Promise<GitFileStatuses> {
     const projectPath = this.#resolveProjectPath(projectId, 'git:fileStatuses')
-    const target = parseSshTarget(projectPath)
-    if (target !== null) {
-      const result = await this.#remoteRead(target, FILE_STATUS_ARGS)
+    const environment = projectEnvironment(projectPath)
+    if (environment.kind === 'ssh') {
+      const result = await this.#remoteRead(environment.target, FILE_STATUS_ARGS)
       return result === null || result.exitCode !== 0 ? {} : parseGitFileStatuses(result.stdout)
     }
     try {
@@ -388,7 +388,7 @@ export class GitService {
     this.#syncingProjects.add(projectId)
     try {
       const projectPath = this.#resolveProjectPath(projectId, 'git:sync')
-      if (parseSshTarget(projectPath) !== null) {
+      if (projectEnvironment(projectPath).kind === 'ssh') {
         throw new AppError(
           'unsupported',
           'This action is not available for SSH projects.',
@@ -419,7 +419,7 @@ export class GitService {
 
 export function execFileRunner(args: string[], cwd: string): Promise<GitStatusRunResult> {
   return new Promise((resolve) => {
-    const location = parseWslPath(cwd)
+    const location = projectWslLocation(cwd)
     const file = location === null ? 'git' : 'wsl.exe'
     const commandArgs =
       location === null

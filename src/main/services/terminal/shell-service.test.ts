@@ -220,6 +220,29 @@ describe('resolve (fallback rules)', () => {
     expect(existsCalls).toEqual([])
   })
 
+  it('falls back to the host default for a wsl: choice detection no longer lists', async () => {
+    const { service } = makeService({ exists: [], files: [] }, ['Ubuntu-24.04'], WIN_ENV, {
+      platform: 'win32',
+    })
+    // Before the first detection run nothing is known: the stored choice keeps spawning.
+    expect(service.resolve('wsl:Removed')).toEqual({ file: 'wsl.exe', args: ['-d', 'Removed'] })
+    expect(service.label('wsl:Removed')).toBe('WSL: Removed')
+    expect(service.chatLabel('wsl:Removed')).toBe('WSL')
+    expect(service.effectiveChoice('wsl:Removed')).toBe('wsl:Removed')
+    await service.detectAsync([])
+    expect(service.effectiveChoice('wsl:Removed')).toBe('default')
+    // The stale id now resolves and reads as the host shell, like any other stale choice.
+    expect(service.resolve('wsl:Removed')).toEqual({ file: 'powershell.exe', args: ['-NoLogo'] })
+    expect(service.label('wsl:Removed')).toBe('PowerShell')
+    expect(service.chatLabel('wsl:Removed')).toBe('PS5')
+    // A distribution detection lists still runs in WSL.
+    expect(service.resolve('wsl:Ubuntu-24.04')).toEqual({
+      file: 'wsl.exe',
+      args: ['-d', 'Ubuntu-24.04'],
+    })
+    expect(service.label('wsl:Ubuntu-24.04')).toBe('WSL: Ubuntu-24.04')
+  })
+
   it.skipIf(!isWindowsHost)(
     'falls back to the default for an unknown id and a dead custom path',
     () => {
@@ -254,10 +277,13 @@ describe('label (same fallback rules as resolve)', () => {
   )
 
   it.skipIf(!isWindowsHost)('labels detected and custom choices', async () => {
-    const { service } = makeService({
-      exists: ['C:\\Windows\\System32\\cmd.exe'],
-      files: ['D:\\tools\\nu.exe'],
-    })
+    const { service } = makeService(
+      {
+        exists: ['C:\\Windows\\System32\\cmd.exe'],
+        files: ['D:\\tools\\nu.exe'],
+      },
+      ['Ubuntu-24.04'],
+    )
     await service.detectAsync([])
     expect(service.label('cmd')).toBe('cmd')
     expect(service.label('wsl:Ubuntu-24.04')).toBe('WSL: Ubuntu-24.04')

@@ -1,11 +1,11 @@
 # Session labels and agent badges
 
-Status: Delivered (Kanban and session-name labels, agent badges and WSL project badges in left navigation; approved by the user on 2026-10-18).
+Status: Delivered (Kanban and session-name labels, agent badges and WSL project badges in left navigation; approved by the user on 2026-10-18). Amended by [project environment clarity](../project-environment-clarity/spec.md) on 2026-11-08: an SSH project shows an environment badge next to the WSL one.
 Path: `docs/features/session-labels/spec.md`.
 
 ## Goal
 
-Make left-navigation sessions identifiable by their Kanban task or session name, with a separate badge identifying the launched agent. Identify WSL projects beside their names.
+Make left-navigation sessions identifiable by their Kanban task or session name, with a separate badge identifying the launched agent. Identify WSL and SSH projects beside their names.
 
 ## Related requirements
 
@@ -13,6 +13,7 @@ Make left-navigation sessions identifiable by their Kanban task or session name,
 - User decision of 2026-10-18: sessions outside Kanban retain their session name and receive an agent badge.
 - [Chat creation](../../UX-UI.md#46-chat-creation), [New chat agent profile menu](../new-chat-agent-menu/spec.md), and [Project shell selection](../project-shell-selection/spec.md) own the existing stored naming and launch behavior. This feature changes navigation presentation and adds launch metadata; it does not rename existing stored chats.
 - [Kanban task launch](../kanban-adapter-interface/spec.md) owns Start and Resume.
+- [Project environment clarity](../project-environment-clarity/spec.md) owns the SSH badge and the shared environment resolver both badges read.
 
 ## Scope
 
@@ -28,7 +29,7 @@ Chat renaming controls, detecting agents manually started inside a shell, new ag
 2. A session without a Kanban ref displays its session name without the generated leading `[shell]` prefix. A generated shell-only name displays `Terminal`. Preserve the remainder of the name verbatim apart from surrounding whitespace.
 3. A session launched with an agent displays a compact lowercase text badge beside the main label, as specified by the [left-panel contract](../left-panel/spec.md). Identify the launched CLI, independently of the profile display name. Persist the conventional identity, such as `Codex`, `Claude`, `Grok`, `Gemini`, `Hermes`, or `AntiGravity`; lowercase it only for the visible badge. For other executables use the executable's basename without a launcher suffix. Recognize script-backed Node launches from their explicit script argument rather than calling the agent `Node`. Do not run commands or inspect terminal output to derive the name.
 4. A plain shell session has no agent badge. No badge claims that an agent is currently running; it records the agent chosen at launch.
-5. A project with a WSL project location displays a compact `WSL` badge immediately beside its name. Its tooltip identifies the distribution. Determine this from the established WSL path representation, not a saved chat prefix or `runtimeLabel`. Local projects receive no environment badge.
+5. A project with a WSL or SSH project location displays a compact `WSL` or `SSH` badge immediately beside its name. The `WSL` tooltip identifies the distribution; the `SSH` tooltip is `SSH: [user@]host[:port]`, with the port shown only when it is not 22 and IPv6 brackets restored. Determine both from the stored project path through the shared environment resolver, not from a saved chat prefix or `runtimeLabel` ([project environment clarity](../project-environment-clarity/spec.md) Behaviour 7). Local projects receive no environment badge.
 6. Preserve project expansion, close controls, attention/activity/status indicators, and existing task-progress display. A tile is active only while its session's terminal tab is visible. The context count comes from the session's own agent transcript as the [left-panel contract](../left-panel/spec.md) specifies; hide activity time until real session telemetry exists, because status-change time is not activity time. Long labels truncate; badges remain readable within the navigation width. Accessible session labels include the visible identity and agent name. Hover exposes the full label and existing status information.
 7. Save the task ref and agent identity with the chat at launch so listing sessions after restart produces the same labels. A profile rename, edit, deletion, or project deselection does not rewrite an existing session's identity.
 
@@ -63,7 +64,7 @@ Use the existing typed persistence and launch error paths. A failed identity wri
 - AC1: Start and Resume render the full Kanban ref with the launched CLI badge.
 - AC2: Non-Kanban agent sessions render their name without a shell prefix, plus the CLI badge even when the profile has a different name.
 - AC3: Plain shell sessions render `Terminal` without an agent badge.
-- AC4: Only WSL projects display `WSL`; the tooltip names their distribution.
+- AC4: WSL projects display `WSL` and SSH projects display `SSH`; Local projects display no environment badge. The tooltip names the distribution or the SSH destination.
 - AC5: Identity survives database reopen and profile edits/deletion. Existing rows migrate without being renamed or assigned guessed metadata.
 - AC6: Navigation actions and existing session indicators retain their behavior, including truncation and accessible labels.
 

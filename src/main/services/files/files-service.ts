@@ -2,7 +2,8 @@ import { promises as nodeFs } from 'node:fs'
 import { posix, win32 } from 'node:path'
 import type { FileEntry, FilePreview } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { parseSshTarget, type SshTarget } from '@shared/ssh-target'
+import { projectEnvironment } from '@shared/project-environment'
+import type { SshTarget } from '@shared/ssh-target'
 import { joinProjectPath } from '../project-path'
 
 // Project file listing and read-only preview classification (spec Data/API,
@@ -351,9 +352,9 @@ export class FilesService {
   async list(projectId: string, relativePath: string | null): Promise<FileEntry[]> {
     const channel = 'files:list'
     const projectPath = this.#projectPath(projectId, channel)
-    const target = parseSshTarget(projectPath)
-    if (target !== null) {
-      return this.#listRemote(target, relativePath, channel)
+    const environment = projectEnvironment(projectPath)
+    if (environment.kind === 'ssh') {
+      return this.#listRemote(environment.target, relativePath, channel)
     }
     const { target: dir, requestRel } = await this.#locate(projectPath, relativePath, channel)
 
@@ -402,9 +403,9 @@ export class FilesService {
   async read(projectId: string, relativePath: string): Promise<FilePreview> {
     const channel = 'files:read'
     const projectPath = this.#projectPath(projectId, channel)
-    const target = parseSshTarget(projectPath)
-    if (target !== null) {
-      return this.#readRemote(target, relativePath, channel)
+    const environment = projectEnvironment(projectPath)
+    if (environment.kind === 'ssh') {
+      return this.#readRemote(environment.target, relativePath, channel)
     }
     const { target: file } = await this.#locate(projectPath, relativePath, channel)
 
@@ -547,7 +548,7 @@ export class FilesService {
 
   /** Rejects a local-only surface of an SSH project (spec Behaviour 11). */
   #requireLocal(projectPath: string, channel: string): void {
-    if (parseSshTarget(projectPath) !== null) {
+    if (projectEnvironment(projectPath).kind === 'ssh') {
       throw unsupportedSsh(channel)
     }
   }
@@ -661,7 +662,7 @@ export class FilesService {
     relativePath: string | null,
     channel: string,
   ): Promise<{ root: string; target: string; requestRel: string; lexicalTarget: string }> {
-    if (parseSshTarget(projectPath) !== null) {
+    if (projectEnvironment(projectPath).kind === 'ssh') {
       // Invariant: an SSH path never becomes a local path (spec ssh-projects
       // Behaviour 11). Callers branch on the transport before reaching here.
       throw unsupportedSsh(channel)
