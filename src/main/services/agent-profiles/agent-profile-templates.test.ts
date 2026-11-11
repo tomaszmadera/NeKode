@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { parseAgentCommand } from '@shared/agent-command'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { agentArgs } from '../agent-chat-launch-service'
 import { agentProfileTemplates } from './agent-profile-templates'
 
 const roots: string[] = []
@@ -38,6 +39,19 @@ describe('agent CLI command templates', () => {
       ])
     },
   )
+
+  it('starts OpenCode New Chat without the --prompt flag and keeps it for task prompts', () => {
+    const templates = agentProfileTemplates()
+    const openCode = templates.find((p) => p.id === 'opencode')
+    expect(openCode?.interactiveArgs).toEqual([])
+    expect(parseAgentCommand(openCode?.command ?? '').args).toEqual(['--prompt', '{prompt}'])
+    expect(
+      agentArgs(parseAgentCommand(openCode?.command ?? '').args, openCode?.interactiveArgs),
+    ).toEqual([])
+    expect(templates.filter((p) => p.interactiveArgs !== undefined).map((p) => p.id)).toEqual([
+      'opencode',
+    ])
+  })
 
   it('proposes bare names on Windows even with native executables and shell shims on PATH', () => {
     const first = scratch()

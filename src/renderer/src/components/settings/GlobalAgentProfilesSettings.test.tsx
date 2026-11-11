@@ -23,6 +23,12 @@ function harness(profiles: AgentProfile[] = []) {
   vi.mocked(app.agentProfiles.libraryGet).mockResolvedValue({ version: 1, profiles })
   vi.mocked(app.agentProfiles.templatesGet).mockResolvedValue([
     { id: 'claude', name: 'Claude Code', command: 'claude "{prompt}"' },
+    {
+      id: 'opencode',
+      name: 'OpenCode',
+      command: 'opencode --prompt "{prompt}"',
+      interactiveArgs: [],
+    },
   ])
   vi.mocked(app.agentProfiles.put).mockImplementation(async (input) => ({
     version: 1,
@@ -148,6 +154,25 @@ describe('global agent library editor', () => {
         id: null,
         name: 'Claude work',
         command: 'claude "{prompt}"',
+      }),
+    )
+  })
+
+  it('fills the interactive override a template proposes and saves it', async () => {
+    const app = harness()
+    fireEvent.click(await screen.findByRole('button', { name: 'Add agent' }))
+    fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'opencode' } })
+    expect((screen.getByLabelText('New Chat arguments') as HTMLInputElement).value).toBe('')
+    fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'claude' } })
+    expect(screen.queryByLabelText('New Chat arguments')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'opencode' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save agent' }))
+    await waitFor(() =>
+      expect(app.agentProfiles.put).toHaveBeenCalledWith({
+        id: null,
+        name: 'OpenCode',
+        command: 'opencode --prompt "{prompt}"',
+        interactiveArgs: [],
       }),
     )
   })

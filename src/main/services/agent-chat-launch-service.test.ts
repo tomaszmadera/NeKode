@@ -1,11 +1,13 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parseAgentCommand } from '@shared/agent-command'
 import type { AgentProfile } from '@shared/ipc-contract'
 import { AppError, type AppErrorCode } from '@shared/ipc-error'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openDatabase } from '../db/connection'
 import { runMigrations } from '../db/migrations'
 import { AgentChatLaunchService } from './agent-chat-launch-service'
+import { agentProfileTemplates } from './agent-profiles/agent-profile-templates'
 import { AgentProfilesService } from './agent-profiles/agent-profiles-service'
 import { AgentSessionRegistry } from './agent-session-registry'
 import { AppStateService } from './app-state-service'
@@ -208,6 +210,21 @@ describe('AgentChatLaunchService', () => {
     expect(spawns).toEqual([{ file: fields.executable, args: fields.interactiveArgs }])
     expect(selected.interactiveArgs).toEqual(fields.interactiveArgs)
     expect(spawns[0].args).not.toBe(selected.interactiveArgs)
+  })
+
+  it('starts the OpenCode template without a dangling --prompt flag', async () => {
+    const template = agentProfileTemplates().find((p) => p.id === 'opencode')
+    if (template === undefined) throw new Error('missing OpenCode template')
+    const selected: AgentProfile = {
+      id: 'prof-opencode',
+      name: template.name,
+      ...parseAgentCommand(template.command),
+      interactiveArgs: template.interactiveArgs,
+    }
+    const { service, project, spawns } = createHarness({ profiles: [selected] })
+    await service.createWithAgent(project.id, selected.id)
+    expect(spawns).toEqual([{ file: 'opencode', args: [] }])
+    expect(selected.args).toEqual(['--prompt', '{prompt}'])
   })
 
   it('rejects a globally existing unselected profile before chat creation and reads the current definition on later launch', async () => {

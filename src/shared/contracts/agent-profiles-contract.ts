@@ -30,6 +30,8 @@ export interface AgentProfileTemplate {
   id: string
   name: string
   command: string
+  /** New Chat argv when removing `{prompt}` alone would leave a dangling prompt flag. */
+  interactiveArgs?: string[]
 }
 
 export interface AgentProjectSelection extends AgentProjectSelectionInput {

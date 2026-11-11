@@ -198,7 +198,18 @@ export function GlobalAgentProfilesSettings({ app }: { app: AppApi }): React.JSX
                     const preset = templates.find((entry) => entry.id === value)
                     setForm(
                       preset
-                        ? { id: null, name: preset.name, command: preset.command }
+                        ? {
+                            id: null,
+                            name: preset.name,
+                            command: preset.command,
+                            ...(preset.interactiveArgs === undefined
+                              ? {}
+                              : {
+                                  interactiveArguments: serializeAgentArguments(
+                                    preset.interactiveArgs,
+                                  ),
+                                }),
+                          }
                         : { id: null, name: '', command: '' },
                     )
                     setError(null)
