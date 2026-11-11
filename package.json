@@ -28,8 +28,9 @@
     "check:package": "node scripts/check-package.cjs",
     "test:adapters": "python3 -m unittest discover -s adapters/plane -p test_description_text.py",
     "test:release": "node --test scripts/release.test.mjs",
+    "test:verify": "node --test scripts/verify.test.mjs",
     "test:watch": "vitest",
-    "verify": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run test:runner && pnpm run test:package && pnpm run test:release && pnpm run test:adapters"
+    "verify": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run test:runner && pnpm run test:package && pnpm run test:release && pnpm run test:verify && pnpm run test:adapters"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
