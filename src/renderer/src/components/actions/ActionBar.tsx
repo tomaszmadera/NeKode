@@ -9,7 +9,7 @@ import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn'
-import { actionIconGlyph, Icon, type LucideIcon } from '../../lib/icons'
+import { Icon, type LucideIcon } from '../../lib/icons'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { MarkdownViewToggle } from '../files/MarkdownViewToggle'
@@ -19,6 +19,8 @@ import type { KanbanSortBy, KanbanToolbarControls } from '../kanban/kanban-board
 import { NewChatAgentMenu } from '../layout/LeftNavigation'
 import { TaskProgressButton } from '../task-progress/TaskProgressButton'
 import { ActionContextMenu } from './ActionContextMenu'
+import { ActionGlyph } from './ActionGlyph'
+import { ActionGroupMenu } from './ActionGroupMenu'
 
 interface ActionBarProps {
   app: AppApi
@@ -76,25 +78,51 @@ const fixed: Array<{ label: string; action: FixedAction; icon: LucideIcon }> = [
   { label: 'Continue', action: 'continue', icon: Icon.continue },
 ]
 
-/**
- * Status glyph per action state (design doc 10: status icons 13-14px).
- * Completion intentionally reverts to the idle glyph: the persisted run
- * state survives app restarts, so a success checkmark would never go
- * away; the tooltip (exit code, completed at) carries the result.
- */
-const statusIcons: Record<'idle' | 'running' | 'success' | 'failed', LucideIcon> = {
-  idle: Icon.run,
-  running: Icon.running,
-  success: Icon.run,
-  failed: Icon.fail,
-}
-
 function message(error: unknown): string {
   return parseAppErrorPayload(error)?.message ?? 'Action failed.'
 }
 
 function epochOf(epochs: Record<string, number>, id: string): number {
   return epochs[id] ?? 0
+}
+
+interface GroupEntry {
+  kind: 'group'
+  name: string
+  actions: ActionControl[]
+}
+
+type ActionEntry = { kind: 'action'; action: ActionControl } | GroupEntry
+
+/** Global actions plus the active project's (center-layout spec Behaviour 13). */
+function visibleActions(actions: ActionControl[], projectId: string | null): ActionControl[] {
+  return actions.filter((action) => action.scope === 'global' || action.projectId === projectId)
+}
+
+/**
+ * Action row entries in configured order (action-groups spec Behaviour 4): an
+ * action with a group joins the entry anchored at that group's first visible
+ * member; an action without one keeps its own button.
+ */
+function actionEntries(visible: ActionControl[]): ActionEntry[] {
+  const entries: ActionEntry[] = []
+  const groups = new Map<string, GroupEntry>()
+  for (const action of visible) {
+    const name = action.group?.trim() ?? ''
+    if (name === '') {
+      entries.push({ kind: 'action', action })
+      continue
+    }
+    const existing = groups.get(name)
+    if (existing) {
+      existing.actions.push(action)
+      continue
+    }
+    const entry: GroupEntry = { kind: 'group', name, actions: [action] }
+    groups.set(name, entry)
+    entries.push(entry)
+  }
+  return entries
 }
 
 export function ActionBar({
@@ -136,6 +164,16 @@ export function ActionBar({
     x: number
     y: number
   } | null>(null)
+  /**
+   * Open group menu: the group name, the project it was opened in, and the
+   * trigger anchor (action-groups spec Behaviour 7).
+   */
+  const [groupMenu, setGroupMenu] = useState<{
+    name: string
+    projectId: string | null
+    x: number
+    y: number
+  } | null>(null)
   // A status read is stamped with the run epoch. execute() bumps it first, so
   // an earlier read (mount hydration included) cannot overwrite that run.
   const runEpochRef = useRef<Record<string, number>>({})
@@ -152,9 +190,8 @@ export function ActionBar({
       return next
     })
   }, [])
-  const visible = actions.filter(
-    (action) => action.scope === 'global' || action.projectId === projectId,
-  )
+  const visible = visibleActions(actions, projectId)
+  const entries = actionEntries(visible)
   // Pending Continue CR timer (split-write submission); cancelled on unmount.
   const cancelContinueCrRef = useRef<(() => void) | null>(null)
   useEffect(() => {
@@ -169,6 +206,22 @@ export function ActionBar({
       setContextMenu(null)
     }
   }, [actions, contextMenu])
+
+  // An open group menu closes when its group disappears (project switch,
+  // deletion, or a regroup that leaves fewer than two visible members).
+  useEffect(() => {
+    if (groupMenu === null) return
+    if (groupMenu.projectId !== projectId) {
+      setGroupMenu(null)
+      return
+    }
+    const entry = actionEntries(visibleActions(actions, projectId)).find(
+      (candidate) => candidate.kind === 'group' && candidate.name === groupMenu.name,
+    )
+    if (entry === undefined || entry.kind !== 'group' || entry.actions.length < 2) {
+      setGroupMenu(null)
+    }
+  }, [actions, projectId, groupMenu])
 
   useEffect(() => {
     let alive = true
@@ -302,15 +355,7 @@ export function ActionBar({
     const state = states[action.id]
     const status = state?.status ?? 'idle'
     const isRunning = status === 'running'
-    // A preset icon name renders as its Lucide glyph; any other stored
-    // value (custom emoji) stays literal text before the title. The
-    // capitalized alias keeps JSX from reading the variable as a DOM tag.
-    // The action's own icon (preset glyph or emoji) IS the run-state
-    // glyph: it carries the state color and the running spin. The
-    // generic status glyph (idle/run, failed) renders only when no
-    // custom icon is set — never both (double-icon fix).
-    const PresetIcon = actionIconGlyph(action.icon)
-    const StatusIcon = statusIcons[status]
+    // Hover details carry the command, exit code, and completion time.
     const details = [
       action.command,
       state?.exitCode !== null && state?.exitCode !== undefined
@@ -351,28 +396,55 @@ export function ActionBar({
             }
           }}
         >
-          {PresetIcon ? (
-            <PresetIcon
-              size={15}
-              aria-hidden
-              className={cn(isRunning && 'animate-spin', status === 'idle' && 'text-ink-secondary')}
-            />
-          ) : action.icon ? (
-            <span aria-hidden="true" className={cn(isRunning && 'animate-spin')}>
-              {action.icon}
-            </span>
-          ) : (
-            <StatusIcon
-              size={15}
-              aria-hidden
-              className={cn(isRunning && 'animate-spin', status === 'idle' && 'text-ink-secondary')}
-            />
-          )}
+          <ActionGlyph action={action} status={status} />
           {action.title}
         </button>
       </div>
     )
   }
+
+  // A group with two or more visible members is one trigger plus a menu; a
+  // single member keeps its own button (action-groups spec Behaviour 5-6).
+  const renderGroup = (entry: GroupEntry): React.JSX.Element => {
+    const isRunning = entry.actions.some((action) => states[action.id]?.status === 'running')
+    const open = groupMenu?.name === entry.name
+    return (
+      <div key={`group:${entry.name}`} className="nk-btn-group shrink-0">
+        <button
+          type="button"
+          title={`${entry.name} actions`}
+          data-active={isRunning ? 'true' : 'false'}
+          data-testid={testIdFor.actionGroup(entry.name)}
+          className={cn('nk-tb', isRunning && 'active text-info')}
+          onClick={(event) => {
+            if (open) {
+              setGroupMenu(null)
+              return
+            }
+            const rect = event.currentTarget.getBoundingClientRect()
+            setGroupMenu({ name: entry.name, projectId, x: rect.left, y: rect.bottom })
+          }}
+        >
+          {entry.name}
+          <Icon.chevronDown size={13} aria-hidden className="text-ink-secondary" />
+        </button>
+      </div>
+    )
+  }
+
+  const renderEntry = (entry: ActionEntry): React.JSX.Element => {
+    if (entry.kind === 'action') return renderAction(entry.action)
+    if (entry.actions.length === 1) return renderAction(entry.actions[0])
+    return renderGroup(entry)
+  }
+
+  const openGroup =
+    groupMenu === null
+      ? null
+      : (entries.find(
+          (entry): entry is GroupEntry =>
+            entry.kind === 'group' && entry.name === groupMenu.name && entry.actions.length > 1,
+        ) ?? null)
 
   return (
     <div
@@ -563,7 +635,7 @@ export function ActionBar({
           followed by Markdown Code | Preview if active. */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {!isKanban && task !== undefined ? <TaskProgressButton task={task} /> : null}
-        {visible.map(renderAction)}
+        {entries.map(renderEntry)}
         {markdownView !== null ? (
           <MarkdownViewToggle mode={markdownView.mode} onChange={markdownView.onChange} />
         ) : null}
@@ -574,6 +646,24 @@ export function ActionBar({
           y={contextMenu.y}
           command={contextMenu.action.command}
           onClose={() => setContextMenu(null)}
+        />
+      ) : null}
+      {openGroup !== null ? (
+        <ActionGroupMenu
+          name={openGroup.name}
+          x={groupMenu?.x ?? 0}
+          y={groupMenu?.y ?? 0}
+          actions={openGroup.actions}
+          statusOf={(id) => states[id]?.status ?? 'idle'}
+          onSelect={(action) => {
+            setGroupMenu(null)
+            void execute(action)
+          }}
+          onCopy={(action, x, y) => {
+            setGroupMenu(null)
+            setContextMenu({ action, x, y })
+          }}
+          onClose={() => setGroupMenu(null)}
         />
       ) : null}
     </div>

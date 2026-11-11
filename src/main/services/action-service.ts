@@ -15,6 +15,7 @@ interface ActionRow {
   scope: 'global' | 'project'
   title: string
   icon: string | null
+  group_name: string | null
   command: string
   cwd: string | null
   run_mode: 'background' | 'new-terminal' | 'bottom-terminal'
@@ -140,12 +141,19 @@ function toControl(row: ActionRow): ActionControl {
     projectId: row.project_id,
     title: row.title,
     icon: row.icon,
+    group: row.group_name,
     command: row.command,
     cwd: row.cwd,
     runMode: row.run_mode,
     confirm: row.confirm === 1,
     sortOrder: row.sort_order,
   }
+}
+
+/** Stored form of a group name: trimmed, and an empty result is no group. */
+function groupOf(value: string | null): string | null {
+  const trimmed = value?.trim() ?? ''
+  return trimmed === '' ? null : trimmed
 }
 
 const idle: ActionExecution = { status: 'idle', exitCode: null, completedAt: null, error: null }
@@ -175,17 +183,19 @@ export class ActionService {
   create(input: ActionInput): ActionControl {
     this.#validate(input)
     const id = randomUUID()
+    const group = groupOf(input.group)
     try {
       this.#deps.db
         .prepare(`INSERT INTO actions
-        (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        (id, project_id, scope, title, icon, group_name, command, cwd, run_mode, confirm, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(
           id,
           input.projectId,
           input.scope,
           input.title.trim(),
           input.icon,
+          group,
           input.command.trim(),
           input.cwd,
           input.runMode,
@@ -195,21 +205,23 @@ export class ActionService {
     } catch (error) {
       throw wrapSqliteError(error, 'actions:create')
     }
-    return { ...input, id, title: input.title.trim(), command: input.command.trim() }
+    return { ...input, id, title: input.title.trim(), group, command: input.command.trim() }
   }
 
   update(id: string, input: ActionInput): ActionControl {
     this.#validate(input)
+    const group = groupOf(input.group)
     try {
       const result = this.#deps.db
         .prepare(`UPDATE actions SET
-        project_id = ?, scope = ?, title = ?, icon = ?, command = ?, cwd = ?,
+        project_id = ?, scope = ?, title = ?, icon = ?, group_name = ?, command = ?, cwd = ?,
         run_mode = ?, confirm = ?, sort_order = ? WHERE id = ?`)
         .run(
           input.projectId,
           input.scope,
           input.title.trim(),
           input.icon,
+          group,
           input.command.trim(),
           input.cwd,
           input.runMode,
@@ -223,7 +235,7 @@ export class ActionService {
       if (error instanceof AppError) throw error
       throw wrapSqliteError(error, 'actions:update')
     }
-    return { ...input, id, title: input.title.trim(), command: input.command.trim() }
+    return { ...input, id, title: input.title.trim(), group, command: input.command.trim() }
   }
 
   delete(id: string): void {

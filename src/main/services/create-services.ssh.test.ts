@@ -326,6 +326,7 @@ describe('SSH launch routing', () => {
       projectId: project.id,
       title: 'Build',
       icon: null,
+      group: null,
       command: 'make',
       cwd: null,
       runMode: 'background',

@@ -615,6 +615,7 @@ describe('registered ipc handlers', () => {
       projectId: 'p1',
       title: 'Build',
       icon: null,
+      group: null,
       command: 'pnpm build',
       cwd: null,
       runMode: 'background',

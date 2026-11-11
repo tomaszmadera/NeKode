@@ -372,6 +372,7 @@ describe('preload app api', () => {
       projectId: 'p1',
       title: 'Build',
       icon: null,
+      group: null,
       command: 'pnpm build',
       cwd: null,
       runMode: 'background' as const,

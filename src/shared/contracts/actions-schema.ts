@@ -8,6 +8,15 @@ export const actionInputSchema = exactObject(
     projectId: z.string({ error: 'must be a string' }).nullable(),
     title: nonBlankSchema,
     icon: z.string({ error: 'must be a string' }).nullable(),
+    /**
+     * Group name for the action row (action-groups spec Behaviour 1-3); `null`
+     * keeps the action as its own button. Trimmed by the service, and an empty
+     * result is stored as `null`.
+     */
+    group: z
+      .string({ error: 'must be a string' })
+      .refine((value) => value.trim().length <= 60, { error: 'must be at most 60 characters' })
+      .nullable(),
     command: nonBlankSchema,
     cwd: safePathSchema.nullable(),
     runMode: z.enum(['background', 'new-terminal', 'bottom-terminal'], { error: 'is invalid' }),

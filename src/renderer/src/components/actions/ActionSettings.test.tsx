@@ -409,6 +409,7 @@ describe('custom emoji icon selection', () => {
       projectId: null,
       title: 'Emoji Action',
       icon: '🚀',
+      group: null,
       command: 'echo emoji',
       cwd: null,
       runMode: 'background',
@@ -584,6 +585,7 @@ describe('mutation in-flight guards and duplicate prevention', () => {
       projectId: null,
       title: 'Action 1',
       icon: null,
+      group: null,
       command: 'echo 1',
       cwd: null,
       runMode: 'background',
@@ -636,6 +638,7 @@ describe('mutation in-flight guards and duplicate prevention', () => {
       projectId: null,
       title: 'Action 1',
       icon: null,
+      group: null,
       command: 'echo 1',
       cwd: null,
       runMode: 'background',
@@ -697,4 +700,88 @@ describe('mutation in-flight guards and duplicate prevention', () => {
       expect(retryButton.disabled).toBe(false)
     },
   )
+})
+
+describe('Action group field', () => {
+  const existing: ActionControl = {
+    id: 'a1',
+    scope: 'global',
+    projectId: null,
+    title: 'Build',
+    icon: null,
+    group: 'Release',
+    command: 'pnpm build',
+    cwd: null,
+    runMode: 'background',
+    confirm: false,
+    sortOrder: 0,
+  }
+
+  function renderSettings(app: AppApi, actions: ActionControl[]) {
+    return render(
+      <ActionSettings
+        app={app}
+        actions={actions}
+        projectId={null}
+        projectPath={null}
+        autoSend={false}
+        onAutoSendChange={vi.fn()}
+        onRefresh={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    )
+  }
+
+  it('saves a trimmed group and suggests the existing names', async () => {
+    const create = vi.fn().mockResolvedValue({})
+    const app = {
+      ...shellAppMock(),
+      actions: { create, update: vi.fn().mockResolvedValue({}) },
+    } as unknown as AppApi
+    renderSettings(app, [existing])
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+
+    expect(screen.getByText(/Group: Release/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
+    const options = screen
+      .getByTestId(TEST_ID.settingsActionGroupOptions)
+      .querySelectorAll('option')
+    expect([...options].map((option) => option.getAttribute('value'))).toEqual(['Release'])
+
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Publish' } })
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm publish' } })
+    fireEvent.change(screen.getByLabelText('Group'), { target: { value: '  Release  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect((create.mock.calls[0][0] as ActionInput).group).toBe('Release')
+  })
+
+  it('writes null when the group field is empty', async () => {
+    const create = vi.fn().mockResolvedValue({})
+    const app = {
+      ...shellAppMock(),
+      actions: { create, update: vi.fn().mockResolvedValue({}) },
+    } as unknown as AppApi
+    renderSettings(app, [])
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    fireEvent.click(screen.getByRole('button', { name: 'Add action' }))
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Lint' } })
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm lint' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect((create.mock.calls[0][0] as ActionInput).group).toBeNull()
+  })
+
+  it('round-trips the stored group into the edit form', () => {
+    const app = {
+      ...shellAppMock(),
+      actions: { create: vi.fn(), update: vi.fn() },
+    } as unknown as AppApi
+    renderSettings(app, [existing])
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect((screen.getByLabelText('Group') as HTMLInputElement).value).toBe('Release')
+  })
 })

@@ -60,6 +60,7 @@ describe('ActionService', () => {
           projectId: 'p1',
           title: 'Build',
           icon: null,
+          group: null,
           command: 'make',
           cwd,
           runMode: 'background',
@@ -103,6 +104,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Build',
         icon: null,
+        group: null,
         command: 'pnpm build',
         cwd: null,
         runMode: 'background',
@@ -137,6 +139,7 @@ describe('ActionService', () => {
         projectId: null,
         title: 'Global',
         icon: null,
+        group: null,
         command: 'echo global',
         cwd: null,
         runMode: 'background',
@@ -148,6 +151,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Build',
         icon: null,
+        group: null,
         command: 'pnpm build',
         cwd: null,
         runMode: 'background',
@@ -174,6 +178,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Build',
         icon: null,
+        group: null,
         command: 'pnpm build',
         cwd: null,
         runMode: 'background',
@@ -202,6 +207,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Build',
         icon: null,
+        group: null,
         command: 'pnpm build',
         cwd: null,
         runMode: 'background',
@@ -224,6 +230,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Build',
         icon: null,
+        group: null,
         command: 'pnpm build',
         cwd: null,
         runMode: 'background',
@@ -262,6 +269,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Build',
         icon: null,
+        group: null,
         command: 'pnpm build',
         cwd: null,
         runMode: 'background',
@@ -297,6 +305,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Watch',
         icon: null,
+        group: null,
         command: 'pnpm test',
         cwd: hostPath('D:/code/demo/app'),
         runMode: 'bottom-terminal',
@@ -326,6 +335,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Rooted',
         icon: null,
+        group: null,
         command: 'pnpm lint',
         cwd: null,
         runMode: 'bottom-terminal',
@@ -350,6 +360,7 @@ describe('ActionService', () => {
         projectId: null,
         title: 'Global watch',
         icon: null,
+        group: null,
         command: 'pnpm test',
         cwd: hostPath('D:/code/anywhere'),
         runMode: 'bottom-terminal',
@@ -369,6 +380,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Watch',
         icon: null,
+        group: null,
         command: 'pnpm test',
         cwd: hostPath('D:/code/missing'),
         runMode: 'bottom-terminal',
@@ -400,6 +412,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Watch',
         icon: null,
+        group: null,
         command: 'pnpm dev',
         cwd: hostPath('D:/code/demo/app'),
         runMode: 'new-terminal',
@@ -421,6 +434,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Test',
         icon: null,
+        group: null,
         command: 'pnpm test',
         cwd: null,
         runMode: 'new-terminal',
@@ -479,6 +493,7 @@ describe('ActionService', () => {
     try {
       const input = {
         icon: null,
+        group: null,
         cwd: null,
         runMode: 'background' as const,
         confirm: false,
@@ -579,6 +594,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'P1',
         icon: null,
+        group: null,
         command: 'p1',
         cwd: null,
         runMode: 'background',
@@ -590,6 +606,7 @@ describe('ActionService', () => {
         projectId: 'p2',
         title: 'P2',
         icon: null,
+        group: null,
         command: 'p2',
         cwd: null,
         runMode: 'background',
@@ -601,6 +618,7 @@ describe('ActionService', () => {
         projectId: null,
         title: 'Global',
         icon: null,
+        group: null,
         command: 'global',
         cwd: null,
         runMode: 'background',
@@ -651,6 +669,7 @@ describe('ActionService', () => {
       projectId: 'p1',
       title: 'Stay',
       icon: null,
+      group: null,
       command: `"${process.execPath}" "${scriptPath}"`,
       cwd: null,
       runMode: 'background',
@@ -702,6 +721,7 @@ describe('ActionService', () => {
         projectId: 'p1',
         title: 'Sleep',
         icon: null,
+        group: null,
         command: `sleep 60 & echo $! > '${pidFile}'; wait`,
         cwd: null,
         runMode: 'background',
@@ -726,6 +746,95 @@ describe('ActionService', () => {
     },
     20000,
   )
+
+  it('stores and returns the action group, normalizing a blank value to null', () => {
+    const { db, service } = setup()
+    try {
+      const grouped = service.create({
+        scope: 'global',
+        projectId: null,
+        title: 'Build',
+        icon: null,
+        group: '  Release  ',
+        command: 'make',
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 0,
+      })
+      const ungrouped = service.create({
+        scope: 'global',
+        projectId: null,
+        title: 'Lint',
+        icon: null,
+        group: '   ',
+        command: 'make lint',
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 1,
+      })
+
+      expect(grouped.group).toBe('Release')
+      expect(ungrouped.group).toBeNull()
+      expect(service.list().map((action) => [action.title, action.group])).toEqual([
+        ['Build', 'Release'],
+        ['Lint', null],
+      ])
+
+      const moved = service.update(grouped.id, {
+        scope: 'global',
+        projectId: null,
+        title: 'Build',
+        icon: null,
+        group: 'Checks',
+        command: 'make',
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 0,
+      })
+      const cleared = service.update(ungrouped.id, {
+        scope: 'global',
+        projectId: null,
+        title: 'Lint',
+        icon: null,
+        group: 'Checks',
+        command: 'make lint',
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 1,
+      })
+
+      expect(moved.group).toBe('Checks')
+      expect(cleared.group).toBe('Checks')
+      expect(service.list().map((action) => action.group)).toEqual(['Checks', 'Checks'])
+
+      // Clearing the field through update removes the action from its group and
+      // stores NULL, never an empty string (action-groups spec Behaviour 13).
+      const blanked = service.update(cleared.id, {
+        scope: 'global',
+        projectId: null,
+        title: 'Lint',
+        icon: null,
+        group: '   ',
+        command: 'make lint',
+        cwd: null,
+        runMode: 'background',
+        confirm: false,
+        sortOrder: 1,
+      })
+
+      expect(blanked.group).toBeNull()
+      expect(service.list().find((action) => action.id === cleared.id)?.group).toBeNull()
+      expect(db.prepare('SELECT group_name FROM actions WHERE id = ?').get(cleared.id)).toEqual({
+        group_name: null,
+      })
+    } finally {
+      db.close()
+    }
+  })
 })
 
 function isPidAlive(pid: number): boolean {

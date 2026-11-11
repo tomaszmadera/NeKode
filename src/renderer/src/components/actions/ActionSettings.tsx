@@ -111,6 +111,7 @@ function emptyInput(projectId: string | null, sortOrder: number): ActionInput {
     projectId,
     title: '',
     icon: null,
+    group: null,
     command: '',
     cwd: null,
     runMode: 'background',
@@ -166,6 +167,11 @@ export function ActionSettings({
   const visible = actions.filter(
     (action) => action.scope === 'global' || action.projectId === projectId,
   )
+  // Suggestion list for the form's group field: existing names of the actions
+  // visible in this project (action-groups spec Behaviour 12).
+  const groupNameOptions = [
+    ...new Set(visible.map((action) => action.group?.trim() ?? '').filter((name) => name !== '')),
+  ].sort()
 
   const guard = useMutationGuard()
 
@@ -178,6 +184,7 @@ export function ActionSettings({
       projectId: action.projectId,
       title: action.title,
       icon: action.icon,
+      group: action.group,
       command: decoded.command,
       cwd: action.cwd,
       runMode: action.runMode,
@@ -198,6 +205,7 @@ export function ActionSettings({
     const input = {
       ...form,
       icon: form.icon?.trim() ? form.icon.trim() : null,
+      group: form.group?.trim() ? form.group.trim() : null,
       command: runWithPowerShell ? powerShellCommand(form.command) : form.command,
     }
     await guard.run(async () => {
@@ -380,6 +388,7 @@ export function ActionSettings({
                             </code>
                             <span className="text-[11px] text-ink-muted">
                               {mode} · {action.scope}
+                              {action.group ? ` · Group: ${action.group}` : ''}
                             </span>
                           </span>
                           <button type="button" className={quietClass} onClick={() => edit(action)}>
@@ -483,6 +492,30 @@ export function ActionSettings({
                       />
                     </FieldRow>
                   ) : null}
+                  <FieldRow
+                    label="Group"
+                    htmlFor="settings-action-group"
+                    description="Actions with the same group share one toolbar control."
+                    divided
+                  >
+                    <input
+                      id="settings-action-group"
+                      className={textClass}
+                      value={form.group ?? ''}
+                      list="settings-action-group-options"
+                      placeholder="No group"
+                      data-testid={TEST_ID.settingsActionGroup}
+                      onChange={(event) => setForm({ ...form, group: event.target.value })}
+                    />
+                    <datalist
+                      id="settings-action-group-options"
+                      data-testid={TEST_ID.settingsActionGroupOptions}
+                    >
+                      {groupNameOptions.map((name) => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
+                  </FieldRow>
                   <FieldRow
                     label="Scope"
                     htmlFor="settings-action-scope"

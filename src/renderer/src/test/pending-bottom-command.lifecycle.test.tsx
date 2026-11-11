@@ -50,6 +50,7 @@ const bottomAction: ActionControl = {
   projectId: 'p1',
   title: 'Build',
   icon: null,
+  group: null,
   command: 'pnpm test',
   cwd: 'D:/code/demo/app',
   runMode: 'bottom-terminal',

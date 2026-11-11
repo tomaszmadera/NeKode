@@ -46,8 +46,8 @@ describe('migration 6 (chat launch identity)', () => {
         '[PS7] Old profile',
         '2026-10-18T00:00:00Z',
       )
-      expect(runMigrations(db)).toBe(8)
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(9)
       expect(db.prepare('SELECT name, task_ref, agent_name FROM chats').get()).toEqual({
         name: '[PS7] Old profile',
         task_ref: null,
@@ -61,7 +61,7 @@ describe('migration 6 (chat launch identity)', () => {
     }
     const reopened = openDatabase(path)
     try {
-      expect(runMigrations(reopened)).toBe(8)
+      expect(runMigrations(reopened)).toBe(9)
       expect(
         reopened.prepare('SELECT name, task_ref, agent_name FROM chats WHERE id = ?').get('agent'),
       ).toEqual({
@@ -94,8 +94,8 @@ describe('runMigrations', () => {
   it('creates the schema once and is idempotent', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(8)
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(9)
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as Array<{ name: string }>
@@ -384,7 +384,7 @@ describe('migration 2 (tasks -> chats)', () => {
   it('carries rows over to chats without status and drops the tasks table', () => {
     const db = createLegacyDb()
     try {
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -466,7 +466,7 @@ describe('migration 2 (tasks -> chats)', () => {
       const applied = db
         .prepare('SELECT version FROM schema_migrations ORDER BY version')
         .all() as Array<{ version: number }>
-      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
     } finally {
       db.close()
     }
@@ -522,7 +522,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
   it('accepts bottom-terminal on an empty database and keeps the schema', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
       db.prepare(
         'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       ).run(
@@ -543,7 +543,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
           .run(),
       ).not.toThrow()
       // Idempotent: a second run re-applies nothing.
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
     } finally {
       db.close()
     }
@@ -552,7 +552,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
   it('lets populated databases accept bottom-terminal and keeps old rows byte-for-byte', () => {
     const db = createLegacyDbAtV4()
     try {
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
       expect(() =>
         db
           .prepare(
@@ -667,7 +667,7 @@ describe('migration 3 (chat name unique index dropped)', () => {
   it('drops the unique index: duplicate chat names within a project are allowed', () => {
     const db = createLegacyDbAtV2()
     try {
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
       expect(() =>
         db
           .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
@@ -728,8 +728,8 @@ describe('migration 7 (dictation dictionary)', () => {
   it('creates the dictation_dictionary table with expected schema and indexes', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(8)
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(9)
 
       const columns = db.prepare('PRAGMA table_info(dictation_dictionary)').all() as Array<{
         name: string
@@ -996,7 +996,7 @@ describe('migration 7 (dictation dictionary)', () => {
       ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
 
       // Now run migration 7
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
 
       const now = '2026-10-25T10:00:00Z'
       db.prepare(
@@ -1009,7 +1009,7 @@ describe('migration 7 (dictation dictionary)', () => {
 
     const reopened = openDatabase(path)
     try {
-      expect(runMigrations(reopened)).toBe(8)
+      expect(runMigrations(reopened)).toBe(9)
       const entry = reopened
         .prepare('SELECT * FROM dictation_dictionary WHERE id = ?')
         .get('d1') as Record<string, unknown>
@@ -1069,7 +1069,7 @@ describe('migration 8 (project path identity)', () => {
         'p1',
       )
 
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
 
       expect(
         db
@@ -1104,7 +1104,7 @@ describe('migration 8 (project path identity)', () => {
       expect(
         db.prepare("SELECT name FROM sqlite_master WHERE name = 'uq_projects_path_identity'").get(),
       ).toEqual({ name: 'uq_projects_path_identity' })
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
     } finally {
       db.close()
     }
@@ -1113,7 +1113,7 @@ describe('migration 8 (project path identity)', () => {
   it('rejects a raw insert that reuses a project identity and keeps Linux case distinct', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(8)
+      expect(runMigrations(db)).toBe(9)
       const insert = db.prepare(
         'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       )
@@ -1248,6 +1248,56 @@ describe('migration 8 (project path identity)', () => {
       expect(db.prepare('SELECT key, value FROM app_state').all()).toEqual([
         { key: 'selection.projectId', value: 'p1' },
       ])
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('migration 9 (action groups)', () => {
+  it('adds an empty group to existing action rows without rewriting them', () => {
+    const db = openDatabase(':memory:')
+    try {
+      runMigrations(
+        db,
+        MIGRATIONS.filter((migration) => migration.version <= 8),
+      )
+      db.prepare(
+        'INSERT INTO actions (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).run('a1', null, 'global', 'Build', 'run', 'pnpm build', null, 'background', 0, 2)
+      expect(db.prepare('PRAGMA table_info(actions)').all()).not.toContainEqual(
+        expect.objectContaining({ name: 'group_name' }),
+      )
+
+      expect(runMigrations(db)).toBe(9)
+
+      expect(
+        db
+          .prepare(
+            'SELECT id, scope, title, icon, group_name, command, run_mode, sort_order FROM actions',
+          )
+          .all(),
+      ).toEqual([
+        {
+          id: 'a1',
+          scope: 'global',
+          title: 'Build',
+          icon: 'run',
+          group_name: null,
+          command: 'pnpm build',
+          run_mode: 'background',
+          sort_order: 2,
+        },
+      ])
+
+      db.prepare('UPDATE actions SET group_name = ? WHERE id = ?').run('Release', 'a1')
+      expect(db.prepare('SELECT group_name FROM actions WHERE id = ?').get('a1')).toEqual({
+        group_name: 'Release',
+      })
+      // The column rejects a blank name; ungrouped rows keep NULL.
+      expect(() =>
+        db.prepare('UPDATE actions SET group_name = ? WHERE id = ?').run('   ', 'a1'),
+      ).toThrow(/CHECK constraint failed/i)
     } finally {
       db.close()
     }

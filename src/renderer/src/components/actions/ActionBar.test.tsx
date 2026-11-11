@@ -28,6 +28,7 @@ const customAction: ActionControl = {
   projectId: null,
   title: 'Start',
   icon: null,
+  group: null,
   command: 'npm start',
   cwd: null,
   runMode: 'background',
@@ -537,5 +538,228 @@ describe('ActionBar', () => {
     expect(button.querySelector('svg')).not.toBeNull()
     // No extra emoji span
     expect(button.querySelector('span[aria-hidden="true"]')).toBeNull()
+  })
+})
+
+describe('action groups', () => {
+  function groupedAction(
+    id: string,
+    title: string,
+    group: string | null,
+    sortOrder: number,
+    extra: Partial<ActionControl> = {},
+  ): ActionControl {
+    return {
+      id,
+      scope: 'global',
+      projectId: null,
+      title,
+      icon: null,
+      group,
+      command: `${title} cmd`,
+      cwd: null,
+      runMode: 'background',
+      confirm: false,
+      sortOrder,
+      ...extra,
+    }
+  }
+
+  function barElement(app: AppApi, actions: ActionControl[], isKanban = false, projectId = 'p1') {
+    return (
+      <ActionBar
+        app={app}
+        actions={actions}
+        projectId={projectId}
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={isKanban}
+      />
+    )
+  }
+
+  function renderBar(app: AppApi, actions: ActionControl[], isKanban = false) {
+    return render(barElement(app, actions, isKanban))
+  }
+
+  it('collapses grouped actions into one trigger and runs the chosen member', async () => {
+    const app = makeAppMock()
+    renderBar(app, [
+      groupedAction('a1', 'Build', 'Build', 0),
+      groupedAction('a2', 'Build all', 'Build', 1),
+      groupedAction('a3', 'Start', null, 2),
+    ])
+
+    expect(screen.getByTestId(testIdFor.actionButton('a3'))).toBeTruthy()
+    expect(screen.queryByTestId(testIdFor.actionButton('a1'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.actionButton('a2'))).toBeNull()
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Build')))
+    expect(screen.getByTestId(testIdFor.actionGroupMenu('Build'))).toBeTruthy()
+    fireEvent.click(screen.getByTestId(testIdFor.actionButton('a2')))
+
+    await waitFor(() => expect(app.actions.execute).toHaveBeenCalledWith('a2', 'p1', false))
+    expect(screen.queryByTestId(testIdFor.actionGroupMenu('Build'))).toBeNull()
+  })
+
+  it('keeps a one-member group as the member button', () => {
+    const app = makeAppMock()
+    renderBar(app, [groupedAction('a1', 'Build', 'Build', 0), groupedAction('a2', 'Lint', null, 1)])
+
+    expect(screen.queryByTestId(testIdFor.actionGroup('Build'))).toBeNull()
+    expect(screen.getByTestId(testIdFor.actionButton('a1'))).toBeTruthy()
+    expect(screen.getByTestId(testIdFor.actionButton('a2'))).toBeTruthy()
+  })
+
+  it('groups a global and a project action that share a name', () => {
+    const app = makeAppMock()
+    renderBar(app, [
+      groupedAction('a1', 'Build', 'Release', 0),
+      groupedAction('a2', 'Publish', 'Release', 1, { scope: 'project', projectId: 'p1' }),
+    ])
+
+    expect(screen.getByTestId(testIdFor.actionGroup('Release'))).toBeTruthy()
+    expect(screen.queryByTestId(testIdFor.actionButton('a1'))).toBeNull()
+    expect(screen.queryByTestId(testIdFor.actionButton('a2'))).toBeNull()
+  })
+
+  it('asks before running a confirmed member and runs nothing on cancel', () => {
+    const app = makeAppMock()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderBar(app, [
+      groupedAction('a1', 'Deploy', 'Ops', 0, { confirm: true }),
+      groupedAction('a2', 'Restart', 'Ops', 1),
+    ])
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+    fireEvent.click(screen.getByTestId(testIdFor.actionButton('a1')))
+
+    expect(confirm).toHaveBeenCalledWith('Run Deploy?')
+    expect(app.actions.execute).not.toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('marks the trigger active while a member runs and disables only that member', async () => {
+    const app = makeAppMock()
+    vi.mocked(app.actions.status).mockImplementation(async (id: string) =>
+      id === 'a1'
+        ? { status: 'running', exitCode: null, completedAt: null, error: null }
+        : { status: 'idle', exitCode: null, completedAt: null, error: null },
+    )
+    renderBar(app, [groupedAction('a1', 'Build', 'Ops', 0), groupedAction('a2', 'Test', 'Ops', 1)])
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.actionButton('a1')).hasAttribute('disabled')).toBe(true),
+    )
+    expect(screen.getByTestId(testIdFor.actionGroup('Ops')).getAttribute('data-active')).toBe(
+      'true',
+    )
+    expect(screen.getByTestId(testIdFor.actionButton('a2')).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('closes the menu on Escape and on an outside click', () => {
+    const app = makeAppMock()
+    renderBar(app, [groupedAction('a1', 'Build', 'Ops', 0), groupedAction('a2', 'Test', 'Ops', 1)])
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+    expect(screen.getByTestId(testIdFor.actionGroupMenu('Ops'))).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId(testIdFor.actionGroupMenu('Ops'))).toBeNull()
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroupMenu('Ops')))
+    expect(screen.queryByTestId(testIdFor.actionGroupMenu('Ops'))).toBeNull()
+  })
+
+  it('keeps the copy-command menu available on a group item', async () => {
+    const app = makeAppMock()
+    const clipboard = stubClipboard()
+    renderBar(app, [groupedAction('a1', 'Build', 'Ops', 0), groupedAction('a2', 'Test', 'Ops', 1)])
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.actionButton('a1')))
+
+    expect(screen.queryByTestId(testIdFor.actionGroupMenu('Ops'))).toBeNull()
+    fireEvent.click(screen.getByTestId(TEST_ID.actionContextCopyCommand))
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('Build cmd'))
+  })
+
+  it('groups actions in kanban mode as well', () => {
+    const app = makeAppMock()
+    renderBar(
+      app,
+      [groupedAction('a1', 'Build', 'Ops', 0), groupedAction('a2', 'Test', 'Ops', 1)],
+      true,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Handoff' })).toBeNull()
+    expect(screen.getByTestId(testIdFor.actionGroup('Ops'))).toBeTruthy()
+  })
+
+  it('lists the grouped members in configured order with their titles', () => {
+    const app = makeAppMock()
+    renderBar(app, [
+      groupedAction('a1', 'Build', 'Ops', 0),
+      groupedAction('a2', 'Test suite', 'Ops', 1),
+      groupedAction('a3', 'Deploy', 'Ops', 2),
+    ])
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+
+    const items = screen.getAllByRole('menuitem')
+    expect(items.map((item) => item.textContent)).toEqual(['Build', 'Test suite', 'Deploy'])
+    expect(items.map((item) => item.getAttribute('data-testid'))).toEqual([
+      testIdFor.actionButton('a1'),
+      testIdFor.actionButton('a2'),
+      testIdFor.actionButton('a3'),
+    ])
+  })
+
+  it('colors a failed member inside the menu and leaves the trigger unmarked', async () => {
+    const app = makeAppMock()
+    vi.mocked(app.actions.status).mockImplementation(async (id: string) =>
+      id === 'a1'
+        ? { status: 'failed', exitCode: 1, completedAt: null, error: null }
+        : { status: 'idle', exitCode: null, completedAt: null, error: null },
+    )
+    renderBar(app, [groupedAction('a1', 'Build', 'Ops', 0), groupedAction('a2', 'Test', 'Ops', 1)])
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+
+    await waitFor(() =>
+      expect(screen.getByTestId(testIdFor.actionButton('a1')).getAttribute('data-status')).toBe(
+        'failed',
+      ),
+    )
+    expect(screen.getByTestId(testIdFor.actionButton('a1')).className).toContain('text-error')
+    expect(screen.getByTestId(testIdFor.actionGroup('Ops')).getAttribute('data-active')).toBe(
+      'false',
+    )
+  })
+
+  it('closes the menu when the group disappears or the project changes', () => {
+    const app = makeAppMock()
+    const members = [groupedAction('a1', 'Build', 'Ops', 0), groupedAction('a2', 'Test', 'Ops', 1)]
+    const view = renderBar(app, members)
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+    expect(screen.getByTestId(testIdFor.actionGroupMenu('Ops'))).toBeTruthy()
+
+    view.rerender(barElement(app, [members[0]]))
+    expect(screen.queryByTestId(testIdFor.actionGroupMenu('Ops'))).toBeNull()
+
+    view.rerender(barElement(app, members))
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Ops')))
+    expect(screen.getByTestId(testIdFor.actionGroupMenu('Ops'))).toBeTruthy()
+
+    view.rerender(barElement(app, members, false, 'p2'))
+    expect(screen.queryByTestId(testIdFor.actionGroupMenu('Ops'))).toBeNull()
   })
 })

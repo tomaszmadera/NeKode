@@ -968,6 +968,10 @@ interface ActionControl {
     title: string
     icon?: string
 
+    /** Action-row group name; unset or null keeps its own button
+        (contract: docs/features/action-groups/spec.md) */
+    group?: string | null
+
     command: string
     cwd?: string
 
@@ -1484,6 +1488,7 @@ CREATE TABLE actions (
     scope TEXT NOT NULL,
     title TEXT NOT NULL,
     icon TEXT,
+    group_name TEXT,
     command TEXT NOT NULL,
     cwd TEXT,
     run_mode TEXT NOT NULL,

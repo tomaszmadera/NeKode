@@ -332,6 +332,9 @@ export const TEST_ID = {
   /** Action form icon picker: preset select and the custom-emoji input. */
   settingsActionIconSelect: 'settings-action-icon-select',
   settingsActionIconEmoji: 'settings-action-icon-emoji',
+  /** Action form group field (optional group name) and its suggestion list. */
+  settingsActionGroup: 'settings-action-group',
+  settingsActionGroupOptions: 'settings-action-group-options',
   /** App Settings: terminal font size select. */
   settingsTerminalFontSize: 'settings-terminal-font-size',
   /** App Settings: show project icons toggle. */
@@ -416,4 +419,8 @@ export const testIdFor = {
   kanbanReviewComment: (commentId: string): string => `kanban-review-comment-${commentId}`,
   /** Custom action button in the action bar. */
   actionButton: (actionId: string): string => `action-button-${actionId}`,
+  /** Group trigger in the action bar, labeled with the group name (action-groups spec). */
+  actionGroup: (groupName: string): string => `action-group-${groupName}`,
+  /** Menu opened from a group trigger in the action bar. */
+  actionGroupMenu: (groupName: string): string => `action-group-menu-${groupName}`,
 }

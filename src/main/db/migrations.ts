@@ -235,6 +235,18 @@ export const MIGRATIONS: readonly Migration[] = [
       `)
     },
   },
+  {
+    // Action groups (card NEKODE-174, docs/features/action-groups/spec.md):
+    // an optional group name per action. Additive column, no rewrite; every
+    // existing row stays ungrouped.
+    version: 9,
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE actions ADD COLUMN group_name TEXT
+          CHECK (group_name IS NULL OR length(trim(group_name)) > 0);
+      `)
+    },
+  },
 ]
 
 export function assertValidMigrations(migrations: readonly Migration[]): void {

@@ -663,6 +663,7 @@ describe('ipc payload validation', () => {
       projectId: 'p1',
       title: 'Build',
       icon: null,
+      group: null,
       command: 'pnpm build',
       cwd: null,
       runMode: 'background',
@@ -683,6 +684,22 @@ describe('ipc payload validation', () => {
       channels.get('actions:create')?.parse([{ ...input, runMode: 'detached' }]),
     ).toThrow(ValidationError)
     expect(() => channels.get('actions:create')?.parse([{ ...input, cwd: '../outside' }])).toThrow(
+      ValidationError,
+    )
+    // The group is optional text: null and a name are valid, a non-string and
+    // an over-long name are rejected (action-groups spec Data/API).
+    const groupedInput = { ...input, group: 'Build tools' }
+    expect(channels.get('actions:create')?.parse([groupedInput])).toEqual([groupedInput])
+    expect(() => channels.get('actions:create')?.parse([{ ...input, group: 7 }])).toThrow(
+      ValidationError,
+    )
+    expect(() =>
+      channels.get('actions:create')?.parse([{ ...input, group: 'x'.repeat(61) }]),
+    ).toThrow(ValidationError)
+    // The 60-character bound counts the trimmed name (action-groups spec Behaviour 1).
+    const paddedInput = { ...input, group: `  ${'x'.repeat(60)}  ` }
+    expect(channels.get('actions:create')?.parse([paddedInput])).toEqual([paddedInput])
+    expect(() => channels.get('actions:create')?.parse([{ ...input, group: undefined }])).toThrow(
       ValidationError,
     )
     expect(() => channels.get('actions:execute')?.parse(['a1', 'p1', 'true'])).toThrow(
@@ -790,6 +807,7 @@ describe('ipc payload validation', () => {
           projectId: 'p1',
           title: 'Build',
           icon: null,
+          group: null,
           command: 'make',
           cwd: 'ssh://host/p',
           runMode: 'background',
@@ -897,6 +915,7 @@ describe('ipc payload validation', () => {
       projectId: null,
       title: 'Build',
       icon: null,
+      group: null,
       command: 'pnpm build',
       cwd: null,
       runMode: 'background',
