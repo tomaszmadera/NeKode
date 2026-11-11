@@ -532,6 +532,9 @@ function AppContent({
               activeProjectId={activeKanbanProjectId}
               versions={kanban.kanbanVersions}
               localFileProjectIds={localFileProjectIds}
+              projectNames={Object.fromEntries(
+                projects.map((project) => [project.id, project.name]),
+              )}
               onUseLocalTaskList={kanban.handleUseLocalTaskList}
               onConfigure={handleOpenKanbanSettings}
               onConfigureHandoffs={handleConfigureProjectHandoffs}

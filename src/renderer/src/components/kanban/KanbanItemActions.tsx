@@ -32,8 +32,17 @@ export function navigatorClipboard(): { writeText(text: string): Promise<void> }
 /** Opens a menu at (x, y) for an item: a context menu or the keyboard menu key. */
 export type OpenItemMenu = (item: WorkItem, x: number, y: number) => void
 
+/** Row appearance: bordered 26px controls, Start revealed by the row hover. */
+const ROW_CONTROL_CLASS =
+  'h-[26px] shrink-0 rounded-[6px] border border-edge bg-button px-2.5 text-[12px] font-medium text-ink hover:bg-button-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+
+const ROW_START_REVEAL_CLASS =
+  'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-50 [@media(hover:none)]:opacity-100'
+
 /** Start stays visible and is disabled while a confirmed handoff shows Resume.
  * Hover underlines Start only while it is enabled, and Resume while it is shown.
+ * The `row` appearance is the grouped list: Start is hidden until the row is
+ * hovered or focused, while a shown Resume stays visible.
  */
 export function ItemLaunchButtons({
   item,
@@ -41,18 +50,26 @@ export function ItemLaunchButtons({
   onStart,
   onResume,
   onOpenStartMenu,
+  appearance = 'default',
 }: {
   item: WorkItem
   resumeEnabled: boolean
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
   onOpenStartMenu?: OpenItemMenu
+  appearance?: 'default' | 'row'
 }): React.JSX.Element {
+  const isRow = appearance === 'row'
   return (
-    <div className="flex shrink-0 gap-1">
+    <div className={`flex shrink-0 gap-1${isRow ? ' justify-self-end' : ''}`}>
       <button
         type="button"
-        className={`${ITEM_CONTROL_CLASS} text-ink disabled:pointer-events-none disabled:opacity-50${resumeEnabled ? '' : ` ${ACTION_HOVER_CLASS}`}`}
+        className={
+          isRow
+            ? `${ROW_CONTROL_CLASS} ${ROW_START_REVEAL_CLASS}`
+            : `${ITEM_CONTROL_CLASS} text-ink disabled:pointer-events-none disabled:opacity-50${resumeEnabled ? '' : ` ${ACTION_HOVER_CLASS}`}`
+        }
+        aria-label={isRow ? `Start ${item.ref}` : undefined}
         data-testid={testIdFor.kanbanItemStart(item.ref)}
         disabled={resumeEnabled}
         onClick={() => {
@@ -77,7 +94,9 @@ export function ItemLaunchButtons({
       {resumeEnabled ? (
         <button
           type="button"
-          className={`${ITEM_CONTROL_CLASS} text-ink ${ACTION_HOVER_CLASS}`}
+          className={
+            isRow ? ROW_CONTROL_CLASS : `${ITEM_CONTROL_CLASS} text-ink ${ACTION_HOVER_CLASS}`
+          }
           data-testid={testIdFor.kanbanItemResume(item.ref)}
           onClick={() => {
             onResume?.(item)

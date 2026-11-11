@@ -39,7 +39,7 @@ export function KanbanHeader({
 }: KanbanHeaderProps): React.JSX.Element {
   const listControls = phase === 'ready' && !isReviewing
   return (
-    <div className="sticky top-0 z-10 -mx-3 mb-3 flex shrink-0 items-center gap-2 bg-app px-3 py-2">
+    <div className="sticky top-0 z-10 -mx-4 -mt-2.5 mb-3 flex shrink-0 items-center gap-2 bg-app px-4 py-2">
       <h2 className="text-[14.7px] font-semibold text-ink">Tasks</h2>
       {isReviewing ? (
         <button

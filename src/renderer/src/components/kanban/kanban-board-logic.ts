@@ -2,6 +2,7 @@ import type {
   KanbanBoard as KanbanBoardData,
   KanbanPriority,
   KanbanState,
+  KanbanStateGroup,
   WorkItem,
 } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
@@ -10,6 +11,7 @@ import { parseAppErrorPayload } from '@shared/ipc-error'
 export interface KanbanColumn {
   stateId: string
   name: string
+  group: KanbanStateGroup
   items: WorkItem[]
 }
 
@@ -76,6 +78,7 @@ export function boardColumns(board: KanbanBoardData): KanbanColumn[] {
     .map((state) => ({
       stateId: state.id,
       name: state.name,
+      group: state.group,
       items: board.items.filter((item) => item.stateId === state.id),
     }))
   const knownStateIds = new Set(board.states.map((state) => state.id))
@@ -89,6 +92,7 @@ export function boardColumns(board: KanbanBoardData): KanbanColumn[] {
       unmatched.set(item.stateId, {
         stateId: item.stateId,
         name: item.stateName,
+        group: item.stateGroup,
         items: [item],
       })
     } else {
@@ -363,6 +367,18 @@ export const PRIORITY_COLOR: Record<KanbanPriority, string> = {
   high: 'rgb(107, 62, 20)',
   medium: '#f5d125',
   low: '#63acff',
+}
+
+/**
+ * Priority dot colours from the design contract: context critical for Urgent,
+ * the soft coral of `--color-usage-stale` for High, git yellow for Medium, and
+ * info for Low. No palette colour is introduced.
+ */
+export const PRIORITY_DOT_COLOR: Record<KanbanPriority, string> = {
+  urgent: 'var(--color-error)',
+  high: 'var(--color-usage-stale)',
+  medium: 'var(--color-warning)',
+  low: 'var(--color-info)',
 }
 
 export const PRIORITY_LABEL: Record<KanbanPriority, string> = {

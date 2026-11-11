@@ -1,10 +1,9 @@
-import type { KanbanPriority, WorkItem } from '@shared/ipc-contract'
+import type { KanbanStateGroup, WorkItem } from '@shared/ipc-contract'
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../lib/icons'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import {
-  ACTION_HOVER_CLASS,
   COPY_FAILED,
   ItemLaunchButtons,
   MENU_ITEM_CLASS,
@@ -18,40 +17,81 @@ import {
   type KanbanSortState,
   loadCollapsedStateIds,
   loadKanbanSort,
-  PRIORITY_COLOR,
+  PRIORITY_DOT_COLOR,
   priorityLabel,
   saveCollapsedStateIds,
   saveKanbanSort,
   sortWorkItems,
 } from './kanban-board-logic'
 
-// The board list: the items grouped under the state names, in adapter
-// `order`. Each row shows the ref (Plane slug) and the title in separate
-// columns, plus the priority. The title truncates in a fixed slug column.
-// Hover underlines the slug, the title, enabled Start, and shown Resume; only
-// those handle a click, and only the slug and the title open the review. The
-// slug and title menu copies the ref or `WorkItem.url`.
+// The board list: one titled section per state in adapter `order`. A section
+// header is a title control (chevron, status icon, uppercase name, count pill),
+// not a row. An open non-empty group is one rounded container whose rows share
+// hairlines. A row shows the ref, the title, the priority dot and label, and
+// the launch actions. Only the ref and the title open the review; their menu
+// copies the ref or `WorkItem.url`.
 
-/** List rows share this track so the slug and title line up across items. */
-const LIST_ROW_COLUMNS = '7.5rem minmax(0, 1fr) auto auto'
+/** Row track: ID, title, priority, and the launch actions. */
+const LIST_ROW_COLUMNS = '96px minmax(0, 1fr) auto minmax(72px, auto)'
 
-const IDENTITY_CLASS =
-  'w-fit max-w-full min-w-0 justify-self-start rounded-md px-0.5 py-0.5 text-left text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+const ROW_IDENTITY_CLASS =
+  'min-w-0 truncate rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
 
-/** Border box of a single-line list row before this split: 26.9px.
- * Electron, default theme, deviceScaleFactor 1. The row is 1.5× that height.
- */
-const LIST_ROW_MIN_HEIGHT_PX = 40.35
+/** Status-icon colours and marks per adapter group. */
+const GROUP_ICON_COLOR: Record<KanbanStateGroup, string> = {
+  backlog: 'text-ink-muted',
+  unstarted: 'text-ink-secondary',
+  started: 'text-info',
+  completed: 'text-success',
+  cancelled: 'text-ink-disabled',
+}
 
-function PriorityText({ priority }: { priority: KanbanPriority | null }): React.JSX.Element {
+function GroupStatusIcon({ group }: { group: KanbanStateGroup }): React.JSX.Element {
   return (
-    <span
-      className="inline-flex w-24 shrink-0 justify-end text-ink-secondary"
-      style={priority !== null ? { color: PRIORITY_COLOR[priority] } : undefined}
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width={14}
+      height={14}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      className={`shrink-0 ${GROUP_ICON_COLOR[group]}`}
     >
-      <span className="sr-only">Priority </span>
-      <span>{priorityLabel(priority)}</span>
-    </span>
+      <circle cx={12} cy={12} r={9} strokeDasharray={group === 'backlog' ? '3 3' : undefined} />
+      {group === 'started' ? (
+        <path d="M12 6.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none" />
+      ) : null}
+      {group === 'completed' ? <path d="M8 12.5l2.8 2.8L16.5 9.5" /> : null}
+      {group === 'cancelled' ? <path d="M9 9l6 6M15 9l-6 6" /> : null}
+    </svg>
+  )
+}
+
+/** A closed task is a Completed or Cancelled group: its title reads muted and struck. */
+function isClosedGroup(group: KanbanStateGroup): boolean {
+  return group === 'completed' || group === 'cancelled'
+}
+
+function PriorityCell({ item }: { item: WorkItem }): React.JSX.Element {
+  return (
+    <div
+      className="flex items-center gap-1.5 text-[12px] whitespace-nowrap text-ink-muted"
+      data-testid={testIdFor.kanbanItemPriority(item.ref)}
+    >
+      {item.priority !== null ? (
+        <>
+          <span className="sr-only">Priority </span>
+          <span
+            aria-hidden="true"
+            className="size-1.5 shrink-0 rounded-full"
+            style={{ backgroundColor: PRIORITY_DOT_COLOR[item.priority] }}
+            data-testid={testIdFor.kanbanItemPriorityDot(item.ref)}
+          />
+          <span>{priorityLabel(item.priority)}</span>
+        </>
+      ) : null}
+    </div>
   )
 }
 
@@ -83,13 +123,15 @@ function identityHandlers(
   }
 }
 
-/** Slug and title. Hover underlines the text, and that text is the click target. */
+/** ID and title. Both are the review's click targets. */
 function ItemColumns({
   item,
+  closed,
   onOpen,
   onOpenMenu,
 }: {
   item: WorkItem
+  closed: boolean
   onOpen: (ref: string) => void
   onOpenMenu: OpenItemMenu
 }): React.JSX.Element {
@@ -98,7 +140,7 @@ function ItemColumns({
     <>
       <button
         type="button"
-        className={`${IDENTITY_CLASS} truncate ${ACTION_HOVER_CLASS}`}
+        className={`${ROW_IDENTITY_CLASS} font-mono text-[12px] text-ink-muted`}
         data-testid={testIdFor.kanbanItemRef(item.ref)}
         {...handlers}
       >
@@ -106,7 +148,7 @@ function ItemColumns({
       </button>
       <button
         type="button"
-        className={`${IDENTITY_CLASS} truncate ${ACTION_HOVER_CLASS}`}
+        className={`${ROW_IDENTITY_CLASS} ${closed ? 'text-ink-muted line-through' : 'text-ink'}`}
         data-testid={testIdFor.kanbanItemTitle(item.ref)}
         {...handlers}
       >
@@ -216,9 +258,10 @@ export function ItemCopyMenu({
   )
 }
 
-/** List row. Only the slug and the title open the review. */
+/** List row. Only the ID and the title open the review. */
 function WorkItemSurface({
   item,
+  closed,
   resumeEnabled,
   onOpen,
   onOpenMenu,
@@ -227,6 +270,7 @@ function WorkItemSurface({
   onOpenStartMenu,
 }: {
   item: WorkItem
+  closed: boolean
   resumeEnabled: boolean
   onOpen: (ref: string) => void
   onOpenMenu: OpenItemMenu
@@ -235,21 +279,22 @@ function WorkItemSurface({
   onOpenStartMenu?: OpenItemMenu
 }): React.JSX.Element {
   return (
-    <div
-      className="grid w-full items-center gap-x-3 rounded-md px-1.5 py-1 hover:bg-highlight"
-      style={{ minHeight: LIST_ROW_MIN_HEIGHT_PX, gridTemplateColumns: LIST_ROW_COLUMNS }}
+    <li
+      className="group grid w-full items-center gap-x-[14px] py-0 pr-2.5 pl-3.5 text-[13px] transition-[background-color] duration-[120ms] hover:bg-ink/[0.04] [&:not(:first-child)]:border-t [&:not(:first-child)]:border-edge/70"
+      style={{ minHeight: 40, gridTemplateColumns: LIST_ROW_COLUMNS }}
       data-testid={testIdFor.kanbanItem(item.ref)}
     >
-      <ItemColumns item={item} onOpen={onOpen} onOpenMenu={onOpenMenu} />
-      <PriorityText priority={item.priority} />
+      <ItemColumns item={item} closed={closed} onOpen={onOpen} onOpenMenu={onOpenMenu} />
+      <PriorityCell item={item} />
       <ItemLaunchButtons
         item={item}
         resumeEnabled={resumeEnabled}
         onStart={onStart}
         onResume={onResume}
         onOpenStartMenu={onOpenStartMenu}
+        appearance="row"
       />
-    </div>
+    </li>
   )
 }
 
@@ -285,49 +330,62 @@ export function KanbanListView({
   onOpenStartMenu,
 }: KanbanListViewProps): React.JSX.Element {
   return (
-    <div className="flex min-w-0 flex-col gap-3" data-testid={TEST_ID.kanbanList}>
+    <div className="flex min-w-0 flex-col gap-[14px]" data-testid={TEST_ID.kanbanList}>
       {isFiltering && columns.length === 0 ? <p role="status">No matching tasks.</p> : null}
       {columns.map((column) => {
         const isCollapsed = !isFiltering && collapsedStates.has(column.stateId)
         const listId = `kanban-list-items-${column.stateId}`
         const sortedItems = sortWorkItems(column.items, sortState.sortBy, sortState.direction)
+        const showTasks = !isCollapsed && sortedItems.length > 0
         return (
-          <section key={column.stateId} data-testid={testIdFor.kanbanListGroup(column.stateId)}>
-            <h3 className="mb-1 border-b border-edge pb-1 text-[12.6px] font-semibold text-ink">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded px-1 py-0.5 text-left hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-                aria-expanded={!isCollapsed}
-                disabled={isFiltering}
-                aria-controls={listId}
-                data-testid={testIdFor.kanbanGroupToggle(column.stateId)}
-                onClick={() => {
-                  onToggleCollapse(column.stateId)
-                }}
+          <section
+            key={column.stateId}
+            aria-label={column.name}
+            className="flex flex-col gap-1.5"
+            data-testid={testIdFor.kanbanListGroup(column.stateId)}
+          >
+            <button
+              type="button"
+              className="flex h-7 items-center gap-2 self-start rounded-[6px] bg-transparent pr-2 pl-1 text-ink-secondary hover:bg-button-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50"
+              aria-expanded={!isCollapsed}
+              aria-controls={showTasks ? listId : undefined}
+              disabled={isFiltering}
+              data-testid={testIdFor.kanbanGroupToggle(column.stateId)}
+              onClick={() => {
+                onToggleCollapse(column.stateId)
+              }}
+            >
+              <Icon.chevronRight
+                size={12}
+                strokeWidth={2.4}
+                aria-hidden
+                className={`shrink-0 text-ink-muted transition-transform duration-150${isCollapsed ? '' : ' rotate-90'}`}
+              />
+              <GroupStatusIcon group={column.group} />
+              <span className="text-[12px] font-semibold tracking-[0.06em] uppercase">
+                {column.name}
+              </span>
+              <span className="rounded-full bg-ink/[0.07] px-[7px] py-px font-mono text-[11px] text-ink-muted">
+                {column.items.length}
+              </span>
+            </button>
+            {showTasks ? (
+              <ul
+                id={listId}
+                className="overflow-hidden rounded-[10px] border border-edge bg-ink/[0.02]"
               >
-                <span className="flex items-center gap-1.5">
-                  <span aria-hidden="true" className="flex shrink-0 text-ink-muted">
-                    {isCollapsed ? <Icon.chevronRight size={14} /> : <Icon.chevronDown size={14} />}
-                  </span>
-                  <span>{column.name}</span>
-                </span>
-                <span className="text-sm font-normal text-ink-muted">{column.items.length}</span>
-              </button>
-            </h3>
-            {!isCollapsed ? (
-              <ul id={listId} className="space-y-1">
                 {sortedItems.map((item) => (
-                  <li key={item.ref}>
-                    <WorkItemSurface
-                      item={item}
-                      resumeEnabled={itemResumable(item)}
-                      onOpen={onOpen}
-                      onOpenMenu={onOpenMenu}
-                      onStart={onStart}
-                      onResume={onResume}
-                      onOpenStartMenu={onOpenStartMenu}
-                    />
-                  </li>
+                  <WorkItemSurface
+                    key={item.ref}
+                    item={item}
+                    closed={isClosedGroup(column.group)}
+                    resumeEnabled={itemResumable(item)}
+                    onOpen={onOpen}
+                    onOpenMenu={onOpenMenu}
+                    onStart={onStart}
+                    onResume={onResume}
+                    onOpenStartMenu={onOpenStartMenu}
+                  />
                 ))}
               </ul>
             ) : null}

@@ -25,10 +25,15 @@ describe('KanbanBoardStatus', () => {
         phase="empty"
         error={null}
         sourceMissing={false}
+        projectName="gerde.pl"
         onConfigure={onConfigure}
       />,
     )
-    expect(screen.getByTestId(TEST_ID.kanbanBoardEmpty)).toBeTruthy()
+    const empty = screen.getByTestId(TEST_ID.kanbanBoardEmpty)
+    expect(empty.textContent).toContain('gerde.pl · Kanban')
+    expect(empty.textContent).toContain(
+      'No tasks yet. Tasks added to this project will appear here.',
+    )
 
     rerender(
       <KanbanBoardStatus

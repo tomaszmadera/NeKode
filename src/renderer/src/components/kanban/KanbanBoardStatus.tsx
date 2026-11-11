@@ -14,6 +14,8 @@ export interface KanbanBoardStatusProps {
   error: string | null
   /** The last load failed because the local task file is missing. */
   sourceMissing: boolean
+  /** Project whose board is empty; only the empty state uses it. */
+  projectName?: string
   onConfigure: () => void
   onUseLocalTaskList?: () => Promise<void>
 }
@@ -22,6 +24,7 @@ export function KanbanBoardStatus({
   phase,
   error,
   sourceMissing,
+  projectName,
   onConfigure,
   onUseLocalTaskList,
 }: KanbanBoardStatusProps): React.JSX.Element {
@@ -68,9 +71,17 @@ export function KanbanBoardStatus({
         </div>
       ) : null}
       {phase === 'empty' ? (
-        <p className="text-[12.6px] text-ink-secondary" data-testid={TEST_ID.kanbanBoardEmpty}>
-          This board has no states yet.
-        </p>
+        <div
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 py-10 text-center"
+          data-testid={TEST_ID.kanbanBoardEmpty}
+        >
+          <p className="font-mono text-[15px] text-ink-secondary">
+            {projectName !== undefined && projectName !== '' ? `${projectName} · Kanban` : 'Kanban'}
+          </p>
+          <p className="text-[13px] text-ink-muted">
+            No tasks yet. Tasks added to this project will appear here.
+          </p>
+        </div>
       ) : null}
     </>
   )

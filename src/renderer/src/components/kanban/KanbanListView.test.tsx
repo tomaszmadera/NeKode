@@ -91,6 +91,107 @@ describe('KanbanListView', () => {
     expect(props.onOpen).not.toHaveBeenCalled()
   })
 
+  it('renders a titled section header with a status icon, uppercase name, count pill, and no header rule', () => {
+    renderList()
+    const backlog = screen.getByTestId(testIdFor.kanbanListGroup('s1'))
+    const header = within(backlog).getByTestId(testIdFor.kanbanGroupToggle('s1'))
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(backlog.getAttribute('aria-label')).toBe('Backlog')
+    expect(header.querySelector('svg')).toBeTruthy()
+    expect(within(header).getByText('Backlog').className).toContain('uppercase')
+    expect(within(header).getByText('2').className).toContain('font-mono')
+    expect(header.className).not.toContain('border-b')
+    // The tasks sit in one rounded container; the header has no rule of its own.
+    expect(backlog.querySelector('ul')?.className).toContain('rounded-[10px]')
+  })
+
+  it('marks every group with its own status icon', () => {
+    const groups = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'] as const
+    const board = {
+      states: groups.map((group, index) => ({
+        id: `s-${group}`,
+        name: group,
+        group,
+        order: index,
+      })),
+      items: groups.map((group, index) => ({
+        ...kanbanBoardFixture.items[0],
+        ref: `NK-${index + 10}`,
+        stateId: `s-${group}`,
+      })),
+    }
+    renderList({ columns: boardColumns(board) })
+
+    // The chevron is the first SVG; the status mark follows it.
+    const icon = (group: string): SVGSVGElement =>
+      screen
+        .getByTestId(testIdFor.kanbanGroupToggle(`s-${group}`))
+        .querySelectorAll('svg')[1] as SVGSVGElement
+    expect(icon('backlog').querySelector('circle')?.getAttribute('stroke-dasharray')).toBe('3 3')
+    expect(icon('backlog').querySelector('path')).toBeNull()
+    expect(icon('unstarted').querySelector('circle')?.getAttribute('stroke-dasharray')).toBeNull()
+    expect(icon('started').querySelector('path')?.getAttribute('fill')).toBe('currentColor')
+    expect(icon('completed').querySelector('path')?.getAttribute('d')).toBe(
+      'M8 12.5l2.8 2.8L16.5 9.5',
+    )
+    expect(icon('cancelled').querySelector('path')?.getAttribute('d')).toBe('M9 9l6 6M15 9l-6 6')
+  })
+
+  it('renders only the header for an empty group and no empty container', () => {
+    renderList()
+    const done = screen.getByTestId(testIdFor.kanbanListGroup('s3'))
+    expect(within(done).getByText('Done')).toBeTruthy()
+    expect(within(done).getByText('0')).toBeTruthy()
+    expect(done.querySelector('ul')).toBeNull()
+    expect(within(done).queryByRole('listitem')).toBeNull()
+  })
+
+  it('shows a coloured priority dot with the label, and nothing for None', () => {
+    const board = {
+      states: [
+        { id: 's1', name: 'Todo', group: 'unstarted' as const, order: 1 },
+        { id: 's2', name: 'Done', group: 'completed' as const, order: 2 },
+        { id: 's3', name: 'Cancelled', group: 'cancelled' as const, order: 3 },
+      ],
+      items: [
+        { ...kanbanBoardFixture.items[0], ref: 'NK-4', stateId: 's1', priority: 'urgent' as const },
+        { ...kanbanBoardFixture.items[1], ref: 'NK-5', stateId: 's1', priority: null },
+        { ...kanbanBoardFixture.items[2], ref: 'NK-6', stateId: 's2', priority: null },
+        { ...kanbanBoardFixture.items[0], ref: 'NK-7', stateId: 's3', priority: 'low' as const },
+      ],
+    }
+    renderList({ columns: boardColumns(board) })
+
+    const urgentRow = screen.getByTestId(testIdFor.kanbanItem('NK-4'))
+    expect(within(urgentRow).getByText('Urgent')).toBeTruthy()
+    expect(
+      within(urgentRow).getByTestId(testIdFor.kanbanItemPriorityDot('NK-4')).style.backgroundColor,
+    ).toBe('var(--color-error)')
+
+    const noneRow = screen.getByTestId(testIdFor.kanbanItem('NK-5'))
+    expect(within(noneRow).queryByTestId(testIdFor.kanbanItemPriorityDot('NK-5'))).toBeNull()
+    expect(within(noneRow).getByTestId(testIdFor.kanbanItemPriority('NK-5')).textContent).toBe('')
+
+    // Completed and Cancelled titles are muted and struck through.
+    for (const ref of ['NK-6', 'NK-7']) {
+      const title = within(screen.getByTestId(testIdFor.kanbanItem(ref))).getByTestId(
+        testIdFor.kanbanItemTitle(ref),
+      )
+      expect(title.className).toContain('line-through')
+      expect(title.className).toContain('text-ink-muted')
+    }
+  })
+
+  it('reveals Start on row hover or focus and labels it with the ID', () => {
+    renderList()
+    const start = screen.getByTestId(testIdFor.kanbanItemStart('NK-1'))
+    expect(start.getAttribute('aria-label')).toBe('Start NK-1')
+    expect(start.className).toContain('opacity-0')
+    expect(start.className).toContain('group-hover:opacity-100')
+    expect(start.className).toContain('focus-visible:opacity-100')
+    expect(start.className).toContain('[@media(hover:none)]:opacity-100')
+  })
+
   it('reports no match while filtering an empty result and disables group toggles', () => {
     renderList({ columns: [], isFiltering: true })
     expect(screen.getByRole('status').textContent).toBe('No matching tasks.')

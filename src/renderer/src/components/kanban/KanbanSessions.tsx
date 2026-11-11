@@ -11,6 +11,8 @@ interface Props {
   versions: Readonly<Record<string, number>>
   /** Projects bound to the built-in `local-file` source. */
   localFileProjectIds?: ReadonlySet<string>
+  /** Display names for the empty board state, keyed by project id. */
+  projectNames?: Readonly<Record<string, string>>
   /** `Use a local task list` for a bound project whose task file is missing. */
   onUseLocalTaskList?: (projectId: string) => Promise<void>
   onConfigure: () => void
@@ -30,6 +32,7 @@ function KanbanSessionItem({
   app,
   id,
   version,
+  projectName,
   active,
   onUseLocalTaskList,
   onConfigure,
@@ -42,6 +45,7 @@ function KanbanSessionItem({
   app: AppApi
   id: string
   version: number
+  projectName?: string
   active: boolean
   onUseLocalTaskList?: (projectId: string) => Promise<void>
   onConfigure: () => void
@@ -92,6 +96,7 @@ function KanbanSessionItem({
         key={`${id}:${version}`}
         app={app}
         projectId={id}
+        projectName={projectName}
         active={active}
         onUseLocalTaskList={onUseLocalTaskList === undefined ? undefined : handleUseLocalTaskList}
         onConfigure={onConfigure}
@@ -114,6 +119,7 @@ export function KanbanSessions({
   activeProjectId,
   versions,
   localFileProjectIds,
+  projectNames,
   onUseLocalTaskList,
   onConfigure,
   onConfigureHandoffs,
@@ -146,6 +152,7 @@ export function KanbanSessions({
           app={app}
           id={id}
           version={version}
+          projectName={projectNames?.[id]}
           active={activeProjectId === id}
           onUseLocalTaskList={localFileProjectIds?.has(id) ? onUseLocalTaskList : undefined}
           onConfigure={onConfigure}

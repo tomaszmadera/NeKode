@@ -194,6 +194,11 @@
   padding: 14px 16px;
 }
 
+/* Kanban view keeps the 1px toolbar edge over the card gradient. */
+[data-theme="nekode-float"] .nk-action-row[data-kanban="true"] {
+  border-bottom: 1px solid var(--color-edge);
+}
+
 [data-theme="nekode-float"] .nk-btn-group {
   border-radius: var(--radius-md);
   background-color: rgba(255, 255, 255, 0.025);

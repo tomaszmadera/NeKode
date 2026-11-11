@@ -201,7 +201,7 @@ describe('cached background refresh', () => {
     expect(screen.getByTestId(TEST_ID.kanbanReview)).toBe(review)
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.kanbanReview)).toBeNull())
-    expect(screen.getByTestId(TEST_ID.kanbanList)).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.kanbanBoardEmpty)).toBeTruthy()
     expect(listBoard).toHaveBeenCalledTimes(4)
   })
 
@@ -518,14 +518,17 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     const blank = within(screen.getByTestId(testIdFor.kanbanListGroup('s1'))).getByTestId(
       testIdFor.kanbanItem('NK-2'),
     )
-    expect(within(blank).getByText('None')).toBeTruthy()
+    // None renders nothing in the priority cell: no dot and no label.
+    const blankPriority = within(blank).getByTestId(testIdFor.kanbanItemPriority('NK-2'))
+    expect(blankPriority.textContent).toBe('')
+    expect(within(blank).queryByTestId(testIdFor.kanbanItemPriorityDot('NK-2'))).toBeNull()
     expect(within(blank).getByTestId(testIdFor.kanbanItemRef('NK-2')).textContent).toBe('NK-2')
     expect(within(blank).getByTestId(testIdFor.kanbanItemTitle('NK-2')).textContent).toBe(
       'Second task',
     )
   })
 
-  it('applies priority-specific font colors on the board item rows', async () => {
+  it('applies priority-specific dot colours on the board item rows', async () => {
     const boardWithPriorities: KanbanBoardData = {
       states: [{ id: 's1', name: 'Todo', group: 'unstarted', order: 1 }],
       items: [
@@ -540,19 +543,18 @@ describe('kanban board: list view and item review (spec Behaviour 14, AC14)', ()
     render(<KanbanBoard app={appWith(listBoard)} projectId="p1" onConfigure={vi.fn()} />)
     await screen.findByTestId(TEST_ID.kanbanList)
 
-    const lowRow = screen.getByTestId(testIdFor.kanbanItem('NK-1'))
-    const medRow = screen.getByTestId(testIdFor.kanbanItem('NK-2'))
-    const highRow = screen.getByTestId(testIdFor.kanbanItem('NK-3'))
-    const urgentRow = screen.getByTestId(testIdFor.kanbanItem('NK-4'))
     const noneRow = screen.getByTestId(testIdFor.kanbanItem('NK-5'))
 
-    // The four colours are pinned as literals: reading them back from
-    // PRIORITY_COLOR would pass for any change to that constant.
-    expect(within(lowRow).getByText('Low').parentElement?.style.color).toBe('rgb(99, 172, 255)')
-    expect(within(medRow).getByText('Medium').parentElement?.style.color).toBe('rgb(245, 209, 37)')
-    expect(within(highRow).getByText('High').parentElement?.style.color).toBe('rgb(107, 62, 20)')
-    expect(within(urgentRow).getByText('Urgent').parentElement?.style.color).toBe('rgb(99, 40, 36)')
-    expect(within(noneRow).getByText('None').parentElement?.style.color).toBe('')
+    // The four dots name existing theme tokens, so the row keeps one palette.
+    const dotColor = (ref: string): string =>
+      within(screen.getByTestId(testIdFor.kanbanItem(ref))).getByTestId(
+        testIdFor.kanbanItemPriorityDot(ref),
+      ).style.backgroundColor
+    expect(dotColor('NK-1')).toBe('var(--color-info)')
+    expect(dotColor('NK-2')).toBe('var(--color-warning)')
+    expect(dotColor('NK-3')).toBe('var(--color-usage-stale)')
+    expect(dotColor('NK-4')).toBe('var(--color-error)')
+    expect(within(noneRow).queryByTestId(testIdFor.kanbanItemPriorityDot('NK-5'))).toBeNull()
   })
 
   it('opens a review with the full title and the description, then Back returns to the list', async () => {
@@ -1238,7 +1240,9 @@ describe('kanban item copy menu', () => {
     expect(
       fireEvent.contextMenu(await within(row).findByTestId(testIdFor.kanbanItemResume('NK-1'))),
     ).toBe(true)
-    expect(fireEvent.contextMenu(within(row).getByText('None'))).toBe(true)
+    expect(
+      fireEvent.contextMenu(within(row).getByTestId(testIdFor.kanbanItemPriority('NK-1'))),
+    ).toBe(true)
     expect(fireEvent.contextMenu(row)).toBe(true)
     expect(fireEvent.contextMenu(within(row).getByTestId(testIdFor.kanbanItemRef('NK-1')))).toBe(
       false,
@@ -1316,7 +1320,11 @@ describe('kanban handoff availability', () => {
     expect(document.activeElement).not.toBe(start)
     fireEvent.click(start)
     fireEvent.click(screen.getByTestId(testIdFor.kanbanItem('NK-2')))
-    fireEvent.click(within(screen.getByTestId(testIdFor.kanbanItem('NK-2'))).getByText('None'))
+    fireEvent.click(
+      within(screen.getByTestId(testIdFor.kanbanItem('NK-2'))).getByTestId(
+        testIdFor.kanbanItemPriority('NK-2'),
+      ),
+    )
     expect(onStart).not.toHaveBeenCalled()
     expect(otherStart.disabled).toBe(false)
     fireEvent.click(otherStart)
@@ -2425,7 +2433,8 @@ describe('kanban review priority change', () => {
 
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
     const saved = screen.getByTestId(testIdFor.kanbanItem('NK-1'))
-    expect(within(saved).getByText('None')).toBeTruthy()
+    expect(within(saved).getByTestId(testIdFor.kanbanItemPriority('NK-1')).textContent).toBe('')
+    expect(within(saved).queryByTestId(testIdFor.kanbanItemPriorityDot('NK-1'))).toBeNull()
     expect(within(saved).queryByRole('combobox')).toBeNull()
   })
 

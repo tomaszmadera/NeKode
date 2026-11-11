@@ -452,6 +452,7 @@ export function ActionBar({
       aria-label="Agent controls"
       className="nk-action-row flex shrink-0 items-center gap-2 overflow-x-auto bg-panel border-b border-edge px-3 py-2"
       data-testid={TEST_ID.actionRowSlot}
+      data-kanban={isKanban ? 'true' : undefined}
     >
       <div className="nk-btn-group shrink-0">
         <button

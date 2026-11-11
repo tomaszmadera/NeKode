@@ -654,7 +654,7 @@ describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)'
     revision: 1,
   }
 
-  it('Use a local task list binds local-file and shows the empty list with New task', async () => {
+  it('Use a local task list binds local-file and shows the empty board with New task', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     mockLocalBinding(null)
     vi.mocked(app.kanban.listBoard).mockResolvedValue(emptyLocalBoard)
@@ -665,7 +665,7 @@ describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)'
     expect(app.kanban.listBoard).not.toHaveBeenCalled()
     fireEvent.click(screen.getByTestId(TEST_ID.projectHomeUseLocal))
 
-    await screen.findByTestId(TEST_ID.kanbanList)
+    await screen.findByTestId(TEST_ID.kanbanBoardEmpty)
     expect(app.kanban.bindLocalFile).toHaveBeenCalledWith('p1')
     expect(app.kanban.bindLocalFile).toHaveBeenCalledTimes(1)
     expect(app.kanban.listBoard).toHaveBeenCalledWith('p1')
@@ -710,7 +710,7 @@ describe('local task list (project-home spec Behaviour 7, AC5, AC7, Edge cases)'
     const error = await screen.findByTestId(TEST_ID.kanbanBoardError)
     expect(error.textContent).toContain('.nekode/tasks.json was not found')
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardUseLocal))
-    await screen.findByTestId(TEST_ID.kanbanList)
+    await screen.findByTestId(TEST_ID.kanbanBoardEmpty)
     expect(app.kanban.bindLocalFile).toHaveBeenCalledWith('p1')
     expect(app.kanban.listBoard).toHaveBeenCalledTimes(2)
     expect(screen.queryByTestId(TEST_ID.kanbanBoardUseLocal)).toBeNull()

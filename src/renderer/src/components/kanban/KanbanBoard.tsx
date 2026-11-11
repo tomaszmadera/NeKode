@@ -57,6 +57,8 @@ interface KanbanBoardProps {
   app: AppApi
   /** Active project; the board never renders without one. */
   projectId: string
+  /** Project display name for the empty board state. */
+  projectName?: string
   /** Opens Project Settings on the Tasks section (the not-configured state). */
   onConfigure: () => void
   /**
@@ -94,6 +96,7 @@ interface KanbanBoardProps {
 export function KanbanBoard({
   app,
   projectId,
+  projectName,
   onConfigure,
   onUseLocalTaskList,
   onConfigureHandoffs,
@@ -468,6 +471,10 @@ export function KanbanBoard({
   const refresh = useCallback((): void => {
     void load()
   }, [load])
+  // A project with no tasks at all: no states, or states whose groups are
+  // empty. The list is replaced by the centred project empty state.
+  const showEmpty =
+    reviewItem === null && (phase === 'empty' || (phase === 'ready' && board.items.length === 0))
   const toolbarControls: KanbanToolbarControls = {
     phase,
     refreshing,
@@ -486,7 +493,7 @@ export function KanbanBoard({
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 text-[12.6px]"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-2.5 pb-6 text-[12.6px]"
       data-testid={TEST_ID.kanbanBoard}
     >
       {onToolbarControls ? null : <KanbanHeader {...toolbarControls} />}
@@ -515,9 +522,10 @@ export function KanbanBoard({
         />
       ) : null}
       <KanbanBoardStatus
-        phase={phase}
+        phase={showEmpty ? 'empty' : phase}
         error={error}
         sourceMissing={sourceMissing}
+        projectName={projectName}
         onConfigure={onConfigure}
         onUseLocalTaskList={onUseLocalTaskList}
       />
@@ -548,7 +556,7 @@ export function KanbanBoard({
           }}
         />
       ) : null}
-      {phase === 'ready' && reviewItem === null ? (
+      {phase === 'ready' && reviewItem === null && !showEmpty ? (
         <KanbanListView
           columns={columns}
           isFiltering={isFiltering}

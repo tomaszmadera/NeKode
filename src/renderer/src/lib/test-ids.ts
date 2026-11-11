@@ -401,6 +401,10 @@ export const testIdFor = {
   kanbanItemRef: (ref: string): string => `kanban-item-ref-${ref}`,
   /** Title column. Opens the review. Not underlined. */
   kanbanItemTitle: (ref: string): string => `kanban-item-title-${ref}`,
+  /** Priority cell of a row: the dot and label, or empty for None. */
+  kanbanItemPriority: (ref: string): string => `kanban-item-priority-${ref}`,
+  /** Coloured priority dot of a row; absent for None. */
+  kanbanItemPriorityDot: (ref: string): string => `kanban-item-priority-dot-${ref}`,
   /** Visible Start control. Opens the launch confirmation in the app shell. */
   kanbanItemStart: (ref: string): string => `kanban-item-start-${ref}`,
   /** Visible Resume control. Opens the Resume and handoff confirmation. */
