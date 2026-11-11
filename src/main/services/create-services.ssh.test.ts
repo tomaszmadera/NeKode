@@ -359,10 +359,25 @@ describe('SSH local-file surfaces', () => {
     message: 'This action is not available for SSH projects.',
   }
 
+  it('rejects kanban.skillPreview for an SSH project', async () => {
+    const services = setup()
+    const project = await register(services)
+    expect(appError(() => services.kanban.skillPreview(project.id))).toMatchObject(unsupported)
+    services.terminals.terminateAll()
+    services.closeDatabase?.()
+  })
+
   it('rejects kanban.writeSkill for an SSH project', async () => {
     const services = setup()
     const project = await register(services)
-    expect(appError(() => services.kanban.writeSkill(project.id))).toMatchObject(unsupported)
+    expect(
+      appError(() =>
+        services.kanban.writeSkill(
+          project.id,
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ),
+      ),
+    ).toMatchObject(unsupported)
     services.terminals.terminateAll()
     services.closeDatabase?.()
   })

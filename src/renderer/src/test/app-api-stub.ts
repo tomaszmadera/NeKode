@@ -3,9 +3,28 @@
 // after the factory call in each test file (Stage 2 W16). One definition so
 // the copies that used to live in eight test files cannot drift.
 
-import { type AppApi, emptyGitWorktree } from '@shared/ipc-contract'
+import {
+  AGENT_SKILL_FILE_PATH,
+  type AppApi,
+  emptyGitWorktree,
+  type KanbanSkillPreview,
+} from '@shared/ipc-contract'
 import { vi } from 'vitest'
 import { createDictationApiStub } from './dictation-api-stub'
+
+/** A `kanban:skillPreview` result for a new file; tests override fields. */
+export function skillPreviewStub(overrides: Partial<KanbanSkillPreview> = {}): KanbanSkillPreview {
+  return {
+    path: AGENT_SKILL_FILE_PATH,
+    origin: 'local-file',
+    sourceName: 'Local file',
+    exists: false,
+    current: null,
+    text: '---\nname: nekode-tasks\n---\n\n# NeKode tasks\n',
+    token: 'c'.repeat(64),
+    ...overrides,
+  }
+}
 
 export function createAppApiStub(): AppApi {
   return {
@@ -127,7 +146,7 @@ export function createAppApiStub(): AppApi {
       getItem: vi.fn(),
       getComments: vi.fn().mockResolvedValue([]),
       bindLocalFile: vi.fn().mockResolvedValue(undefined),
-      skillStatus: vi.fn().mockResolvedValue({ exists: false }),
+      skillPreview: vi.fn().mockResolvedValue(skillPreviewStub()),
       writeSkill: vi.fn().mockResolvedValue(undefined),
       launchTask: vi.fn(),
     },

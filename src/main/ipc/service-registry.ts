@@ -34,7 +34,7 @@ import type {
   KanbanLaunchTaskInput,
   KanbanProjectConfig,
   KanbanSetConfigInput,
-  KanbanSkillStatus,
+  KanbanSkillPreview,
   KanbanUpdatePatch,
   ProjectInfo,
   ResumeSourceBinding,
@@ -287,10 +287,10 @@ export interface AppServices {
     ): Promise<KanbanItemWriteResult>
     /** Creates `.nekode/tasks.json` when absent, then binds `local-file`. */
     bindLocalFile(projectId: string): Promise<void>
-    /** Whether `.agents/skills/nekode-tasks/SKILL.md` exists under the project root. */
-    skillStatus(projectId: string): Promise<KanbanSkillStatus>
-    /** Writes the skill file for the bound source; main builds its text. */
-    writeSkill(projectId: string): Promise<void>
+    /** `Teach agents` preview: exact text, current file, and write token. */
+    skillPreview(projectId: string): Promise<KanbanSkillPreview>
+    /** Writes the previewed skill text while the token still matches; main builds the text. */
+    writeSkill(projectId: string, token: string): Promise<void>
     /** Adapter `getItem` `{ ref }`. Not the cached board. */
     getItem(projectId: string, ref: string): Promise<WorkItem>
     /** Comments for one work item via the adapter `listComments` action (`{ ref }`). */

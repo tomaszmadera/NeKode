@@ -158,6 +158,52 @@ describe('parseAdapterManifest', () => {
   })
 })
 
+describe('manifest agentSkill (NEKODE-169)', () => {
+  it('accepts a safe relative path and keeps it off the public adapter info', () => {
+    for (const agentSkill of ['SKILL.md', 'docs/agent/SKILL.md', '.hidden/skill.md']) {
+      const parsed = parseAdapterManifest(JSON.stringify({ ...VALID_MANIFEST, agentSkill }), 'm')
+      expect(parsed).not.toHaveProperty('agentSkill')
+    }
+  })
+
+  it('rejects an absolute, drive, backslash, empty, dot, or dot-dot path', () => {
+    const bad: unknown[] = [
+      '',
+      '/etc/skill.md',
+      'C:/skill.md',
+      'c:skill.md',
+      'docs\\skill.md',
+      './skill.md',
+      'docs/./skill.md',
+      '../skill.md',
+      'docs/../../skill.md',
+      'docs//skill.md',
+      'docs/',
+      42,
+      null,
+    ]
+    for (const agentSkill of bad) {
+      expect(() =>
+        parseAdapterManifest(JSON.stringify({ ...VALID_MANIFEST, agentSkill }), 'm'),
+      ).toThrow(/agentSkill/)
+    }
+  })
+
+  it('discovery carries a declared agentSkill and omits it when absent', () => {
+    writeAdapter('a', { ...VALID_MANIFEST, id: 'with-skill', agentSkill: 'docs/SKILL.md' })
+    writeAdapter('b', { ...VALID_MANIFEST, id: 'without-skill' })
+    writeAdapter('c', { ...VALID_MANIFEST, id: 'bad-skill', agentSkill: '../x.md' })
+    const result = discoverAdapters(dir)
+    expect(result.adapters.map((adapter) => [adapter.id, adapter.agentSkill])).toEqual([
+      ['with-skill', 'docs/SKILL.md'],
+      ['without-skill', undefined],
+    ])
+    expect(result.adapters[1]).not.toHaveProperty('agentSkill')
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain('agentSkill')
+  })
+})
+
 describe('discoverAdapters', () => {
   it('lists one valid adapter directory', () => {
     writeAdapter('demo', VALID_MANIFEST)

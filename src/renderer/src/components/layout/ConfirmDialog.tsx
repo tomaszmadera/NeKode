@@ -17,6 +17,8 @@ interface ConfirmDialogProps {
    * disabled button loses focus, and Escape would then miss this dialog.
    */
   confirmDisabled?: boolean
+  /** Wider panel with its own scroll, for a preview such as file text. */
+  wide?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -35,6 +37,7 @@ export function ConfirmDialog({
   destructive = false,
   children,
   confirmDisabled = false,
+  wide = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps): React.JSX.Element {
@@ -71,7 +74,11 @@ export function ConfirmDialog({
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-dialog-title"
-          className="w-[min(24rem,90vw)] rounded-lg border border-edge bg-panel p-5 shadow-xl"
+          className={
+            wide
+              ? 'max-h-[90vh] w-[min(48rem,92vw)] overflow-y-auto rounded-lg border border-edge bg-panel p-5 shadow-xl'
+              : 'w-[min(24rem,90vw)] rounded-lg border border-edge bg-panel p-5 shadow-xl'
+          }
           data-testid={TEST_ID.confirmDialog}
         >
           <h2 id="confirm-dialog-title" className="text-base font-semibold text-ink">

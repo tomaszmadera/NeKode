@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { promises as nodeFs } from 'node:fs'
-import { AGENT_SKILL_FILE_PATH, LOCAL_FILE_ADAPTER_ID } from '@shared/ipc-contract'
+import { join } from 'node:path'
+import { AGENT_SKILL_FILE_PATH } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { joinProjectPath } from '../project-path'
 import { errnoCode, isInside } from './local-task-file'
@@ -9,11 +10,15 @@ import { errnoCode, isInside } from './local-task-file'
 // Errors). Main writes one skill file, `.agents/skills/nekode-tasks/SKILL.md`,
 // under the stored project root, the same root the file tree and the
 // `local-file` source use (a WSL project uses its stored UNC path). The text
-// is built here from the bound source id; the renderer sends no content. It
-// holds no task items, no adapter config, and no secrets. Only the
-// `.agents/skills/nekode-tasks` parents are created, never the root, and no
-// process or shell runs. Every existing segment must resolve inside the
-// project root. The file is replaced by a temp file in the same directory
+// is chosen by the bound source only (NEKODE-169): the built-in local text,
+// the bound adapter's declared `agentSkill` body under fixed front matter, or
+// a neutral default that forbids no tool. The renderer sends no content; a
+// write carries the preview token, a SHA-256 over the text and the current
+// file bytes, so Confirm writes exactly the previewed text over exactly the
+// previewed file. The text holds no task items, no adapter config, and no
+// secrets. Only the `.agents/skills/nekode-tasks` parents are created, never
+// the root, and no process or shell runs. Every existing segment must
+// resolve inside the project root. The file is replaced by a temp file in the same directory
 // followed by a rename, so a failed write leaves the previous file unchanged.
 
 const SKILL_DIR_SEGMENTS = ['.agents', 'skills', 'nekode-tasks'] as const
@@ -49,28 +54,132 @@ The file is JSON in UTF-8 without a byte order mark. NeKode writes the keys \`sc
 Never reset, empty, or recreate the file. If it is missing or not valid, stop and tell the user.
 `
 
-const EXTERNAL_SKILL = `---
+/** Fixed front matter above an adapter-declared body. */
+const ADAPTER_FRONT_MATTER = `---
 name: nekode-tasks
-description: Use when you work with this project's tasks. The tasks live in the tracker configured for this project in NeKode, not in the repository, and they are added and updated in NeKode.
+description: Use when you work with this project's tasks. The tasks live in the tracker configured for this project in NeKode.
+---
+
+`
+
+function defaultSkill(adapterName: string): string {
+  return `---
+name: nekode-tasks
+description: Use when you work with this project's tasks. The tasks live in the tracker configured for this project in NeKode, not in the repository.
 ---
 
 # NeKode tasks
 
-This project's tasks live in the tracker configured for this project in NeKode (Project Settings, Tasks). NeKode lists and updates them there.
+This project's tasks live in the tracker configured for this project in NeKode (Project Settings, Tasks), through the ${adapterName} adapter. NeKode lists and updates them there.
 
 - Do not copy tasks into the repository: no task list, TODO file, or \`.nekode/tasks.json\`.
 - Do not create a second task list anywhere.
-- Do not call a kanban CLI recorded in this repository (for example a \`kanban\` skill or command under \`.agents/\`) to read or change these tasks. It may target a different tracker project.
-- Work from the task details NeKode gave you in this chat, or ask the user.
+- When NeKode started this chat for a task, work from the task details it gave you.
+- If other instructions in this repository describe a task tool that targets a different tracker or project, or you cannot tell which tracker a tool targets, ask the user instead of choosing.
 `
+}
+
+/** Where the skill text comes from (project-home spec Behaviour 11). */
+export type AgentSkillSource =
+  | { kind: 'local-file' }
+  | { kind: 'adapter'; body: string }
+  | { kind: 'default'; adapterName: string }
 
 /**
- * The skill text for the bound source id (spec Behaviour 11). Only the
- * branch depends on the id; nothing from the binding, its config, or the
- * task list is copied in.
+ * The skill text for the bound source. Nothing from the binding's config or
+ * the task list is copied in; an adapter body is copied unchanged.
  */
-export function buildAgentSkill(adapterId: string): string {
-  return adapterId === LOCAL_FILE_ADAPTER_ID ? LOCAL_FILE_SKILL : EXTERNAL_SKILL
+export function buildAgentSkill(source: AgentSkillSource): string {
+  switch (source.kind) {
+    case 'local-file':
+      return LOCAL_FILE_SKILL
+    case 'adapter':
+      return `${ADAPTER_FRONT_MATTER}${source.body}`
+    case 'default':
+      // A manifest name is one line in the text, whatever it contains.
+      return defaultSkill(source.adapterName.replace(/\s+/g, ' ').trim())
+  }
+}
+
+/** Largest adapter-declared body NeKode accepts. */
+export const MAX_ADAPTER_SKILL_BYTES = 32 * 1024
+/** Largest current skill file the preview shows as text. */
+export const MAX_SHOWN_SKILL_BYTES = 256 * 1024
+
+/**
+ * Reads a validated manifest `agentSkill` body (project-home spec Data / API).
+ * Missing, outside the adapter folder, unreadable, not valid UTF-8, blank,
+ * over 32 KiB, or starting with a front-matter line is `validation_error`
+ * naming the adapter id and the declared path. There is no fallback text.
+ */
+export async function readAdapterSkillBody(
+  adapter: { id: string; dir: string },
+  relative: string,
+  channel: string,
+): Promise<string> {
+  const invalid = (reason: string, cause?: unknown): AppError => {
+    if (cause !== undefined) {
+      console.warn(`[kanban] Adapter "${adapter.id}" agentSkill ${relative}:`, cause)
+    }
+    return new AppError(
+      'validation_error',
+      `The agentSkill file "${relative}" of the "${adapter.id}" adapter ${reason}.`,
+      channel,
+    )
+  }
+  let realDir: string
+  let realFile: string
+  try {
+    realDir = await nodeFs.realpath(adapter.dir)
+    realFile = await nodeFs.realpath(join(adapter.dir, ...relative.split('/')))
+  } catch (error) {
+    if (errnoCode(error) === 'ENOENT') throw invalid('does not exist')
+    throw invalid('cannot be read', error)
+  }
+  if (!isInside(realDir, realFile)) throw invalid('resolves outside the adapter folder')
+  let bytes: Buffer
+  try {
+    bytes = await nodeFs.readFile(realFile)
+  } catch (error) {
+    throw invalid('cannot be read', error)
+  }
+  if (bytes.length > MAX_ADAPTER_SKILL_BYTES) throw invalid('is larger than 32 KiB')
+  const body = decodeUtf8(bytes)
+  if (body === null) throw invalid('is not valid UTF-8')
+  if (body.trim().length === 0) throw invalid('is empty')
+  if (/^\uFEFF?---[ \t]*(\r?\n|$)/.test(body)) {
+    throw invalid('starts with a front-matter line; NeKode adds its own front matter')
+  }
+  return body
+}
+
+function decodeUtf8(bytes: Buffer): string | null {
+  try {
+    // `ignoreBOM` keeps a byte order mark, so the text is the bytes exactly.
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Preview token: hex SHA-256 over the text, a NUL, and the current file
+ * bytes, or the marker `absent` when there is no file.
+ */
+export function agentSkillToken(text: string, current: Buffer | null): string {
+  const hash = createHash('sha256')
+  hash.update(text, 'utf8')
+  hash.update('\u0000')
+  hash.update(current ?? 'absent')
+  return hash.digest('hex')
+}
+
+/** The skill file as the preview sees it. */
+export interface AgentSkillDiskState {
+  exists: boolean
+  /** UTF-8 text, or null when absent, not valid UTF-8, or over 256 KiB. */
+  current: string | null
+  token: string
 }
 
 /** Minimal project lookup: the stored project root path. */
@@ -129,21 +238,31 @@ export class AgentSkillFile {
     this.#newId = deps.newId ?? randomUUID
   }
 
-  /** Whether the skill file exists; every existing segment must stay inside the root. */
-  async exists(projectId: string, channel: string): Promise<boolean> {
+  /** Current file state and the token for `text`; every existing segment must stay inside the root. */
+  async preview(projectId: string, text: string, channel: string): Promise<AgentSkillDiskState> {
     const located = this.#locate(projectId, channel)
     const realRoot = await this.#realRoot(located, channel)
-    for (const segment of located.dirs) {
-      if (!(await this.#resolveInside(realRoot, segment, channel))) return false
-    }
-    return await this.#resolveInside(realRoot, located.file, channel)
+    const bytes = await this.#readCurrent(located, realRoot, channel)
+    const shown = bytes === null || bytes.length > MAX_SHOWN_SKILL_BYTES ? null : decodeUtf8(bytes)
+    return { exists: bytes !== null, current: shown, token: agentSkillToken(text, bytes) }
   }
 
-  /** Writes the given text to the skill file by temp file plus rename. */
-  async write(projectId: string, text: string, channel: string): Promise<void> {
+  /**
+   * Writes `text` by temp file plus rename, only while the current file still
+   * matches the preview `token`; otherwise `conflict` and nothing is written.
+   */
+  async write(projectId: string, text: string, token: string, channel: string): Promise<void> {
     await this.#serialized(projectId, async () => {
       const located = this.#locate(projectId, channel)
       const realRoot = await this.#realRoot(located, channel)
+      const bytes = await this.#readCurrent(located, realRoot, channel)
+      if (agentSkillToken(text, bytes) !== token) {
+        throw new AppError(
+          'conflict',
+          'The skill file or its source changed. Review the new preview.',
+          channel,
+        )
+      }
       for (const segment of located.dirs) {
         try {
           // One segment at a time, never recursive: each existing segment is
@@ -182,6 +301,19 @@ export class AgentSkillFile {
         throw ioFailure('write', AGENT_SKILL_FILE_PATH, error, channel)
       }
     })
+  }
+
+  /** Current file bytes, or null when the file or one of its parents is absent. */
+  async #readCurrent(located: Located, realRoot: string, channel: string): Promise<Buffer | null> {
+    for (const segment of located.dirs) {
+      if (!(await this.#resolveInside(realRoot, segment, channel))) return null
+    }
+    if (!(await this.#resolveInside(realRoot, located.file, channel))) return null
+    try {
+      return await nodeFs.readFile(located.file.path)
+    } catch (error) {
+      throw ioFailure('read', AGENT_SKILL_FILE_PATH, error, channel)
+    }
   }
 
   async #removeTemp(temp: string): Promise<void> {

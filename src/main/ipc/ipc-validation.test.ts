@@ -113,7 +113,7 @@ function fakeServices(): AppServices {
       getItem: vi.fn(() => Promise.resolve({} as never)),
       getComments: vi.fn(() => Promise.resolve([])),
       bindLocalFile: vi.fn(() => Promise.resolve()),
-      skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
+      skillPreview: vi.fn(() => Promise.resolve({} as never)),
       writeSkill: vi.fn(() => Promise.resolve()),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
       cleanupProject: vi.fn(),
@@ -1369,18 +1369,38 @@ describe('ipc payload validation', () => {
         [''],
         'kanban:bindLocalFile requires a non-empty projectId',
       ],
-      [IPC_CHANNEL.kanbanSkillStatus, [''], 'kanban:skillStatus requires a non-empty projectId'],
+      [IPC_CHANNEL.kanbanSkillPreview, [''], 'kanban:skillPreview requires a non-empty projectId'],
       [
-        IPC_CHANNEL.kanbanSkillStatus,
+        IPC_CHANNEL.kanbanSkillPreview,
         ['p1', 'extra'],
-        'kanban:skillStatus: expected 1 argument(s), got 2',
+        'kanban:skillPreview: expected 1 argument(s), got 2',
       ],
-      [IPC_CHANNEL.kanbanWriteSkill, [], 'kanban:writeSkill: expected 1 argument(s), got 0'],
-      // The renderer never sends skill text: main builds it (project-home 11-12).
+      [IPC_CHANNEL.kanbanWriteSkill, ['p1'], 'kanban:writeSkill: expected 2 argument(s), got 1'],
+      [
+        IPC_CHANNEL.kanbanWriteSkill,
+        ['', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+        'kanban:writeSkill requires a non-empty projectId',
+      ],
+      // The renderer never sends skill text: only the preview token (project-home 11-13).
       [
         IPC_CHANNEL.kanbanWriteSkill,
         ['p1', '# injected skill text'],
-        'kanban:writeSkill: expected 1 argument(s), got 2',
+        'kanban:writeSkill requires a 64-character lowercase hex token',
+      ],
+      [
+        IPC_CHANNEL.kanbanWriteSkill,
+        ['p1', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'],
+        'kanban:writeSkill requires a 64-character lowercase hex token',
+      ],
+      [
+        IPC_CHANNEL.kanbanWriteSkill,
+        ['p1', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0'],
+        'kanban:writeSkill requires a 64-character lowercase hex token',
+      ],
+      [
+        IPC_CHANNEL.kanbanWriteSkill,
+        ['p1', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'extra'],
+        'kanban:writeSkill: expected 2 argument(s), got 3',
       ],
       // updateItem keeps the item arity and the shared revision rule here; its
       // patch rules stay in the message table and the priority test.

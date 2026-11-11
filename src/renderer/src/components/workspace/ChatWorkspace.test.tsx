@@ -143,7 +143,7 @@ function createAppMock(): AppMockBundle {
       getItem: vi.fn(),
       getComments: vi.fn().mockResolvedValue([]),
       bindLocalFile: vi.fn().mockResolvedValue(undefined),
-      skillStatus: vi.fn().mockResolvedValue({ exists: false }),
+      skillPreview: vi.fn(),
       writeSkill: vi.fn().mockResolvedValue(undefined),
       launchTask: vi.fn(),
     },

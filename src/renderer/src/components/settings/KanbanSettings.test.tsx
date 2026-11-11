@@ -3,10 +3,12 @@ import type {
   KanbanAdapterInfo,
   KanbanConfigField,
   KanbanProjectConfig,
+  KanbanSkillPreview,
 } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
+import { skillPreviewStub } from '../../test/app-api-stub'
 import { KanbanSettings } from './KanbanSettings'
 
 afterEach(cleanup)
@@ -45,7 +47,7 @@ function appMock(
     setConfig?: ReturnType<typeof vi.fn>
     test?: ReturnType<typeof vi.fn>
     bindLocalFile?: ReturnType<typeof vi.fn>
-    skillStatus?: ReturnType<typeof vi.fn>
+    skillPreview?: ReturnType<typeof vi.fn>
     writeSkill?: ReturnType<typeof vi.fn>
     agentProfilesGet?: ReturnType<typeof vi.fn>
   } = {},
@@ -57,7 +59,7 @@ function appMock(
       setConfig: options.setConfig ?? vi.fn().mockResolvedValue(undefined),
       test: options.test ?? vi.fn().mockResolvedValue(undefined),
       bindLocalFile: options.bindLocalFile ?? vi.fn().mockResolvedValue(undefined),
-      skillStatus: options.skillStatus ?? vi.fn().mockResolvedValue({ exists: false }),
+      skillPreview: options.skillPreview ?? vi.fn().mockResolvedValue(skillPreviewStub()),
       writeSkill: options.writeSkill ?? vi.fn().mockResolvedValue(undefined),
       listBoard: vi.fn(),
       createItem: vi.fn(),
@@ -718,7 +720,7 @@ describe('KanbanSettings - Local file (project-home spec Behaviour 6-7, 10)', ()
   })
 })
 
-describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', () => {
+describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, 13, AC8, AC11-12)', () => {
   const LOCAL: KanbanAdapterInfo = { id: 'local-file', name: 'Local file', configSchema: [] }
   const SKILL_PATH = '.agents/skills/nekode-tasks/SKILL.md'
 
@@ -759,18 +761,18 @@ describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', 
 
   it('names the file and lists the selected profiles; Cancel writes nothing', async () => {
     const writeSkill = vi.fn().mockResolvedValue(undefined)
-    const skillStatus = vi.fn().mockResolvedValue({ exists: false })
+    const skillPreview = vi.fn().mockResolvedValue(skillPreviewStub())
     const app = appMock({
       adaptersList: vi.fn().mockResolvedValue([PLANE]),
       getConfig: bound('plane'),
       writeSkill,
-      skillStatus,
+      skillPreview,
       agentProfilesGet: profiles('Claude', 'Grok'),
     })
     await renderLoaded(app)
     fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
     const dialog = await screen.findByTestId(TEST_ID.confirmDialog)
-    expect(skillStatus).toHaveBeenCalledWith('p1')
+    expect(skillPreview).toHaveBeenCalledWith('p1')
     expect(app.agentProfiles.get).toHaveBeenCalledWith('p1')
     expect(screen.getByTestId(TEST_ID.settingsKanbanTeachFile).textContent).toBe(SKILL_PATH)
     const items = screen.getByTestId(TEST_ID.settingsKanbanTeachProfiles).querySelectorAll('li')
@@ -804,7 +806,11 @@ describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', 
     const app = appMock({
       adaptersList: vi.fn().mockResolvedValue([LOCAL]),
       getConfig: bound('local-file'),
-      skillStatus: vi.fn().mockResolvedValue({ exists: true }),
+      skillPreview: vi
+        .fn()
+        .mockResolvedValue(
+          skillPreviewStub({ exists: true, current: 'old\n', token: 'd'.repeat(64) }),
+        ),
       writeSkill,
       agentProfilesGet: profiles('Claude'),
     })
@@ -818,7 +824,7 @@ describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', 
     fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
     expect(writeSkill).toHaveBeenCalledTimes(1)
-    expect(writeSkill).toHaveBeenCalledWith('p1')
+    expect(writeSkill).toHaveBeenCalledWith('p1', 'd'.repeat(64))
     expect(screen.getByTestId(TEST_ID.settingsKanbanTeachDone).textContent).toBe(
       `Wrote ${SKILL_PATH}.`,
     )
@@ -900,18 +906,18 @@ describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', 
     finish()
   })
 
-  it('returns focus to Teach agents on close even if focus dropped while the status loaded', async () => {
-    let answer: (value: { exists: boolean }) => void = () => undefined
-    const skillStatus = vi.fn(
+  it('returns focus to Teach agents on close even if focus dropped while the preview loaded', async () => {
+    let answer: (value: KanbanSkillPreview) => void = () => undefined
+    const skillPreview = vi.fn(
       () =>
-        new Promise<{ exists: boolean }>((resolve) => {
+        new Promise<KanbanSkillPreview>((resolve) => {
           answer = resolve
         }),
     )
     const app = appMock({
       adaptersList: vi.fn().mockResolvedValue([LOCAL]),
       getConfig: bound('local-file'),
-      skillStatus,
+      skillPreview,
     })
     await renderLoaded(app)
     const teach = screen.getByTestId(TEST_ID.settingsKanbanTeachAgents) as HTMLButtonElement
@@ -925,7 +931,7 @@ describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', 
     stand.focus()
     stand.remove()
     expect(document.activeElement).toBe(document.body)
-    answer({ exists: false })
+    answer(skillPreviewStub())
     await screen.findByTestId(TEST_ID.confirmDialog)
     fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogCancel))
     expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
@@ -933,19 +939,19 @@ describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', 
 
     // A successful write returns focus there too.
     fireEvent.click(teach)
-    await waitFor(() => expect(skillStatus).toHaveBeenCalledTimes(2))
-    answer({ exists: false })
+    await waitFor(() => expect(skillPreview).toHaveBeenCalledTimes(2))
+    answer(skillPreviewStub())
     await screen.findByTestId(TEST_ID.confirmDialog)
     fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
     await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(teach))
   })
 
-  it('shows a failed status read inline in the section and opens no dialog', async () => {
+  it('shows a failed preview read inline in the section and opens no dialog', async () => {
     const app = appMock({
       adaptersList: vi.fn().mockResolvedValue([LOCAL]),
       getConfig: bound('local-file'),
-      skillStatus: vi.fn().mockRejectedValue({
+      skillPreview: vi.fn().mockRejectedValue({
         nekodeAppError: true,
         code: 'unknown',
         message: 'Could not resolve .agents: it exists but its link cannot be followed.',
@@ -957,6 +963,179 @@ describe('KanbanSettings - Teach agents (project-home spec Behaviour 11, AC8)', 
       'Could not resolve .agents: it exists but its link cannot be followed.',
     )
     expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull()
+    expect(app.kanban.writeSkill).not.toHaveBeenCalled()
+  })
+
+  async function openPreview(
+    preview: KanbanSkillPreview,
+    extra: Parameters<typeof appMock>[0] = {},
+  ) {
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL, PLANE, SECOND]),
+      getConfig: bound('plane'),
+      skillPreview: vi.fn().mockResolvedValue(preview),
+      ...extra,
+    })
+    await renderLoaded(app)
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTeachAgents))
+    await screen.findByTestId(TEST_ID.confirmDialog)
+    return app
+  }
+
+  it('previews a new file: path, new-file copy, origin, exact text, and the boundary note', async () => {
+    const text = '---\nname: nekode-tasks\n---\n\n# Default\n'
+    await openPreview(
+      skillPreviewStub({ origin: 'default', sourceName: 'Plane', text, exists: false }),
+    )
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachFile).textContent).toBe(SKILL_PATH)
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachNew).textContent).toBe(
+      'This creates a new file.',
+    )
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachReplace)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachOrigin).textContent).toBe(
+      'NeKode default instructions for Plane',
+    )
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachText).textContent).toBe(text)
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachDiff)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachBoundary).textContent).toBe(
+      'Writing this file installs and configures nothing. Agents that do not read project skills ignore it.',
+    )
+  })
+
+  it('names each origin', async () => {
+    const cases: Array<[KanbanSkillPreview['origin'], string]> = [
+      ['local-file', 'Local file instructions'],
+      ['adapter', 'Instructions from the Plane adapter'],
+      ['default', 'NeKode default instructions for Plane'],
+    ]
+    for (const [origin, label] of cases) {
+      await openPreview(skillPreviewStub({ origin, sourceName: 'Plane' }))
+      expect(screen.getByTestId(TEST_ID.settingsKanbanTeachOrigin).textContent).toBe(label)
+      cleanup()
+    }
+  })
+
+  it('shows a line diff when replacing a different file', async () => {
+    await openPreview(
+      skillPreviewStub({ exists: true, current: 'keep\nold line\n', text: 'keep\nnew line\n' }),
+    )
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachReplace)).toBeTruthy()
+    const rows = Array.from(
+      screen.getByTestId(TEST_ID.settingsKanbanTeachDiff).querySelectorAll('[data-diff]'),
+    ).map((row) => `${row.getAttribute('data-diff')}:${row.textContent}`)
+    expect(rows).toEqual(['same: keep', 'remove:-old line', 'add:+new line', 'same: '])
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachNoChanges)).toBeNull()
+  })
+
+  it('says No changes when the current file equals the new text', async () => {
+    await openPreview(skillPreviewStub({ exists: true, current: 'same\n', text: 'same\n' }))
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachNoChanges).textContent).toBe('No changes')
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachDiff)).toBeNull()
+  })
+
+  it('says the current file cannot be shown and still allows the replace', async () => {
+    const writeSkill = vi.fn().mockResolvedValue(undefined)
+    await openPreview(skillPreviewStub({ exists: true, current: null, token: 'e'.repeat(64) }), {
+      writeSkill,
+    })
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachCurrentHidden).textContent).toBe(
+      'The current file cannot be shown.',
+    )
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachDiff)).toBeNull()
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(writeSkill).toHaveBeenCalledWith('p1', 'e'.repeat(64)))
+  })
+
+  it('a stale preview writes nothing, shows the notice, and needs a new confirm', async () => {
+    const skillPreview = vi
+      .fn()
+      .mockResolvedValueOnce(skillPreviewStub({ text: 'first\n', token: '1'.repeat(64) }))
+      .mockResolvedValueOnce(skillPreviewStub({ text: 'second\n', token: '2'.repeat(64) }))
+    const writeSkill = vi
+      .fn()
+      .mockRejectedValueOnce({
+        nekodeAppError: true,
+        code: 'conflict',
+        message: 'The skill file or its source changed. Review the new preview.',
+      })
+      .mockResolvedValueOnce(undefined)
+    await openPreview(skillPreviewStub(), { skillPreview, writeSkill })
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.settingsKanbanTeachNotice).textContent).toBe(
+        'The skill file or its source changed. Review the new preview.',
+      ),
+    )
+    expect(writeSkill).toHaveBeenCalledWith('p1', '1'.repeat(64))
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachText).textContent).toBe('second\n')
+    expect(screen.getByTestId(TEST_ID.confirmDialog)).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachDone)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachError)).toBeNull()
+    expect(writeSkill).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
+    expect(writeSkill).toHaveBeenLastCalledWith('p1', '2'.repeat(64))
+  })
+
+  it('a failed preview reload after conflict hides the stale text and blocks Confirm', async () => {
+    const skillPreview = vi
+      .fn()
+      .mockResolvedValueOnce(skillPreviewStub({ text: 'first\n', token: '1'.repeat(64) }))
+      .mockRejectedValueOnce({
+        nekodeAppError: true,
+        code: 'unknown',
+        message: 'Could not read the adapter skill body.',
+      })
+    const writeSkill = vi.fn().mockRejectedValue({
+      nekodeAppError: true,
+      code: 'conflict',
+      message: 'The skill file or its source changed. Review the new preview.',
+    })
+    await openPreview(skillPreviewStub(), { skillPreview, writeSkill })
+    fireEvent.click(screen.getByTestId(TEST_ID.confirmDialogConfirm))
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.settingsKanbanTeachError).textContent).toBe(
+        'Could not read the adapter skill body.',
+      ),
+    )
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanTeachText)).toBeNull()
+    const confirm = screen.getByTestId(TEST_ID.confirmDialogConfirm)
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.click(confirm)
+    expect(writeSkill).toHaveBeenCalledTimes(1)
+  })
+
+  it('saving another source while the dialog is open reloads the preview', async () => {
+    const skillPreview = vi
+      .fn()
+      .mockResolvedValueOnce(skillPreviewStub({ origin: 'default', sourceName: 'Plane' }))
+      .mockResolvedValueOnce(skillPreviewStub({ origin: 'default', sourceName: 'Second' }))
+    const getConfig = vi
+      .fn()
+      .mockResolvedValueOnce({ adapterId: 'plane', values: {}, secretKeys: [] })
+      .mockResolvedValue({ adapterId: 'second', values: {}, secretKeys: [] })
+    await openPreview(skillPreviewStub(), { skillPreview, getConfig })
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect), {
+      target: { value: 'second' },
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanSave))
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_ID.settingsKanbanTeachOrigin).textContent).toBe(
+        'NeKode default instructions for Second',
+      ),
+    )
+    expect(skillPreview).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId(TEST_ID.settingsKanbanTeachNotice)).toBeTruthy()
+  })
+
+  it('clearing the binding while the dialog is open closes it', async () => {
+    const app = await openPreview(skillPreviewStub())
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect), {
+      target: { value: '' },
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanSave))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.confirmDialog)).toBeNull())
     expect(app.kanban.writeSkill).not.toHaveBeenCalled()
   })
 })

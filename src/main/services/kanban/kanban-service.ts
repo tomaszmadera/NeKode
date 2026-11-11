@@ -1,4 +1,5 @@
 import {
+  AGENT_SKILL_FILE_PATH,
   KANBAN_PRIORITIES,
   type KanbanAdapterInfo,
   type KanbanBoard,
@@ -7,7 +8,8 @@ import {
   type KanbanItemWriteResult,
   type KanbanPriority,
   type KanbanProjectConfig,
-  type KanbanSkillStatus,
+  type KanbanSkillOrigin,
+  type KanbanSkillPreview,
   type KanbanUpdatePatch,
   LOCAL_FILE_ADAPTER_ID,
   LOCAL_FILE_ADAPTER_NAME,
@@ -24,7 +26,7 @@ import {
   normalizeItems,
   normalizeStates,
 } from './adapter-protocol'
-import { AgentSkillFile, buildAgentSkill } from './agent-skill-file'
+import { AgentSkillFile, buildAgentSkill, readAdapterSkillBody } from './agent-skill-file'
 import { LocalTaskFile } from './local-task-file'
 
 // KanbanService (spec kanban-adapter-interface Behaviour 4–11): the single
@@ -47,7 +49,7 @@ const CHANNEL = {
   getItem: 'kanban:getItem',
   getComments: 'kanban:getComments',
   bindLocalFile: 'kanban:bindLocalFile',
-  skillStatus: 'kanban:skillStatus',
+  skillPreview: 'kanban:skillPreview',
   writeSkill: 'kanban:writeSkill',
 } as const
 
@@ -300,28 +302,82 @@ export class KanbanService {
     this.#state.set(projectKanbanAdapterKey(projectId), LOCAL_FILE_ADAPTER_ID)
   }
 
-  /** `Teach agents` dialog: whether the skill file exists (project-home spec Behaviour 11). */
-  async skillStatus(projectId: string): Promise<KanbanSkillStatus> {
-    this.assertProject(projectId)
-    return { exists: await this.#skillFile.exists(projectId, CHANNEL.skillStatus) }
+  /**
+   * `Teach agents` preview (project-home spec Behaviour 11, 13, NEKODE-169):
+   * the exact text a write produces for the bound source, the current file,
+   * and the token that binds a later write to both. It never runs the
+   * adapter, reads its config, or copies task items.
+   */
+  async skillPreview(projectId: string): Promise<KanbanSkillPreview> {
+    const source = await this.skillSource(projectId, CHANNEL.skillPreview)
+    const disk = await this.#skillFile.preview(projectId, source.text, CHANNEL.skillPreview)
+    return {
+      path: AGENT_SKILL_FILE_PATH,
+      origin: source.origin,
+      sourceName: source.sourceName,
+      exists: disk.exists,
+      current: disk.current,
+      text: source.text,
+      token: disk.token,
+    }
   }
 
   /**
-   * `Teach agents` confirm (project-home spec Behaviour 11-12): writes the
-   * skill text for the bound source. It never runs the adapter, reads its
-   * config, or copies task items. An unbound project is rejected.
+   * `Teach agents` confirm (project-home spec Behaviour 11-13): rebuilds the
+   * preview from the stored binding and the disk, and writes only when its
+   * token still equals the confirmed one; otherwise `conflict`.
    */
-  async writeSkill(projectId: string): Promise<void> {
+  async writeSkill(projectId: string, token: string): Promise<void> {
+    const source = await this.skillSource(projectId, CHANNEL.writeSkill)
+    await this.#skillFile.write(projectId, source.text, token, CHANNEL.writeSkill)
+  }
+
+  /**
+   * The skill text chosen by the bound source only: `local-file`, the bound
+   * adapter's declared `agentSkill`, or the default text naming the adapter.
+   * An unbound project is `validation_error`; a bound adapter that is not
+   * installed is `not_found`, so no text is guessed for it.
+   */
+  private async skillSource(
+    projectId: string,
+    channel: string,
+  ): Promise<{ origin: KanbanSkillOrigin; sourceName: string; text: string }> {
     this.assertProject(projectId)
     const adapterId = this.#state.get(projectKanbanAdapterKey(projectId))
     if (adapterId === null || adapterId.trim().length === 0) {
       throw new AppError(
         'validation_error',
         'Connect a task source before teaching agents.',
-        CHANNEL.writeSkill,
+        channel,
       )
     }
-    await this.#skillFile.write(projectId, buildAgentSkill(adapterId), CHANNEL.writeSkill)
+    if (adapterId === LOCAL_FILE_ADAPTER_ID) {
+      return {
+        origin: 'local-file',
+        sourceName: LOCAL_FILE_ADAPTER_NAME,
+        text: buildAgentSkill({ kind: 'local-file' }),
+      }
+    }
+    const adapter = this.#discoverAdapters(this.#adaptersDir()).adapters.find(
+      (candidate) => candidate.info.id === adapterId,
+    )
+    if (adapter === undefined) {
+      throw new AppError(
+        'not_found',
+        `Kanban adapter "${adapterId}" is not installed in the adapters directory.`,
+        channel,
+      )
+    }
+    const sourceName = adapter.info.name
+    if (adapter.agentSkill === undefined) {
+      return {
+        origin: 'default',
+        sourceName,
+        text: buildAgentSkill({ kind: 'default', adapterName: sourceName }),
+      }
+    }
+    const body = await readAdapterSkillBody(adapter, adapter.agentSkill, channel)
+    return { origin: 'adapter', sourceName, text: buildAgentSkill({ kind: 'adapter', body }) }
   }
 
   getConfig(projectId: string): KanbanProjectConfig {

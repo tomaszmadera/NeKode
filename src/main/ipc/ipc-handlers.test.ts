@@ -333,7 +333,7 @@ function createHarness(
       getItem: vi.fn(() => Promise.resolve({} as never)),
       getComments: vi.fn(() => Promise.resolve([])),
       bindLocalFile: vi.fn(() => Promise.resolve()),
-      skillStatus: vi.fn(() => Promise.resolve({ exists: false })),
+      skillPreview: vi.fn(() => Promise.resolve({} as never)),
       writeSkill: vi.fn(() => Promise.resolve()),
       launchTask: vi.fn(() => Promise.resolve({} as never)),
       cleanupProject: vi.fn(),
@@ -1106,10 +1106,16 @@ describe('kanban:* channels (adapter integration)', () => {
     expect(services.kanban.bindLocalFile).toHaveBeenCalledWith('p1')
 
     // Teach agents: only the project id crosses; main builds the skill text.
-    await invoke(IPC_CHANNEL.kanbanSkillStatus, ['p1'])
-    expect(services.kanban.skillStatus).toHaveBeenCalledWith('p1')
-    await invoke(IPC_CHANNEL.kanbanWriteSkill, ['p1'])
-    expect(services.kanban.writeSkill).toHaveBeenCalledWith('p1')
+    await invoke(IPC_CHANNEL.kanbanSkillPreview, ['p1'])
+    expect(services.kanban.skillPreview).toHaveBeenCalledWith('p1')
+    await invoke(IPC_CHANNEL.kanbanWriteSkill, [
+      'p1',
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ])
+    expect(services.kanban.writeSkill).toHaveBeenCalledWith(
+      'p1',
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    )
 
     await invoke(IPC_CHANNEL.kanbanGetItem, ['p1', 'DEMO-1'])
     expect(services.kanban.getItem).toHaveBeenCalledWith('p1', 'DEMO-1')
@@ -1158,9 +1164,10 @@ describe('kanban:* channels (adapter integration)', () => {
       [IPC_CHANNEL.kanbanTest, ['p1', { k: 1 }]],
       // Item schema with the optional local-file revision: createItem, updateItem.
       [IPC_CHANNEL.kanbanCreateItem, ['p1', { title: '' }]],
-      // One non-empty project id and nothing else: bindLocalFile, skillStatus,
-      // writeSkill.
+      // One non-empty project id and nothing else: bindLocalFile, skillPreview;
+      // writeSkill adds only the preview token.
       [IPC_CHANNEL.kanbanBindLocalFile, ['']],
+      [IPC_CHANNEL.kanbanWriteSkill, ['p1', 'not-a-token']],
       // The whole payload is one launch object: launchTask.
       [IPC_CHANNEL.kanbanLaunchTask, [{ projectId: 'p1', mode: 'resume' }]],
     ]
@@ -1178,6 +1185,7 @@ describe('kanban:* channels (adapter integration)', () => {
     expect(services.kanban.test).not.toHaveBeenCalled()
     expect(services.kanban.createItem).not.toHaveBeenCalled()
     expect(services.kanban.bindLocalFile).not.toHaveBeenCalled()
+    expect(services.kanban.writeSkill).not.toHaveBeenCalled()
     expect(services.kanban.launchTask).not.toHaveBeenCalled()
   })
 

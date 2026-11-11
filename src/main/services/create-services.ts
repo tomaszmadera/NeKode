@@ -653,10 +653,13 @@ export function createServices(
         requireLocalProject(projectId, IPC_CHANNEL.kanbanBindLocalFile)
         return kanban.bindLocalFile(projectId)
       },
-      skillStatus: (projectId) => kanban.skillStatus(projectId),
-      writeSkill: (projectId) => {
+      skillPreview: (projectId) => {
+        requireLocalProject(projectId, IPC_CHANNEL.kanbanSkillPreview)
+        return kanban.skillPreview(projectId)
+      },
+      writeSkill: (projectId, token) => {
         requireLocalProject(projectId, IPC_CHANNEL.kanbanWriteSkill)
-        return kanban.writeSkill(projectId)
+        return kanban.writeSkill(projectId, token)
       },
       getItem: (projectId, ref) => kanban.getItem(projectId, ref),
       getComments: (projectId, ref) => kanban.getComments(projectId, ref),

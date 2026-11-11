@@ -583,11 +583,17 @@ describe('preload app api', () => {
   it('routes Teach agents with the project id only', async () => {
     const ipc = createIpcMock()
     const api = createAppApi(ipc)
-    await api.kanban.skillStatus('p1')
-    await api.kanban.writeSkill('p1')
+    await api.kanban.skillPreview('p1')
+    await api.kanban.writeSkill(
+      'p1',
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    )
     expect(ipc.invocations).toEqual([
-      { channel: IPC_CHANNEL.kanbanSkillStatus, args: ['p1'] },
-      { channel: IPC_CHANNEL.kanbanWriteSkill, args: ['p1'] },
+      { channel: IPC_CHANNEL.kanbanSkillPreview, args: ['p1'] },
+      {
+        channel: IPC_CHANNEL.kanbanWriteSkill,
+        args: ['p1', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'],
+      },
     ])
   })
 

@@ -107,9 +107,28 @@ export const LOCAL_TASK_FILE_MISSING = 'local_task_file_missing'
  */
 export const AGENT_SKILL_FILE_PATH = '.agents/skills/nekode-tasks/SKILL.md'
 
-/** Result of `kanban:skillStatus`: whether the skill file already exists. */
-export interface KanbanSkillStatus {
+/** Where the `Teach agents` text comes from (project-home spec Behaviour 11). */
+export type KanbanSkillOrigin = 'local-file' | 'adapter' | 'default'
+
+/**
+ * Result of `kanban:skillPreview` (project-home spec Behaviour 13, Data /
+ * API): the exact text Confirm writes, the current file, and the token a
+ * write must carry.
+ */
+export interface KanbanSkillPreview {
+  /** Project-relative skill file path (`AGENT_SKILL_FILE_PATH`). */
+  path: string
+  origin: KanbanSkillOrigin
+  /** Display name of the bound source. */
+  sourceName: string
+  /** Whether the skill file exists. */
   exists: boolean
+  /** Current UTF-8 text, or null when absent, not valid UTF-8, or over 256 KiB. */
+  current: string | null
+  /** The exact text a write produces. */
+  text: string
+  /** Hex SHA-256 over `text`, a NUL, and the current file bytes (or `absent`). */
+  token: string
 }
 
 export type KanbanConfigFieldType = 'string' | 'secret' | 'select' | 'boolean'

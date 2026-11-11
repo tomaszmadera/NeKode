@@ -2,6 +2,7 @@ import type { ActionControl, ActionInput, AppApi } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID } from '../../lib/test-ids'
+import { skillPreviewStub } from '../../test/app-api-stub'
 import { ActionSettings } from './ActionSettings'
 
 afterEach(cleanup)
@@ -185,7 +186,7 @@ describe('Kanban tab shell', () => {
         getConfig: vi
           .fn()
           .mockResolvedValue({ adapterId: 'local-file', values: {}, secretKeys: [] }),
-        skillStatus: vi.fn().mockResolvedValue({ exists: false }),
+        skillPreview: vi.fn().mockResolvedValue(skillPreviewStub()),
         writeSkill,
       },
       agentProfiles: { get: vi.fn().mockResolvedValue({ defaultId: null, profiles: [] }) },

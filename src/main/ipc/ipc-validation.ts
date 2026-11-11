@@ -1028,32 +1028,37 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       },
       invoke: (args) => services.kanban.bindLocalFile(args[0] as string),
     },
-    // `Teach agents` (project-home spec Behaviour 11-12): one registered
-    // project id each. The renderer sends no path and no skill text; main
-    // builds both from the stored root and the bound source.
+    // `Teach agents` (project-home spec Behaviour 11-13): the preview takes
+    // one registered project id; the write takes that id and the preview's
+    // 64-character lowercase hex token. The renderer sends no path and no
+    // skill text; main builds both from the stored root and the bound source.
     {
-      channel: IPC_CHANNEL.kanbanSkillStatus,
+      channel: IPC_CHANNEL.kanbanSkillPreview,
       parse: (payload) => {
-        requireArgs(payload, 1, IPC_CHANNEL.kanbanSkillStatus)
-        assertString(payload[0], `${IPC_CHANNEL.kanbanSkillStatus} arg[0]`)
+        requireArgs(payload, 1, IPC_CHANNEL.kanbanSkillPreview)
+        assertString(payload[0], `${IPC_CHANNEL.kanbanSkillPreview} arg[0]`)
         if ((payload[0] as string).length === 0) {
-          fail(IPC_CHANNEL.kanbanSkillStatus, 'requires a non-empty projectId')
+          fail(IPC_CHANNEL.kanbanSkillPreview, 'requires a non-empty projectId')
         }
         return payload
       },
-      invoke: (args) => services.kanban.skillStatus(args[0] as string),
+      invoke: (args) => services.kanban.skillPreview(args[0] as string),
     },
     {
       channel: IPC_CHANNEL.kanbanWriteSkill,
       parse: (payload) => {
-        requireArgs(payload, 1, IPC_CHANNEL.kanbanWriteSkill)
+        requireArgs(payload, 2, IPC_CHANNEL.kanbanWriteSkill)
         assertString(payload[0], `${IPC_CHANNEL.kanbanWriteSkill} arg[0]`)
         if ((payload[0] as string).length === 0) {
           fail(IPC_CHANNEL.kanbanWriteSkill, 'requires a non-empty projectId')
         }
+        assertString(payload[1], `${IPC_CHANNEL.kanbanWriteSkill} arg[1]`)
+        if (!/^[0-9a-f]{64}$/.test(payload[1] as string)) {
+          fail(IPC_CHANNEL.kanbanWriteSkill, 'requires a 64-character lowercase hex token')
+        }
         return payload
       },
-      invoke: (args) => services.kanban.writeSkill(args[0] as string),
+      invoke: (args) => services.kanban.writeSkill(args[0] as string, args[1] as string),
     },
     {
       channel: IPC_CHANNEL.kanbanLaunchTask,

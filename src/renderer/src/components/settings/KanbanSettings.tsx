@@ -3,6 +3,7 @@ import type {
   KanbanAdapterInfo,
   KanbanConfigField,
   KanbanProjectConfig,
+  KanbanSkillPreview,
 } from '@shared/ipc-contract'
 import {
   AGENT_SKILL_FILE_PATH,
@@ -11,9 +12,10 @@ import {
 } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
+import { diffLines } from '../../lib/line-diff'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { ConfirmDialog } from '../layout/ConfirmDialog'
 import {
@@ -45,9 +47,11 @@ import {
 // first adapter entry: it has no fields, shows its relative path and Test
 // (which parses the file), and while no source is bound the section offers
 // `Use a local task list`. While a source is bound, `Teach agents` opens a
-// confirm dialog that names the one skill file main writes (project-home spec
-// Behaviour 11) and lists the project's selected agent profiles; only the
-// project id crosses the bridge, main builds the text.
+// confirm dialog that previews the one skill file main writes (project-home
+// spec Behaviour 11, 13): path, new or replace, origin, the exact text, and a
+// line diff when replacing, plus the project's selected agent profiles. Main
+// builds the text; Confirm sends only the preview token, so a stale preview
+// gets `conflict` and a new preview instead of a write.
 
 interface KanbanSettingsProps {
   app: AppApi
@@ -57,10 +61,72 @@ interface KanbanSettingsProps {
 
 type TestState = 'idle' | 'running' | 'success' | 'error'
 
-/** Open `Teach agents` dialog: whether the file exists and the selected profile names. */
+/** Open `Teach agents` dialog: the preview, the selected profile names, and a reload notice. */
 interface TeachDialogState {
-  exists: boolean
+  /** Null after a failed reload: nothing is shown as writable and Confirm is off. */
+  preview: KanbanSkillPreview | null
   profiles: { id: string; name: string }[]
+  notice: string | null
+}
+
+const TEACH_STALE_NOTICE = 'The skill file or its source changed. Review the new preview.'
+
+function teachOriginLabel(preview: KanbanSkillPreview): string {
+  switch (preview.origin) {
+    case 'local-file':
+      return 'Local file instructions'
+    case 'adapter':
+      return `Instructions from the ${preview.sourceName} adapter`
+    case 'default':
+      return `NeKode default instructions for ${preview.sourceName}`
+  }
+}
+
+/** Current file to new text: `No changes`, a hidden current file, or a line diff. */
+function TeachDiff({ preview }: { preview: KanbanSkillPreview }): React.JSX.Element | null {
+  // The diff only depends on the two texts; other dialog state must not redo it.
+  const lines = useMemo(
+    () =>
+      preview.current === null || preview.current === preview.text
+        ? []
+        : diffLines(preview.current, preview.text),
+    [preview.current, preview.text],
+  )
+  if (!preview.exists) return null
+  if (preview.current === null) {
+    return (
+      <p className="mt-2 text-ink-muted" data-testid={TEST_ID.settingsKanbanTeachCurrentHidden}>
+        The current file cannot be shown.
+      </p>
+    )
+  }
+  if (preview.current === preview.text) {
+    return (
+      <p className="mt-2 text-ink-muted" data-testid={TEST_ID.settingsKanbanTeachNoChanges}>
+        No changes
+      </p>
+    )
+  }
+  const mark = { same: ' ', remove: '-', add: '+' } as const
+  const tone = { same: 'text-ink-secondary', remove: 'text-error', add: 'text-success' } as const
+  return (
+    <>
+      <p className="mt-3">Changes to the current file:</p>
+      <pre
+        className="mt-1 max-h-56 overflow-auto rounded-md border border-edge bg-app p-2 font-mono text-[11px] leading-snug"
+        data-testid={TEST_ID.settingsKanbanTeachDiff}
+      >
+        {lines.map((line, index) => (
+          // Lines have no identity beyond their position in this diff.
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional diff rows
+          <div key={index} className={tone[line.kind]} data-diff={line.kind}>
+            {mark[line.kind]}
+            {line.text}
+          </div>
+        ))}
+      </pre>
+    </>
+  )
 }
 
 /** Effective stored values as returned by getConfig (non-secret) or null. */
@@ -143,6 +209,40 @@ function requiredError(
   return null
 }
 
+/** Path, new or replace, origin, exact text, and diff of one preview (Behaviour 13). */
+function TeachPreview({ preview }: { preview: KanbanSkillPreview }): React.JSX.Element {
+  return (
+    <>
+      <p>
+        File:{' '}
+        <code className="text-ink" data-testid={TEST_ID.settingsKanbanTeachFile}>
+          {preview.path}
+        </code>
+      </p>
+      {preview.exists ? (
+        <p className="mt-2 text-warning" data-testid={TEST_ID.settingsKanbanTeachReplace}>
+          This replaces {preview.path}.
+        </p>
+      ) : (
+        <p className="mt-2" data-testid={TEST_ID.settingsKanbanTeachNew}>
+          This creates a new file.
+        </p>
+      )}
+      <p className="mt-2 text-ink" data-testid={TEST_ID.settingsKanbanTeachOrigin}>
+        {teachOriginLabel(preview)}
+      </p>
+      <p className="mt-3">Text to write:</p>
+      <pre
+        className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap rounded-md border border-edge bg-app p-2 font-mono text-[11px] leading-snug text-ink"
+        data-testid={TEST_ID.settingsKanbanTeachText}
+      >
+        {preview.text}
+      </pre>
+      <TeachDiff preview={preview} />
+    </>
+  )
+}
+
 export function KanbanSettings({
   app,
   projectId,
@@ -173,6 +273,8 @@ export function KanbanSettings({
   // A stored secret stays masked until Change. There is no clear: an empty
   // secret is omitted on save and main keeps the stored value.
   const [editingSecrets, setEditingSecrets] = useState<ReadonlySet<string>>(new Set())
+  const teachOpen = useRef(false)
+  teachOpen.current = teachDialog !== null
   // The opener is disabled while the status loads, so the dialog cannot rely
   // on the element focused at its mount; focus returns here on close.
   const teachButtonRef = useRef<HTMLButtonElement>(null)
@@ -371,10 +473,47 @@ export function KanbanSettings({
     })
   }
 
+  /** A fresh preview for the open dialog; `notice` says why it was reloaded. */
+  const reloadTeachPreview = useCallback(
+    async (notice: string | null): Promise<void> => {
+      if (projectId === null) return
+      try {
+        const preview = await app.kanban.skillPreview(projectId)
+        setTeachError(null)
+        setTeachDialog((current) => (current === null ? null : { ...current, preview, notice }))
+      } catch (cause) {
+        // The shown preview is stale and no new one exists: drop it so the
+        // dialog shows only the error and Confirm cannot run.
+        setTeachDialog((current) =>
+          current === null ? null : { ...current, preview: null, notice },
+        )
+        setTeachError(
+          parseAppErrorPayload(cause)?.message ?? 'Could not prepare the agent skill file.',
+        )
+      }
+    },
+    [app, projectId],
+  )
+
+  // Saving another source or clearing the binding while the dialog is open
+  // reloads the preview, or closes the dialog when no source remains.
+  const lastTeachBinding = useRef(persistedAdapterId)
+  useEffect(() => {
+    if (lastTeachBinding.current === persistedAdapterId) return
+    lastTeachBinding.current = persistedAdapterId
+    if (!teachOpen.current) return
+    if (persistedAdapterId === null) {
+      setTeachDialog(null)
+      setTeachError(null)
+      return
+    }
+    void reloadTeachPreview(TEACH_STALE_NOTICE)
+  }, [persistedAdapterId, reloadTeachPreview])
+
   /**
-   * `Teach agents` (project-home spec Behaviour 11): reads whether the skill
-   * file exists and the project's selected profiles, then opens the confirm
-   * dialog. Nothing is written until Confirm.
+   * `Teach agents` (project-home spec Behaviour 11, 13): loads the preview
+   * and the project's selected profiles, then opens the confirm dialog.
+   * Nothing is written until Confirm.
    */
   async function openTeachAgents(): Promise<void> {
     if (projectId === null || persistedAdapterId === null) return
@@ -382,14 +521,15 @@ export function KanbanSettings({
       setFormError(null)
       setTeachDone(false)
       try {
-        const [status, document] = await Promise.all([
-          app.kanban.skillStatus(projectId),
+        const [preview, document] = await Promise.all([
+          app.kanban.skillPreview(projectId),
           app.agentProfiles.get(projectId),
         ])
         setTeachError(null)
         setTeachDialog({
-          exists: status.exists,
+          preview,
           profiles: document.profiles.map((profile) => ({ id: profile.id, name: profile.name })),
+          notice: null,
         })
       } catch (cause) {
         setFormError(
@@ -399,19 +539,27 @@ export function KanbanSettings({
     })
   }
 
-  /** Confirm: one write; a failure stays inline and keeps the dialog open (spec Errors). */
+  /**
+   * Confirm: one write of the previewed text. A stale preview (`conflict`)
+   * writes nothing and loads a new preview that needs its own confirm; any
+   * other failure stays inline and keeps the dialog open (spec Errors).
+   */
   async function confirmTeachAgents(): Promise<void> {
-    if (projectId === null || teachWriting) return
+    if (projectId === null || teachDialog?.preview == null || teachWriting) return
+    const { path, token } = teachDialog.preview
     setTeachWriting(true)
     setTeachError(null)
     try {
-      await app.kanban.writeSkill(projectId)
+      await app.kanban.writeSkill(projectId, token)
       setTeachDialog(null)
       setTeachDone(true)
     } catch (cause) {
-      setTeachError(
-        parseAppErrorPayload(cause)?.message ?? `Could not write ${AGENT_SKILL_FILE_PATH}.`,
-      )
+      const error = parseAppErrorPayload(cause)
+      if (error?.code === 'conflict') {
+        await reloadTeachPreview(TEACH_STALE_NOTICE)
+      } else {
+        setTeachError(error?.message ?? `Could not write ${path}.`)
+      }
     } finally {
       setTeachWriting(false)
     }
@@ -746,7 +894,8 @@ export function KanbanSettings({
                       title="Teach agents"
                       body="NeKode writes one project skill file that tells agents where this project's tasks live. It contains no tasks and no tracker settings."
                       confirmLabel="Write skill file"
-                      confirmDisabled={teachWriting}
+                      confirmDisabled={teachWriting || teachDialog.preview === null}
+                      wide
                       onConfirm={() => {
                         void confirmTeachAgents()
                       }}
@@ -757,20 +906,22 @@ export function KanbanSettings({
                       }}
                     >
                       <div className="mt-3 text-xs text-ink-secondary">
-                        <p>
-                          File:{' '}
-                          <code className="text-ink" data-testid={TEST_ID.settingsKanbanTeachFile}>
-                            {AGENT_SKILL_FILE_PATH}
-                          </code>
-                        </p>
-                        {teachDialog.exists ? (
+                        {teachDialog.notice !== null ? (
                           <p
-                            className="mt-2 text-warning"
-                            data-testid={TEST_ID.settingsKanbanTeachReplace}
+                            role="status"
+                            className="mb-3 text-warning"
+                            data-testid={TEST_ID.settingsKanbanTeachNotice}
                           >
-                            This replaces {AGENT_SKILL_FILE_PATH}.
+                            {teachDialog.notice}
                           </p>
                         ) : null}
+                        {teachDialog.preview === null ? null : (
+                          <TeachPreview preview={teachDialog.preview} />
+                        )}
+                        <p className="mt-3" data-testid={TEST_ID.settingsKanbanTeachBoundary}>
+                          Writing this file installs and configures nothing. Agents that do not read
+                          project skills ignore it.
+                        </p>
                         <p className="mt-3">Agents that can read a project skill:</p>
                         {teachDialog.profiles.length > 0 ? (
                           <ul

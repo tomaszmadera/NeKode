@@ -37,7 +37,7 @@ import type {
   KanbanLaunchTaskInput,
   KanbanProjectConfig,
   KanbanSetConfigInput,
-  KanbanSkillStatus,
+  KanbanSkillPreview,
   KanbanUpdatePatch,
   WorkItem,
 } from './contracts/kanban-contract'
@@ -212,7 +212,7 @@ export const IPC_CHANNEL = {
   kanbanGetItem: 'kanban:getItem',
   kanbanGetComments: 'kanban:getComments',
   kanbanBindLocalFile: 'kanban:bindLocalFile',
-  kanbanSkillStatus: 'kanban:skillStatus',
+  kanbanSkillPreview: 'kanban:skillPreview',
   kanbanWriteSkill: 'kanban:writeSkill',
   kanbanLaunchTask: 'kanban:launchTask',
   taskProgressAdaptersList: 'taskProgress:adaptersList',
@@ -491,17 +491,19 @@ export interface AppApi {
      */
     bindLocalFile(projectId: string): Promise<void>
     /**
-     * `Teach agents` (project-home spec Behaviour 11): whether
-     * `.agents/skills/nekode-tasks/SKILL.md` exists under the project root.
-     * Read-only, with the same containment checks as the write.
+     * `Teach agents` preview (project-home spec Behaviour 11, 13): the exact
+     * text for the bound source, the current
+     * `.agents/skills/nekode-tasks/SKILL.md`, and the write token. Read-only,
+     * with the same containment checks as the write.
      */
-    skillStatus(projectId: string): Promise<KanbanSkillStatus>
+    skillPreview(projectId: string): Promise<KanbanSkillPreview>
     /**
      * Writes `.agents/skills/nekode-tasks/SKILL.md` after the confirm gesture.
-     * Main builds the text from the bound source; the renderer sends no
-     * content. Rejects while no source is bound.
+     * Main rebuilds the text from the bound source; the renderer sends only
+     * the preview token. A stale token rejects with `conflict`; rejects while
+     * no source is bound.
      */
-    writeSkill(projectId: string): Promise<void>
+    writeSkill(projectId: string, token: string): Promise<void>
     /**
      * Starts one task chat. Main owns the profile, the prompt, and the
      * process. The same `attemptId` returns the same chat.

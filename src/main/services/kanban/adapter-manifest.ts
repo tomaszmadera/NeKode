@@ -147,11 +147,34 @@ export function parseAdapterManifest(content: string, manifestPath: string): Kan
     return parsed
   })
 
+  if (manifest.agentSkill !== undefined) {
+    parseAgentSkillPath(manifest.agentSkill, manifestPath)
+  }
+
   return {
     id,
     name,
     configSchema,
   }
+}
+
+/**
+ * Optional `agentSkill` (spec kanban-adapter-interface Behaviour 2,
+ * NEKODE-169): a relative POSIX path inside the adapter directory. It is
+ * non-empty, has no leading `/`, no drive letter, no backslash, and no empty,
+ * `.`, or `..` segment. NeKode reads the file only to build the `Teach agents`
+ * preview; it never reaches the adapter process.
+ */
+function parseAgentSkillPath(value: unknown, manifestPath: string): string {
+  const rule = 'field "agentSkill" must be a relative path inside the adapter folder'
+  if (typeof value !== 'string' || value.length === 0) fail(manifestPath, rule)
+  if (value.startsWith('/') || value.includes('\\') || /^[A-Za-z]:/.test(value)) {
+    fail(manifestPath, rule)
+  }
+  for (const segment of value.split('/')) {
+    if (segment === '' || segment === '.' || segment === '..') fail(manifestPath, rule)
+  }
+  return value
 }
 
 /** Full invocation declaration carried alongside the public adapter info. */
@@ -162,6 +185,8 @@ export interface DiscoveredAdapter {
   /** Directory containing adapter.json; the spawn cwd. */
   dir: string
   invocation: { command: string; args: string[] }
+  /** Validated manifest `agentSkill` relative path, when declared (NEKODE-169). */
+  agentSkill?: string
 }
 
 export interface DiscoveryResult {
@@ -193,6 +218,7 @@ export function discoverAdapters(dir: string): DiscoveryResult {
     const manifestPath = join(adapterDir, MANIFEST_FILE)
     let info: KanbanAdapterInfo
     let invocation: { command: string; args: string[] }
+    let agentSkill: string | undefined
     try {
       const content = readFileSync(manifestPath, 'utf8')
       const parsed = parseAdapterManifest(content, manifestPath)
@@ -200,8 +226,10 @@ export function discoverAdapters(dir: string): DiscoveryResult {
       // the host so the service never re-reads the manifest).
       const raw = JSON.parse(content) as {
         invocation: { command: string; args?: string[] }
+        agentSkill?: string
       }
       invocation = { command: raw.invocation.command, args: raw.invocation.args ?? [] }
+      agentSkill = raw.agentSkill
       info = parsed
     } catch (error) {
       if (error instanceof ManifestError) {
@@ -219,7 +247,13 @@ export function discoverAdapters(dir: string): DiscoveryResult {
       continue
     }
     seenIds.set(info.id, manifestPath)
-    adapters.push({ info, id: info.id, dir: adapterDir, invocation })
+    adapters.push({
+      info,
+      id: info.id,
+      dir: adapterDir,
+      invocation,
+      ...(agentSkill === undefined ? {} : { agentSkill }),
+    })
   }
   return { adapters, warnings }
 }
