@@ -2868,11 +2868,12 @@ describe('project and chat data flow', () => {
       .getAllByRole('menuitem')
       .map((el) => el.textContent?.trim())
     expect(items).toEqual([
-      'Open project tasks',
       'Open in file explorer',
+      'Open project tasks',
       'Project Settings',
       'Remove Project',
     ])
+    expect(within(menu).getAllByRole('separator')).toHaveLength(1)
 
     fireEvent.click(screen.getByRole('menuitem', { name: 'Open in file explorer' }))
     await waitFor(() => expect(app.files.openRoot).toHaveBeenCalledWith('p1'))

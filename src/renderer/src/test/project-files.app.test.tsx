@@ -180,7 +180,8 @@ describe('project files — entry points (spec Behaviour 1–3)', () => {
     fireEvent.contextMenu(row)
     const item = await screen.findByTestId(testIdFor.removeProject('p1'))
     expect(item.textContent).toBe('Remove Project')
-    expect(screen.getByTestId(TEST_ID.projectContextMenu)).toBeTruthy()
+    const menu = screen.getByTestId(TEST_ID.projectContextMenu)
+    expect(within(menu).getAllByRole('menuitem')[0].textContent).toBe('Open in file explorer')
 
     // The menu runs the existing removal flow unchanged.
     fireEvent.click(item)

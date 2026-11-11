@@ -1032,7 +1032,7 @@ function ContextMenuOverlay({
   onOpenProject: (projectId: string) => void
 }): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
-  const position = clampMenuPosition(state.x, state.y, { menuWidth: 160, menuHeight: 120 })
+  const position = clampMenuPosition(state.x, state.y, { menuWidth: 180, menuHeight: 160 })
 
   useLayoutEffect(() => {
     const menu = menuRef.current
@@ -1078,17 +1078,17 @@ function ContextMenuOverlay({
           type="button"
           role="menuitem"
           className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
-          onClick={() => onOpenProject(state.projectId)}
+          onClick={() => onOpenInFileExplorer(state.projectId)}
         >
-          Open project tasks
+          Open in file explorer
         </button>
         <button
           type="button"
           role="menuitem"
           className="block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap"
-          onClick={() => onOpenInFileExplorer(state.projectId)}
+          onClick={() => onOpenProject(state.projectId)}
         >
-          Open in file explorer
+          Open project tasks
         </button>
         <button
           type="button"
@@ -1098,6 +1098,7 @@ function ContextMenuOverlay({
         >
           Project Settings
         </button>
+        <hr className="my-1 border-edge" />
         <button
           type="button"
           role="menuitem"

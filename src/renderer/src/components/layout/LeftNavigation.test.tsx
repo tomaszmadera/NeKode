@@ -462,7 +462,10 @@ describe('LeftNavigation project avatar and initials', () => {
     // The name click never collapses or expands through the row button.
     expect(props.onToggleProject.mock.calls).toEqual([['p2']])
     fireEvent.contextMenu(screen.getByTestId(testIdFor.projectSelect('p2')))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Open project tasks' }))
+    const menu = screen.getByTestId(TEST_ID.projectContextMenu)
+    expect(within(menu).getAllByRole('menuitem')[0].textContent).toBe('Open in file explorer')
+    expect(within(menu).getAllByRole('separator')).toHaveLength(1)
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Open project tasks' }))
     expect(props.onSelectProject).toHaveBeenCalledWith('p2')
   })
 
