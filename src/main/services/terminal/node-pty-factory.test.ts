@@ -7,6 +7,12 @@ vi.mock('node-pty', () => ({
   spawn: vi.fn(),
 }))
 
+// The Windows name lookup has its own suite (windows-executable.test.ts); here
+// the factory only has to hand the resolved target to node-pty.
+vi.mock('./windows-executable', () => ({
+  resolveWindowsExecutable: (file: string) => `resolved:${file}`,
+}))
+
 describe('createNodePty', () => {
   const originalPlatform = process.platform
   const fakePty = {
@@ -27,26 +33,21 @@ describe('createNodePty', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform })
   })
 
-  it.each(['hermes', 'agy', 'grok', 'claude', 'codex', 'C:\\Agent tools\\agent'])(
-    'starts the Windows native executable for extensionless profile %s',
-    (file) => {
-      Object.defineProperty(process, 'platform', { value: 'win32' })
-      const args = ['a b', '& | ;', '"quote"', 'ą', '']
-      createNodePty({ file, args, cwd: 'C:\\project', cols: 80, rows: 24, env: {} })
-      expect(spawn).toHaveBeenCalledWith(`${file}.exe`, args, expect.any(Object))
-    },
-  )
+  it('spawns the Windows target the resolver returns for the profile name', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    const args = ['a b', '& | ;', '"quote"', 'ą', '']
+    createNodePty({
+      file: 'opencode',
+      args,
+      cwd: 'C:\\project',
+      cols: 80,
+      rows: 24,
+      env: { PATH: 'C:\\bin' },
+    })
+    expect(spawn).toHaveBeenCalledWith('resolved:opencode', args, expect.any(Object))
+  })
 
-  it.each(['agent.exe', 'agent.com', 'agent.cmd', 'agent.bat', 'wsl.exe'])(
-    'preserves an explicit Windows executable extension in %s',
-    (file) => {
-      Object.defineProperty(process, 'platform', { value: 'win32' })
-      createNodePty({ file, args: [], cwd: 'C:\\project', cols: 80, rows: 24, env: {} })
-      expect(spawn).toHaveBeenCalledWith(file, [], expect.any(Object))
-    },
-  )
-
-  it('preserves extensionless executables on Linux', () => {
+  it('preserves the profile name on other platforms', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
     createNodePty({
       file: '/usr/bin/claude',
@@ -60,6 +61,7 @@ describe('createNodePty', () => {
   })
 
   it('forwards all spawn options to node-pty spawn', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' })
     const options: PtySpawnOptions = {
       file: 'powershell.exe',
       args: ['-NoLogo', '-ExecutionPolicy', 'Bypass'],
