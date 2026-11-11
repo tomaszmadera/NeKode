@@ -67,6 +67,13 @@ interface NewChatMenuState {
   y: number
 }
 
+interface SessionMenuState {
+  projectId: string
+  label: string
+  x: number
+  y: number
+}
+
 export function getChatLabel(chat: ChatInfo): string {
   return chat.taskRef?.trim() || chat.name.replace(/^\[[^\]]+\](?:\s+|$)/, '').trim() || 'Terminal'
 }
@@ -144,30 +151,34 @@ export function LeftNavigation({
   const [sidebarView, setSidebarView] = useState<SidebarView>('projects')
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [newChatMenu, setNewChatMenu] = useState<NewChatMenuState | null>(null)
+  const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null)
   // Escape closes any open menu
   useEffect(() => {
-    if (contextMenu === null && newChatMenu === null) {
+    if (contextMenu === null && newChatMenu === null && sessionMenu === null) {
       return
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         setContextMenu(null)
         setNewChatMenu(null)
+        setSessionMenu(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [contextMenu, newChatMenu])
+  }, [contextMenu, newChatMenu, sessionMenu])
 
   function openContextMenu(projectId: string | null, x: number, y: number): void {
     setNewChatMenu(null)
+    setSessionMenu(null)
     setContextMenu({ projectId, x, y })
   }
 
   function openNewChatMenu(projectId: string, x: number, y: number): void {
     setContextMenu(null)
+    setSessionMenu(null)
     setNewChatMenu({ projectId, x, y })
   }
 
@@ -240,6 +251,17 @@ export function LeftNavigation({
     sessionTasks,
   ])
 
+  function openSessionMenu(item: (typeof allSessions)[number], x: number, y: number): void {
+    setContextMenu(null)
+    setNewChatMenu(null)
+    setSessionMenu({
+      projectId: item.project.id,
+      label: item.label,
+      x,
+      y,
+    })
+  }
+
   function renderSession(item: (typeof allSessions)[number], flat = false): React.JSX.Element {
     const attentionState = attention[item.chat.id]
     const attentionVisible =
@@ -263,6 +285,13 @@ export function LeftNavigation({
         recentOutput={activity.has(item.chat.id)}
         onSelect={() => onSelectChat(item.project.id, item.chat.id)}
         onClose={onRequestCloseChat ? () => onRequestCloseChat(item.chat.id) : undefined}
+        onOpenContextMenu={
+          flat
+            ? (x, y) => {
+                openSessionMenu(item, x, y)
+              }
+            : undefined
+        }
       />
     )
   }
@@ -409,12 +438,14 @@ export function LeftNavigation({
         data-testid={TEST_ID.projectListArea}
         className="min-h-0 flex-1 overflow-y-auto"
         onContextMenu={(event) => {
+          if (sidebarView !== 'projects') return
           if (event.target instanceof Element && event.target.closest('li')) return
           event.preventDefault()
           event.currentTarget.focus()
           openContextMenu(null, event.clientX, event.clientY)
         }}
         onKeyDown={(event) => {
+          if (sidebarView !== 'projects') return
           if (event.target !== event.currentTarget) return
           if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
             event.preventDefault()
@@ -939,6 +970,17 @@ export function LeftNavigation({
           onClose={() => setNewChatMenu(null)}
         />
       ) : null}
+
+      {sessionMenu !== null ? (
+        <SessionContextMenu
+          state={sessionMenu}
+          loadProfiles={loadAgentProfiles}
+          onCreateChat={onCreateChat}
+          onCreateAgentChat={onCreateAgentChat}
+          onOpenInFileExplorer={onOpenInFileExplorer}
+          onClose={() => setSessionMenu(null)}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1115,27 +1157,18 @@ function ContextMenuOverlay({
   )
 }
 
-export function NewChatAgentMenu({
-  state,
-  loadProfiles,
-  onCreateChat,
-  onConfigureAgents,
-  onClose,
-}: {
-  state: NewChatMenuState
-  loadProfiles: (projectId: string) => Promise<AgentProfilesDocument>
-  onCreateChat: (projectId: string, profileId: string) => Promise<boolean>
-  onConfigureAgents: (projectId: string) => void
-  onClose: () => void
-}): React.JSX.Element {
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [profiles, setProfiles] = useState<AgentProfile[]>([])
-  const menuRef = useRef<HTMLDivElement>(null)
-  const position = clampMenuPosition(state.x, state.y, { menuWidth: 180, menuHeight: 160 })
+type AgentProfilesPhase = 'loading' | 'ready' | 'error'
 
+/** Loads a project's agent profiles for a menu. */
+function useAgentProfiles(
+  projectId: string,
+  loadProfiles: (projectId: string) => Promise<AgentProfilesDocument>,
+): { phase: AgentProfilesPhase; profiles: AgentProfile[] } {
+  const [phase, setPhase] = useState<AgentProfilesPhase>('loading')
+  const [profiles, setProfiles] = useState<AgentProfile[]>([])
   useEffect(() => {
     let active = true
-    void loadProfiles(state.projectId)
+    void loadProfiles(projectId)
       .then((document) => {
         if (!active) {
           return
@@ -1152,7 +1185,153 @@ export function NewChatAgentMenu({
     return () => {
       active = false
     }
-  }, [loadProfiles, state.projectId])
+  }, [loadProfiles, projectId])
+  return { phase, profiles }
+}
+
+function SessionContextMenu({
+  state,
+  loadProfiles,
+  onCreateChat,
+  onCreateAgentChat,
+  onOpenInFileExplorer,
+  onClose,
+}: {
+  state: SessionMenuState
+  loadProfiles: (projectId: string) => Promise<AgentProfilesDocument>
+  onCreateChat: (projectId: string) => Promise<boolean>
+  onCreateAgentChat: (projectId: string, profileId: string) => Promise<boolean>
+  onOpenInFileExplorer: (projectId: string) => void
+  onClose: () => void
+}): React.JSX.Element {
+  const { phase, profiles } = useAgentProfiles(state.projectId, loadProfiles)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const firstActionRef = useRef<HTMLButtonElement>(null)
+  const position = clampMenuPosition(state.x, state.y, { menuWidth: 200, menuHeight: 220 })
+
+  useLayoutEffect(() => {
+    const opener = document.activeElement
+    firstActionRef.current?.focus()
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    void phase
+    void profiles.length
+    const menu = menuRef.current
+    if (!menu) return
+    const rect = menu.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const refined = clampMenuPosition(state.x, state.y, {
+        menuWidth: rect.width,
+        menuHeight: rect.height,
+      })
+      menu.style.left = `${refined.left}px`
+      menu.style.top = `${refined.top}px`
+    }
+  }, [state.x, state.y, phase, profiles.length])
+
+  const itemClass =
+    'block w-full px-3 py-1.5 text-left text-xs text-ink-secondary hover:bg-highlight hover:text-ink whitespace-nowrap'
+
+  return createPortal(
+    <div
+      role="menu"
+      aria-label={`Session ${state.label}`}
+      className="no-drag fixed inset-0 z-40"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          onClose()
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+    >
+      <div
+        ref={menuRef}
+        className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
+        style={position}
+        data-testid={TEST_ID.sessionContextMenu}
+      >
+        <button
+          ref={firstActionRef}
+          type="button"
+          role="menuitem"
+          className={itemClass}
+          onClick={() => {
+            onClose()
+            onOpenInFileExplorer(state.projectId)
+          }}
+        >
+          Open in file explorer
+        </button>
+        <hr className="my-1 border-edge" />
+        <button
+          type="button"
+          role="menuitem"
+          className={itemClass}
+          onClick={() => {
+            onClose()
+            void onCreateChat(state.projectId)
+          }}
+        >
+          Shell
+        </button>
+        {phase === 'loading' ? (
+          <p className="px-3 py-1.5 text-xs text-ink-muted whitespace-nowrap">Loading…</p>
+        ) : null}
+        {phase === 'error' ? (
+          <p className="px-3 py-1.5 text-xs text-ink-muted whitespace-nowrap">
+            Failed to load agent profiles.
+          </p>
+        ) : null}
+        {phase === 'ready'
+          ? profiles.map((profile) => (
+              <button
+                key={profile.id}
+                type="button"
+                role="menuitem"
+                className={itemClass}
+                onClick={() => {
+                  onClose()
+                  void onCreateAgentChat(state.projectId, profile.id)
+                }}
+              >
+                {profile.name}
+              </button>
+            ))
+          : null}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+export function NewChatAgentMenu({
+  state,
+  loadProfiles,
+  onCreateChat,
+  onConfigureAgents,
+  onClose,
+}: {
+  state: NewChatMenuState
+  loadProfiles: (projectId: string) => Promise<AgentProfilesDocument>
+  onCreateChat: (projectId: string, profileId: string) => Promise<boolean>
+  onConfigureAgents: (projectId: string) => void
+  onClose: () => void
+}): React.JSX.Element {
+  const { phase, profiles } = useAgentProfiles(state.projectId, loadProfiles)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const position = clampMenuPosition(state.x, state.y, { menuWidth: 180, menuHeight: 160 })
 
   useLayoutEffect(() => {
     void phase

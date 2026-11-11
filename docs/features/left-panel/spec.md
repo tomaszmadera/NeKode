@@ -29,6 +29,7 @@ Context telemetry for agents other than Claude Code and Codex CLI, last-activity
 - Footer has 8px 14px 8px 16px padding, 6px gaps, edge top border, three 40px buttons with 18px icons: App settings (dialog), persisted Show/Hide mascot toggle, Report a bug using the existing issue flow. The real build version is right aligned, mono 13px.
 - Float content row has 10px 10px 6px 10px padding and 6px gaps; sidebar has edge border and 10px radius. Preserve functional resizing. Files/Projects track is 200%, translateX(0/-50%), .32s cubic-bezier(.22,.8,.24,1), with the hidden pane aria-hidden and inert.
 - Flat has no gutter/gap, only sidebar right border, and square non-button elements except circles. Buttons keep radius. Existing sans/mono font tokens and palette tokens are reused. No new shadows, gradients, accent bars or tile decoration.
+- Session tile context menu decision of 2026-11-11 (NEKODE-179): the Sessions view has no empty-area context menu and never offers Add Project. Right-clicking a session tile, or pressing ContextMenu / Shift+F10 on it, opens `Open in file explorer` for the project root, a separator, then `Shell` and the project's agent profiles, which start a new session in that project. The Projects view keeps its project-row and empty-area menus unchanged.
 
 ## Business rules
 

@@ -33,6 +33,8 @@ interface SessionTileProps {
   recentOutput: boolean
   onSelect: () => void
   onClose?: () => void
+  /** Opens the session menu; the parent view decides whether a tile has one. */
+  onOpenContextMenu?: (x: number, y: number) => void
 }
 
 export function SessionTile({
@@ -52,6 +54,7 @@ export function SessionTile({
   recentOutput,
   onSelect,
   onClose,
+  onOpenContextMenu,
 }: SessionTileProps): React.JSX.Element {
   const config = SESSION_STATUS_CONFIG[status]
   const identity = chat.agentName ? `${label}, ${chat.agentName}` : label
@@ -75,6 +78,28 @@ export function SessionTile({
         data-selected={active ? 'true' : 'false'}
         className="nk-session-tile"
         onClick={onSelect}
+        onContextMenu={
+          onOpenContextMenu === undefined
+            ? undefined
+            : (event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onOpenContextMenu(event.clientX, event.clientY)
+              }
+        }
+        onKeyDown={
+          onOpenContextMenu === undefined
+            ? undefined
+            : (event) => {
+                if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) {
+                  return
+                }
+                event.preventDefault()
+                event.stopPropagation()
+                const rect = event.currentTarget.getBoundingClientRect()
+                onOpenContextMenu(rect.left, rect.bottom)
+              }
+        }
       >
         <span className="nk-session-line">
           <span className="nk-session-leading" aria-hidden="true">

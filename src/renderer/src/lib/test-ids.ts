@@ -89,6 +89,8 @@ export const TEST_ID = {
   /** Welcome illustration surface: contextual add-project primary action. */
   welcomeAddProjectButton: 'welcome-add-project-button',
   projectContextMenu: 'project-context-menu',
+  /** Context menu of a session tile in the Sessions view. */
+  sessionContextMenu: 'session-context-menu',
   filesBackButton: 'files-back-button',
   filesProjectName: 'files-project-name',
   /** Project path in the Files subheader (home shown as `~`). */

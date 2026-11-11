@@ -844,3 +844,81 @@ describe('LeftNavigation approved design', () => {
     expect(props.onSelectChat).toHaveBeenCalledWith('p1', 'idle')
   })
 })
+
+describe('LeftNavigation session tile context menu', () => {
+  function sessionsNavigation() {
+    const props = {
+      ...defaultProps(),
+      chatsByProject: {
+        p1: [{ id: 'c1', projectId: 'p1', name: 'Chat 1' }],
+      },
+      loadAgentProfiles: vi.fn().mockResolvedValue({
+        version: 1,
+        profiles: [{ id: 'p-1', name: 'Hermes Coder' }],
+      }),
+    }
+    render(navigation(props))
+    fireEvent.click(screen.getByRole('button', { name: /^Sessions/ }))
+    return props
+  }
+
+  it('offers no empty-area menu in the Sessions view', () => {
+    sessionsNavigation()
+    fireEvent.contextMenu(screen.getByTestId(TEST_ID.projectListArea), {
+      clientX: 10,
+      clientY: 10,
+    })
+    expect(screen.queryByRole('menu', { name: 'Projects' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Add Project' })).toBeNull()
+  })
+
+  it('opens the project root and session starters from a session tile', async () => {
+    const props = sessionsNavigation()
+    const row = screen.getByTestId(testIdFor.chatRow('c1'))
+
+    fireEvent.contextMenu(row, { clientX: 40, clientY: 60 })
+    const menu = await screen.findByTestId(TEST_ID.sessionContextMenu)
+    await within(menu).findByRole('menuitem', { name: 'Hermes Coder' })
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Open in file explorer', 'Shell', 'Hermes Coder'])
+    expect(within(menu).getAllByRole('separator')).toHaveLength(1)
+
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Open in file explorer' }))
+    expect(props.onOpenInFileExplorer).toHaveBeenCalledWith('p1')
+    expect(screen.queryByTestId(TEST_ID.sessionContextMenu)).toBeNull()
+
+    fireEvent.contextMenu(row)
+    const shellMenu = await screen.findByTestId(TEST_ID.sessionContextMenu)
+    fireEvent.click(within(shellMenu).getByRole('menuitem', { name: 'Shell' }))
+    expect(props.onCreateChat).toHaveBeenCalledWith('p1')
+
+    fireEvent.contextMenu(row)
+    const agentMenu = await screen.findByTestId(TEST_ID.sessionContextMenu)
+    fireEvent.click(await within(agentMenu).findByRole('menuitem', { name: 'Hermes Coder' }))
+    expect(props.onCreateAgentChat).toHaveBeenCalledWith('p1', 'p-1')
+  })
+
+  it('opens with the keyboard menu gesture and closes on Escape', async () => {
+    sessionsNavigation()
+    const row = screen.getByTestId(testIdFor.chatRow('c1'))
+    fireEvent.keyDown(row, { key: 'ContextMenu' })
+    const menu = await screen.findByTestId(TEST_ID.sessionContextMenu)
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.sessionContextMenu)).toBeNull()
+  })
+
+  it('does not attach the session menu to the Projects view tiles', () => {
+    const props = {
+      ...defaultProps(),
+      chatsByProject: {
+        p1: [{ id: 'c1', projectId: 'p1', name: 'Chat 1' }],
+      },
+    }
+    render(navigation(props))
+    fireEvent.contextMenu(screen.getByTestId(testIdFor.chatRow('c1')))
+    expect(screen.queryByTestId(TEST_ID.sessionContextMenu)).toBeNull()
+  })
+})
