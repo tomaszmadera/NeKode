@@ -981,6 +981,9 @@ interface ActionControl {
         // contract: docs/features/bottom-auxiliary-terminal/spec.md
         | "bottom-terminal"
         | "new-terminal"
+        // writes into the active chat's live terminal:
+        // contract: docs/features/center-layout-tabs-actions/spec.md
+        | "current-terminal"
 
     confirm?: boolean
 
@@ -1047,6 +1050,14 @@ php artisan queue:work
 ```
 
 This mode may remain minimal in the MVP.
+
+---
+
+## 23.4 Current Terminal
+
+Write the configured command followed by one CR (0x0D) into the active chat's live terminal. The action creates no chat, bottom tab, or background process, and its working directory setting does not apply.
+
+The mode exists for actions that belong in the running agent conversation, such as a prompt-friendly check or a follow-up instruction. The action is disabled while the active chat has no live terminal. Delivery uses the renderer's existing `terminals:write` path and split-write submit helper, the same as `Continue`; the execution contract lives in `docs/features/center-layout-tabs-actions/spec.md`.
 
 ---
 
@@ -1127,7 +1138,7 @@ Run in:
 ```
 
 Persistence may still use JSON or SQLite internally.
-The action form offers Background, New terminal, and Bottom terminal. Saved actions keep the mode they already have.
+The action form offers Background, New terminal, Bottom terminal, and Current terminal. Saved actions keep the mode they already have.
 
 ---
 

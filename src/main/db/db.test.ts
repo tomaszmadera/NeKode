@@ -46,8 +46,8 @@ describe('migration 6 (chat launch identity)', () => {
         '[PS7] Old profile',
         '2026-10-18T00:00:00Z',
       )
-      expect(runMigrations(db)).toBe(9)
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
+      expect(runMigrations(db)).toBe(10)
       expect(db.prepare('SELECT name, task_ref, agent_name FROM chats').get()).toEqual({
         name: '[PS7] Old profile',
         task_ref: null,
@@ -61,7 +61,7 @@ describe('migration 6 (chat launch identity)', () => {
     }
     const reopened = openDatabase(path)
     try {
-      expect(runMigrations(reopened)).toBe(9)
+      expect(runMigrations(reopened)).toBe(10)
       expect(
         reopened.prepare('SELECT name, task_ref, agent_name FROM chats WHERE id = ?').get('agent'),
       ).toEqual({
@@ -94,8 +94,8 @@ describe('runMigrations', () => {
   it('creates the schema once and is idempotent', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(9)
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
+      expect(runMigrations(db)).toBe(10)
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as Array<{ name: string }>
@@ -384,7 +384,7 @@ describe('migration 2 (tasks -> chats)', () => {
   it('carries rows over to chats without status and drops the tasks table', () => {
     const db = createLegacyDb()
     try {
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -466,7 +466,7 @@ describe('migration 2 (tasks -> chats)', () => {
       const applied = db
         .prepare('SELECT version FROM schema_migrations ORDER BY version')
         .all() as Array<{ version: number }>
-      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+      expect(applied.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     } finally {
       db.close()
     }
@@ -522,7 +522,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
   it('accepts bottom-terminal on an empty database and keeps the schema', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
       db.prepare(
         'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       ).run(
@@ -543,7 +543,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
           .run(),
       ).not.toThrow()
       // Idempotent: a second run re-applies nothing.
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
     } finally {
       db.close()
     }
@@ -552,7 +552,7 @@ describe('migration 5 (run_mode gains bottom-terminal)', () => {
   it('lets populated databases accept bottom-terminal and keeps old rows byte-for-byte', () => {
     const db = createLegacyDbAtV4()
     try {
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
       expect(() =>
         db
           .prepare(
@@ -667,7 +667,7 @@ describe('migration 3 (chat name unique index dropped)', () => {
   it('drops the unique index: duplicate chat names within a project are allowed', () => {
     const db = createLegacyDbAtV2()
     try {
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
       expect(() =>
         db
           .prepare('INSERT INTO chats (id, project_id, name, created_at) VALUES (?, ?, ?, ?)')
@@ -728,8 +728,8 @@ describe('migration 7 (dictation dictionary)', () => {
   it('creates the dictation_dictionary table with expected schema and indexes', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(9)
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
+      expect(runMigrations(db)).toBe(10)
 
       const columns = db.prepare('PRAGMA table_info(dictation_dictionary)').all() as Array<{
         name: string
@@ -996,7 +996,7 @@ describe('migration 7 (dictation dictionary)', () => {
       ).run('p1', 'demo', 'D:/code/demo', null, '2026-01-01T00:00:00Z')
 
       // Now run migration 7
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
 
       const now = '2026-10-25T10:00:00Z'
       db.prepare(
@@ -1009,7 +1009,7 @@ describe('migration 7 (dictation dictionary)', () => {
 
     const reopened = openDatabase(path)
     try {
-      expect(runMigrations(reopened)).toBe(9)
+      expect(runMigrations(reopened)).toBe(10)
       const entry = reopened
         .prepare('SELECT * FROM dictation_dictionary WHERE id = ?')
         .get('d1') as Record<string, unknown>
@@ -1069,7 +1069,7 @@ describe('migration 8 (project path identity)', () => {
         'p1',
       )
 
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
 
       expect(
         db
@@ -1104,7 +1104,7 @@ describe('migration 8 (project path identity)', () => {
       expect(
         db.prepare("SELECT name FROM sqlite_master WHERE name = 'uq_projects_path_identity'").get(),
       ).toEqual({ name: 'uq_projects_path_identity' })
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
     } finally {
       db.close()
     }
@@ -1113,7 +1113,7 @@ describe('migration 8 (project path identity)', () => {
   it('rejects a raw insert that reuses a project identity and keeps Linux case distinct', () => {
     const db = openDatabase(':memory:')
     try {
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
       const insert = db.prepare(
         'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       )
@@ -1269,7 +1269,7 @@ describe('migration 9 (action groups)', () => {
         expect.objectContaining({ name: 'group_name' }),
       )
 
-      expect(runMigrations(db)).toBe(9)
+      expect(runMigrations(db)).toBe(10)
 
       expect(
         db
@@ -1298,6 +1298,150 @@ describe('migration 9 (action groups)', () => {
       expect(() =>
         db.prepare('UPDATE actions SET group_name = ? WHERE id = ?').run('   ', 'a1'),
       ).toThrow(/CHECK constraint failed/i)
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('migration 10 (run_mode gains current-terminal)', () => {
+  /** Builds a database exactly as migration 9 left it, with populated rows. */
+  function createLegacyDbAtV9(): Database.Database {
+    const db = openDatabase(':memory:')
+    runMigrations(
+      db,
+      MIGRATIONS.filter((migration) => migration.version <= 9),
+    )
+    db.prepare(
+      'INSERT INTO projects (id, name, path, path_identity, runtime_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'p1',
+      'demo',
+      'D:/code/demo',
+      projectPathIdentity('D:/code/demo', process.platform),
+      null,
+      '2026-01-01T00:00:00Z',
+    )
+    db.exec(`
+      INSERT INTO actions (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order, group_name) VALUES
+        ('a-bg', 'p1', 'project', 'Background', 'hammer', 'pnpm build', NULL, 'background', 0, 0, 'Build'),
+        ('a-nt', 'p1', 'project', 'New terminal', NULL, 'pnpm dev', NULL, 'new-terminal', 0, 1, NULL),
+        ('a-bt', 'p1', 'project', 'Bottom', NULL, 'pnpm test', NULL, 'bottom-terminal', 0, 2, 'Build');
+    `)
+    return db
+  }
+
+  it('a v9 database really rejects current-terminal before the migration', () => {
+    const db = createLegacyDbAtV9()
+    try {
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO actions
+             (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order, group_name)
+             VALUES ('a-ct', 'p1', 'project', 'Current', NULL, 'pnpm lint', NULL, 'current-terminal', 0, 3, NULL)`,
+          )
+          .run(),
+      ).toThrow(/CHECK|run_mode/i)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('accepts current-terminal on an empty database at the newest schema', () => {
+    const db = openDatabase(':memory:')
+    try {
+      expect(runMigrations(db)).toBe(10)
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO actions
+             (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order, group_name)
+             VALUES ('a-ct', NULL, 'global', 'Current', NULL, 'pnpm lint', NULL, 'current-terminal', 0, 0, NULL)`,
+          )
+          .run(),
+      ).not.toThrow()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('accepts current-terminal after the migration and keeps old rows unchanged', () => {
+    const db = createLegacyDbAtV9()
+    try {
+      expect(runMigrations(db)).toBe(10)
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO actions
+             (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order, group_name)
+             VALUES ('a-ct', 'p1', 'project', 'Current', NULL, 'pnpm lint', NULL, 'current-terminal', 0, 3, NULL)`,
+          )
+          .run(),
+      ).not.toThrow()
+      // The rebuild copies every column, including group_name from migration 9.
+      const rows = db
+        .prepare(
+          'SELECT id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order, group_name FROM actions ORDER BY sort_order',
+        )
+        .all() as Array<Record<string, unknown>>
+      expect(rows).toEqual([
+        {
+          id: 'a-bg',
+          project_id: 'p1',
+          scope: 'project',
+          title: 'Background',
+          icon: 'hammer',
+          command: 'pnpm build',
+          cwd: null,
+          run_mode: 'background',
+          confirm: 0,
+          sort_order: 0,
+          group_name: 'Build',
+        },
+        {
+          id: 'a-nt',
+          project_id: 'p1',
+          scope: 'project',
+          title: 'New terminal',
+          icon: null,
+          command: 'pnpm dev',
+          cwd: null,
+          run_mode: 'new-terminal',
+          confirm: 0,
+          sort_order: 1,
+          group_name: null,
+        },
+        {
+          id: 'a-bt',
+          project_id: 'p1',
+          scope: 'project',
+          title: 'Bottom',
+          icon: null,
+          command: 'pnpm test',
+          cwd: null,
+          run_mode: 'bottom-terminal',
+          confirm: 0,
+          sort_order: 2,
+          group_name: 'Build',
+        },
+        {
+          id: 'a-ct',
+          project_id: 'p1',
+          scope: 'project',
+          title: 'Current',
+          icon: null,
+          command: 'pnpm lint',
+          cwd: null,
+          run_mode: 'current-terminal',
+          confirm: 0,
+          sort_order: 3,
+          group_name: null,
+        },
+      ])
+      // The rebuilt table keeps the project cascade.
+      db.prepare('DELETE FROM projects WHERE id = ?').run('p1')
+      expect((db.prepare('SELECT COUNT(*) AS c FROM actions').get() as { c: number }).c).toBe(0)
     } finally {
       db.close()
     }

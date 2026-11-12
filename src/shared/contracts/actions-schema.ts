@@ -19,7 +19,9 @@ export const actionInputSchema = exactObject(
       .nullable(),
     command: nonBlankSchema,
     cwd: safePathSchema.nullable(),
-    runMode: z.enum(['background', 'new-terminal', 'bottom-terminal'], { error: 'is invalid' }),
+    runMode: z.enum(['background', 'new-terminal', 'bottom-terminal', 'current-terminal'], {
+      error: 'is invalid',
+    }),
     confirm: z.boolean({ error: 'must be a boolean' }),
     sortOrder: z
       .number({ error: 'must be an integer' })

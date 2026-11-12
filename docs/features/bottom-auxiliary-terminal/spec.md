@@ -52,7 +52,7 @@ Give the developer a full-width auxiliary terminal panel above the status bar, w
 12. If the project directory is missing when a tab spawns, that tab shows an explicit error state and a retry. There is no silent retry loop. Other tabs and the chat terminals are unchanged.
 13. The vertical resize handle changes the panel height while it is open and persists the clamped height when the drag ends, using the existing `region.bottom.height` key. A failed write of the open flag or the height surfaces in the notice banner. It does not revert the in-memory size and it does not hide a failure.
 14. `Handoff`, `Resume`, `Stop`, and `Continue` still write only to the active chat terminal, and only under their existing enabled rules.
-15. The action form's Run in control offers `Background`, `New terminal`, and `Bottom terminal`. Saved actions keep the mode they already have.
+15. The action form's Run in control offers `Background`, `New terminal`, `Bottom terminal`, and `Current terminal` (the last owned by `docs/features/center-layout-tabs-actions/spec.md`). Saved actions keep the mode they already have.
 16. `bottom-terminal` execution requires an active project, the same as `new-terminal`. It confirms first when the action asks for confirmation. Cancel does nothing. It opens the panel if hidden, creates a new bottom tab in the active project, does not create or select a chat, focuses that tab, and writes the configured command followed by one CR (0x0D) once that terminal is ready to receive input. The tab's cwd is the action's working directory, or the project path when the action has none.
 17. When that working directory does not exist, execution fails with no new tab and no panel change beyond what was already open. The failure is visible on the action (failed state, the missing-directory error). A failed write of the command leaves the new tab in place and shows a notice.
 18. A `bottom-terminal` action reports delivery success, with a null exit code, once the tab exists and the command has been accepted for write. It does not wait for or report the shell command's later exit. `background` execution is unchanged.
@@ -63,7 +63,7 @@ Give the developer a full-width auxiliary terminal panel above the status bar, w
 - Tab label comes from the platform shell at creation, is non-empty, and may repeat within a project.
 - One live PTY per bottom tab. Application quit kills all of them. A view unmount from hiding the panel or switching tabs does not kill the PTY.
 - `region.bottom.open` stores `1` or `0`. `region.bottom.height` stores the pixel height as a decimal string. Both are `app_state` keys.
-- `run_mode` accepts `background`, `new-terminal`, and `bottom-terminal`. Existing stored modes stay as they are. The new mode is added by a new forward migration. The applied migration that created `actions` is not edited.
+- `run_mode` accepts `background`, `new-terminal`, `bottom-terminal`, and `current-terminal` (the last owned by `docs/features/center-layout-tabs-actions/spec.md`). Existing stored modes stay as they are. Each new mode is added by a forward migration; the applied migration that created `actions` is not edited.
 - Action execution stays explicit and user-triggered. Nothing in this feature runs a command at startup or on project switch.
 - Fixed chat prompts and `Stop` (0x03) are unchanged and never target a bottom tab.
 - UI labels are English.
@@ -85,7 +85,7 @@ No new chat rows. Bottom tabs live in memory for one application run.
 
 Typed IPC:
 
-- `ActionInput.runMode` and validation accept `bottom-terminal` in addition to `background` and `new-terminal`.
+- `ActionInput.runMode` and validation accept `bottom-terminal` and the modes owned by the center-layout contract (`background`, `new-terminal`, `current-terminal`).
 - `actions:execute` for `bottom-terminal` returns an `ActionExecution` with `status: 'success'`, `exitCode: null`, and the command to write (`terminalCommand`) plus `terminalCwd`, addressed to the new bottom tab rather than a `chat`. The renderer writes the command only after that tab's terminal is subscribed, through the existing `terminals:write`.
 - Bottom tab ids are not chat ids. `terminals:create`, `terminals:write`, `terminals:resize`, `terminals:data`, and `terminals:exit` accept a bottom tab id under the same payload rules as a chat id. Data and exit events for one id never deliver to another.
 - The renderer does not spawn processes or touch the filesystem. Panel open flag and height go through `state.get` / `state.set`.

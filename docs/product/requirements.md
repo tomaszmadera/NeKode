@@ -42,7 +42,7 @@ The central concept of the MVP is the **Chat**: a terminal session assigned to a
 5. **Project action bar (Action Bar):**
    - The action bar in the center column, directly under the tab bar (user decision 2026-09-26): fixed groups `Handoff | Resume` and `Stop | Continue`, followed by configurable buttons that run defined project commands (for example dev server, tests, build, verification).
    - `Stop` sends Ctrl+C, and `Continue` sends text and CR, through `terminals:write`. `Handoff` and `Resume` paste their string into the console without submitting by default; with auto-send on, they send the string and one CR. The flow is owned by [handoff-resume-flow](../features/handoff-resume-flow/spec.md).
-   - Running commands in `background` or `new-terminal` mode (a new chat with the command); the `bottom-terminal` mode (a new bottom panel tab with the command) follows the `docs/features/bottom-auxiliary-terminal/spec.md` contract once the bottom terminal panel is delivered (requirement 3).
+   - Running commands in `background`, `new-terminal` (a new chat with the command), or `current-terminal` mode (the active chat's live terminal receives the command and CR); the `bottom-terminal` mode (a new bottom panel tab with the command) follows the `docs/features/bottom-auxiliary-terminal/spec.md` contract once the bottom terminal panel is delivered (requirement 3).
 
 6. **Data persistence:**
    - Saving the configuration of projects, chats, history and layout state in a local SQLite database (`better-sqlite3`).

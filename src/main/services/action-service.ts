@@ -18,7 +18,7 @@ interface ActionRow {
   group_name: string | null
   command: string
   cwd: string | null
-  run_mode: 'background' | 'new-terminal' | 'bottom-terminal'
+  run_mode: 'background' | 'new-terminal' | 'bottom-terminal' | 'current-terminal'
   confirm: number
   sort_order: number
 }
@@ -292,6 +292,23 @@ export class ActionService {
     }
     if (projectId !== null && !this.#projectPath(projectId)) {
       throw new AppError('not_found', 'Project not found.', 'actions:execute')
+    }
+    if (action.runMode === 'current-terminal') {
+      // Delivery is renderer-side, like the other terminal modes: the caller
+      // writes the command into the live terminal it had active at click time.
+      // No working directory, project location, or PTY takes part here.
+      this.#invalidateRun(id)
+      this.#stopChild(id)
+      const success: ActionExecution = {
+        status: 'success',
+        exitCode: null,
+        completedAt: new Date().toISOString(),
+        error: null,
+        terminalCommand: action.command,
+        activeTerminal: true,
+      }
+      this.#status.set(id, success)
+      return success
     }
     const cwd = action.cwd ?? (projectId === null ? null : this.#projectPath(projectId))
     if (cwd === null)

@@ -197,10 +197,19 @@ export function ActionBar({
   const entries = actionEntries(visible)
   // Pending Continue CR timer (split-write submission); cancelled on unmount.
   const cancelContinueCrRef = useRef<(() => void) | null>(null)
+  // The last pending current-terminal CR timer; cancelled on unmount, like
+  // Continue. Earlier timers still fire normally.
+  const cancelActionSubmitRef = useRef<(() => void) | null>(null)
+  // Delivery and error reporting stop after this row unmounts.
+  const mountedRef = useRef(true)
   useEffect(() => {
+    mountedRef.current = true
     return () => {
+      mountedRef.current = false
       cancelContinueCrRef.current?.()
       cancelContinueCrRef.current = null
+      cancelActionSubmitRef.current?.()
+      cancelActionSubmitRef.current = null
     }
   }, [])
 
@@ -331,24 +340,45 @@ export function ActionBar({
     }
   }
 
+  // The current-terminal mode delivers to the chat active at invocation, not
+  // to whatever chat is active when the IPC call returns (spec Behaviour 22).
+  const terminalUnavailable = !activeChatId || !chatIsLive
+  const unavailable = (action: ActionControl): boolean =>
+    action.runMode === 'current-terminal' && terminalUnavailable
+
   async function execute(action: ActionControl): Promise<void> {
     if (executeLockRef.current.has(action.id)) return
     // Confirmation (spec Behaviour 16): the modal runs before the IPC call, so
     // a cancel sends nothing, creates no tab, and changes no panel state.
     if (action.confirm && !window.confirm(`Run ${action.title}?`)) return
+    const targetChatId = activeChatId
     executeLockRef.current.add(action.id)
     const epoch = epochOf(runEpochRef.current, action.id) + 1
     runEpochRef.current[action.id] = epoch
     try {
       const state = await app.actions.execute(action.id, projectId, action.confirm)
-      if (epochOf(runEpochRef.current, action.id) !== epoch) return
+      if (!mountedRef.current || epochOf(runEpochRef.current, action.id) !== epoch) return
       setStates((previous) => ({ ...previous, [action.id]: state }))
       if (state.chat) onNewTerminal(state)
       if (state.bottomTabId !== undefined && projectId !== null) {
         onBottomTerminal(state, projectId)
       }
+      if (state.activeTerminal) {
+        if (targetChatId === null || state.terminalCommand === undefined) {
+          onError('Open a terminal to run this action.')
+        } else {
+          const cancel = writeSubmitLine((data) => {
+            void app.terminals.write(targetChatId, data).catch((error: unknown) => {
+              if (mountedRef.current) onError(message(error))
+            })
+          }, state.terminalCommand)
+          cancelActionSubmitRef.current = cancel
+        }
+      }
     } catch (error) {
-      if (epochOf(runEpochRef.current, action.id) === epoch) onError(message(error))
+      if (mountedRef.current && epochOf(runEpochRef.current, action.id) === epoch) {
+        onError(message(error))
+      }
     } finally {
       executeLockRef.current.delete(action.id)
     }
@@ -358,6 +388,7 @@ export function ActionBar({
     const state = states[action.id]
     const status = state?.status ?? 'idle'
     const isRunning = status === 'running'
+    const isDisabled = isRunning || unavailable(action)
     // Hover details carry the command, exit code, and completion time.
     const details = [
       action.command,
@@ -373,7 +404,7 @@ export function ActionBar({
       <div key={action.id} className="nk-btn-group shrink-0">
         <button
           type="button"
-          disabled={isRunning}
+          disabled={isDisabled}
           title={details}
           data-status={status}
           data-active={isRunning ? 'true' : 'false'}
@@ -659,6 +690,7 @@ export function ActionBar({
           y={groupMenu?.y ?? 0}
           actions={openGroup.actions}
           statusOf={(id) => states[id]?.status ?? 'idle'}
+          disabledOf={unavailable}
           onSelect={(action) => {
             setGroupMenu(null)
             void execute(action)

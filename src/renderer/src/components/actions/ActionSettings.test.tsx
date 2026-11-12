@@ -91,7 +91,7 @@ describe('PowerShell action option', () => {
     expect(screen.getByLabelText(PS_LABEL).getAttribute('aria-checked') === 'true').toBe(false)
   })
 
-  it.each([['background'], ['new-terminal'], ['bottom-terminal']] as const)(
+  it.each([['background'], ['new-terminal'], ['bottom-terminal'], ['current-terminal']] as const)(
     'passes the %s runMode through to the save payload',
     async (runMode) => {
       const create = vi.fn().mockResolvedValue({})
@@ -817,5 +817,17 @@ describe('Action group field', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     expect((screen.getByLabelText('Group') as HTMLInputElement).value).toBe('Release')
+  })
+
+  it('shows the current-terminal mode in the list and the edit form', () => {
+    const app = {
+      ...shellAppMock(),
+      actions: { create: vi.fn(), update: vi.fn() },
+    } as unknown as AppApi
+    renderSettings(app, [{ ...existing, runMode: 'current-terminal' }])
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
+    expect(screen.getByText(/Current terminal · global/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect((screen.getByLabelText('Run in') as HTMLSelectElement).value).toBe('current-terminal')
   })
 })

@@ -2158,6 +2158,7 @@ describe('action row and settings', () => {
       'background',
       'new-terminal',
       'bottom-terminal',
+      'current-terminal',
     ])
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Tests' } })
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'pnpm test' } })

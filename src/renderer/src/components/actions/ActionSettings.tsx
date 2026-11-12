@@ -394,7 +394,9 @@ export function ActionSettings({
                           ? 'Background'
                           : action.runMode === 'bottom-terminal'
                             ? 'Bottom terminal'
-                            : 'New terminal'
+                            : action.runMode === 'current-terminal'
+                              ? 'Current terminal'
+                              : 'New terminal'
                       return (
                         <li
                           key={action.id}
@@ -613,7 +615,7 @@ export function ActionSettings({
                   <FieldRow
                     label="Run in"
                     htmlFor="settings-action-run"
-                    description="Background, a new terminal, or the bottom terminal."
+                    description="Background, a new terminal, the bottom terminal, or the current terminal."
                     divided
                   >
                     <SettingsSelect
@@ -626,6 +628,7 @@ export function ActionSettings({
                       <option value="background">Background</option>
                       <option value="new-terminal">New terminal</option>
                       <option value="bottom-terminal">Bottom terminal</option>
+                      <option value="current-terminal">Current terminal</option>
                     </SettingsSelect>
                   </FieldRow>
                   <SettingsSwitch

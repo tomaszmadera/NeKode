@@ -263,9 +263,11 @@ Do not show success toasts.
 Actions may run:
 
 - in background,
-- in a new terminal (a new chat whose terminal receives the command).
+- in a new terminal (a new chat whose terminal receives the command),
+- in the current terminal (the active chat's live terminal receives the command and one CR),
+- in the bottom terminal (a new tab of the bottom panel receives the command).
 
-The bottom-terminal run mode is no longer reserved: with the bottom auxiliary terminal panel shipped it is offered in the action form, and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
+The bottom-terminal run mode is no longer reserved: with the bottom auxiliary terminal panel shipped it is offered in the action form, and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`. The current-terminal mode follows `docs/features/center-layout-tabs-actions/spec.md`: its button is disabled while the active chat has no live terminal.
 
 ---
 
@@ -1573,7 +1575,7 @@ Working Directory
 Project Root
 
 Run In
-Background | New terminal
+Background | New terminal | Bottom terminal | Current terminal
 
 [ ] Ask for confirmation
 
@@ -1582,7 +1584,7 @@ Background | New terminal
 
 Dangerous actions may require confirmation.
 
-Saved actions appear in the action bar immediately and survive application restarts. The `bottom-terminal` run mode is no longer reserved: with the bottom auxiliary terminal panel shipped it is offered in this form, and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`.
+Saved actions appear in the action bar immediately and survive application restarts. The `bottom-terminal` run mode is no longer reserved: with the bottom auxiliary terminal panel shipped it is offered in this form, and its execution contract lives in `docs/features/bottom-auxiliary-terminal/spec.md`. `Current terminal` writes the command plus one CR into the active chat's live terminal and is disabled without one; its contract lives in `docs/features/center-layout-tabs-actions/spec.md`.
 
 ---
 

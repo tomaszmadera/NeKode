@@ -4,6 +4,7 @@ import {
 } from '@shared/contracts/action-instructions-contract'
 import type { ActionControl, AppApi } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 import { restoreClipboard, stubClipboard } from '../../test/clipboard-stub'
@@ -572,6 +573,154 @@ describe('ActionBar', () => {
     expect(button.querySelector('svg')).not.toBeNull()
     // No extra emoji span
     expect(button.querySelector('span[aria-hidden="true"]')).toBeNull()
+  })
+})
+
+describe('current-terminal action delivery', () => {
+  const currentAction: ActionControl = {
+    ...customAction,
+    id: 'action-current',
+    title: 'Lint here',
+    command: 'pnpm lint',
+    runMode: 'current-terminal',
+  }
+
+  function bar(
+    app: AppApi,
+    props: Partial<React.ComponentProps<typeof ActionBar>> = {},
+  ): React.JSX.Element {
+    return (
+      <ActionBar
+        app={app}
+        actions={[currentAction]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+        isKanban={false}
+        {...props}
+      />
+    )
+  }
+
+  function delivery() {
+    return {
+      status: 'success' as const,
+      exitCode: null,
+      completedAt: null,
+      error: null,
+      terminalCommand: 'pnpm lint',
+      activeTerminal: true,
+    }
+  }
+
+  it('writes the configured command and one CR into the active chat without creating a tab', async () => {
+    const app = makeAppMock()
+    vi.mocked(app.actions.execute).mockResolvedValue(delivery())
+    const onNewTerminal = vi.fn()
+    const onBottomTerminal = vi.fn()
+    render(bar(app, { onNewTerminal, onBottomTerminal }))
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionButton('action-current')))
+
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('c1', 'pnpm lint'))
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('c1', '\r'))
+    expect(app.terminals.write).toHaveBeenCalledTimes(2)
+    expect(onNewTerminal).not.toHaveBeenCalled()
+    expect(onBottomTerminal).not.toHaveBeenCalled()
+  })
+
+  it('disables the button while no live terminal exists and runs nothing', () => {
+    const app = makeAppMock()
+    render(bar(app, { activeChatId: null, chatIsLive: false }))
+
+    const button = screen.getByTestId(testIdFor.actionButton('action-current'))
+    expect(button.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(button)
+    expect(app.actions.execute).not.toHaveBeenCalled()
+    expect(app.terminals.write).not.toHaveBeenCalled()
+  })
+
+  it('honors the confirmation flag before delivering', async () => {
+    const app = makeAppMock()
+    vi.mocked(app.actions.execute).mockResolvedValue(delivery())
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      render(bar(app, { actions: [{ ...currentAction, confirm: true }] }))
+      fireEvent.click(screen.getByTestId(testIdFor.actionButton('action-current')))
+      expect(confirm).toHaveBeenCalledWith('Run Lint here?')
+      expect(app.actions.execute).not.toHaveBeenCalled()
+      expect(app.terminals.write).not.toHaveBeenCalled()
+
+      confirm.mockReturnValue(true)
+      fireEvent.click(screen.getByTestId(testIdFor.actionButton('action-current')))
+      await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('c1', 'pnpm lint'))
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('cancels the pending submit when the row unmounts', async () => {
+    const app = makeAppMock()
+    vi.mocked(app.actions.execute).mockResolvedValue(delivery())
+    window.NEKODE_PROMPT_SUBMIT_GAP_MS = 100
+    try {
+      const view = render(bar(app))
+      fireEvent.click(screen.getByTestId(testIdFor.actionButton('action-current')))
+      await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('c1', 'pnpm lint'))
+
+      view.unmount()
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      expect(app.terminals.write).not.toHaveBeenCalledWith('c1', '\r')
+    } finally {
+      window.NEKODE_PROMPT_SUBMIT_GAP_MS = 0
+    }
+  })
+
+  it('delivers to the chat that was active when the action was invoked', async () => {
+    const app = makeAppMock()
+    let resolveExecute: (value: Awaited<ReturnType<AppApi['actions']['execute']>>) => void = () =>
+      undefined
+    vi.mocked(app.actions.execute).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveExecute = resolve
+        }),
+    )
+    const view = render(bar(app))
+    fireEvent.click(screen.getByTestId(testIdFor.actionButton('action-current')))
+
+    // The user switches chats while the execute call is in flight.
+    view.rerender(bar(app, { activeChatId: 'c2' }))
+    resolveExecute(delivery())
+
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('c1', 'pnpm lint'))
+    expect(app.terminals.write).not.toHaveBeenCalledWith('c2', 'pnpm lint')
+  })
+
+  it('keeps a grouped current-terminal member unavailable without a live terminal', () => {
+    const app = makeAppMock()
+    render(
+      bar(app, {
+        activeChatId: null,
+        chatIsLive: false,
+        actions: [
+          { ...currentAction, id: 'g1', title: 'Lint', group: 'Checks', sortOrder: 0 },
+          { ...customAction, id: 'g2', title: 'Build', group: 'Checks', sortOrder: 1 },
+        ],
+      }),
+    )
+
+    fireEvent.click(screen.getByTestId(testIdFor.actionGroup('Checks')))
+    expect(screen.getByTestId(testIdFor.actionButton('g1')).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId(testIdFor.actionButton('g2')).hasAttribute('disabled')).toBe(false)
   })
 })
 

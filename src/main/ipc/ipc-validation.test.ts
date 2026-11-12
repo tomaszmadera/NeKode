@@ -682,6 +682,14 @@ describe('ipc payload validation', () => {
     const bottomInput = { ...input, runMode: 'bottom-terminal' }
     expect(channels.get('actions:create')?.parse([bottomInput])).toEqual([bottomInput])
     expect(channels.get('actions:update')?.parse(['a1', bottomInput])).toEqual(['a1', bottomInput])
+    // The current-terminal mode is valid too (center-layout-tabs-actions spec
+    // Behaviour 22).
+    const currentInput = { ...input, runMode: 'current-terminal' }
+    expect(channels.get('actions:create')?.parse([currentInput])).toEqual([currentInput])
+    expect(channels.get('actions:update')?.parse(['a1', currentInput])).toEqual([
+      'a1',
+      currentInput,
+    ])
     // …and still rejects an unknown mode.
     expect(() =>
       channels.get('actions:create')?.parse([{ ...input, runMode: 'detached' }]),

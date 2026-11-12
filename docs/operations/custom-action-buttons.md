@@ -53,6 +53,9 @@ When you edit a command with this prefix, the checkbox is selected automatically
   Bypass -File** checkbox cleared, the Command field is run by
   `cmd.exe` (`spawn` with `shell: true`), and cmd does not run .ps1 directly.
   That is why the command wraps the script in `powershell -NoProfile -ExecutionPolicy Bypass -File ...`.
+- Run In = **Current terminal** writes the command plus Enter into the active
+  chat's live terminal. It creates no new terminal and ignores Working Dir. The
+  button is disabled while no chat terminal is running.
 - Run In = **Background**: `start.ps1` starts `pnpm run dev` in the background
   (logs in `tmp\logs\`) and exits after about 3 s, so the button shows
   running → success while the app keeps running.

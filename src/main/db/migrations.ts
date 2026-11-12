@@ -247,6 +247,41 @@ export const MIGRATIONS: readonly Migration[] = [
       `)
     },
   },
+  {
+    // Current-terminal delivery (NEKODE-183,
+    // docs/features/center-layout-tabs-actions/spec.md): run_mode gains
+    // 'current-terminal'. SQLite cannot alter a CHECK constraint, so the table
+    // is rebuilt with the widened one; rows are carried over unchanged and
+    // group_name from migration 9 is preserved.
+    version: 10,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE actions_new (
+          id TEXT PRIMARY KEY,
+          project_id TEXT REFERENCES projects (id) ON DELETE CASCADE,
+          scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
+          title TEXT NOT NULL,
+          icon TEXT,
+          command TEXT NOT NULL,
+          cwd TEXT,
+          run_mode TEXT NOT NULL CHECK (run_mode IN ('background', 'new-terminal', 'bottom-terminal', 'current-terminal')),
+          confirm INTEGER NOT NULL CHECK (confirm IN (0, 1)),
+          sort_order INTEGER NOT NULL,
+          group_name TEXT CHECK (group_name IS NULL OR length(trim(group_name)) > 0),
+          CHECK ((scope = 'global' AND project_id IS NULL) OR (scope = 'project' AND project_id IS NOT NULL))
+        );
+
+        INSERT INTO actions_new (id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order, group_name)
+          SELECT id, project_id, scope, title, icon, command, cwd, run_mode, confirm, sort_order, group_name
+          FROM actions;
+
+        DROP TABLE actions;
+
+        ALTER TABLE actions_new RENAME TO actions;
+        CREATE INDEX actions_order ON actions (sort_order, title);
+      `)
+    },
+  },
 ]
 
 export function assertValidMigrations(migrations: readonly Migration[]): void {

@@ -404,6 +404,61 @@ describe('ActionService', () => {
     }
   })
 
+  it('executes current-terminal by returning delivery data without a chat, tab, or directory check', () => {
+    const { db, service, startBackground, createChat, createTerminal, createBottomTabId } = setup()
+    try {
+      // A global action needs no project; a missing configured cwd is never
+      // inspected because the command runs in the terminal that already exists.
+      const action = service.create({
+        scope: 'global',
+        projectId: null,
+        title: 'Lint here',
+        icon: null,
+        group: null,
+        command: 'pnpm lint',
+        cwd: hostPath('D:/code/missing'),
+        runMode: 'current-terminal',
+        confirm: false,
+        sortOrder: 0,
+      })
+      const result = service.execute(action.id, null, false)
+      expect(result).toEqual({
+        status: 'success',
+        exitCode: null,
+        completedAt: expect.any(String),
+        error: null,
+        terminalCommand: 'pnpm lint',
+        activeTerminal: true,
+      })
+      expect(startBackground).not.toHaveBeenCalled()
+      expect(createChat).not.toHaveBeenCalled()
+      expect(createTerminal).not.toHaveBeenCalled()
+      expect(createBottomTabId).not.toHaveBeenCalled()
+      expect(service.status(action.id)).toMatchObject({ status: 'success', exitCode: null })
+
+      const confirmed = service.create({
+        scope: 'project',
+        projectId: 'p1',
+        title: 'Disruptive',
+        icon: null,
+        group: null,
+        command: 'pnpm clean',
+        cwd: null,
+        runMode: 'current-terminal',
+        confirm: true,
+        sortOrder: 1,
+      })
+      expect(() => service.execute(confirmed.id, 'p1', false)).toThrow(/requires confirmation/)
+      expect(service.execute(confirmed.id, 'p1', true)).toMatchObject({
+        status: 'success',
+        activeTerminal: true,
+        terminalCommand: 'pnpm clean',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
   it('creates a chat for new-terminal mode and does not spawn the PTY', () => {
     const { db, service, createChat, createTerminal } = setup()
     try {

@@ -25,4 +25,11 @@ export interface ActionExecution {
    * exit code is null and the shell command's later exit is not tracked.
    */
   bottomTabId?: string
+  /**
+   * Current-terminal delivery: the renderer writes terminalCommand plus one CR
+   * into the chat that was active when the action was invoked, through the
+   * existing terminals:write and split-write helper. Success means delivery
+   * acceptance; the exit code is null and nothing is tracked afterwards.
+   */
+  activeTerminal?: boolean
 }

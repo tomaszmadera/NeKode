@@ -14,6 +14,8 @@ interface Props {
   y: number
   actions: ActionControl[]
   statusOf: (id: string) => ActionExecution['status']
+  /** A member the host cannot run now (for example, no live active terminal). */
+  disabledOf?: (action: ActionControl) => boolean
   /** Runs one member. The caller closes the menu before executing. */
   onSelect: (action: ActionControl) => void
   /** Copy-command menu for one member, at the pointer or keyboard anchor. */
@@ -33,6 +35,7 @@ export function ActionGroupMenu({
   y,
   actions,
   statusOf,
+  disabledOf,
   onSelect,
   onCopy,
   onClose,
@@ -87,12 +90,13 @@ export function ActionGroupMenu({
         {actions.map((action) => {
           const status = statusOf(action.id)
           const isRunning = status === 'running'
+          const isDisabled = isRunning || (disabledOf?.(action) ?? false)
           return (
             <button
               key={action.id}
               type="button"
               role="menuitem"
-              disabled={isRunning}
+              disabled={isDisabled}
               title={action.command}
               data-status={status}
               data-testid={testIdFor.actionButton(action.id)}
