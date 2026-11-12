@@ -168,6 +168,10 @@ export const TEST_ID = {
   appUpdateButton: 'app-update-button',
   settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
+  /** Project Settings: effective instruction text with its origin (NEKODE-172). */
+  settingsEffectiveHandoff: 'settings-effective-handoff',
+  settingsEffectiveContinue: 'settings-effective-continue',
+  settingsEffectiveResume: 'settings-effective-resume',
   /** App Settings: quick theme switcher in status bar toggle. */
   settingsQuickThemeSwitch: 'settings-quick-theme-switch',
   /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
@@ -181,6 +185,27 @@ export const TEST_ID = {
   settingsGeneralTab: 'settings-general-tab',
   /** App Settings: Shortcuts tab button. */
   settingsShortcutsTab: 'settings-shortcuts-tab',
+  /** App Settings: Instructions tab and its Handoff/Continue/Resume controls (NEKODE-172). */
+  settingsInstructionsTab: 'settings-instructions-tab',
+  instructionsAffectedProjects: 'instructions-affected-projects',
+  instructionHandoffEditor: 'instruction-handoff-editor',
+  instructionHandoffSave: 'instruction-handoff-save',
+  instructionHandoffReset: 'instruction-handoff-reset',
+  instructionHandoffPreview: 'instruction-handoff-preview',
+  instructionHandoffError: 'instruction-handoff-error',
+  instructionContinueEditor: 'instruction-continue-editor',
+  instructionContinueSave: 'instruction-continue-save',
+  instructionContinueReset: 'instruction-continue-reset',
+  instructionContinuePreview: 'instruction-continue-preview',
+  instructionContinueError: 'instruction-continue-error',
+  instructionResumeProject: 'instruction-resume-project',
+  instructionResumePrompt: 'instruction-resume-prompt',
+  instructionResumeUnconfigured: 'instruction-resume-unconfigured',
+  instructionResumeError: 'instruction-resume-error',
+  instructionManageTemplates: 'instruction-manage-templates',
+  instructionStopNote: 'instruction-stop-note',
+  /** Resume template editor: projects that bind the selected template (NEKODE-172). */
+  resumeTemplateUsage: 'resume-template-usage',
   /** App Settings: shortcut table on the Shortcuts tab. */
   settingsShortcutsTable: 'settings-shortcuts-table',
   /** Project Settings: Shell tab (spec project-shell-selection). */

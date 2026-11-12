@@ -49,6 +49,7 @@ import type {
   ResumeSourcePreview,
   ResumeSourcePut,
   ResumeSourcesChanged,
+  ResumeSourceUsage,
 } from './contracts/resume-sources-contract'
 import type { ShellInfo } from './contracts/shell-contract'
 import type {
@@ -198,6 +199,7 @@ export const IPC_CHANNEL = {
   resumeSourcesChanged: 'resumeSources:changed',
   resumeSourcesBind: 'resumeSources:bind',
   resumeSourcesBinding: 'resumeSources:binding',
+  resumeSourcesUsage: 'resumeSources:usage',
   resumeSourcesDiscover: 'resumeSources:discover',
   resumeSourcesPrepare: 'resumeSources:prepare',
   resumeSourcesImportLegacy: 'resumeSources:importLegacy',
@@ -443,6 +445,8 @@ export interface AppApi {
     onChanged(callback: (event: ResumeSourcesChanged) => void): Unsubscribe
     bind(projectId: string, templateId: string | null): Promise<ResumeSourceBinding>
     binding(projectId: string): Promise<ResumeSourceBinding>
+    /** Registered projects using this template, read-only (NEKODE-172). */
+    usage(templateId: string): Promise<ResumeSourceUsage>
     discover(projectId: string, requestId: string): Promise<ResumeSourceDiscovery>
     prepare(projectId: string, token: string, requestId: string): Promise<string>
     importLegacy(): Promise<string | null>

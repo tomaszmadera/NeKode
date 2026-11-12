@@ -30,6 +30,16 @@ export const APP_STATE_KEY = {
   projectsLastDirectory: 'projects.lastDirectory',
   /** '1' sends Handoff/Resume commands straight to the PTY; missing means paste-only. */
   autoSendHandoffResume: 'handoffResume.autoSend',
+  /**
+   * Multiline Handoff instruction shared by every project (NEKODE-172).
+   * Missing or blank means the built-in default `Write a handoff`.
+   */
+  handoffInstruction: 'instructions.handoff',
+  /**
+   * Multiline Continue instruction shared by every project (NEKODE-172).
+   * Missing or blank means the built-in default `Continue`.
+   */
+  continueInstruction: 'instructions.continue',
   /** '0' disables the Ctrl+Tab chat switch; missing or '1' means enabled. */
   chatSwitchEnabled: 'chatSwitch.enabled',
   /** '0' keeps original project names in the tree; missing or '1' means uppercase. */

@@ -12,6 +12,7 @@ export function resumeSourcesTestStub(): AppServices['resumeSources'] {
     onChanged: vi.fn(() => () => undefined),
     bind: vi.fn((projectId: string, templateId: string | null) => ({ projectId, templateId })),
     binding: vi.fn((projectId: string) => ({ projectId, templateId: null })),
+    usage: vi.fn((templateId: string) => ({ templateId, projects: [] })),
     discover: vi.fn(async () => ({
       projectId: 'p',
       templateId: 't',

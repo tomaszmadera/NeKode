@@ -34,6 +34,7 @@ import type {
   ResumeSourceDiscovery,
   ResumeSourceLibrary,
   ResumeSourcePreview,
+  ResumeSourceUsage,
   ShellInfo,
   TaskProgressAdapterList,
   TaskProgressBinding,
@@ -275,6 +276,7 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
         invoke<ResumeSourceBinding>(IPC_CHANNEL.resumeSourcesBind, projectId, templateId),
       binding: (projectId) =>
         invoke<ResumeSourceBinding>(IPC_CHANNEL.resumeSourcesBinding, projectId),
+      usage: (templateId) => invoke<ResumeSourceUsage>(IPC_CHANNEL.resumeSourcesUsage, templateId),
       discover: (projectId, requestId) =>
         invoke<ResumeSourceDiscovery>(IPC_CHANNEL.resumeSourcesDiscover, projectId, requestId),
       prepare: (projectId, token, requestId) =>

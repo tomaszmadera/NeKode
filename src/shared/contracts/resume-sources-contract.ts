@@ -62,6 +62,16 @@ export interface ResumeSourcesChanged {
   templateId: string
 }
 
+/**
+ * Registered projects that currently bind one Resume template
+ * (spec handoff-resume-flow, NEKODE-172). Read-only: editing the template
+ * prompt affects exactly these projects.
+ */
+export interface ResumeSourceUsage {
+  templateId: string
+  projects: Array<{ id: string; name: string }>
+}
+
 export function isResumeSourcesChanged(value: unknown): value is ResumeSourcesChanged {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const event = value as Record<string, unknown>

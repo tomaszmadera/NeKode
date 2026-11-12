@@ -41,6 +41,7 @@ export function createAppApiStub(): AppApi {
         templateId,
       })),
       binding: vi.fn(async (projectId: string) => ({ projectId, templateId: null })),
+      usage: vi.fn(async (templateId: string) => ({ templateId, projects: [] })),
       discover: vi.fn(async (projectId: string) => ({
         projectId,
         templateId: 'agent-harness',

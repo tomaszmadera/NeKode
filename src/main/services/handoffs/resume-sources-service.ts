@@ -14,6 +14,7 @@ import {
   type ResumeSourcePreview,
   type ResumeSourcePut,
   type ResumeSourcesChanged,
+  type ResumeSourceUsage,
 } from '@shared/contracts/resume-sources-contract'
 import { resumeSourcePutSchema } from '@shared/contracts/resume-sources-schema'
 import { AppError } from '@shared/ipc-error'
@@ -132,6 +133,27 @@ export class ResumeSourcesService {
     const raw = this.#deps.state.get(projectResumeTemplateKey(projectId))
     const templateId = raw === null || raw.trim().length === 0 ? null : raw.trim()
     return { projectId, templateId }
+  }
+
+  /**
+   * Registered projects that bind this template, sorted by name. Read-only:
+   * no binding, inventory or revision changes (spec NEKODE-172).
+   */
+  usage(templateId: string): ResumeSourceUsage {
+    const template = this.list().templates.find((row) => row.id === templateId)
+    if (template === undefined) throw new AppError('not_found', 'Resume template not found.')
+    const projects = this.#deps.projects.list?.() ?? []
+    return {
+      templateId,
+      projects: projects
+        .filter(
+          (project) => this.#deps.state.get(projectResumeTemplateKey(project.id)) === templateId,
+        )
+        .map((project) => ({ id: project.id, name: project.name }))
+        .sort(
+          (left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
+        ),
+    }
   }
 
   list(): ResumeSourceLibrary {

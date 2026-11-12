@@ -236,14 +236,16 @@ Do not require icons.
 
 The fixed buttons act on the active chat. `Stop` and `Continue` write terminal input through `terminals:write`. `Handoff` and `Resume` paste into the console without submitting unless auto-send is on, in which case they write the same text plus CR. `docs/features/handoff-resume-flow/spec.md` owns that flow.
 
+Handoff and Continue are multiline instructions configured in App Settings > Instructions and shared by every project. Resume uses the instruction of the project's Resume template. The defaults are:
+
 ```text
 Handoff     Write a handoff
-Resume      Resume from handoff    (picker; a selected file appends the path)
-Continue    Continue             + CR (0x0D)
+Resume      Resume task {taskPath}    (Resume template; {taskPath} is the selected context path)
+Continue    Continue               + CR (0x0D)
 Stop        Ctrl+C (0x03)
 ```
 
-These strings are literal data; they are never localized or altered. `Stop` never sends Ctrl+D (0x04 closes chats). The four fixed buttons are enabled only while the active chat has a live terminal session.
+The configured text is sent literally; Handoff and Continue support no placeholders. `Stop` is fixed, never sends Ctrl+D (0x04 closes chats), and creates no task record or handoff. The four fixed buttons are enabled only while the active chat has a live terminal session.
 
 Recommended states for configurable action buttons:
 

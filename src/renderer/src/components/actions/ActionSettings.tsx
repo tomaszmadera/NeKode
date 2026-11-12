@@ -46,6 +46,10 @@ interface Props {
   /** Application-global Handoff/Resume auto-send (spec Behaviour 6). */
   autoSend: boolean
   onAutoSendChange: (next: boolean) => void
+  /** Effective Handoff instruction inherited from Application settings (NEKODE-172). */
+  handoffInstruction: string
+  /** Effective Continue instruction inherited from Application settings (NEKODE-172). */
+  continueInstruction: string
   onRefresh: () => Promise<void>
   /**
    * Tab selected when the dialog opens (default `shell`). Only a caller that
@@ -142,6 +146,8 @@ export function ActionSettings({
   projectPath,
   autoSend,
   onAutoSendChange,
+  handoffInstruction,
+  continueInstruction,
   onRefresh,
   initialTab,
   onClose,
@@ -296,8 +302,8 @@ export function ActionSettings({
             projectId={projectId}
             onManageTemplates={onManageResumeTemplates}
           />
-          <SettingsGroup label="Handoff">
-            <SectionLabel title="Handoff" />
+          <SettingsGroup label="Handoff and instructions">
+            <SectionLabel title="Handoff and instructions" />
             <GroupBox>
               <div data-testid={TEST_ID.settingsConfigSection}>
                 <SettingsSwitch
@@ -308,6 +314,39 @@ export function ActionSettings({
                   testId={TEST_ID.settingsAutoSend}
                   onChange={onAutoSendChange}
                 />
+              </div>
+              <div className="border-t border-edge px-4 py-3 text-xs">
+                <p className="font-medium text-ink">Handoff</p>
+                <p
+                  data-testid={TEST_ID.settingsEffectiveHandoff}
+                  className="mt-1 whitespace-pre-wrap break-words font-mono text-ink"
+                >
+                  {handoffInstruction}
+                </p>
+                <p className="mt-1 text-ink-muted">
+                  Application settings, shared by all projects. The agent records the context; the
+                  application does not claim the handoff.
+                </p>
+              </div>
+              <div className="border-t border-edge px-4 py-3 text-xs">
+                <p className="font-medium text-ink">Continue</p>
+                <p
+                  data-testid={TEST_ID.settingsEffectiveContinue}
+                  className="mt-1 whitespace-pre-wrap break-words font-mono text-ink"
+                >
+                  {continueInstruction}
+                </p>
+                <p className="mt-1 text-ink-muted">
+                  Application settings, shared by all projects. It addresses the current
+                  conversation and selects no task or context file.
+                </p>
+              </div>
+              <div className="border-t border-edge px-4 py-3 text-xs">
+                <p className="font-medium text-ink">Resume</p>
+                <p data-testid={TEST_ID.settingsEffectiveResume} className="mt-1 text-ink-muted">
+                  Uses the Resume template selected above. Its instruction is edited in Application
+                  settings, Resume templates, and applies to every project using that template.
+                </p>
               </div>
             </GroupBox>
           </SettingsGroup>

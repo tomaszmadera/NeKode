@@ -10,9 +10,11 @@ import {
   type ResumeSourcePreview,
   type ResumeSourcePut,
   type ResumeSourceTemplate,
+  type ResumeSourceUsage,
 } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { TEST_ID } from '../../lib/test-ids'
 import {
   PageIntro,
   primaryClass,
@@ -47,6 +49,8 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
   const [form, setForm] = useState<ResumeSourcePut | null>(null)
   const [argumentKeys, setArgumentKeys] = useState<string[]>([])
   const [preview, setPreview] = useState<ResumeSourcePreview | null>(null)
+  const [usage, setUsage] = useState<ResumeSourceUsage | null>(null)
+  const [usageError, setUsageError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -54,6 +58,7 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
   const mutating = useRef(false)
   const request = useRef<string | null>(null)
   const current = library?.templates.find((row) => row.id === selectedId)
+  const currentId = current?.id ?? ''
 
   const accept = useCallback((next: ResumeSourceLibrary): void => {
     setLibrary((previous) =>
@@ -111,6 +116,30 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
       if (id !== null) void app.resumeSources.cancel(id).catch(() => undefined)
     }
   }, [app, accept])
+
+  useEffect(() => {
+    let alive = true
+    if (currentId === '') {
+      setUsage(null)
+      setUsageError(null)
+      return
+    }
+    void app.resumeSources
+      .usage(currentId)
+      .then((next) => {
+        if (!alive) return
+        setUsage(next)
+        setUsageError(null)
+      })
+      .catch((cause) => {
+        if (!alive) return
+        setUsage(null)
+        setUsageError(errorMessage(cause))
+      })
+    return () => {
+      alive = false
+    }
+  }, [app, currentId])
 
   async function mutate(
     operation: () => Promise<ResumeSourceLibrary>,
@@ -268,6 +297,17 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
               <p className="whitespace-pre-wrap rounded border border-edge bg-field p-3 text-sm">
                 {current.prompt}
               </p>
+              {usageError !== null ? (
+                <p role="alert" className="text-xs text-danger">
+                  {usageError}
+                </p>
+              ) : usage !== null ? (
+                <p data-testid={TEST_ID.resumeTemplateUsage} className="text-xs text-ink-secondary">
+                  {usage.projects.length === 0
+                    ? 'Not used by any project.'
+                    : `Used by: ${usage.projects.map((project) => project.name).join(', ')}. Saving the instruction applies it to these projects.`}
+                </p>
+              ) : null}
             </>
           )}
           {form !== null && (
@@ -527,6 +567,12 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                   Include {'{taskPath}'}. The legacy alias {'{handoffPath}'} is also accepted. Save
                   before testing.
                 </p>
+                {usage !== null && usage.projects.length > 0 ? (
+                  <p className="text-xs text-ink-secondary">
+                    Saving applies this instruction to:{' '}
+                    {usage.projects.map((project) => project.name).join(', ')}.
+                  </p>
+                ) : null}
                 <div className="flex gap-2">
                   <button type="submit" className={primaryClass}>
                     Save template

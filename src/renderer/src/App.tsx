@@ -108,6 +108,8 @@ function AppContent({
       terminalActionsVisible: state.terminalActionsVisible,
       autoSendHandoff: state.autoSendHandoff,
       setAutoSendHandoff: state.setAutoSendHandoff,
+      handoffInstruction: state.handoffInstruction,
+      continueInstruction: state.continueInstruction,
     })),
   )
 
@@ -470,6 +472,8 @@ function AppContent({
               onNewTerminal={selection.handleNewTerminalAction}
               onBottomTerminal={bottom.handleBottomTerminalAction}
               onPromptCommand={terminals.handlePromptCommand}
+              handoffInstruction={settings.handoffInstruction}
+              continueInstruction={settings.continueInstruction}
               onResume={() => {
                 if (tabProjectId !== null) {
                   setHandoffPickerOpen(true)
@@ -632,6 +636,8 @@ function AppContent({
           }
           autoSend={settings.autoSendHandoff}
           onAutoSendChange={settings.setAutoSendHandoff}
+          handoffInstruction={settings.handoffInstruction}
+          continueInstruction={settings.continueInstruction}
           onRefresh={refreshActions}
           initialTab={projectSettings.tab}
           onClose={projectSettings.closeProjectSettings}

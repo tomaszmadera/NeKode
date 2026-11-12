@@ -1,3 +1,7 @@
+import {
+  DEFAULT_CONTINUE_INSTRUCTION,
+  DEFAULT_HANDOFF_INSTRUCTION,
+} from '@shared/contracts/action-instructions-contract'
 import type { ActionControl, AppApi } from '@shared/ipc-contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -49,6 +53,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -87,6 +93,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -171,6 +179,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -214,6 +224,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -247,6 +259,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -270,6 +284,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -306,6 +322,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -340,6 +358,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -367,6 +387,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -392,6 +414,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -423,6 +447,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -443,6 +469,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -465,6 +493,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -495,6 +525,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -527,6 +559,8 @@ describe('ActionBar', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -576,6 +610,8 @@ describe('action groups', () => {
         onNewTerminal={vi.fn()}
         onBottomTerminal={vi.fn()}
         onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
         onResume={vi.fn()}
         onError={vi.fn()}
         markdownView={null}
@@ -761,5 +797,62 @@ describe('action groups', () => {
 
     view.rerender(barElement(app, members, false, 'p2'))
     expect(screen.queryByTestId(testIdFor.actionGroupMenu('Ops'))).toBeNull()
+  })
+
+  it('sends the configured Handoff instruction and keeps Stop on Ctrl+C', async () => {
+    const app = makeAppMock()
+    const onPromptCommand = vi.fn()
+    render(
+      <ActionBar
+        app={app}
+        actions={[]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={onPromptCommand}
+        handoffInstruction={'Record\nthe context'}
+        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
+    expect(onPromptCommand).toHaveBeenCalledWith('Record\nthe context')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('c1', '\x03'))
+    expect(onPromptCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('writes the configured Continue instruction and submits it once', async () => {
+    const app = makeAppMock()
+    render(
+      <ActionBar
+        app={app}
+        actions={[]}
+        projectId="p1"
+        activeChatId="c1"
+        chatIsLive={true}
+        onNewTerminal={vi.fn()}
+        onBottomTerminal={vi.fn()}
+        onPromptCommand={vi.fn()}
+        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
+        continueInstruction={'Go\non'}
+        onResume={vi.fn()}
+        onError={vi.fn()}
+        markdownView={null}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await waitFor(() => {
+      expect(app.terminals.write).toHaveBeenCalledWith('c1', 'Go\non')
+      expect(app.terminals.write).toHaveBeenCalledWith('c1', '\r')
+    })
+    expect(app.terminals.write).toHaveBeenCalledTimes(2)
   })
 })

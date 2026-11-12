@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ATTENTION_SETTINGS } from '../../lib/attention-settings'
 import { DEFAULT_TERMINAL_FONT_FAMILIES, DEFAULT_TERMINAL_FONT_SIZE } from '../../lib/terminal-font'
+import { TEST_ID } from '../../lib/test-ids'
 import {
   createSettingsStore,
   SettingsStoreContext,
@@ -65,6 +66,16 @@ describe('AppSettings dictation shortcut error', () => {
     expect(await screen.findByRole('button', { name: 'New template' })).not.toBeNull()
     expect(screen.getByLabelText('Test project')).not.toBeNull()
   })
+  it('opens the Instructions tab with Handoff, Continue and the read-only Stop note', async () => {
+    renderSettings('general')
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsInstructionsTab))
+
+    expect(await screen.findByTestId(TEST_ID.instructionHandoffEditor)).not.toBeNull()
+    expect(screen.getByTestId(TEST_ID.instructionContinueEditor)).not.toBeNull()
+    expect(screen.getByTestId(TEST_ID.instructionStopNote).textContent).toContain('Ctrl+C')
+    expect(screen.queryByTestId(TEST_ID.instructionResumePrompt)).toBeNull()
+  })
+
   it('announces an OpenWhispr shortcut save error once on the Dictation tab', async () => {
     renderSettings('dictation')
     await screen.findByTestId('dictation-method-error')

@@ -13,6 +13,7 @@ import { DictationDictionary } from './DictationDictionary'
 import { DictationSettings } from './DictationSettings'
 import { FontsSettings } from './FontsSettings'
 import { GlobalAgentProfilesSettings } from './GlobalAgentProfilesSettings'
+import { InstructionSettings } from './InstructionSettings'
 import { ResumeTemplatesSettings } from './ResumeTemplatesSettings'
 import { SettingsShell } from './SettingsShell'
 import {
@@ -37,13 +38,22 @@ interface AppSettingsProps {
   onClose: () => void
 }
 
-type SettingsTab = 'general' | 'fonts' | 'shortcuts' | 'dictation' | 'agents' | 'usage' | 'resume'
+type SettingsTab =
+  | 'general'
+  | 'fonts'
+  | 'shortcuts'
+  | 'dictation'
+  | 'agents'
+  | 'usage'
+  | 'instructions'
+  | 'resume'
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }> = [
   { id: 'general', label: 'General', icon: Icon.sliders },
   { id: 'fonts', label: 'Fonts', icon: Icon.type },
   { id: 'shortcuts', label: 'Shortcuts', icon: Icon.keyboard },
   { id: 'dictation', label: 'Dictation', icon: Icon.dictation },
   { id: 'agents', label: 'Agents', icon: Icon.agent },
+  { id: 'instructions', label: 'Instructions', icon: Icon.book },
   { id: 'resume', label: 'Resume templates', icon: Icon.sliders },
   { id: 'usage', label: 'Usage', icon: Icon.gauge },
 ]
@@ -114,6 +124,15 @@ export function AppSettings({
     onTerminalCtrlVPasteChange,
     terminalActionsVisible,
     onTerminalActionsVisibleChange,
+    autoSendHandoff,
+    handoffInstruction,
+    continueInstruction,
+    handoffInstructionError,
+    continueInstructionError,
+    onSaveHandoffInstruction,
+    onResetHandoffInstruction,
+    onSaveContinueInstruction,
+    onResetContinueInstruction,
   } = useSettingsStore(
     useShallow((state) => ({
       theme: state.theme,
@@ -137,6 +156,15 @@ export function AppSettings({
       onTerminalCtrlVPasteChange: state.setTerminalCtrlVPaste,
       terminalActionsVisible: state.terminalActionsVisible,
       onTerminalActionsVisibleChange: state.setTerminalActionsVisible,
+      autoSendHandoff: state.autoSendHandoff,
+      handoffInstruction: state.handoffInstruction,
+      continueInstruction: state.continueInstruction,
+      handoffInstructionError: state.handoffInstructionError,
+      continueInstructionError: state.continueInstructionError,
+      onSaveHandoffInstruction: state.setHandoffInstruction,
+      onResetHandoffInstruction: state.resetHandoffInstruction,
+      onSaveContinueInstruction: state.setContinueInstruction,
+      onResetContinueInstruction: state.resetContinueInstruction,
     })),
   )
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab)
@@ -182,7 +210,9 @@ export function AppSettings({
             ? TEST_ID.settingsGeneralTab
             : tab.id === 'shortcuts'
               ? TEST_ID.settingsShortcutsTab
-              : undefined,
+              : tab.id === 'instructions'
+                ? TEST_ID.settingsInstructionsTab
+                : undefined,
       }))}
       activeId={activeTab}
       onSelect={(id) => setActiveTab(id as SettingsTab)}
@@ -308,6 +338,20 @@ export function AppSettings({
           </SettingsGroup>
           <AppUpdateBlock app={app} />
         </div>
+      ) : activeTab === 'instructions' ? (
+        <InstructionSettings
+          app={app}
+          handoffInstruction={handoffInstruction}
+          continueInstruction={continueInstruction}
+          handoffInstructionError={handoffInstructionError}
+          continueInstructionError={continueInstructionError}
+          autoSend={autoSendHandoff}
+          onSaveHandoff={onSaveHandoffInstruction}
+          onResetHandoff={onResetHandoffInstruction}
+          onSaveContinue={onSaveContinueInstruction}
+          onResetContinue={onResetContinueInstruction}
+          onManageTemplates={() => setActiveTab('resume')}
+        />
       ) : activeTab === 'resume' ? (
         <ResumeTemplatesSettings app={app} />
       ) : activeTab === 'usage' ? (

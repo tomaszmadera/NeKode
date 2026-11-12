@@ -1,3 +1,10 @@
+import {
+  DEFAULT_CONTINUE_INSTRUCTION,
+  DEFAULT_HANDOFF_INSTRUCTION,
+  isValidStoredInstruction,
+  resolveInstruction,
+  validateInstruction,
+} from '@shared/contracts/action-instructions-contract'
 import type { AppApi } from '@shared/ipc-contract'
 import { APP_STATE_KEY } from '@shared/ipc-contract'
 import { createContext, useContext } from 'react'
@@ -52,6 +59,14 @@ interface SettingsState {
   // written best-effort on change (failures go to the shell notice).
   /** Handoff/Resume delivery (spec handoff-resume-flow): off pastes into the terminal without submitting. */
   autoSendHandoff: boolean
+  /** Effective multiline Handoff instruction shared by every project (NEKODE-172). */
+  handoffInstruction: string
+  /** Visible warning when the stored Handoff instruction is invalid and the default is used. */
+  handoffInstructionError: string | null
+  /** Effective multiline Continue instruction shared by every project (NEKODE-172). */
+  continueInstruction: string
+  /** Visible warning when the stored Continue instruction is invalid and the default is used. */
+  continueInstructionError: string | null
   /** Ctrl+Tab chat switching (NEKODE-2): enabled unless explicitly turned off. */
   chatSwitchEnabled: boolean
   projectNamesUppercase: boolean
@@ -69,6 +84,11 @@ interface SettingsActions {
   setTerminalActionsVisible: (visible: boolean) => void
   toggleMascot: () => void
   setAutoSendHandoff: (next: boolean) => void
+  /** Returns a validation message and writes nothing, or null after saving. */
+  setHandoffInstruction: (next: string) => string | null
+  resetHandoffInstruction: () => void
+  setContinueInstruction: (next: string) => string | null
+  resetContinueInstruction: () => void
   setChatSwitchEnabled: (next: boolean) => void
   setProjectNamesUppercase: (next: boolean) => void
   setShowProjectIcons: (next: boolean) => void
@@ -88,6 +108,10 @@ export interface SettingsPersistence {
 function readLocalSettings(): Omit<
   SettingsState,
   | 'autoSendHandoff'
+  | 'handoffInstruction'
+  | 'handoffInstructionError'
+  | 'continueInstruction'
+  | 'continueInstructionError'
   | 'chatSwitchEnabled'
   | 'projectNamesUppercase'
   | 'showProjectIcons'
@@ -184,9 +208,49 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
     })
   }
 
-  return createStore<SettingsStore>()((set) => ({
+  function saveInstructionText(
+    key: string,
+    next: string,
+    previous: string,
+    accept: (value: string, error: string | null) => void,
+    failure: string,
+  ): void {
+    void app.state.set(key, next).catch((error: unknown) => {
+      // A failed write restores the previously effective text and reports it.
+      accept(previous, null)
+      reportError(errorMessage(error, failure))
+    })
+  }
+
+  // An invalid stored multiline instruction falls back to the built-in default
+  // and reports it in the Instructions tab; it is never silently replaced.
+  function invalidInstruction(label: string, stored: string | null): string | null {
+    return stored !== null && stored.trim().length > 0 && !isValidStoredInstruction(stored)
+      ? `The saved ${label} instruction is invalid. The default is used until you save a valid instruction.`
+      : null
+  }
+
+  function applyInstruction(
+    key: string,
+    next: string,
+    previous: string,
+    accept: (value: string, error: string | null) => void,
+    failure: string,
+  ): string | null {
+    const checked = validateInstruction(next)
+    if (!checked.ok) return checked.message
+    accept(checked.value, null)
+    saveInstructionText(key, checked.value, previous, accept, failure)
+    return null
+  }
+
+  return createStore<SettingsStore>()((set, get) => ({
     ...readLocalSettings(),
     autoSendHandoff: false,
+    handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
+    handoffInstructionError: null,
+    continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+    continueInstructionError: null,
     chatSwitchEnabled: true,
     projectNamesUppercase: true,
     showProjectIcons: true,
@@ -262,6 +326,44 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
       set({ autoSendHandoff: next })
       save(APP_STATE_KEY.autoSendHandoffResume, next, 'Failed to save the setting.')
     },
+    setHandoffInstruction: (next) =>
+      applyInstruction(
+        APP_STATE_KEY.handoffInstruction,
+        next,
+        get().handoffInstruction,
+        (value, error) => set({ handoffInstruction: value, handoffInstructionError: error }),
+        'Failed to save the Handoff instruction.',
+      ),
+    resetHandoffInstruction: () => {
+      const previous = get().handoffInstruction
+      set({ handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION, handoffInstructionError: null })
+      saveInstructionText(
+        APP_STATE_KEY.handoffInstruction,
+        '',
+        previous,
+        (value, error) => set({ handoffInstruction: value, handoffInstructionError: error }),
+        'Failed to save the Handoff instruction.',
+      )
+    },
+    setContinueInstruction: (next) =>
+      applyInstruction(
+        APP_STATE_KEY.continueInstruction,
+        next,
+        get().continueInstruction,
+        (value, error) => set({ continueInstruction: value, continueInstructionError: error }),
+        'Failed to save the Continue instruction.',
+      ),
+    resetContinueInstruction: () => {
+      const previous = get().continueInstruction
+      set({ continueInstruction: DEFAULT_CONTINUE_INSTRUCTION, continueInstructionError: null })
+      saveInstructionText(
+        APP_STATE_KEY.continueInstruction,
+        '',
+        previous,
+        (value, error) => set({ continueInstruction: value, continueInstructionError: error }),
+        'Failed to save the Continue instruction.',
+      )
+    },
     setChatSwitchEnabled: (next) => {
       set({ chatSwitchEnabled: next })
       save(APP_STATE_KEY.chatSwitchEnabled, next, 'Failed to save the setting.')
@@ -290,6 +392,26 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
         .get(APP_STATE_KEY.autoSendHandoffResume)
         .then((value) => {
           if (alive) set({ autoSendHandoff: value === '1' })
+        })
+        .catch(loadFailed)
+      void app.state
+        .get(APP_STATE_KEY.handoffInstruction)
+        .then((value) => {
+          if (!alive) return
+          set({
+            handoffInstruction: resolveInstruction(value, DEFAULT_HANDOFF_INSTRUCTION),
+            handoffInstructionError: invalidInstruction('Handoff', value),
+          })
+        })
+        .catch(loadFailed)
+      void app.state
+        .get(APP_STATE_KEY.continueInstruction)
+        .then((value) => {
+          if (!alive) return
+          set({
+            continueInstruction: resolveInstruction(value, DEFAULT_CONTINUE_INSTRUCTION),
+            continueInstructionError: invalidInstruction('Continue', value),
+          })
         })
         .catch(loadFailed)
       // Missing or '1' means enabled (NEKODE-2).

@@ -49,6 +49,7 @@ describe('preload app api', () => {
     await api.cancel('request')
     await api.bind('project', 'saved')
     await api.binding('project')
+    await api.usage('saved')
     await api.discover('project', 'req-disc')
     await api.prepare('project', 'tok-1', 'req-prep')
     await api.importLegacy()
@@ -61,6 +62,7 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.resumeSourcesCancel, args: ['request'] },
       { channel: IPC_CHANNEL.resumeSourcesBind, args: ['project', 'saved'] },
       { channel: IPC_CHANNEL.resumeSourcesBinding, args: ['project'] },
+      { channel: IPC_CHANNEL.resumeSourcesUsage, args: ['saved'] },
       { channel: IPC_CHANNEL.resumeSourcesDiscover, args: ['project', 'req-disc'] },
       { channel: IPC_CHANNEL.resumeSourcesPrepare, args: ['project', 'tok-1', 'req-prep'] },
       { channel: IPC_CHANNEL.resumeSourcesImportLegacy, args: [] },

@@ -58,6 +58,23 @@ describe('reusable Resume sources', () => {
     expect(service.delete(template.id, template.revision).templates).not.toContainEqual(template)
   })
 
+  it('reports the registered projects using a template without changing state', () => {
+    const templates = service.put(fileInput()).templates
+    const template = templates[templates.length - 1]
+    service.bind('two', template.id)
+    service.bind('one', template.id)
+
+    expect(service.usage(template.id)).toEqual({
+      templateId: template.id,
+      projects: [
+        { id: 'one', name: 'Project one' },
+        { id: 'two', name: 'Project two' },
+      ],
+    })
+    expect(service.list().revision).toBe(template.revision)
+    expect(() => service.usage('missing')).toThrow(/not found/)
+  })
+
   it('revalidates bytes even with the same mtime and consumes each opaque selection once', async () => {
     const file = join(root, 'one', 'progress.txt')
     await writeFile(file, 'before')

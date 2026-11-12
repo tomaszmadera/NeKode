@@ -3,6 +3,7 @@ import { LOCAL_PROGRESS_RESUME_PROMPT } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { TEST_ID } from '../../lib/test-ids'
 import { createAppApiStub } from '../../test/app-api-stub'
 import { ResumeTemplatesSettings } from './ResumeTemplatesSettings'
 
@@ -243,6 +244,42 @@ describe('Resume templates settings', () => {
     await screen.findByRole('option', { name: 'Notes copy' })
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(app.resumeSources.delete).toHaveBeenCalledWith('copy', 2))
+  })
+
+  it('names the projects using the selected template and reports an unused template', async () => {
+    const app = createAppApiStub()
+    vi.mocked(app.resumeSources.list).mockResolvedValue(library())
+    vi.mocked(app.projects.list).mockResolvedValue([])
+    vi.mocked(app.resumeSources.usage).mockResolvedValue({
+      templateId: 'notes',
+      projects: [{ id: 'p1', name: 'One' }],
+    })
+    render(<ResumeTemplatesSettings app={app} />)
+    await screen.findByRole('option', { name: 'Notes' })
+    fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'notes' } })
+
+    expect((await screen.findByTestId(TEST_ID.resumeTemplateUsage)).textContent).toBe(
+      'Used by: One. Saving the instruction applies it to these projects.',
+    )
+    expect(app.resumeSources.usage).toHaveBeenCalledWith('notes')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.getByText(/Saving applies this instruction to: One\./)).not.toBeNull()
+  })
+
+  it('shows a recoverable usage error instead of an empty project list', async () => {
+    const app = createAppApiStub()
+    vi.mocked(app.resumeSources.list).mockResolvedValue(library())
+    vi.mocked(app.projects.list).mockResolvedValue([])
+    vi.mocked(app.resumeSources.usage).mockRejectedValue(
+      new AppError('not_found', 'Resume template not found.'),
+    )
+    render(<ResumeTemplatesSettings app={app} />)
+    await screen.findByRole('option', { name: 'Notes' })
+    fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'notes' } })
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Resume template not found.')
+    expect(screen.queryByTestId(TEST_ID.resumeTemplateUsage)).toBeNull()
   })
 
   it('imports legacy Resume template from settings.json into the editor', async () => {

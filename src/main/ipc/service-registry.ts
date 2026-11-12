@@ -43,6 +43,7 @@ import type {
   ResumeSourcePreview,
   ResumeSourcePut,
   ResumeSourcesChanged,
+  ResumeSourceUsage,
   ShellInfo,
   SshProjectInput,
   SttProviderSummary,
@@ -256,6 +257,7 @@ export interface AppServices {
     onChanged(callback: (event: ResumeSourcesChanged) => void): Unsubscribe
     bind(projectId: string, templateId: string | null): ResumeSourceBinding
     binding(projectId: string): ResumeSourceBinding
+    usage(templateId: string): ResumeSourceUsage
     discover(projectId: string, requestId: string): Promise<ResumeSourceDiscovery>
     prepare(projectId: string, token: string, requestId: string): Promise<string>
     importLegacy(): Promise<string | null>

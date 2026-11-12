@@ -38,10 +38,14 @@ interface ActionBarProps {
   onBottomTerminal: (execution: ActionExecution, projectId: string) => void
   /**
    * Handoff/Resume delivery (spec handoff-resume-flow Behaviour 3): the host
-   * pastes the English command into the active console, or sends it
-   * straight to the PTY when auto-send is on. The command stays English.
+   * pastes the command into the active console, or sends it straight to the
+   * PTY when auto-send is on.
    */
   onPromptCommand: (text: string) => void
+  /** Effective Handoff instruction shared by every project (NEKODE-172). */
+  handoffInstruction: string
+  /** Effective Continue instruction shared by every project (NEKODE-172). */
+  continueInstruction: string
   /** Resume opens the handoff picker (lazy list, spec Behaviour 4). */
   onResume: () => void
   onError: (message: string) => void
@@ -65,9 +69,6 @@ interface ActionBarProps {
   /** Active board's toolbar controls when isKanban is true. */
   kanbanControls?: KanbanToolbarControls | null
 }
-
-/** Fixed Handoff command (English, spec Behaviour 2). */
-const HANDOFF_COMMAND = 'Write a handoff'
 
 type FixedAction = 'handoff' | 'resume' | 'stop' | 'continue'
 
@@ -138,6 +139,8 @@ export function ActionBar({
   onNewTerminal,
   onBottomTerminal,
   onPromptCommand,
+  handoffInstruction,
+  continueInstruction,
   onResume,
   onError,
   markdownView,
@@ -315,7 +318,7 @@ export function ActionBar({
   function runFixed(action: FixedAction): void {
     if (!activeChatId || !chatIsLive) return
     if (action === 'handoff') {
-      onPromptCommand(HANDOFF_COMMAND)
+      onPromptCommand(handoffInstruction)
     } else if (action === 'resume') {
       onResume()
     } else if (action === 'stop') {
@@ -324,7 +327,7 @@ export function ActionBar({
       cancelContinueCrRef.current?.()
       cancelContinueCrRef.current = writeSubmitLine((data) => {
         void sendFixed(data)
-      }, 'Continue')
+      }, continueInstruction)
     }
   }
 

@@ -1,3 +1,7 @@
+import {
+  DEFAULT_CONTINUE_INSTRUCTION,
+  DEFAULT_HANDOFF_INSTRUCTION,
+} from '@shared/contracts/action-instructions-contract'
 import { APP_STATE_KEY } from '@shared/ipc-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ATTENTION_SETTINGS } from '../lib/attention-settings'
@@ -205,6 +209,8 @@ describe('settings store: app_state settings', () => {
       [APP_STATE_KEY.attentionChimeEnabled]: '1',
       [APP_STATE_KEY.attentionActiveChimeEnabled]: null,
       [APP_STATE_KEY.attentionActiveIndicatorEnabled]: '0',
+      [APP_STATE_KEY.handoffInstruction]: 'Record {state}\nand stop',
+      [APP_STATE_KEY.continueInstruction]: null,
     })
     const store = createSettingsStore({ app, reportError: vi.fn() })
     store.getState().hydrate()
@@ -219,6 +225,8 @@ describe('settings store: app_state settings', () => {
         APP_STATE_KEY.attentionChimeEnabled,
         APP_STATE_KEY.attentionActiveChimeEnabled,
         APP_STATE_KEY.attentionActiveIndicatorEnabled,
+        APP_STATE_KEY.handoffInstruction,
+        APP_STATE_KEY.continueInstruction,
       ].sort(),
     )
     await flush()
@@ -228,6 +236,10 @@ describe('settings store: app_state settings', () => {
       projectNamesUppercase: false,
       showProjectIcons: true,
       attentionSettings: { badge: false, chime: true, activeChime: true, activeIndicator: false },
+      handoffInstruction: 'Record {state}\nand stop',
+      handoffInstructionError: null,
+      continueInstruction: 'Continue',
+      continueInstructionError: null,
     })
   })
 
@@ -283,6 +295,74 @@ describe('settings store: app_state settings', () => {
     await flush()
     expect(store.getState().autoSendHandoff).toBe(false)
     expect(reportError).not.toHaveBeenCalled()
+  })
+
+  it('saves and resets Handoff and Continue instructions exactly', () => {
+    const app = fakeApp()
+    const store = createSettingsStore({ app, reportError: vi.fn() })
+    const actions = store.getState()
+
+    expect(actions.setHandoffInstruction('Record {state}\nand stop')).toBeNull()
+    expect(actions.setContinueInstruction('Go\non')).toBeNull()
+    expect(app.state.set.mock.calls).toEqual([
+      [APP_STATE_KEY.handoffInstruction, 'Record {state}\nand stop'],
+      [APP_STATE_KEY.continueInstruction, 'Go\non'],
+    ])
+    expect(store.getState()).toMatchObject({
+      handoffInstruction: 'Record {state}\nand stop',
+      continueInstruction: 'Go\non',
+    })
+
+    actions.resetHandoffInstruction()
+    expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.handoffInstruction, '')
+    expect(store.getState().handoffInstruction).toBe(DEFAULT_HANDOFF_INSTRUCTION)
+    actions.resetContinueInstruction()
+    expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.continueInstruction, '')
+    expect(store.getState().continueInstruction).toBe(DEFAULT_CONTINUE_INSTRUCTION)
+  })
+
+  it('rejects blank instructions without writing state', () => {
+    const app = fakeApp()
+    const store = createSettingsStore({ app, reportError: vi.fn() })
+
+    expect(store.getState().setHandoffInstruction('  \n ')).toBe(
+      'Instruction cannot be empty. Use Reset to default.',
+    )
+    expect(store.getState().setContinueInstruction('a\u0000b')).toBe(
+      'Instruction cannot contain a null character.',
+    )
+    expect(app.state.set).not.toHaveBeenCalled()
+    expect(store.getState().handoffInstruction).toBe(DEFAULT_HANDOFF_INSTRUCTION)
+    expect(store.getState().continueInstruction).toBe(DEFAULT_CONTINUE_INSTRUCTION)
+  })
+
+  it('restores the previous text when an instruction save fails', async () => {
+    const app = fakeApp()
+    const reportError = vi.fn()
+    const store = createSettingsStore({ app, reportError })
+    app.state.set.mockRejectedValueOnce(new Error('disk'))
+
+    expect(store.getState().setHandoffInstruction('New handoff')).toBeNull()
+    expect(store.getState().handoffInstruction).toBe('New handoff')
+    await flush()
+
+    expect(store.getState().handoffInstruction).toBe(DEFAULT_HANDOFF_INSTRUCTION)
+    expect(reportError).toHaveBeenCalledWith('Failed to save the Handoff instruction.')
+  })
+
+  it('falls back visibly for an invalid stored instruction', async () => {
+    const app = fakeApp({
+      [APP_STATE_KEY.handoffInstruction]: 'bad\u0000text',
+      [APP_STATE_KEY.continueInstruction]: '   ',
+    })
+    const store = createSettingsStore({ app, reportError: vi.fn() })
+    store.getState().hydrate()
+    await flush()
+
+    expect(store.getState().handoffInstruction).toBe(DEFAULT_HANDOFF_INSTRUCTION)
+    expect(store.getState().handoffInstructionError).toContain('invalid')
+    expect(store.getState().continueInstruction).toBe(DEFAULT_CONTINUE_INSTRUCTION)
+    expect(store.getState().continueInstructionError).toBeNull()
   })
 
   it('reports a failed load, except the silent show-icons read', async () => {

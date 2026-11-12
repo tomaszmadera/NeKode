@@ -3,6 +3,7 @@
 Status: Delivered (reusable Resume sources, prompts, console delivery and task-centric Kanban integration delivered under NEKODE-142).
 Resume template amendment (NEKODE-83): specification and plan approved on 2026-10-17.
 NEKODE-142 amendment below: specification and three-stage plan approved by the user on 2026-10-29; Stage 3 completed. Legacy handoff directory setting and old handoff matcher decommissioned.
+NEKODE-172 amendment below: approved by the user on 2026-11-12; configurable Handoff and Continue instructions with the Resume instruction kept in its single template source.
 Path: `docs/features/handoff-resume-flow/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
@@ -225,3 +226,110 @@ Required evidence:
 7. Real Electron smoke proves configuration, picker selection, console paste and direct-send behavior using a local fixture CLI without a model call. User documentation covers template reuse, both source kinds, Harness setup, compatibility and recovery.
 
 The paired [Kanban amendment](../kanban-adapter-interface/spec.md#task-and-file-resume-sources-nekode-142) owns work-item matching and launch. No new Kanban backend entity, automatic lifecycle write, watcher or background polling is introduced.
+
+## Configurable Handoff, Continue and Resume instructions (NEKODE-172)
+
+### Authority and scope
+
+User decision 2026-11-12: Handoff, Resume and Continue instructions are configurable; the current action set stays; Stop stays `Ctrl+C`; no separate "prepare handoff and finish work" action is added. Follow-up user decision 2026-11-12: Handoff and Continue are application-level instructions inherited by every project; Resume keeps its single instruction source in the shared Resume profile (template). No per-project instruction override is stored or offered.
+
+This amendment supersedes the fixed Continue wording in Behaviour 2 and the Non-goals entry "Changes to Stop and Continue fixed actions" only for the Continue text, and the sentence in the NEKODE-142 section that fixes Handoff wording. Handoff delivery, Resume discovery, selection, composition, Kanban launch, addressed-console injection and Stop behavior stay as specified. The fixed command set and toolbar labels stay.
+
+Actors are the local user, the action bar and the running agent. NeKode only sends text. Recording a handoff, updating a task record or a progress file, and closing a card are the agent's acts. Sending a message never proves a handoff exists.
+
+### Inheritance and visible scope
+
+Three levels apply:
+
+- Application settings: the Handoff and Continue instructions, shared by every registered project, plus the existing auto-send setting.
+- Shared Resume profile (template): owns discovery, project binding and the single Resume instruction, reused by reference across projects under the NEKODE-142 contract.
+- Project: inherits Handoff and Continue and selects one Resume template. It has no instruction override of its own.
+
+Effective content and origin stay visible:
+
+- Application Settings, Instructions lists the registered projects affected by Handoff or Continue edits ("Applies to all projects (N)" plus names).
+- Project Settings shows the effective Handoff, Continue and Resume text with its origin (Application settings, or the Resume template name) or the unconfigured Resume state.
+- The Resume template editor shows the projects using that template ("Used by: ...") and states that saving applies the edited instruction to all of them. A shared edit never replaces a prompt the user did not edit.
+
+### Instruction configuration
+
+Application Settings gains an Instructions tab. It shows one group per action with its purpose, effective text and send mode:
+
+- Handoff asks the running agent to record transfer context and stop. In an Agent Harness project the agent updates the task record; without Harness the project convention, for example a progress file, carries the context. The application does not claim a saved handoff, completed task or closed card because it sent the text.
+- Continue asks the running agent to continue the current conversation. It selects no task and no context file and starts no discovery.
+- Resume starts from the context selected by the project's Resume template. The editable control remains the existing template editor; the Instructions tab shows the effective saved instruction and routes there. It is not a second editable Resume prompt.
+- Stop is read-only: it sends `Ctrl+C`, is not configurable, creates no task record or handoff and does not close a card.
+
+Handoff and Continue are multiline text areas. Defaults are the current texts: Handoff `Write a handoff`, Continue `Continue`. Missing or blank stored value means the default. A Reset control restores the default.
+
+Saving requires nonblank text after trimming, no NUL and at most 10,000 characters. Handoff and Continue support no placeholders; the stored text is sent exactly as written, preserving line breaks, whitespace, braces, dollar signs and other literal characters. The UI states this.
+
+### Delivery
+
+- Handoff uses the existing addressed prompt delivery: with auto-send off it pastes the effective text into the active chat console without CR; with auto-send on it writes the text and CR to the active chat PTY. One click delivers once. The preview derives its send mode from the same stored setting.
+- Continue keeps its direct split write to the active chat PTY (text, then CR after the submit gap) and does not depend on auto-send. It delivers once.
+- Both address the chat active at the click and never another chat. Switching chat or project before a pending paste is consumed drops it. Custom text changes neither the target nor the nonce rules.
+- Stop remains a direct `\x03` write.
+
+### Compatibility and boundaries
+
+- Existing Resume templates, ids, bindings, prompts, revisions, discovery, fingerprints and Kanban launch behave unchanged. No migration.
+- The Resume instruction is never copied into application settings, and no default is substituted into a saved template.
+- No per-project override, no inheritance of Handoff or Continue from a Resume template and no new placeholder.
+- No new action, automatic lifecycle transition, taskctl invocation or handoff/task-record write by the application.
+- Settings stay in the flat app_state store; no SQLite schema, table or migration change.
+
+### Data / API
+
+- `APP_STATE_KEY` additions: `handoffInstruction: 'instructions.handoff'`, `continueInstruction: 'instructions.continue'`. Values are multiline strings; missing or blank means the built-in default; they are written only after validation.
+- Shared contract additions: the two default constants, a resolver from stored value to effective text, and the validation rule shared by the settings store and tests.
+- `AppApi.resumeSources.usage(templateId: string): Promise<ResumeSourceUsage>` with `ResumeSourceUsage { templateId: string; projects: Array<{ id: string; name: string }> }`. Unknown template is `not_found`; malformed id is `validation`. The call is read-only.
+- No signature change to `resumeSources` list, put, duplicate, delete, bind, binding, test, discover, prepare or importLegacy.
+
+### Edge cases
+
+- Stored instruction is blank or whitespace (external edit): the default is used and the editor shows the default.
+- Stored instruction contains NUL or exceeds the limit: the default is used and the Instructions tab shows a visible invalid-saved-value message until a valid value is saved.
+- Text ends with a line break: stored and sent unchanged; the transport CR is not part of the instruction. The editor does not normalize line breaks.
+- Two rapid clicks: each click follows the existing nonce and split-write rules; Continue cancels a pending CR from the previous click, so the second click submits once.
+- No registered projects: the affected list says "No projects registered."
+- Resume template not used by any project: the editor shows "Not used by any project."
+- Project has no Resume template: Project Settings and the Instructions tab show `Not configured` with a route to the editor.
+- The chat exits while a Handoff paste is pending: the paste is dropped under the existing rule.
+
+### Errors
+
+- Save with blank, NUL or oversize text: visible validation error, no app_state write, previous effective text remains.
+- Settings read or write failure: visible error; delivery keeps the built-in default until a valid value loads.
+- Usage query for an unknown template: `not_found`; the editor shows the error and no usage list.
+- Invalid Resume template edits keep their existing behavior and never replace valid saved state.
+
+### Acceptance criteria
+
+1. Fresh defaults send `Write a handoff` for Handoff and `Continue` for Continue, keep every existing Resume template prompt and leave Stop as `Ctrl+C`.
+2. Multiline custom Handoff and Continue instructions persist across restart with exact text and reach only the chat active at the click.
+3. Handoff follows the displayed auto-send mode: paste without CR when off, direct send with CR when on. Continue always submits once and does not depend on auto-send.
+4. Application Settings names every registered project affected by a Handoff or Continue change; Project Settings shows each effective text and origin; no project override is created.
+5. The Resume instruction is editable only in its template; the Instructions tab and Project Settings show the effective saved text and route to it; the template editor lists the projects using it.
+6. A shared edit never silently replaces another saved prompt; Reset restores only the action being reset.
+7. The Handoff description says the agent records the context and the app does not claim the handoff; Continue describes the current conversation; no automatic lifecycle transition exists anywhere in the flow.
+8. Resume keeps `{taskPath}` as its required placeholder and `{handoffPath}` as its deprecated alias; Handoff and Continue require no selection and perform no substitution.
+9. The usage call validates the template id, rejects unknown templates and returns only registered project ids and names.
+10. Existing Resume discovery, binding, prompt composition, Kanban launch, auto-send and Stop tests keep passing.
+
+### Required tests
+
+- Shared: default resolution for missing and blank values, handling of invalid stored values, validation of blank/NUL/length, and exact literal preservation of multiline text, braces and dollar signs.
+- Renderer settings store: hydrate defaults and custom values, save exact text into the two keys, reset, keep the previous value on failure and report an error.
+- Instructions tab: three purpose descriptions plus the read-only Stop note, edit/save/reset, preview text and send mode, affected project list, Resume project selection with bound prompt and unconfigured state, and no second editable Resume prompt.
+- Project Settings: effective Handoff, Continue and Resume text with origins and the unconfigured Resume state.
+- Template editor: usage line with project names, empty usage, usage error, and the warning that saving affects those projects.
+- ActionBar/App: custom Handoff paste with auto-send off, custom Handoff CR send with auto-send on, custom Continue split write once, Stop `\x03` with no instruction delivery, pending Handoff dropped on chat or project switch, no double delivery, and defaults when unset.
+- Main: usage call keeps the trusted-sender guard, validates the payload and rejects an unknown template.
+- Regression: existing Resume source, template, picker, Kanban launch and auto-send suites.
+
+### Relevant SDD / ADR
+
+- `docs/features/mvp-core-shell` (app_state store)
+- The NEKODE-142 section above (Resume profile ownership)
+- No new ADR.

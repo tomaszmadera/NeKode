@@ -1150,11 +1150,42 @@ describe('action row and settings', () => {
     await screen.findByTestId(TEST_ID.handoffPicker)
   })
 
-  it('auto-send writes the English Handoff and Resume commands straight to the PTY', async () => {
+  it('delivers configured Handoff and Continue instructions to the selected chat', async () => {
+    vi.mocked(app.state.get).mockImplementation(async (key) => {
+      if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
+      if (key === APP_STATE_KEY.selectedChatId) return 't1'
+      if (key === APP_STATE_KEY.handoffInstruction) return 'Record {state}\nand stop'
+      if (key === APP_STATE_KEY.continueInstruction) return 'Go\non'
+      return null
+    })
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([chatOne])
+    render(<App app={app} />)
+    await waitFor(() => expect(app.terminals.create).toHaveBeenCalledWith('t1', projectA.path))
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Handoff' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    await waitFor(() =>
+      expect(app.state.get).toHaveBeenCalledWith(APP_STATE_KEY.handoffInstruction),
+    )
+    await act(async () => undefined)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
+    expect(mockTerminalInstances[0].paste).toHaveBeenLastCalledWith('Record {state}\nand stop')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Go\non'))
+    expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
+  })
+
+  it('auto-send writes the configured Handoff and Resume commands straight to the PTY', async () => {
     vi.mocked(app.state.get).mockImplementation(async (key) => {
       if (key === APP_STATE_KEY.selectedProjectId) return 'p1'
       if (key === APP_STATE_KEY.selectedChatId) return 't1'
       if (key === APP_STATE_KEY.autoSendHandoffResume) return '1'
+      if (key === APP_STATE_KEY.handoffInstruction) return 'Record the context'
       if (key === projectHandoffDirKey('p1')) return '.agents/handoffs'
       return null
     })
@@ -1189,9 +1220,16 @@ describe('action row and settings', () => {
         false,
       ),
     )
+    await waitFor(() =>
+      expect(app.state.get).toHaveBeenCalledWith(APP_STATE_KEY.handoffInstruction),
+    )
+    await act(async () => undefined)
     fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
-    // Split-write submission: the line, then the CR as its own write.
-    await waitFor(() => expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Write a handoff'))
+    // Split-write submission of the configured instruction: the line, then the
+    // CR as its own write.
+    await waitFor(() =>
+      expect(app.terminals.write).toHaveBeenCalledWith('t1', 'Record the context'),
+    )
     expect(app.terminals.write).toHaveBeenCalledWith('t1', '\r')
     expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled()
 

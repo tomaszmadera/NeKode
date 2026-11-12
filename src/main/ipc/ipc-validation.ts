@@ -886,6 +886,15 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
       invoke: (args) => services.resumeSources.binding(args[0] as string),
     },
     {
+      channel: IPC_CHANNEL.resumeSourcesUsage,
+      parse: (args) => {
+        requireArgs(args, 1, IPC_CHANNEL.resumeSourcesUsage)
+        parsePayload(resumeIdSchema, args[0], 'templateId')
+        return args
+      },
+      invoke: (args) => services.resumeSources.usage(args[0] as string),
+    },
+    {
       channel: IPC_CHANNEL.resumeSourcesDiscover,
       parse: (args) => {
         requireArgs(args, 2, IPC_CHANNEL.resumeSourcesDiscover)
