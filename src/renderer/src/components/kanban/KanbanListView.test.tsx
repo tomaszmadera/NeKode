@@ -2,8 +2,13 @@ import type { WorkItem } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { kanbanBoardFixture } from '../../test/kanban-fixtures'
-import { KanbanListView, type KanbanListViewProps, useKanbanListPrefs } from './KanbanListView'
+import { kanbanBoardFixture, kanbanWorkItem } from '../../test/kanban-fixtures'
+import {
+  ItemCopyMenu,
+  KanbanListView,
+  type KanbanListViewProps,
+  useKanbanListPrefs,
+} from './KanbanListView'
 import { boardColumns, DEFAULT_KANBAN_SORT } from './kanban-board-logic'
 
 // The stored preferences are addressed by their literal key text: the key is
@@ -231,5 +236,38 @@ describe('useKanbanListPrefs', () => {
     })
     expect([...result.current.collapsedStates]).toEqual(['s2'])
     expect(result.current.sortState).toEqual(DEFAULT_KANBAN_SORT)
+  })
+})
+
+describe('ItemCopyMenu', () => {
+  it('keeps the menu inside the viewport when opened at the right edge', () => {
+    const originalInnerWidth = window.innerWidth
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+    try {
+      render(
+        <ItemCopyMenu
+          item={kanbanWorkItem('NK-1', 'First task', 's1')}
+          x={790}
+          y={40}
+          onClose={vi.fn()}
+        />,
+      )
+      const panel = screen.getByRole('menu', { name: 'Copy NK-1' }).firstElementChild as HTMLElement
+      const left = Number.parseFloat(panel.style.left)
+      const top = Number.parseFloat(panel.style.top)
+      // 800 - estimated width 200 - padding 8. The click at 790 would paint off-screen.
+      expect(left).toBe(592)
+      expect(top).toBe(40)
+      expect(left).toBeGreaterThanOrEqual(8)
+      expect(left).toBeLessThan(790)
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        value: originalInnerHeight,
+      })
+    }
   })
 })

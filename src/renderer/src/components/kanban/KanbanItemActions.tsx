@@ -1,6 +1,6 @@
 import type { WorkItem } from '@shared/ipc-contract'
 import type React from 'react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { Icon } from '../../lib/icons'
 import { clampMenuPosition } from '../../lib/menu-position'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
@@ -177,6 +177,20 @@ export function StartMenu({
   onStartDraft: (item: WorkItem) => void
   onClose: () => void
 }): React.JSX.Element {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const position = clampMenuPosition(x, y, { menuWidth: 200, menuHeight: 72 })
+
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const refined = clampMenuPosition(x, y, { menuWidth: rect.width, menuHeight: rect.height })
+      el.style.left = `${refined.left}px`
+      el.style.top = `${refined.top}px`
+    }
+  }, [x, y])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onClose()
@@ -205,8 +219,9 @@ export function StartMenu({
       }}
     >
       <div
+        ref={menuRef}
         className="absolute min-w-40 rounded-md border border-edge bg-panel py-1 shadow-lg"
-        style={{ left: x, top: y }}
+        style={{ left: position.left, top: position.top }}
       >
         <button
           type="button"

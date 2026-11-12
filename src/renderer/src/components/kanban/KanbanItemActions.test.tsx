@@ -101,6 +101,39 @@ describe('StartMenu', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(3)
   })
+
+  it('keeps the menu inside the viewport when opened at the right edge', () => {
+    const originalInnerWidth = window.innerWidth
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+    try {
+      render(
+        <StartMenu
+          item={ITEM}
+          x={790}
+          y={40}
+          onStart={vi.fn()}
+          onStartDraft={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      )
+      const panel = screen.getByTestId(TEST_ID.kanbanStartMenu).firstElementChild as HTMLElement
+      const left = Number.parseFloat(panel.style.left)
+      const top = Number.parseFloat(panel.style.top)
+      // 800 - estimated width 200 - padding 8. The click at 790 would paint off-screen.
+      expect(left).toBe(592)
+      expect(top).toBe(40)
+      expect(left).toBeGreaterThanOrEqual(8)
+      expect(left).toBeLessThan(790)
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        value: originalInnerHeight,
+      })
+    }
+  })
 })
 
 describe('ResumeMenu', () => {

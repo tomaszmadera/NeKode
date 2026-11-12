@@ -159,6 +159,31 @@ describe('ReviewTextMenu', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Could not copy to the clipboard.')
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  it('keeps the menu inside the viewport when opened at the right edge', () => {
+    const originalInnerWidth = window.innerWidth
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+    try {
+      render(<ReviewTextMenu text="picked" x={790} y={40} onClose={vi.fn()} />)
+      const menu = screen.getByRole('menu', { name: 'Copy selection' })
+      const panel = menu.firstElementChild as HTMLElement
+      const left = Number.parseFloat(panel.style.left)
+      const top = Number.parseFloat(panel.style.top)
+      // 800 - estimated width 200 - padding 8. The click at 790 would paint off-screen.
+      expect(left).toBe(592)
+      expect(top).toBe(40)
+      expect(left).toBeGreaterThanOrEqual(8)
+      expect(left).toBeLessThan(790)
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        value: originalInnerHeight,
+      })
+    }
+  })
 })
 
 describe('useReviewComments', () => {
