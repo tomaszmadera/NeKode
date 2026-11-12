@@ -1320,9 +1320,22 @@ describe('ipc payload validation', () => {
     expect(() => launch?.parse([{ ...draftInput, prompt: 'secret' }])).toThrow(
       /unexpected or missing/,
     )
+    // Resume without sending (2026-11-12) carries exactly the Resume fields.
+    const resumeDraftInput = { ...resumeInput, mode: 'resume-draft' as const }
+    launch?.invoke(launch.parse([resumeDraftInput]))
+    expect(services.kanban.launchTask).toHaveBeenCalledWith(resumeDraftInput)
+    expect(() => launch?.parse([{ ...launchInput, mode: 'resume-draft' }])).toThrow(
+      /unexpected or missing/,
+    )
+    expect(() => launch?.parse([{ ...resumeDraftInput, fileName: 'x.md' }])).toThrow(
+      /unexpected or missing/,
+    )
+    expect(() => launch?.parse([{ ...resumeDraftInput, prompt: '   ' }])).toThrow(
+      /prompt must be non-empty/,
+    )
     expect(() => launch?.parse([{ ...launchInput, mode: 'other' }])).toThrow(ValidationError)
     expect(services.kanban.getItem).toHaveBeenCalledTimes(1)
-    expect(services.kanban.launchTask).toHaveBeenCalledTimes(3)
+    expect(services.kanban.launchTask).toHaveBeenCalledTimes(4)
   })
 
   // Channels whose rejection rule only the handler table used to prove. The

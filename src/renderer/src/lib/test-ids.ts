@@ -311,6 +311,8 @@ export const TEST_ID = {
       Rendered by the app shell, not inside the board. */
   kanbanResumeDialog: 'kanban-resume-dialog',
   kanbanResumeTask: 'kanban-resume-task',
+  /** Draft variant: the instruction is pasted, not sent. */
+  kanbanResumeDraftHint: 'kanban-resume-draft-hint',
   kanbanResumeLoading: 'kanban-resume-loading',
   kanbanResumeError: 'kanban-resume-error',
   kanbanResumeConfigure: 'kanban-resume-configure',
@@ -323,6 +325,9 @@ export const TEST_ID = {
   kanbanResumeAmbiguous: 'kanban-resume-ambiguous',
   /** Rejected files with their visible reason. */
   kanbanResumeWarnings: 'kanban-resume-warnings',
+  kanbanResumeMenu: 'kanban-resume-menu',
+  kanbanResumeMenuResume: 'kanban-resume-menu-resume',
+  kanbanResumeMenuDraft: 'kanban-resume-menu-draft',
   kanbanResumeCancel: 'kanban-resume-cancel',
   /** Confirm of a Resume launch. Disabled until the scan, file and profile hold. */
   kanbanResumeConfirm: 'kanban-resume-confirm',
@@ -419,6 +424,8 @@ export const testIdFor = {
   kanbanItemStart: (ref: string): string => `kanban-item-start-${ref}`,
   /** Visible Resume control. Opens the Resume and handoff confirmation. */
   kanbanItemResume: (ref: string): string => `kanban-item-resume-${ref}`,
+  /** Chevron of the Resume split control. Opens the launch-variant menu. */
+  kanbanResumeOptions: (ref: string): string => `kanban-resume-options-${ref}`,
   /** One agent profile radio in the Start confirmation. */
   kanbanStartProfile: (profileId: string): string => `kanban-start-profile-${profileId}`,
   /** One agent profile item in the New Chat menu. */

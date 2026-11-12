@@ -541,6 +541,7 @@ function AppContent({
               onStart={launches.handleStartTask}
               onStartDraft={launches.handleStartTaskDraft}
               onResume={launches.handleResumeTask}
+              onResumeDraft={launches.handleResumeTaskDraft}
               onToolbarControls={kanban.handleKanbanToolbarControls}
             />
           )}
@@ -576,10 +577,11 @@ function AppContent({
       ) : null}
       {taskResume !== null ? (
         <TaskResumeModal
-          key={`resume:${taskResume.projectId}:${taskResume.item.id}`}
+          key={`resume:${taskResume.projectId}:${taskResume.item.id}:${taskResume.draft}`}
           app={app}
           projectId={taskResume.projectId}
           item={taskResume.item}
+          draft={taskResume.draft}
           onCancel={() => launches.setTaskResume(null)}
           onConfigureHandoffs={launches.handleConfigureTaskHandoffs}
           onConfigureAgents={launches.handleConfigureResumeAgents}

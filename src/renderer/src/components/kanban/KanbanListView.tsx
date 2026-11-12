@@ -9,6 +9,7 @@ import {
   MENU_ITEM_CLASS,
   navigatorClipboard,
   type OpenItemMenu,
+  type OpenResumeMenu,
 } from './KanbanItemActions'
 import {
   blankUrl,
@@ -263,20 +264,24 @@ function WorkItemSurface({
   item,
   closed,
   resumeEnabled,
+  resumeMenuOpen,
   onOpen,
   onOpenMenu,
   onStart,
   onResume,
   onOpenStartMenu,
+  onOpenResumeMenu,
 }: {
   item: WorkItem
   closed: boolean
   resumeEnabled: boolean
+  resumeMenuOpen: boolean
   onOpen: (ref: string) => void
   onOpenMenu: OpenItemMenu
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
   onOpenStartMenu?: OpenItemMenu
+  onOpenResumeMenu?: OpenResumeMenu
 }): React.JSX.Element {
   return (
     <li
@@ -292,6 +297,8 @@ function WorkItemSurface({
         onStart={onStart}
         onResume={onResume}
         onOpenStartMenu={onOpenStartMenu}
+        onOpenResumeMenu={onOpenResumeMenu}
+        resumeMenuOpen={resumeMenuOpen}
         appearance="row"
       />
     </li>
@@ -314,6 +321,10 @@ export interface KanbanListViewProps {
   onResume?: (item: WorkItem) => void
   /** Present only when the host supports Start without sending. */
   onOpenStartMenu?: OpenItemMenu
+  /** Present only when the host supports Resume without sending. */
+  onOpenResumeMenu?: OpenResumeMenu
+  /** Ref of the item whose Resume menu is open. */
+  resumeMenuRef?: string | null
 }
 
 export function KanbanListView({
@@ -328,6 +339,8 @@ export function KanbanListView({
   onStart,
   onResume,
   onOpenStartMenu,
+  onOpenResumeMenu,
+  resumeMenuRef = null,
 }: KanbanListViewProps): React.JSX.Element {
   return (
     <div className="flex min-w-0 flex-col gap-[14px]" data-testid={TEST_ID.kanbanList}>
@@ -380,11 +393,13 @@ export function KanbanListView({
                     item={item}
                     closed={isClosedGroup(column.group)}
                     resumeEnabled={itemResumable(item)}
+                    resumeMenuOpen={resumeMenuRef === item.ref}
                     onOpen={onOpen}
                     onOpenMenu={onOpenMenu}
                     onStart={onStart}
                     onResume={onResume}
                     onOpenStartMenu={onOpenStartMenu}
+                    onOpenResumeMenu={onOpenResumeMenu}
                   />
                 ))}
               </ul>

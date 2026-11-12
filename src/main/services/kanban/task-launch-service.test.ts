@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type {
   AgentProfile,
   KanbanDraftLaunchInput,
+  KanbanResumeDraftLaunchInput,
   KanbanResumeLaunchInput,
   KanbanStartLaunchInput,
   WorkItem,
@@ -103,6 +104,21 @@ function resumeInput(overrides: Partial<KanbanResumeLaunchInput> = {}): KanbanRe
     profileId: profile.id,
     attemptId: 'resume-1',
     mode: 'resume',
+    prompt: 'Resume from handoffs/nekode-28-notes.md',
+    ...overrides,
+  }
+}
+
+function resumeDraftInput(
+  overrides: Partial<KanbanResumeDraftLaunchInput> = {},
+): KanbanResumeDraftLaunchInput {
+  return {
+    projectId: 'pending',
+    itemId: 'native-1',
+    ref: 'DEMO-1',
+    profileId: profile.id,
+    attemptId: 'resume-draft-1',
+    mode: 'resume-draft',
     prompt: 'Resume from handoffs/nekode-28-notes.md',
     ...overrides,
   }
@@ -747,5 +763,76 @@ describe('TaskLaunchService resume', () => {
     const logged = JSON.stringify(errors)
     expect(logged).not.toContain(LEAK)
     spy.mockRestore()
+  })
+})
+
+describe('TaskLaunchService resume draft (2026-11-12)', () => {
+  it('starts the profile without the Resume instruction and returns it for paste', async () => {
+    const bundle = harness()
+    const prompt = 'Resume task .agents/tasks/nekode-28/task.md'
+    const result = await bundle.service.launch(
+      resumeDraftInput({ projectId: bundle.project.id, prompt }),
+    )
+    expect(result.delivered).toBe(true)
+    expect(result.chat.name).toBe('[PowerShell] Codex')
+    expect(result.chat.taskRef).toBe('DEMO-1')
+    expect(result.draftPrompt).toBe(prompt)
+    expect(bundle.spawns).toHaveLength(1)
+    expect(bundle.spawns[0]?.file).toBe('codex.exe')
+    expect(bundle.spawns[0]?.args).toEqual(['--model', 'gpt', '--yolo'])
+    expect(bundle.spawns[0]?.args.some((arg) => arg.includes('Resume task'))).toBe(false)
+  })
+
+  it('uses interactiveArgs when the profile defines them', async () => {
+    const bundle = harness({ profile: { ...profile, interactiveArgs: ['--tui'] } })
+    const result = await bundle.service.launch(resumeDraftInput({ projectId: bundle.project.id }))
+    expect(bundle.spawns[0]?.args).toEqual(['--tui'])
+    expect(result.draftPrompt).toBe('Resume from handoffs/nekode-28-notes.md')
+  })
+
+  it('keeps the regular Resume result shape without draftPrompt', async () => {
+    const bundle = harness()
+    const result = await bundle.service.launch(resumeInput({ projectId: bundle.project.id }))
+    expect('draftPrompt' in result).toBe(false)
+  })
+
+  it('returns the prompt only after a failed spawn is retried, and again on a repeat', async () => {
+    const options = { failSpawn: true }
+    const bundle = harness(options)
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const launch = resumeDraftInput({ projectId: bundle.project.id })
+    const failed = await bundle.service.launch(launch)
+    spy.mockRestore()
+    expect(failed.delivered).toBe(false)
+    expect('draftPrompt' in failed).toBe(false)
+    options.failSpawn = false
+    const retried = await bundle.service.launch(launch)
+    expect(retried.delivered).toBe(true)
+    expect(retried.chat.id).toBe(failed.chat.id)
+    expect(retried.draftPrompt).toBe(launch.prompt)
+    const again = await bundle.service.launch(launch)
+    expect(again).toEqual(retried)
+    expect(bundle.spawns).toHaveLength(2)
+    expect(bundle.chats.list(bundle.project.id)).toHaveLength(1)
+  })
+
+  it('rejects a resume draft with extra or missing fields and a mismatched retry', async () => {
+    const bundle = harness()
+    expect(() =>
+      bundle.service.launch({
+        ...resumeDraftInput({ projectId: bundle.project.id }),
+        fileName: 'x.md',
+      } as unknown as KanbanResumeDraftLaunchInput),
+    ).toThrow(/unexpected or missing fields/)
+    expect(() =>
+      bundle.service.launch(resumeDraftInput({ projectId: bundle.project.id, prompt: '   ' })),
+    ).toThrow(/prompt is invalid/)
+    await bundle.service.launch(
+      resumeDraftInput({ projectId: bundle.project.id, attemptId: 'kept' }),
+    )
+    expect(() =>
+      bundle.service.launch(resumeInput({ projectId: bundle.project.id, attemptId: 'kept' })),
+    ).toThrow(AppError)
+    expect(bundle.spawns).toHaveLength(1)
   })
 })

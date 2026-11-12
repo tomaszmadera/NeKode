@@ -24,6 +24,8 @@ interface Props {
   onStartDraft?: (projectId: string, item: WorkItem) => void
   /** Resume on a work item. The shell owns the handoff confirmation dialog. */
   onResume?: (projectId: string, item: WorkItem) => void
+  /** Resume without sending (2026-11-12). The shell owns the confirmation dialog. */
+  onResumeDraft?: (projectId: string, item: WorkItem) => void
   /** Reports toolbar controls of the active board. */
   onToolbarControls?: (projectId: string, controls: KanbanToolbarControls | null) => void
 }
@@ -40,6 +42,7 @@ function KanbanSessionItem({
   onStart,
   onStartDraft,
   onResume,
+  onResumeDraft,
   onToolbarControls,
 }: {
   app: AppApi
@@ -53,6 +56,7 @@ function KanbanSessionItem({
   onStart?: (projectId: string, item: WorkItem) => void
   onStartDraft?: (projectId: string, item: WorkItem) => void
   onResume?: (projectId: string, item: WorkItem) => void
+  onResumeDraft?: (projectId: string, item: WorkItem) => void
   onToolbarControls?: (projectId: string, controls: KanbanToolbarControls | null) => void
 }): React.JSX.Element {
   const handleControls = useCallback(
@@ -85,6 +89,12 @@ function KanbanSessionItem({
     },
     [id, onResume],
   )
+  const handleResumeDraft = useCallback(
+    (item: WorkItem) => {
+      onResumeDraft?.(id, item)
+    },
+    [id, onResumeDraft],
+  )
 
   return (
     <div
@@ -106,6 +116,7 @@ function KanbanSessionItem({
         onStart={onStart === undefined ? undefined : handleStart}
         onStartDraft={onStartDraft === undefined ? undefined : handleStartDraft}
         onResume={onResume === undefined ? undefined : handleResume}
+        onResumeDraft={onResumeDraft === undefined ? undefined : handleResumeDraft}
         onToolbarControls={onToolbarControls === undefined ? undefined : handleControls}
       />
     </div>
@@ -126,6 +137,7 @@ export function KanbanSessions({
   onStart,
   onStartDraft,
   onResume,
+  onResumeDraft,
   onToolbarControls,
 }: Props): React.JSX.Element {
   const [sessions, setSessions] = useState<Readonly<Record<string, number>>>({})
@@ -160,6 +172,7 @@ export function KanbanSessions({
           onStart={onStart}
           onStartDraft={onStartDraft}
           onResume={onResume}
+          onResumeDraft={onResumeDraft}
           onToolbarControls={onToolbarControls}
         />
       ))}

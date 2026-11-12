@@ -106,6 +106,20 @@ export const kanbanResumeLaunchInputSchema = z.strictObject({
 export type KanbanResumeLaunchInput = z.output<typeof kanbanResumeLaunchInputSchema>
 
 /**
+ * `kanban:launchTask` body for `mode: 'resume-draft'` (Resume without sending,
+ * user decision 2026-11-12). Main starts the profile with its interactive argv
+ * and returns the prepared Resume prompt as `draftPrompt` instead of passing it
+ * to the process.
+ */
+export const kanbanResumeDraftLaunchInputSchema = z.strictObject({
+  ...launchTaskBaseShape,
+  mode: z.literal('resume-draft'),
+  prompt: nonBlankSchema,
+})
+
+export type KanbanResumeDraftLaunchInput = z.output<typeof kanbanResumeDraftLaunchInputSchema>
+
+/**
  * `kanban:launchTask` body for `mode: 'draft'` (Start without sending,
  * NEKODE-99). Main starts the profile with its interactive argv and returns the
  * Start prompt as `draftPrompt` instead of passing it to the process.
@@ -120,6 +134,7 @@ export type KanbanDraftLaunchInput = z.output<typeof kanbanDraftLaunchInputSchem
 const launchKeysByMode: Record<string, (input: Record<string, unknown>) => boolean> = {
   start: exactKeys(kanbanStartLaunchInputSchema.shape),
   resume: exactKeys(kanbanResumeLaunchInputSchema.shape),
+  'resume-draft': exactKeys(kanbanResumeDraftLaunchInputSchema.shape),
   draft: exactKeys(kanbanDraftLaunchInputSchema.shape),
 }
 
@@ -128,7 +143,7 @@ export const kanbanLaunchTaskInputSchema = objectInput()
   .refine(
     (input) => typeof input.mode === 'string' && Object.hasOwn(launchKeysByMode, input.mode),
     {
-      error: 'must be "start", "resume" or "draft"',
+      error: 'must be "start", "resume", "resume-draft" or "draft"',
       path: ['mode'],
       abort: true,
     },
@@ -141,6 +156,7 @@ export const kanbanLaunchTaskInputSchema = objectInput()
     z.discriminatedUnion('mode', [
       kanbanStartLaunchInputSchema,
       kanbanResumeLaunchInputSchema,
+      kanbanResumeDraftLaunchInputSchema,
       kanbanDraftLaunchInputSchema,
     ]),
   )

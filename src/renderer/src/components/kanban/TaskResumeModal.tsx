@@ -3,7 +3,6 @@ import type {
   AppApi,
   KanbanLaunchResult,
   KanbanLaunchTaskInput,
-  KanbanResumeLaunchInput,
   ResumeSourceDiscovery,
   WorkItem,
 } from '@shared/ipc-contract'
@@ -18,6 +17,8 @@ interface TaskResumeModalProps {
   app: AppApi
   projectId: string
   item: WorkItem
+  /** Resume without sending: the prompt is pasted into the chat, not sent. */
+  draft?: boolean
   onCancel: () => void
   /** Project Settings on the tab that owns the Resume template configuration. */
   onConfigureHandoffs: () => void
@@ -42,11 +43,14 @@ function errorMessage(error: unknown, fallback: string): string {
  * profile plus exactly one matching context. Multiple matches are an explicit
  * ambiguity, never a selection. Before chat creation, main revalidates
  * the template binding and candidate fingerprint via prepare.
+ * Resume without sending (user decision 2026-11-12) keeps the same checks and
+ * launches with `resume-draft`: main returns the prompt for console paste.
  */
 export function TaskResumeModal({
   app,
   projectId,
   item,
+  draft = false,
   onCancel,
   onConfigureHandoffs,
   onConfigureAgents,
@@ -168,13 +172,13 @@ export function TaskResumeModal({
     try {
       const requestId = `resume-prep-${Date.now()}-${Math.random().toString(36).slice(2)}`
       const prompt = await app.resumeSources.prepare(projectId, chosen.token, requestId)
-      const input: KanbanResumeLaunchInput = {
+      const input: KanbanLaunchTaskInput = {
         projectId,
         itemId: item.id,
         ref: item.ref,
         profileId: selectedProfileId,
         attemptId: crypto.randomUUID(),
-        mode: 'resume',
+        mode: draft ? 'resume-draft' : 'resume',
         prompt,
       }
       const launchResult = await app.kanban.launchTask(input)
@@ -222,14 +226,16 @@ export function TaskResumeModal({
           role="dialog"
           aria-modal="true"
           aria-labelledby="kanban-resume-title"
-          aria-describedby="kanban-resume-task"
+          aria-describedby={
+            draft ? 'kanban-resume-task kanban-resume-draft-hint' : 'kanban-resume-task'
+          }
           aria-busy={busy}
           onKeyDown={handleKeyDown}
           className="w-[min(28rem,92vw)] rounded-lg border border-edge bg-panel p-5 shadow-xl"
           data-testid={TEST_ID.kanbanResumeDialog}
         >
           <h2 id="kanban-resume-title" className="text-[14.7px] font-semibold text-ink">
-            Resume task
+            {draft ? 'Resume task without sending' : 'Resume task'}
           </h2>
           <p
             id="kanban-resume-task"
@@ -238,6 +244,15 @@ export function TaskResumeModal({
           >
             {item.ref}: {item.title}
           </p>
+          {draft ? (
+            <p
+              id="kanban-resume-draft-hint"
+              className="mt-2 text-[12.6px] text-ink-secondary"
+              data-testid={TEST_ID.kanbanResumeDraftHint}
+            >
+              The resume instruction is pasted into the console without sending.
+            </p>
+          ) : null}
 
           {phase === 'loading' ? (
             <p
@@ -414,7 +429,7 @@ export function TaskResumeModal({
                 void handleConfirm()
               }}
             >
-              Resume
+              {draft ? 'Resume without sending' : 'Resume'}
             </button>
           </div>
         </section>

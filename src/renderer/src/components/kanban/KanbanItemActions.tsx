@@ -1,11 +1,14 @@
 import type { WorkItem } from '@shared/ipc-contract'
 import type React from 'react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { Icon } from '../../lib/icons'
+import { clampMenuPosition } from '../../lib/menu-position'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
 
 // Launch controls shared by the list rows (KanbanListView) and the item review
-// (KanbanItemReview): Start, Resume, and the Start menu (NEKODE-99). Neither
-// control opens the review or launches from the board; each asks the host.
+// (KanbanItemReview): Start, Resume, the Start menu (NEKODE-99), and the Resume
+// split control with its menu (user decision 2026-11-12). Neither control opens
+// the review or launches from the board; each asks the host.
 
 const ITEM_CONTROL_CLASS =
   'w-fit rounded-md px-1.5 py-0.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
@@ -32,9 +35,15 @@ export function navigatorClipboard(): { writeText(text: string): Promise<void> }
 /** Opens a menu at (x, y) for an item: a context menu or the keyboard menu key. */
 export type OpenItemMenu = (item: WorkItem, x: number, y: number) => void
 
+/** Opens the Resume menu and keeps the trigger for Escape focus return. */
+export type OpenResumeMenu = (item: WorkItem, x: number, y: number, anchor: HTMLElement) => void
+
 /** Row appearance: bordered 26px controls, Start revealed by the row hover. */
-const ROW_CONTROL_CLASS =
-  'h-[26px] shrink-0 rounded-[6px] border border-edge bg-button px-2.5 text-[12px] font-medium text-ink hover:bg-button-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+const ROW_CONTROL_BASE =
+  'h-[26px] shrink-0 border border-edge bg-button text-[12px] font-medium text-ink hover:bg-button-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+const ROW_CONTROL_CLASS = `${ROW_CONTROL_BASE} rounded-[6px] px-2.5`
+const ROW_RESUME_MAIN_CLASS = `${ROW_CONTROL_BASE} rounded-l-[6px] border-r-0 px-2.5`
+const ROW_RESUME_TRIGGER_CLASS = `${ROW_CONTROL_BASE} rounded-r-[6px] px-1.5`
 
 const ROW_START_REVEAL_CLASS =
   'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-50 [@media(hover:none)]:opacity-100'
@@ -50,6 +59,8 @@ export function ItemLaunchButtons({
   onStart,
   onResume,
   onOpenStartMenu,
+  onOpenResumeMenu,
+  resumeMenuOpen = false,
   appearance = 'default',
 }: {
   item: WorkItem
@@ -57,9 +68,26 @@ export function ItemLaunchButtons({
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
   onOpenStartMenu?: OpenItemMenu
+  /** Present only when the host supports Resume without sending. */
+  onOpenResumeMenu?: OpenResumeMenu
+  /** True while this item's Resume menu is open. */
+  resumeMenuOpen?: boolean
   appearance?: 'default' | 'row'
 }): React.JSX.Element {
   const isRow = appearance === 'row'
+  const resumeMainClass = isRow
+    ? onOpenResumeMenu === undefined
+      ? ROW_CONTROL_CLASS
+      : ROW_RESUME_MAIN_CLASS
+    : `${ITEM_CONTROL_CLASS} text-ink ${ACTION_HOVER_CLASS}`
+  const resumeTriggerClass = isRow
+    ? ROW_RESUME_TRIGGER_CLASS
+    : `${ITEM_CONTROL_CLASS} text-ink-secondary hover:text-ink ${ACTION_HOVER_CLASS}`
+  const openResumeMenu = (trigger: HTMLElement): void => {
+    if (onOpenResumeMenu === undefined) return
+    const rect = trigger.getBoundingClientRect()
+    onOpenResumeMenu(item, rect.left, rect.bottom, trigger)
+  }
   return (
     <div className={`flex shrink-0 gap-1${isRow ? ' justify-self-end' : ''}`}>
       <button
@@ -92,18 +120,42 @@ export function ItemLaunchButtons({
         Start
       </button>
       {resumeEnabled ? (
-        <button
-          type="button"
-          className={
-            isRow ? ROW_CONTROL_CLASS : `${ITEM_CONTROL_CLASS} text-ink ${ACTION_HOVER_CLASS}`
-          }
-          data-testid={testIdFor.kanbanItemResume(item.ref)}
-          onClick={() => {
-            onResume?.(item)
-          }}
+        <div
+          role="group"
+          aria-label={`Resume ${item.ref}`}
+          className={isRow ? 'flex shrink-0 items-stretch' : 'flex shrink-0 items-center'}
         >
-          Resume
-        </button>
+          <button
+            type="button"
+            className={resumeMainClass}
+            data-testid={testIdFor.kanbanItemResume(item.ref)}
+            onClick={() => {
+              onResume?.(item)
+            }}
+          >
+            Resume
+          </button>
+          {onOpenResumeMenu !== undefined ? (
+            <button
+              type="button"
+              aria-label={`Resume options for ${item.ref}`}
+              aria-haspopup="menu"
+              aria-expanded={resumeMenuOpen}
+              className={resumeTriggerClass}
+              data-testid={testIdFor.kanbanResumeOptions(item.ref)}
+              onClick={(event) => {
+                openResumeMenu(event.currentTarget)
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'ArrowDown') return
+                event.preventDefault()
+                openResumeMenu(event.currentTarget)
+              }}
+            >
+              <Icon.chevronDown size={12} aria-hidden />
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )
@@ -179,6 +231,107 @@ export function StartMenu({
           }}
         >
           Start without sending
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Resume split-control menu: Resume, or Resume without sending (2026-11-12). */
+export function ResumeMenu({
+  item,
+  x,
+  y,
+  anchor,
+  onResume,
+  onResumeDraft,
+  onClose,
+}: {
+  item: WorkItem
+  x: number
+  y: number
+  /** Trigger that opened the menu: Escape returns focus to it. */
+  anchor: HTMLElement
+  onResume?: (item: WorkItem) => void
+  onResumeDraft: (item: WorkItem) => void
+  onClose: () => void
+}): React.JSX.Element {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const position = clampMenuPosition(x, y, { menuWidth: 200, menuHeight: 72 })
+
+  useEffect(() => {
+    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+  }, [])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      anchor.focus()
+      onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [anchor, onClose])
+
+  const moveFocus = (event: React.KeyboardEvent): void => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
+    )
+    if (items.length === 0) return
+    event.preventDefault()
+    const current = items.indexOf(document.activeElement as HTMLButtonElement)
+    const step = event.key === 'ArrowDown' ? 1 : -1
+    const next = current < 0 ? 0 : (current + step + items.length) % items.length
+    items[next]?.focus()
+  }
+
+  return (
+    <div
+      role="menu"
+      aria-label={`Resume ${item.ref}`}
+      className="fixed inset-0 z-40"
+      data-testid={TEST_ID.kanbanResumeMenu}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+      onKeyDown={moveFocus}
+    >
+      <div
+        ref={menuRef}
+        className="absolute min-w-48 rounded-md border border-edge bg-panel py-1 shadow-lg"
+        style={{ left: position.left, top: position.top }}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          className={MENU_ITEM_CLASS}
+          data-testid={TEST_ID.kanbanResumeMenuResume}
+          onClick={() => {
+            onClose()
+            onResume?.(item)
+          }}
+        >
+          Resume
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className={MENU_ITEM_CLASS}
+          data-testid={TEST_ID.kanbanResumeMenuDraft}
+          onClick={() => {
+            onClose()
+            onResumeDraft(item)
+          }}
+        >
+          Resume without sending
         </button>
       </div>
     </div>

@@ -30,6 +30,8 @@ import { validateWslExecutableAsync } from '../terminal/wsl'
 // Draft (Start without sending, NEKODE-99) shares the Start checks
 // and prompt, starts the profile with its interactive argv like New Chat, and
 // returns the prompt for the renderer to paste into the console without submitting.
+// Resume without sending (user decision 2026-11-12) applies the same draft launch
+// to the prepared Resume prompt.
 
 const CHANNEL = 'kanban:launchTask'
 const SPAWN_LOG = '[kanban-launch] failed to start the task process'
@@ -145,7 +147,9 @@ function logSpawnFailure(): void {
 function resumeFields(input: KanbanLaunchTaskInput): {
   prompt: string | null
 } {
-  return input.mode === 'resume' ? { prompt: input.prompt } : { prompt: null }
+  return input.mode === 'resume' || input.mode === 'resume-draft'
+    ? { prompt: input.prompt }
+    : { prompt: null }
 }
 
 export class TaskLaunchService {
@@ -310,7 +314,10 @@ export class TaskLaunchService {
         CHANNEL,
       )
     }
-    const prompt = input.mode === 'resume' ? input.prompt : buildStartPrompt(item)
+    const prompt =
+      input.mode === 'resume' || input.mode === 'resume-draft'
+        ? input.prompt
+        : buildStartPrompt(item)
     // The project must still be present when adapter reads land.
     if (
       this.#droppedProjects.has(input.projectId) ||
@@ -318,7 +325,7 @@ export class TaskLaunchService {
     ) {
       throw new AppError('not_found', 'Project not found.', CHANNEL)
     }
-    const draft = input.mode === 'draft'
+    const draft = input.mode === 'draft' || input.mode === 'resume-draft'
     while (true) {
       // Recheck selection and the definition after every asynchronous probe.
       profile = this.#profiles
@@ -451,10 +458,16 @@ export class TaskLaunchService {
       throw new AppError('validation', 'kanban:launchTask requires an object.', CHANNEL)
     }
     const record = input as unknown as Record<string, unknown>
-    if (record.mode !== 'start' && record.mode !== 'resume' && record.mode !== 'draft') {
+    if (
+      record.mode !== 'start' &&
+      record.mode !== 'resume' &&
+      record.mode !== 'resume-draft' &&
+      record.mode !== 'draft'
+    ) {
       throw new AppError('validation', 'kanban:launchTask mode is invalid.', CHANNEL)
     }
-    const fields: readonly string[] = record.mode === 'resume' ? RESUME_FIELDS : LAUNCH_FIELDS
+    const fields: readonly string[] =
+      record.mode === 'resume' || record.mode === 'resume-draft' ? RESUME_FIELDS : LAUNCH_FIELDS
     const keys = Object.keys(record)
     if (keys.length !== fields.length || fields.some((field) => !keys.includes(field))) {
       throw new AppError(
@@ -469,7 +482,7 @@ export class TaskLaunchService {
         throw new AppError('validation', `kanban:launchTask ${field} is invalid.`, CHANNEL)
       }
     }
-    if (record.mode === 'resume') {
+    if (record.mode === 'resume' || record.mode === 'resume-draft') {
       const value = record.prompt
       if (typeof value !== 'string' || value.trim().length === 0 || value.includes('\u0000')) {
         throw new AppError('validation', 'kanban:launchTask prompt is invalid.', CHANNEL)

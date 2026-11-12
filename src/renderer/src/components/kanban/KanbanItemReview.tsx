@@ -16,6 +16,7 @@ import {
   MENU_ITEM_CLASS,
   navigatorClipboard,
   type OpenItemMenu,
+  type OpenResumeMenu,
 } from './KanbanItemActions'
 import {
   commentTimestamp,
@@ -204,6 +205,8 @@ export interface KanbanItemReviewProps {
   onStart?: (item: WorkItem) => void
   onResume?: (item: WorkItem) => void
   onOpenStartMenu?: OpenItemMenu
+  onOpenResumeMenu?: OpenResumeMenu
+  resumeMenuOpen?: boolean
   onStatusChange: (stateName: string) => void
   onPriorityChange: (priority: KanbanPriority | null) => void
   /** Context menu on review text: the current selection and the pointer position. */
@@ -222,6 +225,8 @@ export function KanbanItemReview({
   onStart,
   onResume,
   onOpenStartMenu,
+  onOpenResumeMenu,
+  resumeMenuOpen = false,
   onStatusChange,
   onPriorityChange,
   onCopyText,
@@ -270,6 +275,8 @@ export function KanbanItemReview({
             onStart={onStart}
             onResume={onResume}
             onOpenStartMenu={onOpenStartMenu}
+            onOpenResumeMenu={onOpenResumeMenu}
+            resumeMenuOpen={resumeMenuOpen}
           />
           <div className="flex flex-col gap-1">
             <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanReviewPriority}>

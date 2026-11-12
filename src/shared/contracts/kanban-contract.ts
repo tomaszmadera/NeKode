@@ -6,6 +6,7 @@ export type {
   KanbanDraftLaunchInput,
   KanbanLaunchTaskBase,
   KanbanLaunchTaskInput,
+  KanbanResumeDraftLaunchInput,
   KanbanResumeLaunchInput,
   KanbanSetConfigInput,
   KanbanStartLaunchInput,
@@ -168,6 +169,9 @@ export interface KanbanProjectConfig {
 export interface KanbanLaunchResult {
   chat: ChatInfo
   delivered: boolean
-  /** The Start prompt for console paste; only for `mode: 'draft'` when delivered. */
+  /**
+   * The prompt for console paste; only for `mode: 'draft'` (Start) or
+   * `mode: 'resume-draft'` (Resume) when delivered.
+   */
   draftPrompt?: string
 }

@@ -36,7 +36,11 @@ export function useTaskLaunches(
     item: WorkItem
     draft: boolean
   } | null>(null)
-  const [taskResume, setTaskResume] = useState<{ projectId: string; item: WorkItem } | null>(null)
+  const [taskResume, setTaskResume] = useState<{
+    projectId: string
+    item: WorkItem
+    draft: boolean
+  } | null>(null)
   const [heldLaunches, setHeldLaunches] = useState<Record<string, HeldLaunch>>({})
   const heldLaunchesRef = useRef(heldLaunches)
   heldLaunchesRef.current = heldLaunches
@@ -53,7 +57,12 @@ export function useTaskLaunches(
   }, [])
 
   const handleResumeTask = useCallback((projectId: string, item: WorkItem): void => {
-    setTaskResume({ projectId, item })
+    setTaskResume({ projectId, item, draft: false })
+  }, [])
+
+  // Resume without sending (2026-11-12): the same confirmation in its draft variant.
+  const handleResumeTaskDraft = useCallback((projectId: string, item: WorkItem): void => {
+    setTaskResume({ projectId, item, draft: true })
   }, [])
 
   const handleConfigureTaskAgents = useCallback((): void => {
@@ -200,6 +209,7 @@ export function useTaskLaunches(
     handleStartTask,
     handleStartTaskDraft,
     handleResumeTask,
+    handleResumeTaskDraft,
     handleConfigureTaskAgents,
     handleConfigureResumeAgents,
     handleConfigureTaskHandoffs,

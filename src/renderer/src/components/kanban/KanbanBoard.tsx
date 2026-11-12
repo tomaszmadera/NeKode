@@ -15,7 +15,7 @@ import { KanbanBoardStatus } from './KanbanBoardStatus'
 import { KanbanCreateTaskForm } from './KanbanCreateTaskForm'
 import { HandoffNotices, useHandoffAvailability } from './KanbanHandoffNotices'
 import { KanbanHeader, useKanbanToolbarBridge } from './KanbanHeader'
-import { StartMenu } from './KanbanItemActions'
+import { ResumeMenu, StartMenu } from './KanbanItemActions'
 import { KanbanItemReview, ReviewTextMenu, useReviewComments } from './KanbanItemReview'
 import { ItemCopyMenu, KanbanListView, useKanbanListPrefs } from './KanbanListView'
 import {
@@ -84,6 +84,11 @@ interface KanbanBoardProps {
    * available.
    */
   onResume?: (item: WorkItem) => void
+  /**
+   * Resume without sending (user decision 2026-11-12): the Resume split
+   * control's menu offers it. Without this callback Resume has no menu trigger.
+   */
+  onResumeDraft?: (item: WorkItem) => void
   /** Hidden retained sessions never initiate requests. */
   active?: boolean
   /**
@@ -103,6 +108,7 @@ export function KanbanBoard({
   onStart,
   onStartDraft,
   onResume,
+  onResumeDraft,
   active = true,
   onToolbarControls,
 }: KanbanBoardProps): React.JSX.Element {
@@ -116,6 +122,12 @@ export function KanbanBoard({
   const [reviewRef, setReviewRef] = useState<string | null>(null)
   const [copyMenu, setCopyMenu] = useState<{ item: WorkItem; x: number; y: number } | null>(null)
   const [startMenu, setStartMenu] = useState<{ item: WorkItem; x: number; y: number } | null>(null)
+  const [resumeMenu, setResumeMenu] = useState<{
+    item: WorkItem
+    x: number
+    y: number
+    anchor: HTMLElement
+  } | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const prefs = useKanbanListPrefs(projectId)
   const { sortState, reload: reloadPrefs } = prefs
@@ -175,6 +187,7 @@ export function KanbanBoard({
     setReviewRef(null)
     setCopyMenu(null)
     setStartMenu(null)
+    setResumeMenu(null)
     setError(null)
     setRefreshing(false)
     createGeneration.current += 1
@@ -193,6 +206,14 @@ export function KanbanBoard({
     setUpdatingReview(false)
     resetHandoff()
   }, [projectId, closeNewTask, reloadPrefs, resetHandoff])
+
+  // A menu belongs to an item that is still resumable; an inventory change
+  // closes it with the Resume control.
+  useEffect(() => {
+    if (resumeMenu !== null && !handoff.itemResumable(resumeMenu.item)) {
+      setResumeMenu(null)
+    }
+  }, [handoff, resumeMenu])
 
   useEffect(() => {
     if (phase !== 'ready') closeNewTask()
@@ -269,6 +290,7 @@ export function KanbanBoard({
         setReviewRef(null)
         setCopyMenu(null)
         setStartMenu(null)
+        setResumeMenu(null)
         setError(payload.message)
         setSourceMissing(payload.code === 'not_found' && payload.detail === LOCAL_TASK_FILE_MISSING)
         setPhase(payload.code === 'validation' ? 'not-configured' : 'error')
@@ -447,6 +469,7 @@ export function KanbanBoard({
   const openReview = (ref: string): void => {
     setCopyMenu(null)
     setStartMenu(null)
+    setResumeMenu(null)
     setReviewCopy(null)
     closeNewTask()
     setStatusChoice(null)
@@ -458,15 +481,25 @@ export function KanbanBoard({
 
   const openCopyMenu = (item: WorkItem, x: number, y: number): void => {
     setStartMenu(null)
+    setResumeMenu(null)
     setCopyMenu({ item, x, y })
   }
 
   const openStartMenu = (item: WorkItem, x: number, y: number): void => {
     setCopyMenu(null)
     setReviewCopy(null)
+    setResumeMenu(null)
     setStartMenu({ item, x, y })
   }
   const startMenuOpener = onStartDraft === undefined ? undefined : openStartMenu
+
+  const openResumeMenu = (item: WorkItem, x: number, y: number, anchor: HTMLElement): void => {
+    setCopyMenu(null)
+    setReviewCopy(null)
+    setStartMenu(null)
+    setResumeMenu({ item, x, y, anchor })
+  }
+  const resumeMenuOpener = onResumeDraft === undefined ? undefined : openResumeMenu
 
   const refresh = useCallback((): void => {
     void load()
@@ -545,6 +578,8 @@ export function KanbanBoard({
           onStart={onStart}
           onResume={onResume}
           onOpenStartMenu={startMenuOpener}
+          onOpenResumeMenu={resumeMenuOpener}
+          resumeMenuOpen={resumeMenu !== null && resumeMenu.item.ref === reviewItem.ref}
           onStatusChange={(nextName) => {
             void submitReviewWrite({ field: 'status', stateRef: nextName })
           }}
@@ -569,6 +604,8 @@ export function KanbanBoard({
           onStart={onStart}
           onResume={onResume}
           onOpenStartMenu={startMenuOpener}
+          onOpenResumeMenu={resumeMenuOpener}
+          resumeMenuRef={resumeMenu?.item.ref ?? null}
         />
       ) : null}
       {copyMenu !== null ? (
@@ -590,6 +627,19 @@ export function KanbanBoard({
           onStartDraft={onStartDraft}
           onClose={() => {
             setStartMenu(null)
+          }}
+        />
+      ) : null}
+      {resumeMenu !== null && onResumeDraft !== undefined ? (
+        <ResumeMenu
+          item={resumeMenu.item}
+          x={resumeMenu.x}
+          y={resumeMenu.y}
+          anchor={resumeMenu.anchor}
+          onResume={onResume}
+          onResumeDraft={onResumeDraft}
+          onClose={() => {
+            setResumeMenu(null)
           }}
         />
       ) : null}

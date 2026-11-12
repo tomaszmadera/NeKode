@@ -4303,6 +4303,120 @@ describe('chat attention badge (end to end through App)', () => {
   })
 })
 
+describe('kanban Resume without sending', () => {
+  let app: AppApi
+
+  beforeEach(() => {
+    app = createAppApiStub()
+    resetMockTerminals()
+    resetMockFitAddons()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  const board: KanbanBoardData = {
+    states: [{ id: 's1', name: 'Backlog', group: 'backlog', order: 1 }],
+    items: [
+      {
+        ref: 'NEKODE-28',
+        id: 'native-28',
+        title: 'Kanban task launch',
+        description: null,
+        stateId: 's1',
+        stateName: 'Backlog',
+        stateGroup: 'backlog',
+        priority: null,
+        assignee: null,
+        url: null,
+        updatedAt: null,
+      },
+    ],
+  }
+
+  const profile = {
+    id: 'prof-1',
+    name: 'Claude Code',
+    executable: 'claude',
+    args: ['{prompt}'],
+  }
+
+  const PROMPT = 'Resume task .agents/tasks/nekode-28/task.md'
+
+  it('pastes the prepared Resume instruction into the new console without submitting', async () => {
+    vi.mocked(app.projects.list).mockResolvedValue([projectA])
+    vi.mocked(app.chats.list).mockResolvedValue([])
+    vi.mocked(app.kanban.listBoard).mockResolvedValue(board)
+    vi.mocked(app.state.get).mockImplementation(async (key) =>
+      key === projectKanbanAdapterKey('p1') ? 'demo' : null,
+    )
+    vi.mocked(app.agentProfiles.get).mockResolvedValue({
+      defaultId: profile.id,
+      profiles: [profile],
+    })
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'tmpl-1',
+    })
+    vi.mocked(app.resumeSources.discover).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'tmpl-1',
+      revision: 1,
+      candidates: [
+        {
+          token: 'tok-28',
+          id: 'NEKODE-28',
+          title: 'Kanban task launch',
+          displayPath: '.agents/tasks/nekode-28/task.md',
+          modifiedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      rejections: [],
+    })
+    vi.mocked(app.resumeSources.prepare).mockResolvedValue(PROMPT)
+    vi.mocked(app.kanban.launchTask).mockResolvedValue({
+      chat: {
+        id: 'c28',
+        projectId: 'p1',
+        name: '[PowerShell] Claude Code',
+        taskRef: 'NEKODE-28',
+      },
+      delivered: true,
+      draftPrompt: PROMPT,
+    })
+
+    render(<App app={app} />)
+    openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanTab))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanResumeOptions('NEKODE-28')))
+    fireEvent.click(await screen.findByTestId(TEST_ID.kanbanResumeMenuDraft))
+
+    expect(await screen.findByRole('dialog', { name: 'Resume task without sending' })).toBeTruthy()
+    await screen.findByTestId(testIdFor.kanbanResumeProfile(profile.id))
+    const confirm = screen.getByTestId(TEST_ID.kanbanResumeConfirm) as HTMLButtonElement
+    await waitFor(() => expect(confirm.disabled).toBe(false))
+    expect(confirm.textContent).toBe('Resume without sending')
+    fireEvent.click(confirm)
+
+    await waitFor(() => expect(app.kanban.launchTask).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(app.kanban.launchTask).mock.calls[0]?.[0]).toMatchObject({
+      mode: 'resume-draft',
+      prompt: PROMPT,
+      ref: 'NEKODE-28',
+    })
+    await waitFor(() => {
+      expect(
+        mockTerminalInstances.find((terminal) => !terminal.disposed)?.paste,
+      ).toHaveBeenCalledWith(PROMPT)
+    })
+    const written = vi.mocked(app.terminals.write).mock.calls.map(([, data]) => data)
+    expect(written).toContain(PROMPT)
+    expect(written).not.toContain('\r')
+    expect(screen.queryByTestId(TEST_ID.kanbanResumeDialog)).toBeNull()
+  })
+})
+
 describe('kanban task resume — removing the project', () => {
   let app: AppApi
 

@@ -924,7 +924,7 @@ Decyzja użytkownika 2026-10-22, zaktualizowana 2026-10-28 po usunięciu osobneg
 
 Użytkownik uruchamia agenta dla zadania tak jak przez Start, ale polecenie zadania nie jest automatycznie zatwierdzane. Polecenie jest wklejane do konsoli nowego czatu; użytkownik je przegląda, uzupełnia i sam zatwierdza klawiszem Enter albo przyciskiem Send.
 
-Poza zakresem: wykrywanie gotowości TUI agenta, zmiana treści polecenia Start, wariant bez wysyłania dla Resume, nowe pole profilu agenta.
+Poza zakresem: wykrywanie gotowości TUI agenta, zmiana treści polecenia Start, nowe pole profilu agenta. Wariant bez wysyłania dla Resume był poza zakresem NEKODE-99 i został dodany później przez [Kanban Resume without sending amendment](#kanban-resume-without-sending-amendment-user-decision-2026-11-12).
 
 ### Menu przycisku Start
 
@@ -1002,3 +1002,49 @@ Tests must cover full-ref boundaries for both identity extractors and command id
 NEKODE-145 tests cover automatic launch from one matching context, noninteractive identity/path display, zero and ambiguous matches without prepare/launch, refresh transitions between unique/ambiguous/empty states, blocked launch during refresh, unfinished tasks with and without a handoff wait, and unchanged action-bar task selection. This single-stage UI amendment requires targeted regression checks and final changed verification; it does not change the producer protocol, typed IPC, storage, or process launch contract.
 
 For the original three-stage NEKODE-142 delivery, real Electron smoke must show matching Resume in List and Board, a candidate disappearing or changing before confirmation, a successful new fixture-agent chat with the selected prompt and project cwd, an undelivered retry, and Start remaining usable when discovery fails. It must not contact a model, change backend work-item state or mutate Harness lifecycle state. That delivery's final verification scope is full after all independently reviewed stages.
+
+## Kanban Resume without sending amendment (user decision 2026-11-12)
+
+### Authority and scope
+
+User decision 2026-11-12: the Resume control on the board and in the item review offers a second launch variant that opens the chosen agent chat with the Resume instruction already in the console, unsent. This supersedes the NEKODE-99 exclusion "wariant bez wysyłania dla Resume". It extends the Start without sending amendment (NEKODE-99) and the Resume modal contract of the task and file Resume sources (NEKODE-142). Ordinary Resume, Start, Start without sending, the action-bar Resume picker, template editing, auto-send and the copy menu stay unchanged.
+
+### Control
+
+1. Resume appears as a split control: the main `Resume` action and an adjacent menu trigger with a chevron. Both are present wherever Resume is shown: the grouped list row and the item review, and only while Resume is shown for a matching valid candidate.
+2. The main action keeps the existing behavior: it opens the regular Resume confirmation and launches with the prepared prompt in argv.
+3. The menu trigger never launches by itself. It has the accessible name `Resume options for <ref>`, `aria-haspopup="menu"` and `aria-expanded`, and opens a menu with `Resume` and `Resume without sending`.
+4. Row appearance: the trigger shares the row control height and the visibility of Resume. Review appearance: an inline trigger without an extra border, with the same hover underline affordance as Resume.
+5. Pointer click, `Enter`, `Space` or `ArrowDown` opens the menu; `ArrowUp` and `ArrowDown` move between items; `Escape` closes it and returns focus to the trigger; an outside click, a context-menu gesture or item selection closes it. Opening this menu closes the Start menu and the copy menu, and opening either of those closes this menu. A menu for an item that stops being resumable closes with the Resume control.
+
+### Modal and launch
+
+1. `Resume without sending` opens the same Resume confirmation in its draft variant: title `Resume task without sending`, confirm label `Resume without sending`, and helper text `The resume instruction is pasted into the console without sending.` Agent-profile selection, read-only context, Refresh, Cancel, empty, ambiguous, warning, error and Configure states stay as in the regular Resume modal.
+2. Main performs the same project, adapter item, profile, template binding and fingerprint revalidation as Resume. It creates exactly one chat with the same name and launch identity.
+3. The agent starts with the interactive argv used by Start without sending: `interactiveArgs` when the profile has them, otherwise the profile args without the `{prompt}` slot. Process arguments contain no Resume instruction.
+4. After a successful launch NeKode activates the new chat and pastes the prepared Resume prompt into that chat's console through the existing prompt injection, without an appended CR. Enter or Send submits the current terminal input; editing and line handling belong to the running program.
+5. `handoffResume.autoSend` does not affect this variant.
+6. A failed spawn keeps the existing held-launch behavior and Retry. The prompt reaches the console only after a successful retry, and the retry repeats the same draft mode.
+7. A rejected revalidation delivers no prompt and creates no chat or process.
+
+### Data and compatibility
+
+- `kanban:launchTask` accepts a fourth mode `resume-draft` with exactly the `resume` fields, including `prompt`. Unknown or missing fields are rejected as before.
+- `KanbanLaunchResult.draftPrompt` is returned for `resume-draft` only when `delivered: true`, carrying the same prepared prompt that `resume` would pass in argv.
+- Normal Resume (`resume`), Start (`start`) and Start without sending (`draft`) keep their result shapes, argv and delivery. No storage, adapter protocol, profile or migration change. Authorization stays the same as Start and Resume.
+
+### Acceptance criteria
+
+1. Resume in the list row and in the review shows the main action and its menu trigger; the trigger disappears with Resume when no matching candidate exists.
+2. The trigger opens a menu with `Resume` and `Resume without sending` by pointer and keyboard; `Escape`, an outside click and item selection close it, and `Escape` returns focus to the trigger.
+3. `Resume` from the menu behaves exactly like the main Resume action.
+4. `Resume without sending` opens the draft modal with the specified title, confirm label and helper text, and creates one chat that runs the profile without the Resume instruction in argv.
+5. The prepared instruction is pasted into that chat's console without CR; the auto-send setting does not change it.
+6. A held launch retried after a spawn failure pastes the instruction once, in `resume-draft` mode.
+7. IPC rejects `resume-draft` with extra or missing fields; `start`, `resume` and `draft` behave as before.
+
+### Required verification
+
+- Unit tests: `resume-draft` schema and exact mode-field set; service argv with and without `interactiveArgs`, returned `draftPrompt`, absence of `draftPrompt` for `resume`, held-launch retry.
+- Component tests: split control in the row and the review, menu pointer and keyboard behavior, menu absent without Resume, draft modal texts, paste into the addressed chat without CR.
+- No new Electron smoke is required. Use targeted regression and final changed verification; real terminal send behavior stays covered by the existing draft evidence.

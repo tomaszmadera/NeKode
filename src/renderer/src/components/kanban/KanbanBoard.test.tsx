@@ -2742,6 +2742,111 @@ describe('kanban Start context menu (NEKODE-99)', () => {
     expect(onStartDraft).toHaveBeenCalledTimes(1)
     expect(onStartDraft.mock.calls[0]?.[0].ref).toBe('NK-2')
   })
+
+  it('offers Resume and Resume without sending from the Resume chevron', async () => {
+    const onResume = vi.fn()
+    const onResumeDraft = vi.fn()
+    render(
+      <KanbanBoard
+        app={appWithResumeOnNk1()}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={vi.fn()}
+        onStartDraft={vi.fn()}
+        onResume={onResume}
+        onResumeDraft={onResumeDraft}
+      />,
+    )
+    const options = await screen.findByTestId(testIdFor.kanbanResumeOptions('NK-1'))
+    expect(options.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(options)
+    expect(options.getAttribute('aria-expanded')).toBe('true')
+    const menu = screen.getByRole('menu', { name: 'Resume NK-1' })
+    expect(within(menu).getByTestId(TEST_ID.kanbanResumeMenuResume).textContent).toBe('Resume')
+    expect(within(menu).getByTestId(TEST_ID.kanbanResumeMenuDraft).textContent).toBe(
+      'Resume without sending',
+    )
+    fireEvent.click(within(menu).getByTestId(TEST_ID.kanbanResumeMenuDraft))
+    expect(onResumeDraft).toHaveBeenCalledTimes(1)
+    expect(onResumeDraft.mock.calls[0]?.[0].ref).toBe('NK-1')
+    expect(onResume).not.toHaveBeenCalled()
+    expect(screen.queryByTestId(TEST_ID.kanbanResumeMenu)).toBeNull()
+
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanResumeOptions('NK-1')))
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeMenuResume))
+    expect(onResume).toHaveBeenCalledTimes(1)
+    expect(onResume.mock.calls[0]?.[0].ref).toBe('NK-1')
+    expect(screen.queryByTestId(TEST_ID.kanbanResumeMenu)).toBeNull()
+
+    fireEvent.click(screen.getByTestId(testIdFor.kanbanResumeOptions('NK-1')))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId(TEST_ID.kanbanResumeMenu)).toBeNull()
+    expect(onResumeDraft).toHaveBeenCalledTimes(1)
+    expect(onResume).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the Resume menu from the review without the copy menu', async () => {
+    const onResumeDraft = vi.fn()
+    render(
+      <KanbanBoard
+        app={appWithResumeOnNk1()}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={vi.fn()}
+        onStartDraft={vi.fn()}
+        onResume={vi.fn()}
+        onResumeDraft={onResumeDraft}
+      />,
+    )
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    fireEvent.click(within(review).getByTestId(testIdFor.kanbanResumeOptions('NK-1')))
+    expect(screen.queryByRole('menu', { name: 'Copy selection' })).toBeNull()
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanResumeMenuDraft))
+    expect(onResumeDraft).toHaveBeenCalledTimes(1)
+    expect(onResumeDraft.mock.calls[0]?.[0].ref).toBe('NK-1')
+  })
+
+  it('closes an open Resume menu when the item stops being resumable', async () => {
+    const app = appWithResumeOnNk1()
+    render(
+      <KanbanBoard
+        app={app}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={vi.fn()}
+        onStartDraft={vi.fn()}
+        onResume={vi.fn()}
+        onResumeDraft={vi.fn()}
+      />,
+    )
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanResumeOptions('NK-1')))
+    expect(screen.getByTestId(TEST_ID.kanbanResumeMenu)).toBeTruthy()
+    vi.mocked(app.resumeSources.discover).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'tmpl-1',
+      revision: 2,
+      candidates: [],
+      rejections: [],
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanBoardRefresh))
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.kanbanResumeMenu)).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId(testIdFor.kanbanItemResume('NK-1'))).toBeNull())
+  })
+
+  it('shows no Resume menu trigger without a draft handler', async () => {
+    render(
+      <KanbanBoard
+        app={appWithResumeOnNk1()}
+        projectId="p1"
+        onConfigure={vi.fn()}
+        onStart={vi.fn()}
+        onResume={vi.fn()}
+      />,
+    )
+    await screen.findByTestId(testIdFor.kanbanItemResume('NK-1'))
+    expect(screen.queryByTestId(testIdFor.kanbanResumeOptions('NK-1'))).toBeNull()
+  })
 })
 
 describe('kanban board - local-file revision (project-home spec Behaviour 9, Data / API, Edge cases)', () => {

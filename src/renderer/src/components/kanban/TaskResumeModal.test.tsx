@@ -316,6 +316,59 @@ describe('TaskResumeModal', () => {
     },
   )
 
+  it('launches the draft variant with the prepared prompt and without sending', async () => {
+    const app = appMock()
+    vi.mocked(app.resumeSources.discover).mockResolvedValue(
+      discovery({ candidates: [candidate('nekode-28-stage-2')] }),
+    )
+    render(
+      <TaskResumeModal
+        app={app}
+        projectId="p1"
+        item={item}
+        draft
+        onCancel={vi.fn()}
+        onConfigureHandoffs={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('dialog', { name: 'Resume task without sending' })).toBeTruthy()
+    expect(screen.getByTestId(TEST_ID.kanbanResumeDraftHint).textContent).toBe(
+      'The resume instruction is pasted into the console without sending.',
+    )
+    const confirm = screen.getByTestId(TEST_ID.kanbanResumeConfirm) as HTMLButtonElement
+    await waitFor(() => expect(confirm.disabled).toBe(false))
+    expect(confirm.textContent).toBe('Resume without sending')
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(app.kanban.launchTask).toHaveBeenCalledWith({
+        projectId: 'p1',
+        itemId: 'native-28',
+        ref: 'NEKODE-28',
+        profileId: profile.id,
+        attemptId: expect.any(String),
+        mode: 'resume-draft',
+        prompt: 'Resume from candidate prompt',
+      })
+    })
+    expect(app.kanban.launchTask).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the regular Resume title and label without the draft flag', async () => {
+    const app = appMock()
+    render(
+      <TaskResumeModal
+        app={app}
+        projectId="p1"
+        item={item}
+        onCancel={vi.fn()}
+        onConfigureHandoffs={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('dialog', { name: 'Resume task' })).toBeTruthy()
+    expect(screen.queryByTestId(TEST_ID.kanbanResumeDraftHint)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanResumeConfirm).textContent).toBe('Resume')
+  })
+
   it('blocks ambiguous matches and names every conflicting identity and path', async () => {
     const app = appMock()
     vi.mocked(app.resumeSources.discover).mockResolvedValue(
