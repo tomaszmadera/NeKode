@@ -4,17 +4,17 @@ Decision of 2026-10-02 (work item NEKODE-15). The model is trunk-based hybrid: o
 
 ## Rules
 
-- `main` is the only permanent branch. It is always green (CI runs on every push to `main` and on every PR) and always releasable.
+- `main` is the only permanent branch. It is always green (CI runs on every push to `main`) and always releasable.
 - Small maintenance changes (fixes, small features): commit directly on `main`. Before pushing, run the recorded verification: `cmd /c pnpm run lint && cmd /c pnpm run typecheck` or the full `cmd /c pnpm run verify`.
-- Larger or risky work: a work branch from the current `main`, merged through a PR with green CI. Branch lifetime: target up to about 3 days; split longer work into smaller parts or rebase regularly on `main`.
+- Larger or risky work: a work branch from the current `main`, verified locally, then integrated into `main` by the maintainer with a fast-forward or a squash. Maintainer work does not use a pull request. Branch lifetime: target up to about 3 days; split longer work into smaller parts or rebase regularly on `main`.
 - Work branch name: `nekode-<number>-<short-description>` (for example `nekode-20-terminal-shell-choice`) when the work has a backlog item; without one: `<short-description>`.
-- The maintainer merges. The `main` history stays linear; external PRs are squashed (one commit per PR).
+- The maintainer integrates local branches. The `main` history stays linear; external PRs are squashed (one commit per PR).
 - External PRs target `main`, from contributor forks. They are merged after review and green CI.
 - Release: a separate version commit and an annotated semver tag without a `v` prefix, following the [public release procedure](releases.md). Publishing branches and selected tags is explicit. The tag points to the version commit on `main`; there is no `develop` branch.
 
 ## Protecting main on GitHub
 
-The repository is public (`github.com:tomaszmadera/NeKode`). Target configuration: a ruleset on `main` that requires a PR and a green CI check for everyone, with a bypass for the administrator, so the maintainer can still commit directly. Turning on the ruleset is a separate action in the repository settings.
+The repository is public (`github.com:tomaszmadera/NeKode`). Target configuration: a ruleset on `main` that requires a green CI check, with a bypass for the administrator so the maintainer can integrate without a PR. External contributions may still require a PR. Turning on the ruleset is a separate action in the repository settings.
 
 ## Why not git-flow
 
