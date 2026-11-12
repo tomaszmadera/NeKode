@@ -727,13 +727,14 @@ export class KanbanService {
     valuesOverride: Record<string, string> | undefined,
     params: Record<string, unknown>,
   ): Promise<T> {
-    this.assertProject(projectId)
+    const project = this.assertProject(projectId)
     const adapter = this.boundAdapter(projectId)
     const config = this.effectiveConfig(projectId, valuesOverride)
     try {
       return await this.#host.invoke<T>(adapter, {
         protocolVersion: 1,
         action,
+        project: { root: project.path },
         config,
         params,
       })

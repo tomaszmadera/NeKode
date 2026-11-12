@@ -616,7 +616,7 @@ describe('KanbanService actions', () => {
     expect(invoke).toHaveBeenCalledTimes(2)
   })
 
-  it('sends protocolVersion, action, config and params on each request', async () => {
+  it('sends protocolVersion, action, project, config and params on each request', async () => {
     const stored = {
       'project.kanbanAdapter:p1': 'demo',
       'project.kanbanConfig:p1': JSON.stringify({ api_key: 'tok' }),
@@ -631,6 +631,7 @@ describe('KanbanService actions', () => {
     expect(request).toEqual({
       protocolVersion: 1,
       action: 'test',
+      project: { root: 'D:/code/demo' },
       config: { api_key: 'tok' },
       params: {},
     })

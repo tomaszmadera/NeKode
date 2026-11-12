@@ -66,6 +66,7 @@ async function waitForProcessExit(pid: number, attempts = 20): Promise<boolean> 
 const request: AdapterRequest = {
   protocolVersion: 1,
   action: 'test',
+  project: { root: 'D:/code/demo' },
   config: { api_key: 'sekret' },
   params: {},
 }

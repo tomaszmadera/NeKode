@@ -27,6 +27,8 @@ const FAILURE_CODES: readonly AdapterFailureCode[] = [
 export interface AdapterRequest {
   protocolVersion: number
   action: string
+  /** The bound project, supplied by NeKode so adapters never ask the user for it. */
+  project: { root: string }
   config: Record<string, string>
   params: Record<string, unknown>
 }
