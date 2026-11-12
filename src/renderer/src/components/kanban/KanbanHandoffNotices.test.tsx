@@ -1,3 +1,4 @@
+import { matchesResumeCandidateRef } from '@shared/contracts/resume-sources-contract'
 import type { AppApi, ResumeSourceBinding, ResumeSourceDiscovery } from '@shared/ipc-contract'
 import {
   act,
@@ -11,13 +12,13 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID } from '../../lib/test-ids'
 import { kanbanWorkItem } from '../../test/kanban-fixtures'
-import { HandoffNotices, matchesTaskRef, useHandoffAvailability } from './KanbanHandoffNotices'
+import { HandoffNotices, useHandoffAvailability } from './KanbanHandoffNotices'
 
 afterEach(() => {
   cleanup()
 })
 
-describe('matchesTaskRef', () => {
+describe('matchesResumeCandidateRef', () => {
   // One table for the ref-prefix rule: equality ignores case, a hyphen starts a
   // suffix, and a longer number or a non-prefix candidate never matches.
   it.each([
@@ -29,10 +30,12 @@ describe('matchesTaskRef', () => {
     ['NEKODE-2', 'nekode-21-slug', false],
     ['NEKODE-2', 'old-nekode-2', false],
     ['NEKODE-2', 'prefix-nekode-2-notes', false],
+    ['T-1', 'T-10', false],
+    ['T-1', 'T-1', true],
   ] as Array<[string, string, boolean]>)(
     'matches ref %s against candidate %s -> %s',
     (ref, candidate, expected) => {
-      expect(matchesTaskRef(ref, candidate)).toBe(expected)
+      expect(matchesResumeCandidateRef(ref, candidate)).toBe(expected)
     },
   )
 })

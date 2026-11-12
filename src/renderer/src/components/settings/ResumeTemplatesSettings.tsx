@@ -1,6 +1,10 @@
 import {
   type AppApi,
+  formatResumePrompt,
   HARNESS_RESUME_SOURCE,
+  isLocalProgressResumeSource,
+  LOCAL_PROGRESS_RESUME_PROMPT,
+  LOCAL_PROGRESS_RESUME_SOURCE,
   type ProjectInfo,
   type ResumeSourceLibrary,
   type ResumeSourcePreview,
@@ -28,6 +32,12 @@ const newTemplate = (): ResumeSourcePut => ({
 const errorMessage = (cause: unknown) =>
   parseAppErrorPayload(cause)?.message ??
   'Resume templates could not be updated. Retry the operation.'
+
+function sourceKindValue(source: ResumeSourcePut['source']): string {
+  if (source.kind === 'files')
+    return isLocalProgressResumeSource(source) ? 'local-progress' : 'files'
+  return source.protocol
+}
 
 export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Element {
   const [library, setLibrary] = useState<ResumeSourceLibrary | null>(null)
@@ -283,7 +293,7 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                   Source
                   <select
                     className={selectClass}
-                    value={form.source.kind === 'files' ? 'files' : form.source.protocol}
+                    value={sourceKindValue(form.source)}
                     onChange={(event) => {
                       setArgumentKeys([])
                       setForm({
@@ -291,17 +301,27 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                         prompt:
                           event.target.value === 'agent-harness'
                             ? 'Resume task {taskPath}'
-                            : form.prompt,
+                            : event.target.value === 'local-progress'
+                              ? LOCAL_PROGRESS_RESUME_PROMPT
+                              : form.prompt,
                         source:
                           event.target.value === 'files'
                             ? newTemplate().source
-                            : event.target.value === 'agent-harness'
-                              ? structuredClone(HARNESS_RESUME_SOURCE)
-                              : { kind: 'command', protocol: 'generic', executable: '', args: [] },
+                            : event.target.value === 'local-progress'
+                              ? { ...LOCAL_PROGRESS_RESUME_SOURCE }
+                              : event.target.value === 'agent-harness'
+                                ? structuredClone(HARNESS_RESUME_SOURCE)
+                                : {
+                                    kind: 'command',
+                                    protocol: 'generic',
+                                    executable: '',
+                                    args: [],
+                                  },
                       })
                     }}
                   >
                     <option value="files">Files</option>
+                    <option value="local-progress">Local progress files</option>
                     <option value="generic">Custom command</option>
                     <option value="agent-harness">Agent Harness</option>
                   </select>
@@ -312,6 +332,14 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                       Files provide continuation context. They are not validated unfinished tasks.
                       Links and directory junctions are excluded.
                     </p>
+                    {isLocalProgressResumeSource(form.source) ? (
+                      <p className="text-xs text-ink-secondary">
+                        Local progress files: one context file per card at{' '}
+                        <code className="font-mono">work/&lt;ref&gt;/progress.md</code>, matched by
+                        the card ref in the directory name. Selecting this preset creates no files
+                        and binds no project; save the template and select it in a project.
+                      </p>
+                    ) : null}
                     <label className="flex flex-col gap-1 text-sm">
                       Directory
                       <input
@@ -581,6 +609,14 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                           {row.status ?? 'File'} - {new Date(row.modifiedAt).toLocaleString()}
                         </p>
                         {row.next_action !== undefined && <p>{row.next_action}</p>}
+                        {current !== undefined ? (
+                          <p
+                            className="mt-1 whitespace-pre-wrap rounded bg-field p-2 font-mono text-xs"
+                            data-testid={`resume-preview-instruction-${row.id}`}
+                          >
+                            {formatResumePrompt(current.prompt, row.displayPath)}
+                          </p>
+                        ) : null}
                       </li>
                     ))}
                   </ul>

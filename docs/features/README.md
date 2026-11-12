@@ -41,6 +41,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [handoff-resume-flow](handoff-resume-flow/spec.md) | Handoff/Resume flow | Delivered |
 | [in-app-update](in-app-update/spec.md) | In-app update | Delivered (quiet Windows update from App Settings) |
 | [kanban-adapter-interface](kanban-adapter-interface/spec.md) | Kanban adapter interface | Delivered (adapter-backed board); drag-and-drop and the UX-UI 26-30 visual design remain later work |
+| [local-task-workflow](local-task-workflow/spec.md) | Local task workflow without Harness | Delivered in part (no-Harness workflow; the Harness-backed variant requires the upstream local-file backend and adapter) |
 | [markdown-mermaid-diagrams](markdown-mermaid-diagrams/spec.md) | Markdown preview: Mermaid diagrams | Delivered |
 | [mvp-core-shell](mvp-core-shell/spec.md) | NeKode MVP Core Shell - first vertical slice | Delivered |
 | [new-chat-agent-menu](new-chat-agent-menu/spec.md) | New chat agent profile menu | Delivered |

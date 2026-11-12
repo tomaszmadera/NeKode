@@ -6,6 +6,41 @@ import { ProjectResumeSettings } from './ProjectResumeSettings'
 afterEach(cleanup)
 
 describe('ProjectResumeSettings', () => {
+  it('shows the selected template source and the exact instruction', async () => {
+    const app = createAppApiStub()
+    vi.mocked(app.resumeSources.list).mockResolvedValue({
+      revision: 1,
+      templates: [
+        {
+          id: 'local-progress',
+          revision: 1,
+          name: 'Local progress files',
+          prompt:
+            'Resume task {taskPath}.\nRead that progress file before continuing. It records the work so far, decisions, checks, and the next action.',
+          source: {
+            kind: 'files',
+            directory: 'work',
+            pattern: 'progress.md',
+            recursive: true,
+            identity: 'parent',
+          },
+        },
+      ],
+    })
+    vi.mocked(app.resumeSources.binding).mockResolvedValue({
+      projectId: 'p1',
+      templateId: 'local-progress',
+    })
+
+    render(<ProjectResumeSettings app={app} projectId="p1" />)
+
+    const summary = await screen.findByTestId('project-resume-source-summary')
+    expect(summary.textContent).toContain(
+      'Files: work / progress.md, including subdirectories, identity: immediate parent directory',
+    )
+    expect(summary.textContent).toContain('Resume task {taskPath}.')
+  })
+
   it('loads templates and current project binding, and saves template choice', async () => {
     const app = createAppApiStub()
     vi.mocked(app.resumeSources.list).mockResolvedValue({

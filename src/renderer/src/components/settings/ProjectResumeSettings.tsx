@@ -2,6 +2,7 @@ import type { AppApi, ResumeSourceLibrary, ResumeSourceTemplate } from '@shared/
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
 import { useEffect, useState } from 'react'
+import { summarizeResumeSource } from '../../lib/resume-source-summary'
 import {
   FieldRow,
   GroupBox,
@@ -94,6 +95,8 @@ export function ProjectResumeSettings({
     return null
   }
 
+  const selected = templates.find((template) => template.id === selectedTemplateId)
+
   return (
     <SettingsGroup label="Resume template">
       <SectionLabel title="Resume template" />
@@ -127,6 +130,15 @@ export function ProjectResumeSettings({
               ) : null}
             </div>
           </FieldRow>
+          {selected ? (
+            <div
+              className="border-t border-edge px-4 py-2 text-xs text-ink-secondary"
+              data-testid="project-resume-source-summary"
+            >
+              <p className="font-mono">{summarizeResumeSource(selected.source)}</p>
+              <p className="mt-1 whitespace-pre-wrap">{selected.prompt}</p>
+            </div>
+          ) : null}
           {error ? (
             <p role="alert" className="border-t border-edge px-4 py-2 text-xs text-error">
               {error}

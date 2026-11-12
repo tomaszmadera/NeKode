@@ -1,3 +1,4 @@
+import { matchesResumeCandidateRef } from '@shared/contracts/resume-sources-contract'
 import type { AppApi, HandoffRejection, WorkItem } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
@@ -21,16 +22,6 @@ export interface HandoffAvailability {
   load: (items: Array<{ itemId: string; ref: string }>) => Promise<void>
   /** Drops the shown result and any in-flight check (a project change). */
   reset: () => void
-}
-
-/**
- * Case-insensitive match on the full ref: exact equality or ref followed by a hyphen.
- * (e.g. "NEKODE-2" matches "nekode-2" or "nekode-2-slug", but not "nekode-20" or "old-nekode-2").
- */
-export function matchesTaskRef(ref: string, candidateId: string): boolean {
-  const r = ref.trim().toLowerCase()
-  const c = candidateId.trim().toLowerCase()
-  return c === r || c.startsWith(`${r}-`)
 }
 
 /**
@@ -90,7 +81,11 @@ export function useHandoffAvailability(app: AppApi, projectId: string): HandoffA
         if (requestGeneration !== generation.current) return
         const matched = new Set<string>()
         for (const item of items) {
-          if (discovery.candidates.some((candidate) => matchesTaskRef(item.ref, candidate.id))) {
+          if (
+            discovery.candidates.some((candidate) =>
+              matchesResumeCandidateRef(item.ref, candidate.id),
+            )
+          ) {
             matched.add(item.itemId)
           }
         }
