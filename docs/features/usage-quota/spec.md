@@ -470,8 +470,10 @@ A11. A refresh with `refreshProviders` changes only metrics of the selected agen
 agents keep their values, dates and pin unchanged. Metrics of selected agents follow the existing
 merge rules: a reported metric is accepted under rule 14 and L3, a failed window keeps its previous
 value, and a metric the operation did not report is dropped only when the request had no
-`refreshSources` subset. The stored `refreshResult` is merged as a subset result. A failed agent
-refresh stores its error on the account (rule 13, NEKODE-147) and does not suspend automatic reads.
+`refreshSources` subset. The stored `refreshResult` is merged as a subset result: a retained source
+whose windows all occur in the new result is replaced, a source without windows is retained unless
+the new result repeats its `sourceId`, and outcomes of unselected agents stay. A failed agent refresh
+stores its error on the account (rule 13, NEKODE-147) and does not suspend automatic reads.
 
 ### Compatibility
 

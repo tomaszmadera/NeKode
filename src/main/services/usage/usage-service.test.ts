@@ -2256,6 +2256,46 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect(h.service.read().refresh).toBeUndefined()
     expect(h.read).toHaveBeenCalledTimes(3)
   })
+  it('drops a retained unsupported source of the agent a manual refresh covers (E1)', async () => {
+    const f = fixture()
+    const h = agentHub(f)
+    const unsupported = (agent: string, metricId: string) =>
+      refreshSource(
+        `unsupported:${agent}`,
+        'unsupported',
+        [refreshWindow(metricId, 'unsupported', { errorCode: 'unsupported' })],
+        { errorCode: 'unsupported' },
+      )
+    h.read.mockImplementationOnce(async () =>
+      adapterResult(
+        h.document(['claude', 'codex']),
+        refreshResult([
+          unsupported('claude', 'claude-5h'),
+          unsupported('grok', 'grok-weekly'),
+          refreshSource('hub-codex', 'succeeded', [refreshWindow('codex-5h')]),
+        ]),
+      ),
+    )
+    await h.service.refresh(account)
+    expect(h.service.read().connections[0].refreshResult?.sources.map((s) => s.sourceId)).toEqual([
+      'unsupported:claude',
+      'unsupported:grok',
+      'hub-codex',
+    ])
+    h.advance(60_000)
+    h.read.mockImplementationOnce(async () =>
+      adapterResult(
+        h.document(['claude']),
+        refreshResult([refreshSource('hub-claude', 'succeeded', [refreshWindow('claude-5h')])]),
+      ),
+    )
+    await h.service.refresh(claude)
+    expect(h.service.read().connections[0].refreshResult?.sources.map((s) => s.sourceId)).toEqual([
+      'unsupported:grok',
+      'hub-codex',
+      'hub-claude',
+    ])
+  })
   it('limits account and agent actions to the adapter refreshable list (R3, R4)', async () => {
     const f = fixture()
     const h = agentHub(f, ['providers'], ['claude'])

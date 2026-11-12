@@ -175,7 +175,10 @@ function refreshStatusOf(sources: UsageRefreshSourceResult[]): UsageRefreshResul
 /**
  * Merge a new operation result with the previous one. A source skipped because its retry deadline
  * is still pending keeps its last typed failure and deadline, while a refreshed source replaces
- * both its source and window results. The overall status is recomputed from the merged set.
+ * both its source and window results. A retained source is dropped once the new result covers all
+ * its windows, so an agent whose source changed does not keep an obsolete error line; a source
+ * without windows stays unless the new result repeats its source id. The overall status is
+ * recomputed from the merged set.
  */
 function mergeRefreshResult(
   previous: UsageRefreshResult | null,
@@ -183,8 +186,19 @@ function mergeRefreshResult(
   keepMissing: boolean,
 ): UsageRefreshResult {
   const sources = new Map<string, UsageRefreshSourceResult>()
-  if (keepMissing)
-    for (const source of previous?.sources ?? []) sources.set(source.sourceId, source)
+  if (keepMissing) {
+    const incomingWindows = new Set(
+      next.sources.flatMap((source) => source.windows.map((window) => window.metricId)),
+    )
+    const incomingSources = new Set(next.sources.map((source) => source.sourceId))
+    for (const source of previous?.sources ?? []) {
+      const replaced =
+        source.windows.length > 0
+          ? source.windows.every((window) => incomingWindows.has(window.metricId))
+          : incomingSources.has(source.sourceId)
+      if (!replaced) sources.set(source.sourceId, source)
+    }
+  }
   for (const source of next.sources) sources.set(source.sourceId, source)
   const merged = [...sources.values()]
   const measurementId = next.measurementId ?? (keepMissing ? previous?.measurementId : undefined)
