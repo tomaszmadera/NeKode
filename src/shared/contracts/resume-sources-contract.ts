@@ -119,3 +119,41 @@ export const HARNESS_RESUME_SOURCE: ResumeCommandSource = {
   executable: 'python',
   args: ['.agents/scripts/taskctl', 'list', '--json'],
 }
+
+/**
+ * Ready Resume template for the no-Harness local task workflow
+ * (local-task-workflow spec Behaviour 3-4): one progress file per card under
+ * `work/<ref>/progress.md`, identified by its immediate parent directory.
+ * It is a starting point only: selecting it creates and binds nothing.
+ */
+export const LOCAL_PROGRESS_RESUME_SOURCE: ResumeFileSource = {
+  kind: 'files',
+  directory: 'work',
+  pattern: 'progress.md',
+  recursive: true,
+  identity: 'parent',
+}
+
+export const LOCAL_PROGRESS_RESUME_PROMPT =
+  'Resume task {taskPath}.\nRead that progress file before continuing. It records the work so far, decisions, checks, and the next action.'
+
+export function isLocalProgressResumeSource(source: ResumeSource): boolean {
+  return (
+    source.kind === 'files' &&
+    source.directory === LOCAL_PROGRESS_RESUME_SOURCE.directory &&
+    source.pattern === LOCAL_PROGRESS_RESUME_SOURCE.pattern &&
+    source.recursive === LOCAL_PROGRESS_RESUME_SOURCE.recursive &&
+    source.identity === LOCAL_PROGRESS_RESUME_SOURCE.identity
+  )
+}
+
+/**
+ * Full-ref match (local-task-workflow spec Behaviour 12): exact equality or
+ * the ref followed by `-`. `T-1` matches `T-1` and `T-1-follow-up`, not
+ * `T-10` or `old-T-1`.
+ */
+export function matchesResumeCandidateRef(ref: string, candidateId: string): boolean {
+  const candidate = candidateId.trim().toLowerCase()
+  const expected = ref.trim().toLowerCase()
+  return candidate === expected || candidate.startsWith(`${expected}-`)
+}

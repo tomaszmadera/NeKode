@@ -1,4 +1,5 @@
 import type { ResumeSourceLibrary, ResumeSourcePreview } from '@shared/ipc-contract'
+import { LOCAL_PROGRESS_RESUME_PROMPT } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -61,6 +62,9 @@ describe('Resume templates settings', () => {
     vi.mocked(app.resumeSources.test).mockResolvedValue(result())
     fireEvent.click(screen.getByRole('button', { name: 'Test saved template' }))
     expect(await screen.findByText('TASK-1/progress.txt')).not.toBeNull()
+    expect(screen.getByTestId('resume-preview-instruction-TASK-1').textContent).toBe(
+      'Resume from TASK-1/progress.txt',
+    )
     expect(app.resumeSources.test).toHaveBeenCalledWith('notes', 'p1', 1, expect.any(String))
     expect(app.state.set).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('Test project'), { target: { value: 'p2' } })
@@ -98,6 +102,43 @@ describe('Resume templates settings', () => {
           identity: 'parent',
         },
       }),
+    )
+  })
+
+  it('offers the Local progress files preset without creating files or binding a project', async () => {
+    const { app } = await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'New template' }))
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'local-progress' } })
+
+    expect((screen.getByLabelText('Directory') as HTMLInputElement).value).toBe('work')
+    expect((screen.getByLabelText('File name filter') as HTMLInputElement).value).toBe(
+      'progress.md',
+    )
+    expect((screen.getByLabelText('Search subdirectories') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('Candidate identity') as HTMLSelectElement).value).toBe('parent')
+    expect((screen.getByLabelText('Resume instruction') as HTMLTextAreaElement).value).toBe(
+      LOCAL_PROGRESS_RESUME_PROMPT,
+    )
+    expect(screen.getByText(/Selecting this preset creates no files/)).not.toBeNull()
+    expect(app.resumeSources.put).not.toHaveBeenCalled()
+    expect(app.resumeSources.bind).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Local progress' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save template' }))
+    await waitFor(() =>
+      expect(app.resumeSources.put).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Local progress',
+          prompt: expect.stringContaining('Read that progress file before continuing.'),
+          source: {
+            kind: 'files',
+            directory: 'work',
+            pattern: 'progress.md',
+            recursive: true,
+            identity: 'parent',
+          },
+        }),
+      ),
     )
   })
 

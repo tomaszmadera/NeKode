@@ -1,3 +1,4 @@
+import { matchesResumeCandidateRef } from '@shared/contracts/resume-sources-contract'
 import type {
   AgentProfile,
   AppApi,
@@ -11,7 +12,6 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { matchesTaskRef } from './KanbanHandoffNotices'
 
 interface TaskResumeModalProps {
   app: AppApi
@@ -199,7 +199,7 @@ export function TaskResumeModal({
   const options =
     result === null
       ? []
-      : result.candidates.filter((candidate) => matchesTaskRef(item.ref, candidate.id))
+      : result.candidates.filter((candidate) => matchesResumeCandidateRef(item.ref, candidate.id))
   const chosen = options.length === 1 ? options[0] : null
   const canConfirm =
     phase === 'ready' &&

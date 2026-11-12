@@ -31,7 +31,7 @@ description: Use when you read, add, or update this project's tasks. The tasks l
 
 # NeKode tasks
 
-This project's task list is the file \`.nekode/tasks.json\`. NeKode shows it on the project's home tab. It is the only task list for this project: do not create a second task list, a TODO file, or another tracker file.
+This project's task list is the file \`.nekode/tasks.json\`. NeKode shows it on the project's home tab. It is the only task list for this project: do not create a second task list, a TODO file, or another tracker file. The progress file described below is execution context, not a task list.
 
 ## File shape
 
@@ -52,6 +52,24 @@ The file is JSON in UTF-8 without a byte order mark. NeKode writes the keys \`sc
 4. If the \`revision\` changed, someone else wrote the file. Never write with a stale revision: read the file again, apply your change to the new content, and repeat from step 2.
 
 Never reset, empty, or recreate the file. If it is missing or not valid, stop and tell the user.
+
+## Execution context
+
+The task list is the only backlog. Keep the execution context in a separate progress file.
+
+- For a task with ref \`T-1\`, create or update \`work/T-1/progress.md\` under the project root when you start working on it. Use the complete ref as the directory name.
+- Keep the file short and current. It must state: the ref and title; what is finished and what is in progress; decisions and their reasons; checks you ran with their command and result; blockers; one exact next action that names the file or command; and the UTC time of the last update.
+- Do not copy the task list, other cards, or a new TODO list into the file. Update it when one of those facts changes.
+
+## Handoff, Stop, and Resume
+
+- Handoff: update \`work/<ref>/progress.md\`, leave the card In Progress, and stop. The progress file is the handoff. Do not create another handoff file and do not claim the work is finished.
+- Stop is an interruption by the user, not a handoff. It creates or changes no progress file by itself. When asked to continue, reconcile the existing progress file with the repository before acting.
+- Resume: read the progress file at the path NeKode gives you before changing files. Check its claims against the repository and continue from its next action. If the file is missing or stale, say so; do not invent prior state.
+
+## Completing a task
+
+When the user confirms the task is complete and the card is in Done, move \`work/<ref>/progress.md\` to \`work-completed/<ref>/progress.md\`. That directory is outside the Resume source, so the finished context is no longer offered. Keep the file; delete it only when the user asks. If the task reopens, move the file back to \`work/<ref>/progress.md\` and update it.
 `
 
 /** Fixed front matter above an adapter-declared body. */
