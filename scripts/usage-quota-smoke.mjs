@@ -225,6 +225,7 @@ try {
       id: 'short',
       label: '5h',
       kind: 'window',
+      providerId: 'alpha',
       usedPercent: 14,
       observedAt: iso(now - 90 * 60000),
       periodStart: iso(now - 2 * 3600000),
@@ -234,6 +235,7 @@ try {
       id: 'week',
       label: '7d',
       kind: 'window',
+      providerId: 'alpha',
       usedPercent: 47,
       observedAt: iso(now - 60000),
       periodStart: iso(now - 3 * day),
@@ -243,6 +245,7 @@ try {
       id: 'month',
       label: 'Monthly',
       kind: 'credits',
+      providerId: 'beta',
       used: 900,
       limit: 2000,
       unit: 'characters',
@@ -254,6 +257,7 @@ try {
       id: 'balance',
       label: 'Balance',
       kind: 'balance',
+      providerId: 'beta',
       amount: 12.55,
       currency: 'USD',
       observedAt: null,
@@ -291,9 +295,14 @@ process.stdin.on('end', () => {
     const data = JSON.parse(fs.readFileSync(request.config.path, 'utf8'))
     if (request.action === 'refresh') {
       const at = new Date().toISOString()
+      const selected = request.params && request.params.refreshProviders
+      if (selected) {
+        const agents = new Set(selected)
+        for (const s of data.subscriptions) s.metrics = s.metrics.filter((m) => agents.has(m.providerId))
+      }
       for (const s of data.subscriptions) for (const m of s.metrics) if (m.state === 'available') m.observedAt = at
     }
-    respond({ protocolVersion: 2, ok: true, data }, 0)
+    respond({ protocolVersion: 2, ok: true, data, refreshableProviders: ['alpha'] }, 0)
   } catch {
     respond({ protocolVersion: 2, ok: false, error: { code: 'protocol', message: 'Invalid fixture input.' } }, 1)
   }
@@ -308,6 +317,7 @@ process.stdin.on('end', () => {
     sourceKind: 'api',
     capabilities: ['window', 'credits', 'balance'],
     minimumRefreshSeconds: 300,
+    refreshOptions: ['providers'],
     configSchema: [{ key: 'path', label: 'Fixture input file', type: 'file', required: true }],
   }
   writeFileSync(join(adapterDir, 'usage-adapter.json'), JSON.stringify(manifest))
@@ -429,6 +439,58 @@ process.stdin.on('end', () => {
     'four actual fixture metrics render, including balance and old age',
     'document.querySelectorAll(".usage-row").length===4 && document.querySelector(".usage-panel").textContent.includes("USD 12.55") && document.querySelector(".usage-panel").textContent.includes("Stale - 1h 30m old")',
   )
+  const menuState = await evaluate(
+    '(()=>{const labels=[...document.querySelectorAll(".usage-group-menu")].map(b=>b.getAttribute("aria-label"));return {labels}})()',
+  )
+  assert.ok(menuState.labels.includes('Refresh options for Fixture subscription (test data)'))
+  assert.ok(
+    menuState.labels.includes('Refresh options for Alpha in Fixture subscription (test data)'),
+  )
+  assert.ok(
+    menuState.labels.includes('Refresh options for Beta in Fixture subscription (test data)'),
+  )
+  report.menu = menuState
+  report.assertions.push('account and agent group menus are present')
+  const beforeAgent = await evaluate(
+    'window.app.usage.read().then(s=>Object.fromEntries(s.connections[0].subscription.metrics.map(m=>[m.id,m.observedAt])))',
+  )
+  await evaluate(
+    '[...document.querySelectorAll(".usage-group-menu")].find(b=>b.getAttribute("aria-label").startsWith("Refresh options for Alpha")).click()',
+  )
+  await sleep(100)
+  const alphaMenu = await evaluate(
+    '(()=>{const m=document.querySelector(".usage-menu");return {text:m?.textContent,disabled:m?.querySelector("[role=menuitem]")?.disabled}})()',
+  )
+  assert.ok(alphaMenu.text.includes('Refresh Alpha in Fixture subscription (test data)'))
+  assert.equal(alphaMenu.disabled, false)
+  await evaluate('document.querySelector(".usage-menu [role=menuitem]").click()')
+  await waitFor(
+    'document.querySelector("[role=status]")?.textContent.includes("Alpha in Fixture subscription (test data) refreshed.")',
+    10000,
+  )
+  const afterAgent = await evaluate(
+    'window.app.usage.read().then(s=>Object.fromEntries(s.connections[0].subscription.metrics.map(m=>[m.id,m.observedAt])))',
+  )
+  assert.notEqual(afterAgent.short, beforeAgent.short)
+  assert.equal(afterAgent.month, beforeAgent.month)
+  report.agentRefresh = { beforeAgent, afterAgent }
+  report.assertions.push(
+    'agent menu refreshes only the selected agent and leaves the other agent dates unchanged',
+  )
+  await evaluate(
+    '[...document.querySelectorAll(".usage-group-menu")].find(b=>b.getAttribute("aria-label").startsWith("Refresh options for Beta")).click()',
+  )
+  await sleep(100)
+  const betaMenu = await evaluate(
+    '(()=>{const m=document.querySelector(".usage-menu");return {text:m?.textContent,disabled:m?.querySelector("[role=menuitem]")?.disabled}})()',
+  )
+  assert.ok(betaMenu.text.includes('No refresh source for this agent in the Hub'))
+  assert.equal(betaMenu.disabled, true)
+  report.betaMenu = betaMenu
+  report.assertions.push('an unlisted agent shows a disabled refresh reason')
+  await evaluate(
+    'document.querySelector(".usage-menu")?.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))',
+  )
   report.regions = await evaluate(
     '({focusInside: Boolean(document.querySelector(".usage-panel").contains(document.activeElement)), active:document.activeElement?.outerHTML, firstButton:document.querySelector(".usage-panel button").outerHTML,title:getComputedStyle(document.querySelector("[data-testid=title-bar]")).webkitAppRegion,trigger:getComputedStyle(document.querySelector(".usage-trigger")).webkitAppRegion})',
   )
@@ -531,7 +593,7 @@ process.stdin.on('end', () => {
   await check(
     'pin and real observation timestamp persist after restart',
     '(()=>{return window.app.usage.read().then(s=>s.pin?.metricId==="week"&&s.connections[0].subscription.metrics.find(m=>m.id==="short").observedAt===' +
-      JSON.stringify(metrics[0].observedAt) +
+      JSON.stringify(afterAgent.short) +
       ')})()',
   )
   const pluginFailure =
@@ -543,44 +605,46 @@ process.stdin.on('end', () => {
     let n = 0;
     n < 70 &&
     !(await evaluate(
-      'document.querySelector(".usage-source-note")?.textContent.includes("source protocol")',
+      'document.querySelector(".usage-errors-body")?.textContent.includes("source protocol")',
     ));
     n++
   )
     await sleep(100)
   await check(
-    'renderer exposes the cached source error',
-    'document.querySelector(".usage-source-note")?.textContent.includes("source protocol")===true && document.querySelector(".usage-trigger").textContent.includes("Error")',
+    'renderer exposes the cached source error in the console',
+    'document.querySelector(".usage-errors-body")?.textContent.includes("source protocol")===true && document.querySelector(".usage-trigger").textContent.includes("Error")',
+  )
+  await evaluate('document.querySelector(".usage-errors-head button").click()')
+  await check(
+    'the error console closes without deleting the source error',
+    '!document.querySelector(".usage-errors-body") && document.querySelector(".usage-trigger").textContent.includes("Error")',
+  )
+  await evaluate('document.querySelector(".usage-errors-toggle").click()')
+  await check(
+    'the error console reopens from the header',
+    'document.querySelector(".usage-errors-body")?.textContent.includes("source protocol")===true',
   )
   await shot('panel-error-cached')
-  // Spec L5: a manual refresh reads 60 seconds after the last read although the adapter
-  // minimum is 300 seconds, sends `refresh`, and reports an interval skip inside 60 seconds.
+  // Spec L5: a manual refresh sends `refresh` despite the 300-second adapter minimum, and an
+  // immediate second click reports the 60-second interval skip.
   doc.subscriptions[0].metrics.find((m) => m.id === 'week').usedPercent = 48
   writeFileSync(input, JSON.stringify(doc))
-  const nextRefreshAt = await evaluate(
-    'window.app.usage.read().then(s=>s.connections[0].nextRefreshAt)',
-  )
-  assert.ok(nextRefreshAt, 'a manual refresh waits after the failed scheduled read')
-  report.manualRefresh = { nextRefreshAt }
+  report.manualRefresh = { at: new Date().toISOString() }
   await check(
-    'a manual refresh inside the 60-second limit is skipped as interval',
-    'window.app.usage.refresh({connectionId:"fixture-account"}).then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval"&&s.refresh.skipped[0]?.connectionId==="fixture-account")',
-  )
-  const waitMs = Date.parse(nextRefreshAt) - Date.now() + 1000
-  if (waitMs > 0) await sleep(waitMs)
-  report.manualRefresh.at = new Date().toISOString()
-  await check(
-    'a manual refresh 60 seconds after the last read sends refresh inside the 300-second adapter interval',
+    'a manual refresh sends refresh inside the 300-second adapter interval',
     'window.app.usage.refresh({connectionId:"fixture-account"}).then(s=>s.refresh.read.includes("fixture-account")&&s.connections[0].error===null&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===48)',
   )
   const actions = readFileSync(actionsFile, 'utf8').trim().split(/\s+/)
   assert.equal(actions.at(-1), 'refresh', 'the manual read used the refresh action')
+  assert.ok(actions.includes('read'), 'scheduled reads used the read action')
   assert.ok(
-    actions.slice(0, -1).every((a) => a === 'read'),
-    'scheduled reads used the read action',
+    actions.slice(0, -1).includes('refresh'),
+    'the agent menu used the refresh action before the account refresh',
   )
   report.manualRefresh.actions = actions
-  report.assertions.push('scheduled reads send read and the manual read sends refresh')
+  report.assertions.push(
+    'scheduled reads send read and manual account and agent reads send refresh',
+  )
   await check(
     'an immediate second manual refresh is skipped as interval',
     'window.app.usage.refresh({connectionId:"fixture-account"}).then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval")',

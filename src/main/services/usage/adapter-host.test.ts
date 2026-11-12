@@ -475,6 +475,59 @@ describe('partial refresh result parsing (PDH-13)', () => {
       ),
     ).rejects.toMatchObject({ code: 'validation_error' })
   })
+
+  it('accepts a known refreshable agent list beside the document', async () => {
+    const result = await new UsageAdapterHost().read(
+      adapter(
+        `console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document},refreshableProviders:['claude','codex']}))`,
+      ),
+      {},
+      'account',
+      signal(),
+    )
+    expect(result.refreshableProviders).toEqual(['claude', 'codex'])
+    expect(JSON.stringify(result)).not.toContain('refreshableProviders')
+  })
+
+  it('keeps a missing refreshable agent list distinct from an empty known list', async () => {
+    const missing = await new UsageAdapterHost().read(
+      adapter(`console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document}}))`),
+      {},
+      'account',
+      signal(),
+    )
+    expect(missing.refreshableProviders).toBeNull()
+    const empty = await new UsageAdapterHost().read(
+      adapter(
+        `console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document},refreshableProviders:[]}))`,
+      ),
+      {},
+      'account',
+      signal(),
+    )
+    expect(empty.refreshableProviders).toEqual([])
+  })
+
+  it.each([
+    ['duplicate', `['claude','claude']`],
+    ['malformed', `['Claude']`],
+    ['too many', `Array.from({length:51},(_,i)=>'agent-'+i)`],
+    ['not an array', `'claude'`],
+  ])(
+    'rejects a %s refreshable agent list as a protocol validation failure',
+    async (_name, value) => {
+      await expect(
+        new UsageAdapterHost().read(
+          adapter(
+            `console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document},refreshableProviders:${value}}))`,
+          ),
+          {},
+          'account',
+          signal(),
+        ),
+      ).rejects.toMatchObject({ code: 'protocol' })
+    },
+  )
 })
 
 describe('bundled and user usage adapters', () => {

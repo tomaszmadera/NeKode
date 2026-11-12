@@ -98,6 +98,11 @@ interface RefreshTarget {
   connectionId: string
   providerId?: string
 }
+/** A group menu opened from its trigger or a right-click on the group heading (spec M2). */
+interface MenuState extends RefreshTarget {
+  x: number
+  y: number
+}
 const targetKey = (target: RefreshTarget) =>
   JSON.stringify([target.connectionId, target.providerId ?? null])
 /** Agent name for headings and labels (spec A2): the provider id with a capital first letter. */
@@ -137,6 +142,21 @@ function refreshState(
       : source.agents?.find((agent) => agent.providerId === providerId)?.nextRefreshAt
   const seconds = until ? Math.ceil((Date.parse(until) - now) / 1000) : 0
   return seconds > 0 ? `${label} can refresh again in ${seconds} s` : `${label} is ready to refresh`
+}
+/** The short visible state beside a menu item; the full sentence stays in its description. */
+function refreshShortState(
+  source: UsageConnectionSnapshot,
+  now: number,
+  providerId?: string,
+  pending = false,
+): string {
+  if (pending || (providerId === undefined && source.refreshing)) return 'Refreshing...'
+  const until =
+    providerId === undefined
+      ? source.nextRefreshAt
+      : source.agents?.find((agent) => agent.providerId === providerId)?.nextRefreshAt
+  const seconds = until ? Math.ceil((Date.parse(until) - now) / 1000) : 0
+  return seconds > 0 ? `in ${seconds} s` : 'Ready'
 }
 /** Fixed text for the closed refresh statuses; adapter/provider text is never rendered. */
 const REFRESH_STATUS_TEXT: Record<UsageRefreshSourceStatus, string> = {
@@ -259,7 +279,9 @@ export function UsageToolbar({
   const [snapshot, setSnapshot] = useState(EMPTY),
     [open, setOpen] = useState(false),
     [now, setNow] = useState(Date.now()),
-    [error, setError] = useState<string | null>(null)
+    [error, setError] = useState<string | null>(null),
+    [menu, setMenu] = useState<MenuState | null>(null),
+    [errorsOpen, setErrorsOpen] = useState(false)
   const [position, setPosition] = useState({ left: 12, top: 46 })
   // Spec A4-A5: pending targets, and the last clicked target with its result.
   const [pending, setPending] = useState<string[]>([]),
@@ -269,9 +291,89 @@ export function UsageToolbar({
   const manualFlights = useRef(new Set<string>()),
     manualSequence = useRef(0)
   const trigger = useRef<HTMLButtonElement>(null),
-    dialog = useRef<HTMLElement>(null)
+    dialog = useRef<HTMLElement>(null),
+    menuRef = useRef<HTMLDivElement>(null),
+    menuReturnFocus = useRef<HTMLElement | null>(null)
   const readFlight = useRef<{ api: UsageApi; promise: Promise<UsageSnapshot> } | null>(null),
-    alive = useRef(false)
+    alive = useRef(false),
+    lastErrorSignature = useRef('')
+  const errorItems: { key: string; text: string; signature: string }[] = []
+  const addError = (key: string, text: string, signature = text) =>
+    errorItems.push({ key, text, signature })
+  if (error) addError('ipc', error)
+  for (const source of snapshot.connections) {
+    const label = source.connection.label
+    if (source.error) {
+      const text = `${label}: ${/[.!?]$/.test(source.error.message) ? source.error.message : `${source.error.message}.`}`
+      addError(
+        `source:${source.connection.id}`,
+        text,
+        `${source.connection.id}\u0000${source.error.message}`,
+      )
+    }
+    const detail =
+      manual?.result?.connections.find((c) => c.connection.id === source.connection.id)
+        ?.refreshResult ?? source.refreshResult
+    for (const result of detail?.sources ?? []) {
+      if (result.status !== 'succeeded')
+        addError(
+          `refresh:${source.connection.id}:${result.sourceId}`,
+          refreshSourceLine(result, now),
+          `${source.connection.id}\u0000${result.sourceId}\u0000${result.status}\u0000${result.errorCode ?? ''}\u0000${result.nextAllowedAt ?? ''}`,
+        )
+      for (const window of result.windows)
+        if (window.status !== 'succeeded')
+          addError(
+            `window:${source.connection.id}:${result.sourceId}:${window.metricId}`,
+            refreshWindowLine(window, source, now),
+            `${source.connection.id}\u0000${result.sourceId}\u0000${window.metricId}\u0000${window.status}\u0000${window.errorCode ?? ''}\u0000${window.nextAllowedAt ?? ''}`,
+          )
+    }
+  }
+  if (snapshot.cacheError) addError('cache', snapshot.cacheError)
+  if (snapshot.exportError) addError('export', snapshot.exportError)
+  const errorSignature = errorItems.map((item) => `${item.key}\u0000${item.signature}`).join('\n')
+  useEffect(() => {
+    if (!errorSignature) {
+      lastErrorSignature.current = ''
+      setErrorsOpen(false)
+      return
+    }
+    if (errorSignature !== lastErrorSignature.current) {
+      lastErrorSignature.current = errorSignature
+      setErrorsOpen(true)
+    }
+  }, [errorSignature])
+  useEffect(() => {
+    if (!errorsOpen || !errorSignature) return
+    const timer = setTimeout(() => setErrorsOpen(false), 60_000)
+    return () => clearTimeout(timer)
+  }, [errorsOpen, errorSignature])
+  useEffect(() => {
+    if (!menu) return
+    const item = menuRef.current?.querySelector<HTMLButtonElement>('button:not([disabled])')
+    ;(item ?? menuRef.current)?.focus()
+  }, [menu])
+  useEffect(() => {
+    if (menu) return
+    const target = menuReturnFocus.current
+    if (target?.isConnected) target.focus()
+  }, [menu])
+  useEffect(() => {
+    if (!menu) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement
+      if (menuRef.current?.contains(target) || target.closest('.usage-group-menu')) return
+      setMenu(null)
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [menu])
+  useEffect(() => {
+    if (!open) setMenu(null)
+  }, [open])
   // biome-ignore lint/correctness/useExhaustiveDependencies: A successful settings save invalidates the renderer snapshot.
   useEffect(() => {
     let mounted = true
@@ -356,6 +458,21 @@ export function UsageToolbar({
   )
   const pinned = pinnedSource?.subscription?.metrics.find((m) => m.id === snapshot.pin?.metricId)
   const refreshing = pending.length > 0 || snapshot.connections.some((c) => c.refreshing)
+  const menuSource = menu
+    ? snapshot.connections.find((c) => c.connection.id === menu.connectionId)
+    : undefined
+  const menuTarget: RefreshTarget | null = menu
+    ? {
+        connectionId: menu.connectionId,
+        ...(menu.providerId === undefined ? {} : { providerId: menu.providerId }),
+      }
+    : null
+  const menuEnabled =
+    menuSource && menu
+      ? menu.providerId === undefined
+        ? menuSource.agents == null || menuSource.agents.length > 0
+        : (menuSource.agents?.some((agent) => agent.providerId === menu.providerId) ?? false)
+      : false
   const isPending = (target: RefreshTarget) =>
     pending.includes(targetKey({ connectionId: target.connectionId })) ||
     (target.providerId !== undefined && pending.includes(targetKey(target)))
@@ -385,22 +502,142 @@ export function UsageToolbar({
       if (alive.current) setPending((keys) => keys.filter((k) => k !== key))
     }
   }
-  function refreshButton(source: UsageConnectionSnapshot, providerId?: string) {
-    const target = { connectionId: source.connection.id, providerId }
+  function closeMenu(): void {
+    setMenu(null)
+  }
+  function openMenuAt(
+    source: UsageConnectionSnapshot,
+    providerId: string | undefined,
+    x: number,
+    y: number,
+    returnFocus: HTMLElement | null,
+  ): void {
+    menuReturnFocus.current = returnFocus
+    setMenu({
+      connectionId: source.connection.id,
+      ...(providerId === undefined ? {} : { providerId }),
+      x: Math.max(8, Math.min(x, window.innerWidth - 228)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 128)),
+    })
+  }
+  function openMenuFromButton(
+    event: React.MouseEvent<HTMLButtonElement>,
+    source: UsageConnectionSnapshot,
+    providerId?: string,
+  ): void {
+    const rect = event.currentTarget.getBoundingClientRect()
+    openMenuAt(source, providerId, rect.left, rect.bottom + 4, event.currentTarget)
+  }
+  function openMenuFromHeading(
+    event: React.MouseEvent<HTMLDivElement>,
+    source: UsageConnectionSnapshot,
+    providerId?: string,
+  ): void {
+    event.preventDefault()
+    const trigger = event.currentTarget.querySelector<HTMLElement>('.usage-group-menu')
+    openMenuAt(source, providerId, event.clientX, event.clientY, trigger)
+  }
+  function menuKeydown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeMenu()
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const items = [
+      ...(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not([disabled])') ?? []),
+    ]
+    if (items.length === 0) return
+    const index = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
+    items[next]?.focus()
+  }
+  function runMenu(target: RefreshTarget): void {
+    closeMenu()
+    void refresh(target)
+  }
+  function menuItem(
+    target: RefreshTarget,
+    enabled: boolean,
+    reason?: string,
+  ): React.JSX.Element | null {
+    const source = snapshot.connections.find((c) => c.connection.id === target.connectionId)
+    if (!source) return null
+    if (!enabled)
+      return (
+        <button type="button" role="menuitem" disabled className="usage-menu-item">
+          {reason ?? 'No refresh source in the Hub'}
+        </button>
+      )
     const busy = isPending(target)
-    const state = `${refreshState(source, now, providerId, busy)}.`
+    const state = `${refreshState(source, now, target.providerId, busy)}.`
     return (
       <button
         type="button"
-        className="usage-group-refresh"
-        aria-label={`Refresh ${targetLabel(source, providerId)}`}
-        title={state}
+        role="menuitem"
+        className="usage-menu-item"
+        aria-label={`Refresh ${targetLabel(source, target.providerId)}`}
         aria-description={state}
-        onClick={() => void refresh(target)}
+        title={state}
         disabled={busy}
+        onClick={() => runMenu(target)}
       >
-        ↻
+        <span>Refresh {targetLabel(source, target.providerId)}</span>
+        <span className="usage-menu-state">
+          {refreshShortState(source, now, target.providerId, busy)}
+        </span>
       </button>
+    )
+  }
+  /** Spec M2: a visible menu trigger on every group, plus the same menu from a heading right-click. */
+  function groupHead(source: UsageConnectionSnapshot, providerId?: string): React.JSX.Element {
+    const label = targetLabel(source, providerId)
+    const hasMenu = providerId === undefined || source.agents != null
+    const expanded = menu?.connectionId === source.connection.id && menu.providerId === providerId
+    const Heading = providerId === undefined ? 'h3' : 'h4'
+    return (
+      <div
+        className="usage-group-head"
+        role="group"
+        aria-label={label}
+        onContextMenu={
+          hasMenu ? (event) => openMenuFromHeading(event, source, providerId) : undefined
+        }
+      >
+        <Heading>
+          {providerId === undefined ? source.connection.label : agentName(providerId)}
+        </Heading>
+        {providerId === undefined && source.error ? (
+          <span className="usage-group-error" aria-hidden="true">
+            Error
+          </span>
+        ) : null}
+        {hasMenu ? (
+          <button
+            type="button"
+            className="usage-group-menu"
+            aria-label={`Refresh options for ${label}`}
+            aria-haspopup="menu"
+            aria-expanded={expanded}
+            onClick={(event) => openMenuFromButton(event, source, providerId)}
+            onKeyDown={(event) => {
+              if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+              event.preventDefault()
+              const rect = event.currentTarget.getBoundingClientRect()
+              openMenuAt(source, providerId, rect.left, rect.bottom + 4, event.currentTarget)
+            }}
+          >
+            ⋯
+          </button>
+        ) : null}
+      </div>
     )
   }
   async function pin(connectionId: string, metricId: string): Promise<void> {
@@ -487,6 +724,17 @@ export function UsageToolbar({
                   <span className="usage-head-note">
                     {refreshing ? 'Refreshing usage...' : `${snapshot.connections.length} sources`}
                   </span>
+                  {errorItems.length > 0 ? (
+                    <button
+                      type="button"
+                      className="usage-errors-toggle"
+                      aria-expanded={errorsOpen}
+                      aria-controls="usage-errors"
+                      onClick={() => setErrorsOpen((value) => !value)}
+                    >
+                      Errors ({errorItems.length})
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     aria-label="Close usage panel"
@@ -495,6 +743,9 @@ export function UsageToolbar({
                     ×
                   </button>
                 </header>
+                <span className="usage-row-status" aria-live="polite">
+                  {errorItems.length > 0 ? `${errorItems.length} usage errors` : ''}
+                </span>
                 {manual ? (
                   <p role="status" className="usage-message">
                     {manual.result
@@ -507,11 +758,6 @@ export function UsageToolbar({
                             ? targetLabel(source, manual.target.providerId)
                             : manual.target.connectionId
                         })()}...`}
-                  </p>
-                ) : null}
-                {error ? (
-                  <p role="alert" className="usage-message">
-                    {error}
                   </p>
                 ) : null}
                 {snapshot.connections.length === 0 ? (
@@ -529,10 +775,6 @@ export function UsageToolbar({
                   </div>
                 ) : (
                   snapshot.connections.map((source) => {
-                    const refreshDetail =
-                      manual?.result?.connections.find(
-                        (c) => c.connection.id === source.connection.id,
-                      )?.refreshResult ?? source.refreshResult
                     const groups = agentGroups(source)
                     const row = (metric: UsageMetric) => {
                       const selected =
@@ -579,17 +821,11 @@ export function UsageToolbar({
                     }
                     return (
                       <div key={source.connection.id} className="usage-source">
-                        <div className="usage-group-head">
-                          <h3>{source.connection.label}</h3>
-                          {refreshButton(source)}
-                        </div>
+                        {groupHead(source)}
                         {groups ? (
                           groups.map(([agent, metrics]) => (
                             <div key={agent} className="usage-agent">
-                              <div className="usage-group-head">
-                                <h4>{agentName(agent)}</h4>
-                                {source.agents ? refreshButton(source, agent) : null}
-                              </div>
+                              {groupHead(source, agent)}
                               {metrics.map(row)}
                             </div>
                           ))
@@ -602,43 +838,49 @@ export function UsageToolbar({
                               : 'No usage data yet'}
                           </p>
                         )}
-                        {refreshDetail ? (
-                          <div className="usage-refresh-detail">
-                            {refreshDetail.sources.map((result) => (
-                              <div key={result.sourceId}>
-                                <p className="usage-message">{refreshSourceLine(result, now)}</p>
-                                {result.windows.map((window) => (
-                                  <p
-                                    className="usage-message"
-                                    key={window.metricId}
-                                    title={window.nextAllowedAt ?? undefined}
-                                  >
-                                    {refreshWindowLine(window, source, now)}
-                                  </p>
-                                ))}
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                        {source.error ? (
-                          <p className="usage-source-note">
-                            {source.error.message}
-                            {/[.!?]$/.test(source.error.message) ? '' : '.'}
-                          </p>
-                        ) : null}
                       </div>
                     )
                   })
                 )}
-                {snapshot.cacheError ? (
-                  <p role="status" className="usage-message">
-                    {snapshot.cacheError}
-                  </p>
+                {errorItems.length > 0 && errorsOpen ? (
+                  <section id="usage-errors" aria-label="Usage errors" className="usage-errors">
+                    <div className="usage-errors-head">
+                      <span>Usage errors</span>
+                      <button
+                        type="button"
+                        aria-label="Close usage errors"
+                        onClick={() => setErrorsOpen(false)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="usage-errors-body">
+                      {errorItems.map((item) => (
+                        <p key={item.key} className="usage-message">
+                          {item.text}
+                        </p>
+                      ))}
+                    </div>
+                  </section>
                 ) : null}
-                {snapshot.exportError ? (
-                  <p role="alert" className="usage-message">
-                    {snapshot.exportError}
-                  </p>
+                {menu && menuSource && menuTarget ? (
+                  <div
+                    ref={menuRef}
+                    role="menu"
+                    aria-label={`Actions for ${targetLabel(menuSource, menu.providerId)}`}
+                    className="usage-menu"
+                    style={{ left: menu.x, top: menu.y }}
+                    tabIndex={-1}
+                    onKeyDown={menuKeydown}
+                  >
+                    {menuItem(
+                      menuTarget,
+                      menuEnabled,
+                      menu.providerId === undefined
+                        ? 'No refresh source in the Hub'
+                        : 'No refresh source for this agent in the Hub',
+                    )}
+                  </div>
                 ) : null}
                 {snapshot.connections.length > 0 ? (
                   <footer>

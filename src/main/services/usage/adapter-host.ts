@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
   parseUsageDocument,
+  parseUsageRefreshableProviders,
   parseUsageRefreshResult,
   USAGE_MAX_BYTES,
   USAGE_PROVIDER_ID,
@@ -28,6 +29,8 @@ const INVALID_MANIFEST =
 export type UsageAdapterResult = UsageDocument & {
   /** Non-enumerable so the parsed document keeps its strict schema shape. */
   readonly refresh: UsageRefreshResult | null
+  /** Known agents with a real refresh source (spec R1); null when the adapter omitted the field. */
+  readonly refreshableProviders: string[] | null
 }
 
 /**
@@ -411,10 +414,23 @@ export class UsageAdapterHost {
           response.refresh === undefined
             ? null
             : parseUsageRefreshResult(response.refresh, document, Date.now())
+        let refreshableProviders: string[] | null = null
+        if (response.refreshableProviders !== undefined) {
+          try {
+            refreshableProviders = parseUsageRefreshableProviders(response.refreshableProviders)
+          } catch {
+            throw new AppError('protocol', 'Invalid usage refreshable agents.')
+          }
+        }
         // Non-enumerable: `parseUsageDocument` still accepts the object and JSON export of the
         // document never carries attempt metadata.
         Object.defineProperty(document, 'refresh', {
           value: refresh,
+          enumerable: false,
+          configurable: true,
+        })
+        Object.defineProperty(document, 'refreshableProviders', {
+          value: refreshableProviders,
           enumerable: false,
           configurable: true,
         })

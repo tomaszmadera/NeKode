@@ -127,6 +127,8 @@ export interface UsageSettings {
 }
 /** Provider id format, shared by manifests, metrics and refresh requests. */
 export const USAGE_PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
+/** Maximum number of agent ids in an adapter's `refreshableProviders` envelope field. */
+export const USAGE_MAX_REFRESHABLE_PROVIDERS = 50
 export const USAGE_REFRESH_OPTIONS = ['providers'] as const
 export type UsageRefreshOption = (typeof USAGE_REFRESH_OPTIONS)[number]
 /** Target of one manual refresh: an account, or one agent of it (spec A6). */
@@ -524,6 +526,26 @@ export function parseUsageRefreshResult(
     ...(measurementId === undefined ? {} : { measurementId }),
     ...(reportId === undefined ? {} : { reportId }),
   }
+}
+
+/**
+ * Parse the optional `refreshableProviders` envelope field (spec R1). The caller distinguishes a
+ * missing field (`null`) from an empty known list (`[]`). The list stays outside `data`.
+ */
+export function parseUsageRefreshableProviders(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > USAGE_MAX_REFRESHABLE_PROVIDERS)
+    invalid('Invalid usage refreshable agents.')
+  const seen = new Set<string>()
+  for (const providerId of value) {
+    if (
+      typeof providerId !== 'string' ||
+      !USAGE_PROVIDER_ID.test(providerId) ||
+      seen.has(providerId)
+    )
+      invalid('Invalid usage refreshable agents.')
+    seen.add(providerId)
+  }
+  return [...value]
 }
 
 export function parseUsageSettings(value: unknown): UsageSettings {

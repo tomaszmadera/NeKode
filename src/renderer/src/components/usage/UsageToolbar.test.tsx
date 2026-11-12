@@ -45,6 +45,22 @@ const snapshot = (): UsageSnapshot => ({
   cacheError: null,
   exportError: null,
 })
+async function openGroupMenu(label: string): Promise<HTMLElement> {
+  fireEvent.click(screen.getByRole('button', { name: `Refresh options for ${label}` }))
+  await act(async () => {})
+  return screen.getByRole('menu')
+}
+function refreshMenuItem(label: string): HTMLElement {
+  return screen.getByRole('menuitem', { name: `Refresh ${label}` })
+}
+async function clickRefresh(label: string): Promise<void> {
+  await openGroupMenu(label)
+  fireEvent.click(refreshMenuItem(label))
+}
+function closeOpenMenu(): void {
+  const menu = screen.queryByRole('menu')
+  if (menu) fireEvent.keyDown(menu, { key: 'Escape' })
+}
 describe('Usage panel', () => {
   it.each(['interval', 'backoff'] as const)(
     'explains %s skips and keeps feedback across polling and repeated clicks',
@@ -66,10 +82,10 @@ describe('Usage panel', () => {
       render(<UsageToolbar api={api} onConfigure={() => {}} />)
       await act(async () => {})
       fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
-      const button = screen.getByRole('button', { name: 'Refresh Fixture account' })
-      expect(button.getAttribute('aria-description')).toContain('42 s')
+      await openGroupMenu('Fixture account')
+      expect(refreshMenuItem('Fixture account').getAttribute('aria-description')).toContain('42 s')
       await act(async () => {
-        fireEvent.click(button)
+        fireEvent.click(refreshMenuItem('Fixture account'))
       })
       const status = screen.getByRole('status')
       expect(status.textContent).toContain('Fixture account can refresh again in 42 s')
@@ -77,21 +93,28 @@ describe('Usage panel', () => {
       expect(status.textContent).toContain(
         `Fixture account was skipped (${reason === 'backoff' ? 'provider backoff' : '60-second limit'}).`,
       )
-      expect(button.hasAttribute('disabled')).toBe(false)
+      await openGroupMenu('Fixture account')
+      expect(refreshMenuItem('Fixture account').hasAttribute('disabled')).toBe(false)
+      closeOpenMenu()
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5000)
       })
       expect(status.textContent).toContain('37 s')
-      expect(button.getAttribute('title')).toContain('37 s')
+      await openGroupMenu('Fixture account')
+      expect(refreshMenuItem('Fixture account').getAttribute('title')).toContain('37 s')
       await act(async () => {
-        fireEvent.click(button)
+        fireEvent.click(refreshMenuItem('Fixture account'))
       })
       expect(api.refresh).toHaveBeenCalledTimes(2)
       expect(screen.getByRole('status').textContent).toContain('37 s')
       await act(async () => {
         await vi.advanceTimersByTimeAsync(37_000)
       })
-      expect(button.getAttribute('aria-description')).toContain('ready to refresh')
+      await openGroupMenu('Fixture account')
+      expect(refreshMenuItem('Fixture account').getAttribute('aria-description')).toContain(
+        'ready to refresh',
+      )
+      closeOpenMenu()
       expect(screen.getByRole('status').textContent).not.toContain('in 0 s')
       expect(screen.getByRole('status').textContent).toContain(
         'Fixture account is ready to refresh.',
@@ -115,7 +138,7 @@ describe('Usage panel', () => {
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh Fixture account' }))
+      await clickRefresh('Fixture account')
     })
     const current = structuredClone(s)
     current.connections[0].nextRefreshAt = new Date(Date.now() + 65_000).toISOString()
@@ -123,8 +146,11 @@ describe('Usage panel', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(42_000)
     })
-    const button = screen.getByRole('button', { name: 'Refresh Fixture account' })
-    expect(button.getAttribute('aria-description')).toContain('can refresh again in 23 s')
+    await openGroupMenu('Fixture account')
+    expect(refreshMenuItem('Fixture account').getAttribute('aria-description')).toContain(
+      'can refresh again in 23 s',
+    )
+    closeOpenMenu()
     expect(screen.getByRole('status').textContent).toContain('can refresh again in 23 s')
     expect(screen.getByRole('status').textContent).not.toContain('ready to refresh')
     expect(api.refresh).toHaveBeenCalledTimes(1)
@@ -142,15 +168,15 @@ describe('Usage panel', () => {
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Usage quota' }))
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh Fixture account' }))
+      await clickRefresh('Fixture account')
     })
     expect(screen.getByRole('status').textContent).toContain('Fixture account is refreshing.')
     expect(screen.getByRole('status').textContent).not.toContain('ready to refresh')
-    expect(
-      screen
-        .getByRole('button', { name: 'Refresh Fixture account' })
-        .getAttribute('aria-description'),
-    ).toBe('Fixture account is refreshing.')
+    await openGroupMenu('Fixture account')
+    expect(refreshMenuItem('Fixture account').getAttribute('aria-description')).toBe(
+      'Fixture account is refreshing.',
+    )
+    closeOpenMenu()
   })
   it('keeps pending feedback through polling then reports an unchanged successful read', async () => {
     vi.useFakeTimers()
@@ -167,22 +193,25 @@ describe('Usage panel', () => {
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
-    const button = screen.getByRole('button', { name: 'Refresh Fixture account' })
-    fireEvent.click(button)
+    await clickRefresh('Fixture account')
     expect(screen.getByRole('status').textContent).toBe('Refreshing Fixture account...')
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000)
     })
     expect(screen.getByRole('status').textContent).toBe('Refreshing Fixture account...')
-    expect(button.hasAttribute('disabled')).toBe(true)
+    await openGroupMenu('Fixture account')
+    expect(refreshMenuItem('Fixture account').hasAttribute('disabled')).toBe(true)
+    closeOpenMenu()
     await act(async () => {
       finish({ ...s, refresh: { read: ['account'], skipped: [] } })
     })
     expect(screen.getByRole('status').textContent).toBe('Fixture account refreshed.')
-    expect(button.hasAttribute('disabled')).toBe(false)
+    await openGroupMenu('Fixture account')
+    expect(refreshMenuItem('Fixture account').hasAttribute('disabled')).toBe(false)
+    closeOpenMenu()
     expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%/ })).toBeDefined()
   })
-  it('refreshes one account and leaves the other account button with its own state (A4)', async () => {
+  it('refreshes one account and leaves the other account menu with its own state (A4)', async () => {
     const api = createAppApiStub().usage,
       s = snapshot()
     const until = new Date(Date.now() + 120_000).toISOString()
@@ -198,13 +227,16 @@ describe('Usage panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     expect(screen.queryByRole('button', { name: 'Refresh usage' })).toBeNull()
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh Fixture account' }))
+      await clickRefresh('Fixture account')
     })
     expect(api.refresh).toHaveBeenCalledWith({ connectionId: 'account' })
     expect(screen.getByRole('status').textContent).toBe('Fixture account refreshed.')
-    const other = screen.getByRole('button', { name: 'Refresh Other' })
-    expect(other.getAttribute('aria-description')).toContain('Other can refresh again in')
-    expect(other.hasAttribute('disabled')).toBe(false)
+    await openGroupMenu('Other')
+    expect(refreshMenuItem('Other').getAttribute('aria-description')).toContain(
+      'Other can refresh again in',
+    )
+    expect(refreshMenuItem('Other').hasAttribute('disabled')).toBe(false)
+    closeOpenMenu()
   })
   it('moves focus into the panel while the first source read is pending', async () => {
     const api = createAppApiStub().usage
@@ -229,17 +261,18 @@ describe('Usage panel', () => {
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
-    const button = screen.getByRole('button', { name: 'Refresh Fixture account' })
     await act(async () => {
-      fireEvent.click(button)
+      await clickRefresh('Fixture account')
     })
-    expect(screen.getByRole('alert').textContent).toContain('Fixture refresh failed')
-    expect(button.hasAttribute('disabled')).toBe(false)
+    expect(screen.getByText('Fixture refresh failed')).toBeDefined()
+    await openGroupMenu('Fixture account')
+    expect(refreshMenuItem('Fixture account').hasAttribute('disabled')).toBe(false)
+    closeOpenMenu()
     await act(async () => {
-      fireEvent.click(button)
+      await clickRefresh('Fixture account')
     })
     expect(screen.getByRole('status').textContent).toBe('Fixture account refreshed.')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText('Fixture refresh failed')).toBeNull()
   })
   it('accepts the first snapshot under StrictMode without waiting for the polling interval', async () => {
     const api = createAppApiStub().usage
@@ -292,7 +325,7 @@ describe('Usage panel', () => {
     )
     expect(configure).toHaveBeenCalledOnce()
   })
-  it('pins the explicit row globally, closes the panel, and preserves row focus during refresh failures', async () => {
+  it('pins the explicit row globally, closes the panel, and preserves menu focus during refresh failures', async () => {
     const api = createAppApiStub().usage,
       s = snapshot()
     vi.mocked(api.read).mockResolvedValue(s)
@@ -332,13 +365,16 @@ describe('Usage panel', () => {
       name: /Fixture account, 7d, 47%/,
     })
     refreshedRow.focus()
+    const menuButton = screen.getByRole('button', {
+      name: 'Refresh options for Fixture account',
+    })
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh Fixture account' }))
+      await clickRefresh('Fixture account')
     })
     expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%, Error/ })).toBe(
       refreshedRow,
     )
-    expect(document.activeElement).toBe(refreshedRow)
+    expect(document.activeElement).toBe(menuButton)
     expect(screen.getByText(/Cannot read usage file/)).toBeDefined()
     expect(screen.getByRole('status').textContent).toBe('Fixture account refresh failed.')
   })
@@ -354,11 +390,14 @@ describe('Usage panel', () => {
     await waitFor(() => expect(api.read).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     const note = await waitFor(() => {
-      const element = document.querySelector('.usage-source-note')
-      if (!element) throw new Error('Usage source note is missing')
+      const element = document.querySelector('.usage-errors-body')
+      if (!element) throw new Error('Usage error console is missing')
       return element
     })
-    expect(note.textContent).toBe('Usage source config. Check the account and retry.')
+    expect(note.textContent).toBe(
+      'Fixture account: Usage source config. Check the account and retry.',
+    )
+    expect(document.querySelector('.usage-group-error')?.textContent).toBe('Error')
   })
   it('gives every row its own avatar and freshness badge and no per-row source note', async () => {
     const api = createAppApiStub().usage,
@@ -475,13 +514,14 @@ describe('Usage panel', () => {
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh Fixture account' }))
+      await clickRefresh('Fixture account')
     })
     const status = screen.getByRole('status')
     expect(status.textContent).toContain('Fixture account refresh partially completed')
     expect(status.textContent).toContain('1 source(s) and 2 window(s) failed')
-    expect(screen.getByText('claude: updated.')).toBeDefined()
-    expect(screen.getByText('claude-5h: updated.')).toBeDefined()
+    // Successful source and window lines are not errors and stay out of the console.
+    expect(screen.queryByText('claude: updated.')).toBeNull()
+    expect(screen.queryByText('claude-5h: updated.')).toBeNull()
     const retained = screen.getByText(
       'claude-weekly: failed (network error). Earlier value Stale - 2h 0m old.',
     )
@@ -489,7 +529,6 @@ describe('Usage panel', () => {
     expect(screen.getByText('codex: rate limited. Retry in 5m.')).toBeDefined()
     const missing = screen.getByText('codex-weekly: rate limited. Retry in 5m. No earlier value.')
     expect(missing).toBeDefined()
-    expect(missing.getAttribute('title')).toBe(deadline)
     // The fixed text contains no provider payload and the rows keep their earlier values.
     expect(document.body.textContent).not.toContain('raw provider')
     expect(screen.getByRole('button', { name: /Claude weekly, 47%, Stale/ })).toBeDefined()
@@ -534,9 +573,8 @@ describe('Usage panel', () => {
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
-    const button = screen.getByRole('button', { name: 'Refresh Fixture account' })
     await act(async () => {
-      fireEvent.click(button)
+      await clickRefresh('Fixture account')
     })
     expect(screen.getByRole('status').textContent).toContain(
       'Fixture account refresh partially completed',
@@ -546,7 +584,7 @@ describe('Usage panel', () => {
     ).toBeDefined()
     // A second click inside the 60-second minimum reads no source and must not claim a partial one.
     await act(async () => {
-      fireEvent.click(button)
+      await clickRefresh('Fixture account')
     })
     const second = screen.getByRole('status').textContent ?? ''
     expect(second).not.toContain('partially completed')
@@ -558,7 +596,7 @@ describe('Usage panel', () => {
       screen.getByText('claude-weekly: failed (network error). No earlier value.'),
     ).toBeDefined()
   })
-  it('groups an aggregating account by agent with one refresh button per agent (A2-A5)', async () => {
+  it('groups an aggregating account by agent with one refresh menu per agent (A2-A5)', async () => {
     const api = createAppApiStub().usage,
       s = snapshot(),
       sub = s.connections[0].subscription
@@ -588,25 +626,43 @@ describe('Usage panel', () => {
       'Claude',
       'Codex',
     ])
-    const claude = screen.getByRole('button', { name: 'Refresh Claude in Fixture account' })
-    const codex = screen.getByRole('button', { name: 'Refresh Codex in Fixture account' })
-    const account = screen.getByRole('button', { name: 'Refresh Fixture account' })
-    expect(claude.getAttribute('aria-description')).toBe(
+    await openGroupMenu('Claude in Fixture account')
+    expect(refreshMenuItem('Claude in Fixture account').getAttribute('aria-description')).toBe(
       'Claude in Fixture account is ready to refresh.',
     )
-    expect(codex.getAttribute('title')).toContain('Codex in Fixture account can refresh again in')
-    fireEvent.click(claude)
+    closeOpenMenu()
+    await openGroupMenu('Codex in Fixture account')
+    expect(refreshMenuItem('Codex in Fixture account').getAttribute('title')).toContain(
+      'Codex in Fixture account can refresh again in',
+    )
+    closeOpenMenu()
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Refresh options for Claude in Fixture account',
+      }),
+    )
+    fireEvent.click(refreshMenuItem('Claude in Fixture account'))
     expect(api.refresh).toHaveBeenCalledWith({ connectionId: 'account', providerId: 'claude' })
     expect(screen.getByRole('status').textContent).toBe('Refreshing Claude in Fixture account...')
-    expect(claude.hasAttribute('disabled')).toBe(true)
-    expect(claude.getAttribute('aria-description')).toBe('Claude in Fixture account is refreshing.')
-    expect(codex.hasAttribute('disabled')).toBe(false)
-    expect(account.hasAttribute('disabled')).toBe(false)
+    await openGroupMenu('Claude in Fixture account')
+    expect(refreshMenuItem('Claude in Fixture account').hasAttribute('disabled')).toBe(true)
+    expect(refreshMenuItem('Claude in Fixture account').getAttribute('aria-description')).toBe(
+      'Claude in Fixture account is refreshing.',
+    )
+    closeOpenMenu()
+    await openGroupMenu('Codex in Fixture account')
+    expect(refreshMenuItem('Codex in Fixture account').hasAttribute('disabled')).toBe(false)
+    closeOpenMenu()
+    await openGroupMenu('Fixture account')
+    expect(refreshMenuItem('Fixture account').hasAttribute('disabled')).toBe(false)
+    closeOpenMenu()
     await act(async () => {
       finish({ ...s, refresh: { read: ['account'], skipped: [] } })
     })
     expect(screen.getByRole('status').textContent).toBe('Claude in Fixture account refreshed.')
-    expect(claude.hasAttribute('disabled')).toBe(false)
+    await openGroupMenu('Claude in Fixture account')
+    expect(refreshMenuItem('Claude in Fixture account').hasAttribute('disabled')).toBe(false)
+    closeOpenMenu()
   })
   it('shows agent headings without buttons when the adapter cannot refresh one agent', async () => {
     const api = createAppApiStub().usage,
@@ -620,8 +676,10 @@ describe('Usage panel', () => {
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     expect(screen.getByRole('heading', { level: 4, name: 'Claude' })).toBeDefined()
-    expect(screen.queryByRole('button', { name: /Refresh Claude/ })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Refresh Fixture account' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: /Refresh options for Claude/ })).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Refresh options for Fixture account' }),
+    ).toBeDefined()
   })
   it('reports a failed refresh with no numbers and explicit missing history', async () => {
     const api = createAppApiStub().usage,
@@ -644,7 +702,7 @@ describe('Usage panel', () => {
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh Fixture account' }))
+      await clickRefresh('Fixture account')
     })
     expect(screen.getByRole('status').textContent).toContain(
       'Fixture account refresh failed; earlier values were kept.',
@@ -682,7 +740,8 @@ describe('Usage panel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
       const label = target === 'agent' ? 'Claude in Fixture account' : 'Fixture account'
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: `Refresh ${label}` }))
+        await openGroupMenu(label)
+        fireEvent.click(refreshMenuItem(label))
       })
       expect(api.refresh).toHaveBeenCalledWith({
         connectionId: 'account',
@@ -747,16 +806,163 @@ describe('Usage panel', () => {
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh Claude in Fixture account' }))
+      await clickRefresh('Claude in Fixture account')
     })
     expect(screen.getByRole('status').textContent).toBe(
       'Claude in Fixture account refresh failed; earlier values were kept.',
     )
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh Codex in Fixture account' }))
+      await clickRefresh('Codex in Fixture account')
     })
     expect(api.refresh).toHaveBeenLastCalledWith({ connectionId: 'account', providerId: 'codex' })
     expect(screen.getByRole('status').textContent).toBe('Codex in Fixture account refreshed.')
     expect(screen.getByText('hub-claude: failed.')).toBeDefined()
+  })
+  it('opens the group menu by right-click and keyboard, then restores focus on Escape', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    vi.mocked(api.read).mockResolvedValue(s)
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    fireEvent.contextMenu(screen.getByRole('group', { name: 'Fixture account' }), {
+      clientX: 20,
+      clientY: 20,
+    })
+    await act(async () => {})
+    const menu = screen.getByRole('menu')
+    expect(document.activeElement).toBe(
+      screen.getByRole('menuitem', { name: 'Refresh Fixture account' }),
+    )
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    const menuButton = screen.getByRole('button', {
+      name: 'Refresh options for Fixture account',
+    })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(menuButton)
+    fireEvent.keyDown(menuButton, { key: 'ContextMenu' })
+    await act(async () => {})
+    const keyboardMenu = screen.getByRole('menu')
+    fireEvent.keyDown(keyboardMenu, { key: 'ArrowDown' })
+    fireEvent.keyDown(keyboardMenu, { key: 'End' })
+    fireEvent.keyDown(keyboardMenu, { key: 'Home' })
+    fireEvent.keyDown(keyboardMenu, { key: 'Tab' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(menuButton)
+    fireEvent.keyDown(menuButton, { key: 'ContextMenu' })
+    await act(async () => {})
+    fireEvent.pointerDown(screen.getByRole('dialog'))
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(screen.getByRole('dialog')).toBeDefined()
+  })
+  it('puts cache, export and rejected request failures in the error console', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    s.cacheError = 'Cannot write usage cache.'
+    s.exportError = 'Export failed.'
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh).mockRejectedValueOnce(new Error('Request failed'))
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    await act(async () => {
+      await clickRefresh('Fixture account')
+    })
+    const body = document.querySelector('.usage-errors-body')
+    expect(body?.textContent).toContain('Cannot write usage cache.')
+    expect(body?.textContent).toContain('Export failed.')
+    expect(body?.textContent).toContain('Request failed')
+  })
+  it('shows a disabled reason for a known empty or unlisted refresh agent', async () => {
+    vi.useFakeTimers()
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    s.connections[0].agents = []
+    vi.mocked(api.read).mockResolvedValue(s)
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    await openGroupMenu('Fixture account')
+    expect(screen.getByRole('menuitem').textContent).toBe('No refresh source in the Hub')
+    expect(screen.getByRole('menuitem').hasAttribute('disabled')).toBe(true)
+    closeOpenMenu()
+
+    s.connections[0].agents = [{ providerId: 'codex', nextRefreshAt: null }]
+    s.connections[0].subscription?.metrics.forEach((metric) => {
+      metric.providerId = 'claude'
+    })
+    vi.mocked(api.read).mockResolvedValue(structuredClone(s))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    await openGroupMenu('Claude in Fixture account')
+    expect(screen.getByRole('menuitem').textContent).toBe(
+      'No refresh source for this agent in the Hub',
+    )
+    expect(screen.getByRole('menuitem').hasAttribute('disabled')).toBe(true)
+  })
+  it('does not restart the error-console timer when a derived detail text changes', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+    const api = createAppApiStub().usage,
+      s = snapshot(),
+      metric = s.connections[0].subscription?.metrics[0]
+    if (!metric) throw new Error('Fixture metric is missing')
+    metric.observedAt = new Date(Date.now() - 2 * 3_600_000).toISOString()
+    s.connections[0].refreshResult = {
+      status: 'failed',
+      requestId: 'request-1',
+      sources: [
+        {
+          sourceId: 'fixture-source',
+          status: 'failed',
+          errorCode: 'network',
+          windows: [{ metricId: 'week', status: 'failed', errorCode: 'network' }],
+        },
+      ],
+    }
+    vi.mocked(api.read).mockResolvedValue(s)
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    expect(screen.getByRole('region', { name: 'Usage errors' })).toBeDefined()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+    expect(screen.queryByRole('region', { name: 'Usage errors' })).toBeNull()
+  })
+  it('auto-collapses the error console after 60 seconds and reopens it', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+    const api = createAppApiStub().usage,
+      s = snapshot()
+    s.connections[0].error = { code: 'io', message: 'Cannot read usage file' }
+    vi.mocked(api.read).mockResolvedValue(s)
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    expect(screen.getByRole('region', { name: 'Usage errors' })).toBeDefined()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_000)
+    })
+    expect(screen.getByRole('region', { name: 'Usage errors' })).toBeDefined()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    expect(screen.queryByRole('region', { name: 'Usage errors' })).toBeNull()
+    const toggle = screen.getByRole('button', { name: 'Errors (1)' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('region', { name: 'Usage errors' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Close usage errors' }))
+    expect(screen.queryByRole('region', { name: 'Usage errors' })).toBeNull()
+
+    const next = structuredClone(s)
+    next.connections[0].error = { code: 'io', message: 'Another usage failure' }
+    vi.mocked(api.read).mockResolvedValue(next)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(screen.getByRole('region', { name: 'Usage errors' })).toBeDefined()
   })
 })

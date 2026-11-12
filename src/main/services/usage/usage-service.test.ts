@@ -1926,6 +1926,7 @@ describe('account and agent refresh (NEKODE-148)', () => {
   function agentHub(
     f: ReturnType<typeof fixture>,
     refreshOptions: string[] | null = ['providers'],
+    refreshableProviders?: string[],
   ) {
     const directory = join(f.deps.userDataPath, 'usage-adapters', 'agents')
     mkdirSync(directory, { recursive: true })
@@ -1940,11 +1941,12 @@ describe('account and agent refresh (NEKODE-148)', () => {
         sourceKind: 'api',
         capabilities: ['window'],
         minimumRefreshSeconds: 60,
-        configSchema: [],
+        configSchema: [{ key: 'mode', label: 'Mode', type: 'text' }],
         ...(refreshOptions ? { refreshOptions } : {}),
       }),
     )
     let now = NOW
+    let refreshable = refreshableProviders
     const percent: Record<string, number> = { claude: 30, codex: 30 }
     const metric = (agent: string) => ({
       id: `${agent}-5h`,
@@ -1972,9 +1974,12 @@ describe('account and agent refresh (NEKODE-148)', () => {
     const host = new UsageAdapterHost()
     const read = vi
       .spyOn(host, 'read')
-      .mockImplementation(async (_adapter, _config, _id, _signal, _action, options = {}) =>
-        adapterResult(document(options.refreshProviders ?? ['claude', 'codex'])),
-      )
+      .mockImplementation(async (_adapter, _config, _id, _signal, _action, options = {}) => {
+        const result = adapterResult(document(options.refreshProviders ?? ['claude', 'codex']))
+        if (refreshable !== undefined)
+          Object.defineProperty(result, 'refreshableProviders', { value: refreshable })
+        return result
+      })
     const service = new UsageService({ ...f.deps, host, now: () => now })
     services.push(service)
     service.saveSettings({
@@ -1995,6 +2000,9 @@ describe('account and agent refresh (NEKODE-148)', () => {
       read,
       document,
       percent,
+      setRefreshable: (next: string[] | undefined) => {
+        refreshable = next
+      },
       advance: (ms: number) => {
         now += ms
       },
@@ -2247,5 +2255,109 @@ describe('account and agent refresh (NEKODE-148)', () => {
     ])
     expect(h.service.read().refresh).toBeUndefined()
     expect(h.read).toHaveBeenCalledTimes(3)
+  })
+  it('limits account and agent actions to the adapter refreshable list (R3, R4)', async () => {
+    const f = fixture()
+    const h = agentHub(f, ['providers'], ['claude'])
+    await h.service.refresh(account)
+    h.advance(60_000)
+    expect((await h.service.refresh(account)).refresh?.read).toEqual(['hub-account'])
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: ['claude'] })
+    expect(h.service.read().connections[0].agents).toEqual([
+      { providerId: 'claude', nextRefreshAt: h.at(120_000) },
+    ])
+    await expect(h.service.refresh(codex)).rejects.toMatchObject({ code: 'not_found' })
+    expect(h.read).toHaveBeenCalledTimes(2)
+  })
+  it('keeps the last known list when a response omits it and clears it on a configuration change (R2)', async () => {
+    const f = fixture()
+    const h = agentHub(f, ['providers'], ['claude'])
+    await h.service.refresh(account)
+    h.setRefreshable(undefined)
+    h.advance(60_000)
+    await h.service.refresh(account)
+    expect(h.service.read().connections[0].agents?.map((agent) => agent.providerId)).toEqual([
+      'claude',
+    ])
+    const settings = h.service.getSettings()
+    h.service.saveSettings({
+      ...settings,
+      connections: settings.connections.map((connection) => ({
+        ...connection,
+        config: { mode: 'changed' },
+      })),
+    })
+    await h.service.refresh(account)
+    expect(
+      h.service
+        .read()
+        .connections[0].agents?.map((agent) => agent.providerId)
+        .sort(),
+    ).toEqual(['claude', 'codex'])
+  })
+  it('shows no refresh action for a known empty list and rejects an account refresh (R3, R5)', async () => {
+    const f = fixture()
+    const h = agentHub(f, ['providers'], [])
+    // The first read learns the list; the next manual account refresh must not start a process.
+    await h.service.refresh(account)
+    h.advance(60_000)
+    await expect(h.service.refresh(account)).rejects.toMatchObject({ code: 'unsupported' })
+    expect(h.service.read().connections[0]).toMatchObject({ nextRefreshAt: null, agents: [] })
+    expect(h.read).toHaveBeenCalledTimes(1)
+  })
+  it('refreshes a listed agent before it has any retained metric (R4)', async () => {
+    const f = fixture()
+    const h = agentHub(f, ['providers'], ['grok'])
+    await h.service.refresh(account)
+    h.advance(60_000)
+    const result = await h.service.refresh({ connectionId: 'hub-account', providerId: 'grok' })
+    expect(result.refresh?.read).toEqual(['hub-account'])
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: ['grok'] })
+    expect(h.service.read().connections[0].agents).toEqual([
+      { providerId: 'grok', nextRefreshAt: h.at(120_000) },
+    ])
+  })
+  it('caps an account selection at 20 listed agents (A7, R4)', async () => {
+    const f = fixture()
+    const list = Array.from({ length: 21 }, (_, index) => `agent-${index}`)
+    const h = agentHub(f, ['providers'], list)
+    await h.service.refresh(account)
+    h.advance(60_000)
+    await h.service.refresh(account)
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: list.slice(0, 20) })
+    // The excluded agent keeps its deadline and is the only eligible agent on the next click.
+    expect(
+      h.service.read().connections[0].agents?.find((a) => a.providerId === 'agent-20'),
+    ).toEqual({ providerId: 'agent-20', nextRefreshAt: null })
+    await h.service.refresh(account)
+    expect(h.read.mock.calls[2][5]).toEqual({ refreshProviders: ['agent-20'] })
+  })
+  it('loads a legacy refresh-results file without a refreshable list as unknown (R2)', async () => {
+    const f = fixture()
+    const h = agentHub(f, ['providers'], ['claude'])
+    await h.service.refresh(account)
+    const revisions = JSON.parse(f.deps.state.get('usage.connection-revisions') ?? '{}')
+    writeFileSync(
+      join(f.deps.userDataPath, 'usage', 'refresh-results.json'),
+      JSON.stringify({ connectionRevisions: revisions, results: {} }),
+    )
+    const restarted = new UsageService({ ...f.deps, startTimer: false })
+    services.push(restarted)
+    const snapshot = restarted.read()
+    expect(snapshot.cacheError).toBeNull()
+    expect(snapshot.connections[0].agents?.map((agent) => agent.providerId).sort()).toEqual([
+      'claude',
+      'codex',
+    ])
+  })
+  it('restores the refreshable list from the persisted attempt metadata (R2)', async () => {
+    const f = fixture()
+    const h = agentHub(f, ['providers'], ['claude'])
+    await h.service.refresh(account)
+    const restarted = new UsageService({ ...f.deps, startTimer: false })
+    services.push(restarted)
+    expect(restarted.read().connections[0].agents).toEqual([
+      { providerId: 'claude', nextRefreshAt: null },
+    ])
   })
 })

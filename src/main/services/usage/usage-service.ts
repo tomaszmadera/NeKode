@@ -13,6 +13,7 @@ import {
 import { dirname, isAbsolute, join, parse, resolve } from 'node:path'
 import {
   parseUsageDocument,
+  parseUsageRefreshableProviders,
   parseUsageRefreshResult,
   parseUsageSettings,
   USAGE_ENABLED_KEY,
@@ -63,6 +64,11 @@ interface Runtime {
   refreshing: boolean
   /** Last manual refresh outcome; survives automatic polls and restarts. */
   refreshResult: UsageRefreshResult | null
+  /**
+   * Agents with a real refresh source reported by the adapter (spec R2); null when the adapter
+   * never sent the field, which keeps the earlier metric-derived behavior.
+   */
+  refreshableProviders: string[] | null
   /** Next scheduled read (rules 12-13). */
   due: number
   /**
@@ -338,6 +344,7 @@ export class UsageService {
       refreshError: null,
       refreshing: false,
       refreshResult: null,
+      refreshableProviders: null,
       due: 0,
       manualStartedAt: 0,
       agentManualStartedAt: new Map(),
@@ -642,6 +649,7 @@ export class UsageService {
       if (changed && !invalidated.has(c.id)) {
         r.subscription = kept?.subscription ?? null
         r.refreshResult = kept?.refreshResult ?? null
+        r.refreshableProviders = kept?.refreshableProviders ?? null
       }
       // Spec L5: a save without a source change keeps every deadline, so neither a scheduled
       // nor a manual read starts before the interval or a provider retry deadline. A read this
@@ -680,12 +688,13 @@ export class UsageService {
         const { config: _config, ...connection } = c
         const r = this.runtimeFor(c.id)
         const supported = this.agentSupport(c, adapters)
+        const canRefresh = !removedSource(c) && this.hasRefreshableAgents(supported, r)
         return {
           connection,
           subscription: r.subscription,
           error: this.failure(c, r),
           refreshing: r.refreshing,
-          nextRefreshAt: removedSource(c) ? null : at(this.manualPlan(c, r, supported)),
+          nextRefreshAt: canRefresh ? at(this.manualPlan(c, r, supported)) : null,
           agents: supported
             ? this.agentsOf(c, r).map((providerId) => ({
                 providerId,
@@ -722,6 +731,8 @@ export class UsageService {
         throw new AppError('validation_error', 'This usage source cannot refresh one agent.')
       if (!this.agentsOf(c, r).includes(providerId))
         throw new AppError('not_found', 'This usage source reports no such agent.')
+    } else if (!this.hasRefreshableAgents(this.agentSupport(c), r)) {
+      throw new AppError('unsupported', 'This usage source has no refreshable agents.')
     }
     if (this.enabled) {
       const result = await this.collect(c, true, providerId)
@@ -751,14 +762,22 @@ export class UsageService {
     }
     return a.refreshOptions?.includes('providers') === true
   }
+  /** Spec R3: a known empty list has no account action; an unknown list keeps the old behavior. */
+  private hasRefreshableAgents(supported: boolean, r: Runtime): boolean {
+    return !supported || r.refreshableProviders == null || r.refreshableProviders.length > 0
+  }
   /** Agents of the retained metrics, in the order they first appear (spec A2). */
-  private agentsOf(c: UsageConnection, r: Runtime): string[] {
+  private metricAgents(c: UsageConnection, r: Runtime): string[] {
     const agents: string[] = []
     for (const metric of r.subscription?.metrics ?? []) {
       const agent = agentOf(metric, c)
       if (!agents.includes(agent)) agents.push(agent)
     }
     return agents
+  }
+  /** Spec R3: a known adapter list wins; without it the retained metrics supply the agents. */
+  private agentsOf(c: UsageConnection, r: Runtime): string[] {
+    return r.refreshableProviders == null ? this.metricAgents(c, r) : [...r.refreshableProviders]
   }
   private agentDeadline(r: Runtime, agent: string): number {
     return Math.max(r.manualStartedAt, r.agentManualStartedAt.get(agent) ?? 0) + MANUAL_REFRESH_MS
@@ -833,8 +852,15 @@ export class UsageService {
     } else if (agents.length > 0) {
       const ready = agents.filter((agent) => this.agentDeadline(r, agent) <= now)
       interval = ready.length ? 0 : Math.min(...agents.map((a) => this.agentDeadline(r, a)))
-      if (ready.length > 0 && ready.length < agents.length) providers = ready
+      // Spec R4: when the adapter list leaves out a known metric agent, a full account refresh
+      // must still name the eligible listed agents so the adapter never sees an unsupported one.
+      const known = this.metricAgents(c, r)
+      const allKnownListed =
+        r.refreshableProviders == null || known.every((agent) => agents.includes(agent))
+      if (ready.length > 0 && (ready.length < agents.length || !allKnownListed)) providers = ready
     } else interval = r.manualStartedAt + MANUAL_REFRESH_MS
+    // Spec A7/R4: one request names at most 20 agents; the rest stay eligible for the next click.
+    if (providers && providers.length > 20) providers = providers.slice(0, 20)
     // Retry is per source; an agent selection counts only the sources holding its metrics.
     const selected = providers
     const agentByMetric = new Map((r.subscription?.metrics ?? []).map((m) => [m.id, agentOf(m, c)]))
@@ -875,7 +901,11 @@ export class UsageService {
     startedAt: number,
     refreshSources?: string[],
     refreshProviders?: string[],
-  ): Promise<{ subscription: UsageSubscription; refresh: UsageRefreshResult | null }> {
+  ): Promise<{
+    subscription: UsageSubscription
+    refresh: UsageRefreshResult | null
+    refreshableProviders: string[] | null
+  }> {
     if (removedSource(c)) throw new AppError('config', USAGE_REMOVED_ADAPTER_MESSAGE)
     const a = this.adapter(c),
       config = this.secrets(c, a)
@@ -911,6 +941,7 @@ export class UsageService {
         sourceKind: a.sourceKind,
       },
       refresh: result.refresh,
+      refreshableProviders: result.refreshableProviders ?? null,
     }
   }
   async test(raw: UsageConnection): Promise<void> {
@@ -1003,6 +1034,8 @@ export class UsageService {
         )
           return
         const sub = loaded.subscription
+        if (loaded.refreshableProviders !== null)
+          r.refreshableProviders = loaded.refreshableProviders
         // A rename during the read keeps it (spec rule 2); show the current label.
         sub.label = this.settings.connections.find((p) => p.id === c.id)?.label ?? sub.label
         const now = this.now()
@@ -1162,14 +1195,19 @@ export class UsageService {
       const revisions =
         raw.connectionRevisions === undefined ? {} : connectionRevisions(raw.connectionRevisions)
       const results = raw.results === undefined ? {} : usageObject(raw.results)
+      const refreshables =
+        raw.refreshableProviders === undefined ? {} : usageObject(raw.refreshableProviders)
       for (const c of this.settings.connections) {
         if (!revisions[c.id] || revisions[c.id] !== this.connectionRevisions[c.id]) continue
         const r = this.runtimeFor(c.id)
         const value = results[c.id]
-        if (value === undefined) continue
-        // Structural validation only: the stored result predates the merged subscription and its
-        // failed windows intentionally have no metric in the current document.
-        r.refreshResult = parseUsageRefreshResult(value, undefined, this.now())
+        if (value !== undefined) {
+          // Structural validation only: the stored result predates the merged subscription and its
+          // failed windows intentionally have no metric in the current document.
+          r.refreshResult = parseUsageRefreshResult(value, undefined, this.now())
+        }
+        const listed = refreshables[c.id]
+        if (listed !== undefined) r.refreshableProviders = parseUsageRefreshableProviders(listed)
       }
     } catch {
       this.cacheError = 'Cannot load usage refresh results. Refresh the account to restore them.'
@@ -1182,12 +1220,15 @@ export class UsageService {
   private persistRefreshResults(): void {
     try {
       const results: Record<string, UsageRefreshResult> = {}
+      const refreshableProviders: Record<string, string[]> = {}
       for (const c of this.settings.connections) {
-        const result = this.runtime.get(c.id)?.refreshResult
-        if (result) results[c.id] = result
+        const r = this.runtime.get(c.id)
+        if (r?.refreshResult) results[c.id] = r.refreshResult
+        if (r?.refreshableProviders !== null && r?.refreshableProviders !== undefined)
+          refreshableProviders[c.id] = r.refreshableProviders
       }
       const text = JSON.stringify(
-        { connectionRevisions: this.connectionRevisions, results },
+        { connectionRevisions: this.connectionRevisions, results, refreshableProviders },
         null,
         2,
       )

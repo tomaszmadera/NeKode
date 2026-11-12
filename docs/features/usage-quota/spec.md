@@ -3,6 +3,7 @@
 Status: Delivered (Stages 1-3 implemented, reviewed and fully verified; live provider reads not run). Amendment "accounts settings flow" (task `usage-accounts-ux`, rules 21-28) approved by the user on 2026-10-22; implemented, in review.
 Path: `docs/features/usage-quota/spec.md`.
 Amendment "account and agent refresh" (NEKODE-148): approved by the user on 2026-10-31, see the last section.
+Amendment "refresh menu, error console and refreshable agents" (NEKODE-180): approved by the user on 2026-11-12, see the last section.
 
 NEKODE-116 amendment (approved by the user on 2026-10-24): rules 21-28, acceptance criteria 15 and 18, and their verification text below use Sources and Adapters. For settings terminology these changes supersede the earlier accounts settings wording, including rules 1-3 and the L7 message; the live refresh amendment still owns collection and discovery. No removed reader is restored.
 
@@ -511,3 +512,113 @@ with this amendment. Requests without `refreshProviders` keep the earlier contra
 - Real Windows Electron check with isolated user data and a fixture adapter that declares the option.
   The Electron smoke with Personal Data Hub runs after PDH-18 ships; until then it is recorded as not
   run.
+
+## Amendment: refresh menu, error console and refreshable agents (NEKODE-180)
+
+Status: approved by the user on 2026-11-12 for task `nekode-180-usage-refresh-menu-errors`. The
+amendment changes rule 5 (header actions), rule 6 (group headers), NEKODE-148 A2-A4 (inline buttons)
+and the adapter response envelope. A6, A8-A11, the partial-refresh contract, the 60-second limits and
+every other earlier rule stay unchanged.
+
+Goal: the user refreshes one account or one agent from a group menu, reads failures in a console
+that collapses after one minute and can be reopened, and a hub can declare which agents have a real
+refresh source. The Personal Data Hub adapter already returns `refreshableProviders`; NeKode ignores
+it today. The matching PDH manifest change is blocked until this NeKode contract ships.
+
+### Panel and menus
+
+M1. The panel header keeps `Usage`, the source/refreshing summary and `Close usage panel`. It has no
+refresh action. It adds an `Errors (N)` toggle only while the error console has at least one current
+message. The inline `↻` buttons of NEKODE-148 A2 are removed.
+
+M2. Each account and agent group heading has a menu trigger: a visible `⋯` button with
+`aria-haspopup="menu"`, `aria-expanded` and an accessible label naming the group. Right-click,
+`ContextMenu` and `Shift+F10` on the heading open the same menu at the pointer or the heading. The
+menu is part of the panel, not the page, and opening it does not close the panel.
+
+M3. The account menu has `Refresh <account label>` only when its refresh action is available: the
+refreshable list is unknown, or it is known and non-empty. The agent menu has
+`Refresh <agent name> in <account label>` only for an agent in the known refreshable list (R3). A
+group without a refresh action shows one disabled item naming the reason (for example
+`No refresh source in the Hub`) instead of inventing an action. The menu refreshes one account (all
+eligible agents) or one agent; there is no cross-account refresh.
+
+M4. A menu item is disabled only while a refresh that covers its group is pending or in flight (an
+account refresh covers every agent). It stays enabled during the 60-second limit and a provider retry
+deadline, as A4 requires; a click reports the skip in the status message. Its accessible description
+is the existing group state: refreshing, `can refresh again in N s` from the absolute deadline, or
+ready. Other groups' menus stay usable while one group refreshes.
+
+M5. Menu keyboard: focus moves to the first item; ArrowDown/ArrowUp/Home/End move within the menu;
+Escape, Tab and an outside click close it and return focus to its trigger. Enter or Space runs the
+focused item and closes the menu. The panel's focus trap includes the open menu. Rows, pin state and
+focus outside the menu stay in place.
+
+### Error console
+
+E1. Every current failure is shown in one labelled `Usage errors` region: each account's current
+error, failure and retry lines from the per-source/window refresh detail, `cacheError`, `exportError`
+and a rejected IPC request. Successful source and window lines are not errors and stay out of it.
+Each account block keeps only its short error marker and freshness; long error text moves into the
+console.
+
+E2. The console is expanded when its set of messages becomes non-empty or a message with new content
+appears. It collapses automatically 60 seconds after expansion or after the last new message. The
+user can close it immediately with `Close usage errors` and reopen it through `Errors (N)`;
+reopening restarts the 60-second timer. Collapsing deletes nothing: source errors, `refreshResult`,
+manual status and rows stay available, and the next new message expands the console again.
+
+E3. The manual `role="status"` message and normal rows stay outside the console and are not
+auto-closed. The console is a labelled region with readable text and scrolling inside the panel's
+maximum height; it does not use one live alert per line. A concise status announces that new usage
+errors appeared, without repeating every line. The console is keyboard reachable and readable
+without colour or hover.
+
+### `refreshableProviders`
+
+R1. An adapter that declares `refreshOptions: ["providers"]` may add a top-level
+`refreshableProviders: string[]` to an `ok: true` response for `read` or `refresh`. The array has 0
+to 50 unique provider ids. Any other shape fails the read as `protocol` and keeps the previous
+values. The field stays outside `data`, so the normalized document, cache document and JSON export
+never include it.
+
+R2. NeKode stores the last list received for an account with the same connection revision used for
+`refreshResult`. A response without the field keeps the last list. A configuration or adapter change
+clears it. The list survives an application restart.
+
+R3. For an account with agent refresh support and a known list, the snapshot `agents` contains
+exactly the listed provider ids with their manual deadlines, including an agent with no retained
+metric. An empty list gives `agents: []` and no account or agent refresh item. An unknown list keeps
+the current metric-derived behavior. The UI never invents a group for a listed agent without metrics;
+the account item can still select it under R4.
+
+R4. When the list is known, an account refresh sends `refreshProviders` only with listed agents whose
+60-second limit passed. It omits the parameter only when the list covers every known agent and all of
+them are eligible. It never sends an unlisted or known-unsupported agent. When a selection is sent
+and more than 20 listed agents are eligible, it sends the first 20 in adapter-list order; the rest
+stay eligible for the next click. If no listed agent is eligible, the request is skipped with
+`interval`, or `backoff` when
+provider deadlines are the only block. The per-agent limits, saves, renames, re-enabling and
+scheduled reads keep A9-A11.
+
+R5. A request for an unlisted agent fails as `not_found` before starting an adapter process. An
+account request when the known list is empty fails as `unsupported` before starting a process. A
+response to a request with `refreshProviders` still must contain only metrics of the selected agents
+(A8). A manifest with `refreshOptions` and no `refreshableProviders` keeps the earlier behavior.
+
+### Compatibility and verification
+
+No settings, IPC, cache, export or pin migration. Adapters without the option are unchanged.
+A stored cache without the new field loads as an unknown list. The PDH manifest declares
+`refreshOptions` only after this contract is released, in a separate PDH task.
+
+Required tests: `adapter-host.test.ts` for valid, duplicate, malformed, oversized and missing lists;
+`usage-service.test.ts` with an injected clock for storing the list, keeping it on a missing field,
+clearing it on configuration change, restart, account selection, an empty list, an unlisted agent
+and the 59/60-second boundaries; `UsageToolbar.test.tsx` for menu open by button, right-click and
+keyboard, item states, per-group isolation, error-console expand, manual close, 60-second collapse,
+reopen and new-message expansion, and the status/row retention. `docs/features/usage-quota/usage.md`
+documents `refreshableProviders` and the menu. A real Windows Electron check uses isolated user data
+and a fixture adapter that declares the option. The Personal Data Hub smoke stays not run until the
+PDH tasks are delivered; it is missing evidence, not a pass. Final verification uses the recorded
+changed command plus the Electron smoke.
