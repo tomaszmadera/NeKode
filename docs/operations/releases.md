@@ -8,7 +8,7 @@ NeKode releases are GitHub Releases in `tomaszmadera/NeKode` with a Windows inst
 
 - Every version tag on `main` is a release with Windows and Linux binaries. One exception: a pushed tag whose release run failed because of a defect in the tagged commit, or whose draft the maintainer rejected, stays without a release. Its number is never reused, and the fix ships in the next patch version.
 - `main` and the tag are pushed atomically (`git push --atomic`), so the tag never reaches `origin` without its commit on `main`.
-- Changes accumulate on `main`. The version is bumped only when the maintainer explicitly requests a release, and one release includes all changes since the previous tag. A single fix gets its own release only when the maintainer requests it (for example a crash or data-loss fix).
+- Changes accumulate on `main`, and one release includes all changes since the previous tag. An agent may propose a release when it judges the moment right, but the version is bumped only with the maintainer's consent. A single fix may get its own release (for example a crash or data-loss fix), under the same consent rule.
 - Tag names are numeric semver without a `v` prefix, for example `0.15.0`.
 - A version `X.Y.Z` without a suffix is a regular release and becomes "Latest", also during 0.x. The release title, the notes, and the README communicate the beta status.
 - A tag with a semver suffix, for example `0.15.0-rc.1`, creates a release marked as pre-release. It does not change "Latest".
@@ -61,7 +61,7 @@ Confirm the commit contains all and only the approved changes. Larger work reach
 
 ## Version commit and annotated tag
 
-On the resulting verified `main`, require a clean worktree and select the approved semver. Bump only on the maintainer's explicit release request (see [Release policy](#release-policy)), and list the commits since the last tag with `git log --oneline <previous-tag>..HEAD` to choose the version from the most significant change. Existing tags use numeric names such as `0.14.0`, without a `v` prefix. For a pre-release, use a suffixed version such as `0.15.0-rc.1` in both `package.json` and the tag. Increment patch for a compatible fix, minor for compatible added functionality, and major for an incompatible release, with an explicit maintainer decision during the pre-1.0 period. Inspect the current manifest and local/remote tags before choosing a version.
+On the resulting verified `main`, require a clean worktree and select the approved semver. Bump only with the maintainer's consent to the release (see [Release policy](#release-policy)), and list the commits since the last tag with `git log --oneline <previous-tag>..HEAD` to choose the version from the most significant change. Existing tags use numeric names such as `0.14.0`, without a `v` prefix. For a pre-release, use a suffixed version such as `0.15.0-rc.1` in both `package.json` and the tag. Increment patch for a compatible fix, minor for compatible added functionality, and major for an incompatible release, with an explicit maintainer decision during the pre-1.0 period. Inspect the current manifest and local/remote tags before choosing a version.
 
 ```powershell
 git branch --show-current
