@@ -1,25 +1,27 @@
 # Chat attention badge
 
-Status: Delivered (bell and OSC 9 detection, amber chat-row dot).
+Status: Delivered (bell and OSC 9 detection, amber chat-row dot). Amended 2026-11-13 (NEKODE-184): OSC 99 notifications and the OSC 99 capability reply.
 Path: `docs/features/chat-attention-badge/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal
 
-When an agent CLI running inside a chat terminal (Claude Code, Codex CLI, OpenCode, or any program that rings the terminal bell or emits an OSC 9 notification) needs the user's attention — it finished its turn or is blocked on a prompt — that chat shows a badge in the left chat tree. A developer running several agent sessions in parallel sees which one needs them without switching chats.
+When an agent CLI running inside a chat terminal (Claude Code, Codex CLI, OpenCode, or any program that rings the terminal bell or emits an OSC 9 or OSC 99 notification) needs the user's attention (it finished its turn or is blocked on a prompt), that chat shows a badge in the left chat tree. A developer running several agent sessions in parallel sees which one needs them without switching chats.
 
 ## Related requirements
 
 - No item in `docs/product/requirements.md`. User request 2026-10-01 (analysis session): detect attention requests of agent CLIs running in the app's terminal chats and surface them on the chat list.
 - Measured fact (2026-10-01, dev machine, probe per the `terminal-io-debugging` skill): ConPTY forwards BEL, OSC 9, and OSC 777 byte-for-byte into the node-pty stream of a spawned PowerShell. Historic ConPTY stripped OSC sequences (microsoft/node-pty#714); the fix shipped with the ConPTY of Windows Terminal 1.23 (late 2024). Detection therefore sees what the agent sent on current Windows hosts; older hosts degrade to BEL-only, which this feature tolerates.
 - Agent-side signal sources are external configuration the app never edits: Claude Code `preferredNotifChannel: "terminal_bell"` (code.claude.com/docs/en/terminal-config), Codex CLI `[tui] notifications` with `notification_method = "bel"` or `"osc9"` (github.com/openai/codex `docs/config.md`), OpenCode bell plugins.
+- Measured fact (2026-11-12, dev machine, OpenCode 2.2.7 with `@opentui/core` 0.8.4 on ConPTY, NEKODE-184): OpenCode emits neither BEL nor OSC 9 without a plugin. At startup it sends the kitty desktop-notification query `ESC ] 99 ; i=opentui-notifications:p=? ; ESC \` and emits OSC 99 notifications only after the terminal answers that query. Kitty's query response is `ESC ] 99 ; i=<id> : p=? ; <key=value pairs> ST`, and its `p` key must list `title`.
 - Chat terminal contract reused, not redefined: `docs/features/mvp-core-shell/spec.md` (hidden terminals keep receiving their data; terminal-exit close flow).
 - Visual language: `docs/references/NeKode-Design-System.md` §2.4 — amber indicates attention.
 
 ## Scope
 
-- Passive detection of attention signals in chat terminals' PTY output: the BEL character as a standalone bell, and OSC 9 notifications.
+- Passive detection of attention signals in chat terminals' PTY output: the BEL character as a standalone bell, OSC 9 notifications, and OSC 99 (kitty desktop-notification protocol) title and body notifications.
+- One reply to an OSC 99 capability query, so a program that waits for that reply (OpenCode) starts sending OSC 99 notifications.
 - A per-chat, in-memory attention state and an amber badge on that chat's row in the left tree, with a tooltip when a message text is available.
 - Clearing the badge on chat selection and on any input the app delivers to that chat's PTY.
 
@@ -34,15 +36,17 @@ When an agent CLI running inside a chat terminal (Claude Code, Codex CLI, OpenCo
 
 ## Behaviour
 
-1. The only monitored streams are chat terminals' PTY output. Detection is passive: bytes reach the xterm view unchanged, and detection never consumes, blocks, delays, or rewrites them.
+1. The only monitored streams are chat terminals' PTY output. Detection is passive: bytes reach the xterm view unchanged, and detection never consumes, blocks, delays, or rewrites them. The only write the feature makes is the OSC 99 capability reply (Behaviour 10).
 2. A BEL (0x07) that the terminal parser reports as a bell raises attention for that chat. A BEL that merely terminates another escape sequence (for example a window-title set) must not: the detector relies on the terminal's parser callbacks, never on counting bytes in the raw stream.
 3. An OSC 9 notification (`ESC ] 9 ; <message>` terminated by BEL or ST) raises attention for that chat. The message text is kept for the tooltip, truncated to 120 characters. An empty message keeps the badge without a tooltip. An unterminated (malformed) OSC 9 raises nothing.
 4. A signal received while the chat is selected sets the attention state only when the active-chat indicator toggle (attention-alert-settings feature) is on — its default — so the row can show the indicator; with that toggle off the signal is ignored: the user is already looking at the chat. Visibility of the resulting dot is governed by the attention-alert-settings toggles, not by this spec.
 5. The badge shows on the chat's row in the left tree, next to the chat name, as an amber dot (Design-System §2.4). When message text exists, the badge tooltip shows it. A collapsed project hides the badge until expanded; no badge is promoted to the project row.
-6. The attention state clears when the user selects the chat, or when input is delivered to that chat's PTY through the app (typed, pasted, or submitted — any successful `terminals:write` for that chat id). Once cleared it stays clear until a new signal.
+6. The attention state clears when the user selects the chat, or when input is delivered to that chat's PTY through the app (typed, pasted, or submitted: any successful `terminals:write` for that chat id). The OSC 99 capability reply (Behaviour 10) is not user input and does not clear the state. Once cleared it stays clear until a new signal.
 7. Closing the chat removes the chat and its attention state with it (exit close flow unchanged). A replaced session generation starts with no attention state.
 8. Attention state lives in memory for one application run. After a restart no chat shows a badge.
 9. Bottom-panel terminals never set chat badges. Attention state is keyed by chat id; events of one id never affect another chat.
+10. An OSC 99 capability query (`ESC ] 99 ; <metadata> ; <empty payload>` whose metadata has `p=?`) in a chat terminal gets exactly one reply written to that chat's PTY: `ESC ] 99 ; i=<id>:p=? ; p=title,body ESC \`. `<id>` is the query's `i` value when it matches `[A-Za-z0-9._+-]{1,64}`, otherwise `0`. An OSC 99 with `p=?` and a non-empty payload is a reply echoed back by the program or the shell; it gets no reply, so the exchange cannot loop. Bottom-panel terminals do not reply. The reply raises no attention.
+11. An OSC 99 notification raises attention for that chat. Metadata is colon-separated `key=value` pairs. `p=title` or `p=body` carries text, and a missing `p` means title. `e=1` marks a base64 UTF-8 payload. `d=0` holds the chunk under its `i` id; a chunk with any other `d` value, or none, finishes the notification and raises attention once, whatever its payload kind. The tooltip message is the body, the title when the body is empty, or `<title>: <body>` when both exist, truncated to 120 characters as in Behaviour 3. A finished notification with no text keeps the badge without a tooltip. An OSC 99 without the `;` before the payload is malformed and raises nothing. Other payload kinds (`p=close`, `p=icon`, `p=alive`, `p=buttons`, and unknown kinds) raise nothing unless they finish a held notification. A base64 payload that does not decode raises nothing.
 
 ## Business rules
 
@@ -50,6 +54,7 @@ When an agent CLI running inside a chat terminal (Claude Code, Codex CLI, OpenCo
 - BEL-vs-terminator discrimination must come from the terminal parser (for example xterm `onBell` / `registerOscHandler`), not raw byte scanning.
 - The badge is passive: no retry, no timeout, no auto-clear.
 - UI labels and tooltips are English.
+- The OSC 99 reply goes to the PTY through the existing terminal write path, not through the input paths that report delivered input (Behaviour 6).
 
 ## Authorization
 
@@ -57,7 +62,7 @@ none (local single-user application).
 
 ## Data / API
 
-No IPC changes, no database tables, no `app_state` keys for the attention state itself (in-memory renderer state keyed by chat id: chat id → `{ message: string | null }`; the visibility toggles that read this state are persisted under the attention-alert-settings feature's keys). xterm APIs used: `onBell`, `registerOscHandler(9)`.
+No IPC changes, no database tables, no `app_state` keys for the attention state itself (in-memory renderer state keyed by chat id: chat id → `{ message: string | null }`; the visibility toggles that read this state are persisted under the attention-alert-settings feature's keys). xterm APIs used: `onBell`, `registerOscHandler(9)`, `registerOscHandler(99)`. The OSC 99 reply uses the existing `terminals:write` channel.
 
 ## Edge cases
 
@@ -65,11 +70,13 @@ No IPC changes, no database tables, no `app_state` keys for the attention state 
 - A signal from a hidden chat or a chat under a collapsed project: state is set and becomes visible on selection or expansion respectively.
 - A signal between the view's subscription and the lazy create resolving cannot be missed: the view subscribes before create resolves (mvp-core-shell contract).
 - A full-screen program in the alternate buffer (for example vim) rings BEL: it still counts; the badge appears when the chat is not selected.
+- An OSC 99 notification split over several `d=0` chunks raises attention once, when the finishing chunk arrives. Chunks with another `i` id stay separate.
+- A program that never sends the OSC 99 query (Claude Code, Codex CLI) sees no reply and no change in behaviour.
 - A session exits while its badge is active: the existing close flow removes the chat and the state with it; nothing else to clear.
 
 ## Errors
 
-Detection is passive observation. A failed or unsupported detection hook (for example in a test mock without parser callbacks) degrades to "no badge" without an error surface; this spec explicitly requires that silent degrade. Detection must never break the terminal view, its data path, or the Ctrl+D emptiness gate.
+Detection is passive observation. A failed or unsupported detection hook (for example in a test mock without parser callbacks) degrades to "no badge" without an error surface; this spec explicitly requires that silent degrade. A failed OSC 99 reply write degrades the same way: the program then sends no OSC 99 notifications for that session. Detection must never break the terminal view, its data path, or the Ctrl+D emptiness gate.
 
 ## Acceptance criteria
 
@@ -83,12 +90,17 @@ Detection is passive observation. A failed or unsupported detection hook (for ex
 - AC8: Attention state is in-memory only: restart shows no badges, and the implementation performs no database or `app_state` writes for it (structure assertion).
 - AC9: A signal on one chat never changes another chat's attention state (cross-chat isolation).
 - AC10: A signal received while the chat is hidden (deselected) sets the badge.
+- AC11: An OSC 99 capability query in a chat terminal writes exactly one reply with the query id to that chat's PTY and does not clear the attention state. An invalid id is answered with `i=0`. A `p=?` OSC 99 with a non-empty payload writes nothing. A bottom-panel terminal writes nothing.
+- AC12: An OSC 99 title or body notification, plain or base64, sets the state with the tooltip text from Behaviour 11; a notification with no text sets the badge without a tooltip.
+- AC13: A `d=0` OSC 99 chunk sets nothing until the finishing chunk with the same id arrives; then attention is raised once with the combined text.
+- AC14: `p=close`, malformed OSC 99 without a payload separator, and undecodable base64 OSC 99 payloads set nothing.
 
 ## Required tests
 
 - Renderer unit tests against the xterm mock: standalone BEL between writes; OSC-terminator sequence; OSC 9 forms (BEL-terminated, ST-terminated, empty message, unterminated); badge rendering in the left tree; clearing on selection and on write; selected-chat suppression; bottom-tab exclusion; cross-chat isolation. The mock must model parser semantics: a BEL inside an OSC terminator does not fire `onBell`.
+- Unit tests of the OSC 99 parser: capability query and id fallback, echoed reply, plain and base64 notices, held chunks, ignored kinds. Chat-terminal wiring tests: the reply is written through `terminals.write` without reporting delivered input, a notice calls the attention callback.
 - jsdom only; tests never spawn PTYs.
-- Real-app smoke (dev run): `printf '\a'` in a chat terminal shows the badge; optional manual check with a configured Claude Code or Codex session. When the environment cannot run it, record it as not run.
+- Real-app smoke (dev run): `printf '\a'` in a chat terminal shows the badge; optional manual check with a configured Claude Code or Codex session. OpenCode check: an OpenCode session in a chat terminal that needs the user shows the badge (the reply must arrive inside OpenCode's capability-detection window). When the environment cannot run it, record it as not run.
 
 ## Relevant SDD / ADR
 

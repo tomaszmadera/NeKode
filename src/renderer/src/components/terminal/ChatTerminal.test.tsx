@@ -1743,6 +1743,57 @@ describe('ChatTerminal lifecycle', () => {
       expect(terminal.written).toContain('\x1b]9;notify\x07tail\x07')
     })
 
+    it('AC11: answers the OSC 99 capability query without reporting delivered input', () => {
+      const { terminal, bundle, onAttention, onInputDelivered } = renderTerminalWithAttention()
+      const query = '\x1b]99;i=opentui-notifications:p=?;\x1b\\'
+      act(() => {
+        bundle.emitData(query)
+      })
+      expect(bundle.app.terminals.write).toHaveBeenCalledTimes(1)
+      expect(bundle.app.terminals.write).toHaveBeenCalledWith(
+        't1',
+        '\x1b]99;i=opentui-notifications:p=?;p=title,body\x1b\\',
+      )
+      expect(onInputDelivered).not.toHaveBeenCalled()
+      expect(onAttention).not.toHaveBeenCalled()
+      expect(terminal.written).toContain(query)
+      // The reply echoed back through the stream is not answered again.
+      act(() => {
+        bundle.emitData('\x1b]99;i=opentui-notifications:p=?;p=title,body\x1b\\')
+      })
+      expect(bundle.app.terminals.write).toHaveBeenCalledTimes(1)
+    })
+
+    it('AC12: an OSC 99 notice reports attention with its text', () => {
+      const { bundle, onAttention } = renderTerminalWithAttention()
+      act(() => {
+        bundle.emitData('\x1b]99;i=1:d=0;OpenCode\x1b\\\x1b]99;i=1:p=body;Needs input\x1b\\')
+      })
+      expect(onAttention).toHaveBeenCalledTimes(1)
+      expect(onAttention).toHaveBeenCalledWith({ message: 'OpenCode: Needs input' })
+      expect(bundle.app.terminals.write).not.toHaveBeenCalled()
+    })
+
+    it('AC11: a view without an attention consumer (bottom panel) does not reply', () => {
+      const bundle = createAppMock()
+      render(
+        <ChatTerminal
+          app={bundle.app}
+          chatId="b1"
+          cwd="D:/code/demo"
+          visible
+          showPrompt={false}
+          onExit={() => undefined}
+          onClose={() => undefined}
+          onSpawnError={() => undefined}
+        />,
+      )
+      act(() => {
+        bundle.emitData('\x1b]99;i=opentui-notifications:p=?;\x1b\\')
+      })
+      expect(bundle.app.terminals.write).not.toHaveBeenCalled()
+    })
+
     it('AC6: typed input reports delivered input; focus reports do not', () => {
       const { terminal, onInputDelivered } = renderTerminalWithAttention()
       act(() => {

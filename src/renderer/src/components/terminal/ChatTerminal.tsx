@@ -7,6 +7,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActivitySession } from '../../lib/chat-activity'
 import { isNewChatChord } from '../../lib/new-chat-chord'
+import { createOsc99Attention } from '../../lib/osc99-attention'
 import { isLeftPanelChord, isRightPanelChord } from '../../lib/panel-chords'
 import { writeSubmitLine } from '../../lib/pty-submit'
 import {
@@ -104,9 +105,10 @@ interface ChatTerminalProps {
   suppressSpawn?: boolean
   /**
    * Attention signals parsed from this terminal's stream (chat attention
-   * badge spec Behaviour 2-3): BEL as a standalone bell, or an OSC 9
-   * notification with its message text (null for an empty one). Detection is
-   * passive — these callbacks never consume, block or rewrite stream data.
+   * badge spec Behaviour 2-3 and 11): BEL as a standalone bell, or an OSC 9
+   * or OSC 99 notification with its message text (null for an empty one).
+   * Without this callback the view does not answer OSC 99 queries. Detection is
+   * passive: these callbacks never consume, block or rewrite stream data.
    */
   onAttention?: (signal: { message: string | null }) => void
   /** Delivered input to THIS chat's PTY (attention spec Behaviour 6 / AC6). */
@@ -325,6 +327,24 @@ export function ChatTerminal({
       onAttentionRef.current?.({ message: data.length > 0 ? data : null })
       // No handler consumes the string; false leaves other handlers free to
       // act (none are expected — the app never chains OSC 9 consumers).
+      return false
+    })
+    // OSC 99 (spec Behaviour 10-11): OpenCode sends notifications only after
+    // the terminal answers its capability query. The reply is the one write
+    // this feature makes. It goes straight to terminals.write, not through
+    // sendToPty or onData, because it is not user input and must not clear
+    // the badge (Behaviour 6). Views without an attention consumer (bottom
+    // panel) do not claim the capability.
+    const osc99 = createOsc99Attention()
+    const unsubscribeOsc99 = terminal.parser.registerOscHandler(99, (data) => {
+      const onAttentionNow = onAttentionRef.current
+      if (onAttentionNow === undefined) return false
+      const action = osc99.take(data)
+      if (action?.kind === 'reply') {
+        void appRef.current.terminals.write(chatId, action.data).catch(() => undefined)
+      } else if (action?.kind === 'notice') {
+        onAttentionNow({ message: action.message })
+      }
       return false
     })
 
@@ -724,6 +744,7 @@ export function ChatTerminal({
       unsubscribeExit()
       unsubscribeBell.dispose()
       unsubscribeOsc9.dispose()
+      unsubscribeOsc99.dispose()
       writeParsedSubscription.dispose()
       inputSubscription.dispose()
       terminal.dispose()
