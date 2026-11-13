@@ -66,6 +66,7 @@ Let NeKode read and change work items from an external Kanban backend (Plane tod
    - `getItem` `{ ref }`.
    - `createItem` `{ title, description?, stateRef?, priority? }`.
    - `updateItem` `{ ref, title?, description?, stateRef?, priority? }` — patch semantics: only provided fields change. `priority: null` clears the priority. An omitted `priority` leaves it unchanged.
+   - `listComments` `{ ref }`: the item's comments as `{ id, author, text, createdAt }` objects (NEKODE-85); an adapter whose backend has no comments returns `[]`. NeKode calls it whenever the task preview opens, so every adapter must implement it.
    - `stateRef` accepts a concrete state id, a concrete state name (case-insensitive) or a group alias (`backlog`, `todo`/`unstarted`, `in progress`/`started`, `done`/`completed`, `cancelled`) and is resolved by the adapter against its own states.
 5. Timeout: main enforces a per-invocation timeout (30 s default) and kills the adapter's process tree; expiry produces a typed `timeout` error naming the adapter and action.
 6. Config delivery: the request `config` object carries all stored field values, secrets included. No config values are placed on the command line (argv is world-readable on Windows) and no secrets go into environment variables or the manifest.
