@@ -238,23 +238,20 @@ describe('AdapterHost', () => {
   })
 
   it('kills a timed-out adapter so the process actually dies (pid probe)', async () => {
-    // The fixture prints its pid, then sleeps until killed.
-    const pidSleeper = `console.error('PID:' + process.pid); setInterval(() => {}, 1000)`
-    const adapter = fixture('pidsleep.cjs', pidSleeper)
+    // The fixture only sleeps; its pid must come from the spawn result, never
+    // from output the fixture may not reach before the timeout fires.
+    const adapter = fixture('pidsleep.cjs', `setInterval(() => {}, 1000)`)
     let adapterPid: number | null = null
-    // Wrap spawn to capture the child pid.
+    // Wrap spawn to capture the child pid. It is known as soon as spawn
+    // returns, unlike a pid the fixture has to print first: a slow runner can
+    // hit the timeout while node is still starting, so stderr would stay empty.
     const wrappedSpawn = ((
       command: string,
       args: string[],
       options: Parameters<typeof spawn>[2],
     ) => {
       const child = spawn(command, args, options)
-      child.stderr?.on('data', (chunk: Buffer) => {
-        const match = /PID:(\d+)/.exec(chunk.toString('utf8'))
-        if (match) {
-          adapterPid = Number(match[1])
-        }
-      })
+      adapterPid = child.pid ?? null
       return child
     }) as typeof spawn
     const host = new AdapterHost({ timeoutMs: 200, spawnProcess: wrappedSpawn })
@@ -269,13 +266,19 @@ describe('AdapterHost', () => {
     async () => {
       // The adapter starts a sleeping grandchild, reports its pid, then hangs.
       // SIGKILL on the direct child alone would leave the grandchild running.
-      const tree = [
-        `const { spawn } = require('node:child_process')`,
-        `const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })`,
-        `console.error('GRANDCHILD:' + g.pid)`,
-        `setInterval(() => {}, 1000)`,
-      ].join('\n')
-      const adapter = fixture('tree.cjs', tree)
+      // The grandchild pid reaches the test only through the adapter's own
+      // output, so the adapter must report it before the timeout: a shell
+      // starts in milliseconds where node startup can outlast the budget on a
+      // loaded runner, which is the same race the direct-child probes removed
+      // by reading child.pid.
+      const adapter = {
+        id: 'fixture-adapter',
+        dir,
+        invocation: {
+          command: '/bin/sh',
+          args: ['-c', 'sleep 300 & echo "GRANDCHILD:$!" >&2; wait'],
+        },
+      }
       let grandchildPid: number | null = null
       const wrappedSpawn = ((
         command: string,
@@ -315,21 +318,16 @@ describe('AdapterHost', () => {
     // stdin.write pending; when the host's own timeout kills the tree, closing
     // stdin raises EPIPE on that pending write. The stdin error must not mask
     // the typed `timeout` error Behaviour 5 requires (adapter + action named).
-    const pidSleeper = `console.error('PID:' + process.pid); setInterval(() => {}, 1000)`
-    const adapter = fixture('bigsleep.cjs', pidSleeper)
+    const adapter = fixture('bigsleep.cjs', `setInterval(() => {}, 1000)`)
     let adapterPid: number | null = null
+    // Same pid source as the timeout probe: the spawn result, never output.
     const wrappedSpawn = ((
       command: string,
       args: string[],
       options: Parameters<typeof spawn>[2],
     ) => {
       const child = spawn(command, args, options)
-      child.stderr?.on('data', (chunk: Buffer) => {
-        const match = /PID:(\d+)/.exec(chunk.toString('utf8'))
-        if (match) {
-          adapterPid = Number(match[1])
-        }
-      })
+      adapterPid = child.pid ?? null
       return child
     }) as typeof spawn
     const host = new AdapterHost({ timeoutMs: 200, spawnProcess: wrappedSpawn })
