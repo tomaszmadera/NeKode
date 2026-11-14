@@ -172,6 +172,7 @@ export const TEST_ID = {
   settingsEffectiveHandoff: 'settings-effective-handoff',
   settingsEffectiveContinue: 'settings-effective-continue',
   settingsEffectiveResume: 'settings-effective-resume',
+  settingsEffectiveStart: 'settings-effective-start',
   /** App Settings: quick theme switcher in status bar toggle. */
   settingsQuickThemeSwitch: 'settings-quick-theme-switch',
   /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
@@ -198,10 +199,21 @@ export const TEST_ID = {
   instructionContinueReset: 'instruction-continue-reset',
   instructionContinuePreview: 'instruction-continue-preview',
   instructionContinueError: 'instruction-continue-error',
-  instructionResumeProject: 'instruction-resume-project',
-  instructionResumePrompt: 'instruction-resume-prompt',
-  instructionResumeUnconfigured: 'instruction-resume-unconfigured',
+  /** Start and Resume instruction editors (NEKODE-187). */
+  instructionStartEditor: 'instruction-start-editor',
+  instructionStartSave: 'instruction-start-save',
+  instructionStartReset: 'instruction-start-reset',
+  instructionStartPreview: 'instruction-start-preview',
+  instructionStartError: 'instruction-start-error',
+  instructionStartKanbanNote: 'instruction-start-kanban-note',
+  instructionResumeEditor: 'instruction-resume-editor',
+  instructionResumeSave: 'instruction-resume-save',
+  instructionResumeReset: 'instruction-resume-reset',
+  instructionResumePreview: 'instruction-resume-preview',
   instructionResumeError: 'instruction-resume-error',
+  instructionResumeImport: 'instruction-resume-import',
+  instructionResumeMigration: 'instruction-resume-migration',
+  instructionResumeMigrationDismiss: 'instruction-resume-migration-dismiss',
   instructionManageTemplates: 'instruction-manage-templates',
   instructionStopNote: 'instruction-stop-note',
   /** Resume template editor: projects that bind the selected template (NEKODE-172). */

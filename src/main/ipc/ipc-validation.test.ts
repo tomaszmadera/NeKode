@@ -168,7 +168,6 @@ describe('ipc payload validation', () => {
       id: null,
       revision: null,
       name: 'Notes',
-      prompt: '{taskPath}',
       source: {
         kind: 'files',
         directory: '.',
@@ -182,7 +181,8 @@ describe('ipc payload validation', () => {
       { unknown: true },
       { id: 'existing' },
       { revision: 0 },
-      { prompt: 'missing' },
+      // NEKODE-187: a source carries no prompt.
+      { prompt: '{taskPath}' },
       { source: { ...input.source, extra: true } },
       { source: { ...input.source, pattern: 'dir/file' } },
       { source: { ...input.source, directory: '../' } },

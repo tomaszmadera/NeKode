@@ -304,7 +304,6 @@ describe('Resume command sources', () => {
         id: null,
         revision: null,
         name: 'Slow',
-        prompt: '{taskPath}',
         source: source('setInterval(()=>{},1000)'),
       })
       .templates.slice(-1)[0]
@@ -589,7 +588,7 @@ describe('Resume command sources', () => {
       runCommand: runner,
     })
     let template = service
-      .put({ id: null, revision: null, name: 'Slow', prompt: '{taskPath}', source: source('') })
+      .put({ id: null, revision: null, name: 'Slow', source: source('') })
       .templates.slice(-1)[0]
     await expect(service.test(template.id, 'p', template.revision, 'timeout')).rejects.toThrow(
       /30 seconds/,

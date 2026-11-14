@@ -110,6 +110,8 @@ function AppContent({
       setAutoSendHandoff: state.setAutoSendHandoff,
       handoffInstruction: state.handoffInstruction,
       continueInstruction: state.continueInstruction,
+      startInstruction: state.startInstruction,
+      resumeInstruction: state.resumeInstruction,
     })),
   )
 
@@ -638,6 +640,8 @@ function AppContent({
           onAutoSendChange={settings.setAutoSendHandoff}
           handoffInstruction={settings.handoffInstruction}
           continueInstruction={settings.continueInstruction}
+          startInstruction={settings.startInstruction}
+          resumeInstruction={settings.resumeInstruction}
           onRefresh={refreshActions}
           initialTab={projectSettings.tab}
           onClose={projectSettings.closeProjectSettings}

@@ -21,7 +21,7 @@ export interface ProjectResumeSettingsProps {
 }
 
 const errorMessage = (cause: unknown) =>
-  parseAppErrorPayload(cause)?.message ?? 'Failed to update Resume template selection.'
+  parseAppErrorPayload(cause)?.message ?? 'Failed to update Resume source selection.'
 
 export function ProjectResumeSettings({
   app,
@@ -98,14 +98,14 @@ export function ProjectResumeSettings({
   const selected = templates.find((template) => template.id === selectedTemplateId)
 
   return (
-    <SettingsGroup label="Resume template">
-      <SectionLabel title="Resume template" />
+    <SettingsGroup label="Resume source">
+      <SectionLabel title="Resume source" />
       <GroupBox>
         <div data-testid="project-resume-settings">
           <FieldRow
-            label="Resume template"
+            label="Resume source"
             htmlFor="project-resume-template"
-            description="Configures how Resume finds continuation context and formats instructions."
+            description="Configures where Resume finds continuation context. The Resume instruction is set in Application settings, Instructions."
           >
             <div className="flex items-center gap-2">
               <SettingsSelect
@@ -125,7 +125,7 @@ export function ProjectResumeSettings({
               </SettingsSelect>
               {onManageTemplates ? (
                 <button type="button" className={secondaryClass} onClick={onManageTemplates}>
-                  Manage templates
+                  Manage sources
                 </button>
               ) : null}
             </div>
@@ -136,7 +136,6 @@ export function ProjectResumeSettings({
               data-testid="project-resume-source-summary"
             >
               <p className="font-mono">{summarizeResumeSource(selected.source)}</p>
-              <p className="mt-1 whitespace-pre-wrap">{selected.prompt}</p>
             </div>
           ) : null}
           {error ? (

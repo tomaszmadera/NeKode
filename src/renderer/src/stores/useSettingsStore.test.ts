@@ -1,6 +1,8 @@
 import {
   DEFAULT_CONTINUE_INSTRUCTION,
   DEFAULT_HANDOFF_INSTRUCTION,
+  DEFAULT_RESUME_INSTRUCTION,
+  DEFAULT_START_INSTRUCTION,
 } from '@shared/contracts/action-instructions-contract'
 import { APP_STATE_KEY } from '@shared/ipc-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -227,6 +229,9 @@ describe('settings store: app_state settings', () => {
         APP_STATE_KEY.attentionActiveIndicatorEnabled,
         APP_STATE_KEY.handoffInstruction,
         APP_STATE_KEY.continueInstruction,
+        APP_STATE_KEY.startInstruction,
+        APP_STATE_KEY.resumeInstruction,
+        APP_STATE_KEY.resumeMigration,
       ].sort(),
     )
     await flush()
@@ -363,6 +368,75 @@ describe('settings store: app_state settings', () => {
     expect(store.getState().handoffInstructionError).toContain('invalid')
     expect(store.getState().continueInstruction).toBe(DEFAULT_CONTINUE_INSTRUCTION)
     expect(store.getState().continueInstructionError).toBeNull()
+  })
+
+  it('hydrates Start, Resume and the migration notice with visible fallbacks', async () => {
+    const notice = { prompts: [{ prompt: 'Old {taskPath}', templates: ['A'] }] }
+    const app = fakeApp({
+      [APP_STATE_KEY.startInstruction]: 'Take {ref}\n\n{url}',
+      [APP_STATE_KEY.resumeInstruction]: 'No path here',
+      [APP_STATE_KEY.resumeMigration]: JSON.stringify(notice),
+    })
+    const store = createSettingsStore({ app, reportError: vi.fn() })
+    store.getState().hydrate()
+    await flush()
+
+    expect(store.getState()).toMatchObject({
+      startInstruction: 'Take {ref}\n\n{url}',
+      startInstructionError: null,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
+      resumeMigrationNotice: notice,
+    })
+    expect(store.getState().resumeInstructionError).toContain(
+      'The saved Resume instruction is invalid.',
+    )
+  })
+
+  it('validates, saves and resets Start and Resume instructions', () => {
+    const app = fakeApp()
+    const store = createSettingsStore({ app, reportError: vi.fn() })
+    const actions = store.getState()
+
+    expect(actions.setStartInstruction('No ref')).toBe('Start instruction must contain {ref}.')
+    expect(actions.setResumeInstruction('No path')).toBe(
+      'Resume instruction must contain {taskPath}.',
+    )
+    expect(app.state.set).not.toHaveBeenCalled()
+
+    expect(actions.setStartInstruction('Take {ref}\n{title}')).toBeNull()
+    expect(actions.setResumeInstruction('Go {taskPath}\nnow')).toBeNull()
+    expect(app.state.set.mock.calls).toEqual([
+      [APP_STATE_KEY.startInstruction, 'Take {ref}\n{title}'],
+      [APP_STATE_KEY.resumeInstruction, 'Go {taskPath}\nnow'],
+    ])
+
+    actions.resetStartInstruction()
+    expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.startInstruction, '')
+    expect(store.getState().startInstruction).toBe(DEFAULT_START_INSTRUCTION)
+    actions.resetResumeInstruction()
+    expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.resumeInstruction, '')
+    expect(store.getState().resumeInstruction).toBe(DEFAULT_RESUME_INSTRUCTION)
+  })
+
+  it('dismisses the migration notice and restores it when the write fails', async () => {
+    const notice = { prompts: [{ prompt: 'Old {taskPath}', templates: ['A'] }] }
+    const app = fakeApp({ [APP_STATE_KEY.resumeMigration]: JSON.stringify(notice) })
+    const reportError = vi.fn()
+    const store = createSettingsStore({ app, reportError })
+    store.getState().hydrate()
+    await flush()
+
+    app.state.set.mockRejectedValueOnce(new Error('disk'))
+    store.getState().dismissResumeMigrationNotice()
+    expect(store.getState().resumeMigrationNotice).toBeNull()
+    await flush()
+    expect(store.getState().resumeMigrationNotice).toEqual(notice)
+    expect(reportError).toHaveBeenCalledWith('Failed to dismiss the previous Resume prompts.')
+
+    store.getState().dismissResumeMigrationNotice()
+    await flush()
+    expect(app.state.set).toHaveBeenLastCalledWith(APP_STATE_KEY.resumeMigration, '')
+    expect(store.getState().resumeMigrationNotice).toBeNull()
   })
 
   it('reports a failed load, except the silent show-icons read', async () => {

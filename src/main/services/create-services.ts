@@ -3,6 +3,11 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bottomTabProjectId, isBottomTabId } from '@shared/bottom-tab-id'
 import {
+  DEFAULT_RESUME_INSTRUCTION,
+  DEFAULT_START_INSTRUCTION,
+  resolveInstruction,
+} from '@shared/contracts/action-instructions-contract'
+import {
   APP_STATE_KEY,
   IPC_CHANNEL,
   projectShellKey,
@@ -310,7 +315,20 @@ export function createServices(
     projects,
     state,
     readLegacyTemplate: () => resumeTemplates.readLegacyTemplate(),
+    resumeInstruction: () =>
+      resolveInstruction(
+        state.get(APP_STATE_KEY.resumeInstruction),
+        DEFAULT_RESUME_INSTRUCTION,
+        'resume',
+      ),
   })
+  // One-time NEKODE-187 migration before any renderer reads the instructions.
+  // A failure is logged and retried at the next start; the default applies meanwhile.
+  try {
+    resumeSources.migrateResumeInstruction()
+  } catch (error) {
+    console.error('[resume-sources] Resume instruction migration failed', error)
+  }
   const kanban = new KanbanService({
     projects,
     state,
@@ -375,6 +393,12 @@ export function createServices(
       chats.createNamed(projectId, name, IPC_CHANNEL.kanbanLaunchTask, identity),
     sessions: agentSessions,
     terminals: agentTerminals,
+    startInstruction: () =>
+      resolveInstruction(
+        state.get(APP_STATE_KEY.startInstruction),
+        DEFAULT_START_INSTRUCTION,
+        'start',
+      ),
   })
   const contextUsage = new ContextUsageService({
     projects,

@@ -236,11 +236,11 @@ Do not require icons.
 
 The fixed buttons act on the active chat. `Stop` and `Continue` write terminal input through `terminals:write`. `Handoff` and `Resume` paste into the console without submitting unless auto-send is on, in which case they write the same text plus CR. `docs/features/handoff-resume-flow/spec.md` owns that flow.
 
-Handoff and Continue are multiline instructions configured in App Settings > Instructions and shared by every project. Resume uses the instruction of the project's Resume template. The defaults are:
+Start, Resume, Handoff and Continue are multiline instructions configured in App Settings > Instructions and shared by every project. A project only selects the Resume source that finds the context path. Start is used when a Kanban card is started and has the placeholders `{ref}`, `{title}`, `{description}` and `{url}`. The action-bar defaults are:
 
 ```text
 Handoff     Write a handoff
-Resume      Resume task {taskPath}    (Resume template; {taskPath} is the selected context path)
+Resume      Resume task {taskPath}    ({taskPath} is the context path the project's Resume source found)
 Continue    Continue               + CR (0x0D)
 Stop        Ctrl+C (0x03)
 ```

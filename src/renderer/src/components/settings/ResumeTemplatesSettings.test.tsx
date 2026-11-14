@@ -1,5 +1,4 @@
 import type { ResumeSourceLibrary, ResumeSourcePreview } from '@shared/ipc-contract'
-import { LOCAL_PROGRESS_RESUME_PROMPT } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +7,7 @@ import { createAppApiStub } from '../../test/app-api-stub'
 import { ResumeTemplatesSettings } from './ResumeTemplatesSettings'
 
 afterEach(cleanup)
+const RESUME = 'Resume from {taskPath}\nRead it first.'
 const library = (): ResumeSourceLibrary => ({
   revision: 1,
   templates: [
@@ -15,7 +15,6 @@ const library = (): ResumeSourceLibrary => ({
       id: 'notes',
       revision: 1,
       name: 'Notes',
-      prompt: 'Resume from {taskPath}',
       source: {
         kind: 'files',
         directory: '.',
@@ -50,31 +49,32 @@ async function setup() {
     { id: 'p2', name: 'Two', path: '/two', runtimeLabel: null },
   ])
   vi.mocked(app.resumeSources.put).mockResolvedValue({ ...library(), revision: 2 })
-  const view = render(<ResumeTemplatesSettings app={app} />)
+  const view = render(<ResumeTemplatesSettings app={app} resumeInstruction={RESUME} />)
   await screen.findByRole('option', { name: 'Notes' })
-  fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'notes' } })
+  fireEvent.change(screen.getByLabelText('Saved source'), { target: { value: 'notes' } })
   fireEvent.change(screen.getByLabelText('Test project'), { target: { value: 'p1' } })
   return { app, ...view }
 }
 
-describe('Resume templates settings', () => {
+describe('Resume sources settings', () => {
   it('previews the saved template for a selected registered project without editing project settings', async () => {
     const { app } = await setup()
     vi.mocked(app.resumeSources.test).mockResolvedValue(result())
-    fireEvent.click(screen.getByRole('button', { name: 'Test saved template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test saved source' }))
     expect(await screen.findByText('TASK-1/progress.txt')).not.toBeNull()
     expect(screen.getByTestId('resume-preview-instruction-TASK-1').textContent).toBe(
-      'Resume from TASK-1/progress.txt',
+      'Resume from TASK-1/progress.txt\nRead it first.',
     )
+    expect(screen.getByText('Resume instruction (Application settings):')).not.toBeNull()
     expect(app.resumeSources.test).toHaveBeenCalledWith('notes', 'p1', 1, expect.any(String))
     expect(app.state.set).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('Test project'), { target: { value: 'p2' } })
     expect(screen.queryByText('TASK-1/progress.txt')).toBeNull()
   })
 
-  it('creates file templates and edits source fields and multiline instructions before saving', async () => {
+  it('creates file sources and saves source fields without a prompt', async () => {
     const { app } = await setup()
-    fireEvent.click(screen.getByRole('button', { name: 'New template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New source' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Progress' } })
     fireEvent.change(screen.getByLabelText('Directory'), { target: { value: 'work' } })
     fireEvent.change(screen.getByLabelText('File name filter'), {
@@ -82,19 +82,16 @@ describe('Resume templates settings', () => {
     })
     fireEvent.click(screen.getByLabelText('Search subdirectories'))
     fireEvent.change(screen.getByLabelText('Candidate identity'), { target: { value: 'parent' } })
-    fireEvent.change(screen.getByLabelText('Resume instruction'), {
-      target: { value: 'Resume {taskPath}\nKeep {unknown} and $literal' },
-    })
+    expect(screen.queryByLabelText('Resume instruction')).toBeNull()
     expect(
-      (screen.getByRole('button', { name: 'Test saved template' }) as HTMLButtonElement).disabled,
+      (screen.getByRole('button', { name: 'Test saved source' }) as HTMLButtonElement).disabled,
     ).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Save template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save source' }))
     await waitFor(() =>
       expect(app.resumeSources.put).toHaveBeenCalledWith({
         id: null,
         revision: null,
         name: 'Progress',
-        prompt: 'Resume {taskPath}\nKeep {unknown} and $literal',
         source: {
           kind: 'files',
           directory: 'work',
@@ -108,7 +105,7 @@ describe('Resume templates settings', () => {
 
   it('offers the Local progress files preset without creating files or binding a project', async () => {
     const { app } = await setup()
-    fireEvent.click(screen.getByRole('button', { name: 'New template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New source' }))
     fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'local-progress' } })
 
     expect((screen.getByLabelText('Directory') as HTMLInputElement).value).toBe('work')
@@ -117,35 +114,32 @@ describe('Resume templates settings', () => {
     )
     expect((screen.getByLabelText('Search subdirectories') as HTMLInputElement).checked).toBe(true)
     expect((screen.getByLabelText('Candidate identity') as HTMLSelectElement).value).toBe('parent')
-    expect((screen.getByLabelText('Resume instruction') as HTMLTextAreaElement).value).toBe(
-      LOCAL_PROGRESS_RESUME_PROMPT,
-    )
+    expect(screen.queryByLabelText('Resume instruction')).toBeNull()
     expect(screen.getByText(/Selecting this preset creates no files/)).not.toBeNull()
     expect(app.resumeSources.put).not.toHaveBeenCalled()
     expect(app.resumeSources.bind).not.toHaveBeenCalled()
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Local progress' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save source' }))
     await waitFor(() =>
-      expect(app.resumeSources.put).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'Local progress',
-          prompt: expect.stringContaining('Read that progress file before continuing.'),
-          source: {
-            kind: 'files',
-            directory: 'work',
-            pattern: 'progress.md',
-            recursive: true,
-            identity: 'parent',
-          },
-        }),
-      ),
+      expect(app.resumeSources.put).toHaveBeenCalledWith({
+        id: null,
+        revision: null,
+        name: 'Local progress',
+        source: {
+          kind: 'files',
+          directory: 'work',
+          pattern: 'progress.md',
+          recursive: true,
+          identity: 'parent',
+        },
+      }),
     )
   })
 
   it('keeps executable and argv separate and exposes the Harness preset explicitly', async () => {
     const { app } = await setup()
-    fireEvent.click(screen.getByRole('button', { name: 'New template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New source' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Custom' } })
     fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'generic' } })
     fireEvent.change(screen.getByLabelText('Executable'), { target: { value: 'inventory' } })
@@ -153,7 +147,7 @@ describe('Resume templates settings', () => {
     fireEvent.change(screen.getByLabelText('Argument 1'), {
       target: { value: 'path with spaces; $x' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save source' }))
     await waitFor(() =>
       expect(app.resumeSources.put).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -166,11 +160,9 @@ describe('Resume templates settings', () => {
         }),
       ),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'New template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New source' }))
     fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'agent-harness' } })
-    expect((screen.getByLabelText('Resume instruction') as HTMLTextAreaElement).value).toBe(
-      'Resume task {taskPath}',
-    )
+    expect(screen.queryByLabelText('Resume instruction')).toBeNull()
     expect(screen.queryByLabelText('Executable')).toBeNull()
     expect(screen.getByText(/Requires Agent Harness/)).not.toBeNull()
   })
@@ -180,15 +172,15 @@ describe('Resume templates settings', () => {
     vi.mocked(app.resumeSources.test)
       .mockRejectedValueOnce(new AppError('config', 'Install Agent Harness in this project.'))
       .mockResolvedValue(result())
-    fireEvent.click(screen.getByRole('button', { name: 'Test saved template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test saved source' }))
     expect((await screen.findByRole('alert')).textContent).toContain('Install Agent Harness')
-    fireEvent.click(screen.getByRole('button', { name: 'Test saved template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test saved source' }))
     expect(await screen.findByText('TASK-1/progress.txt')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     vi.mocked(app.resumeSources.put).mockRejectedValueOnce(
-      new AppError('conflict', 'The Resume template changed. Reload it and retry.'),
+      new AppError('conflict', 'The Resume source changed. Reload it and retry.'),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Save template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save source' }))
     expect((await screen.findByRole('alert')).textContent).toContain('changed')
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Notes')
   })
@@ -202,7 +194,7 @@ describe('Resume templates settings', () => {
           finish = resolve
         }),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Test saved template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test saved source' }))
     fireEvent.click(screen.getByRole('button', { name: 'Testing...' }))
     expect(app.resumeSources.test).toHaveBeenCalledTimes(1)
     fireEvent.change(screen.getByLabelText('Test project'), { target: { value: 'p2' } })
@@ -211,14 +203,14 @@ describe('Resume templates settings', () => {
     })
     expect(screen.queryByText('TASK-1/progress.txt')).toBeNull()
     expect(app.resumeSources.cancel).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Test saved template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test saved source' }))
     const event = vi.mocked(app.resumeSources.onChanged).mock.calls[0][0]
     await act(async () => {
       event({ templateId: 'notes', revision: 2 })
       finish(result())
     })
     expect(screen.queryByText('TASK-1/progress.txt')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Test saved template' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test saved source' }))
     unmount()
     await act(async () => {
       finish(result())
@@ -226,7 +218,7 @@ describe('Resume templates settings', () => {
     expect(app.resumeSources.cancel).toHaveBeenCalledTimes(3)
   })
 
-  it('duplicates and deletes a saved template with revision guards', async () => {
+  it('duplicates and deletes a saved source with revision guards', async () => {
     const { app } = await setup()
     vi.mocked(app.resumeSources.duplicate).mockResolvedValue({
       revision: 2,
@@ -246,7 +238,7 @@ describe('Resume templates settings', () => {
     await waitFor(() => expect(app.resumeSources.delete).toHaveBeenCalledWith('copy', 2))
   })
 
-  it('names the projects using the selected template and reports an unused template', async () => {
+  it('names the projects using the selected source', async () => {
     const app = createAppApiStub()
     vi.mocked(app.resumeSources.list).mockResolvedValue(library())
     vi.mocked(app.projects.list).mockResolvedValue([])
@@ -254,17 +246,17 @@ describe('Resume templates settings', () => {
       templateId: 'notes',
       projects: [{ id: 'p1', name: 'One' }],
     })
-    render(<ResumeTemplatesSettings app={app} />)
+    render(<ResumeTemplatesSettings app={app} resumeInstruction={RESUME} />)
     await screen.findByRole('option', { name: 'Notes' })
-    fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'notes' } })
+    fireEvent.change(screen.getByLabelText('Saved source'), { target: { value: 'notes' } })
 
     expect((await screen.findByTestId(TEST_ID.resumeTemplateUsage)).textContent).toBe(
-      'Used by: One. Saving the instruction applies it to these projects.',
+      'Used by: One. Saving the source applies it to these projects.',
     )
     expect(app.resumeSources.usage).toHaveBeenCalledWith('notes')
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
-    expect(screen.getByText(/Saving applies this instruction to: One\./)).not.toBeNull()
+    expect(screen.getByText(/Saving applies this source to: One\./)).not.toBeNull()
   })
 
   it('shows a recoverable usage error instead of an empty project list', async () => {
@@ -274,25 +266,17 @@ describe('Resume templates settings', () => {
     vi.mocked(app.resumeSources.usage).mockRejectedValue(
       new AppError('not_found', 'Resume template not found.'),
     )
-    render(<ResumeTemplatesSettings app={app} />)
+    render(<ResumeTemplatesSettings app={app} resumeInstruction={RESUME} />)
     await screen.findByRole('option', { name: 'Notes' })
-    fireEvent.change(screen.getByLabelText('Template'), { target: { value: 'notes' } })
+    fireEvent.change(screen.getByLabelText('Saved source'), { target: { value: 'notes' } })
 
     expect((await screen.findByRole('alert')).textContent).toContain('Resume template not found.')
     expect(screen.queryByTestId(TEST_ID.resumeTemplateUsage)).toBeNull()
   })
 
-  it('imports legacy Resume template from settings.json into the editor', async () => {
-    const { app } = await setup()
-    vi.mocked(app.resumeSources.importLegacy).mockResolvedValue('Imported prompt {handoffPath}')
+  it('offers no legacy import in the source editor', async () => {
+    await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
-    const importBtn = screen.getByRole('button', { name: 'Import legacy template' })
-    fireEvent.click(importBtn)
-    await waitFor(() => {
-      expect(app.resumeSources.importLegacy).toHaveBeenCalledOnce()
-      expect((screen.getByLabelText('Resume instruction') as HTMLTextAreaElement).value).toBe(
-        'Imported prompt {handoffPath}',
-      )
-    })
+    expect(screen.queryByRole('button', { name: 'Import legacy template' })).toBeNull()
   })
 })

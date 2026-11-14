@@ -1,7 +1,12 @@
 import {
   DEFAULT_CONTINUE_INSTRUCTION,
   DEFAULT_HANDOFF_INSTRUCTION,
+  DEFAULT_RESUME_INSTRUCTION,
+  DEFAULT_START_INSTRUCTION,
+  type InstructionKind,
   isValidStoredInstruction,
+  parseResumeMigrationNotice,
+  type ResumeMigrationNotice,
   resolveInstruction,
   validateInstruction,
 } from '@shared/contracts/action-instructions-contract'
@@ -67,6 +72,16 @@ interface SettingsState {
   continueInstruction: string
   /** Visible warning when the stored Continue instruction is invalid and the default is used. */
   continueInstructionError: string | null
+  /** Effective multiline Start instruction shared by every project (NEKODE-187). */
+  startInstruction: string
+  /** Visible warning when the stored Start instruction is invalid and the default is used. */
+  startInstructionError: string | null
+  /** Effective multiline Resume instruction shared by every project (NEKODE-187). */
+  resumeInstruction: string
+  /** Visible warning when the stored Resume instruction is invalid and the default is used. */
+  resumeInstructionError: string | null
+  /** Differing pre-NEKODE-187 template prompts kept for copying until dismissed. */
+  resumeMigrationNotice: ResumeMigrationNotice | null
   /** Ctrl+Tab chat switching (NEKODE-2): enabled unless explicitly turned off. */
   chatSwitchEnabled: boolean
   projectNamesUppercase: boolean
@@ -89,6 +104,11 @@ interface SettingsActions {
   resetHandoffInstruction: () => void
   setContinueInstruction: (next: string) => string | null
   resetContinueInstruction: () => void
+  setStartInstruction: (next: string) => string | null
+  resetStartInstruction: () => void
+  setResumeInstruction: (next: string) => string | null
+  resetResumeInstruction: () => void
+  dismissResumeMigrationNotice: () => void
   setChatSwitchEnabled: (next: boolean) => void
   setProjectNamesUppercase: (next: boolean) => void
   setShowProjectIcons: (next: boolean) => void
@@ -112,6 +132,11 @@ function readLocalSettings(): Omit<
   | 'handoffInstructionError'
   | 'continueInstruction'
   | 'continueInstructionError'
+  | 'startInstruction'
+  | 'startInstructionError'
+  | 'resumeInstruction'
+  | 'resumeInstructionError'
+  | 'resumeMigrationNotice'
   | 'chatSwitchEnabled'
   | 'projectNamesUppercase'
   | 'showProjectIcons'
@@ -224,8 +249,12 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
 
   // An invalid stored multiline instruction falls back to the built-in default
   // and reports it in the Instructions tab; it is never silently replaced.
-  function invalidInstruction(label: string, stored: string | null): string | null {
-    return stored !== null && stored.trim().length > 0 && !isValidStoredInstruction(stored)
+  function invalidInstruction(
+    label: string,
+    stored: string | null,
+    kind: InstructionKind = 'handoff',
+  ): string | null {
+    return stored !== null && stored.trim().length > 0 && !isValidStoredInstruction(stored, kind)
       ? `The saved ${label} instruction is invalid. The default is used until you save a valid instruction.`
       : null
   }
@@ -236,8 +265,9 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
     previous: string,
     accept: (value: string, error: string | null) => void,
     failure: string,
+    kind: InstructionKind = 'handoff',
   ): string | null {
-    const checked = validateInstruction(next)
+    const checked = validateInstruction(next, kind)
     if (!checked.ok) return checked.message
     accept(checked.value, null)
     saveInstructionText(key, checked.value, previous, accept, failure)
@@ -251,6 +281,11 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
     handoffInstructionError: null,
     continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
     continueInstructionError: null,
+    startInstruction: DEFAULT_START_INSTRUCTION,
+    startInstructionError: null,
+    resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
+    resumeInstructionError: null,
+    resumeMigrationNotice: null,
     chatSwitchEnabled: true,
     projectNamesUppercase: true,
     showProjectIcons: true,
@@ -364,6 +399,54 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
         'Failed to save the Continue instruction.',
       )
     },
+    setStartInstruction: (next) =>
+      applyInstruction(
+        APP_STATE_KEY.startInstruction,
+        next,
+        get().startInstruction,
+        (value, error) => set({ startInstruction: value, startInstructionError: error }),
+        'Failed to save the Start instruction.',
+        'start',
+      ),
+    resetStartInstruction: () => {
+      const previous = get().startInstruction
+      set({ startInstruction: DEFAULT_START_INSTRUCTION, startInstructionError: null })
+      saveInstructionText(
+        APP_STATE_KEY.startInstruction,
+        '',
+        previous,
+        (value, error) => set({ startInstruction: value, startInstructionError: error }),
+        'Failed to save the Start instruction.',
+      )
+    },
+    setResumeInstruction: (next) =>
+      applyInstruction(
+        APP_STATE_KEY.resumeInstruction,
+        next,
+        get().resumeInstruction,
+        (value, error) => set({ resumeInstruction: value, resumeInstructionError: error }),
+        'Failed to save the Resume instruction.',
+        'resume',
+      ),
+    resetResumeInstruction: () => {
+      const previous = get().resumeInstruction
+      set({ resumeInstruction: DEFAULT_RESUME_INSTRUCTION, resumeInstructionError: null })
+      saveInstructionText(
+        APP_STATE_KEY.resumeInstruction,
+        '',
+        previous,
+        (value, error) => set({ resumeInstruction: value, resumeInstructionError: error }),
+        'Failed to save the Resume instruction.',
+      )
+    },
+    dismissResumeMigrationNotice: () => {
+      const previous = get().resumeMigrationNotice
+      set({ resumeMigrationNotice: null })
+      void app.state.set(APP_STATE_KEY.resumeMigration, '').catch((error: unknown) => {
+        set({ resumeMigrationNotice: previous })
+        reportError(errorMessage(error, 'Failed to dismiss the previous Resume prompts.'))
+      })
+    },
     setChatSwitchEnabled: (next) => {
       set({ chatSwitchEnabled: next })
       save(APP_STATE_KEY.chatSwitchEnabled, next, 'Failed to save the setting.')
@@ -412,6 +495,32 @@ export function createSettingsStore({ app, reportError }: SettingsPersistence) {
             continueInstruction: resolveInstruction(value, DEFAULT_CONTINUE_INSTRUCTION),
             continueInstructionError: invalidInstruction('Continue', value),
           })
+        })
+        .catch(loadFailed)
+      void app.state
+        .get(APP_STATE_KEY.startInstruction)
+        .then((value) => {
+          if (!alive) return
+          set({
+            startInstruction: resolveInstruction(value, DEFAULT_START_INSTRUCTION, 'start'),
+            startInstructionError: invalidInstruction('Start', value, 'start'),
+          })
+        })
+        .catch(loadFailed)
+      void app.state
+        .get(APP_STATE_KEY.resumeInstruction)
+        .then((value) => {
+          if (!alive) return
+          set({
+            resumeInstruction: resolveInstruction(value, DEFAULT_RESUME_INSTRUCTION, 'resume'),
+            resumeInstructionError: invalidInstruction('Resume', value, 'resume'),
+          })
+        })
+        .catch(loadFailed)
+      void app.state
+        .get(APP_STATE_KEY.resumeMigration)
+        .then((value) => {
+          if (alive) set({ resumeMigrationNotice: parseResumeMigrationNotice(value) })
         })
         .catch(loadFailed)
       // Missing or '1' means enabled (NEKODE-2).

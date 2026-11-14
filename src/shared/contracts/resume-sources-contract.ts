@@ -15,11 +15,14 @@ export interface ResumeCommandSource {
 
 export type ResumeSource = ResumeFileSource | ResumeCommandSource
 
+/**
+ * A reusable Resume source (NEKODE-187: formerly a Resume template). It owns
+ * discovery only; the Resume instruction is application-level.
+ */
 export interface ResumeSourceTemplate {
   id: string
   revision: number
   name: string
-  prompt: string
   source: ResumeSource
 }
 
@@ -32,7 +35,6 @@ export interface ResumeSourcePut {
   id: string | null
   revision: number | null
   name: string
-  prompt: string
   source: ResumeSource
 }
 
@@ -143,9 +145,6 @@ export const LOCAL_PROGRESS_RESUME_SOURCE: ResumeFileSource = {
   recursive: true,
   identity: 'parent',
 }
-
-export const LOCAL_PROGRESS_RESUME_PROMPT =
-  'Resume task {taskPath}.\nRead that progress file before continuing. It records the work so far, decisions, checks, and the next action.'
 
 export function isLocalProgressResumeSource(source: ResumeSource): boolean {
   return (

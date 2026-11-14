@@ -40,6 +40,18 @@ export const APP_STATE_KEY = {
    * Missing or blank means the built-in default `Continue`.
    */
   continueInstruction: 'instructions.continue',
+  /**
+   * Multiline Start instruction shared by every project (NEKODE-187), with
+   * `{ref}`, `{title}`, `{description}` and `{url}`. Missing or blank means the default.
+   */
+  startInstruction: 'instructions.start',
+  /**
+   * Multiline Resume instruction shared by every project (NEKODE-187), with
+   * `{taskPath}`. Missing or blank means `Resume task {taskPath}`.
+   */
+  resumeInstruction: 'instructions.resume',
+  /** JSON ResumeMigrationNotice of differing pre-NEKODE-187 prompts; empty means dismissed. */
+  resumeMigration: 'instructions.resumeMigration',
   /** '0' disables the Ctrl+Tab chat switch; missing or '1' means enabled. */
   chatSwitchEnabled: 'chatSwitch.enabled',
   /** '0' keeps original project names in the tree; missing or '1' means uppercase. */

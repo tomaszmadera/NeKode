@@ -4,6 +4,7 @@ Status: Delivered (reusable Resume sources, prompts, console delivery and task-c
 Resume template amendment (NEKODE-83): specification and plan approved on 2026-10-17.
 NEKODE-142 amendment below: specification and three-stage plan approved by the user on 2026-10-29; Stage 3 completed. Legacy handoff directory setting and old handoff matcher decommissioned.
 NEKODE-172 amendment below: approved by the user on 2026-11-12; configurable Handoff and Continue instructions with the Resume instruction kept in its single template source.
+NEKODE-187 amendment below: proposed 2026-11-14; global Start and Resume instructions, Resume templates become Resume sources without a prompt. It supersedes the NEKODE-142 and NEKODE-172 rules that place the Resume instruction in a template.
 Path: `docs/features/handoff-resume-flow/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
@@ -332,4 +333,110 @@ Saving requires nonblank text after trimming, no NUL and at most 10,000 characte
 
 - `docs/features/mvp-core-shell` (app_state store)
 - The NEKODE-142 section above (Resume profile ownership)
+- No new ADR.
+
+## Global Start and Resume instructions (NEKODE-187)
+
+### Authority and scope
+
+User decisions 2026-11-14: the text an action sends to the agent is application-level, and only the continuation source is per project. Start and Resume instructions join Handoff and Continue in Application Settings, Instructions. A Resume template keeps its source and loses its prompt; the library stays shared by reference and is named Resume sources. Migration keeps one common prompt or falls back to the default with a visible list of the previous prompts. No per-project instruction override exists.
+
+This amendment supersedes, for the Resume instruction only, the NEKODE-142 rule that the template editor exposes the instruction and that Project Settings shows the template instruction, and the NEKODE-172 rules that the Resume instruction stays in the template, that the Instructions tab shows it read-only, and "No migration". It also supersedes the fixed Start wording of [Kanban Start](../kanban-adapter-interface/spec.md#start) Behaviour 5 and the [local task workflow](../local-task-workflow/spec.md) preset prompt. Discovery, sources, bindings, Test, usage, fingerprints, selection tokens, Kanban matching and launch, Handoff, Continue, Stop, auto-send and console injection stay as specified.
+
+NeKode only sends text. The agent's instructions own what Start and Resume mean in a project.
+
+### Levels
+
+- Application settings: Start, Resume, Handoff and Continue instructions, shared by every registered project, plus auto-send.
+- Resume source (formerly Resume template): name, source kind and its fields, reused by reference across projects. It owns discovery only.
+- Project: selects one Resume source (or none) and inherits every instruction.
+
+### Start instruction
+
+- Used when a card is started from a Kanban board. Its group in the Instructions tab says so and, when no registered project has a Kanban adapter, adds the note `No project uses a Kanban board yet.` The text stays editable.
+- Placeholders: `{ref}` (the full ref), `{title}`, `{description}`, `{url}`. `{ref}` is required. `{description}` becomes the trimmed description, or `This task has no description.` when it is blank. `{url}` becomes the trimmed URL, or empty when there is none.
+- Substitution is one pass over the saved text: inserted values are never scanned for placeholders, and unknown braces, `$`, whitespace and line breaks stay literal.
+- Empty paragraph rule: the saved text is split into paragraphs at blank lines. A paragraph that contains at least one placeholder and is blank after substitution is removed together with one adjoining blank-line separator. No other text is changed.
+- Default, equal to the current `buildStartPrompt` output for every item, with and without description and URL:
+
+  ```text
+  Work on task {ref}: {title}.
+
+  {description}
+
+  {url}
+
+  Follow the project's instructions. Do not assume approval for actions that require it.
+
+  Keep the full ref in the name of the local task record, following the project's instructions.
+  ```
+
+- Main composes the Start prompt from the saved instruction during launch preparation, after it fetches the current item, under the existing Start rules. An undelivered retry composes again from the current saved text; a delivered attempt sends nothing again.
+
+### Resume instruction
+
+- Placeholder `{taskPath}` is required; `{handoffPath}` stays its deprecated alias. Composition keeps the NEKODE-142 one-pass rule and path forms.
+- Default: `Resume task {taskPath}`.
+- Main composes it in `resumeSources.prepare` from the saved application instruction, for both the action-bar picker and Kanban Resume. A template prompt is never read again.
+- The Instructions tab edits it like Handoff, with a preview and the auto-send mode. The project selector and the read-only template prompt leave that group.
+- The explicit legacy import (`resumeSources.importLegacy`, NEKODE-83 bounded reader) moves to the Resume group: it fills the editor with the imported text, which is saved only by Save. Import errors are visible and change nothing.
+
+### Validation and fallback
+
+- Saving Start or Resume requires nonblank text after trimming, no NUL, at most 10,000 characters and its required placeholder. Failed validation shows an error and writes nothing.
+- A missing or blank stored value means the default. An invalid stored value (external edit) makes main and the renderer use the default, and the Instructions tab shows the invalid-saved-value message, as NEKODE-172 defines for Handoff and Continue.
+
+### Resume sources
+
+- The Application Settings section and editor are named Resume sources. The editor keeps name, source kind, fields, Duplicate, Delete protection, usage (`Used by: ...`) and Test. It has no prompt field. The Test preview shows each candidate identity and display path, and the instruction formatted from the current saved Resume instruction, labelled as coming from Application settings.
+- Project Settings shows a Resume source selector (`None (Unconfigured)` plus saved sources), the source summary and the effective Resume instruction with origin Application settings.
+- Ready presets (Agent Harness, Local progress files) fill only source values.
+- Stored ids, bindings (`project.resumeTemplate:<projectId>`), revisions and the `resume.sources` key are unchanged. A stored row may still carry a legacy `prompt`: it is accepted on read, ignored, and dropped on the next save of that row. `resumeSources.put` rejects a `prompt` field.
+
+### Migration
+
+Runs once in main, before the first Resume composition or Instructions read of a session, when `instructions.resume` is absent:
+
+1. If no Resume library is saved, write nothing; the default applies.
+2. Otherwise take the prompts of templates bound to registered projects; if none is bound, take the prompts of all saved templates.
+3. If those prompts are identical strings, write that string to `instructions.resume`.
+4. Otherwise write the default to `instructions.resume` and write `instructions.resumeMigration` with the distinct previous prompts and the names of the templates that carried them. The Resume group shows them read-only with Copy and Dismiss; Dismiss clears the key (stores an empty value, which means dismissed, because the state API has no delete).
+5. A failed write is logged by main, the default applies, and the migration is retried in the next session (user decision 2026-11-14: no Instructions tab message). The notice is written before `instructions.resume`, so a partial failure also retries. The migration does not rewrite stored template rows.
+
+### Data / API
+
+- `APP_STATE_KEY` additions: `startInstruction: 'instructions.start'`, `resumeInstruction: 'instructions.resume'`, `resumeMigration: 'instructions.resumeMigration'` (JSON `{ prompts: Array<{ prompt: string; templates: string[] }> }`).
+- Shared contract additions: Start and Resume defaults, validation with required placeholders, the Start formatter (placeholders and the empty paragraph rule) and the effective-value resolver used by main and the renderer.
+- `ResumeSourceTemplate` and `ResumeSourcePut` lose `prompt`. No IPC channel is added or removed; `resumeSources.put` and `duplicate` no longer carry a prompt.
+- Settings stay in the flat app_state store; no SQLite schema change.
+
+### Edge cases
+
+- A description contains `{url}` or `{ref}`: inserted literally.
+- A description contains blank lines: kept; the empty paragraph rule looks only at template paragraphs.
+- A template paragraph mixes literal text and an empty `{url}`: it is kept with its literal text.
+- The stored Resume instruction lacks `{taskPath}` (external edit): default plus the visible warning.
+- One bound custom prompt and other unbound templates with different prompts: the bound prompt wins (rule 2).
+- The notice is dismissed before copying: the prompts are gone; the UI states this next to Dismiss.
+
+### Acceptance criteria
+
+1. With no saved Start instruction, every Kanban Start sends exactly the previous prompt for items with and without description and URL.
+2. A saved multiline Start instruction with all four placeholders produces the expected text; `{ref}` is required; empty `{url}` and blank description follow the defined rules; inserted values are not expanded.
+3. Resume from the action bar and from Kanban both use the saved application Resume instruction; editing it changes the next prepare without restart; no template prompt is read.
+4. Resume sources have no prompt field; presets fill only source values; legacy stored prompts are ignored and dropped on save.
+5. Migration: an identical common prompt is preserved; differing prompts give the default plus a visible, copyable, dismissible list; no saved library gives the default with no notice; the migration runs once.
+6. Instructions shows Start, Resume, Handoff, Continue and Stop; Start shows the Kanban note when no adapter is configured; Project Settings shows the source selector and the effective Resume text with origin Application settings.
+7. Existing discovery, binding, Test, usage, delete protection, fingerprints, Kanban matching and launch, auto-send, Handoff, Continue and Stop tests keep passing.
+
+### Required tests
+
+- Shared: Start formatter (placeholders, one pass, empty paragraph rule, default equal to the previous `buildStartPrompt` cases), validation of both instructions, resolver fallback.
+- Main: migration cases from acceptance 5 with in-memory state; `prepare` uses the application instruction; Start launch composes from the saved instruction and a retry recomposes; `put` rejects `prompt`; legacy rows with `prompt` still list.
+- Renderer: Instructions tab Start and Resume edit/save/reset/validation, Kanban note, migration notice copy/dismiss, legacy import into the draft; Resume sources editor without prompt and with the Test preview using the application instruction; Project Settings source selector and origin.
+- Regression: existing Resume source, picker, Kanban launch and ActionBar suites.
+
+### Relevant SDD / ADR
+
+- NEKODE-142 and NEKODE-172 sections above.
 - No new ADR.

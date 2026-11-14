@@ -50,6 +50,10 @@ interface Props {
   handoffInstruction: string
   /** Effective Continue instruction inherited from Application settings (NEKODE-172). */
   continueInstruction: string
+  /** Effective Start instruction inherited from Application settings (NEKODE-187). */
+  startInstruction: string
+  /** Effective Resume instruction inherited from Application settings (NEKODE-187). */
+  resumeInstruction: string
   onRefresh: () => Promise<void>
   /**
    * Tab selected when the dialog opens (default `shell`). Only a caller that
@@ -148,6 +152,8 @@ export function ActionSettings({
   onAutoSendChange,
   handoffInstruction,
   continueInstruction,
+  startInstruction,
+  resumeInstruction,
   onRefresh,
   initialTab,
   onClose,
@@ -343,9 +349,28 @@ export function ActionSettings({
               </div>
               <div className="border-t border-edge px-4 py-3 text-xs">
                 <p className="font-medium text-ink">Resume</p>
-                <p data-testid={TEST_ID.settingsEffectiveResume} className="mt-1 text-ink-muted">
-                  Uses the Resume template selected above. Its instruction is edited in Application
-                  settings, Resume templates, and applies to every project using that template.
+                <p
+                  data-testid={TEST_ID.settingsEffectiveResume}
+                  className="mt-1 whitespace-pre-wrap break-words font-mono text-ink"
+                >
+                  {resumeInstruction}
+                </p>
+                <p className="mt-1 text-ink-muted">
+                  Application settings, shared by all projects. It names the context that the Resume
+                  source selected above finds.
+                </p>
+              </div>
+              <div className="border-t border-edge px-4 py-3 text-xs">
+                <p className="font-medium text-ink">Start</p>
+                <p
+                  data-testid={TEST_ID.settingsEffectiveStart}
+                  className="mt-1 whitespace-pre-wrap break-words font-mono text-ink"
+                >
+                  {startInstruction}
+                </p>
+                <p className="mt-1 text-ink-muted">
+                  Application settings, shared by all projects. Sent when you start a card from this
+                  project's Kanban board.
                 </p>
               </div>
             </GroupBox>

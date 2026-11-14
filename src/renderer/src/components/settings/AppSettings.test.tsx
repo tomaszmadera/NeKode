@@ -62,18 +62,19 @@ function renderSettings(initialTab: 'general' | 'dictation') {
 describe('AppSettings dictation shortcut error', () => {
   it('opens the reusable Resume editor from the application settings navigation', async () => {
     renderSettings('general')
-    fireEvent.click(screen.getByRole('tab', { name: 'Resume templates' }))
-    expect(await screen.findByRole('button', { name: 'New template' })).not.toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'Resume sources' }))
+    expect(await screen.findByRole('button', { name: 'New source' })).not.toBeNull()
     expect(screen.getByLabelText('Test project')).not.toBeNull()
   })
-  it('opens the Instructions tab with Handoff, Continue and the read-only Stop note', async () => {
+  it('opens the Instructions tab with Start, Resume, Handoff, Continue and the Stop note', async () => {
     renderSettings('general')
     fireEvent.click(screen.getByTestId(TEST_ID.settingsInstructionsTab))
 
     expect(await screen.findByTestId(TEST_ID.instructionHandoffEditor)).not.toBeNull()
     expect(screen.getByTestId(TEST_ID.instructionContinueEditor)).not.toBeNull()
     expect(screen.getByTestId(TEST_ID.instructionStopNote).textContent).toContain('Ctrl+C')
-    expect(screen.queryByTestId(TEST_ID.instructionResumePrompt)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.instructionStartEditor)).not.toBeNull()
+    expect(screen.getByTestId(TEST_ID.instructionResumeEditor)).not.toBeNull()
   })
 
   it('announces an OpenWhispr shortcut save error once on the Dictation tab', async () => {

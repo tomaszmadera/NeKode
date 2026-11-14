@@ -224,6 +224,18 @@ try {
   const target = await waitForPage(port)
   page = await openSocket(target.webSocketDebuggerUrl)
   const pageCall = cdp(page)
+  const setResumeInstruction = async (value) => {
+    const saved = await pageCall('Runtime.evaluate', {
+      expression: `window.app.state.set('instructions.resume', ${JSON.stringify(value)})`,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+    if (saved.exceptionDetails !== undefined) {
+      throw new Error(
+        `saving the Resume instruction failed: ${JSON.stringify(saved.exceptionDetails)}`,
+      )
+    }
+  }
   await waitForApp(pageCall)
   await waitForDatabase(join(userData, 'nekode.db'))
 
@@ -317,7 +329,6 @@ try {
     id: null,
     revision: null,
     name: 'Generic files',
-    prompt: 'Resume from {taskPath}',
     source: {
       kind: 'files',
       directory: 'handoffs',
@@ -358,7 +369,8 @@ try {
     throw new Error(`file candidate smk-1-handoff not found: ${JSON.stringify(scan)}`)
   }
 
-  // Prepare prompt for file candidate.
+  // Prepare prompt for file candidate with the application Resume instruction (NEKODE-187).
+  await setResumeInstruction('Resume from {taskPath}')
   const prepCall = await pageCall('Runtime.evaluate', {
     expression: `window.app.resumeSources.prepare(${JSON.stringify(projectId)}, ${JSON.stringify(candidate.token)}, 'req-smoke-file')`,
     awaitPromise: true,
@@ -504,6 +516,7 @@ if '--json' in sys.argv:
     throw new Error(`harness candidate SMK-1 not found: ${JSON.stringify(harnessScan)}`)
   }
 
+  await setResumeInstruction('')
   const harnessPrep = await pageCall('Runtime.evaluate', {
     expression: `window.app.resumeSources.prepare(${JSON.stringify(projectId)}, ${JSON.stringify(harnessCandidate.token)}, 'req-smoke-harness')`,
     awaitPromise: true,
@@ -513,6 +526,7 @@ if '--json' in sys.argv:
     throw new Error(`harness prepare rejected: ${JSON.stringify(harnessPrep.exceptionDetails)}`)
   }
   const harnessPrompt = harnessPrep.result?.value
+  // The default instruction applies again after the saved one is cleared (no restart).
   const expectedHarnessPrompt = `Resume task ${join('.agents', 'tasks', 'smk-1', 'task.md')}`
   if (harnessPrompt !== expectedHarnessPrompt) {
     throw new Error(`unexpected harness prompt: ${harnessPrompt}`)
@@ -561,7 +575,6 @@ if '--json' in sys.argv:
     id: null,
     revision: null,
     name: 'Broken template',
-    prompt: 'Resume {taskPath}',
     source: {
       kind: 'command',
       protocol: 'generic',

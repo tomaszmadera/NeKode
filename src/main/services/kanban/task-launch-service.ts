@@ -1,3 +1,7 @@
+import {
+  DEFAULT_START_INSTRUCTION,
+  formatStartInstruction,
+} from '@shared/contracts/action-instructions-contract'
 import type {
   AgentProfile,
   AgentProfilesDocument,
@@ -61,6 +65,8 @@ export interface TaskLaunchDeps {
   terminals: {
     create(chatId: string, cwd: string, shell?: ShellSpec): string | Promise<string>
   }
+  /** Effective application-level Start instruction (NEKODE-187), read per preparation. */
+  startInstruction?: () => string
 }
 
 interface Attempt {
@@ -86,27 +92,20 @@ interface PreparedLaunch {
   draftPrompt: string | null
 }
 
-/** Start context: the description, URL and project instructions. */
-function promptTail(item: WorkItem): string[] {
-  const parts: string[] = []
-  const description = item.description?.trim() ?? ''
-  parts.push(description.length > 0 ? description : 'This task has no description.')
-  const url = item.url?.trim() ?? ''
-  if (url.length > 0) {
-    parts.push(url)
-  }
-  parts.push(
-    "Follow the project's instructions. Do not assume approval for actions that require it.",
-  )
-  parts.push(
-    "Keep the full ref in the name of the local task record, following the project's instructions.",
-  )
-  return parts
-}
-
-/** Start prompt. The first line is the spec sentence; the rest is separated by blank lines. */
-export function buildStartPrompt(item: WorkItem): string {
-  return [`Work on task ${item.ref}: ${item.title}.`, ...promptTail(item)].join('\n\n')
+/**
+ * Start prompt from the application Start instruction (NEKODE-187). The
+ * default instruction reproduces the previous fixed text exactly.
+ */
+export function buildStartPrompt(
+  item: WorkItem,
+  instruction: string = DEFAULT_START_INSTRUCTION,
+): string {
+  return formatStartInstruction(instruction, {
+    ref: item.ref,
+    title: item.title,
+    description: item.description,
+    url: item.url,
+  })
 }
 
 /**
@@ -159,6 +158,7 @@ export class TaskLaunchService {
   readonly #createChat: TaskLaunchDeps['createChat']
   readonly #sessions: AgentSessionRegistry
   readonly #terminals: TaskLaunchDeps['terminals']
+  readonly #startInstruction: () => string
   readonly #attempts = new Map<string, Attempt>()
   readonly #droppedProjects = new Set<string>()
 
@@ -169,6 +169,7 @@ export class TaskLaunchService {
     this.#createChat = deps.createChat
     this.#sessions = deps.sessions
     this.#terminals = deps.terminals
+    this.#startInstruction = deps.startInstruction ?? (() => DEFAULT_START_INSTRUCTION)
   }
 
   /**
@@ -317,7 +318,7 @@ export class TaskLaunchService {
     const prompt =
       input.mode === 'resume' || input.mode === 'resume-draft'
         ? input.prompt
-        : buildStartPrompt(item)
+        : buildStartPrompt(item, this.#startInstruction())
     // The project must still be present when adapter reads land.
     if (
       this.#droppedProjects.has(input.projectId) ||

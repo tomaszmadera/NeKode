@@ -202,7 +202,6 @@ try {
       id: null,
       revision: null,
       name: 'Smoke Notes',
-      prompt: 'Resume note {taskPath}',
       source: {
         kind: 'files',
         directory: 'notes',
@@ -266,7 +265,17 @@ try {
     throw new Error('token must be opaque and not leak file path')
   }
 
-  // Test 4: Prepare prompt from token
+  // Test 4: Prepare prompt from token with the application Resume instruction (NEKODE-187)
+  const setInstruction = await pageCall('Runtime.evaluate', {
+    expression: `window.app.state.set('instructions.resume', 'Resume note {taskPath}')`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (setInstruction.exceptionDetails !== undefined) {
+    throw new Error(
+      `saving the Resume instruction failed: ${JSON.stringify(setInstruction.exceptionDetails)}`,
+    )
+  }
   const prepareCall = await pageCall('Runtime.evaluate', {
     expression: `window.app.resumeSources.prepare('${projectId}', '${fileCand.token}', 'smoke-req-2')`,
     awaitPromise: true,

@@ -1,6 +1,8 @@
 import {
   DEFAULT_CONTINUE_INSTRUCTION,
   DEFAULT_HANDOFF_INSTRUCTION,
+  DEFAULT_RESUME_INSTRUCTION,
+  DEFAULT_START_INSTRUCTION,
 } from '@shared/contracts/action-instructions-contract'
 import type { ActionControl, ActionInput, AppApi } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -48,6 +50,8 @@ describe('PowerShell action option', () => {
       onAutoSendChange: vi.fn(),
       handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
       continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+      startInstruction: DEFAULT_START_INSTRUCTION,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -109,6 +113,8 @@ describe('PowerShell action option', () => {
           onAutoSendChange={vi.fn()}
           handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
           continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
+          startInstruction={DEFAULT_START_INSTRUCTION}
+          resumeInstruction={DEFAULT_RESUME_INSTRUCTION}
           onRefresh={vi.fn().mockResolvedValue(undefined)}
           onClose={vi.fn()}
         />,
@@ -156,6 +162,8 @@ describe('Kanban tab shell', () => {
       onAutoSendChange: vi.fn(),
       handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
       continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+      startInstruction: DEFAULT_START_INSTRUCTION,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -172,8 +180,11 @@ describe('Kanban tab shell', () => {
     expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.settingsEffectiveHandoff).textContent).toBe('Write a handoff')
     expect(screen.getByTestId(TEST_ID.settingsEffectiveContinue).textContent).toBe('Continue')
-    expect(screen.getByTestId(TEST_ID.settingsEffectiveResume).textContent).toContain(
-      'Uses the Resume template selected above.',
+    expect(screen.getByTestId(TEST_ID.settingsEffectiveResume).textContent).toBe(
+      DEFAULT_RESUME_INSTRUCTION,
+    )
+    expect(screen.getByTestId(TEST_ID.settingsEffectiveStart).textContent).toBe(
+      DEFAULT_START_INSTRUCTION,
     )
 
     // Actions has its own toolbar controls.
@@ -217,6 +228,8 @@ describe('Kanban tab shell', () => {
         onAutoSendChange={vi.fn()}
         handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
         continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
+        startInstruction={DEFAULT_START_INSTRUCTION}
+        resumeInstruction={DEFAULT_RESUME_INSTRUCTION}
         onRefresh={vi.fn().mockResolvedValue(undefined)}
         initialTab="kanban"
         onClose={onClose}
@@ -264,6 +277,8 @@ describe('Kanban tab shell', () => {
       onAutoSendChange: vi.fn(),
       handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
       continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+      startInstruction: DEFAULT_START_INSTRUCTION,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       initialTab: 'kanban' as const,
       onClose: vi.fn(),
@@ -294,6 +309,8 @@ describe('Kanban tab shell', () => {
       onAutoSendChange: vi.fn(),
       handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
       continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+      startInstruction: DEFAULT_START_INSTRUCTION,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -337,6 +354,8 @@ describe('Kanban tab shell', () => {
         onAutoSendChange={vi.fn()}
         handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
         continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
+        startInstruction={DEFAULT_START_INSTRUCTION}
+        resumeInstruction={DEFAULT_RESUME_INSTRUCTION}
         onRefresh={vi.fn().mockResolvedValue(undefined)}
         onClose={vi.fn()}
       />,
@@ -363,6 +382,8 @@ describe('action save error handling and duplicate prevention', () => {
       onAutoSendChange: vi.fn(),
       handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
       continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+      startInstruction: DEFAULT_START_INSTRUCTION,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh,
       onClose: vi.fn(),
     }
@@ -403,6 +424,8 @@ describe('custom emoji icon selection', () => {
       onAutoSendChange: vi.fn(),
       handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
       continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+      startInstruction: DEFAULT_START_INSTRUCTION,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh,
       onClose: vi.fn(),
     }
@@ -478,6 +501,8 @@ describe('custom emoji icon selection', () => {
       onAutoSendChange: vi.fn(),
       handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
       continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+      startInstruction: DEFAULT_START_INSTRUCTION,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -560,6 +585,8 @@ describe('mutation in-flight guards and duplicate prevention', () => {
       onAutoSendChange: vi.fn(),
       handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
       continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
+      startInstruction: DEFAULT_START_INSTRUCTION,
+      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -760,6 +787,8 @@ describe('Action group field', () => {
         onAutoSendChange={vi.fn()}
         handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
         continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
+        startInstruction={DEFAULT_START_INSTRUCTION}
+        resumeInstruction={DEFAULT_RESUME_INSTRUCTION}
         onRefresh={vi.fn().mockResolvedValue(undefined)}
         onClose={vi.fn()}
       />,

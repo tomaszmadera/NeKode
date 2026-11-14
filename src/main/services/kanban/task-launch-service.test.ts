@@ -130,6 +130,7 @@ function harness(
     globalProfiles?: boolean
     path?: string
     profile?: AgentProfile
+    startInstruction?: () => string
   } = {},
 ) {
   const db = openDatabase(':memory:')
@@ -167,6 +168,7 @@ function harness(
       chats.createNamed(projectId, name, 'kanban:launchTask', identity),
     sessions: new AgentSessionRegistry(),
     terminals,
+    startInstruction: options.startInstruction,
   })
   return {
     service,
@@ -623,6 +625,33 @@ function draftInput(overrides: Partial<KanbanDraftLaunchInput> = {}): KanbanDraf
     ...overrides,
   }
 }
+
+describe('TaskLaunchService Start instruction (NEKODE-187)', () => {
+  it('composes the Start prompt from the saved application instruction', async () => {
+    const bundle = harness({
+      startInstruction: () => 'Take {ref}\n\n{url}\n\nTitle: {title}',
+    })
+    await bundle.service.launch(input({ projectId: bundle.project.id }))
+    expect(bundle.spawns[0]?.args[2]).toBe(`Take DEMO-1\n\n${URL}\n\nTitle: Ship the launch`)
+  })
+
+  it('recomposes an undelivered retry from the current saved text', async () => {
+    let saved = 'First {ref} SPAWN_FAIL'
+    const bundle = harness({ startInstruction: () => saved })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const launch = input({ projectId: bundle.project.id })
+    const failed = await bundle.service.launch(launch)
+    expect(failed.delivered).toBe(false)
+    saved = 'Second {ref}'
+    const retried = await bundle.service.launch(launch)
+    expect(retried.delivered).toBe(true)
+    expect(bundle.spawns[1]?.args[2]).toBe('Second DEMO-1')
+    saved = 'Third {ref}'
+    await bundle.service.launch(launch)
+    expect(bundle.spawns).toHaveLength(2)
+    spy.mockRestore()
+  })
+})
 
 describe('TaskLaunchService draft (NEKODE-99)', () => {
   it('starts the profile without its prompt slot and returns the Start prompt', async () => {

@@ -4,6 +4,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ResumeSourcesService } from './resume-sources-service'
 
+const RESUME_KEY = 'instructions.resume'
+const MIGRATION_KEY = 'instructions.resumeMigration'
+
 describe('reusable Resume sources', () => {
   let root: string
   let values: Map<string, string>
@@ -24,6 +27,7 @@ describe('reusable Resume sources', () => {
         get: (id) => (['one', 'two'].includes(id) ? { path: join(root, id) } : null),
         list: () => ['one', 'two'].map((id) => ({ id, name: `Project ${id}` })),
       },
+      resumeInstruction: () => values.get(RESUME_KEY) ?? 'Resume task {taskPath}',
     })
   })
   afterEach(async () => {
@@ -35,7 +39,6 @@ describe('reusable Resume sources', () => {
     id: null,
     revision: null,
     name: 'Progress files',
-    prompt: 'Resume from {taskPath}',
     source: {
       kind: 'files' as const,
       directory: '.',
@@ -78,10 +81,8 @@ describe('reusable Resume sources', () => {
   it('revalidates bytes even with the same mtime and consumes each opaque selection once', async () => {
     const file = join(root, 'one', 'progress.txt')
     await writeFile(file, 'before')
-    const templates = service.put({
-      ...fileInput(),
-      prompt: 'A {taskPath}\n{handoffPath} $& {other}',
-    }).templates
+    values.set(RESUME_KEY, 'A {taskPath}\n{handoffPath} $& {other}')
+    const templates = service.put(fileInput()).templates
     const template = templates[templates.length - 1]
     service.bind('one', template.id)
     const inventory = await service.discover('one', 'inventory')
@@ -130,7 +131,7 @@ describe('reusable Resume sources', () => {
       .templates.filter((row) => row.id === template.id)[0]
     expect(updated.revision).toBeGreaterThan(template.revision)
     expect(() => service.put({ ...template, name: 'Stale' })).toThrow(/changed/)
-    expect(() => service.put({ ...updated, prompt: 'no path' })).toThrow()
+    expect(() => service.put({ ...updated, prompt: 'Resume {taskPath}' } as never)).toThrow()
     expect(service.delete(copy.id, copy.revision).templates.some((row) => row.id === copy.id)).toBe(
       false,
     )
@@ -224,12 +225,10 @@ describe('reusable Resume sources', () => {
     expect(values.get('resume.sources')).toBe('{broken')
   })
 
-  it('does not accept invalid source or prompt edits and requires the saved revision for Test', async () => {
+  it('does not accept invalid source edits or a prompt and requires the saved revision for Test', async () => {
     const template = service.put(fileInput()).templates.slice(-1)[0]
     for (const patch of [
-      { prompt: 'missing path' },
-      { prompt: ' \n{unknown}' },
-      { prompt: 'x\u0000{taskPath}' },
+      { prompt: 'Resume {taskPath}' },
       { source: { ...fileInput().source, directory: '../outside' } },
       { source: { ...fileInput().source, pattern: '../progress.txt' } },
       { extra: true },
@@ -348,4 +347,166 @@ describe('reusable Resume sources', () => {
       /10,000/,
     )
   }, 30000)
+
+  it('prepares with the current application instruction and never reads a template prompt', async () => {
+    await writeFile(join(root, 'one', 'progress.txt'), 'one')
+    const template = service.put(fileInput()).templates.slice(-1)[0]
+    service.bind('one', template.id)
+    const stored = JSON.parse(values.get('resume.sources') ?? '')
+    stored.templates = stored.templates.map((row: { id: string }) =>
+      row.id === template.id ? { ...row, prompt: 'Legacy {taskPath}' } : row,
+    )
+    values.set('resume.sources', JSON.stringify(stored))
+
+    const first = await service.discover('one', 'first')
+    expect(await service.prepare('one', first.candidates[0].token, 'p1')).toBe(
+      'Resume task progress.txt',
+    )
+    values.set(RESUME_KEY, 'Continue from {taskPath}\nRead it first.')
+    const second = await service.discover('one', 'second')
+    expect(await service.prepare('one', second.candidates[0].token, 'p2')).toBe(
+      'Continue from progress.txt\nRead it first.',
+    )
+  })
+
+  it('lists legacy rows with a prompt without exposing it and drops it only from the saved row', () => {
+    values.set(
+      'resume.sources',
+      JSON.stringify({
+        revision: 3,
+        templates: [
+          {
+            id: 'legacy',
+            revision: 2,
+            name: 'Legacy',
+            prompt: 'Old {taskPath}',
+            source: fileInput().source,
+          },
+          {
+            id: 'other',
+            revision: 1,
+            name: 'Other',
+            prompt: 'Other {taskPath}',
+            source: fileInput().source,
+          },
+        ],
+      }),
+    )
+    const listed = service.list()
+    expect(listed.templates).toEqual([
+      { id: 'legacy', revision: 2, name: 'Legacy', source: fileInput().source },
+      { id: 'other', revision: 1, name: 'Other', source: fileInput().source },
+    ])
+    const returned = service.put({ ...listed.templates[0], name: 'Renamed' })
+    for (const row of returned.templates) expect(row).not.toHaveProperty('prompt')
+    const saved = JSON.parse(values.get('resume.sources') ?? '')
+    const renamed = saved.templates.find((row: { id: string }) => row.id === 'legacy')
+    expect(renamed).not.toHaveProperty('prompt')
+    expect(renamed.name).toBe('Renamed')
+    expect(saved.templates.find((row: { id: string }) => row.id === 'other').prompt).toBe(
+      'Other {taskPath}',
+    )
+    const legacyRevision = returned.templates.find((row) => row.id === 'legacy')?.revision ?? 0
+    const afterDelete = service.delete('legacy', legacyRevision)
+    expect(afterDelete.templates).toEqual([
+      { id: 'other', revision: 1, name: 'Other', source: fileInput().source },
+    ])
+  })
+
+  describe('NEKODE-187 Resume instruction migration', () => {
+    const library = (rows: Array<{ id: string; name: string; prompt?: string }>) =>
+      JSON.stringify({
+        revision: 1,
+        templates: rows.map((row) => ({ revision: 1, source: fileInput().source, ...row })),
+      })
+
+    it('writes nothing when no library is saved', () => {
+      service.migrateResumeInstruction()
+      expect(values.has(RESUME_KEY)).toBe(false)
+      expect(values.has(MIGRATION_KEY)).toBe(false)
+    })
+
+    it('keeps one identical common prompt', () => {
+      values.set(
+        'resume.sources',
+        library([
+          { id: 'a', name: 'A', prompt: 'Mine {taskPath}\nmore' },
+          { id: 'b', name: 'B', prompt: 'Mine {taskPath}\nmore' },
+        ]),
+      )
+      service.migrateResumeInstruction()
+      expect(values.get(RESUME_KEY)).toBe('Mine {taskPath}\nmore')
+      expect(values.has(MIGRATION_KEY)).toBe(false)
+    })
+
+    it('uses the default and lists differing prompts with their template names', () => {
+      values.set(
+        'resume.sources',
+        library([
+          { id: 'a', name: 'A', prompt: 'One {taskPath}' },
+          { id: 'b', name: 'B', prompt: 'Two {taskPath}' },
+          { id: 'c', name: 'C', prompt: 'One {taskPath}' },
+        ]),
+      )
+      service.migrateResumeInstruction()
+      expect(values.get(RESUME_KEY)).toBe('Resume task {taskPath}')
+      expect(JSON.parse(values.get(MIGRATION_KEY) ?? '')).toEqual({
+        prompts: [
+          { prompt: 'One {taskPath}', templates: ['A', 'C'] },
+          { prompt: 'Two {taskPath}', templates: ['B'] },
+        ],
+      })
+    })
+
+    it('prefers the prompts of templates bound to registered projects', () => {
+      values.set(
+        'resume.sources',
+        library([
+          { id: 'a', name: 'A', prompt: 'Bound {taskPath}' },
+          { id: 'b', name: 'B', prompt: 'Other {taskPath}' },
+        ]),
+      )
+      values.set('project.resumeTemplate:one', 'a')
+      values.set('project.resumeTemplate:gone', 'b')
+      service.migrateResumeInstruction()
+      expect(values.get(RESUME_KEY)).toBe('Bound {taskPath}')
+      expect(values.has(MIGRATION_KEY)).toBe(false)
+    })
+
+    it('runs once and does not rewrite stored template rows', () => {
+      const raw = library([
+        { id: 'a', name: 'A', prompt: 'One {taskPath}' },
+        { id: 'b', name: 'B', prompt: 'Two {taskPath}' },
+      ])
+      values.set('resume.sources', raw)
+      service.migrateResumeInstruction()
+      values.set(MIGRATION_KEY, '')
+      values.set(RESUME_KEY, 'Edited {taskPath}')
+      service.migrateResumeInstruction()
+      expect(values.get(RESUME_KEY)).toBe('Edited {taskPath}')
+      expect(values.get(MIGRATION_KEY)).toBe('')
+      expect(values.get('resume.sources')).toBe(raw)
+    })
+
+    it('leaves the marker unset when a write fails so the next start retries', () => {
+      values.set(
+        'resume.sources',
+        library([
+          { id: 'a', name: 'A', prompt: 'One {taskPath}' },
+          { id: 'b', name: 'B', prompt: 'Two {taskPath}' },
+        ]),
+      )
+      const failing = new ResumeSourcesService({
+        state: {
+          get: (key) => values.get(key) ?? null,
+          set: (key) => {
+            throw new Error(`write failed: ${key}`)
+          },
+        },
+        projects: { get: () => null, list: () => [] },
+      })
+      expect(() => failing.migrateResumeInstruction()).toThrow(/write failed/)
+      expect(values.has(RESUME_KEY)).toBe(false)
+    })
+  })
 })

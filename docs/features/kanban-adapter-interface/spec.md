@@ -309,6 +309,9 @@ a list of all Actions and are not detected from button names.
    for actions that require it.` and information about the handoff directory, if
    one is configured. It recommends keeping the full ref in the name of the future
    local record and handoff, following the project's instructions.
+   Superseded by NEKODE-187: this text is the default of the editable application-level
+   Start instruction defined in the
+   [handoff/resume contract](../handoff-resume-flow/spec.md#global-start-and-resume-instructions-nekode-187).
 6. Confirmation means launching and passing the instruction, regardless of
    `handoffResume.autoSend`. That existing option applies to the action bar.
    A successful launch does not mean the agent has done the task.

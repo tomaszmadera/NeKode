@@ -6,7 +6,7 @@ import { ProjectResumeSettings } from './ProjectResumeSettings'
 afterEach(cleanup)
 
 describe('ProjectResumeSettings', () => {
-  it('shows the selected template source and the exact instruction', async () => {
+  it('shows the selected source summary without a per-source instruction', async () => {
     const app = createAppApiStub()
     vi.mocked(app.resumeSources.list).mockResolvedValue({
       revision: 1,
@@ -15,8 +15,6 @@ describe('ProjectResumeSettings', () => {
           id: 'local-progress',
           revision: 1,
           name: 'Local progress files',
-          prompt:
-            'Resume task {taskPath}.\nRead that progress file before continuing. It records the work so far, decisions, checks, and the next action.',
           source: {
             kind: 'files',
             directory: 'work',
@@ -38,7 +36,8 @@ describe('ProjectResumeSettings', () => {
     expect(summary.textContent).toContain(
       'Files: work / progress.md, including subdirectories, identity: immediate parent directory',
     )
-    expect(summary.textContent).toContain('Resume task {taskPath}.')
+    expect(summary.textContent).not.toContain('{taskPath}')
+    expect(screen.getByText(/Resume instruction is set in Application settings/)).toBeTruthy()
   })
 
   it('loads templates and current project binding, and saves template choice', async () => {
@@ -50,14 +49,12 @@ describe('ProjectResumeSettings', () => {
           id: 'agent-harness',
           revision: 1,
           name: 'Agent Harness',
-          prompt: 'Resume {taskPath}',
           source: { kind: 'command', protocol: 'agent-harness', executable: 'python', args: [] },
         },
         {
           id: 'custom-files',
           revision: 1,
           name: 'Custom Files',
-          prompt: 'Resume {taskPath}',
           source: {
             kind: 'files',
             directory: '.',
@@ -94,7 +91,7 @@ describe('ProjectResumeSettings', () => {
       expect(app.resumeSources.bind).toHaveBeenCalledWith('p1', null)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage sources' }))
     expect(onManageTemplates).toHaveBeenCalledOnce()
   })
 })

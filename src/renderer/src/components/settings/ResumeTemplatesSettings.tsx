@@ -3,7 +3,6 @@ import {
   formatResumePrompt,
   HARNESS_RESUME_SOURCE,
   isLocalProgressResumeSource,
-  LOCAL_PROGRESS_RESUME_PROMPT,
   LOCAL_PROGRESS_RESUME_SOURCE,
   type ProjectInfo,
   type ResumeSourceLibrary,
@@ -28,12 +27,11 @@ const newTemplate = (): ResumeSourcePut => ({
   id: null,
   revision: null,
   name: '',
-  prompt: 'Resume from {taskPath}',
   source: { kind: 'files', directory: '.', pattern: '*.md', recursive: false, identity: 'stem' },
 })
 const errorMessage = (cause: unknown) =>
   parseAppErrorPayload(cause)?.message ??
-  'Resume templates could not be updated. Retry the operation.'
+  'Resume sources could not be updated. Retry the operation.'
 
 function sourceKindValue(source: ResumeSourcePut['source']): string {
   if (source.kind === 'files')
@@ -41,7 +39,16 @@ function sourceKindValue(source: ResumeSourcePut['source']): string {
   return source.protocol
 }
 
-export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Element {
+export interface ResumeTemplatesSettingsProps {
+  app: AppApi
+  /** Effective application Resume instruction used by the Test preview (NEKODE-187). */
+  resumeInstruction: string
+}
+
+export function ResumeTemplatesSettings({
+  app,
+  resumeInstruction,
+}: ResumeTemplatesSettingsProps): React.JSX.Element {
   const [library, setLibrary] = useState<ResumeSourceLibrary | null>(null)
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [selectedId, setSelectedId] = useState('')
@@ -194,26 +201,11 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
     )
   }
 
-  async function importLegacyPrompt(): Promise<void> {
-    if (form === null) return
-    setError(null)
-    try {
-      const imported = await app.resumeSources.importLegacy()
-      if (imported === null) {
-        setError('No legacy Resume template was found in settings.json.')
-        return
-      }
-      setForm({ ...form, prompt: imported })
-    } catch (cause) {
-      setError(errorMessage(cause))
-    }
-  }
-
   return (
     <div className="flex max-w-[760px] flex-col gap-5">
       <PageIntro
-        title="Resume templates"
-        description="Reuse a source and Resume instruction across projects. Test previews saved settings without changing the project's Resume action."
+        title="Resume sources"
+        description="Reuse a continuation source across projects. Each project selects one source; the Resume instruction is set in Instructions. Test previews saved settings without changing the project's Resume action."
       />
       {error !== null && (
         <p role="alert" className="text-sm text-danger">
@@ -221,12 +213,12 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
         </p>
       )}
       {library === null ? (
-        <p role="status">Loading Resume templates...</p>
+        <p role="status">Loading Resume sources...</p>
       ) : (
         <>
           <div className="flex items-end gap-3">
             <label className="flex flex-1 flex-col gap-1 text-sm">
-              Template
+              Saved source
               <select
                 className={selectClass}
                 value={selectedId}
@@ -238,7 +230,7 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                   setError(null)
                 }}
               >
-                <option value="">Choose a template</option>
+                <option value="">Choose a source</option>
                 {library.templates.map((row) => (
                   <option key={row.id} value={row.id}>
                     {row.name}
@@ -256,7 +248,7 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                 setError(null)
               }}
             >
-              New template
+              New source
             </button>
           </div>
           {current !== undefined && form === null && (
@@ -294,9 +286,6 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                   Delete
                 </button>
               </div>
-              <p className="whitespace-pre-wrap rounded border border-edge bg-field p-3 text-sm">
-                {current.prompt}
-              </p>
               {usageError !== null ? (
                 <p role="alert" className="text-xs text-danger">
                   {usageError}
@@ -305,7 +294,7 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                 <p data-testid={TEST_ID.resumeTemplateUsage} className="text-xs text-ink-secondary">
                   {usage.projects.length === 0
                     ? 'Not used by any project.'
-                    : `Used by: ${usage.projects.map((project) => project.name).join(', ')}. Saving the instruction applies it to these projects.`}
+                    : `Used by: ${usage.projects.map((project) => project.name).join(', ')}. Saving the source applies it to these projects.`}
                 </p>
               ) : null}
             </>
@@ -338,12 +327,6 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                       setArgumentKeys([])
                       setForm({
                         ...form,
-                        prompt:
-                          event.target.value === 'agent-harness'
-                            ? 'Resume task {taskPath}'
-                            : event.target.value === 'local-progress'
-                              ? LOCAL_PROGRESS_RESUME_PROMPT
-                              : form.prompt,
                         source:
                           event.target.value === 'files'
                             ? newTemplate().source
@@ -377,7 +360,7 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                         Local progress files: one context file per card at{' '}
                         <code className="font-mono">work/&lt;ref&gt;/progress.md</code>, matched by
                         the card ref in the directory name. Selecting this preset creates no files
-                        and binds no project; save the template and select it in a project.
+                        and binds no project; save the source and select it in a project.
                       </p>
                     ) : null}
                     <label className="flex flex-col gap-1 text-sm">
@@ -544,38 +527,16 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                     </button>
                   </>
                 )}
-                <div className="flex flex-col gap-1 text-sm">
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="resume-instruction-field">Resume instruction</label>
-                    <button
-                      type="button"
-                      className={`${secondaryClass} text-xs py-1 px-2.5 h-auto`}
-                      onClick={() => void importLegacyPrompt()}
-                    >
-                      Import legacy template
-                    </button>
-                  </div>
-                  <textarea
-                    id="resume-instruction-field"
-                    className={`${textClass} h-28 py-2`}
-                    value={form.prompt}
-                    onChange={(event) => setForm({ ...form, prompt: event.target.value })}
-                    required
-                  />
-                </div>
-                <p className="text-xs text-ink-secondary">
-                  Include {'{taskPath}'}. The legacy alias {'{handoffPath}'} is also accepted. Save
-                  before testing.
-                </p>
+                <p className="text-xs text-ink-secondary">Save before testing.</p>
                 {usage !== null && usage.projects.length > 0 ? (
                   <p className="text-xs text-ink-secondary">
-                    Saving applies this instruction to:{' '}
+                    Saving applies this source to:{' '}
                     {usage.projects.map((project) => project.name).join(', ')}.
                   </p>
                 ) : null}
                 <div className="flex gap-2">
                   <button type="submit" className={primaryClass}>
-                    Save template
+                    Save source
                   </button>
                   <button
                     type="button"
@@ -592,7 +553,7 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
             </form>
           )}
           <section
-            aria-label="Test saved template"
+            aria-label="Test saved source"
             className="flex flex-col gap-3 border-t border-edge pt-4"
           >
             <label className="flex flex-col gap-1 text-sm">
@@ -621,7 +582,7 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                 disabled={current === undefined || !projectId || form !== null || testing || saving}
                 onClick={() => void test()}
               >
-                {testing ? 'Testing...' : 'Test saved template'}
+                {testing ? 'Testing...' : 'Test saved source'}
               </button>
               {testing && (
                 <button type="button" className={quietClass} onClick={discardPreview}>
@@ -655,14 +616,15 @@ export function ResumeTemplatesSettings({ app }: { app: AppApi }): React.JSX.Ele
                           {row.status ?? 'File'} - {new Date(row.modifiedAt).toLocaleString()}
                         </p>
                         {row.next_action !== undefined && <p>{row.next_action}</p>}
-                        {current !== undefined ? (
-                          <p
-                            className="mt-1 whitespace-pre-wrap rounded bg-field p-2 font-mono text-xs"
-                            data-testid={`resume-preview-instruction-${row.id}`}
-                          >
-                            {formatResumePrompt(current.prompt, row.displayPath)}
-                          </p>
-                        ) : null}
+                        <p className="mt-1 text-xs text-ink-muted">
+                          Resume instruction (Application settings):
+                        </p>
+                        <p
+                          className="whitespace-pre-wrap rounded bg-field p-2 font-mono text-xs"
+                          data-testid={`resume-preview-instruction-${row.id}`}
+                        >
+                          {formatResumePrompt(resumeInstruction, row.displayPath)}
+                        </p>
                       </li>
                     ))}
                   </ul>

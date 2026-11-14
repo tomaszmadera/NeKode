@@ -2,6 +2,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { open } from 'node:fs/promises'
 import {
+  DEFAULT_RESUME_INSTRUCTION,
+  type ResumeMigrationNotice,
+} from '@shared/contracts/action-instructions-contract'
+import { APP_STATE_KEY } from '@shared/contracts/app-state-contract'
+import {
   formatResumePrompt,
   HARNESS_RESUME_SOURCE,
   projectResumeTemplateKey,
@@ -16,7 +21,10 @@ import {
   type ResumeSourcesChanged,
   type ResumeSourceUsage,
 } from '@shared/contracts/resume-sources-contract'
-import { resumeSourcePutSchema } from '@shared/contracts/resume-sources-schema'
+import {
+  resumeSourcePutSchema,
+  storedResumeSourceSchema,
+} from '@shared/contracts/resume-sources-schema'
 import { AppError } from '@shared/ipc-error'
 import { discoverResumeCommand, type runResumeCommand } from './resume-source-command'
 import { checkResumeCancelled, discoverResumeFiles } from './resume-source-files'
@@ -32,6 +40,8 @@ interface ResumeSourcesDeps {
   timeoutMs?: number
   runCommand?: typeof runResumeCommand
   readLegacyTemplate?: () => Promise<string | null>
+  /** Effective application-level Resume instruction (NEKODE-187), read per composition. */
+  resumeInstruction?: () => string
 }
 
 async function computeFileHash(path: string, signal: AbortSignal): Promise<string> {
@@ -157,8 +167,8 @@ export class ResumeSourcesService {
   }
 
   list(): ResumeSourceLibrary {
-    const raw = this.#deps.state.get(RESUME_SOURCES_STATE_KEY)
-    if (raw === null)
+    const stored = this.#stored()
+    if (stored === null)
       return {
         revision: 1,
         templates: [
@@ -166,13 +176,70 @@ export class ResumeSourcesService {
             id: 'agent-harness',
             revision: 1,
             name: 'Agent Harness',
-            prompt: 'Resume task {taskPath}',
             source: structuredClone(HARNESS_RESUME_SOURCE),
           },
         ],
       }
+    return {
+      revision: stored.revision,
+      templates: stored.templates.map(({ id, revision, name, source }) => ({
+        id,
+        revision,
+        name,
+        source,
+      })),
+    }
+  }
+
+  /**
+   * One-time NEKODE-187 migration of template prompts into the application
+   * Resume instruction. Runs only while `instructions.resume` is absent. An
+   * identical prompt set is kept; differing prompts give the default plus a
+   * notice. The notice is written before the marker key so a failed write
+   * leaves the migration to run again. Stored rows are not rewritten.
+   */
+  migrateResumeInstruction(): void {
+    const state = this.#deps.state
+    if (state.get(APP_STATE_KEY.resumeInstruction) !== null) return
+    const stored = this.#stored()
+    if (stored === null) return
+    const projects = this.#deps.projects.list?.() ?? []
+    const bound = new Set(
+      projects
+        .map((project) => state.get(projectResumeTemplateKey(project.id)))
+        .filter((id): id is string => id !== null && id.trim().length > 0),
+    )
+    const boundRows = stored.templates.filter((row) => bound.has(row.id))
+    const rows = (boundRows.length > 0 ? boundRows : stored.templates).filter(
+      (row): row is typeof row & { prompt: string } => typeof row.prompt === 'string',
+    )
+    const distinct = new Map<string, string[]>()
+    for (const row of rows)
+      distinct.set(row.prompt, [...(distinct.get(row.prompt) ?? []), row.name])
+    if (distinct.size === 1) {
+      state.set(APP_STATE_KEY.resumeInstruction, [...distinct.keys()][0])
+      return
+    }
+    if (distinct.size > 1) {
+      const notice: ResumeMigrationNotice = {
+        prompts: [...distinct].map(([prompt, templates]) => ({ prompt, templates })),
+      }
+      state.set(APP_STATE_KEY.resumeMigration, JSON.stringify(notice))
+    }
+    state.set(APP_STATE_KEY.resumeInstruction, DEFAULT_RESUME_INSTRUCTION)
+  }
+
+  #stored(): {
+    revision: number
+    templates: Array<ResumeSourceLibrary['templates'][number] & { prompt?: string }>
+  } | null {
+    const raw = this.#deps.state.get(RESUME_SOURCES_STATE_KEY)
+    if (raw === null) return null
     try {
-      const document = JSON.parse(raw) as ResumeSourceLibrary
+      const document = JSON.parse(raw) as {
+        revision: number
+        templates: Array<ResumeSourceLibrary['templates'][number] & { prompt?: string }>
+      }
       if (
         !Number.isSafeInteger(document.revision) ||
         document.revision < 1 ||
@@ -181,7 +248,7 @@ export class ResumeSourcesService {
         throw new Error()
       const ids = new Set<string>()
       for (const row of document.templates) {
-        const valid = resumeSourcePutSchema.safeParse(row)
+        const valid = storedResumeSourceSchema.safeParse(row)
         if (
           !valid.success ||
           row.id === null ||
@@ -212,7 +279,7 @@ export class ResumeSourcesService {
     return this.#save(
       {
         revision: next.revision,
-        templates: [...library.templates.filter((row) => row.id !== id), next],
+        templates: [...this.#storedRows(library).filter((row) => row.id !== id), next],
       },
       id,
     )
@@ -244,10 +311,19 @@ export class ResumeSourcesService {
     return this.#save(
       {
         revision: library.revision + 1,
-        templates: library.templates.filter((row) => row.id !== id),
+        templates: this.#storedRows(library).filter((row) => row.id !== id),
       },
       id,
     )
+  }
+
+  /**
+   * Rows to persist unchanged: the stored rows, so an untouched row keeps a
+   * legacy prompt until that row itself is saved (NEKODE-187); the built-in
+   * library when nothing is stored yet.
+   */
+  #storedRows(library: ResumeSourceLibrary): ResumeSourceLibrary['templates'] {
+    return this.#stored()?.templates ?? library.templates
   }
 
   #save(library: ResumeSourceLibrary, templateId: string): ResumeSourceLibrary {
@@ -258,7 +334,8 @@ export class ResumeSourcesService {
           new AppError('conflict', 'The Resume template changed. Test the saved version again.'),
         )
     for (const listener of this.#listeners) listener({ revision: library.revision, templateId })
-    return library
+    // Stored rows may keep a legacy prompt; callers get the prompt-free contract shape.
+    return this.list()
   }
 
   #template(library: ResumeSourceLibrary, id: string, revision: number) {
@@ -458,7 +535,7 @@ export class ResumeSourcesService {
         'This Resume selection has already been used. Refresh the Resume list.',
       )
     }
-    const template = this.#template(this.list(), inventory.templateId, inventory.templateRevision)
+    this.#template(this.list(), inventory.templateId, inventory.templateRevision)
 
     const controller = new AbortController()
     let hash: string
@@ -473,8 +550,13 @@ export class ResumeSourcesService {
     if (hash !== record.contentHash) {
       throw new AppError('conflict', 'The selected candidate has changed. Refresh the Resume list.')
     }
+    this.#template(this.list(), inventory.templateId, inventory.templateRevision)
     record.consumed = true
-    return formatResumePrompt(template.prompt, record.candidate.displayPath)
+    return formatResumePrompt(this.#resumeInstruction(), record.candidate.displayPath)
+  }
+
+  #resumeInstruction(): string {
+    return this.#deps.resumeInstruction?.() ?? DEFAULT_RESUME_INSTRUCTION
   }
 
   async importLegacy(): Promise<string | null> {

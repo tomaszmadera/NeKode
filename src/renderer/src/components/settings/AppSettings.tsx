@@ -54,7 +54,7 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }>
   { id: 'dictation', label: 'Dictation', icon: Icon.dictation },
   { id: 'agents', label: 'Agents', icon: Icon.agent },
   { id: 'instructions', label: 'Instructions', icon: Icon.book },
-  { id: 'resume', label: 'Resume templates', icon: Icon.sliders },
+  { id: 'resume', label: 'Resume sources', icon: Icon.sliders },
   { id: 'usage', label: 'Usage', icon: Icon.gauge },
 ]
 function tabId(tab: SettingsTab): string {
@@ -133,6 +133,16 @@ export function AppSettings({
     onResetHandoffInstruction,
     onSaveContinueInstruction,
     onResetContinueInstruction,
+    startInstruction,
+    resumeInstruction,
+    startInstructionError,
+    resumeInstructionError,
+    resumeMigrationNotice,
+    onSaveStartInstruction,
+    onResetStartInstruction,
+    onSaveResumeInstruction,
+    onResetResumeInstruction,
+    onDismissResumeMigration,
   } = useSettingsStore(
     useShallow((state) => ({
       theme: state.theme,
@@ -165,6 +175,16 @@ export function AppSettings({
       onResetHandoffInstruction: state.resetHandoffInstruction,
       onSaveContinueInstruction: state.setContinueInstruction,
       onResetContinueInstruction: state.resetContinueInstruction,
+      startInstruction: state.startInstruction,
+      resumeInstruction: state.resumeInstruction,
+      startInstructionError: state.startInstructionError,
+      resumeInstructionError: state.resumeInstructionError,
+      resumeMigrationNotice: state.resumeMigrationNotice,
+      onSaveStartInstruction: state.setStartInstruction,
+      onResetStartInstruction: state.resetStartInstruction,
+      onSaveResumeInstruction: state.setResumeInstruction,
+      onResetResumeInstruction: state.resetResumeInstruction,
+      onDismissResumeMigration: state.dismissResumeMigrationNotice,
     })),
   )
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab)
@@ -345,6 +365,16 @@ export function AppSettings({
           continueInstruction={continueInstruction}
           handoffInstructionError={handoffInstructionError}
           continueInstructionError={continueInstructionError}
+          startInstruction={startInstruction}
+          resumeInstruction={resumeInstruction}
+          startInstructionError={startInstructionError}
+          resumeInstructionError={resumeInstructionError}
+          resumeMigrationNotice={resumeMigrationNotice}
+          onSaveStart={onSaveStartInstruction}
+          onResetStart={onResetStartInstruction}
+          onSaveResume={onSaveResumeInstruction}
+          onResetResume={onResetResumeInstruction}
+          onDismissResumeMigration={onDismissResumeMigration}
           autoSend={autoSendHandoff}
           onSaveHandoff={onSaveHandoffInstruction}
           onResetHandoff={onResetHandoffInstruction}
@@ -353,7 +383,7 @@ export function AppSettings({
           onManageTemplates={() => setActiveTab('resume')}
         />
       ) : activeTab === 'resume' ? (
-        <ResumeTemplatesSettings app={app} />
+        <ResumeTemplatesSettings app={app} resumeInstruction={resumeInstruction} />
       ) : activeTab === 'usage' ? (
         <UsageSettings app={app} onSaved={onUsageSaved} />
       ) : activeTab === 'agents' ? (

@@ -57,27 +57,28 @@ const sourceSchema = z.discriminatedUnion('kind', [
     ),
 ])
 
-export const resumeSourcePutSchema = z
-  .strictObject({
-    id: resumeIdSchema.nullable(),
-    revision: resumeRevisionSchema.nullable(),
-    name: z
-      .string()
-      .min(1)
-      .max(200)
-      .refine((value) => value.trim().length > 0 && !value.includes('\u0000')),
-    prompt: z
-      .string()
-      .refine(
-        (value) =>
-          value.trim().length > 0 &&
-          !value.includes('\u0000') &&
-          /\{(?:taskPath|handoffPath)\}/.test(value),
-        'Resume instruction must contain {taskPath} or {handoffPath}.',
-      ),
-    source: sourceSchema,
-  })
-  .refine(
-    (value) => (value.id === null) === (value.revision === null),
-    'New templates use null id and revision; editing requires both.',
-  )
+const putFields = {
+  id: resumeIdSchema.nullable(),
+  revision: resumeRevisionSchema.nullable(),
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine((value) => value.trim().length > 0 && !value.includes('\u0000')),
+  source: sourceSchema,
+}
+
+const sameIdentity = (value: { id: string | null; revision: number | null }) =>
+  (value.id === null) === (value.revision === null)
+const identityMessage = 'New sources use null id and revision; editing requires both.'
+
+/** A save carries no prompt: the Resume instruction is application-level (NEKODE-187). */
+export const resumeSourcePutSchema = z.strictObject(putFields).refine(sameIdentity, identityMessage)
+
+/**
+ * A stored row may still carry a pre-NEKODE-187 `prompt`. It is accepted on
+ * read, ignored, and dropped on the next save of that row.
+ */
+export const storedResumeSourceSchema = z
+  .strictObject({ ...putFields, prompt: z.string().optional() })
+  .refine(sameIdentity, identityMessage)
