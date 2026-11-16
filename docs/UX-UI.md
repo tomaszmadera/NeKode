@@ -2052,6 +2052,7 @@ The MVP should support:
 - bottom auxiliary terminal
 - `Ctrl + `` toggle
 - concurrent sessions
+- closing the app asks before ending a running terminal
 
 ## Files
 

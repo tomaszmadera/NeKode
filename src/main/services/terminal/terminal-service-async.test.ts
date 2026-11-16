@@ -3,6 +3,32 @@ import { describe, expect, it, vi } from 'vitest'
 import { TerminalService } from './terminal-service'
 
 describe('asynchronous terminal creation', () => {
+  it('counts a pending create before the process exists', async () => {
+    let finish: (value: { file: string; args: string[] }) => void = () => {}
+    const createPty = vi.fn(() => ({
+      pid: 1,
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      onData: () => ({ dispose: vi.fn() }),
+      onExit: () => ({ dispose: vi.fn() }),
+    }))
+    const service = new TerminalService({ createPty, isDirectory: () => true })
+    const pending = service.createAsync(
+      'chat',
+      'D:/project',
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    expect(service.runningCount()).toBe(1)
+    finish({ file: 'bash', args: [] })
+    await pending
+    expect(service.runningCount()).toBe(1)
+    service.terminateAll()
+  })
+
   it('cancels pending bottom tabs when their project is removed', async () => {
     let finish: (value: { file: string; args: string[] }) => void = () => {}
     const createPty = vi.fn()

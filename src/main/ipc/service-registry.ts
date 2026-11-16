@@ -215,6 +215,8 @@ export interface AppServices {
     terminateAll(): void
     /** App-quit wait. A seven-second report does not settle this promise. */
     shutdown(reportTimeout?: (error: unknown) => void): Promise<void>
+    /** Running PTYs plus creates that have not spawned yet. Not on the bridge. */
+    runningCount(): number
     onData(listener: (chatId: string, data: string) => void): Unsubscribe
     onExit(listener: (chatId: string, exitCode: number) => void): Unsubscribe
   }

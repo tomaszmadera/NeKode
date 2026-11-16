@@ -16,6 +16,7 @@ import {
   type PreviewWindowHandle,
   PreviewWindows,
 } from './preview/preview-windows'
+import { createQuitGate, type QuitGate, quitConfirmationCopy } from './quit-confirmation'
 import {
   allowsMicrophone,
   allowsPreviewClipboard,
@@ -29,6 +30,7 @@ import { registerShutdown } from './shutdown'
 import { runPrimaryInstance } from './single-instance'
 
 let currentMainWindow: BrowserWindow | undefined
+let quitGate: QuitGate | undefined
 /** Read-only file preview windows (docs/features/file-preview-window). */
 let previewWindows: PreviewWindows | undefined
 
@@ -64,6 +66,29 @@ function getTrustedRendererUrls(): string[] {
   return [pathToFileURL(join(__dirname, '../renderer/index.html')).href]
 }
 
+async function askQuitConfirmation(count: number): Promise<boolean> {
+  const copy = quitConfirmationCopy(count)
+  const parent =
+    currentMainWindow !== undefined && !currentMainWindow.isDestroyed()
+      ? currentMainWindow
+      : undefined
+  const options = {
+    type: 'warning' as const,
+    buttons: ['Close NeKode', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Close NeKode',
+    message: copy.message,
+    detail: copy.detail,
+    noLink: true,
+  }
+  const result =
+    parent === undefined
+      ? await dialog.showMessageBox(options)
+      : await dialog.showMessageBox(parent, options)
+  return result.response === 0
+}
+
 function createWindow(): void {
   const trustedRendererUrls = getTrustedRendererUrls()
   const mainWindow = new BrowserWindow({
@@ -86,6 +111,11 @@ function createWindow(): void {
   // Preview windows belong to the main window (file-preview-window Behaviour 11).
   mainWindow.on('closed', () => {
     previewWindows?.closeAll()
+  })
+  // Keep this window open until the person answers. Cancel returns to the
+  // same session, and the close itself must not start terminal teardown.
+  mainWindow.on('close', (event) => {
+    if (quitGate?.blockWindowClose()) event.preventDefault()
   })
 
   const permissions = mainWindow.webContents.session
@@ -263,6 +293,8 @@ function startApplication(): void {
             appVersion: app.getVersion(),
             tempDir: app.getPath('temp'),
             quitApp: () => {
+              // The update block already asked the person to save work.
+              quitGate?.approve()
               app.quit()
             },
             subscribeAppQuit: (listener) => {
@@ -392,6 +424,11 @@ function startApplication(): void {
           // exit events so the renderer's chat-close flow cannot run while quitting.
           // Usage and task-progress shutdown run in this sequence so one failure
           // cannot skip the other hooks or terminal teardown.
+          quitGate = createQuitGate({
+            runningCount: () => services.terminals.runningCount(),
+            ask: askQuitConfirmation,
+            quit: () => app.quit(),
+          })
           registerShutdown(
             app,
             (reportTimeout) => services.terminals.shutdown(reportTimeout),
@@ -409,6 +446,7 @@ function startApplication(): void {
               shutdownResumeSources: () => services.resumeSources.shutdown(),
               stopActions: () => services.actions.stopAll(),
               closeDatabase: () => services.closeDatabase?.(),
+              allowQuit: () => quitGate?.allowTeardown() ?? true,
             },
           )
 

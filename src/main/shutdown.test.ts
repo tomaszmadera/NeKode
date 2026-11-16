@@ -2,6 +2,25 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import { registerShutdown } from './shutdown'
 
+it('does not start teardown while quit confirmation is still pending', async () => {
+  const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
+  const terminals = vi.fn(async () => undefined)
+  let allow = false
+  registerShutdown(app, terminals, vi.fn(), vi.fn(), { allowQuit: () => allow })
+  const pending = { preventDefault: vi.fn() }
+  app.emit('before-quit', pending)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(pending.preventDefault).toHaveBeenCalledOnce()
+  expect(terminals).not.toHaveBeenCalled()
+  expect(app.quit).not.toHaveBeenCalled()
+
+  allow = true
+  app.emit('before-quit', { preventDefault: vi.fn() })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(terminals).toHaveBeenCalledOnce()
+  expect(app.quit).toHaveBeenCalledOnce()
+})
+
 it('waits for owned Resume source cleanup before quitting', async () => {
   const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
   let finish!: () => void

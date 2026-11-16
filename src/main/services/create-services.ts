@@ -644,6 +644,7 @@ export function createServices(
       terminateProjectBottom: (projectId) => terminals.terminateProjectBottom(projectId),
       terminateAll: () => terminals.terminateAll(),
       shutdown: (reportTimeout) => terminals.shutdown(reportTimeout),
+      runningCount: () => terminals.runningCount(),
       onData: (listener) => terminals.onData(listener),
       onExit: (listener) => terminals.onExit(listener),
     },

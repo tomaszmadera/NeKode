@@ -185,6 +185,16 @@ describe('terminal service (fake PTY)', () => {
     expect(ptys[0].killCount).toBe(0)
   })
 
+  it('counts running terminals and ignores an exited session', () => {
+    const { service, ptys } = createHarness()
+    expect(service.runningCount()).toBe(0)
+    service.create('t1', 'D:/a')
+    service.create('t2', 'D:/b')
+    expect(service.runningCount()).toBe(2)
+    ptys[0].emitExit(0)
+    expect(service.runningCount()).toBe(1)
+  })
+
   it('spawns lazily and keeps exactly one PTY per chat', () => {
     const { service, ptys, spawn } = createHarness()
     expect(spawn).not.toHaveBeenCalled()

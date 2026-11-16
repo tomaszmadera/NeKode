@@ -84,6 +84,7 @@ function fakeServices(): AppServices {
       terminateProjectBottom: vi.fn(),
       terminateAll: vi.fn(),
       shutdown: vi.fn(async () => {}),
+      runningCount: vi.fn(() => 0),
       onData: () => () => undefined,
       onExit: () => () => undefined,
     },

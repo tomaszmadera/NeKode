@@ -9,6 +9,11 @@ export interface ShutdownHooks {
   shutdownResumeSources?: () => Promise<void>
   stopActions?: () => void
   closeDatabase?: () => void
+  /**
+   * When this returns false, teardown does not start. The quit confirmation
+   * uses that to keep live terminals running until the person confirms.
+   */
+  allowQuit?: () => boolean
 }
 
 /** Keep Electron alive until terminal shutdown settles. A cleanup failure cannot skip the rest. */
@@ -54,6 +59,9 @@ export function registerShutdown(
     if (complete || (teardownFailed && terminalSettled && sourceSettled)) return
     event.preventDefault()
     if (started) return
+    // Live terminals wait here. The prompt owns the later quit, and this
+    // event stays prevented so Electron does not exit while it is open.
+    if (hooks?.allowQuit?.() === false) return
     started = true
 
     runCleanup(hooks?.shutdownUsage)

@@ -430,6 +430,23 @@ export class TerminalService {
     }
   }
 
+  /**
+   * Live terminals that a quit would kill: running PTY sessions and creates
+   * that have not spawned yet. An exited or failed session does not count.
+   */
+  runningCount(): number {
+    let count = 0
+    for (const session of this.#sessions.values()) {
+      if (session.status === 'running') count += 1
+    }
+    for (const [chatId, pending] of this.#pendingCreates) {
+      if (pending.cancelled) continue
+      if (this.#sessions.get(chatId)?.status === 'running') continue
+      count += 1
+    }
+    return count
+  }
+
   /** Display label of the shell this service spawns. */
   shellName(): string {
     return shellDisplayName(this.#shell)

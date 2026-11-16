@@ -265,6 +265,7 @@ function createHarness(
     terminateProjectBottom: vi.fn(),
     terminateAll: vi.fn(),
     shutdown: vi.fn(async () => {}),
+    runningCount: vi.fn(() => 0),
     onData: (listener) => {
       terminalListeners.data.push(listener)
       return () => undefined
