@@ -19,6 +19,8 @@ function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T
   return next
 }
 
+const LAUNCH_FAILED = 'Failed to start the terminal for this chat.'
+
 /** Kanban Start/Resume confirmations and launches whose terminal is held for a retry. */
 export function useTaskLaunches(
   runtime: WorkspaceRuntime,
@@ -110,7 +112,7 @@ export function useTaskLaunches(
         setHeldLaunches((previous) => ({
           ...previous,
           [result.chat.id]: {
-            message: 'Failed to start the terminal for this chat.',
+            message: result.error ?? LAUNCH_FAILED,
             input: result.input,
           },
         }))
@@ -146,7 +148,7 @@ export function useTaskLaunches(
               ...previous,
               [chatId]: {
                 ...held,
-                message: 'Failed to start the terminal for this chat.',
+                message: result.error ?? LAUNCH_FAILED,
               },
             }))
           }
@@ -158,7 +160,7 @@ export function useTaskLaunches(
             ...previous,
             [chatId]: {
               ...held,
-              message: errorMessage(error, 'Failed to start the terminal for this chat.'),
+              message: errorMessage(error, LAUNCH_FAILED),
             },
           }))
         } finally {

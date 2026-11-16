@@ -174,4 +174,9 @@ export interface KanbanLaunchResult {
    * `mode: 'resume-draft'` (Resume) when delivered.
    */
   draftPrompt?: string
+  /**
+   * A classified, user-safe reason for an undelivered attempt. Absent when the
+   * failure is unclassified, so the renderer keeps its generic text.
+   */
+  error?: string
 }

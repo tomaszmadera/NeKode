@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { runWslAsync } from './wsl-async'
+import { runWslAsync, WSL_PROBE_TIMEOUT_MS } from './wsl-async'
 
 vi.mock('node:child_process', () => ({ execFile: vi.fn() }))
 
@@ -9,6 +9,12 @@ beforeEach(() => {
 })
 
 describe('asynchronous WSL probe', () => {
+  it('waits long enough for a cold WSL VM start', () => {
+    // The first probe of a Windows session boots the whole WSL2 VM; the old
+    // five-second bound failed before the distribution answered.
+    expect(WSL_PROBE_TIMEOUT_MS).toBe(30_000)
+  })
+
   it('returns immediately and resolves only when the child completes', async () => {
     let complete: (error: Error | null, stdout: string) => void = () => {}
     vi.mocked(execFile).mockImplementation(((_file, _args, _options, callback) => {
@@ -19,7 +25,11 @@ describe('asynchronous WSL probe', () => {
     expect(execFile).toHaveBeenCalledWith(
       'wsl.exe',
       ['--distribution', 'Ubuntu', '--exec', 'pwd'],
-      expect.objectContaining({ timeout: 5000, windowsHide: true, encoding: 'utf8' }),
+      expect.objectContaining({
+        timeout: WSL_PROBE_TIMEOUT_MS,
+        windowsHide: true,
+        encoding: 'utf8',
+      }),
       expect.any(Function),
     )
     complete(null, '/home/user')

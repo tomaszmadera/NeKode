@@ -138,8 +138,17 @@ function deliveredResult(chat: ChatInfo, draftPrompt: string | null): KanbanLaun
   return draftPrompt === null ? { chat, delivered: true } : { chat, delivered: true, draftPrompt }
 }
 
-function logSpawnFailure(): void {
-  console.error(SPAWN_LOG)
+function logSpawnFailure(reason: string | undefined): void {
+  console.error(SPAWN_LOG, reason ?? 'unclassified')
+}
+
+/**
+ * A classified reason safe to show. A node-pty error can carry the command
+ * line, and a task launch puts the prompt in argv, so only NeKode's own typed
+ * errors are exposed; any other failure keeps the renderer's generic text.
+ */
+function spawnFailureReason(error: unknown): string | undefined {
+  return error instanceof AppError ? error.message : undefined
 }
 
 /** The resume-only identity of a confirmation, or null for Start. */
@@ -420,13 +429,18 @@ export class TaskLaunchService {
         args: withSessionId(executable, prepared.shell.args, launch.sessionId),
       }
       await this.#terminals.create(attempt.chat.id, cwd, shell)
-    } catch {
+    } catch (error) {
       this.#sessions.forget(attempt.chat.id)
       if (attempt.dropped || this.#droppedProjects.has(attempt.projectId)) {
         throw new AppError('not_found', 'Project not found.', CHANNEL)
       }
-      logSpawnFailure()
-      return { chat: attempt.chat, delivered: false }
+      const reason = spawnFailureReason(error)
+      logSpawnFailure(reason)
+      return {
+        chat: attempt.chat,
+        delivered: false,
+        ...(reason === undefined ? {} : { error: reason }),
+      }
     }
     if (attempt.dropped || this.#droppedProjects.has(attempt.projectId)) {
       throw new AppError('not_found', 'Project not found.', CHANNEL)

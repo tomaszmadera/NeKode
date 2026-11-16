@@ -22,7 +22,7 @@ Changes to IPC contracts or renderer UI, and unrelated service behavior.
 - All four provider-configuration reads use one guarded parser. Missing, malformed or non-object JSON yields an empty configuration, without affecting other providers.
 - Each update request, including redirects and response body consumption, has a finite deadline. Failure releases the download busy state and permits a subsequent attempt; failed downloads never launch an installer.
 - After a task-progress adapter times out or is cancelled, attempt process-tree termination and settle the invocation after a bounded grace period even if close never arrives. Preserve the appropriate timeout or cancellation result and clean timers/listeners.
-- WSL probes on IPC paths use asynchronous execution with the existing deadline; startup-only synchronous use may remain. Preserve existing WSL results and error behavior.
+- WSL probes on IPC paths use asynchronous execution with a finite deadline that also covers a cold WSL VM start; startup-only synchronous use may remain. Preserve existing WSL results and error behavior.
 - A second concurrent Git sync for the same project fails with a conflict; different projects may proceed independently. Release the lock on every outcome. Pull uses `git pull --no-edit`, followed by the existing push sequence.
 - OpenWhispr audio files reside in the existing owned session directory and are removed on normal completion or by the existing safe stale-owner cleanup after a crash. Preserve the existing ownership and symlink safeguards.
 

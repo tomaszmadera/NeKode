@@ -417,9 +417,11 @@ records. A `task_id` alone means a local record and is not a Kanban ref.
   invalidates pending responses. A late scan of another project or
   task must not change the choice or start a process.
 - An error after the chat was created leaves that specific chat with a readable error
-  and an explicit Retry. Retry does not create an extra chat and does not blindly repeat
-  a prompt that was already delivered. Reopening the app does not start the task
-  automatically and does not replay the initial instruction.
+  and an explicit Retry. The message carries the classified reason when main can name
+  one, and a generic text otherwise; the prompt never appears in it. Retry does not
+  create an extra chat and does not blindly repeat a prompt that was already delivered.
+  Reopening the app does not start the task automatically and does not replay the
+  initial instruction.
 
 ### Acceptance criteria
 
@@ -950,7 +952,7 @@ Poza zakresem: wykrywanie gotowości TUI agenta, zmiana treści polecenia Start,
 ### Dane i zgodność
 
 - `kanban:launchTask` przyjmuje trzeci tryb `mode: 'draft'` z polami wspólnymi Start. Walidacja IPC i usługi odrzuca nieznane pola, tak jak dla `start`.
-- `KanbanLaunchResult` zawiera opcjonalne `draftPrompt: string`, obecne tylko dla trybu `draft` przy `delivered: true`. Tryby `start` i `resume` nie zmieniają kształtu wyniku.
+- `KanbanLaunchResult` zawiera opcjonalne `draftPrompt: string`, obecne tylko dla trybu `draft` przy `delivered: true`. Tryby `start` i `resume` nie zmieniają kształtu wyniku. Nieudany start (`delivered: false`) może zawierać opcjonalne `error` z zaklasyfikowanym komunikatem bezpiecznym dla użytkownika; brak pola zachowuje dotychczasowy komunikat zastępczy.
 - Brak migracji danych i zmian profili. Uprawnienia jak w Start.
 
 ### Kryteria akceptacji

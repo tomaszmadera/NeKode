@@ -7,6 +7,7 @@ import {
   prepareWslAgentAsync,
   validatedWslProjectPathAsync,
 } from './wsl'
+import { WSL_PROBE_TIMEOUT_MS } from './wsl-async'
 
 vi.mock('node:child_process', () => ({ execFile: vi.fn(), execFileSync: vi.fn() }))
 
@@ -36,7 +37,11 @@ function wslArgv(): string[][] {
   return vi.mocked(execFile).mock.calls.map(([, args]) => args as string[])
 }
 
-const PROBE_OPTIONS = { timeout: 5000, encoding: 'utf8', windowsHide: true }
+const PROBE_OPTIONS = {
+  timeout: WSL_PROBE_TIMEOUT_MS,
+  encoding: 'utf8',
+  windowsHide: true,
+}
 
 function probeArgs(parent: string): string[] {
   return ['--distribution', 'Ubuntu', '--exec', '/usr/bin/test', '-d', parent]

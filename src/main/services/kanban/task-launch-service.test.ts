@@ -539,6 +539,7 @@ describe('TaskLaunchService start', () => {
     const launch = input({ projectId: bundle.project.id })
     const failed = await bundle.service.launch(launch)
     expect(failed.delivered).toBe(false)
+    expect(failed.error).toBe('Failed to start the terminal process.')
     expect(bundle.spawns).toHaveLength(1)
     expect(bundle.service.blocksProjectShell(failed.chat.id)).toBe(true)
     const logged = JSON.stringify(errors)
