@@ -6,6 +6,7 @@ import {
   listWslDistributionsAsync,
   prepareWslAgentAsync,
   validatedWslProjectPathAsync,
+  validateWslExecutableAsync,
 } from './wsl'
 import { WSL_PROBE_TIMEOUT_MS } from './wsl-async'
 
@@ -268,6 +269,8 @@ const AGENT_CASES: Array<{
   shellChoice: string | null
   args: string[]
   calls: number
+  linuxPath?: string
+  wslpathCalls?: number
 }> = [
   ...HOST_CHOICES.map((shellChoice) => ({
     name: `a Local profile on the host for shell choice ${String(shellChoice)}`,
@@ -276,6 +279,13 @@ const AGENT_CASES: Array<{
     args: ['one prompt'],
     calls: 0,
   })),
+  {
+    name: 'the persisted UNC distribution for a chat started from a WSL project',
+    path: '\\\\wsl.localhost\\Ubuntu\\home\\user',
+    shellChoice: null,
+    args: [],
+    calls: 0,
+  },
   {
     name: 'the persisted UNC distribution over a saved host shell choice',
     path: '\\\\wsl.localhost\\Ubuntu\\home\\user',
@@ -289,48 +299,67 @@ const AGENT_CASES: Array<{
     shellChoice: 'wsl:Ubuntu',
     args: ['line one\n$(literal) & | ; "quotes"', '', 'ą'],
     calls: 2,
+    linuxPath: '/custom-mount/f/My $ Project/ą',
+    wslpathCalls: 1,
   },
 ]
 
 describe('WSL agent preparation', () => {
-  it.each(AGENT_CASES)('keeps $name', async ({ path, shellChoice, args, calls }) => {
-    mockExecFile((argv) =>
-      argv.includes('wslpath') ? '/custom-mount/f/My $ Project/ą\n' : 'usable',
-    )
-    const command = { file: 'codex', args }
-    const prepared = await prepareWslAgentAsync(path, command, shellChoice)
+  it.each(AGENT_CASES)(
+    'keeps $name',
+    async ({ path, shellChoice, args, calls, linuxPath, wslpathCalls }) => {
+      mockExecFile((argv) =>
+        argv.includes('wslpath')
+          ? '/custom-mount/f/My $ Project/ą\n'
+          : 'nekode-executable:/usr/local/bin/codex',
+      )
+      const command = { file: 'codex', args }
+      const prepared = await prepareWslAgentAsync(path, command, shellChoice)
 
-    if (calls === 0) {
-      expect(prepared).toBe(command)
-      expect(execFile).not.toHaveBeenCalled()
-      return
-    }
-    expect(prepared).toEqual({
-      file: 'wsl.exe',
-      args: [
-        '--distribution',
-        'Ubuntu',
-        '--cd',
-        '/custom-mount/f/My $ Project/ą',
-        '--exec',
-        'bash',
-        '-lc',
-        'exec "$@"',
-        'bash',
-        'codex',
-        ...args,
-      ],
-    })
-    expect(wslArgv()).toHaveLength(calls)
-    expect(wslArgv()[0]).toEqual([
-      '--distribution',
-      'Ubuntu',
-      '--exec',
-      'wslpath',
-      '-a',
-      '-u',
-      path,
-    ])
-    expect(JSON.stringify(vi.mocked(execFile).mock.calls)).not.toContain('literal')
+      if (calls === 0) {
+        expect(prepared).toBe(command)
+        expect(execFile).not.toHaveBeenCalled()
+        return
+      }
+      expect(prepared).toEqual({
+        file: 'wsl.exe',
+        args: [
+          '--distribution',
+          'Ubuntu',
+          '--cd',
+          linuxPath,
+          '--exec',
+          'bash',
+          '-lc',
+          'exec "$@"',
+          'bash',
+          'codex',
+          ...args,
+        ],
+      })
+      expect(wslArgv()).toHaveLength(calls)
+      expect(wslArgv().filter((argv) => argv.includes('wslpath'))).toHaveLength(wslpathCalls ?? 0)
+      const probe = wslArgv()
+        .filter((argv) => !argv.includes('wslpath'))
+        .at(-1)
+      expect(probe?.slice(-2)).toEqual([linuxPath, 'codex'])
+      expect(JSON.stringify(vi.mocked(execFile).mock.calls)).not.toContain('literal')
+    },
+  )
+
+  it('rejects an executable that resolves onto a Windows drive before any spawn', async () => {
+    // The terminal service wraps a WSL UNC launch and validates the executable,
+    // so the guard must refuse the interop shim the bare profile name finds.
+    const resolved = '/mnt/c/Users/tomek/AppData/Roaming/npm/opencode'
+    mockExecFile(() => `nekode-executable:${resolved}`)
+    await expect(
+      validateWslExecutableAsync('\\\\wsl.localhost\\Ubuntu\\home\\user', {
+        file: 'opencode',
+        args: [],
+      }),
+    ).rejects.toThrow(
+      `Linux executable "opencode" resolves to "${resolved}" on a Windows drive in WSL distribution "Ubuntu".`,
+    )
+    expect(wslArgv()).toHaveLength(1)
   })
 })

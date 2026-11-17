@@ -152,28 +152,14 @@ export function validateWslExecutable(path: string | WslLocation, shell: ShellSp
   const location = typeof path === 'string' ? projectWslLocation(path) : path
   if (location === null || (shell.file === 'wsl.exe' && shell.args.length === 0)) return
   assertLinuxExecutable(shell.file)
-  let result: string
-  try {
-    result = runWsl(location.distribution, [
-      'bash',
-      '-lc',
-      'cd -- "$1" && if executable=$(type -P -- "$2") && test -f "$executable" && test -x "$executable"; then printf usable; fi',
-      'nekode-executable',
-      location.linuxPath,
-      shell.file,
-    ])
-  } catch {
-    throw new AppError(
-      'unknown',
-      `Unable to check Linux executable "${shell.file}" in WSL distribution "${location.distribution}".`,
-    )
-  }
-  if (result !== 'usable') {
+  const executable = resolveLinuxExecutable(location, shell.file)
+  if (executable === null) {
     throw new AppError(
       'not_found',
       `Linux executable "${shell.file}" is unavailable or not executable in WSL distribution "${location.distribution}".`,
     )
   }
+  assertLinuxNative(executable, shell.file, location.distribution)
 }
 
 export async function validateWslExecutableAsync(
@@ -183,27 +169,49 @@ export async function validateWslExecutableAsync(
   const location = typeof path === 'string' ? projectWslLocation(path) : path
   if (location === null || (shell.file === 'wsl.exe' && shell.args.length === 0)) return
   assertLinuxExecutable(shell.file)
-  let result: string
-  try {
-    result = await runWslAsync(location.distribution, [
-      'bash',
-      '-lc',
-      'cd -- "$1" && if executable=$(type -P -- "$2") && test -f "$executable" && test -x "$executable"; then printf usable; fi',
-      'nekode-executable',
-      location.linuxPath,
-      shell.file,
-    ])
-  } catch {
-    throw new AppError(
-      'unknown',
-      `Unable to check Linux executable "${shell.file}" in WSL distribution "${location.distribution}".`,
-    )
-  }
-  if (result !== 'usable')
+  const executable = await resolveLinuxExecutableAsync(location, shell.file)
+  if (executable === null)
     throw new AppError(
       'not_found',
       `Linux executable "${shell.file}" is unavailable or not executable in WSL distribution "${location.distribution}".`,
     )
+  assertLinuxNative(executable, shell.file, location.distribution)
+}
+
+/**
+ * Prints the canonical Linux path a login shell resolves for a bare name, behind
+ * a marker so login-shell noise cannot be mistaken for a result. Callers compare
+ * the path against the Windows drive mounts, because WSL interop runs anything
+ * there as a Windows process.
+ */
+const EXECUTABLE_PROBE =
+  'cd -- "$1" && if executable=$(type -P -- "$2") && test -f "$executable" && test -x "$executable"; then printf "nekode-executable:%s" "$(readlink -f -- "$executable" 2>/dev/null || printf %s "$executable")"; fi'
+
+const EXECUTABLE_MARKER = 'nekode-executable:'
+
+function executableProbeArgs(location: WslLocation, file: string): string[] {
+  return ['bash', '-lc', EXECUTABLE_PROBE, 'nekode-executable', location.linuxPath, file]
+}
+
+function parseExecutableProbe(output: string): string | null {
+  const index = output.lastIndexOf(EXECUTABLE_MARKER)
+  if (index < 0) return null
+  const value = output
+    .slice(index + EXECUTABLE_MARKER.length)
+    .split(/\r?\n/, 1)[0]
+    ?.trim()
+  return value === undefined || value === '' ? null : value
+}
+
+/** A Windows drive mounted into the distribution, for example `/mnt/c/...`. */
+const WINDOWS_DRIVE_PATH = /^\/mnt\/[a-zA-Z]\//
+
+function assertLinuxNative(executable: string, file: string, distribution: string): void {
+  if (!WINDOWS_DRIVE_PATH.test(executable)) return
+  throw new AppError(
+    'not_found',
+    `Linux executable "${file}" resolves to "${executable}" on a Windows drive in WSL distribution "${distribution}". Install the tool inside the distribution to run it in WSL.`,
+  )
 }
 
 function assertLinuxExecutable(file: string): void {
@@ -242,16 +250,35 @@ function wslTerminalSpec(location: WslLocation, shell?: ShellSpec) {
   return { file: 'wsl.exe', args, cwd: process.cwd() }
 }
 
+/**
+ * Agent launches follow the same WSL boundary as terminals: a WSL UNC project
+ * uses its persisted distribution, and a Local project uses its selected WSL
+ * shell. The profile executable must resolve inside the distribution, because
+ * a Windows binary would run outside the Linux session (project-environments
+ * spec Behaviour 9).
+ */
 export async function prepareWslAgentAsync(
   path: string,
   command: ShellSpec,
   shellChoice: string | null,
 ): Promise<ShellSpec> {
+  // A WSL UNC project keeps its persisted distribution: the terminal service
+  // wraps its launches and validates the executable, which rejects a Windows
+  // binary reached through a drive mount (project-environments spec Behaviour 9).
   if (projectWslLocation(path) !== null || !shellChoice?.startsWith('wsl:')) return command
   const distribution = shellChoice.slice('wsl:'.length)
   if (!distribution) return command
   assertLinuxExecutable(command.file)
-  let location: WslLocation
+  const location = await selectedShellLocationAsync(path, distribution)
+  await validateWslExecutableAsync(location, command)
+  const prepared = wslTerminalSpec(location, command)
+  return { file: prepared.file, args: prepared.args }
+}
+
+async function selectedShellLocationAsync(
+  path: string,
+  distribution: string,
+): Promise<WslLocation> {
   try {
     wslProjectPath(distribution, '/query')
     const linuxPath = (await runWslAsync(distribution, ['wslpath', '-a', '-u', path])).replace(
@@ -259,14 +286,40 @@ export async function prepareWslAgentAsync(
       '',
     )
     wslProjectPath(distribution, linuxPath)
-    location = { distribution, linuxPath }
+    return { distribution, linuxPath }
   } catch {
     throw new AppError(
       'unknown',
       `Unable to resolve the project directory in WSL distribution "${distribution}".`,
     )
   }
-  await validateWslExecutableAsync(location, command)
-  const prepared = wslTerminalSpec(location, command)
-  return { file: prepared.file, args: prepared.args }
+}
+
+function resolveLinuxExecutable(location: WslLocation, file: string): string | null {
+  let result: string
+  try {
+    result = runWsl(location.distribution, executableProbeArgs(location, file))
+  } catch {
+    throw new AppError(
+      'unknown',
+      `Unable to check Linux executable "${file}" in WSL distribution "${location.distribution}".`,
+    )
+  }
+  return parseExecutableProbe(result)
+}
+
+async function resolveLinuxExecutableAsync(
+  location: WslLocation,
+  file: string,
+): Promise<string | null> {
+  let result: string
+  try {
+    result = await runWslAsync(location.distribution, executableProbeArgs(location, file))
+  } catch {
+    throw new AppError(
+      'unknown',
+      `Unable to check Linux executable "${file}" in WSL distribution "${location.distribution}".`,
+    )
+  }
+  return parseExecutableProbe(result)
 }

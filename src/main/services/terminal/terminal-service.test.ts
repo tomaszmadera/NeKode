@@ -10,7 +10,9 @@ import {
   TerminalService,
 } from './terminal-service'
 
-vi.mock('node:child_process', () => ({ execFileSync: vi.fn(() => 'usable') }))
+vi.mock('node:child_process', () => ({
+  execFileSync: vi.fn(() => 'nekode-executable:/usr/bin/agent'),
+}))
 
 // Terminal service unit tests with a fake PTY injected (plan Stage 3): no
 // real processes are spawned in vitest. Covers lazy spawn keyed by chatId,
@@ -545,6 +547,22 @@ describe('WSL terminal routing', () => {
     expect(exits).not.toHaveBeenCalled()
     expect(() => service.create('late', path)).toThrow(/closing/)
   })
+  it('rejects an agent executable that only exists as a Windows interop shim', () => {
+    // A bare profile name for a WSL UNC project is resolved by the distribution's
+    // login PATH; the npm shim there execs a Windows PE through interop, so the
+    // launch must fail visibly instead of starting a Windows process (spec
+    // project-environments Behaviour 9).
+    const { service, spawn } = createHarness()
+    vi.mocked(execFileSync).mockReturnValueOnce(
+      'nekode-executable:/mnt/c/Users/tomek/AppData/Roaming/npm/opencode',
+    )
+    expect(() =>
+      service.create('agent', '\\\\wsl$\\Ubuntu\\home\\u', { file: 'opencode', args: ['--auto'] }),
+    ).toThrow(/on a Windows drive in WSL distribution "Ubuntu"/)
+    expect(spawn).not.toHaveBeenCalled()
+    expect(writeCode(service, 'agent')).toBe('not_found')
+  })
+
   it('starts the distribution default in Linux cwd with a separate host cwd', () => {
     const { service, spawn } = createHarness()
     service.create('wsl-chat', '\\\\wsl.localhost\\Ubuntu-24.04\\home\\u\\My Project')

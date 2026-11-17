@@ -26,7 +26,7 @@ describe('WSL invocation boundary', () => {
   })
 
   it('accepts an executable found in the login PATH and does not execute profile arguments', () => {
-    vi.mocked(execFileSync).mockReturnValue('usable')
+    vi.mocked(execFileSync).mockReturnValue('nekode-executable:/usr/bin/hermes')
     expect(() =>
       validateWslExecutable('\\\\wsl$\\Ubuntu\\tmp', {
         file: 'hermes',
@@ -34,6 +34,33 @@ describe('WSL invocation boundary', () => {
       }),
     ).not.toThrow()
     expect(execFileSync).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an executable that resolves onto a Windows drive', () => {
+    vi.mocked(execFileSync).mockReturnValue(
+      'nekode-executable:/mnt/c/Users/tomek/AppData/Roaming/npm/opencode',
+    )
+    expect(() =>
+      validateWslExecutable('\\\\wsl$\\Ubuntu\\tmp', { file: 'opencode', args: [] }),
+    ).toThrow(/on a Windows drive in WSL distribution "Ubuntu"/)
+  })
+
+  it('ignores login-shell output before the probe marker', () => {
+    vi.mocked(execFileSync).mockReturnValue(
+      'Welcome to Ubuntu 24.04\nnekode-executable:/usr/bin/hermes\n',
+    )
+    expect(() =>
+      validateWslExecutable('\\\\wsl$\\Ubuntu\\tmp', { file: 'hermes', args: [] }),
+    ).not.toThrow()
+  })
+
+  it('treats login-shell output without the probe marker as unavailable', () => {
+    vi.mocked(execFileSync).mockReturnValue('Welcome to Ubuntu 24.04\n')
+    expect(() =>
+      validateWslExecutable('\\\\wsl$\\Ubuntu\\tmp', { file: 'hermes', args: [] }),
+    ).toThrow(
+      'Linux executable "hermes" is unavailable or not executable in WSL distribution "Ubuntu".',
+    )
   })
 
   it('names the target on a failed availability check without exposing subprocess output', () => {
