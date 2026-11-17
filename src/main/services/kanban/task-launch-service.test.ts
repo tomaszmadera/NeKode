@@ -26,8 +26,12 @@ import {
 import { runWslAsync } from '../terminal/wsl-async'
 import { buildStartPrompt, TaskLaunchService } from './task-launch-service'
 
-vi.mock('node:child_process', () => ({ execFileSync: vi.fn(() => 'usable') }))
-vi.mock('../terminal/wsl-async', () => ({ runWslAsync: vi.fn(async () => 'usable') }))
+vi.mock('node:child_process', () => ({
+  execFileSync: vi.fn(() => 'nekode-executable:/usr/bin/codex'),
+}))
+vi.mock('../terminal/wsl-async', () => ({
+  runWslAsync: vi.fn(async () => 'nekode-executable:/usr/bin/codex'),
+}))
 
 const openDatabases: Array<{ close(): void }> = []
 const projectPath = join(tmpdir(), 'nekode-task-launch', 'demo-project')
@@ -266,7 +270,7 @@ describe('project opt-in at Kanban launch', () => {
       const pending = h.service.launch(input({ projectId: h.project.id, profileId: agent.id }))
       await probing
       h.globalProfiles.selectionSet(h.project.id, { selectedIds: [], defaultId: null })
-      release('usable')
+      release('nekode-executable:/usr/bin/codex')
       await expect(pending).rejects.toMatchObject({ code: 'not_found' })
       expect(h.chats.list(h.project.id)).toEqual([])
       expect(h.spawns).toEqual([])
@@ -295,7 +299,7 @@ describe('project opt-in at Kanban launch', () => {
       const pending = h.service.launch(input({ projectId: h.project.id, profileId: agent.id }))
       await probing
       h.globalProfiles.put({ id: agent.id, name: 'Edited', command: 'updated --flag "{prompt}"' })
-      release('usable')
+      release('nekode-executable:/usr/bin/codex')
       const result = await pending
       expect(result.chat.name).toBe('[PowerShell] Edited')
       expect(vi.mocked(runWslAsync).mock.calls.some((call) => call[1].includes('updated'))).toBe(

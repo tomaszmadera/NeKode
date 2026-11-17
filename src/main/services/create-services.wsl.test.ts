@@ -8,9 +8,21 @@ import { createNodePty } from './terminal/node-pty-factory'
 import { listWslDirectoriesAsync, listWslDistributionsAsync, runWsl } from './terminal/wsl'
 import { runWslAsync } from './terminal/wsl-async'
 
+/**
+ * Answers each WSL probe dialect: the /etc/shells listing, shell validation and
+ * the executable probe behind its `nekode-executable:` marker. An unknown
+ * command fails loudly so a changed probe cannot pass unnoticed.
+ */
+const wslProbeOutput = vi.hoisted(() => (args: readonly string[]): string => {
+  if (args[0] === '/bin/cat') return '/bin/bash\n'
+  if (args[0] === '/bin/sh') return 'usable'
+  if (args[0] === 'bash') return 'nekode-executable:/usr/bin/codex'
+  throw new Error(`Unexpected WSL command: ${args[0]}`)
+})
+
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
-  execFileSync: vi.fn(() => 'usable'),
+  execFileSync: vi.fn((_file: string, args: string[]) => wslProbeOutput(args.slice(4))),
 }))
 
 vi.mock('node:fs', async (importOriginal) => ({
@@ -32,24 +44,16 @@ vi.mock('./terminal/wsl', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./terminal/wsl')>()),
   listWslDistributionsAsync: vi.fn(async () => ['Ubuntu']),
   listWslDirectoriesAsync: vi.fn(async () => ['/home/user/Project']),
-  runWsl: vi.fn((_distribution: string, args: string[]) =>
-    args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
-  ),
+  runWsl: vi.fn((_distribution: string, args: string[]) => wslProbeOutput(args)),
 }))
 vi.mock('./terminal/wsl-async', () => ({
-  runWslAsync: vi.fn(async (_distribution: string, args: string[]) =>
-    args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
-  ),
+  runWslAsync: vi.fn(async (_distribution: string, args: string[]) => wslProbeOutput(args)),
 }))
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(runWslAsync).mockImplementation(async (_distribution, args) =>
-    args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
-  )
-  vi.mocked(runWsl).mockImplementation((_distribution, args) =>
-    args[0] === '/bin/cat' ? '/bin/bash\n' : 'usable',
-  )
+  vi.mocked(runWslAsync).mockImplementation(async (_distribution, args) => wslProbeOutput(args))
+  vi.mocked(runWsl).mockImplementation((_distribution, args) => wslProbeOutput(args))
 })
 
 function setup(path = '\\\\wsl.localhost\\Ubuntu\\home\\user\\Project') {
@@ -140,7 +144,7 @@ describe.skipIf(!isWindowsHost)('WSL service wiring', () => {
         updatedAt: null,
       })
       vi.mocked(runWslAsync).mockImplementation(async (_distribution, args) =>
-        args.includes('wslpath') ? '/mnt/d/My Project\n' : 'usable',
+        args[0] === 'wslpath' ? '/mnt/d/My Project\n' : wslProbeOutput(args),
       )
       try {
         services.state.set(projectShellKey(project.id), 'wsl:Ubuntu')
