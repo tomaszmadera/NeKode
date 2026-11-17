@@ -26,12 +26,12 @@ const SKILL_FILE = 'SKILL.md'
 
 const LOCAL_FILE_SKILL = `---
 name: nekode-tasks
-description: Use when you read, add, or update this project's tasks. The tasks live in .nekode/tasks.json, the task list NeKode shows for this project.
+description: Use when you read, add, or update this project's work items. The board uses .nekode/tasks.json as its work item source.
 ---
 
-# NeKode tasks
+# NeKode work items
 
-This project's task list is the file \`.nekode/tasks.json\`. NeKode shows it on the project's home tab. It is the only task list for this project: do not create a second task list, a TODO file, or another tracker file. The progress file described below is execution context, not a task list.
+This project's work item source is \`.nekode/tasks.json\`. NeKode reads and writes its work items on the board on the project's home tab. The board is the only backlog: do not create a second task list, a TODO file, or another tracker file. The work record described below holds execution context, never a second backlog or a source of board state.
 
 ## File shape
 
@@ -53,29 +53,59 @@ The file is JSON in UTF-8 without a byte order mark. NeKode writes the keys \`sc
 
 Never reset, empty, or recreate the file. If it is missing or not valid, stop and tell the user.
 
-## Execution context
+## Work record
 
-The task list is the only backlog. Keep the execution context in a separate progress file.
+Keep one active work record per work item. The agent writes and maintains it; NeKode never creates, writes, or repairs it.
 
-- For a task with ref \`T-1\`, create or update \`work/T-1/progress.md\` under the project root when you start working on it. Use the complete ref as the directory name.
+- For a work item with ref \`T-1\`, create or update \`work/T-1/progress.md\` under the project root when you start working on it. Use the complete ref as the directory name and the literal file name \`progress.md\`.
 - Keep the file short and current. It must state: the ref and title; what is finished and what is in progress; decisions and their reasons; checks you ran with their command and result; blockers; one exact next action that names the file or command; and the UTC time of the last update.
 - Do not copy the task list, other cards, or a new TODO list into the file. Update it when one of those facts changes.
 
+The work record must contain exactly one fenced \`nekode-state\` block with strict JSON. Keep the block and the prose aligned on every update, including Handoff, Resume reconciliation, completion, and reopening. Replace the existing block rather than appending another. The rest of the record is human prose, never parsed for Step progress.
+
+Example for \`T-1\` (replace the example values with current facts):
+
+\`\`\`nekode-state
+{
+  "schemaVersion": 1,
+  "status": "active",
+  "phases": [
+    {
+      "name": "Implementation",
+      "steps": [
+        { "id": "1.1", "label": "Write the release note", "done": false }
+      ]
+    }
+  ],
+  "currentStepId": "1.1",
+  "nextAction": "Edit CHANGELOG.md",
+  "blockers": null,
+  "updatedAt": "2026-11-17T12:00:00Z",
+  "title": "Write the release note"
+}
+\`\`\`
+
+- Required fields: \`schemaVersion\` is the integer \`1\`; \`status\` is \`active\`, \`blocked\`, or \`completed\`; \`phases\` is an array and may be empty.
+- Each phase has a nonblank string \`name\` and an array \`steps\`. Each step has a nonblank string \`id\` unique across the record, a nonblank string \`label\`, and a boolean \`done\`.
+- Optional fields: \`currentStepId\` is a string naming an existing step or null; \`nextAction\` and \`blockers\` are strings or null; \`updatedAt\` is an ISO 8601 UTC string; \`title\` is a string. Use the current UTC time when updating \`updatedAt\`.
+- Unknown fields are ignored. Invalid JSON, duplicate step ids, an unknown \`currentStepId\`, an unsupported \`schemaVersion\`, or multiple blocks prevent a step indicator. Keep the block content at most 64 KiB and the whole record at most 1 MiB.
+- Step progress is optional and read-only. Select \`NeKode work record\` in Project Settings, Step progress to read the block. Both bundled progress adapters support local projects only; a WSL binding reports \`environment_unsupported\`. An old record without a block still works for Resume and has no step indicator until you update it.
+
 ## Handoff, Stop, and Resume
 
-- Handoff: update \`work/<ref>/progress.md\`, leave the card In Progress, and stop. The progress file is the handoff. Do not create another handoff file and do not claim the work is finished.
-- Stop is an interruption by the user, not a handoff. It creates or changes no progress file by itself. When asked to continue, reconcile the existing progress file with the repository before acting.
-- Resume: read the progress file at the path NeKode gives you before changing files. Check its claims against the repository and continue from its next action. If the file is missing or stale, say so; do not invent prior state.
+- Handoff: update \`work/<ref>/progress.md\`, including its state block and prose, leave the card In Progress, and stop. Handoff is an action; the work record carries its context. Do not create another handoff file and do not claim the work is finished.
+- Stop is an interruption by the user, not a Handoff. It creates or changes no work record by itself. When asked to continue, reconcile the existing work record with the repository before acting.
+- Resume: read the work record at the path NeKode gives you before changing files. Check its claims against the repository and continue from its next action. If the record is missing or stale, say so; do not invent prior state. The \`Local work record\` preset in App Settings, Work record sources discovers \`work/<ref>/progress.md\`; save it and bind it as the project's Work record source explicitly. The Resume instruction is configured in App Settings, Instructions.
 
-## Completing a task
+## Completing a work item
 
-When the user confirms the task is complete and the card is in Done, move \`work/<ref>/progress.md\` to \`work-completed/<ref>/progress.md\`. That directory is outside the Resume source, so the finished context is no longer offered. Keep the file; delete it only when the user asks. If the task reopens, move the file back to \`work/<ref>/progress.md\` and update it.
+Only after the user confirms completion and the card is in Done, set \`status\` to \`completed\`, record the final checks and outcome in the prose, and move \`work/<ref>/progress.md\` to \`work-completed/<ref>/progress.md\`. This archived work record is outside the configured Work record source, so Resume no longer offers it. The progress adapter can still read its last step. Keep the record; delete it only when the user asks. If the work item reopens, move the record back to \`work/<ref>/progress.md\` and update its block and prose to the actual active or blocked state before continuing.
 `
 
 /** Fixed front matter above an adapter-declared body. */
 const ADAPTER_FRONT_MATTER = `---
 name: nekode-tasks
-description: Use when you work with this project's tasks. The tasks live in the tracker configured for this project in NeKode.
+description: Use when you work with this project's work items. They live in the work item source configured for this project in NeKode.
 ---
 
 `
@@ -83,17 +113,17 @@ description: Use when you work with this project's tasks. The tasks live in the 
 function defaultSkill(adapterName: string): string {
   return `---
 name: nekode-tasks
-description: Use when you work with this project's tasks. The tasks live in the tracker configured for this project in NeKode, not in the repository.
+description: Use when you work with this project's work items. They live in the work item source configured for this project in NeKode, not in the repository.
 ---
 
-# NeKode tasks
+# NeKode work items
 
-This project's tasks live in the tracker configured for this project in NeKode (Project Settings, Tasks), through the ${adapterName} adapter. NeKode lists and updates them there.
+This project's work items live in the work item source configured for this project in NeKode (Project Settings, Work items), through the ${adapterName} adapter. The source reads and writes board items.
 
-- Do not copy tasks into the repository: no task list, TODO file, or \`.nekode/tasks.json\`.
+- Do not copy work items into the repository: no task list, TODO file, or \`.nekode/tasks.json\`.
 - Do not create a second task list anywhere.
-- When NeKode started this chat for a task, work from the task details it gave you.
-- If other instructions in this repository describe a task tool that targets a different tracker or project, or you cannot tell which tracker a tool targets, ask the user instead of choosing.
+- When NeKode started this chat for a work item, work from the details it gave you.
+- If other instructions in this repository describe a tool that targets a different work item source or project, or you cannot tell which source a tool targets, ask the user instead of choosing.
 `
 }
 

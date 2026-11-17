@@ -1,0 +1,8 @@
+{
+  "id": "nekode-work-record",
+  "name": "NeKode work record",
+  "kind": "task-progress",
+  "protocolVersion": 1,
+  "invocation": { "command": "node", "args": ["adapter.cjs"] },
+  "configSchema": []
+}

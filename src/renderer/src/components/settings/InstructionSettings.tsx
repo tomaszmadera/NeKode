@@ -53,13 +53,13 @@ const START_PURPOSE =
   "Sent when you start a card from a Kanban board. It is passed to the agent when its process starts; the project's instructions decide what starting a task means."
 
 const RESUME_PURPOSE =
-  "Sent when you resume from the context that the project's Resume source finds, from the action bar or a Kanban card."
+  "Sent when you resume from the work record that the project's work record source finds, from the action bar or a Kanban card."
 
 const HANDOFF_PURPOSE =
-  'Asks the running agent to record transfer context and stop. In an Agent Harness project the agent updates the task record; without Harness the project convention, such as a progress file, carries the context. NeKode sends only this text and does not claim that a handoff was saved.'
+  'Asks the running agent to update the work record and stop. NeKode sends only this text and does not claim that a handoff was saved.'
 
 const CONTINUE_PURPOSE =
-  'Asks the running agent to continue the current conversation. It does not choose a task or a context file and starts no discovery.'
+  'Asks the running agent to continue the current conversation. It does not choose a work item or a work record and starts no discovery.'
 
 const PLACEHOLDER_NOTE =
   'No placeholders. The text is sent exactly as written, including line breaks, whitespace, braces and dollar signs.'
@@ -68,7 +68,7 @@ const START_PLACEHOLDER_NOTE =
   '{ref} (required) is the full card ref, {title} the title, {description} the description or "This task has no description.", {url} the card URL or nothing. A paragraph left empty by a placeholder is removed. Other text is sent exactly as written.'
 
 const RESUME_PLACEHOLDER_NOTE =
-  '{taskPath} (required) is replaced with the selected context path; {handoffPath} is a deprecated alias. Other text is sent exactly as written.'
+  '{taskPath} (required) is replaced with the selected work record path; {handoffPath} is a deprecated alias. Other text is sent exactly as written.'
 
 type ActionId = 'start' | 'resume' | 'handoff' | 'continue'
 
@@ -291,7 +291,7 @@ export function InstructionSettings({
     <div className="flex max-w-[760px] flex-col gap-5">
       <PageIntro
         title="Instructions"
-        description="What NeKode sends to the agent. Every instruction is shared by all projects; a project only selects where Resume finds its context."
+        description="What NeKode sends to the agent. Every instruction is shared by all projects; a project only selects where Resume finds its work record."
       />
       {projectsError !== null ? (
         <p role="alert" className="text-sm text-danger">
@@ -359,7 +359,7 @@ export function InstructionSettings({
             onClick={onManageTemplates}
             data-testid={TEST_ID.instructionManageTemplates}
           >
-            Manage Resume sources
+            Manage work record sources
           </button>
         }
       >
@@ -469,8 +469,8 @@ export function InstructionSettings({
             data-testid={TEST_ID.instructionStopNote}
             className="px-4 py-3 text-[13px] text-ink-muted"
           >
-            Stop sends Ctrl+C to the active chat. It is not configurable, creates no task record or
-            handoff and does not close a card.
+            Stop sends Ctrl+C to the active chat. It is not configurable, creates no work record and
+            does not close a work item.
           </p>
         </GroupBox>
       </SettingsGroup>

@@ -1,13 +1,23 @@
 # Handoff/Resume flow: reusable sources, prompts and console delivery
 
-Status: Delivered (reusable Resume sources, prompts, console delivery and task-centric Kanban integration delivered under NEKODE-142).
+Status: Delivered (work record sources, application instructions, console delivery and Kanban integration; vocabulary amended by NEKODE-192).
 Resume template amendment (NEKODE-83): specification and plan approved on 2026-10-17.
 NEKODE-142 amendment below: specification and three-stage plan approved by the user on 2026-10-29; Stage 3 completed. Legacy handoff directory setting and old handoff matcher decommissioned.
 NEKODE-172 amendment below: approved by the user on 2026-11-12; configurable Handoff and Continue instructions with the Resume instruction kept in its single template source.
-NEKODE-187 amendment below: proposed 2026-11-14; global Start and Resume instructions, Resume templates become Resume sources without a prompt. It supersedes the NEKODE-142 and NEKODE-172 rules that place the Resume instruction in a template.
+NEKODE-187 amendment below: delivered; global Start and Resume instructions, source configuration without a prompt. It supersedes the NEKODE-142 and NEKODE-172 rules that place the Resume instruction in a template.
 Path: `docs/features/handoff-resume-flow/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
+
+## Work record sources and vocabulary (NEKODE-192)
+
+[Work record progress](../work-record-progress/spec.md) owns the current vocabulary and exact labels. This amendment changes copy only; discovery, matching, fingerprints, bindings, launch, instructions and delivery remain unchanged.
+
+A work record source configures where Resume finds the record of work on a work item. App Settings names its library `Work record sources`. Project Settings, `Work items`, has a `WORK RECORD` section and a `Work record source` selector. Sources own discovery only; the Resume instruction containing `{taskPath}` is application-level in Instructions. The `Local work record` preset discovers `work/<ref>/progress.md`. The optional `Agent Harness` preset remains available by that name. Selecting either preset creates no record and installs nothing.
+
+A work record holds execution state, decisions, checks, blockers, and the next action. Handoff is the update-and-stop action, never a file. The agent owns record updates and archives a record only after confirmed completion. The [local workflow](../local-task-workflow/spec.md) owns prose and `nekode-state` instructions; [Step progress](../task-progress-adapters/spec.md) is a separate optional read-only adapter binding. Resume file discovery never parses that block; a record without it can still Resume.
+
+Compatibility names stay unchanged: `ResumeSource*`, `resume.sources`, `project.resumeTemplate:<projectId>`, existing `resumeSources` operations, `progress.md`, and `work-completed/`. Historical template sections below remain compatibility evidence and are superseded by NEKODE-187 for instruction ownership and this amendment for product copy.
 
 ## Delivered baseline and legacy compatibility
 
@@ -19,7 +29,7 @@ Make the Handoff/Resume action row and the Add Project dialog less lossy for an 
 
 ## Related requirements
 
-- [Local task workflow](../local-task-workflow/spec.md): owns the ready `Local progress files` preset and the no-Harness execution-context convention.
+- [Local task workflow](../local-task-workflow/spec.md): owns the `Local work record` preset and local work record convention.
 
 Accepted user decisions 2026-10-01, owned by this public contract:
 
@@ -165,7 +175,9 @@ The application reads the optional file and never creates or rewrites it. Existi
 6. Existing handoff selection, path formatting, candidate/stamp validation, Start prompts, profile argv substitution, and attempt idempotency retain regression coverage. Configuration tests use temporary directories, never the real user's settings.
 7. Update the user-facing settings documentation with the file location, JSON example, reload timing, defaults, and error recovery. Run affected tests and static checks, then independent review and final changed verification.
 
-## Reusable Resume sources and prompts (NEKODE-142)
+<a id="reusable-resume-sources-and-prompts-nekode-142"></a>
+
+## Reusable work record sources and prompts (NEKODE-142)
 
 ### Authority and scope
 
@@ -236,7 +248,7 @@ User decision 2026-11-12: Handoff, Resume and Continue instructions are configur
 
 This amendment supersedes the fixed Continue wording in Behaviour 2 and the Non-goals entry "Changes to Stop and Continue fixed actions" only for the Continue text, and the sentence in the NEKODE-142 section that fixes Handoff wording. Handoff delivery, Resume discovery, selection, composition, Kanban launch, addressed-console injection and Stop behavior stay as specified. The fixed command set and toolbar labels stay.
 
-Actors are the local user, the action bar and the running agent. NeKode only sends text. Recording a handoff, updating a task record or a progress file, and closing a card are the agent's acts. Sending a message never proves a handoff exists.
+Actors are the local user, the action bar and the running agent. NeKode only sends text. Updating a work record for Handoff and closing a card are the agent's acts. Sending a message never proves a handoff exists.
 
 ### Inheritance and visible scope
 
@@ -256,10 +268,10 @@ Effective content and origin stay visible:
 
 Application Settings gains an Instructions tab. It shows one group per action with its purpose, effective text and send mode:
 
-- Handoff asks the running agent to record transfer context and stop. In an Agent Harness project the agent updates the task record; without Harness the project convention, for example a progress file, carries the context. The application does not claim a saved handoff, completed task or closed card because it sent the text.
+- Handoff asks the running agent to record transfer context and stop. The agent updates the project's work record, following its configured source convention. The application does not claim a saved handoff, completed task or closed card because it sent the text.
 - Continue asks the running agent to continue the current conversation. It selects no task and no context file and starts no discovery.
 - Resume starts from the context selected by the project's Resume template. The editable control remains the existing template editor; the Instructions tab shows the effective saved instruction and routes there. It is not a second editable Resume prompt.
-- Stop is read-only: it sends `Ctrl+C`, is not configurable, creates no task record or handoff and does not close a card.
+- Stop is read-only: it sends `Ctrl+C`, is not configurable, creates no work record and does not close a card.
 
 Handoff and Continue are multiline text areas. Defaults are the current texts: Handoff `Write a handoff`, Continue `Continue`. Missing or blank stored value means the default. A Reset control restores the default.
 
@@ -277,7 +289,7 @@ Saving requires nonblank text after trimming, no NUL and at most 10,000 characte
 - Existing Resume templates, ids, bindings, prompts, revisions, discovery, fingerprints and Kanban launch behave unchanged. No migration.
 - The Resume instruction is never copied into application settings, and no default is substituted into a saved template.
 - No per-project override, no inheritance of Handoff or Continue from a Resume template and no new placeholder.
-- No new action, automatic lifecycle transition, taskctl invocation or handoff/task-record write by the application.
+- No new action, automatic lifecycle transition, taskctl invocation or work record write by the application.
 - Settings stay in the flat app_state store; no SQLite schema, table or migration change.
 
 ### Data / API
@@ -327,7 +339,7 @@ Saving requires nonblank text after trimming, no NUL and at most 10,000 characte
 - Template editor: usage line with project names, empty usage, usage error, and the warning that saving affects those projects.
 - ActionBar/App: custom Handoff paste with auto-send off, custom Handoff CR send with auto-send on, custom Continue split write once, Stop `\x03` with no instruction delivery, pending Handoff dropped on chat or project switch, no double delivery, and defaults when unset.
 - Main: usage call keeps the trusted-sender guard, validates the payload and rejects an unknown template.
-- Regression: existing Resume source, template, picker, Kanban launch and auto-send suites.
+- Regression: existing Work record source, template, picker, Kanban launch and auto-send suites.
 
 ### Relevant SDD / ADR
 
@@ -339,7 +351,7 @@ Saving requires nonblank text after trimming, no NUL and at most 10,000 characte
 
 ### Authority and scope
 
-User decisions 2026-11-14: the text an action sends to the agent is application-level, and only the continuation source is per project. Start and Resume instructions join Handoff and Continue in Application Settings, Instructions. A Resume template keeps its source and loses its prompt; the library stays shared by reference and is named Resume sources. Migration keeps one common prompt or falls back to the default with a visible list of the previous prompts. No per-project instruction override exists.
+User decisions 2026-11-14: the text an action sends to the agent is application-level, and only the continuation source is per project. Start and Resume instructions join Handoff and Continue in Application Settings, Instructions. A Resume template keeps its source and loses its prompt; the library stays shared by reference and is named Work record sources. Migration keeps one common prompt or falls back to the default with a visible list of the previous prompts. No per-project instruction override exists.
 
 This amendment supersedes, for the Resume instruction only, the NEKODE-142 rule that the template editor exposes the instruction and that Project Settings shows the template instruction, and the NEKODE-172 rules that the Resume instruction stays in the template, that the Instructions tab shows it read-only, and "No migration". It also supersedes the fixed Start wording of [Kanban Start](../kanban-adapter-interface/spec.md#start) Behaviour 5 and the [local task workflow](../local-task-workflow/spec.md) preset prompt. Discovery, sources, bindings, Test, usage, fingerprints, selection tokens, Kanban matching and launch, Handoff, Continue, Stop, auto-send and console injection stay as specified.
 
@@ -348,8 +360,8 @@ NeKode only sends text. The agent's instructions own what Start and Resume mean 
 ### Levels
 
 - Application settings: Start, Resume, Handoff and Continue instructions, shared by every registered project, plus auto-send.
-- Resume source (formerly Resume template): name, source kind and its fields, reused by reference across projects. It owns discovery only.
-- Project: selects one Resume source (or none) and inherits every instruction.
+- Work record source (stored as a `ResumeSourceTemplate`): name, source kind and its fields, reused by reference across projects. It owns discovery only.
+- Project: selects one work record source (or none) and inherits every instruction.
 
 ### Start instruction
 
@@ -371,6 +383,8 @@ NeKode only sends text. The agent's instructions own what Start and Resume mean 
   Keep the full ref in the name of the local task record, following the project's instructions.
   ```
 
+  This quoted default preserves the existing technical string in `action-instructions-contract.ts`; its legacy record wording is a compatibility literal. Product copy uses work record.
+
 - Main composes the Start prompt from the saved instruction during launch preparation, after it fetches the current item, under the existing Start rules. An undelivered retry composes again from the current saved text; a delivered attempt sends nothing again.
 
 ### Resume instruction
@@ -386,11 +400,11 @@ NeKode only sends text. The agent's instructions own what Start and Resume mean 
 - Saving Start or Resume requires nonblank text after trimming, no NUL, at most 10,000 characters and its required placeholder. Failed validation shows an error and writes nothing.
 - A missing or blank stored value means the default. An invalid stored value (external edit) makes main and the renderer use the default, and the Instructions tab shows the invalid-saved-value message, as NEKODE-172 defines for Handoff and Continue.
 
-### Resume sources
+### Work record sources
 
-- The Application Settings section and editor are named Resume sources. The editor keeps name, source kind, fields, Duplicate, Delete protection, usage (`Used by: ...`) and Test. It has no prompt field. The Test preview shows each candidate identity and display path, and the instruction formatted from the current saved Resume instruction, labelled as coming from Application settings.
-- Project Settings shows a Resume source selector (`None (Unconfigured)` plus saved sources), the source summary and the effective Resume instruction with origin Application settings.
-- Ready presets (Agent Harness, Local progress files) fill only source values.
+- The Application Settings section and editor are named Work record sources. The editor keeps name, source kind, fields, Duplicate, Delete protection, usage (`Used by: ...`) and Test. It has no prompt field. The Test preview shows each candidate identity and display path, and the instruction formatted from the current saved Resume instruction, labelled as coming from Application settings.
+- Project Settings shows a Work record source selector (`None (Unconfigured)` plus saved sources), the source summary and the effective Resume instruction with origin Application settings.
+- Ready presets (Agent Harness, Local work record) fill only source values.
 - Stored ids, bindings (`project.resumeTemplate:<projectId>`), revisions and the `resume.sources` key are unchanged. A stored row may still carry a legacy `prompt`: it is accepted on read, ignored, and dropped on the next save of that row. `resumeSources.put` rejects a `prompt` field.
 
 ### Migration
@@ -424,7 +438,7 @@ Runs once in main, before the first Resume composition or Instructions read of a
 1. With no saved Start instruction, every Kanban Start sends exactly the previous prompt for items with and without description and URL.
 2. A saved multiline Start instruction with all four placeholders produces the expected text; `{ref}` is required; empty `{url}` and blank description follow the defined rules; inserted values are not expanded.
 3. Resume from the action bar and from Kanban both use the saved application Resume instruction; editing it changes the next prepare without restart; no template prompt is read.
-4. Resume sources have no prompt field; presets fill only source values; legacy stored prompts are ignored and dropped on save.
+4. Work record sources have no prompt field; presets fill only source values; legacy stored prompts are ignored and dropped on save.
 5. Migration: an identical common prompt is preserved; differing prompts give the default plus a visible, copyable, dismissible list; no saved library gives the default with no notice; the migration runs once.
 6. Instructions shows Start, Resume, Handoff, Continue and Stop; Start shows the Kanban note when no adapter is configured; Project Settings shows the source selector and the effective Resume text with origin Application settings.
 7. Existing discovery, binding, Test, usage, delete protection, fingerprints, Kanban matching and launch, auto-send, Handoff, Continue and Stop tests keep passing.
@@ -433,8 +447,8 @@ Runs once in main, before the first Resume composition or Instructions read of a
 
 - Shared: Start formatter (placeholders, one pass, empty paragraph rule, default equal to the previous `buildStartPrompt` cases), validation of both instructions, resolver fallback.
 - Main: migration cases from acceptance 5 with in-memory state; `prepare` uses the application instruction; Start launch composes from the saved instruction and a retry recomposes; `put` rejects `prompt`; legacy rows with `prompt` still list.
-- Renderer: Instructions tab Start and Resume edit/save/reset/validation, Kanban note, migration notice copy/dismiss, legacy import into the draft; Resume sources editor without prompt and with the Test preview using the application instruction; Project Settings source selector and origin.
-- Regression: existing Resume source, picker, Kanban launch and ActionBar suites.
+- Renderer: Instructions tab Start and Resume edit/save/reset/validation, Kanban note, migration notice copy/dismiss, legacy import into the draft; Work record sources editor without prompt and with the Test preview using the application instruction; Project Settings source selector and origin.
+- Regression: existing Work record source, picker, Kanban launch and ActionBar suites.
 
 ### Relevant SDD / ADR
 

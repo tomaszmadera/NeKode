@@ -1,147 +1,160 @@
-# Local task workflow without Harness
+# Local work items and work records
 
-Status: Delivered in part (no-Harness workflow; the Harness-backed variant requires the upstream local-file backend and adapter).
+Status: Delivered in part (local board and work record workflow; the optional integration's board backend still requires upstream work).
 Path: `docs/features/local-task-workflow/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
 ## Goal
 
-A project can keep its work items in the built-in `local-file` list and continue work from a plain file that records execution state, without installing Agent Harness, without Python, and without Plane. The task list stays the only backlog; a separate progress file carries the context that Resume needs. The same project can later switch to Plane or to a Harness-backed workflow without moving or converting its cards.
+A project keeps its work items in the built-in `local-file` source and one work record per work item. The same record carries continuation context for Resume and optional Step progress. The local workflow needs no external board service, Python, or workflow installation. Changing the work item source migrates no cards or records.
 
-Users: anyone who wants a local board in NeKode and an agent that can hand off and resume its own work through files.
+Users: anyone who wants a local board and an agent that can Handoff and Resume through a work record.
 
 ## Related requirements
 
-- [Project home](../project-home/spec.md) owns `.nekode/tasks.json`, the `local-file` binding, and the one skill file written by `Teach agents`.
-- [Handoff/Resume flow](../handoff-resume-flow/spec.md) owns Resume templates, file discovery, and prompt composition.
+- [Work record progress](../work-record-progress/spec.md) owns the canonical vocabulary, exact settings labels, state block schema, and bundled progress adapters (NEKODE-192).
+- [Project home](../project-home/spec.md) owns `.nekode/tasks.json`, the `local-file` binding, and the agent skill file written by `Teach agents`.
+- [Handoff/Resume flow](../handoff-resume-flow/spec.md) owns work record sources, file discovery, and the application-level Resume instruction.
+- [Step progress adapters](../task-progress-adapters/spec.md) owns the read-only adapter protocol and Step progress.
 - [Kanban adapter interface](../kanban-adapter-interface/spec.md) owns the board, Start, and Resume launch.
-- Work item NEKODE-173. Related accepted decisions: NEKODE-170 (separate tracker, continuation source, and agent instructions), NEKODE-171 (Resume profile with separate discovery and instruction settings), NEKODE-172 (configurable Handoff/Resume/Continue instructions), NEKODE-175 (install the Agent Harness adapter when the upstream backend exists).
-- UI copy in this contract is English.
+- NEKODE-173 introduced the local workflow. NEKODE-187 moved Start and Resume instructions to App Settings, Instructions. NEKODE-192 adds the state block and renames the preset to `Local work record`. UI copy is English.
 
 ## Scope
 
-- One ready Resume template preset for local progress files, visible in Resume template settings.
-- The `local-file` agent instructions extended with execution context, Handoff, Resume, Stop, and completion handling.
-- Configuration text that shows the exact context path, the source settings, and the exact instruction an agent receives.
-- A complete T-1 example covering card creation, Start, context, Handoff, Resume, and confirmed completion.
-- Fixture checks without Plane, without Python, and without `.agents/scripts/taskctl`.
-- Documentation of the Plane/local-file switch and of the Harness-backed variant, distinguishing shipped behavior from required upstream work.
+- The `Local work record` preset in App Settings, Work record sources.
+- The generated `local-file` agent skill: work record content, state block, Handoff, Resume, Stop, and confirmed completion.
+- Explicit source configuration and exact instruction previews.
+- A complete T-1 workflow without Python, Plane, or `.agents/scripts/taskctl`.
+- The source switch and the boundary of the optional integration.
 
 ## Non-goals
 
-- A new task backend, a second task list, or a new storage format for cards.
-- Automatic migration of Plane cards to `.nekode/tasks.json`, or the reverse.
-- Creating `work/` files or binding a Resume template automatically when a project is added or a card is started.
-- Parsing progress files as work items, inferring completion from them, or validating them as unfinished tasks.
-- Installing or bundling Agent Harness, running `taskctl`, or implementing the upstream Harness local-file backend.
-- A new Handoff action, a new Stop behavior, or changes to Continue.
-- Editing `.gitignore`.
-- A graphical progress panel.
+- Another backlog or a new card format.
+- Automatic card migration, work record creation, source binding, or `.gitignore` edits.
+- Parsing work records as board items or deriving board state from step data.
+- Installing a workflow, running lifecycle commands, or implementing the upstream integration's board backend.
+- Changes to Start, Resume matching and launch, Handoff delivery, Continue, or Stop.
 
 ## Behaviour
 
-1. One backlog. `.nekode/tasks.json` is the only work-item list for a `local-file` project. Progress files are execution context. An agent must not copy cards into a progress file and must not create a second TODO list, tracker file, or backlog. The board does not read progress files.
-2. Context location. For a card with ref `T-1`, the agent records execution context in `work/T-1/progress.md` under the project root, using forward slashes in instructions. The directory name is the complete ref. The file name is literally `progress.md`.
-3. Ready profile. Resume template settings offer a `Local progress files` source preset with exactly these file-source values: directory `work`, file-name filter `progress.md`, `Search subdirectories` on, and `Candidate identity` set to `Immediate parent directory`. Its default Resume instruction is `Resume task {taskPath}.\nRead that progress file before continuing. It records the work so far, decisions, checks, and the next action.` Superseded by NEKODE-187: the preset fills only source values, and the Resume instruction is the application-level instruction defined in the [handoff/resume contract](../handoff-resume-flow/spec.md#global-start-and-resume-instructions-nekode-187); references below to the preset's instruction mean that instruction.
-4. Explicit configuration. Choosing the preset only fills an unsaved template form. The user still saves the template and selects it in a project. Selecting the preset creates no directory or file, binds no project, and installs nothing. The preset remains editable like any other file template, and editing a source field back to the preset values shows the preset name again.
-5. Exact visibility. The template editor shows the preset's exact directory, file-name filter, recursion, and identity values. A template test lists each candidate's identity and display path and shows the exact instruction produced by substituting that path. Project Settings shows the selected Resume template's source summary and instruction. The `Teach agents` preview keeps showing the exact skill path and the full skill text.
-6. Agent instructions. The `local-file` skill tells the agent to create or update the progress file when it starts working on a card, and to keep in it: the ref and title; the current execution state; decisions and their reasons; checks with the command and result; blockers; one exact next action naming the file or command; and the UTC time of the last update. The agent updates the file when one of those facts changes, keeps the task list unchanged unless a card field must change, and never duplicates the card list in the file.
-7. Handoff. `Write a handoff` is the transfer instruction. The agent updates the progress file, leaves the card In Progress, and stops. The progress file is the transfer; no separate handoff copy is created. The application does not claim that a handoff exists because it sent the instruction.
-8. Stop and Continue. Stop remains `Ctrl+C` and a user interruption. It is not a handoff: it stops the running agent and does not create, update, or complete a progress file by itself. Continue addresses the running conversation and does not select a task or a context file. After a Stop, the agent, when asked to continue, reconciles the existing progress file with the repository before acting.
-9. Resume. The Resume instruction names the single matching progress file. The agent reads that file before changing files, checks its claims against the repository, and continues from its recorded next action. A missing file, a changed file, or a stale claim is reported, not replaced with invented state.
-10. Completion and withdrawal. After the user confirms the task is complete and the card is moved to Done, the agent moves the context to `work-completed/T-1/progress.md`, outside the configured `work` directory, so discovery no longer offers it. The agent preserves the file; deletion needs an explicit user request. If a completed task reopens, the agent moves the file back to `work/T-1/progress.md` and updates it before continuing.
-11. Files are not task records. The file source discovers readable regular files matching the configured name, uses the parent directory name as the candidate identity, and never parses the file body or infers an unfinished state. A file left in `work/` continues to match after the card is Done; moving it to `work-completed/` is the explicit withdrawal. Missing directories, unreadable files, links, and oversized files keep the existing source error behavior.
-12. Matching. Resume matches the full ref case-insensitively when the candidate identity equals the ref or starts with the ref followed by `-`. `T-1` matches `T-1` and `T-1-follow-up`; `T-1` does not match `T-10`, `T-11`, or `old-T-1`. Titles and file contents create no match.
-13. Tracker switch. Changing the project's tracker between Plane and `local-file` changes only the binding. It does not migrate cards, move `.nekode/tasks.json`, delete progress files, change the selected Resume template, or rewrite the skill file. The user must bind and teach the new source explicitly. No tracker is guessed from files or from the presence of a Resume template.
-14. Harness variant. A Harness-backed project uses task records as the execution record and `taskctl list --json` as the Resume source. Cards stay in `.nekode/tasks.json`, and a linked record uses the same complete ref as the card. That variant does not require a parallel `progress.md`. It is available only after the upstream Harness local-file backend ships and its adapter is installed; choosing a Resume profile does not install Harness, create task records, or make the variant available.
-15. Shipped versus required. Shipped now: `.nekode/tasks.json`, board Start, the Files Resume source, the `Local progress files` preset and its prompt preview, the project Resume source summary, the extended `local-file` skill text, the Harness command preset, and `Teach agents`. Required upstream: a Harness backend that manages `.nekode/tasks.json` cards and links task records to them. This contract does not simulate that backend.
+1. One backlog. `.nekode/tasks.json` remains the only board authority for a `local-file` project. A work record holds execution context and step data, never a second task list, TODO list, or source of board state.
+2. Work record location. The agent creates or updates `work/<ref>/progress.md` under the project root when starting work. There is at most one active local work record per work item. The directory name is the complete ref, for example `T-1`; the file name is literally `progress.md`. NeKode never creates, writes, or repairs it.
+3. Ready source. App Settings, Work record sources offers `Local work record` with exactly these file-source values: directory `work`, file-name filter `progress.md`, `Search subdirectories` on, `Candidate identity` set to `Immediate parent directory`. It fills only discovery values. The Resume instruction is shared across projects in App Settings, Instructions; its default is `Resume task {taskPath}`.
+4. Explicit configuration. Choosing the preset fills an unsaved source form. Save the source and bind it as the project's `Work record source` explicitly. These actions create no directory, record, or workflow installation. Source values remain editable. Shared edits affect every project bound to that source.
+5. Exact visibility. Source Test shows each candidate identity and display path plus the instruction composed from the saved application Resume instruction. Project Settings shows the selected source summary and effective Resume instruction with origin App Settings. `Teach agents` shows the exact skill path and full text.
+6. Agent instructions. The work record's prose states the ref and title; finished and current work; decisions and reasons; check commands and results; blockers; one exact next action naming a file or command; and the UTC update time. It contains exactly one `nekode-state` block described below. The agent keeps the block and prose aligned on every update and replaces the block rather than appending another.
+7. Handoff. The configured instruction (default `Write a handoff`) asks the agent to update the work record, including block and prose, leave the card In Progress, and stop. Handoff is an action. The work record carries the context; no separate handoff file is created. Sending text does not prove that the record was updated.
+8. Stop and Continue. Stop sends `Ctrl+C`; it is an interruption and writes no record by itself. Continue addresses the running conversation without selecting a work item or record. When asked to continue after Stop, the agent reconciles the existing work record with repository evidence.
+9. Resume. The agent reads the discovered work record before changing files, checks its claims, and continues from its next action. Missing or stale context is reported, never invented. Matching uses the complete ref, case-insensitively: identity equals the ref or starts with it followed by `-`. `T-1` matches `T-1-follow-up`, never `T-10` or `old-T-1`.
+10. Confirmed completion. Only after the user confirms completion and the card is in Done, the agent sets block `status` to `completed`, aligns the final prose and checks, and moves the record to `work-completed/<ref>/progress.md`. Resume no longer discovers it through the configured `work` source. The archived work record is preserved; deletion needs an explicit request. Reopening moves it back and updates block and prose to the actual active or blocked state.
+11. Discovery and progress are separate. The Files work record source lists readable matching regular files without parsing their body or inferring completion. A completed record left in `work/` still matches Resume. The `NeKode work record` progress adapter reads the state block in both `work/` and `work-completed/`, with a live record winning over an archived duplicate. Invalid or unsupported records show no indicator and a visible reason in Step progress. Records without a block still work for Resume.
+12. Work item source switch. Changing between Plane and `local-file` changes the board binding only. It migrates no cards, moves or deletes no files, changes no work record source binding, and rewrites no agent skill file. Bind and teach the new source explicitly.
+13. Optional integration. The `Agent Harness` work record source preset discovers the external format using `taskctl list --json`. The separately selected `Agent Harness` progress adapter invokes the existing read-only `python .agents/scripts/task-status --json` command. It does not install a workflow or provide a board backend. An upstream backend linking `.nekode/tasks.json` cards to the external records remains required for that integrated board workflow. Reuse the complete ref and keep one work record, never a parallel `progress.md`.
+14. Optional Step progress. Choose a progress adapter explicitly in Project Settings, Step progress. Both `NeKode work record` and `Agent Harness` are bundled, have no configuration fields, and support local projects only in this delivery. A WSL binding reports `environment_unsupported` without starting a process. No binding or matching record means no indicator. Step progress never changes board state or performs lifecycle writes.
+
+## Work record state block
+
+The block uses the exact opening fence ```` ```nekode-state ```` and a closing fence. Its content is strict JSON. This is an example record for a work item whose next action is to edit `CHANGELOG.md`:
+
+````markdown
+# T-1: Write the release note
+
+The release note is in progress. Next action: edit CHANGELOG.md.
+Checks: none yet. Blockers: none. Updated: 2026-11-17T12:00:00Z.
+
+```nekode-state
+{
+  "schemaVersion": 1,
+  "status": "active",
+  "phases": [
+    {
+      "name": "Implementation",
+      "steps": [
+        { "id": "1.1", "label": "Write the release note", "done": false }
+      ]
+    }
+  ],
+  "currentStepId": "1.1",
+  "nextAction": "Edit CHANGELOG.md",
+  "blockers": null,
+  "updatedAt": "2026-11-17T12:00:00Z",
+  "title": "Write the release note"
+}
+```
+````
+
+Required fields are `schemaVersion` (integer `1`), `status` (`active`, `blocked`, or `completed`), and `phases` (an array, possibly empty). Each phase has a nonblank string `name` and an array `steps`. Each step has a nonblank string `id` unique across the record, a nonblank string `label`, and boolean `done`.
+
+Optional fields are `currentStepId` (string naming an existing step or null), `nextAction` and `blockers` (string or null), `updatedAt` (ISO 8601 UTC string), and `title` (string). Unknown fields are ignored. Invalid JSON, duplicate ids, an unknown current step, multiple blocks, or a block content over 64 KiB make a record invalid. An unsupported `schemaVersion` is unsupported. The entire record must be at most 1 MiB. Prose outside the block is for the agent and has no schema.
+
+The [work record progress contract](../work-record-progress/spec.md#work-record-state-block-schema) owns the schema and adapter mapping. The application core validates only normalized snapshots, never this block.
 
 ## Complete T-1 example
 
-This example is the acceptance slice for the no-Harness variant. It uses only the local board, the Files Resume source, and one skill write. It needs no Plane, Python, or `.agents/scripts/taskctl`.
+1. Project Settings, Work items: choose `Use a local task list`. NeKode creates `.nekode/tasks.json` at revision 1 and binds `Local file`.
+2. Board, `New task`: create `Write the release note` in Todo. The ref is `T-1` and revision becomes 2.
+3. Project Settings, Work items, `Teach agents`: review the full agent skill file at `.agents/skills/nekode-tasks/SKILL.md`, then confirm the write.
+4. App Settings, Work record sources: create a source using `Local work record`, save it, and bind it in Project Settings, Work items, Work record source. Optionally select `NeKode work record` in Step progress and Save. Neither action creates a record.
+5. Board, Start: the agent receives the full ref and work item details, the card moves to In Progress, and the agent writes `work/T-1/progress.md` with prose and one state block.
+6. Handoff sends the configured instruction. The agent updates block and prose and stops, leaving the card In Progress.
+7. Resume finds identity `T-1`. Confirm starts a new chat with the saved application instruction, by default `Resume task work/T-1/progress.md`. The agent reads and reconciles the work record, then continues. `T-10` does not match.
+8. After confirmed completion and Done, the agent marks the block completed and moves the record to `work-completed/T-1/progress.md`. Resume disappears; Step progress can retain the last step.
+9. Reopening moves the work record back and updates its state. Resume works again.
 
-1. Project Settings, Tasks: choose `Use a local task list`. NeKode creates `.nekode/tasks.json` and binds `Local file`. The file starts at revision 1 and the board is empty.
-2. Board, `New task`: title `Write the release note`, state Todo. The card is `T-1` and the file revision grows to 2.
-3. Board, Start on `T-1`: the agent starts in the project directory with the ref, title, description, and the project's instructions. The card moves to In Progress.
-4. Project Settings, Tasks, `Teach agents`: the preview shows `.agents/skills/nekode-tasks/SKILL.md`, the origin `Local file instructions`, and the full text, including `work/T-1/progress.md` and `work-completed/<ref>/progress.md`. Confirm writes it once.
-5. Application Settings, Resume templates: `New template`, source `Local progress files`, name `Local progress`, `Save template`. Project Settings, Resume template: select `Local progress`, `Save`. These steps create no directory and no file.
-6. The agent starts work and creates `work/T-1/progress.md`. The file records the current state, the decision and its reason, the check command and result, any blocker, the exact next action, and the UTC update time. The card stays In Progress.
-7. Handoff: the user runs `Handoff`, which sends `Write a handoff`. The agent updates `work/T-1/progress.md`, leaves the card In Progress, and stops. The file is the transfer. A `Stop` before that point is an interruption, not a handoff, and does not by itself write the file.
-8. Resume: discovery finds `work/T-1/progress.md` and uses `T-1` from the parent directory. The board shows Resume for `T-1` only. The dialog shows the read-only context `T-1` and `work/T-1/progress.md`. Confirm starts a new chat and sends the instruction `Resume task work/T-1/progress.md.` followed by the instruction's second line. The agent reads the file, checks it against the repository, and continues from its next action.
-9. Confirmed completion: the user confirms the work is done and moves `T-1` to Done. The agent moves the file to `work-completed/T-1/progress.md`. A refresh no longer finds `T-1`, so Resume is absent while the Done card remains.
-10. Reopening: the user moves `T-1` back to In Progress and asks the agent to continue. The agent moves `work-completed/T-1/progress.md` back to `work/T-1/progress.md`, updates it, and proceeds. Resume works again.
-
-The displayed path uses the project runtime's separators; `work/T-1/progress.md` is the repository-relative form used by the instructions.
+The UI displays paths with runtime separators; instructions use project-relative forward slashes.
 
 ## Business rules
 
-- Refs are opaque identifiers for matching. The app does not derive a ref from a title, path, or file content.
-- A progress file is ordinary project data. It contains no secrets and no credentials.
-- The progress file is not a task-status source. The card state in `.nekode/tasks.json` remains authoritative for the board.
-- One card has at most one active progress file under `work/`. An ambiguity of two matching candidates blocks Resume under the existing template contract; the app never chooses the newest.
-- A task may be worked on without a progress file. Resume is unavailable then; Start remains available.
-- `work-completed/` is a convention owned by the agent instructions, not a hidden application state. The app does not read it, create it, or clean it.
-- The preset is a source template, not a project binding. Shared edits affect every project that uses that template.
-- No data conversion happens on a binding change. Existing Plane cards and values stay in Plane; existing local cards stay in the file.
+- Refs are opaque identifiers. Titles and prose do not create matches.
+- A work record contains no secrets or credentials.
+- Board state and step state are distinct; only the work item source owns the board.
+- Ambiguous Resume candidates block launch; the application never chooses the newest.
+- A work item can exist without a work record. Start remains available; Resume and the step indicator are unavailable.
+- The agent owns archiving. The core application never creates, cleans, or directly reads `work-completed/`; the read-only progress adapter scans it.
 
 ## Authorization
 
-Renderer calls stay behind the trusted-sender guard. The preset writes no files and binds no project. The existing project root boundary, task-file write authorization, skill write confirm, and Resume launch authorization are unchanged. A progress file is written by the agent under the user's own process privileges, not by a new application IPC channel.
+Existing trusted-sender, project root, task-file write, agent skill file confirmation, and Resume launch boundaries stay unchanged. Preset selection writes no files and binds no project. The agent writes the work record under the user's process privileges, through no new IPC channel.
 
 ## Data / API
 
 - No new IPC channel, database table, migration, or app_state key.
-- Shared contract additions: the ready source constant and default prompt for `Local progress files`, reusable by settings UI and tests. The persisted template is an ordinary `ResumeSourceTemplate` with `kind: 'files'`.
-- The exact preset source is `{ kind: 'files', directory: 'work', pattern: 'progress.md', recursive: true, identity: 'parent' }`.
-- The default prompt is `Resume task {taskPath}.\nRead that progress file before continuing. It records the work so far, decisions, checks, and the next action.` It uses the existing `{taskPath}` placeholder and the existing one-pass substitution.
-- The existing `resumeSources` operations (`list`, `put`, `binding`, `test`, `discover`, `prepare`) carry the template unchanged.
-- `local-file` skill text remains generated in main by `buildAgentSkill`; this contract adds no new file destination.
+- The preset is an ordinary `ResumeSourceTemplate` with `{ kind: 'files', directory: 'work', pattern: 'progress.md', recursive: true, identity: 'parent' }`.
+- `resumeSources` operations, stored ids and `project.resumeTemplate:<projectId>` bindings keep their names.
+- `buildAgentSkill` still generates the `local-file` text in main at the existing destination. The revision and parallel-write rules for `.nekode/tasks.json` remain unchanged.
+- Existing records are not migrated. Missing blocks hide only Step progress.
 
-## Edge cases
+## Edge cases and errors
 
-- The `work` directory is missing: discovery reports its own file-source error; the board still loads and Start still works.
-- `work/T-1/progress.md` exists but `T-1` is not on the board: the file is a candidate; no card displays Resume for it.
-- Two cards, `T-1` and `T-10`, both have progress files: `T-1` matches only `T-1`.
-- A completed context is left in `work/`: Resume still offers it because Files do not validate completion. The documented withdrawal is the move to `work-completed/`.
-- A progress file is renamed or moved while Resume is open: the existing fingerprint revalidation rejects the launch and asks for a refresh.
-- A project switches from `local-file` to Plane: the board reads Plane, the local file and the progress files stay, and the selected Resume template stays bound.
-- A project has no selected Resume template: Resume shows `Configure Resume`; Start and the local board work normally.
-- A Harness profile is selected but the upstream backend or adapter is missing: discovery reports the existing install/update error; no `progress.md` is created as a substitute.
-
-## Errors
-
-- Missing or unreadable `work` directory: visible Resume source error with Retry; no fallback to another directory or tracker.
-- Invalid progress file encoding or oversize file: the file is rejected with its path and reason; other candidates remain available.
-- A stale or superseded discovery result never delivers Resume text.
-- A failed skill write leaves the previous skill file unchanged and reports the typed error in the dialog.
-- No silent creation of a progress file, no silent repair of a missing one, and no invented handoff state.
+- Missing or unreadable `work/`: visible Files source error with Retry; board and Start remain available. The progress adapter instead treats missing scan directories as an empty snapshot.
+- Invalid encoding or oversize discovery candidate: existing file-source rejection with path and reason; other candidates remain available.
+- Invalid or unsupported state block: no indicator; error visible in Step progress; no prose parsing or repair fallback.
+- No bound work record source: Resume offers configuration; the board still works.
+- A record changes while Resume is open: fingerprint revalidation rejects launch and requests a refresh.
+- A candidate with no corresponding board card has no board Resume action.
+- Optional integration command, runtime, or backend missing: visible error, no substitute record.
+- A skill write failure preserves the previous skill file and reports its typed error.
 
 ## Acceptance criteria
 
-1. A fixture project with no `.agents/scripts/taskctl` and no Python completes Start, context write, and Resume discovery through the Files source without Plane.
-2. The preset shows directory `work`, filter `progress.md`, recursion on, identity `Immediate parent directory`, and the default instruction; selecting it saves nothing and binds nothing.
-3. `work/T-1/progress.md` produces the `T-1` candidate and matches the `T-1` card; `work/T-10/progress.md` does not match `T-1`.
-4. A missing progress file yields no Resume candidate for its card while Start stays available.
-5. After a completed task's context is moved to `work-completed/T-1/progress.md`, discovery no longer returns `T-1`; moving it back restores the candidate.
-6. The generated `local-file` skill names `work/<ref>/progress.md`, the required content, Handoff, Resume, the Stop distinction, completion withdrawal, the no-second-backlog rule, and the `work-completed/<ref>/progress.md` move.
-7. `Teach agents` shows the exact skill path and the full text, and the Resume template test shows each candidate path with the exact formatted instruction.
-8. A stale write to `.nekode/tasks.json` returns `conflict` and leaves the newer file unchanged, and the documented parallel-write protocol is unchanged.
-9. Documentation states that Plane/local-file switching migrates nothing and leaves files and bindings untouched.
-10. Documentation separates shipped local, Files, and Harness-preset behavior from the required upstream Harness backend; the Harness variant reuses the same ref and creates no second record or backlog.
-11. `Stop` is documented as an interruption, not a Handoff; Handoff is documented as an update-and-stop action whose transfer is the progress file.
-12. All existing project-home, Resume source, board, and launch behavior remains unchanged.
+1. A fixture without Python, Plane, or `taskctl` can Start, write a work record, and discover it through Files.
+2. `Local work record` fills the exact source values only; saving and binding are explicit, and Test previews the saved application instruction.
+3. Full-ref matching, stale-launch rejection, local card CRUD, and revision conflicts remain unchanged.
+4. The generated skill documents the prose, exactly one valid state block, its required and optional fields, bounds, synchronization, and lifecycle.
+5. Handoff updates and stops; Stop writes nothing itself; only confirmed completion plus Done archives the completed record.
+6. The bundled `NeKode work record` adapter reads valid steps; missing or invalid blocks hide indicators without changing Resume.
+7. Switching work item sources migrates nothing and changes no work record source binding or skill file.
+8. The optional integration uses one record with the full ref and clearly separates discovery, progress, and the still-required upstream board backend.
 
 ## Required tests
 
-- Fixture integration: a real temporary project root creates the local task file and `T-1`, writes `work/T-1/progress.md`, discovers it through the Files source with parent identity, matches `T-1`, and does not match `T-10`. No taskctl, Python, or Plane call runs.
-- Fixture integration: missing file, completed context moved to `work-completed/`, and restored context.
-- Local task file: a stale revision write returns `conflict` and does not change the file (existing coverage stays and is exercised through the fixture).
-- Skill text: the `local-file` text contains the context path convention, required fields, Handoff and Resume behavior, the Stop distinction, the withdrawal path, and the no-second-backlog rule; it contains no em dash.
-- Renderer: the `Local progress files` preset fills exactly the source values and the instruction; saving and binding require explicit actions; a test preview shows candidate paths and the exact instruction; Project Settings shows the selected source summary and instruction.
-- Regression: existing file-source discovery, Resume matching boundaries, `Teach agents` preview and write, local task file CRUD and conflict, and board Start/Resume tests keep passing.
+- Local fixture: Start, write, Files discovery with parent identity, `T-1` versus `T-10`, missing record, archive, and reopening, without Python or external calls.
+- Skill text: parse the example as strict JSON through the bundled adapter; assert one block, schema guidance, bounds, prose alignment, Handoff/Stop/Resume, and confirmed-completion archive instructions.
+- Regression: `Teach agents` preview and writes, local card CRUD and conflicts, Resume matching and launch, and exact source preset values.
+- Documentation: relative links exist; retired product terms appear only in technical storage or external-format descriptions.
 
 ## Relevant SDD / ADR
 
-- [Project contracts](../../development/project-contract.md) for the typed IPC and file-boundary rules.
-- No new ADR. This feature adds a profile preset and agent instructions on top of the delivered `local-file` and Resume source contracts.
+- [Project contracts](../../development/project-contract.md) for IPC, file boundaries, and decision ownership.
+- No new ADR; NEKODE-192 records the accepted work record format and vocabulary.

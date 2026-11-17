@@ -8,7 +8,7 @@ import { TEST_ID } from '../../lib/test-ids'
 import { focusRing, primaryClass, secondaryClass } from '../settings/settings-ui'
 
 // Resume picker (spec handoff-resume-flow Behaviour 4-5, NEKODE-142): the list
-// loads lazily at open from the project's configured reusable Resume source.
+// loads lazily at open from the project's configured work record source.
 // Selecting a candidate validates the selection fingerprint and asks main to
 // compose the prompt, then delivers it through the existing paste/auto-send path.
 
@@ -166,8 +166,8 @@ export function HandoffPicker({
             {phase === 'unconfigured' ? (
               <div className="mt-4 text-xs" data-testid={TEST_ID.handoffPickerUnconfigured}>
                 <p className="text-ink-secondary">
-                  No Resume template is configured for this project. Set it in Project Settings to
-                  resume tasks.
+                  No work record source is configured for this project. Set it in Project Settings
+                  to resume tasks.
                 </p>
                 <div className="mt-3 flex gap-2">
                   <button
@@ -205,7 +205,7 @@ export function HandoffPicker({
                   className="mt-4 flex flex-col gap-2 text-xs text-ink-secondary"
                   data-testid={TEST_ID.handoffPickerEmpty}
                 >
-                  <p>No candidates found for the configured Resume source.</p>
+                  <p>No work records found for the configured work record source.</p>
                   <button
                     type="button"
                     className={`${secondaryClass} self-start text-xs`}

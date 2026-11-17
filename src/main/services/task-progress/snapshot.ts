@@ -176,9 +176,6 @@ function parseTask(value: unknown, index: number, fail: Fail): TaskProgressItem 
   const at = `${field} ("${id}")`
   const recordState = oneOf(raw.recordState, RECORD_STATES, `${at}.recordState`, fail)
   const phases = parsePhases(raw.phases, `${at}.phases`, fail)
-  if (recordState === 'valid' && phases.length === 0) {
-    fail(`${at}.phases must not be empty for a valid record`)
-  }
   const stepIds = new Set<string>()
   for (const phase of phases) {
     for (const step of phase.steps) {

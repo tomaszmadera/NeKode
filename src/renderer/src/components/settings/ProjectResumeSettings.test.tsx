@@ -14,7 +14,7 @@ describe('ProjectResumeSettings', () => {
         {
           id: 'local-progress',
           revision: 1,
-          name: 'Local progress files',
+          name: 'Local work record',
           source: {
             kind: 'files',
             directory: 'work',
@@ -33,10 +33,21 @@ describe('ProjectResumeSettings', () => {
     render(<ProjectResumeSettings app={app} projectId="p1" />)
 
     const summary = await screen.findByTestId('project-resume-source-summary')
+    expect(screen.getByRole('region', { name: 'Work record' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Work record', level: 3 })).toMatchInlineSnapshot(`
+      <h3
+        class="m-0 flex-1 text-xs font-semibold tracking-[0.08em] text-ink-muted uppercase"
+      >
+        Work record
+      </h3>
+    `)
+    expect(screen.getByLabelText('Work record source')).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Local work record' })).toBeTruthy()
     expect(summary.textContent).toContain(
       'Files: work / progress.md, including subdirectories, identity: immediate parent directory',
     )
     expect(summary.textContent).not.toContain('{taskPath}')
+    expect(screen.getByText(/where Resume finds the record of work on a work item/)).toBeTruthy()
     expect(screen.getByText(/Resume instruction is set in Application settings/)).toBeTruthy()
   })
 

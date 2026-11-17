@@ -25,8 +25,8 @@ import {
   secondaryClass,
 } from './settings-ui'
 
-// Task progress tab of Project Settings (spec task-progress-adapters Behaviour
-// 7-10). The adapter list is a fresh scan of the one fixed adapters directory
+// Step progress tab of Project Settings (spec task-progress-adapters Behaviour
+// 7-10). The adapter list freshly scans bundled adapters and the fixed user directory
 // on every mount; there is no directory choice. `Test` runs the adapter with
 // the values in the form, unsaved; `Save` persists the adapter id and values;
 // `None` removes the binding while main keeps the stored values; `Copy from
@@ -152,7 +152,11 @@ export function TaskProgressSettings({
     ])
       .then(([list, binding]) => {
         if (!alive) return
-        setAdapters(list.adapters)
+        setAdapters(
+          [...list.adapters].sort(
+            (a, b) => Number(b.bundled === true) - Number(a.bundled === true),
+          ),
+        )
         setWarnings(list.warnings)
         setAdapterId(binding?.adapterId ?? null)
         setStoredConfig(binding?.config ?? {})
@@ -163,7 +167,7 @@ export function TaskProgressSettings({
       })
       .catch((cause: unknown) => {
         if (!alive) return
-        setLoadError(errorMessage(cause, 'Failed to load the task progress settings.'))
+        setLoadError(errorMessage(cause, 'Failed to load the step progress settings.'))
         setLoading(false)
       })
     return () => {
@@ -210,7 +214,7 @@ export function TaskProgressSettings({
       try {
         await app.taskProgress.saveBinding(projectId, adapterId, payload)
       } catch (cause) {
-        setFormError(errorMessage(cause, 'Failed to save the task progress settings.'))
+        setFormError(errorMessage(cause, 'Failed to save the step progress settings.'))
         return
       }
       if (adapterId !== null) {
@@ -233,7 +237,7 @@ export function TaskProgressSettings({
       if (token !== testRequest.current) return
       setTestState({
         kind: 'failed',
-        message: errorMessage(cause, 'The task progress test failed.'),
+        message: errorMessage(cause, 'The step progress test failed.'),
       })
     }
   }
@@ -389,7 +393,7 @@ export function TaskProgressSettings({
     } else if (readState === null) {
       body = (
         <p className="text-ink-muted">
-          Not read. Progress is read while the project has a saved adapter and is selected or
+          Not read. Step progress is read while the project has a saved adapter and is selected or
           expanded in the navigation.
         </p>
       )
@@ -407,7 +411,8 @@ export function TaskProgressSettings({
                   {new Date(readState.receivedAt).toLocaleString()}
                 </time>
                 {' · '}
-                {readState.tasks.length} {readState.tasks.length === 1 ? 'task' : 'tasks'}
+                {readState.tasks.length}{' '}
+                {readState.tasks.length === 1 ? 'work record' : 'work records'}
               </>
             )}
           </p>
@@ -453,8 +458,8 @@ export function TaskProgressSettings({
       className="flex max-w-[660px] flex-col gap-7"
     >
       <PageIntro
-        title="Task progress"
-        description="Phase and step progress shown on agent sessions."
+        title="Step progress"
+        description="Reads optional step data from a progress adapter."
       />
       {loading ? (
         <p
@@ -470,7 +475,7 @@ export function TaskProgressSettings({
         </p>
       ) : projectId === null ? (
         <p className="text-[13px] text-ink-secondary">
-          Select a project to bind a task progress adapter.
+          Select a project to bind a progress adapter.
         </p>
       ) : (
         <>
@@ -480,7 +485,7 @@ export function TaskProgressSettings({
               <FieldRow
                 label="Progress adapter"
                 htmlFor="settings-task-progress-adapter"
-                description="Reads progress from the agent harness."
+                description="Bundled adapters are included with NeKode. You can also install external progress adapters."
               >
                 <SettingsSelect
                   id="settings-task-progress-adapter"
@@ -505,11 +510,10 @@ export function TaskProgressSettings({
                   data-testid={TEST_ID.settingsTaskProgressEmpty}
                 >
                   <Icon.package size={22} aria-hidden className="text-ink-muted" />
-                  <span className="text-[13px] text-ink-secondary">
-                    No progress adapters installed
-                  </span>
+                  <span className="text-[13px] text-ink-secondary">No progress adapters found</span>
                   <p className="max-w-[460px] text-xs leading-normal text-ink-muted">
-                    No task progress adapters are installed. Copy an adapter folder with its{' '}
+                    Bundled adapters are included with NeKode. To install an external progress
+                    adapter, copy its folder with its{' '}
                     <code className="font-mono text-ink-secondary">adapter.json</code> into the{' '}
                     <code className="font-mono text-ink-secondary">task-progress-adapters</code>{' '}
                     folder of the NeKode application data directory, then reopen this tab. The
@@ -614,9 +618,7 @@ export function TaskProgressSettings({
           {copySources !== null ? (
             <div data-testid={TEST_ID.settingsTaskProgressCopyList}>
               {copySources.length === 0 ? (
-                <p className="text-xs text-ink-muted">
-                  No other project has a task progress adapter.
-                </p>
+                <p className="text-xs text-ink-muted">No other project has a progress adapter.</p>
               ) : (
                 <ul className="grid gap-1">
                   {copySources.map((source) => (

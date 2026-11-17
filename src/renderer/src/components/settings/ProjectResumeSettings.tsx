@@ -21,7 +21,7 @@ export interface ProjectResumeSettingsProps {
 }
 
 const errorMessage = (cause: unknown) =>
-  parseAppErrorPayload(cause)?.message ?? 'Failed to update Resume source selection.'
+  parseAppErrorPayload(cause)?.message ?? 'Failed to update work record source selection.'
 
 export function ProjectResumeSettings({
   app,
@@ -98,14 +98,14 @@ export function ProjectResumeSettings({
   const selected = templates.find((template) => template.id === selectedTemplateId)
 
   return (
-    <SettingsGroup label="Resume source">
-      <SectionLabel title="Resume source" />
+    <SettingsGroup label="Work record">
+      <SectionLabel title="Work record" />
       <GroupBox>
         <div data-testid="project-resume-settings">
           <FieldRow
-            label="Resume source"
+            label="Work record source"
             htmlFor="project-resume-template"
-            description="Configures where Resume finds continuation context. The Resume instruction is set in Application settings, Instructions."
+            description="Configures where Resume finds the record of work on a work item. The Resume instruction is set in Application settings, Instructions."
           >
             <div className="flex items-center gap-2">
               <SettingsSelect

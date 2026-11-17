@@ -25,6 +25,7 @@ import {
 import { isTrustedRendererUrl } from './security/sender-guard'
 import { createServices } from './services/create-services'
 import { DesktopShortcutSender, desktopHelperPath } from './services/dictation/desktop-sender'
+import { bundledTaskProgressAdapterDirectories } from './services/task-progress/adapter-manifest'
 import { bundledUsageAdapterDirectories } from './services/usage/adapter-host'
 import { registerShutdown } from './shutdown'
 import { runPrimaryInstance } from './single-instance'
@@ -304,6 +305,11 @@ function startApplication(): void {
               }
             },
             bundledUsageAdapterDirectories: bundledUsageAdapterDirectories(
+              app.isPackaged,
+              app.getAppPath(),
+              process.resourcesPath,
+            ),
+            bundledTaskProgressAdapterDirectories: bundledTaskProgressAdapterDirectories(
               app.isPackaged,
               app.getAppPath(),
               process.resourcesPath,

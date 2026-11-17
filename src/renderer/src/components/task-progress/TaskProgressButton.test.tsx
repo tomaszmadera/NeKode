@@ -16,18 +16,18 @@ describe('TaskProgressButton', () => {
           totalSteps: 2,
           stale: true,
           staleReason: 'Source unavailable',
-          ariaLabel: 'Out of date: Source unavailable. Task progress: step 1 of 2, Plan',
+          ariaLabel: 'Out of date: Source unavailable. Step progress: step 1 of 2, Plan',
         }}
       />,
     )
     const button = screen.getByTestId(TEST_ID.taskProgressButton)
     expect(button.style.opacity).toBe('0.5')
     expect(button.getAttribute('title')).toBe(
-      'Out of date: Source unavailable. Task progress: step 1 of 2, Plan',
+      'Out of date: Source unavailable. Step progress: step 1 of 2, Plan',
     )
     expect(button.getAttribute('aria-label')).toBe(button.getAttribute('title'))
   })
-  it('renders with exact aria-label "Task progress: step 5 of 8, Fixes, fix 3"', () => {
+  it('renders with exact aria-label "Step progress: step 5 of 8, Fixes, fix 3"', () => {
     const task: SessionTaskProgress = {
       taskId: 'NEKODE-74',
       step: 5,
@@ -39,11 +39,11 @@ describe('TaskProgressButton', () => {
     render(<TaskProgressButton task={task} />)
 
     const button = screen.getByRole('button', {
-      name: 'Task progress: step 5 of 8, Fixes, fix 3',
+      name: 'Step progress: step 5 of 8, Fixes, fix 3',
     })
     expect(button).toBeTruthy()
-    expect(button.getAttribute('aria-label')).toBe('Task progress: step 5 of 8, Fixes, fix 3')
-    expect(button.getAttribute('title')).toBe('Task progress: step 5 of 8, Fixes, fix 3')
+    expect(button.getAttribute('aria-label')).toBe('Step progress: step 5 of 8, Fixes, fix 3')
+    expect(button.getAttribute('title')).toBe('Step progress: step 5 of 8, Fixes, fix 3')
     expect(screen.getByText('Fixes · fix:3')).toBeTruthy()
   })
 

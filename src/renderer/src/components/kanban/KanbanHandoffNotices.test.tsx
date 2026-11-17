@@ -54,14 +54,14 @@ describe('HandoffNotices', () => {
       />,
     )
     expect(screen.getByTestId(TEST_ID.kanbanHandoffNotConfigured).textContent).toContain(
-      'No Resume template is configured for this project.',
+      'No work record source is configured for this project.',
     )
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanHandoffConfigure))
     expect(onConfigureHandoffs).toHaveBeenCalledTimes(1)
 
     rerender(<HandoffNotices phase="error" error={null} warnings={[]} onRetry={onRetry} />)
     expect(screen.getByTestId(TEST_ID.kanbanHandoffError).textContent).toContain(
-      'Failed to discover Resume sources.',
+      'Failed to discover work records.',
     )
     fireEvent.click(screen.getByTestId(TEST_ID.kanbanHandoffRetry))
     expect(onRetry).toHaveBeenCalledTimes(1)

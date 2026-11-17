@@ -81,6 +81,20 @@ async function renderLoaded(app: AppApi, projectId = 'p1'): Promise<void> {
 }
 
 describe('KanbanSettings', () => {
+  it('names the work item source and explains its board read and write boundary', async () => {
+    await renderLoaded(appMock())
+    expect(screen.getByRole('heading', { name: 'Work items', level: 2 })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Work items', level: 3 })).toMatchInlineSnapshot(`
+      <h3
+        class="m-0 flex-1 text-xs font-semibold tracking-[0.08em] text-ink-muted uppercase"
+      >
+        Work items
+      </h3>
+    `)
+    expect(screen.getByRole('region', { name: 'Work items' })).toBeTruthy()
+    expect(screen.getByLabelText('Source')).toBeTruthy()
+    expect(screen.getByText('Reads and writes board items.')).toBeTruthy()
+  })
   it('invalidates only after persistence succeeds', async () => {
     const save = vi
       .fn()
@@ -100,9 +114,9 @@ describe('KanbanSettings', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith('p1'))
     expect(invalidate.mock.calls).toEqual([['p1']])
   })
-  it('asks for a project in Tasks wording when none is selected (project-home Behaviour 6)', async () => {
+  it('asks for a project in Work items wording when none is selected', async () => {
     render(<KanbanSettings app={appMock()} projectId={null} />)
-    expect(await screen.findByText('Select a project to connect a task source.')).toBeTruthy()
+    expect(await screen.findByText('Select a project to connect a work item source.')).toBeTruthy()
     expect(screen.queryByText(/kanban/i)).toBeNull()
   })
 

@@ -26,6 +26,12 @@ extraResources:
     to: usage-adapters/usage-claude
   - from: adapters/usage-codex
     to: usage-adapters/usage-codex
+  # Keep in sync with BUNDLED_TASK_PROGRESS_ADAPTERS. Uses ELECTRON_RUN_AS_NODE,
+  # so the RunAsNode fuse must remain enabled.
+  - from: adapters/task-progress-nekode-work-record
+    to: task-progress-adapters/task-progress-nekode-work-record
+  - from: adapters/task-progress-agent-harness
+    to: task-progress-adapters/task-progress-agent-harness
 
 # Windows application icon (added 2026-10-01, user request): the branded cat
 # rasterized from src/renderer/src/assets/brand/cat-icon.svg, a rounded tile

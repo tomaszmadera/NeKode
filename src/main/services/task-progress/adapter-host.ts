@@ -17,6 +17,7 @@ const TERMINATION_GRACE_MS = 1000
 
 /** Codes an adapter may report in `error.code` (spec Behaviour 6). */
 const ADAPTER_CODES: readonly TaskProgressErrorCode[] = [
+  'protocol',
   'config',
   'runtime',
   'unsupported_source',
@@ -44,6 +45,7 @@ export interface TaskProgressRequest {
 export interface TaskProgressInvocation {
   id: string
   dir: string
+  bundled?: true
   invocation: { command: string; args: string[] }
 }
 
@@ -113,8 +115,14 @@ export class TaskProgressHost {
 
     let child: ChildProcess
     try {
+      const env = { ...process.env }
+      for (const key of Object.keys(env)) {
+        if (key.toUpperCase() === 'ELECTRON_RUN_AS_NODE') delete env[key]
+      }
+      if (adapter.bundled) env.ELECTRON_RUN_AS_NODE = '1'
       child = this.#spawn(adapter.invocation.command, adapter.invocation.args, {
         cwd: adapter.dir,
+        env,
         windowsHide: true,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],

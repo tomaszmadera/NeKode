@@ -100,7 +100,7 @@ export function useHandoffAvailability(app: AppApi, projectId: string): HandoffA
         const message =
           (cause instanceof Error && cause.message ? cause.message : null) ??
           parseAppErrorPayload(cause)?.message ??
-          'Failed to discover Resume sources.'
+          'Failed to discover work records.'
         setError(message)
       } finally {
         if (requestGeneration === generation.current) {
@@ -137,7 +137,7 @@ export function HandoffNotices({
   if (phase === 'not-configured') {
     return (
       <div className="mb-3 text-[12.6px]" data-testid={TEST_ID.kanbanHandoffNotConfigured}>
-        <p className="text-ink-secondary">No Resume template is configured for this project.</p>
+        <p className="text-ink-secondary">No work record source is configured for this project.</p>
         <button
           type="button"
           className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"
@@ -152,7 +152,7 @@ export function HandoffNotices({
   if (phase === 'error') {
     return (
       <div className="mb-3 text-[12.6px]" data-testid={TEST_ID.kanbanHandoffError}>
-        <p className="text-error">{error ?? 'Failed to discover Resume sources.'}</p>
+        <p className="text-error">{error ?? 'Failed to discover work records.'}</p>
         <button
           type="button"
           className="mt-2 h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover"

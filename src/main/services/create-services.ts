@@ -109,6 +109,8 @@ export interface CreateServicesOptions {
   subscribeAppQuit?: (listener: () => void) => () => void
   /** Shipped usage adapter directories (`bundledUsageAdapterDirectories`, main/index.ts). */
   bundledUsageAdapterDirectories?: readonly string[]
+  /** Shipped task progress adapter directories resolved by main/index.ts. */
+  bundledTaskProgressAdapterDirectories?: readonly string[]
   /**
    * SSH client of the service graph (spec ssh-projects Business rules).
    * Injectable so tests substitute a fake runner; production uses the real
@@ -343,6 +345,7 @@ export function createServices(
     projects,
     state,
     adaptersDir: join(options.userDataPath, TASK_PROGRESS_ADAPTERS_DIR_NAME),
+    bundledAdapterDirectories: options.bundledTaskProgressAdapterDirectories,
   })
   const agentProfiles = new AgentProfilesService({ projects, state })
   // Both profile launch flows resolve the current execution environment only for a new PTY.

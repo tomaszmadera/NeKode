@@ -1,0 +1,8 @@
+{
+  "id": "agent-harness",
+  "name": "Agent Harness",
+  "kind": "task-progress",
+  "protocolVersion": 1,
+  "invocation": { "command": "node", "args": ["adapter.cjs"] },
+  "configSchema": []
+}

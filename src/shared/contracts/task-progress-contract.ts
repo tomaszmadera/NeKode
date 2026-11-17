@@ -22,6 +22,8 @@ export type TaskProgressEnvironment = 'local' | 'wsl'
 export interface TaskProgressAdapterInfo {
   id: string
   name: string
+  /** Shipped with NeKode; a valid user adapter may override it. */
+  bundled?: true
   /** Project environments the adapter supports; the manifest default is `["local"]`. */
   environments: TaskProgressEnvironment[]
   configSchema: TaskProgressConfigField[]

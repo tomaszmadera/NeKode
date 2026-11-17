@@ -31,7 +31,7 @@ const newTemplate = (): ResumeSourcePut => ({
 })
 const errorMessage = (cause: unknown) =>
   parseAppErrorPayload(cause)?.message ??
-  'Resume sources could not be updated. Retry the operation.'
+  'Work record sources could not be updated. Retry the operation.'
 
 function sourceKindValue(source: ResumeSourcePut['source']): string {
   if (source.kind === 'files')
@@ -204,8 +204,8 @@ export function ResumeTemplatesSettings({
   return (
     <div className="flex max-w-[760px] flex-col gap-5">
       <PageIntro
-        title="Resume sources"
-        description="Reuse a continuation source across projects. Each project selects one source; the Resume instruction is set in Instructions. Test previews saved settings without changing the project's Resume action."
+        title="Work record sources"
+        description="Configure where Resume finds the record of work on a work item. Each project selects one source; the Resume instruction is set in Instructions. Test previews saved settings without changing the project's Resume action."
       />
       {error !== null && (
         <p role="alert" className="text-sm text-danger">
@@ -213,7 +213,7 @@ export function ResumeTemplatesSettings({
         </p>
       )}
       {library === null ? (
-        <p role="status">Loading Resume sources...</p>
+        <p role="status">Loading work record sources...</p>
       ) : (
         <>
           <div className="flex items-end gap-3">
@@ -344,7 +344,7 @@ export function ResumeTemplatesSettings({
                     }}
                   >
                     <option value="files">Files</option>
-                    <option value="local-progress">Local progress files</option>
+                    <option value="local-progress">Local work record</option>
                     <option value="generic">Custom command</option>
                     <option value="agent-harness">Agent Harness</option>
                   </select>
@@ -352,15 +352,15 @@ export function ResumeTemplatesSettings({
                 {form.source.kind === 'files' ? (
                   <>
                     <p className="text-xs text-ink-secondary">
-                      Files provide continuation context. They are not validated unfinished tasks.
-                      Links and directory junctions are excluded.
+                      Files provide work records. Their work item state is not validated. Links and
+                      directory junctions are excluded.
                     </p>
                     {isLocalProgressResumeSource(form.source) ? (
                       <p className="text-xs text-ink-secondary">
-                        Local progress files: one context file per card at{' '}
+                        Local work record: one work record per work item at{' '}
                         <code className="font-mono">work/&lt;ref&gt;/progress.md</code>, matched by
-                        the card ref in the directory name. Selecting this preset creates no files
-                        and binds no project; save the source and select it in a project.
+                        the work item ref in the directory name. Selecting this preset creates no
+                        files and binds no project; save the source and select it in a project.
                       </p>
                     ) : null}
                     <label className="flex flex-col gap-1 text-sm">
@@ -592,7 +592,7 @@ export function ResumeTemplatesSettings({
             </div>
             {projects.length === 0 && (
               <p className="text-sm text-ink-secondary">
-                Add a project before testing a Resume source.
+                Add a project before testing a work record source.
               </p>
             )}
             {preview !== null && (

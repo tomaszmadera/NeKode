@@ -216,7 +216,7 @@ describe('TaskResumeModal', () => {
       />,
     )
     expect((await screen.findByTestId(TEST_ID.kanbanResumeEmpty)).textContent).toBe(
-      'No resume context found for this task.',
+      'No work record found for this work item.',
     )
     expect(screen.queryByTestId(TEST_ID.kanbanResumeContext)).toBeNull()
     expect((screen.getByTestId(TEST_ID.kanbanResumeConfirm) as HTMLButtonElement).disabled).toBe(
@@ -385,7 +385,7 @@ describe('TaskResumeModal', () => {
     )
     const alert = await screen.findByTestId(TEST_ID.kanbanResumeAmbiguous)
     expect(alert.getAttribute('role')).toBe('alert')
-    expect(alert.textContent).toContain('Multiple resume contexts match this task.')
+    expect(alert.textContent).toContain('Multiple work records match this work item.')
     expect(alert.textContent).toContain('h/nekode-28.md')
     expect(alert.textContent).toContain('h/nekode-28-notes.md')
     expect(within(alert).getByText('nekode-28')).toBeTruthy()

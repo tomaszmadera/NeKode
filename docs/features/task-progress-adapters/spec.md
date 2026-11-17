@@ -1,18 +1,18 @@
-# Postęp zadań przez adaptery źródeł
+# Step progress przez adaptery
 
-Status: Delivered (NEKODE-81).
+Status: Delivered (NEKODE-81; bundled adapters and vocabulary amended by NEKODE-192).
 Path: `docs/features/task-progress-adapters/spec.md`.
 
 Ten plik jest kontraktem zachowania funkcji. Agenci implementują na jego podstawie. Nie zapisuj tu postępu wykonania, list plików ani historii architektury.
 
 ## Goal
 
-Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewej nawigacji i pasek segmentów w wierszu akcji) na podstawie danych z adaptera, którego użytkownik świadomie wybrał w ustawieniach projektu. NeKode nie zna żadnego formatu rekordów zadań. Dowolny zewnętrzny harness albo własny format plików podłącza się wyłącznie adapterem. Dane mają być aktualne podczas pracy agenta, a błąd lub stare dane muszą być odróżnialne od braku zadań.
+Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewej nawigacji i pasek segmentów w wierszu akcji) na podstawie danych z adaptera, którego użytkownik świadomie wybrał w ustawieniach projektu. Rdzeń NeKode nie zna formatu work record; interpretację posiada adapter. Dowolny zewnętrzny harness albo własny format plików podłącza się wyłącznie adapterem. Dane mają być aktualne podczas pracy agenta, a błąd lub stare dane muszą być odróżnialne od braku zadań.
 
 ## Related requirements
 
 - NEKODE-81 (opis karty zaktualizowany 2026-10-23).
-- Decyzje użytkownika z 2026-10-23: każde źródło jest adapterem; osobna zakładka `Task progress` w Project Settings z kopiowaniem konfiguracji z innego projektu; nic nie włącza się automatycznie; NeKode nie dostarcza żadnego adaptera postępu, zewnętrzny adapter powstaje we własnym repozytorium, a NeKode dokumentuje ogólną komendę jego instalacji.
+- Decyzje użytkownika z 2026-10-23: każde źródło jest adapterem, konfiguracja jest jawna i może być kopiowana jednorazowo. [Work record progress](../work-record-progress/spec.md) (NEKODE-192) zmienia nazwę zakładki na `Step progress`, dodaje dwa adaptery dostarczane z aplikacją i posiada kanoniczne słownictwo oraz format lokalnego work record.
 - Wzorzec adapterów: [kanban-adapter-interface](../kanban-adapter-interface/spec.md) (Behaviour 1-8) i [usage-quota](../usage-quota/spec.md) (reguły 12-13: harmonogram, single-flight, pauza okna).
 - Projekty WSL: [project-environments](../project-environments/spec.md) (reguła 9) i [ADR WSL](../../architecture/project-environment-adapters.md).
 - Etykiety sesji: [session-labels](../session-labels/spec.md) (reguła 6: zachować wyświetlanie postępu; `task_ref` zapisany przy starcie z kanbanu).
@@ -20,8 +20,8 @@ Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewe
 
 ## Scope
 
-- Odkrywanie adapterów postępu w jednym stałym katalogu adapterów, walidacja manifestu, protokół procesu v1.
-- Zakładka `Task progress` w Project Settings: wybór adaptera albo `None`, formularz pól z manifestu, `Test`, kopiowanie konfiguracji z innego projektu, stan ostatniego odczytu.
+- Odkrywanie dwóch adapterów dostarczanych z aplikacją oraz adapterów użytkownika w stałym katalogu, walidacja manifestu i niezmieniony protokół procesu v1.
+- Zakładka `Step progress` w Project Settings: wybór adaptera albo `None`, formularz pól z manifestu, `Test`, kopiowanie konfiguracji z innego projektu, stan ostatniego odczytu.
 - Usługa w procesie głównym: odczyt snapshotu, walidacja modelu, stany błędów, znacznik nieaktualności, obserwacja plików, odpytywanie zapasowe, sprzątanie.
 - Znormalizowany model postępu w kontrakcie IPC i zdarzenie aktualizacji dla renderera.
 - Dopasowanie czatu do zadania i zasilenie istniejących wskaźników nowym modelem.
@@ -30,7 +30,7 @@ Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewe
 
 ## Non-goals
 
-- Dostarczanie jakiegokolwiek adaptera postępu z aplikacją. Kod zewnętrznego adaptera powstaje we własnym repozytorium.
+- Biblioteka szablonów adapterów i tworzenie nowych szablonów w UI. Wybór adaptera nie jest wyborem szablonu.
 - Finalny widok graficzny postępu, rozwijany panel `TaskProgressButton`, zmiana wyglądu wskaźników poza znacznikiem nieaktualności.
 - Zapis do rekordów zadań, sterowanie workflow, telemetria, model aktywności procesu, stan sesji (NEKODE-4).
 - Ustawienie globalne w App Settings i dziedziczenie konfiguracji między projektami. Kopiowanie jest jednorazowe.
@@ -42,7 +42,7 @@ Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewe
 
 ### Adaptery i protokół
 
-1. Katalog adapterów jest jeden i stały: `<userData>/task-progress-adapters`. Nie ma ustawienia, nadpisania ani wyboru katalogu. Skan jednego poziomu przy każdym `taskProgress:adaptersList`. Podkatalog z poprawnym `adapter.json` jest adapterem. Niepoprawne manifesty są pomijane z ostrzeżeniem w logu, z nazwą ścieżki. Przy powtórzonym `id` wygrywa pierwszy katalog w porządku leksykograficznym. Brak katalogu oznacza pustą listę z wyjaśnieniem, nie błąd.
+1. Odkrywanie przy każdym `taskProgress:adaptersList` czyta najpierw adaptery dostarczane z aplikacją, potem jeden poziom stałego katalogu użytkownika `<userData>/task-progress-adapters`. Nie ma ustawienia ani wyboru katalogu. Poprawny `adapter.json` użytkownika o tym samym `id` zastępuje adapter dostarczony z aplikacją. Niepoprawny manifest jest pomijany z ostrzeżeniem wskazującym ścieżkę i nie zastępuje poprawnego adaptera. Duplikaty użytkownika zachowują pierwszy katalog w porządku leksykograficznym. Brak katalogu użytkownika nie jest błędem i nie usuwa adapterów dostarczanych z aplikacją.
 2. Manifest: `{ id, name, kind: "task-progress", protocolVersion: 1, invocation: { command, args? }, environments?: ["local" | "wsl"], configSchema: [ { key, label, type, required?, options?, default? } ] }`. `type` to `string | select | boolean`. `environments` domyślnie `["local"]`. Manifest z innym `kind` lub `protocolVersion` jest odrzucany. Pól `secret` nie ma w v1.
 3. Wywołanie: jeden proces na żądanie, `invocation.command` i `invocation.args` jako argv bez powłoki, cwd to katalog adaptera. NeKode pisze jeden obiekt JSON na stdin i zamyka stdin, czyta stdout do EOF i oczekuje jednego obiektu JSON. stderr służy tylko diagnostyce. Limit czasu 15 s z zabiciem drzewa procesów, limit stdout 10 MB. Kod wyjścia 0 przy `ok: true`, 1 przy `ok: false`. Każde inne zachowanie to błąd protokołu.
 4. Żądanie: `{ protocolVersion: 1, action, config, project }`, gdzie `project` to `{ root, environment: "local" | "wsl", distribution?, linuxRoot? }`. `root` to ścieżka projektu na hoście (dla WSL ścieżka UNC). Wartości konfiguracji nigdy nie trafiają do argv ani zmiennych środowiskowych.
@@ -51,12 +51,24 @@ Pokazać postęp zadań agentów w projekcie (licznik kroków przy czacie w lewe
    - `snapshot`: zwraca `{ schemaVersion: 1, generatedAt, watch, tasks }` według Data / API.
 6. Odpowiedź błędu: `{ ok: false, error: { code, message } }`, gdzie `code` to `config | runtime | unsupported_source | transient | internal`. `runtime` oznacza brak programu, interpretera lub komendy źródła. `unsupported_source` oznacza format lub wersję źródła, której adapter nie obsługuje. `transient` oznacza chwilowy stan, na przykład wyścig z przenoszeniem rekordu do archiwum.
 
+### Adaptery dostarczane z aplikacją
+
+NeKode dostarcza `NeKode work record` (id `nekode-work-record`, katalog `task-progress-nekode-work-record`) oraz opcjonalny `Agent Harness` (id `agent-harness`, katalog `task-progress-agent-harness`). Oba mają `kind: "task-progress"`, protokół v1, `node adapter.cjs`, pusty `configSchema` i domyślne `environments: ["local"]`. Powiązanie projektu WSL kończy się `environment_unsupported` bez procesu.
+
+W checkoutcie są w `<appPath>/adapters/<name>`; `electron-builder.yml` kopiuje je przez `extraResources` do `<resources>/task-progress-adapters/<name>`. Proces używa `process.execPath` z `ELECTRON_RUN_AS_NODE=1`; bezpiecznik RunAsNode pozostaje włączony. Lista IPC oznacza je opcjonalnym `bundled: true`. Poprawne nadpisanie użytkownika zachowuje własne wywołanie i nie jest oznaczone jako bundled.
+
+`NeKode work record` skanuje rekurencyjnie literalne `progress.md` w `work/` i `work-completed/`, bez symlinków i junctions. Pełny ref to nazwa bezpośredniego katalogu nadrzędnego. Jeden aktywny work record wygrywa ze zarchiwizowanym duplikatem; Test liczy pominięte duplikaty. Brak katalogów daje pusty snapshot, nie błąd. Odczytuje wyłącznie blok `nekode-state`; brak bloku, niepoprawny blok lub nieobsługiwana wersja pozostają widoczne jako błędy rekordu bez wskaźnika. Istniejące pliki bez bloku nadal działają w Resume. [Lokalny workflow](../local-task-workflow/spec.md#work-record-state-block) dokumentuje blok, a [kontrakt work record progress](../work-record-progress/spec.md) posiada pełną walidację i mapowanie.
+
+`Agent Harness` wykonuje bez powłoki `python .agents/scripts/task-status --json` w katalogu projektu, wymaga `schema_version: 2` oraz tablicy `tasks` i mapuje zewnętrzny format na snapshot. Nie parsuje `.agents/tasks` samodzielnie. Brak Python, skryptu lub błąd komendy daje typowany błąd runtime; wadliwy JSON, duplikaty lub wadliwe rekordy dają błąd protokołu, nieobsługiwana wersja daje `unsupported_source`. Nie ma fallbacku. Snapshot zachowuje rekordy zakończone, a archiwalny niezakończony rekord pozostaje active lub blocked. Obserwuje rekurencyjnie `.agents/tasks`; lokalny adapter obserwuje istniejące `work/` oraz `work-completed/`. Test zwraca krótki opis liczby odczytanych rekordów i problemów.
+
+Adaptery są tylko do odczytu: nie zapisują rekordów, nie zmieniają kart, nie instalują workflow i nie wykonują przejść lifecycle. Rdzeń waliduje wyłącznie snapshot. Scheduler, dopasowanie, pauza, nieaktualność, zewnętrzny protokół v1, kanały IPC i zapisane klucze pozostają bez zmian.
+
 ### Ustawienia projektu
 
-7. Project Settings ma zakładkę `Task progress` obok `Kanban`. Lista adapterów zawiera `None` (domyślnie) i odkryte adaptery (nazwa, id). Wybór adaptera pokazuje formularz z `configSchema`; pola wymagane są oznaczone. `Save` zapisuje id adaptera i wartości pól. `None` usuwa powiązanie i zachowuje zapisane wartości pól.
+7. Project Settings ma zakładkę `Step progress` obok `Work items`. Opis mówi, że odczytuje opcjonalne dane kroków przez adapter postępu. Lista zawiera `None` (domyślnie), adaptery dostarczane z aplikacją, a potem adaptery użytkownika (nazwa, id). Nie ma biblioteki szablonów, `New template` ani zapisu jako szablon. Wybór adaptera pokazuje formularz z `configSchema`; pola wymagane są oznaczone. `Save` zapisuje id adaptera i wartości pól. `None` usuwa powiązanie i zachowuje zapisane wartości pól.
 8. `Test` uruchamia akcję `test` z bieżącymi, także niezapisanymi wartościami, bez ich zapisu. Wynik (sukces z `summary` albo typowany błąd) jest pokazany w zakładce, nie w toaście.
 9. `Copy from project` pokazuje listę innych projektów z zapisanym powiązaniem. Wybór kopiuje id adaptera i wartości pól do formularza bez zapisu; użytkownik zatwierdza przez `Save`. Kopia jest jednorazowa: późniejsze zmiany w projekcie źródłowym nie zmieniają kopii.
-10. Zakładka nie ma wyboru ani przeglądania katalogu adapterów. Przy pustej liście adapterów pokazuje tekst, że adaptery instaluje się w katalogu adapterów aplikacji, i odsyła do README protokołu. Lista jest odświeżana przy każdym otwarciu zakładki.
+10. Zakładka nie ma wyboru ani przeglądania katalogu adapterów. Pusty stan wyjaśnia, że adaptery `NeKode work record` i `Agent Harness` są dołączone, a zewnętrzne adaptery instaluje się w stałym katalogu użytkownika; odsyła do README protokołu. Lista jest odświeżana przy każdym otwarciu zakładki.
 11. Zakładka pokazuje stan ostatniego odczytu dla projektu: czas ostatniego poprawnego snapshotu, liczbę zadań i bieżący błąd, jeśli jest.
 12. Zapis, zmiana adaptera i `None` unieważniają snapshot projektu i zatrzymują jego obserwację przed uruchomieniem nowej. `projects:remove` usuwa klucze powiązania i konfiguracji projektu oraz zatrzymuje obserwację.
 
@@ -188,7 +200,7 @@ Typowane kody w `TaskProgressSnapshot.error` i w wyniku `Test`: `adapter_missing
 
 1. Bez powiązania żaden proces adaptera nie startuje, żaden katalog projektu nie jest obserwowany, a wskaźniki postępu są ukryte.
 2. W kodzie `src/` nie ma parsera rekordów zadań; `TaskRecordService` i `ChatInfo.task` nie istnieją.
-3. Zakładka `Task progress` pozwala wybrać adapter, wypełnić pola, wykonać `Test`, zapisać, wyczyścić (`None`), skopiować konfigurację z innego projektu. Nie ma w niej wyboru katalogu adapterów ani pól wybierających katalog.
+3. Zakładka `Step progress` pozwala wybrać adapter, wypełnić pola, wykonać `Test`, zapisać, wyczyścić (`None`), skopiować konfigurację z innego projektu. Nie ma w niej wyboru katalogu adapterów ani pól wybierających katalog.
 4. Zmiana w obserwowanym katalogu aktualizuje wskaźniki bez ponownego wyboru projektu, w ciągu 3 s dla projektu lokalnego.
 5. Przeniesienie rekordu do archiwum zachowuje tożsamość zadania i postęp czatu; zadanie `archived` z `state: "active"` nie jest pokazywane jako zakończone.
 6. Te same `task.id` w dwóch projektach nie wpływają na siebie.
@@ -196,6 +208,9 @@ Typowane kody w `TaskProgressSnapshot.error` i w wyniku `Test`: `adapter_missing
 8. Każdy kod błędu z Errors ma widoczny stan w zakładce; przy istniejącym snapshocie wskaźniki są oznaczone jako nieaktualne.
 9. Projekt WSL z adapterem bez `"wsl"` kończy się `environment_unsupported` bez uruchamiania procesu.
 10. `adapters/task-progress-example/README.md` opisuje protokół i komendę instalacji; przykładowy adapter przechodzi `Test` i `snapshot` w aplikacji.
+11. Dwa adaptery dostarczane z aplikacją są dostępne bez instalacji; poprawne nadpisanie użytkownika wygrywa, niepoprawne nie ukrywa adaptera.
+12. Lokalny work record zasila Resume i Step progress; niepoprawny blok ukrywa tylko wskaźnik, a Test wyjaśnia powód.
+13. Zakładka nie ma kontrolek tworzenia szablonów; oba adaptery są pakowane i obsługują tylko local.
 
 ## Required tests
 

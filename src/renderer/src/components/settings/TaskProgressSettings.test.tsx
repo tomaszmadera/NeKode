@@ -108,7 +108,8 @@ function appMock(
         return bindings[projectId] ?? { adapterId: null, config: {} }
       }),
       saveBinding: options.saveBinding ?? vi.fn().mockResolvedValue(undefined),
-      test: options.test ?? vi.fn().mockResolvedValue({ ok: true, summary: 'Found 2 tasks.' }),
+      test:
+        options.test ?? vi.fn().mockResolvedValue({ ok: true, summary: 'Found 2 work records.' }),
       get: options.get ?? vi.fn().mockResolvedValue(options.snapshot ?? null),
       onChanged: vi.fn((listener: (event: TaskProgressChangedEvent) => void) => {
         listeners.push(listener)
@@ -135,6 +136,52 @@ function field(key: string): HTMLInputElement {
 }
 
 describe('TaskProgressSettings', () => {
+  it('lists bundled adapters before user adapters and binds them without template controls', async () => {
+    const app = appMock({
+      adapters: [
+        EXAMPLE,
+        {
+          id: 'nekode-work-record',
+          name: 'NeKode work record',
+          environments: ['local'],
+          configSchema: [],
+          bundled: true,
+        },
+        {
+          id: 'agent-harness',
+          name: 'Agent Harness',
+          environments: ['local'],
+          configSchema: [],
+          bundled: true,
+        },
+        OTHER,
+      ],
+    })
+    await renderLoaded(app)
+    expect(screen.getByRole('heading', { name: 'Step progress' })).toBeTruthy()
+    expect(screen.getByText('Reads optional step data from a progress adapter.')).toBeTruthy()
+    expect([...select().options].map((option) => option.textContent)).toEqual([
+      'None',
+      'NeKode work record · nekode-work-record',
+      'Agent Harness · agent-harness',
+      'Example · example',
+      'Other · other',
+    ])
+    expect(select().outerHTML).toMatchInlineSnapshot(
+      `"<select id="settings-task-progress-adapter" data-testid="settings-task-progress-adapter-select" class="h-9 w-full appearance-none rounded-[8px] border border-edge bg-button px-3 pr-9 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"><option value="">None</option><option value="nekode-work-record">NeKode work record · nekode-work-record</option><option value="agent-harness">Agent Harness · agent-harness</option><option value="example">Example · example</option><option value="other">Other · other</option></select>"`,
+    )
+    fireEvent.change(select(), { target: { value: 'nekode-work-record' } })
+    expect(screen.queryByRole('button', { name: /template/i })).toBeNull()
+    expect(screen.queryByText(/template library/i)).toBeNull()
+    expect(screen.queryByTestId(testIdFor.taskProgressField('path'))).toBeNull()
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsTaskProgressTest))
+    await screen.findByTestId(TEST_ID.settingsTaskProgressTestResult)
+    expect(app.taskProgress.test).toHaveBeenCalledWith('p1', 'nekode-work-record', {})
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsTaskProgressSave))
+    await screen.findByTestId(TEST_ID.settingsTaskProgressSaved)
+    expect(app.taskProgress.saveBinding).toHaveBeenCalledWith('p1', 'nekode-work-record', {})
+  })
+
   it('defaults to None and lists discovered adapters by name and id', async () => {
     await renderLoaded(appMock())
     expect(select().value).toBe('')
@@ -179,7 +226,7 @@ describe('TaskProgressSettings', () => {
     fireEvent.click(screen.getByTestId(TEST_ID.settingsTaskProgressTest))
     await waitFor(() =>
       expect(screen.getByTestId(TEST_ID.settingsTaskProgressTestResult).textContent).toBe(
-        'Found 2 tasks.',
+        'Found 2 work records.',
       ),
     )
     expect(app.taskProgress.test).toHaveBeenCalledWith('p1', 'example', {
@@ -293,6 +340,7 @@ describe('TaskProgressSettings', () => {
     await renderLoaded(appMock({ adapters: [] }))
     const empty = screen.getByTestId(TEST_ID.settingsTaskProgressEmpty)
     expect(empty.textContent).toContain('task-progress-adapters')
+    expect(empty.textContent).toContain('Bundled adapters are included with NeKode')
     expect(empty.textContent).toContain('adapters/task-progress-example/README.md')
     expect(screen.queryByText(/Browse/)).toBeNull()
     expect(screen.queryByRole('button', { name: /directory|folder/i })).toBeNull()
@@ -398,7 +446,7 @@ describe('TaskProgressSettings', () => {
     const app = appMock({ snapshot })
     await renderLoaded(app)
     const state = await screen.findByTestId(TEST_ID.settingsTaskProgressReadState)
-    await waitFor(() => expect(state.textContent).toContain('2 tasks'))
+    await waitFor(() => expect(state.textContent).toContain('2 work records'))
     expect(state.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-23T09:27:37.000Z')
     expect(state.textContent).toContain(
       'Out of date: config: Adapter "example" (snapshot): file missing',
@@ -418,7 +466,7 @@ describe('TaskProgressSettings', () => {
     })
     const state = screen.getByTestId(TEST_ID.settingsTaskProgressReadState)
     expect(state.textContent).toContain('Retrying: transient: busy')
-    expect(state.textContent).toContain('1 task')
+    expect(state.textContent).toContain('1 work record')
     expect(state.textContent).not.toContain('Out of date:')
   })
 
@@ -433,7 +481,7 @@ describe('TaskProgressSettings', () => {
       tasks: [item('a')],
       receivedAt: '2026-10-23T10:00:00.000Z',
     })
-    expect(state.textContent).toContain('1 task')
+    expect(state.textContent).toContain('1 work record')
     expect(state.textContent).not.toContain('Failed to load')
   })
 
@@ -464,10 +512,10 @@ describe('TaskProgressSettings', () => {
       receivedAt: '2026-10-23T10:00:00.000Z',
     }
     emit(fresh)
-    expect(state.textContent).toContain('1 task')
+    expect(state.textContent).toContain('1 work record')
     expect(state.textContent).not.toContain('Out of date')
     emit({ ...fresh, projectId: 'p2', tasks: [item('x'), item('y'), item('z')] })
-    expect(state.textContent).toContain('1 task')
+    expect(state.textContent).toContain('1 work record')
     emit({ projectId: 'p1', cleared: true })
     expect(state.textContent).toContain('Not read')
   })
@@ -486,7 +534,7 @@ describe('TaskProgressSettings', () => {
       pending.resolve(null)
     })
     expect(screen.getByTestId(TEST_ID.settingsTaskProgressReadState).textContent).toContain(
-      '3 tasks',
+      '3 work records',
     )
   })
 
@@ -498,12 +546,24 @@ describe('TaskProgressSettings', () => {
       status: 'ok',
       tasks: [
         item('a'),
-        item('broken', { recordState: 'invalid', phases: [], errors: ['no Phase 1'] }),
+        item('broken', {
+          recordState: 'invalid',
+          phases: [],
+          errors: ['missing nekode-state block'],
+        }),
+        item('future', {
+          recordState: 'unsupported',
+          phases: [],
+          errors: ['unsupported schemaVersion: 2'],
+        }),
       ],
       receivedAt: '2026-10-23T10:00:00.000Z',
     })
     expect(screen.getByTestId(TEST_ID.settingsTaskProgressReadState).textContent).toContain(
-      'broken (invalid): no Phase 1',
+      'broken (invalid): missing nekode-state block',
+    )
+    expect(screen.getByTestId(TEST_ID.settingsTaskProgressReadState).textContent).toContain(
+      'future (unsupported): unsupported schemaVersion: 2',
     )
   })
 

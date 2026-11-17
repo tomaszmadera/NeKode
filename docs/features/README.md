@@ -41,7 +41,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [handoff-resume-flow](handoff-resume-flow/spec.md) | Handoff/Resume flow | Delivered |
 | [in-app-update](in-app-update/spec.md) | In-app update | Delivered (quiet Windows update from App Settings) |
 | [kanban-adapter-interface](kanban-adapter-interface/spec.md) | Kanban adapter interface | Delivered (adapter-backed board); drag-and-drop and the UX-UI 26-30 visual design remain later work |
-| [local-task-workflow](local-task-workflow/spec.md) | Local task workflow without Harness | Delivered in part (no-Harness workflow; the Harness-backed variant requires the upstream local-file backend and adapter) |
+| [local-task-workflow](local-task-workflow/spec.md) | Local work items and work records | Delivered in part (local board and work record workflow; the optional integration's board backend still requires upstream work) |
 | [markdown-mermaid-diagrams](markdown-mermaid-diagrams/spec.md) | Markdown preview: Mermaid diagrams | Delivered |
 | [mvp-core-shell](mvp-core-shell/spec.md) | NeKode MVP Core Shell - first vertical slice | Delivered |
 | [new-chat-agent-menu](new-chat-agent-menu/spec.md) | New chat agent profile menu | Delivered |
@@ -54,11 +54,12 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [renderer-interaction-correctness](renderer-interaction-correctness/spec.md) | Renderer interaction correctness | Not delivered |
 | [session-labels](session-labels/spec.md) | Session labels and agent badges | Delivered |
 | [ssh-projects](ssh-projects/spec.md) | SSH projects: opening a project on a remote host | Delivered (registration, terminals, agent launches, remote files, read-only Git and typed errors; transport ADR: [ssh-project-transport](../architecture/ssh-project-transport.md)) |
-| [task-progress-adapters](task-progress-adapters/spec.md) | Postęp zadań przez adaptery źródeł | Delivered (NEKODE-81) |
+| [task-progress-adapters](task-progress-adapters/spec.md) | Step progress przez adaptery | Delivered (NEKODE-81; bundled adapters and vocabulary amended by NEKODE-192) |
 | [terminal-font-settings](terminal-font-settings/spec.md) | Terminal font settings | Delivered |
 | [test-suite-simplification](test-suite-simplification/spec.md) | Test suite audit and simplification | Delivered |
 | [themes](themes/spec.md) | Themes | Delivered |
 | [usage-quota](usage-quota/spec.md) | Usage quota | Delivered (Stages 1-3 implemented, reviewed and fully verified; live provider reads not run) |
+| [work-record-progress](work-record-progress/spec.md) | Work record progress and bundled progress adapters | Delivered (NEKODE-192) |
 | [workspace-layout](workspace-layout/spec.md) | Workspace layout modes | Delivered |
 
 ## Analyses

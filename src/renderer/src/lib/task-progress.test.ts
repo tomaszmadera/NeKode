@@ -108,7 +108,7 @@ describe('normalized session task progress', () => {
       label: 'Fixes · fix:3',
       fix: 3,
       review: 2,
-      ariaLabel: 'Task progress: step 1 of 3, Fixes, fix 3',
+      ariaLabel: 'Step progress: step 1 of 3, Fixes, fix 3',
       stepNames: ['Plan', 'Implement', 'Verify'],
     })
     expect(progress([task()])?.step).toBe(2)
@@ -134,7 +134,7 @@ describe('normalized session task progress', () => {
     ).toMatchObject({
       stale: true,
       staleReason: 'Source unavailable',
-      ariaLabel: 'Out of date: Source unavailable. Task progress: step 2 of 3, Implement',
+      ariaLabel: 'Out of date: Source unavailable. Step progress: step 2 of 3, Implement',
     })
   })
 })

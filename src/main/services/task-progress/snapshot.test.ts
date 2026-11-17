@@ -150,8 +150,11 @@ describe('validateTaskProgressSnapshot', () => {
     expect(result).not.toHaveProperty('extra')
   })
 
-  it('accepts empty tasks and empty phases for records that are not valid', () => {
+  it('accepts empty tasks and empty phases for valid or invalid records', () => {
     expect(validateTaskProgressSnapshot(snapshot({ tasks: [] }), LABEL).tasks).toEqual([])
+    expect(
+      validateTaskProgressSnapshot(snapshot({ tasks: [task({ phases: [] })] }), LABEL).tasks[0],
+    ).toMatchObject({ recordState: 'valid', phases: [] })
     const broken = task({ recordState: 'invalid', phases: [], errors: ['missing Phase 1'] })
     expect(
       validateTaskProgressSnapshot(snapshot({ tasks: [broken] }), LABEL).tasks[0],
@@ -184,7 +187,6 @@ describe('validateTaskProgressSnapshot', () => {
     ['missing location', { location: undefined }],
     ['unknown recordState', { recordState: 'ok' }],
     ['missing phases', { phases: undefined }],
-    ['empty phases on a valid record', { phases: [] }],
     ['a step without done', { phases: [{ name: 'A', steps: [{ id: '1', label: 'x' }] }] }],
     ['a phase without name', { phases: [{ steps: [] }] }],
     [

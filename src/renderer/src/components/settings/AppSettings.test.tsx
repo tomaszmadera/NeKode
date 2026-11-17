@@ -62,7 +62,8 @@ function renderSettings(initialTab: 'general' | 'dictation') {
 describe('AppSettings dictation shortcut error', () => {
   it('opens the reusable Resume editor from the application settings navigation', async () => {
     renderSettings('general')
-    fireEvent.click(screen.getByRole('tab', { name: 'Resume sources' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Work record sources' }))
+    expect(await screen.findByRole('heading', { name: 'Work record sources' })).toBeTruthy()
     expect(await screen.findByRole('button', { name: 'New source' })).not.toBeNull()
     expect(screen.getByLabelText('Test project')).not.toBeNull()
   })

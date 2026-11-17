@@ -509,7 +509,7 @@ describe('ShellTab', () => {
       expect(group.textContent).toContain('SSH project: tomek@minipc:2222, /srv/app')
       expect(group.textContent).toContain('Terminals and agents run on that host.')
       expect(group.textContent).toContain(
-        'Read-only files and Git. Not available: Actions, Kanban Start and Resume, task progress, handoff files, opening files in other apps.',
+        'Read-only files and Git. Not available: Actions, Kanban Start and Resume, Step progress, work records, opening files in other apps.',
       )
       expect(detect).not.toHaveBeenCalled()
       expect(screen.queryByTestId(TEST_ID.settingsShellCustomInput)).toBeNull()

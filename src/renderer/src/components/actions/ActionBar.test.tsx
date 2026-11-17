@@ -242,10 +242,10 @@ describe('ActionBar', () => {
     )
 
     const progressBtn = screen.getByRole('button', {
-      name: 'Task progress: step 5 of 8, Fixes, fix 3',
+      name: 'Step progress: step 5 of 8, Fixes, fix 3',
     })
     expect(progressBtn).toBeTruthy()
-    expect(progressBtn.getAttribute('aria-label')).toBe('Task progress: step 5 of 8, Fixes, fix 3')
+    expect(progressBtn.getAttribute('aria-label')).toBe('Step progress: step 5 of 8, Fixes, fix 3')
   })
 
   it('does not render TaskProgressButton when task is undefined', async () => {

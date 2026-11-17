@@ -90,7 +90,25 @@ describe('TaskProgressHost', () => {
     expect(data.env).not.toContain('sekret-value')
   })
 
+  it.each([true, false])('sets Node mode only for bundled adapters (%s)', async (bundled) => {
+    vi.stubEnv('ELECTRON_RUN_AS_NODE', 'inherited')
+    try {
+      const probe = fixture(
+        'node-mode.cjs',
+        `process.stdin.resume(); process.stdin.on('end', () => console.log(JSON.stringify({ok:true,data:{mode:process.env.ELECTRON_RUN_AS_NODE ?? null}})))`,
+      )
+      const result = await new TaskProgressHost().invoke(
+        { ...probe, ...(bundled ? { bundled: true as const } : {}) },
+        request,
+      )
+      expect(result).toEqual({ mode: bundled ? '1' : null })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it.each<TaskProgressErrorCode>([
+    'protocol',
     'config',
     'runtime',
     'unsupported_source',

@@ -83,7 +83,8 @@ describe('InstructionSettings', () => {
     for (const name of ['Start', 'Resume', 'Handoff', 'Continue', 'Stop'])
       expect(screen.getByRole('heading', { name })).toBeTruthy()
     expect(screen.getByText(/does not claim that a handoff was saved/)).toBeTruthy()
-    expect(screen.getByText(/does not choose a task or a context file/)).toBeTruthy()
+    expect(screen.getByText(/does not choose a work item or a work record/)).toBeTruthy()
+    expect(screen.getByText(/update the work record and stop/)).toBeTruthy()
     expect(screen.getByText(/start a card from a Kanban board/)).toBeTruthy()
     expect(screen.getByTestId(TEST_ID.instructionStopNote).textContent).toContain('Ctrl+C')
     expect((await screen.findByTestId(TEST_ID.instructionsAffectedProjects)).textContent).toBe(
@@ -265,10 +266,10 @@ describe('InstructionSettings', () => {
     expect(editorValue(TEST_ID.instructionContinueEditor)).toBe(DEFAULT_CONTINUE_INSTRUCTION)
   })
 
-  it('routes Manage Resume sources to the source editor', () => {
+  it('routes Manage work record sources to the source editor', () => {
     const onManageTemplates = vi.fn()
     renderSettings(makeApp(), { onManageTemplates })
-    fireEvent.click(screen.getByTestId(TEST_ID.instructionManageTemplates))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage work record sources' }))
     expect(onManageTemplates).toHaveBeenCalledTimes(1)
   })
 })

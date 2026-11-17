@@ -341,7 +341,7 @@ export function KanbanSettings({
         if (alive) {
           setLoading(false)
           setLoadError(
-            parseAppErrorPayload(cause)?.message ?? 'Failed to load the task source settings.',
+            parseAppErrorPayload(cause)?.message ?? 'Failed to load the work item source settings.',
           )
         }
       })
@@ -399,7 +399,7 @@ export function KanbanSettings({
           setSavedState('saved')
         } catch (cause) {
           setFormError(
-            parseAppErrorPayload(cause)?.message ?? 'Failed to save the task source settings.',
+            parseAppErrorPayload(cause)?.message ?? 'Failed to save the work item source settings.',
           )
         }
         return
@@ -417,7 +417,7 @@ export function KanbanSettings({
       } catch (cause) {
         // A failed setConfig leaves the binding unsaved (Test stays gated).
         setFormError(
-          parseAppErrorPayload(cause)?.message ?? 'Failed to save the task source settings.',
+          parseAppErrorPayload(cause)?.message ?? 'Failed to save the work item source settings.',
         )
         return
       }
@@ -437,7 +437,7 @@ export function KanbanSettings({
         // The binding is persisted; only the refresh failed. Surface it inline
         // without reverting the saved/persisted state.
         setFormError(
-          parseAppErrorPayload(cause)?.message ?? 'Failed to reload the task source settings.',
+          parseAppErrorPayload(cause)?.message ?? 'Failed to reload the work item source settings.',
         )
       }
     })
@@ -467,7 +467,7 @@ export function KanbanSettings({
         applyState(await fetchState())
       } catch (cause) {
         setFormError(
-          parseAppErrorPayload(cause)?.message ?? 'Failed to reload the task source settings.',
+          parseAppErrorPayload(cause)?.message ?? 'Failed to reload the work item source settings.',
         )
       }
     })
@@ -710,7 +710,7 @@ export function KanbanSettings({
 
   return (
     <div data-testid={TEST_ID.settingsKanbanPanel} className="flex max-w-[660px] flex-col gap-7">
-      <PageIntro title="Tasks" description="The tracker this project's board reads tasks from." />
+      <PageIntro title="Work items" description="Choose the source for this project's board." />
       {loading ? (
         <p
           className="text-[13px] text-ink-secondary"
@@ -728,17 +728,17 @@ export function KanbanSettings({
           ) : null}
           {projectId === null ? (
             <p className="text-[13px] text-ink-secondary">
-              Select a project to connect a task source.
+              Select a project to connect a work item source.
             </p>
           ) : (
             <>
-              <SettingsGroup label="Tracker">
-                <SectionLabel title="Tracker" />
+              <SettingsGroup label="Work items">
+                <SectionLabel title="Work items" />
                 <GroupBox>
                   <FieldRow
-                    label="Adapter"
+                    label="Source"
                     htmlFor="settings-kanban-adapter"
-                    description="Task tracker integration."
+                    description="Reads and writes board items."
                   >
                     <SettingsSelect
                       id="settings-kanban-adapter"
@@ -776,9 +776,9 @@ export function KanbanSettings({
                       className="border-t border-edge px-4 py-3 text-xs text-ink-muted"
                       data-testid={TEST_ID.settingsKanbanEmpty}
                     >
-                      No task adapters are installed. Copy an adapter folder with its adapter.json
-                      into the kanban-adapters folder of the NeKode application data directory, then
-                      reopen this tab.
+                      No external work item sources are installed. Copy an adapter folder with its
+                      adapter.json into the kanban-adapters folder of the NeKode application data
+                      directory, then reopen this tab.
                     </p>
                   ) : null}
                   {missing ? (
@@ -860,7 +860,7 @@ export function KanbanSettings({
                   <GroupBox>
                     <div className="flex items-center gap-6 px-4 py-3">
                       <span className="min-w-0 flex-1 text-[13px] font-medium text-ink">
-                        Teach agents how to use this tracker
+                        Teach agents how to use this work item source
                       </span>
                       <button
                         ref={teachButtonRef}
@@ -892,7 +892,7 @@ export function KanbanSettings({
                 ? createPortal(
                     <ConfirmDialog
                       title="Teach agents"
-                      body="NeKode writes one project skill file that tells agents where this project's tasks live. It contains no tasks and no tracker settings."
+                      body="NeKode writes one agent skill file that tells agents where this project's work items live. It contains no work items or source settings."
                       confirmLabel="Write skill file"
                       confirmDisabled={teachWriting || teachDialog.preview === null}
                       wide

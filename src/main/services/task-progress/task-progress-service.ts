@@ -61,6 +61,7 @@ export interface TaskProgressServiceDeps {
   }
   /** The fixed `<userData>/task-progress-adapters` directory (spec Behaviour 1). */
   adaptersDir: string
+  bundledAdapterDirectories?: readonly string[]
   host?: TaskProgressHost
   discover?: (dir: string) => TaskProgressDiscovery
   /** Directory watcher seam for the scheduler; defaults to fs.watch. */
@@ -86,7 +87,8 @@ export class TaskProgressService {
     this.#adaptersDir = deps.adaptersDir
     this.#log = deps.log ?? ((message) => console.warn(message))
     this.#host = deps.host ?? new TaskProgressHost({ log: this.#log })
-    this.#discover = deps.discover ?? discoverTaskProgressAdapters
+    this.#discover =
+      deps.discover ?? ((dir) => discoverTaskProgressAdapters(dir, deps.bundledAdapterDirectories))
     this.#scheduler = new TaskProgressScheduler({
       target: (projectId) => this.target(projectId),
       read: (projectId, target, signal) => this.readSnapshot(projectId, target, signal),
@@ -215,6 +217,7 @@ export class TaskProgressService {
           id: prepared.adapter.info.id,
           dir: prepared.adapter.dir,
           invocation: prepared.adapter.invocation,
+          ...(prepared.adapter.info.bundled ? { bundled: true as const } : {}),
         },
         {
           protocolVersion: TASK_PROGRESS_PROTOCOL_VERSION,
@@ -284,6 +287,7 @@ export class TaskProgressService {
           id: prepared.adapter.info.id,
           dir: prepared.adapter.dir,
           invocation: prepared.adapter.invocation,
+          ...(prepared.adapter.info.bundled ? { bundled: true as const } : {}),
         },
         {
           protocolVersion: TASK_PROGRESS_PROTOCOL_VERSION,

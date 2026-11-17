@@ -538,7 +538,7 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     expect(isSelected(TEST_ID.kanbanTab)).toBe(true)
   })
 
-  it('Connect a tracker opens Project Settings on the Tasks section of that project', async () => {
+  it('Connect a tracker opens Project Settings on the Work items section of that project', async () => {
     vi.mocked(app.projects.list).mockResolvedValue([projectA])
     mockBindings(app, [])
 
@@ -546,9 +546,9 @@ describe('project home tab without a task source (project-home spec Behaviour 2-
     openProjectHome(await screen.findByTestId(testIdFor.projectSelect('p1')))
     fireEvent.click(await screen.findByTestId(TEST_ID.projectHomeConnectTracker))
     await screen.findByRole('dialog', { name: 'Project Settings' })
-    const tasksTab = screen.getByTestId(TEST_ID.settingsKanbanTab)
-    expect(tasksTab.textContent).toBe('Tasks')
-    await waitFor(() => expect(tasksTab.getAttribute('aria-selected')).toBe('true'))
+    const workItemsTab = screen.getByTestId(TEST_ID.settingsKanbanTab)
+    expect(workItemsTab.textContent).toBe('Work items')
+    await waitFor(() => expect(workItemsTab.getAttribute('aria-selected')).toBe('true'))
     expect(await screen.findByTestId(TEST_ID.settingsKanbanPanel)).toBeTruthy()
     await waitFor(() => expect(app.kanban.getConfig).toHaveBeenCalledWith('p1'))
   })

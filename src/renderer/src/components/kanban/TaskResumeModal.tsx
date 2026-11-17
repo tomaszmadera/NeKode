@@ -102,7 +102,7 @@ export function TaskResumeModal({
         return
       }
       setResult(null)
-      setError(errorMessage(cause, 'Failed to discover Resume sources.'))
+      setError(errorMessage(cause, 'Failed to discover work records.'))
       setPhase('error')
     } finally {
       if (requestGeneration === generation.current) {
@@ -259,14 +259,14 @@ export function TaskResumeModal({
               className="mt-3 text-[12.6px] text-ink-secondary"
               data-testid={TEST_ID.kanbanResumeLoading}
             >
-              Reading resume sources…
+              Reading work records...
             </p>
           ) : null}
 
           {phase === 'not-configured' ? (
             <div className="mt-3 text-[12.6px]">
               <p className="text-ink-secondary">
-                No Resume template is configured for this project.
+                No work record source is configured for this project.
               </p>
               <button
                 type="button"
@@ -304,14 +304,14 @@ export function TaskResumeModal({
                   className="mt-3 text-[12.6px] text-ink-secondary"
                   data-testid={TEST_ID.kanbanResumeEmpty}
                 >
-                  No resume context found for this task.
+                  No work record found for this work item.
                 </p>
               ) : chosen !== null ? (
                 <div
                   className="mt-3 min-w-0 break-words text-[12.6px] text-ink-secondary"
                   data-testid={TEST_ID.kanbanResumeContext}
                 >
-                  <p>Resume context: {chosen.id}</p>
+                  <p>Work record: {chosen.id}</p>
                   <p className="whitespace-pre-wrap">{chosen.displayPath}</p>
                 </div>
               ) : (
@@ -320,7 +320,7 @@ export function TaskResumeModal({
                   role="alert"
                   data-testid={TEST_ID.kanbanResumeAmbiguous}
                 >
-                  <p>Multiple resume contexts match this task.</p>
+                  <p>Multiple work records match this work item.</p>
                   <ul className="mt-2 max-h-48 list-none space-y-2 overflow-y-auto">
                     {options.map((option) => (
                       <li key={option.token}>
@@ -329,7 +329,9 @@ export function TaskResumeModal({
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-2">Correct the task records or Resume template, then refresh.</p>
+                  <p className="mt-2">
+                    Correct the work records or work record source, then refresh.
+                  </p>
                 </div>
               )}
             </>

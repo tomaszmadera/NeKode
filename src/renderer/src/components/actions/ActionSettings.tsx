@@ -79,8 +79,8 @@ export type SettingsTabId = 'shell' | 'actions' | 'kanban' | 'taskProgress' | 'a
 const PROJECT_TABS: Array<{ id: SettingsTabId; label: string; icon: LucideIcon }> = [
   { id: 'shell', label: 'Shell', icon: Icon.terminal },
   { id: 'actions', label: 'Actions', icon: Icon.run },
-  { id: 'kanban', label: 'Tasks', icon: Icon.kanban },
-  { id: 'taskProgress', label: 'Task progress', icon: Icon.activity },
+  { id: 'kanban', label: 'Work items', icon: Icon.kanban },
+  { id: 'taskProgress', label: 'Step progress', icon: Icon.activity },
   { id: 'agents', label: 'Agents', icon: Icon.agent },
 ]
 
@@ -330,8 +330,8 @@ export function ActionSettings({
                   {handoffInstruction}
                 </p>
                 <p className="mt-1 text-ink-muted">
-                  Application settings, shared by all projects. The agent records the context; the
-                  application does not claim the handoff.
+                  Application settings, shared by all projects. The agent updates the work record;
+                  the application does not claim the handoff.
                 </p>
               </div>
               <div className="border-t border-edge px-4 py-3 text-xs">
@@ -344,7 +344,7 @@ export function ActionSettings({
                 </p>
                 <p className="mt-1 text-ink-muted">
                   Application settings, shared by all projects. It addresses the current
-                  conversation and selects no task or context file.
+                  conversation and selects no work item or work record.
                 </p>
               </div>
               <div className="border-t border-edge px-4 py-3 text-xs">
@@ -356,8 +356,8 @@ export function ActionSettings({
                   {resumeInstruction}
                 </p>
                 <p className="mt-1 text-ink-muted">
-                  Application settings, shared by all projects. It names the context that the Resume
-                  source selected above finds.
+                  Application settings, shared by all projects. It names the work record that the
+                  work record source selected above finds.
                 </p>
               </div>
               <div className="border-t border-edge px-4 py-3 text-xs">

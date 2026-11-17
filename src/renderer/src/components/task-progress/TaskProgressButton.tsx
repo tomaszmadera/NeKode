@@ -25,7 +25,7 @@ export function TaskProgressButton({
 
   const ariaLabel =
     task.ariaLabel ??
-    `Task progress: step ${task.step} of ${total}, ${stepName}${fix ? `, fix ${fix}` : ''}`
+    `Step progress: step ${task.step} of ${total}, ${stepName}${fix ? `, fix ${fix}` : ''}`
   const progressLabel = task.label ?? `${stepName}${fix ? ` · fix:${fix}` : ''}`
 
   const handleClick = (): void => {

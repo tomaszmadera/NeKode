@@ -17,6 +17,22 @@ export const TASK_PROGRESS_PROTOCOL_VERSION = 1
 export const TASK_PROGRESS_ADAPTER_KIND = 'task-progress'
 /** Directory name under `<userData>`; there is no setting or override (spec Behaviour 1). */
 export const TASK_PROGRESS_ADAPTERS_DIR_NAME = 'task-progress-adapters'
+/** Keep electron-builder.yml extraResources in sync with this list. */
+export const BUNDLED_TASK_PROGRESS_ADAPTERS = [
+  'task-progress-nekode-work-record',
+  'task-progress-agent-harness',
+] as const
+
+export function bundledTaskProgressAdapterDirectories(
+  packaged: boolean,
+  appPath: string,
+  resourcesPath: string,
+): string[] {
+  const root = packaged
+    ? join(resourcesPath, TASK_PROGRESS_ADAPTERS_DIR_NAME)
+    : join(appPath, 'adapters')
+  return BUNDLED_TASK_PROGRESS_ADAPTERS.map((name) => join(root, name))
+}
 
 const MANIFEST_FILE = 'adapter.json'
 const ADAPTER_ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
@@ -190,7 +206,43 @@ export function parseTaskProgressManifest(
 }
 
 /** One-level scan of the adapters directory (fresh on every call). */
-export function discoverTaskProgressAdapters(dir: string): TaskProgressDiscovery {
+export function discoverTaskProgressAdapters(
+  dir: string,
+  bundledDirectories: readonly string[] = [],
+): TaskProgressDiscovery {
+  const bundled: DiscoveredTaskProgressAdapter[] = []
+  const warnings: string[] = []
+  for (const adapterDir of bundledDirectories) {
+    const manifestPath = join(adapterDir, MANIFEST_FILE)
+    try {
+      const parsed = parseTaskProgressManifest(readFileSync(manifestPath, 'utf8'), manifestPath)
+      bundled.push({
+        ...parsed,
+        dir: adapterDir,
+        info: { ...parsed.info, bundled: true },
+        invocation: {
+          ...parsed.invocation,
+          command:
+            parsed.invocation.command === 'node' ? process.execPath : parsed.invocation.command,
+        },
+      })
+    } catch (error) {
+      warnings.push(
+        error instanceof TaskProgressManifestError
+          ? error.message
+          : `${manifestPath}: cannot be read (${String(error)})`,
+      )
+    }
+  }
+  const user = discoverUserTaskProgressAdapters(dir)
+  const overridden = new Set(user.adapters.map((adapter) => adapter.info.id))
+  return {
+    adapters: [...bundled.filter((adapter) => !overridden.has(adapter.info.id)), ...user.adapters],
+    warnings: [...warnings, ...user.warnings],
+  }
+}
+
+function discoverUserTaskProgressAdapters(dir: string): TaskProgressDiscovery {
   let dirents: Dirent[]
   try {
     dirents = readdirSync(dir, { withFileTypes: true })

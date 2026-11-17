@@ -236,16 +236,16 @@ Do not require icons.
 
 The fixed buttons act on the active chat. `Stop` and `Continue` write terminal input through `terminals:write`. `Handoff` and `Resume` paste into the console without submitting unless auto-send is on, in which case they write the same text plus CR. `docs/features/handoff-resume-flow/spec.md` owns that flow.
 
-Start, Resume, Handoff and Continue are multiline instructions configured in App Settings > Instructions and shared by every project. A project only selects the Resume source that finds the context path. Start is used when a Kanban card is started and has the placeholders `{ref}`, `{title}`, `{description}` and `{url}`. The action-bar defaults are:
+Start, Resume, Handoff and Continue are multiline instructions configured in App Settings > Instructions and shared by every project. A project selects the Work record source that finds its work record. Start is used when a Kanban card is started and has the placeholders `{ref}`, `{title}`, `{description}` and `{url}`. The action-bar defaults are:
 
 ```text
 Handoff     Write a handoff
-Resume      Resume task {taskPath}    ({taskPath} is the context path the project's Resume source found)
+Resume      Resume task {taskPath}    ({taskPath} is the context path the project's Work record source found)
 Continue    Continue               + CR (0x0D)
 Stop        Ctrl+C (0x03)
 ```
 
-The configured text is sent literally; Handoff and Continue support no placeholders. `Stop` is fixed, never sends Ctrl+D (0x04 closes chats), and creates no task record or handoff. The four fixed buttons are enabled only while the active chat has a live terminal session.
+The configured text is sent literally; Handoff and Continue support no placeholders. `Stop` is fixed, never sends Ctrl+D (0x04 closes chats), and creates no work record. The four fixed buttons are enabled only while the active chat has a live terminal session.
 
 Recommended states for configurable action buttons:
 
@@ -583,7 +583,7 @@ exist only while a project is bound.
   a chat opens on the home tab.
 - A project with a stored task-source binding shows its task list on the home
   tab. A project without one shows the setup welcome there (`No task list yet`,
-  with `Connect a tracker` opening Project Settings on the Tasks section) and
+  with `Connect a tracker` opening Project Settings on the Work items tab) and
   stays on the home tab.
 
 Selecting the chat tab or a file tab returns to that surface. There is no
@@ -843,7 +843,7 @@ Session ended
 
 Kanban is intended to become one of the major features of the application.
 
-In the MVP, Kanban is a **visual-only preview of the future product**. The page should already communicate the intended information hierarchy, columns, realistic card designs, metadata, primary actions and visual states, but it must use static demonstration data rather than real Task records.
+In the MVP, Kanban is a **visual-only preview of the future product**. The page should already communicate the intended information hierarchy, columns, realistic card designs, metadata, primary actions and visual states, but it must use static demonstration data rather than real work items.
 
 The goal is to let the user open Kanban and accurately judge how the future workflow will look and feel before that workflow is implemented.
 
@@ -1036,6 +1036,19 @@ Clone Repository
 ---
 
 # 32. Project Settings
+
+The current settings vocabulary is owned by [work record progress](features/work-record-progress/spec.md). Use `Work item source` for the adapter that reads and writes board items; `Work item` for a card; `Ref` for its stable identifier; and `Board` for a source's board view. A `Work record` holds state, decisions, checks, blockers, and the next action. An `Archived work record` is withdrawn after completion. Handoff is an action. `Teach agents` writes the agent skill file.
+
+Project Settings uses these exact labels:
+
+| Surface | Label and purpose |
+|---|---|
+| Board configuration tab | `Work items` |
+| Board source section | `WORK ITEMS`, field `Source`: reads and writes board items |
+| Work record section | `WORK RECORD`, field `Work record source`: configures where Resume finds the record of work on a work item |
+| Optional step data tab | `Step progress`: reads optional step data from a progress adapter |
+
+App Settings uses `Work record sources` for the discovery library, with the `Local work record` preset. Start, Resume, Handoff, and Continue remain in Instructions. `Task file: .nekode/tasks.json` and `Teach agents` keep their labels. Saved code identifiers and keys keep their compatibility names. The optional `Agent Harness` adapter and preset are integrations, not core product categories.
 
 App Settings -> General includes "Uppercase project names in the tree"
 (NEKODE-10), enabled by default. It changes only project labels in the
@@ -2449,7 +2462,15 @@ The MVP should already feel coherent enough for daily use before direct agent pr
 
 ---
 
-# 81. Task Progress / Checkpoint Timeline
+# 81. Step progress and future checkpoint timeline
+
+The current Step progress surface follows [Step progress adapters](features/task-progress-adapters/spec.md) and [work record progress](features/work-record-progress/spec.md). Project Settings, `Step progress`, reads optional step data from a selected progress adapter. It lists `None`, bundled `NeKode work record` and `Agent Harness`, and installed user adapters. It has Test, Save and Copy from project, with no template library or template creation controls. Both bundled adapters support local projects only; WSL reports `environment_unsupported`.
+
+One work record supplies both continuation context and optional step data. For a local record the agent maintains prose and one `nekode-state` block in `work/<ref>/progress.md`; after confirmed completion it archives the record in `work-completed/<ref>/progress.md`. The core application never parses the block or writes the record. Invalid or unsupported records have no indicator and a visible error in settings. Missing blocks still permit Resume. A valid completed record keeps its last step; a stale snapshot is dimmed with `Out of date:`.
+
+Current placement is the left-navigation counter and the action-bar segment strip. The checkpoint examples in sections 82-98 describe future design, not additional current states, hard-coded steps, template controls, or automatic lifecycle writes.
+
+## Future checkpoint timeline
 
 Each Task may expose a compact visual representation of its current implementation progress.
 
@@ -2773,7 +2794,7 @@ Clicking it expands the full timeline. The component architecture must not assum
 
 # 92. Kanban Progress Indicator
 
-Kanban cards may show a compact version of Task progress.
+Kanban cards may show a compact version of Step progress.
 
 In the MVP Kanban, any progress/checkpoint value shown on a card is static demonstration data only. Live synchronization with real Task checkpoints is post-MVP.
 

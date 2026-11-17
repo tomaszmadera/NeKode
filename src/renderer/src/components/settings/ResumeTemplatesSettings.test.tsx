@@ -103,9 +103,10 @@ describe('Resume sources settings', () => {
     )
   })
 
-  it('offers the Local progress files preset without creating files or binding a project', async () => {
+  it('offers the Local work record preset without creating files or binding a project', async () => {
     const { app } = await setup()
     fireEvent.click(screen.getByRole('button', { name: 'New source' }))
+    expect(screen.getByRole('option', { name: 'Local work record' })).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'local-progress' } })
 
     expect((screen.getByLabelText('Directory') as HTMLInputElement).value).toBe('work')

@@ -22,7 +22,7 @@ function matchTask(tasks: TaskProgressItem[], candidate: string): TaskProgressIt
     })[0]
 }
 
-/** Project-scoped matching and display only; the renderer never reads task records. */
+/** Project-scoped matching and display only; the renderer never reads work records. */
 export function sessionTaskProgress(
   chat: ChatInfo,
   snapshot: TaskProgressSnapshot | null | undefined,
@@ -45,7 +45,7 @@ export function sessionTaskProgress(
   const step = index + 1
   const stepName = task.currentLabel ?? steps[index].label
   const fix = task.corrections || undefined
-  const description = `Task progress: step ${step} of ${steps.length}, ${stepName}${fix ? `, fix ${fix}` : ''}`
+  const description = `Step progress: step ${step} of ${steps.length}, ${stepName}${fix ? `, fix ${fix}` : ''}`
   const stale = snapshot.status === 'stale'
   const staleReason = stale ? (snapshot.error?.message ?? 'Snapshot unavailable') : undefined
   return {

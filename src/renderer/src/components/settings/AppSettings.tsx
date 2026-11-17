@@ -54,7 +54,7 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }>
   { id: 'dictation', label: 'Dictation', icon: Icon.dictation },
   { id: 'agents', label: 'Agents', icon: Icon.agent },
   { id: 'instructions', label: 'Instructions', icon: Icon.book },
-  { id: 'resume', label: 'Resume sources', icon: Icon.sliders },
+  { id: 'resume', label: 'Work record sources', icon: Icon.sliders },
   { id: 'usage', label: 'Usage', icon: Icon.gauge },
 ]
 function tabId(tab: SettingsTab): string {

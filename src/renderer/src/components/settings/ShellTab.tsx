@@ -77,7 +77,7 @@ function environmentText(
       location: `SSH project: ${sshEnvironmentTarget(environment.target)}, ${environment.target.path}`,
       runsIn: 'Terminals and agents run on that host.',
       notice:
-        'Read-only files and Git. Not available: Actions, Kanban Start and Resume, task progress, handoff files, opening files in other apps.',
+        'Read-only files and Git. Not available: Actions, Kanban Start and Resume, Step progress, work records, opening files in other apps.',
     }
   }
   return null

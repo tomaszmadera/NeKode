@@ -8,6 +8,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENT_SKILL_FILE_PATH } from '@shared/ipc-contract'
@@ -143,24 +144,48 @@ describe('skill text (Behaviour 11, Business rules)', () => {
     expect(text).toContain('work/T-1/progress.md')
     expect(text).toContain('work/<ref>/progress.md')
     expect(text).toContain('work-completed/<ref>/progress.md')
-    expect(text).toContain('Execution context')
+    expect(text).toContain('Work record')
     expect(text).toMatch(/Handoff: update/)
     expect(text).toMatch(/Stop is an interruption/)
-    expect(text).toMatch(/Resume: read the progress file/)
+    expect(text).toMatch(/Resume: read the work record/)
     expect(text).not.toMatch(/kanban CLI/i)
     expect(text.endsWith('\n')).toBe(true)
     expect(text).not.toContain(EM_DASH)
+  })
+
+  it('local-file teaches one valid state block and keeps it aligned with the work record', () => {
+    const blocks = [...LOCAL_TEXT.matchAll(/^```nekode-state\n([\s\S]*?)^```$/gm)]
+    expect(blocks).toHaveLength(1)
+    const state = JSON.parse(blocks[0][1])
+    const require = createRequire(import.meta.url)
+    const adapter = require('../../../../adapters/task-progress-nekode-work-record/adapter.cjs')
+    expect(adapter.parseRecord(`\`\`\`nekode-state\n${blocks[0][1]}\`\`\`\n`)).toMatchObject({
+      recordState: 'valid',
+      state: state.status,
+      phases: state.phases,
+      currentStepId: state.currentStepId,
+      nextAction: state.nextAction,
+    })
+    expect(LOCAL_TEXT).toContain('exactly one')
+    expect(LOCAL_TEXT).toContain('strict JSON')
+    expect(LOCAL_TEXT).toContain('unique across the record')
+    expect(LOCAL_TEXT).toContain('64 KiB')
+    expect(LOCAL_TEXT).toContain('1 MiB')
+    expect(LOCAL_TEXT).toContain('Keep the block and the prose aligned')
+    expect(LOCAL_TEXT).toContain('Only after the user confirms completion and the card is in Done')
+    expect(LOCAL_TEXT).toContain('set `status` to `completed`')
+    expect(LOCAL_TEXT).not.toMatch(/progress file|task record/i)
   })
 
   it('the default text names the adapter, forbids copies and a second list, and forbids no tool', () => {
     const text = PLANE_TEXT
     expect(frontmatter(text)).toEqual({
       name: 'nekode-tasks',
-      description: expect.stringContaining('tracker configured'),
+      description: expect.stringContaining('work item source configured'),
     })
-    expect(text).toContain('tracker configured for this project in NeKode')
+    expect(text).toContain('work item source configured for this project in NeKode')
     expect(text).toContain('through the Plane adapter')
-    expect(text).toMatch(/do not copy tasks into the repository/i)
+    expect(text).toMatch(/do not copy work items into the repository/i)
     expect(text).toMatch(/do not create a second task list/i)
     expect(text).toMatch(/ask the user instead of choosing/)
     // No tool and no repository tooling is named or forbidden (AC10).
@@ -187,7 +212,7 @@ describe('skill text (Behaviour 11, Business rules)', () => {
     const text = buildAgentSkill({ kind: 'adapter', body })
     expect(frontmatter(text)).toEqual({
       name: 'nekode-tasks',
-      description: expect.stringContaining('tracker configured'),
+      description: expect.stringContaining('work item source configured'),
     })
     expect(text.endsWith(`---\n\n${body}`)).toBe(true)
   })

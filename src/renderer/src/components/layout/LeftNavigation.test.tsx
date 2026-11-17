@@ -625,7 +625,7 @@ describe('LeftNavigation project avatar and initials', () => {
       'Out of date: Source unavailable. Task NEKODE-74: step 5 of 8',
     )
     expect(badge.getAttribute('aria-label')).toBe(
-      'Out of date: Source unavailable. Task progress: step 5 of 8, Fixes',
+      'Out of date: Source unavailable. Step progress: step 5 of 8, Fixes',
     )
   })
 
