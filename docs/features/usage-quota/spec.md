@@ -624,3 +624,164 @@ documents `refreshableProviders` and the menu. A real Windows Electron check use
 and a fixture adapter that declares the option. The Personal Data Hub smoke stays not run until the
 PDH tasks are delivered; it is missing evidence, not a pass. Final verification uses the recorded
 changed command plus the Electron smoke.
+
+## Amendment: subscription ownership and hard rename (NEKODE-191)
+
+Status: proposed on 2026-11-16 for task `nekode-191`. The user decided on 2026-11-16 that the change
+is a hard rename without compatibility aliases, and that `OpenCode Go` is the subscription currently
+reported by the `opencode` source. This amendment supersedes every earlier use of `agent`,
+`providerId`, `refreshProviders`, `refreshableProviders` and `agents` in the usage domain. It does
+not change collection scheduling, retry policy, pin behaviour, secret handling or panel layout.
+
+Goal: usage describes a subscription, never the application that reads it. OpenCode, Codex CLI,
+Claude Code and Personal Data Hub are readers or services. ChatGPT, Claude, Google AI, OpenCode Go,
+Grok and ElevenLabs are subscriptions. A pinned row names its subscription, so a reader name cannot
+be mistaken for a paid plan.
+
+### Vocabulary
+
+- Service: the adapter or reporting endpoint that produced a report, identified by `serviceId`
+  (`codex-cli`, `claude-code`, `personal-data-hub`). A service is not a subscription.
+- Subscription: the paid plan whose allowance a metric describes, identified by `subscriptionId`
+  (`chatgpt`, `claude`, `google-ai`, `opencode-go`, `grok`, `elevenlabs`).
+- Report: one adapter result bound to one configured connection. The stored settings still call a
+  configured row a source and its reader an adapter.
+- Reader: the local application or CLI an adapter uses (`Codex CLI`, `Claude Code`, `OpenCode`,
+  `AGY`). A reader never becomes a subscription id.
+
+### Protocol 3 and document schema 2
+
+U1. Usage adapters use `protocolVersion: 3` and return `data.schemaVersion: 2`. A manifest with
+`protocolVersion: 2` is listed as invalid with the actionable message "This adapter uses protocol
+version 2. Update it to protocol version 3, which reports subscriptions." No process starts and no
+value from it is read. No v2 alias, shim or silent translation exists.
+
+U2. An `ok: true` response is
+`{protocolVersion: 3, ok: true, data: {schemaVersion: 2, reports: [...]}, refreshableSubscriptions?: string[]}`.
+The `refreshableSubscriptions` field stays outside `data`, as `refreshableProviders` did before.
+
+U3. A report is
+`{id, serviceId, label, sourceKind, status, subscriptions: [{id, label}], metrics: [...], collectedAt?}`.
+The internal types `UsageSubscription` and `UsageDocument` become `UsageReport` and
+`UsageReportDocument`; the document's `reports` array holds reports, while a report's
+`subscriptions` array is label metadata for the subscriptions its metrics reference. `id` is the
+connection id. `serviceId` is the manifest service id and equals the connection's
+`serviceId` when the manifest declares one. `subscriptions` declares every subscription referenced by
+this report, in display order, with a unique bounded id and a bounded label. A metric or
+`refreshableSubscriptions` entry whose id has no declaration fails the read as `protocol`.
+
+U4. A metric requires `subscriptionId` and must not contain `providerId`. The field names the
+subscription that owns the allowance. The row heading and the pinned-row accessible label use that
+subscription's declared label, for example `OpenCode Go`; they never derive a label by capitalising
+the id. The metric label itself includes the subscription name, so a pinned row stays unambiguous
+without its heading.
+
+U5. A manifest uses `serviceId` in place of `providerId`. A manifest `providerId`, a metric
+`providerId`, or a report without `serviceId` fails discovery or the read as `protocol`. The
+`serviceId` format is the existing provider id format. The service check on each read stays: a report
+whose `serviceId` differs from the connection's fails.
+
+U6. `refreshOptions` uses `["subscriptions"]`. A request to refresh carries
+`params.refreshSubscriptions: string[]` (1 to 20 unique subscription ids) in place of
+`refreshProviders`. A response to such a request contains only metrics of the selected subscriptions;
+other retained metrics keep their value, observation time and pin. The `unsupported:<subscription>`
+result id uses the subscription id. The account and per-subscription 60-second limits keep the
+existing semantics.
+
+### Settings, IPC and stored data
+
+U7. `UsageConnection` stores `serviceId` in place of `providerId`. `UsageApi.refresh` takes
+`{connectionId: string, subscriptionId?: string}`. `UsageConnectionSnapshot` exposes
+`subscriptions: {subscriptionId: string, nextRefreshAt: string | null}[] | null` in place of `agents`,
+and `UsageRefreshRequest` uses `subscriptionId`. IPC channel names, `usage.enabled`, the pin key and
+the `usage.settings` key stay unchanged.
+
+U8. A stored settings document from 0.40 or earlier is read once for migration: `connections[].providerId`
+is accepted only on load and written back as `serviceId`. No save, snapshot, export, error or log
+emits `providerId` or `agents`. This single legacy read prevents loss of configured accounts; it is
+not a compatibility contract for adapters or external callers.
+
+U9. A cache document with `schemaVersion: 1`, `subscriptions` or `providerId` is discarded, not
+converted. The next successful read repopulates it. A pin whose `connectionId` and `metricId` still
+exist survives; a pin targeting a removed or renamed metric id is cleared under rule 9. The JSON
+export writes schema 2 with `reports`, `serviceId`, `subscriptions` and `subscriptionId`; an old
+export file is not reimportable. The removed file adapter stays absent.
+
+### User interface
+
+U10. Settings text says "One source can report one account or, like a hub, several subscriptions." The
+Personal Data Hub config field is `Subscriptions` (comma-separated subscription ids such as
+`chatgpt, claude, opencode-go`), not `Agents`. NeKode-owned errors, notices, tooltips, menu labels and
+accessible names use `subscription`. Provider account names supplied by an adapter keep their
+meaning.
+
+U11. Inside an account, level-2 groups are subscription labels in report order. A group menu says
+`Refresh <subscription label> in <account label>`. A disabled item says
+`No refresh source for this subscription in the Hub`. The no-source account item stays
+`No refresh source in the Hub`. The error console names the subscription and account; it never prints
+a service id or reader as a subscription.
+
+### Shipped adapters
+
+U12. The bundled Codex adapter declares `serviceId: codex-cli` and reports one subscription
+`chatgpt` labelled `ChatGPT`. The bundled Claude adapter declares `serviceId: claude-code` and
+reports one subscription `claude` labelled `Claude`. Their metric labels name the subscription, for
+example `ChatGPT weekly` and `Claude 5-hour window`.
+
+U13. The Personal Data Hub adapter is owned by the Personal Data Hub repository. It declares
+`serviceId: personal-data-hub`, maps every Hub `subscription` record to `subscriptionId`, declares
+the Hub subscription labels from the Hub response, sends `refreshSubscriptions`, reports
+`refreshableSubscriptions`, and renames its `Agents` config field to `Subscriptions` (key
+`subscriptions`). It never maps a Hub reader or application name to a subscription id.
+The Hub change is task PDH-47 and ships in the same maintenance window.
+
+### Hard-break behaviour
+
+U14. A v2 adapter is invalid even when it would otherwise work. A saved connection whose adapter
+becomes invalid stays listed with the adapter error, keeps its cache and pin, and is not collected.
+The user updates the adapter or replaces it. A Hub deployment that still returns `agent` fields fails
+the read as `protocol`; NeKode does not accept both shapes during a transition.
+
+U15. The following identifiers disappear from the usage domain: `providerId` (usage),
+`refreshProviders`, `refreshableProviders`, `UsageAgentRefreshState`, `agents` on a snapshot,
+`refreshOptions: ["providers"]`, `agent-not-in-catalog`, `agent-outside-agents` and
+`unsupported:<agent>` where the value is an application name. The replacement names use
+`serviceId`, `subscriptionId`, `refreshSubscriptions`, `refreshableSubscriptions`,
+`UsageSubscriptionRefreshState`, `subscriptions`, `refreshOptions: ["subscriptions"]`,
+`subscription-not-in-catalog`, `subscription-outside-subscriptions` and
+`unsupported:<subscription>`.
+
+### Acceptance criteria
+
+1. A Hub read that declares ChatGPT, Claude, Google AI and OpenCode Go shows those four headings and
+   never a heading `OpenCode`.
+2. Every metric in a valid document has a declared subscription label; a metric with no declaration,
+   a `providerId` field or a label mismatch fails as `protocol` without replacing cache.
+3. `usage:refresh` with `subscriptionId` refreshes only that subscription; another subscription's
+   value and observation time stay unchanged.
+4. A manifest with protocol 2 or `providerId` is listed invalid and starts no process.
+5. Settings saved by 0.40 load with every connection, secret and pin intact and are written back with
+   `serviceId`.
+6. An old cache is discarded instead of relabelled; the next read shows correct subscription labels.
+7. The JSON export uses schema 2 and contains no `providerId`, `agent` or application name as a
+   subscription.
+8. The bundled Codex and Claude adapters report `chatgpt` and `claude`; the Personal Data Hub adapter
+   passes its process test against protocol 3 fixtures.
+9. The panel, settings, menus and errors contain no usage-domain `agent` or `providerId` wording.
+10. A real Windows Electron check with isolated user data and a fixture hub shows the four headings,
+    a per-subscription refresh and a pinned OpenCode Go row.
+
+### Required tests
+
+- `usage-contract.test.ts`: schema 2 parsing, required subscription declarations, duplicate ids,
+  missing labels, `providerId` rejection, refresh subscription ids, 20-id bound.
+- `adapter-host.test.ts`: protocol 3 manifest, `serviceId`, `refreshOptions: ["subscriptions"]`,
+  v2 rejection, `refreshSubscriptions` in the request, `refreshableSubscriptions` bounds.
+- `usage-service.test.ts`: settings migration from `providerId`, cache discard, per-subscription
+  limits, selection, retained other-subscription values, restart and rename.
+- `UsageToolbar.test.tsx` and `UsageSettings.test.tsx`: subscription labels, group menus, empty
+  list, no-source item, error console, config field `Subscriptions`, absence of agent wording.
+- Adapter tests for Codex and Claude report `chatgpt` and `claude`; the Personal Data Hub adapter
+  process test runs against protocol 3 fixtures.
+- Real Windows Electron check with isolated user data; live Hub read and refresh only after PDH-47
+  ships.
