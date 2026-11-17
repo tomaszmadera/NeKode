@@ -1,5 +1,6 @@
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -226,25 +227,29 @@ describe('Agent Harness schema 2 mapping', () => {
   })
 })
 
+const realHarnessAvailable = existsSync(join(APP_ROOT, '.agents/scripts/task-status'))
+
 describe('bundled Agent Harness process adapter', () => {
-  it('reads the real task-status producer without changing fixture project files', async () => {
-    for (const relative of [
-      '.agents/scripts/task-status',
-      '.agents/scripts/common.py',
-      '.agents/skills/task-record/scripts/verification_subject.py',
-    ]) {
-      write(relative, readFileSync(join(APP_ROOT, relative), 'utf8'))
-    }
-    write('.agents/project-profile.yaml', 'project:\n  name: Adapter fixtures\n')
-    for (const [id, status, archived] of [
-      ['demo-live', 'active', false],
-      ['demo-archived', 'blocked', true],
-      ['demo-completed', 'completed', false],
-    ] as const) {
-      const completed = status === 'completed'
-      write(
-        `.agents/tasks/${archived ? 'archive/' : ''}${id}/task.md`,
-        `---
+  it.skipIf(!realHarnessAvailable)(
+    'reads the real task-status producer without changing fixture project files',
+    async () => {
+      for (const relative of [
+        '.agents/scripts/task-status',
+        '.agents/scripts/common.py',
+        '.agents/skills/task-record/scripts/verification_subject.py',
+      ]) {
+        write(relative, readFileSync(join(APP_ROOT, relative), 'utf8'))
+      }
+      write('.agents/project-profile.yaml', 'project:\n  name: Adapter fixtures\n')
+      for (const [id, status, archived] of [
+        ['demo-live', 'active', false],
+        ['demo-archived', 'blocked', true],
+        ['demo-completed', 'completed', false],
+      ] as const) {
+        const completed = status === 'completed'
+        write(
+          `.agents/tasks/${archived ? 'archive/' : ''}${id}/task.md`,
+          `---
 id: ${id}
 schema_version: 4
 status: ${status}
@@ -286,69 +291,74 @@ None.
 ## Resume instructions
 ${completed ? 'Complete.' : 'Inspect fixture.'}
 `,
+        )
+      }
+      write(
+        '.agents/tasks/demo-unsupported/task.md',
+        '---\nid: demo-unsupported\nschema_version: 999\nstatus: active\n---\n',
       )
-    }
-    write(
-      '.agents/tasks/demo-unsupported/task.md',
-      '---\nid: demo-unsupported\nschema_version: 999\nstatus: active\n---\n',
-    )
-    write(
-      '.agents/tasks/demo-invalid/task.md',
-      readFileSync(join(root, '.agents/tasks/demo-live/task.md'), 'utf8')
-        .replace('id: demo-live', 'id: demo-invalid')
-        .replace('## Objective', '## Missing objective'),
-    )
-    const files = () => readdirSync(root, { recursive: true }).map(String).sort()
-    const before = files()
-    const bytes = before
-      .filter((relative) => statSync(join(root, relative)).isFile())
-      .map((relative) => [relative, readFileSync(join(root, relative))] as const)
-    const snapshot = validateTaskProgressSnapshot(await invoke(), 'real task-status fixture', root)
-    expect(snapshot.tasks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'demo-live',
-          state: 'active',
-          location: 'live',
-          recordState: 'valid',
-          currentStepId: 'Phase 0.1',
-        }),
-        expect.objectContaining({
-          id: 'demo-archived',
-          state: 'blocked',
-          location: 'archived',
-          recordState: 'valid',
-          blockers: 'Await approval',
-        }),
-        expect.objectContaining({
-          id: 'demo-completed',
-          state: 'completed',
-          location: 'live',
-          recordState: 'valid',
-          currentStepId: null,
-          nextAction: null,
-          checkpoints: [{ stepId: 'Phase 0.1', completedAt: '2026-01-01T00:30:00Z' }],
-        }),
-        expect.objectContaining({
-          id: 'demo-unsupported',
-          state: 'active',
-          recordState: 'unsupported',
-          phases: [],
-          currentStepId: null,
-          errors: [expect.stringContaining('unsupported task record schema_version')],
-        }),
-        expect.objectContaining({
-          id: 'demo-invalid',
-          recordState: 'invalid',
-          errors: expect.arrayContaining([expect.stringContaining('Objective')]),
-        }),
-      ]),
-    )
-    expect(await invoke('test')).toEqual({ summary: '5 task records, 1 completed' })
-    expect(files()).toEqual(before)
-    for (const [relative, content] of bytes)
-      expect(readFileSync(join(root, relative))).toEqual(content)
-  })
+      write(
+        '.agents/tasks/demo-invalid/task.md',
+        readFileSync(join(root, '.agents/tasks/demo-live/task.md'), 'utf8')
+          .replace('id: demo-live', 'id: demo-invalid')
+          .replace('## Objective', '## Missing objective'),
+      )
+      const files = () => readdirSync(root, { recursive: true }).map(String).sort()
+      const before = files()
+      const bytes = before
+        .filter((relative) => statSync(join(root, relative)).isFile())
+        .map((relative) => [relative, readFileSync(join(root, relative))] as const)
+      const snapshot = validateTaskProgressSnapshot(
+        await invoke(),
+        'real task-status fixture',
+        root,
+      )
+      expect(snapshot.tasks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'demo-live',
+            state: 'active',
+            location: 'live',
+            recordState: 'valid',
+            currentStepId: 'Phase 0.1',
+          }),
+          expect.objectContaining({
+            id: 'demo-archived',
+            state: 'blocked',
+            location: 'archived',
+            recordState: 'valid',
+            blockers: 'Await approval',
+          }),
+          expect.objectContaining({
+            id: 'demo-completed',
+            state: 'completed',
+            location: 'live',
+            recordState: 'valid',
+            currentStepId: null,
+            nextAction: null,
+            checkpoints: [{ stepId: 'Phase 0.1', completedAt: '2026-01-01T00:30:00Z' }],
+          }),
+          expect.objectContaining({
+            id: 'demo-unsupported',
+            state: 'active',
+            recordState: 'unsupported',
+            phases: [],
+            currentStepId: null,
+            errors: [expect.stringContaining('unsupported task record schema_version')],
+          }),
+          expect.objectContaining({
+            id: 'demo-invalid',
+            recordState: 'invalid',
+            errors: expect.arrayContaining([expect.stringContaining('Objective')]),
+          }),
+        ]),
+      )
+      expect(await invoke('test')).toEqual({ summary: '5 task records, 1 completed' })
+      expect(files()).toEqual(before)
+      for (const [relative, content] of bytes)
+        expect(readFileSync(join(root, relative))).toEqual(content)
+    },
+  )
   it('returns live, archived unfinished and completed fixtures through the packaged layout', async () => {
     const tasks = [
       task(),
