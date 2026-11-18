@@ -118,8 +118,10 @@ export interface ResumeSourceDiscovery {
   rejections: Array<{ path: string; reason: string }>
 }
 
+/** Instructions use project-relative forward slashes; lists keep runtime display separators. */
 export function formatResumePrompt(prompt: string, displayPath: string): string {
-  return prompt.replaceAll(/\{(?:taskPath|handoffPath)\}/g, () => displayPath)
+  const instructionPath = displayPath.replaceAll('\\', '/')
+  return prompt.replaceAll(/\{(?:taskPath|handoffPath)\}/g, () => instructionPath)
 }
 
 export const projectResumeTemplateKey = (projectId: string): string =>
