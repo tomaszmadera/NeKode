@@ -13,7 +13,7 @@ This file is the behavioral contract for a feature. Agents implement from it. Do
 
 [Work record progress](../work-record-progress/spec.md) owns the current vocabulary and exact labels. This amendment changes copy only; discovery, matching, fingerprints, bindings, launch, instructions and delivery remain unchanged.
 
-A work record source configures where Resume finds the record of work on a work item. App Settings names its library `Work record sources`. Project Settings, `Work items`, has a `WORK RECORD` section and a `Work record source` selector. Sources own discovery only; the Resume instruction containing `{taskPath}` is application-level in Instructions. The `Local work record` preset discovers `work/<ref>/progress.md`. The optional `Agent Harness` preset remains available by that name. Selecting either preset creates no record and installs nothing.
+A work record source configures where Resume finds the record of work on a work item. App Settings names its library `Work record sources`. Project Settings, `Work items`, has a `WORK RECORD` section and a `Work record source` selector. Sources own discovery only; the Resume instruction containing `{taskPath}` is application-level in Instructions. The `Local work record` preset discovers `work/<ref>/progress.md`; the library seeds that saved source once, and a later delete is durable. The optional `Agent Harness` preset remains available by that name. Selecting either preset creates no record and installs nothing.
 
 A work record holds execution state, decisions, checks, blockers, and the next action. Handoff is the update-and-stop action, never a file. The agent owns record updates and archives a record only after confirmed completion. The [local workflow](../local-task-workflow/spec.md) owns prose and `nekode-state` instructions; [Step progress](../task-progress-adapters/spec.md) is a separate optional read-only adapter binding. Resume file discovery never parses that block; a record without it can still Resume.
 
@@ -404,7 +404,7 @@ NeKode only sends text. The agent's instructions own what Start and Resume mean 
 
 - The Application Settings section and editor are named Work record sources. The editor keeps name, source kind, fields, Duplicate, Delete protection, usage (`Used by: ...`) and Test. It has no prompt field. The Test preview shows each candidate identity and display path, and the instruction formatted from the current saved Resume instruction, labelled as coming from Application settings.
 - Project Settings shows a Work record source selector (`None (Unconfigured)` plus saved sources), the source summary and the effective Resume instruction with origin Application settings.
-- Ready presets (Agent Harness, Local work record) fill only source values.
+- Ready presets (Agent Harness, Local work record) fill only source values. The Local preset is also seeded once as an ordinary saved source; the `resume.sources.localPresetSeeded` marker makes a later delete durable.
 - Stored ids, bindings (`project.resumeTemplate:<projectId>`), revisions and the `resume.sources` key are unchanged. A stored row may still carry a legacy `prompt`: it is accepted on read, ignored, and dropped on the next save of that row. `resumeSources.put` rejects a `prompt` field.
 
 ### Migration
@@ -422,7 +422,7 @@ Runs once in main, before the first Resume composition or Instructions read of a
 - `APP_STATE_KEY` additions: `startInstruction: 'instructions.start'`, `resumeInstruction: 'instructions.resume'`, `resumeMigration: 'instructions.resumeMigration'` (JSON `{ prompts: Array<{ prompt: string; templates: string[] }> }`).
 - Shared contract additions: Start and Resume defaults, validation with required placeholders, the Start formatter (placeholders and the empty paragraph rule) and the effective-value resolver used by main and the renderer.
 - `ResumeSourceTemplate` and `ResumeSourcePut` lose `prompt`. No IPC channel is added or removed; `resumeSources.put` and `duplicate` no longer carry a prompt.
-- Settings stay in the flat app_state store; no SQLite schema change.
+- Settings stay in the flat app_state store; no SQLite schema change. The Local preset seed adds the app_state key `resume.sources.localPresetSeeded`; the seed writes one ordinary template row and leaves existing bindings unchanged.
 
 ### Edge cases
 

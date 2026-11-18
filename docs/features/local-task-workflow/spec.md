@@ -18,7 +18,7 @@ Users: anyone who wants a local board and an agent that can Handoff and Resume t
 - [Handoff/Resume flow](../handoff-resume-flow/spec.md) owns work record sources, file discovery, and the application-level Resume instruction.
 - [Step progress adapters](../task-progress-adapters/spec.md) owns the read-only adapter protocol and Step progress.
 - [Kanban adapter interface](../kanban-adapter-interface/spec.md) owns the board, Start, and Resume launch.
-- NEKODE-173 introduced the local workflow. NEKODE-187 moved Start and Resume instructions to App Settings, Instructions. NEKODE-192 adds the state block and renames the preset to `Local work record`. UI copy is English.
+- NEKODE-173 introduced the local workflow. NEKODE-187 moved Start and Resume instructions to App Settings, Instructions. NEKODE-192 adds the state block and renames the preset to `Local work record`. A 2026-11-18 user decision seeds the saved `Local work record` source once so it is ready without manual creation. UI copy is English.
 
 ## Scope
 
@@ -40,8 +40,8 @@ Users: anyone who wants a local board and an agent that can Handoff and Resume t
 
 1. One backlog. `.nekode/tasks.json` remains the only board authority for a `local-file` project. A work record holds execution context and step data, never a second task list, TODO list, or source of board state.
 2. Work record location. The agent creates or updates `work/<ref>/progress.md` under the project root when starting work. There is at most one active local work record per work item. The directory name is the complete ref, for example `T-1`; the file name is literally `progress.md`. NeKode never creates, writes, or repairs it.
-3. Ready source. App Settings, Work record sources offers `Local work record` with exactly these file-source values: directory `work`, file-name filter `progress.md`, `Search subdirectories` on, `Candidate identity` set to `Immediate parent directory`. It fills only discovery values. The Resume instruction is shared across projects in App Settings, Instructions; its default is `Resume task {taskPath}`.
-4. Explicit configuration. Choosing the preset fills an unsaved source form. Save the source and bind it as the project's `Work record source` explicitly. These actions create no directory, record, or workflow installation. Source values remain editable. Shared edits affect every project bound to that source.
+3. Ready source. App Settings, Work record sources offers `Local work record` with exactly these file-source values: directory `work`, file-name filter `progress.md`, `Search subdirectories` on, `Candidate identity` set to `Immediate parent directory`. It fills only discovery values. The library seeds that saved source once, so Project Settings offers it without manual creation; the editor preset remains for recreating it. A later delete stays deleted. The Resume instruction is shared across projects in App Settings, Instructions; its default is `Resume task {taskPath}`.
+4. Explicit configuration. Choosing the preset fills an unsaved source form. Save the source and bind it as the project's `Work record source` explicitly. The seeded source is an ordinary saved row, so binding it is still explicit. These actions create no directory, record, or workflow installation. Source values remain editable. Shared edits affect every project bound to that source.
 5. Exact visibility. Source Test shows each candidate identity and display path plus the instruction composed from the saved application Resume instruction. Project Settings shows the selected source summary and effective Resume instruction with origin App Settings. `Teach agents` shows the exact skill path and full text.
 6. Agent instructions. The work record's prose states the ref and title; finished and current work; decisions and reasons; check commands and results; blockers; one exact next action naming a file or command; and the UTC update time. It contains exactly one `nekode-state` block described below. The agent keeps the block and prose aligned on every update and replaces the block rather than appending another.
 7. Handoff. The configured instruction (default `Write a handoff`) asks the agent to update the work record, including block and prose, leave the card In Progress, and stop. Handoff is an action. The work record carries the context; no separate handoff file is created. Sending text does not prove that the record was updated.
@@ -95,7 +95,7 @@ The [work record progress contract](../work-record-progress/spec.md#work-record-
 1. Project Settings, Work items: choose `Use a local task list`. NeKode creates `.nekode/tasks.json` at revision 1 and binds `Local file`.
 2. Board, `New task`: create `Write the release note` in Todo. The ref is `T-1` and revision becomes 2.
 3. Project Settings, Work items, `Teach agents`: review the full agent skill file at `.agents/skills/nekode-tasks/SKILL.md`, then confirm the write.
-4. App Settings, Work record sources: create a source using `Local work record`, save it, and bind it in Project Settings, Work items, Work record source. Optionally select `NeKode work record` in Step progress and Save. Neither action creates a record.
+4. App Settings, Work record sources: the ready `Local work record` source is already listed; create one from the preset if it was deleted. Bind it in Project Settings, Work items, Work record source. Optionally select `NeKode work record` in Step progress and Save. Neither action creates a record.
 5. Board, Start: the agent receives the full ref and work item details, the card moves to In Progress, and the agent writes `work/T-1/progress.md` with prose and one state block.
 6. Handoff sends the configured instruction. The agent updates block and prose and stops, leaving the card In Progress.
 7. Resume finds identity `T-1`. Confirm starts a new chat with the saved application instruction, by default `Resume task work/T-1/progress.md`. The agent reads and reconciles the work record, then continues. `T-10` does not match.
@@ -115,12 +115,12 @@ The UI displays paths with runtime separators; instructions use project-relative
 
 ## Authorization
 
-Existing trusted-sender, project root, task-file write, agent skill file confirmation, and Resume launch boundaries stay unchanged. Preset selection writes no files and binds no project. The agent writes the work record under the user's process privileges, through no new IPC channel.
+Existing trusted-sender, project root, task-file write, agent skill file confirmation, and Resume launch boundaries stay unchanged. Preset selection writes no files and binds no project. The one-time local-preset seed writes only app_state. The agent writes the work record under the user's process privileges, through no new IPC channel.
 
 ## Data / API
 
-- No new IPC channel, database table, migration, or app_state key.
-- The preset is an ordinary `ResumeSourceTemplate` with `{ kind: 'files', directory: 'work', pattern: 'progress.md', recursive: true, identity: 'parent' }`.
+- No new IPC channel or database table. The one-time seed writes the ordinary source row and the `resume.sources.localPresetSeeded` app_state marker; a failed save leaves the marker unset and retries at the next start.
+- The editor preset and the seeded row are ordinary `ResumeSourceTemplate` values with `{ kind: 'files', directory: 'work', pattern: 'progress.md', recursive: true, identity: 'parent' }`. The seeded row keeps the id `local-progress` and the name `Local work record`.
 - `resumeSources` operations, stored ids and `project.resumeTemplate:<projectId>` bindings keep their names.
 - `buildAgentSkill` still generates the `local-file` text in main at the existing destination. The revision and parallel-write rules for `.nekode/tasks.json` remain unchanged.
 - Existing records are not migrated. Missing blocks hide only Step progress.
@@ -139,7 +139,7 @@ Existing trusted-sender, project root, task-file write, agent skill file confirm
 ## Acceptance criteria
 
 1. A fixture without Python, Plane, or `taskctl` can Start, write a work record, and discover it through Files.
-2. `Local work record` fills the exact source values only; saving and binding are explicit, and Test previews the saved application instruction.
+2. `Local work record` is offered as a ready saved source without manual creation; the editor preset fills the exact source values only, binding is explicit, and Test previews the saved application instruction.
 3. Full-ref matching, stale-launch rejection, local card CRUD, and revision conflicts remain unchanged.
 4. The generated skill documents the prose, exactly one valid state block, its required and optional fields, bounds, synchronization, and lifecycle.
 5. Handoff updates and stops; Stop writes nothing itself; only confirmed completion plus Done archives the completed record.

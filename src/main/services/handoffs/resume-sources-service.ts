@@ -9,6 +9,9 @@ import { APP_STATE_KEY } from '@shared/contracts/app-state-contract'
 import {
   formatResumePrompt,
   HARNESS_RESUME_SOURCE,
+  isLocalProgressResumeSource,
+  LOCAL_PROGRESS_RESUME_SOURCE_ID,
+  localProgressResumeTemplate,
   projectResumeTemplateKey,
   RESUME_SOURCES_STATE_KEY,
   type ResumeDiscoveryCandidate,
@@ -178,6 +181,7 @@ export class ResumeSourcesService {
             name: 'Agent Harness',
             source: structuredClone(HARNESS_RESUME_SOURCE),
           },
+          localProgressResumeTemplate(1),
         ],
       }
     return {
@@ -227,6 +231,35 @@ export class ResumeSourcesService {
       state.set(APP_STATE_KEY.resumeMigration, JSON.stringify(notice))
     }
     state.set(APP_STATE_KEY.resumeInstruction, DEFAULT_RESUME_INSTRUCTION)
+  }
+
+  /**
+   * Seeds the ready `Local work record` source once (local-task-workflow spec).
+   * A fresh library already contains it; a stored library written before the
+   * preset gets one ordinary row. The marker makes a later delete durable.
+   * A failed save leaves the marker unset so the next start retries.
+   */
+  seedLocalPreset(): void {
+    const state = this.#deps.state
+    const marker = APP_STATE_KEY.resumeSourcesLocalPresetSeeded
+    if (state.get(marker) !== null) return
+    const stored = this.#stored()
+    if (stored === null) {
+      state.set(marker, '1')
+      return
+    }
+    const present = stored.templates.some(
+      (row) =>
+        row.id === LOCAL_PROGRESS_RESUME_SOURCE_ID || isLocalProgressResumeSource(row.source),
+    )
+    if (!present) {
+      const revision = stored.revision + 1
+      this.#save(
+        { revision, templates: [...stored.templates, localProgressResumeTemplate(revision)] },
+        LOCAL_PROGRESS_RESUME_SOURCE_ID,
+      )
+    }
+    state.set(marker, '1')
   }
 
   #stored(): {

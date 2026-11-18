@@ -1,6 +1,11 @@
 import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  LOCAL_PROGRESS_RESUME_SOURCE,
+  LOCAL_PROGRESS_RESUME_SOURCE_ID,
+  type ResumeSource,
+} from '@shared/contracts/resume-sources-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ResumeSourcesService } from './resume-sources-service'
 
@@ -411,6 +416,90 @@ describe('reusable Resume sources', () => {
     expect(afterDelete.templates).toEqual([
       { id: 'other', revision: 1, name: 'Other', source: fileInput().source },
     ])
+  })
+
+  describe('ready Local work record source', () => {
+    const SEED_KEY = 'resume.sources.localPresetSeeded'
+    const storedRow = (id: string, source: ResumeSource = fileInput().source) => ({
+      id,
+      revision: 1,
+      name: id,
+      source,
+    })
+    const storedLibrary = (...rows: Array<ReturnType<typeof storedRow>>) =>
+      JSON.stringify({ revision: 1, templates: rows })
+
+    it('offers the ready source in a fresh library and records the seed without a write', () => {
+      const library = service.list()
+      expect(library.templates.map((row) => row.name)).toEqual([
+        'Agent Harness',
+        'Local work record',
+      ])
+      expect(library.templates[1]).toEqual({
+        id: LOCAL_PROGRESS_RESUME_SOURCE_ID,
+        revision: 1,
+        name: 'Local work record',
+        source: LOCAL_PROGRESS_RESUME_SOURCE,
+      })
+      service.seedLocalPreset()
+      expect(values.get(SEED_KEY)).toBe('1')
+      expect(values.has('resume.sources')).toBe(false)
+      service.bind('one', LOCAL_PROGRESS_RESUME_SOURCE_ID)
+      expect(service.binding('one').templateId).toBe(LOCAL_PROGRESS_RESUME_SOURCE_ID)
+    })
+
+    it('adds the ready source once to a stored library and keeps a later delete', () => {
+      values.set('resume.sources', storedLibrary(storedRow('custom')))
+      service.seedLocalPreset()
+      const seeded = service.list()
+      expect(seeded.revision).toBe(2)
+      expect(seeded.templates.map((row) => row.name)).toEqual(['custom', 'Local work record'])
+      expect(values.get(SEED_KEY)).toBe('1')
+
+      service.seedLocalPreset()
+      expect(
+        service.list().templates.filter((row) => row.name === 'Local work record'),
+      ).toHaveLength(1)
+
+      const local = service.list().templates.find((row) => row.name === 'Local work record')
+      if (local === undefined) throw new Error('missing seeded Local work record source')
+      service.delete(local.id, local.revision)
+      service.seedLocalPreset()
+      expect(service.list().templates.some((row) => row.name === 'Local work record')).toBe(false)
+    })
+
+    it('does not add a duplicate matching source or reuse the reserved id', () => {
+      values.set(
+        'resume.sources',
+        storedLibrary(storedRow('mine', { ...LOCAL_PROGRESS_RESUME_SOURCE })),
+      )
+      service.seedLocalPreset()
+      expect(service.list().templates).toHaveLength(1)
+      expect(values.get(SEED_KEY)).toBe('1')
+
+      values.delete(SEED_KEY)
+      values.set('resume.sources', storedLibrary(storedRow(LOCAL_PROGRESS_RESUME_SOURCE_ID)))
+      service.seedLocalPreset()
+      expect(service.list().templates).toHaveLength(1)
+      expect(values.get(SEED_KEY)).toBe('1')
+    })
+
+    it('leaves the marker unset when the seed save fails so the next start retries', () => {
+      values.set('resume.sources', storedLibrary(storedRow('custom')))
+      const failing = new ResumeSourcesService({
+        state: {
+          get: (key) => values.get(key) ?? null,
+          set: (key, value) => {
+            if (key === 'resume.sources') throw new Error('write failed')
+            values.set(key, value)
+          },
+        },
+        projects: { get: () => null, list: () => [] },
+      })
+      expect(() => failing.seedLocalPreset()).toThrow(/write failed/)
+      expect(values.has(SEED_KEY)).toBe(false)
+      expect(values.get('resume.sources')).toBe(storedLibrary(storedRow('custom')))
+    })
   })
 
   describe('NEKODE-187 Resume instruction migration', () => {

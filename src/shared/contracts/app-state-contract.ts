@@ -52,6 +52,8 @@ export const APP_STATE_KEY = {
   resumeInstruction: 'instructions.resume',
   /** JSON ResumeMigrationNotice of differing pre-NEKODE-187 prompts; empty means dismissed. */
   resumeMigration: 'instructions.resumeMigration',
+  /** '1' after the ready Local work record source was seeded once into the library. */
+  resumeSourcesLocalPresetSeeded: 'resume.sources.localPresetSeeded',
   /** '0' disables the Ctrl+Tab chat switch; missing or '1' means enabled. */
   chatSwitchEnabled: 'chatSwitch.enabled',
   /** '0' keeps original project names in the tree; missing or '1' means uppercase. */

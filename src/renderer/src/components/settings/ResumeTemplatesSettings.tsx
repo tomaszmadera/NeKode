@@ -3,6 +3,7 @@ import {
   formatResumePrompt,
   HARNESS_RESUME_SOURCE,
   isLocalProgressResumeSource,
+  LOCAL_PROGRESS_RESUME_NAME,
   LOCAL_PROGRESS_RESUME_SOURCE,
   type ProjectInfo,
   type ResumeSourceLibrary,
@@ -344,7 +345,7 @@ export function ResumeTemplatesSettings({
                     }}
                   >
                     <option value="files">Files</option>
-                    <option value="local-progress">Local work record</option>
+                    <option value="local-progress">{LOCAL_PROGRESS_RESUME_NAME}</option>
                     <option value="generic">Custom command</option>
                     <option value="agent-harness">Agent Harness</option>
                   </select>

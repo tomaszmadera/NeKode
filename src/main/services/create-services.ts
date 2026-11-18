@@ -324,6 +324,13 @@ export function createServices(
         'resume',
       ),
   })
+  // Seed the ready Local work record source before the renderer lists sources.
+  // A failure is logged and retried at the next start because the marker stays unset.
+  try {
+    resumeSources.seedLocalPreset()
+  } catch (error) {
+    console.error('[resume-sources] Local work record seed failed', error)
+  }
   // One-time NEKODE-187 migration before any renderer reads the instructions.
   // A failure is logged and retried at the next start; the default applies meanwhile.
   try {

@@ -132,6 +132,9 @@ export const HARNESS_RESUME_SOURCE: ResumeCommandSource = {
   args: ['.agents/scripts/taskctl', 'list', '--json'],
 }
 
+export const LOCAL_PROGRESS_RESUME_SOURCE_ID = 'local-progress'
+export const LOCAL_PROGRESS_RESUME_NAME = 'Local work record'
+
 /**
  * Ready Resume template for the no-Harness local task workflow
  * (local-task-workflow spec Behaviour 3-4): one progress file per card under
@@ -144,6 +147,16 @@ export const LOCAL_PROGRESS_RESUME_SOURCE: ResumeFileSource = {
   pattern: 'progress.md',
   recursive: true,
   identity: 'parent',
+}
+
+/** Ready saved source seeded once into the library (local-task-workflow spec). */
+export function localProgressResumeTemplate(revision: number): ResumeSourceTemplate {
+  return {
+    id: LOCAL_PROGRESS_RESUME_SOURCE_ID,
+    revision,
+    name: LOCAL_PROGRESS_RESUME_NAME,
+    source: { ...LOCAL_PROGRESS_RESUME_SOURCE },
+  }
 }
 
 export function isLocalProgressResumeSource(source: ResumeSource): boolean {
