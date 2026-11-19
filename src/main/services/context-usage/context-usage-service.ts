@@ -4,6 +4,7 @@ import type { ChatInfo } from '@shared/contracts/chats-contract'
 import type { ProjectInfo } from '@shared/contracts/projects-contract'
 import { projectEnvironment, projectWslLocation } from '@shared/project-environment'
 import type { AgentLaunch } from '../agent-session-registry'
+import { type OpenCodeSnapshot, openCodeSignature, readOpenCodeSnapshot } from './opencode-source'
 
 /**
  * Context used by one agent chat, read from the agent CLI's own transcript
@@ -28,6 +29,12 @@ import type { AgentLaunch } from '../agent-session-registry'
  *   chats in one directory launched within the tolerance of each other, and,
  *   when the best assignment is not better than the next one by a full margin,
  *   the chats whose pairing flips between those two readings.
+ * - OpenCode: `<data>/opencode/opencode.db`, read by `opencode-source.ts`.
+ *   OpenCode writes its session row only at the first prompt, so a chat claims
+ *   the earliest never-claimed top-level session of its directory created no
+ *   earlier than the start tolerance before its launch, and only while it is the
+ *   one unclaimed OpenCode chat there; chats that were unclaimed in one
+ *   directory together never get a number.
  *
  * Numbers come from the transcript, never from a guess: a chat whose
  * transcript cannot be read is absent from the result and its tile renders no
@@ -91,6 +98,8 @@ export interface ContextUsageDeps {
   claudeConfigDir: () => string
   /** Codex CLI config directory (CODEX_HOME, else ~/.codex). */
   codexConfigDir: () => string
+  /** OpenCode database (`<XDG_DATA_HOME or ~/.local/share>/opencode/opencode.db`). */
+  openCodeDatabase: () => string
 }
 
 function usageTokens(usage: unknown): number | null {
@@ -321,6 +330,21 @@ export class ContextUsageService {
   readonly #claudeMisses = new Map<string, number>()
   /** Rollout list for the current usage() pass, so chats do not repeat the walk. */
   #rollouts: string[] | null = null
+  /** OpenCode session claimed by each chat; kept while the chat and the session exist. */
+  readonly #openCodeClaims = new Map<string, string>()
+  /**
+   * Chats that were unclaimed in one directory at the same time. None of them
+   * can tell its session from the others', so they stay silent for good.
+   */
+  readonly #openCodeContested = new Set<string>()
+  /**
+   * Every session a chat has claimed. A claimed session never passes to another
+   * chat, even after its owner closes: a chat launched just after that session
+   * started could not tell it from its own.
+   */
+  readonly #openCodeSpent = new Set<string>()
+  /** Last OpenCode read, reused while the database files and the window stay the same. */
+  #openCodeRead: { key: string; snapshot: OpenCodeSnapshot } | null = null
 
   constructor(deps: ContextUsageDeps) {
     this.#deps = deps
@@ -337,6 +361,7 @@ export class ContextUsageService {
     const codexDir = this.#deps.codexConfigDir()
     const seen = new Set<string>()
     const pending: Array<{ chatId: string; launch: AgentLaunch }> = []
+    const openCode: Array<{ chatId: string; launch: AgentLaunch }> = []
     this.#rollouts = null
     try {
       for (const project of this.#deps.projects.list()) {
@@ -364,6 +389,10 @@ export class ContextUsageService {
             if (tokens !== null) result[chat.id] = tokens
             continue
           }
+          if (launch.agentName === 'OpenCode') {
+            openCode.push({ chatId: chat.id, launch })
+            continue
+          }
           if (launch.agentName !== 'Codex') continue
           const known = this.#codexCached(chat.id)
           if (known !== null) {
@@ -375,6 +404,7 @@ export class ContextUsageService {
         }
       }
       this.#assignCodex(codexDir, pending, result)
+      this.#assignOpenCode(openCode, result)
     } finally {
       this.#rollouts = null
     }
@@ -388,7 +418,95 @@ export class ContextUsageService {
         this.#codexClaims.delete(file)
       }
     }
+    for (const chatId of [...this.#openCodeClaims.keys()]) {
+      if (!seen.has(chatId)) this.#openCodeClaims.delete(chatId)
+    }
+    for (const chatId of [...this.#openCodeContested]) {
+      if (!seen.has(chatId)) this.#openCodeContested.delete(chatId)
+    }
     return result
+  }
+
+  /**
+   * Claims OpenCode sessions for chats and reports their latest completed turn.
+   *
+   * OpenCode writes the session row at the first prompt, which can come minutes
+   * after the launch, so start times cannot pair chats with sessions. A chat
+   * claims the earliest unclaimed top-level session of its directory created no
+   * earlier than the start tolerance before its launch, and only while it is the
+   * one unclaimed OpenCode chat in that directory. Chats unclaimed together are
+   * contested for good: after one closes, its session would otherwise pass to
+   * the survivor.
+   */
+  #assignOpenCode(
+    chats: ReadonlyArray<{ chatId: string; launch: AgentLaunch }>,
+    result: Record<string, number>,
+  ): void {
+    if (chats.length === 0) return
+    const since = Math.min(...chats.map(({ launch }) => launch.startedAt)) - START_TOLERANCE_MS
+    const snapshot = this.#openCodeSnapshot(since)
+    if (snapshot !== null) {
+      const present = new Set(snapshot.sessions.map((session) => session.id))
+      for (const { chatId } of chats) {
+        const claimed = this.#openCodeClaims.get(chatId)
+        if (claimed !== undefined && !present.has(claimed)) this.#openCodeClaims.delete(chatId)
+      }
+      for (const id of [...this.#openCodeSpent]) {
+        if (!present.has(id)) this.#openCodeSpent.delete(id)
+      }
+    }
+    const unclaimed = new Map<string, Array<{ chatId: string; launch: AgentLaunch }>>()
+    for (const entry of chats) {
+      if (this.#openCodeClaims.has(entry.chatId)) continue
+      const directory = normalizePath(entry.launch.projectPath)
+      const group = unclaimed.get(directory) ?? []
+      group.push(entry)
+      unclaimed.set(directory, group)
+    }
+    // Contest does not depend on the database: chats unclaimed together while it
+    // is unreadable are just as indistinguishable.
+    for (const group of unclaimed.values()) {
+      if (group.length > 1) for (const { chatId } of group) this.#openCodeContested.add(chatId)
+    }
+    if (snapshot === null) return
+    const taken = new Set([...this.#openCodeClaims.values(), ...this.#openCodeSpent])
+    for (const [directory, group] of unclaimed) {
+      if (group.length > 1) continue
+      const { chatId, launch } = group[0]
+      if (this.#openCodeContested.has(chatId)) continue
+      const session = snapshot.sessions.find(
+        (candidate) =>
+          !taken.has(candidate.id) &&
+          normalizePath(candidate.directory) === directory &&
+          candidate.createdAt >= launch.startedAt - START_TOLERANCE_MS,
+      )
+      if (session === undefined) continue
+      this.#openCodeClaims.set(chatId, session.id)
+      this.#openCodeSpent.add(session.id)
+      taken.add(session.id)
+    }
+    for (const { chatId } of chats) {
+      const claimed = this.#openCodeClaims.get(chatId)
+      if (claimed === undefined) continue
+      const tokens = snapshot.tokens.get(claimed)
+      if (tokens !== undefined) result[chatId] = tokens
+    }
+  }
+
+  /** Re-reads the database only when its files or the session window changed. */
+  #openCodeSnapshot(since: number): OpenCodeSnapshot | null {
+    const file = this.#deps.openCodeDatabase()
+    const signature = openCodeSignature(file)
+    if (signature === null) {
+      this.#openCodeRead = null
+      return null
+    }
+    const key = `${file}|${signature}|${since}`
+    if (this.#openCodeRead?.key === key) return this.#openCodeRead.snapshot
+    const snapshot = readOpenCodeSnapshot(file, since)
+    // A failed read (locked, mid-write) is retried on the next poll.
+    this.#openCodeRead = snapshot === null ? null : { key, snapshot }
+    return snapshot
   }
 
   /**

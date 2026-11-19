@@ -419,6 +419,13 @@ export function createServices(
       process.env.CLAUDE_CONFIG_DIR?.trim() || join(options.homeDir ?? homedir(), '.claude'),
     codexConfigDir: () =>
       process.env.CODEX_HOME?.trim() || join(options.homeDir ?? homedir(), '.codex'),
+    // OpenCode keeps its data under XDG_DATA_HOME, else ~/.local/share, on every platform.
+    openCodeDatabase: () =>
+      join(
+        process.env.XDG_DATA_HOME?.trim() || join(options.homeDir ?? homedir(), '.local', 'share'),
+        'opencode',
+        'opencode.db',
+      ),
   })
   const appUpdate = new AppUpdateService(
     createAppUpdateIo({

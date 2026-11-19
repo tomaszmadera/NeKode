@@ -153,6 +153,7 @@ describe('ContextUsageService', () => {
       launch: (chatId) => launches[chatId] ?? null,
       claudeConfigDir: () => join(root, 'claude'),
       codexConfigDir: () => join(root, 'codex'),
+      openCodeDatabase: () => join(root, 'opencode', 'opencode.db'),
     })
   }
 
