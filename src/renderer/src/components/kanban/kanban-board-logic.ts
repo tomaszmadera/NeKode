@@ -469,6 +469,38 @@ export interface NewTaskDraft {
   priority: KanbanPriority | null
 }
 
+/** Title and description being edited in the review (NEKODE-196). */
+export interface ReviewTextDraft {
+  title: string
+  description: string
+}
+
+/** The draft an Edit opens with: a null description edits as empty text. */
+export function reviewTextDraftOf(item: WorkItem): ReviewTextDraft {
+  return { title: item.title, description: item.description ?? '' }
+}
+
+/**
+ * The `kanban:updateItem` patch for a review text edit: only the fields that
+ * differ from the confirmed item. A blank description is sent as empty text
+ * and is unchanged when the item's description is null or blank. An empty
+ * result means no write.
+ */
+export function reviewTextPatch(
+  item: WorkItem,
+  draft: ReviewTextDraft,
+): { title?: string; description?: string } {
+  const patch: { title?: string; description?: string } = {}
+  if (draft.title !== item.title) patch.title = draft.title
+  const blank = (text: string | null): boolean => text === null || text.trim() === ''
+  if (blank(draft.description)) {
+    if (!blank(item.description)) patch.description = ''
+  } else if (draft.description !== item.description) {
+    patch.description = draft.description
+  }
+  return patch
+}
+
 /** First state named Todo, ignoring case, or '' when the board has none. Returns state.id. */
 export function defaultNewTaskStateRef(states: readonly KanbanState[]): string {
   const match = statesInAdapterOrder(states).find((state) => state.name.toLowerCase() === 'todo')

@@ -17,6 +17,7 @@ import {
   priorityLabel,
   prioritySelectValue,
   reconcileBoardResponse,
+  reviewTextPatch,
   sortWorkItems,
   upsertWorkItem,
   workItemsMatch,
@@ -367,5 +368,37 @@ describe('kanban board logic - view helpers', () => {
     expect(writeFailureMessage(new Error('Boom'), 'x')).toBe('Boom')
     expect(writeFailureMessage(new Error('  '), 'Fallback')).toBe('Fallback')
     expect(writeFailureMessage('weird', 'Fallback')).toBe('Fallback')
+  })
+})
+
+describe('reviewTextPatch (NEKODE-196)', () => {
+  const base: WorkItem = { ...kanbanWorkItem('NK-1', 'Title', 's1'), description: 'Body' }
+
+  it('returns only the changed fields', () => {
+    expect(reviewTextPatch(base, { title: 'Title', description: 'Body' })).toEqual({})
+    expect(reviewTextPatch(base, { title: 'New', description: 'Body' })).toEqual({ title: 'New' })
+    expect(reviewTextPatch(base, { title: 'Title', description: 'New' })).toEqual({
+      description: 'New',
+    })
+  })
+
+  it('sends a cleared description as empty text', () => {
+    expect(reviewTextPatch(base, { title: 'Title', description: ' \n ' })).toEqual({
+      description: '',
+    })
+  })
+
+  it('treats a blank draft as unchanged when the item has no or a blank description', () => {
+    expect(
+      reviewTextPatch({ ...base, description: null }, { title: 'Title', description: '' }),
+    ).toEqual({})
+    expect(
+      reviewTextPatch({ ...base, description: '  ' }, { title: 'Title', description: '  ' }),
+    ).toEqual({})
+    expect(
+      reviewTextPatch({ ...base, description: null }, { title: 'Title', description: 'Added' }),
+    ).toEqual({
+      description: 'Added',
+    })
   })
 })

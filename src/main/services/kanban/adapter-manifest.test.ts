@@ -204,6 +204,42 @@ describe('manifest agentSkill (NEKODE-169)', () => {
   })
 })
 
+describe('manifest requiresProjectDirectory (NEKODE-198)', () => {
+  it('accepts a boolean and keeps it off the public adapter info', () => {
+    for (const requiresProjectDirectory of [true, false]) {
+      const parsed = parseAdapterManifest(
+        JSON.stringify({ ...VALID_MANIFEST, requiresProjectDirectory }),
+        'm',
+      )
+      expect(parsed).not.toHaveProperty('requiresProjectDirectory')
+    }
+  })
+
+  it('rejects a non-boolean value', () => {
+    for (const requiresProjectDirectory of ['true', 1, null, {}]) {
+      expect(() =>
+        parseAdapterManifest(JSON.stringify({ ...VALID_MANIFEST, requiresProjectDirectory }), 'm'),
+      ).toThrow(/requiresProjectDirectory/)
+    }
+  })
+
+  it('discovery carries only a declared true value', () => {
+    writeAdapter('a', { ...VALID_MANIFEST, id: 'needs-dir', requiresProjectDirectory: true })
+    writeAdapter('b', { ...VALID_MANIFEST, id: 'explicit-false', requiresProjectDirectory: false })
+    writeAdapter('c', { ...VALID_MANIFEST, id: 'absent' })
+    const result = discoverAdapters(dir)
+    expect(
+      result.adapters.map((adapter) => [adapter.id, adapter.requiresProjectDirectory]),
+    ).toEqual([
+      ['needs-dir', true],
+      ['explicit-false', undefined],
+      ['absent', undefined],
+    ])
+    expect(result.adapters[1]).not.toHaveProperty('requiresProjectDirectory')
+    expect(result.warnings).toEqual([])
+  })
+})
+
 describe('discoverAdapters', () => {
   it('lists one valid adapter directory', () => {
     writeAdapter('demo', VALID_MANIFEST)

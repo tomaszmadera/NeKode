@@ -2950,3 +2950,188 @@ describe('kanban board - local-file revision (project-home spec Behaviour 9, Dat
     expect(screen.getByRole('form', { name: 'New task' })).toBeTruthy()
   })
 })
+
+describe('kanban review title and description edit (NEKODE-196)', () => {
+  function textBoard(revision?: number): KanbanBoardData {
+    return {
+      states: [
+        { id: 's1', name: 'Backlog', group: 'backlog', order: 1 },
+        { id: 's2', name: 'Done', group: 'completed', order: 2 },
+      ],
+      items: [
+        {
+          ...item('NK-1', 'Old title', 's1'),
+          description: 'Old body',
+          priority: 'high',
+          stateName: 'Backlog',
+        },
+        { ...item('NK-2', 'No body', 's1'), description: null, stateName: 'Backlog' },
+      ],
+      ...(revision === undefined ? {} : { revision }),
+    }
+  }
+
+  async function openEdit(app: AppApi, ref: string): Promise<HTMLElement> {
+    render(<KanbanBoard app={app} projectId="p1" onConfigure={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle(ref)))
+    const review = await screen.findByTestId(TEST_ID.kanbanReview)
+    fireEvent.click(within(review).getByTestId(TEST_ID.kanbanReviewEdit))
+    return screen.getByTestId(TEST_ID.kanbanReviewEditForm)
+  }
+
+  it('opens with the confirmed text and saves only the changed title', async () => {
+    const board = textBoard()
+    const listBoard = vi.fn().mockResolvedValue(board)
+    const updateItem = vi.fn().mockResolvedValue({ ...board.items[0], title: 'New title' })
+    const app = appWith(listBoard)
+    app.kanban.updateItem = updateItem
+    const form = await openEdit(app, 'NK-1')
+    expect((within(form).getByLabelText('Title') as HTMLInputElement).value).toBe('Old title')
+    expect((within(form).getByLabelText('Description') as HTMLTextAreaElement).value).toBe(
+      'Old body',
+    )
+
+    fireEvent.change(within(form).getByLabelText('Title'), { target: { value: 'New title' } })
+    fireEvent.click(within(form).getByTestId(TEST_ID.kanbanReviewEditSave))
+    await waitFor(() => {
+      expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('New title')
+    })
+    expect(updateItem.mock.calls).toEqual([['p1', 'NK-1', { title: 'New title' }]])
+    expect(screen.queryByTestId(TEST_ID.kanbanReviewEditForm)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanReviewDescription).textContent).toBe('Old body')
+    expect(listBoard).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
+    expect(screen.getByTestId(testIdFor.kanbanItemTitle('NK-1')).textContent).toBe('New title')
+  })
+
+  it('edits a missing description as empty text and sends only the description', async () => {
+    const board = textBoard()
+    const listBoard = vi.fn().mockResolvedValue(board)
+    const updateItem = vi.fn().mockResolvedValue({ ...board.items[1], description: 'Added' })
+    const app = appWith(listBoard)
+    app.kanban.updateItem = updateItem
+    const form = await openEdit(app, 'NK-2')
+    const description = within(form).getByLabelText('Description') as HTMLTextAreaElement
+    expect(description.value).toBe('')
+
+    fireEvent.change(description, { target: { value: 'Added' } })
+    fireEvent.click(within(form).getByTestId(TEST_ID.kanbanReviewEditSave))
+    await waitFor(() => {
+      expect(screen.getByTestId(TEST_ID.kanbanReviewDescription).textContent).toBe('Added')
+    })
+    expect(updateItem.mock.calls).toEqual([['p1', 'NK-2', { description: 'Added' }]])
+  })
+
+  it('sends a cleared description as empty text', async () => {
+    const board = textBoard()
+    const updateItem = vi.fn().mockResolvedValue({ ...board.items[0], description: '' })
+    const app = appWith(vi.fn().mockResolvedValue(board))
+    app.kanban.updateItem = updateItem
+    const form = await openEdit(app, 'NK-1')
+    fireEvent.change(within(form).getByLabelText('Description'), { target: { value: '  \n ' } })
+    fireEvent.click(within(form).getByTestId(TEST_ID.kanbanReviewEditSave))
+    await waitFor(() => {
+      expect(screen.getByTestId(TEST_ID.kanbanReviewDescription).textContent).toBe(
+        'No description.',
+      )
+    })
+    expect(updateItem.mock.calls).toEqual([['p1', 'NK-1', { description: '' }]])
+  })
+
+  it('closes without a write when nothing changed, and Cancel discards the draft', async () => {
+    const updateItem = vi.fn()
+    const app = appWith(vi.fn().mockResolvedValue(textBoard()))
+    app.kanban.updateItem = updateItem
+    const form = await openEdit(app, 'NK-1')
+    fireEvent.click(within(form).getByTestId(TEST_ID.kanbanReviewEditSave))
+    expect(screen.queryByTestId(TEST_ID.kanbanReviewEditForm)).toBeNull()
+
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewEdit))
+    const again = screen.getByTestId(TEST_ID.kanbanReviewEditForm)
+    fireEvent.change(within(again).getByLabelText('Title'), { target: { value: 'Discarded' } })
+    fireEvent.click(within(again).getByTestId(TEST_ID.kanbanReviewEditCancel))
+    expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Old title')
+
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewEdit))
+    expect(
+      (
+        within(screen.getByTestId(TEST_ID.kanbanReviewEditForm)).getByLabelText(
+          'Title',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe('Old title')
+    expect(updateItem).not.toHaveBeenCalled()
+  })
+
+  it('keeps the draft and shows the error when the save fails', async () => {
+    const updateItem = vi.fn().mockRejectedValue({
+      nekodeAppError: true,
+      code: 'adapter',
+      message: 'Plane rejected the update.',
+    })
+    const app = appWith(vi.fn().mockResolvedValue(textBoard()))
+    app.kanban.updateItem = updateItem
+    const form = await openEdit(app, 'NK-1')
+    fireEvent.change(within(form).getByLabelText('Title'), { target: { value: 'Kept' } })
+    fireEvent.click(within(form).getByTestId(TEST_ID.kanbanReviewEditSave))
+
+    expect((await screen.findByTestId(TEST_ID.kanbanReviewEditError)).textContent).toContain(
+      'Plane rejected the update.',
+    )
+    const still = screen.getByTestId(TEST_ID.kanbanReviewEditForm)
+    expect((within(still).getByLabelText('Title') as HTMLInputElement).value).toBe('Kept')
+    expect(
+      (within(still).getByTestId(TEST_ID.kanbanReviewEditSave) as HTMLButtonElement).disabled,
+    ).toBe(false)
+  })
+
+  it('locks Status, Priority, and Save while the text save is in flight', async () => {
+    const board = textBoard()
+    const write = deferred<WorkItem>()
+    const updateItem = vi.fn().mockReturnValue(write.promise)
+    const app = appWith(vi.fn().mockResolvedValue(board))
+    app.kanban.updateItem = updateItem
+    const form = await openEdit(app, 'NK-1')
+    fireEvent.change(within(form).getByLabelText('Title'), { target: { value: 'Locked' } })
+    fireEvent.click(within(form).getByTestId(TEST_ID.kanbanReviewEditSave))
+
+    const review = screen.getByTestId(TEST_ID.kanbanReview)
+    expect((within(review).getByLabelText('Status') as HTMLSelectElement).disabled).toBe(true)
+    expect((within(review).getByLabelText('Priority') as HTMLSelectElement).disabled).toBe(true)
+    expect(
+      (within(form).getByTestId(TEST_ID.kanbanReviewEditSave) as HTMLButtonElement).disabled,
+    ).toBe(true)
+    fireEvent.submit(form)
+    expect(updateItem).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      write.resolve({ ...board.items[0], title: 'Locked' })
+      await write.promise
+    })
+    expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Locked')
+  })
+
+  it('drops the draft when the review closes', async () => {
+    const app = appWith(vi.fn().mockResolvedValue(textBoard()))
+    app.kanban.updateItem = vi.fn()
+    const form = await openEdit(app, 'NK-1')
+    fireEvent.change(within(form).getByLabelText('Title'), { target: { value: 'Gone' } })
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewBack))
+    fireEvent.click(await screen.findByTestId(testIdFor.kanbanItemTitle('NK-1')))
+    expect(screen.queryByTestId(TEST_ID.kanbanReviewEditForm)).toBeNull()
+    expect(screen.getByTestId(TEST_ID.kanbanReviewTitle).textContent).toBe('Old title')
+  })
+
+  it('echoes the local-file revision on a text save', async () => {
+    const board = textBoard(7)
+    const updateItem = vi.fn().mockResolvedValue({ ...board.items[0], title: 'Rev', revision: 8 })
+    const app = appWith(vi.fn().mockResolvedValue(board))
+    app.kanban.updateItem = updateItem
+    const form = await openEdit(app, 'NK-1')
+    fireEvent.change(within(form).getByLabelText('Title'), { target: { value: 'Rev' } })
+    fireEvent.click(within(form).getByTestId(TEST_ID.kanbanReviewEditSave))
+    await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(1))
+    expect(updateItem.mock.calls[0]).toEqual(['p1', 'NK-1', { title: 'Rev' }, 7])
+  })
+})

@@ -35,12 +35,100 @@ function renderReview(overrides: Partial<KanbanItemReviewProps> = {}): KanbanIte
     onResume: vi.fn(),
     onStatusChange: vi.fn(),
     onPriorityChange: vi.fn(),
+    textDraft: null,
+    textError: null,
+    onEditText: vi.fn(),
+    onTextDraftChange: vi.fn(),
+    onSaveText: vi.fn(),
+    onCancelText: vi.fn(),
     onCopyText: vi.fn(),
     ...overrides,
   }
   render(<KanbanItemReview {...props} />)
   return props
 }
+
+describe('KanbanItemReview text edit (NEKODE-196)', () => {
+  it('shows Edit with read-only text and asks the board to start editing', () => {
+    const props = renderReview()
+    expect(screen.queryByTestId(TEST_ID.kanbanReviewEditForm)).toBeNull()
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewEdit))
+    expect(props.onEditText).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables Edit while a review write is in flight', () => {
+    renderReview({ fieldsDisabled: true })
+    expect((screen.getByTestId(TEST_ID.kanbanReviewEdit) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('replaces the title and description with the form, the plain-text note, and the error', () => {
+    const props = renderReview({
+      textDraft: { title: 'Draft title', description: 'Draft body' },
+      textError: 'Could not update the task.',
+    })
+    expect(screen.queryByTestId(TEST_ID.kanbanReviewEdit)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.kanbanReviewTitle)).toBeNull()
+    expect(screen.queryByTestId(TEST_ID.kanbanReviewDescription)).toBeNull()
+    const title = screen.getByLabelText('Title') as HTMLInputElement
+    const description = screen.getByLabelText('Description') as HTMLTextAreaElement
+    expect(title.value).toBe('Draft title')
+    expect(description.value).toBe('Draft body')
+    expect(screen.getByTestId(TEST_ID.kanbanReviewEditNote).textContent).toBe(
+      'The description is saved as plain text. Formatting from the tracker, such as headings, lists, and links, is not kept.',
+    )
+    expect(screen.getByTestId(TEST_ID.kanbanReviewEditError).textContent).toBe(
+      'Could not update the task.',
+    )
+
+    fireEvent.change(title, { target: { value: 'New title' } })
+    expect(props.onTextDraftChange).toHaveBeenLastCalledWith({
+      title: 'New title',
+      description: 'Draft body',
+    })
+    fireEvent.change(description, { target: { value: 'New body' } })
+    expect(props.onTextDraftChange).toHaveBeenLastCalledWith({
+      title: 'Draft title',
+      description: 'New body',
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewEditSave))
+    expect(props.onSaveText).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId(TEST_ID.kanbanReviewEditCancel))
+    expect(props.onCancelText).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks Save for a blank title and cancels on Escape', () => {
+    const props = renderReview({ textDraft: { title: '   ', description: '' } })
+    const save = screen.getByTestId(TEST_ID.kanbanReviewEditSave) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    fireEvent.submit(screen.getByTestId(TEST_ID.kanbanReviewEditForm))
+    expect(props.onSaveText).not.toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByLabelText('Title'), { key: 'Escape' })
+    expect(props.onCancelText).toHaveBeenCalledTimes(1)
+  })
+
+  it('locks the form while saving: no Save, Cancel, or Escape', () => {
+    const props = renderReview({
+      textDraft: { title: 'Draft title', description: '' },
+      fieldsDisabled: true,
+    })
+    expect((screen.getByTestId(TEST_ID.kanbanReviewEditSave) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect((screen.getByTestId(TEST_ID.kanbanReviewEditCancel) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect((screen.getByLabelText('Title') as HTMLInputElement).disabled).toBe(true)
+    fireEvent.keyDown(screen.getByTestId(TEST_ID.kanbanReviewEditForm), { key: 'Escape' })
+    expect(props.onCancelText).not.toHaveBeenCalled()
+  })
+
+  it('does not open the copy menu from the edit fields', () => {
+    const props = renderReview({ textDraft: { title: 'Draft title', description: '' } })
+    fireEvent.contextMenu(screen.getByLabelText('Title'))
+    fireEvent.contextMenu(screen.getByLabelText('Description'))
+    expect(props.onCopyText).not.toHaveBeenCalled()
+  })
+})
 
 describe('KanbanItemReview', () => {
   it('shows the ref, title, description fallback, and the empty comments state', () => {

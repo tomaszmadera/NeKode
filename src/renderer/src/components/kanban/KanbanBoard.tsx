@@ -24,7 +24,10 @@ import {
   type KanbanBoardPhase,
   type KanbanToolbarControls,
   type NewTaskDraft,
+  type ReviewTextDraft,
   reconcileBoardResponse,
+  reviewTextDraftOf,
+  reviewTextPatch,
   upsertWorkItem,
   visibleBoardColumns,
   writeFailureMessage,
@@ -43,7 +46,9 @@ import {
 // the returned item. Failure restores the confirmed value and shows the error
 // on the review. A `listBoard` already in flight keeps that updated item as
 // the one copy, including when its snapshot still has the old item. A later
-// refresh still drops an absent ref.
+// refresh still drops an absent ref. Edit (NEKODE-196) saves the title and
+// description through the same lock with only the changed fields; success
+// closes the form and failure keeps the draft with the error.
 // New task calls the existing `kanban:createItem` with title, stateRef, and an
 // optional description, then upserts the returned item by ref and sends no
 // priority. A `listBoard` already in flight keeps that ref when its snapshot
@@ -142,6 +147,8 @@ export function KanbanBoard({
   const [statusError, setStatusError] = useState<string | null>(null)
   const [priorityChoice, setPriorityChoice] = useState<KanbanPriority | null | undefined>(undefined)
   const [priorityError, setPriorityError] = useState<string | null>(null)
+  const [textDraft, setTextDraft] = useState<ReviewTextDraft | null>(null)
+  const [textError, setTextError] = useState<string | null>(null)
   const [reviewCopy, setReviewCopy] = useState<{ text: string; x: number; y: number } | null>(null)
   const [updatingReview, setUpdatingReview] = useState(false)
   const pending = useRef(false)
@@ -200,6 +207,8 @@ export function KanbanBoard({
     setStatusError(null)
     setPriorityChoice(undefined)
     setPriorityError(null)
+    setTextDraft(null)
+    setTextError(null)
     setReviewCopy(null)
     // The previous project's review write must not keep these selects locked.
     reviewBusy.current = false
@@ -378,7 +387,8 @@ export function KanbanBoard({
   async function submitReviewWrite(
     write:
       | { field: 'status'; stateRef: string }
-      | { field: 'priority'; priority: KanbanPriority | null },
+      | { field: 'priority'; priority: KanbanPriority | null }
+      | { field: 'text'; draft: ReviewTextDraft },
   ): Promise<void> {
     // A second change must not bump the generation: that drops this success
     // before the board or retainedUpdates is updated.
@@ -387,22 +397,32 @@ export function KanbanBoard({
     if (ref === null) return
     const current = boardRef.current.items.find((entry) => entry.ref === ref)
     if (current === undefined) return
+    let patch: KanbanUpdatePatch
     if (write.field === 'status') {
       if (statusChoice === null && write.stateRef === current.stateName) return
-    } else if (priorityChoice === undefined && write.priority === current.priority) {
-      return
+      patch = { stateRef: write.stateRef }
+    } else if (write.field === 'priority') {
+      if (priorityChoice === undefined && write.priority === current.priority) return
+      patch = { priority: write.priority }
+    } else {
+      if (write.draft.title.trim() === '') return
+      patch = reviewTextPatch(current, write.draft)
+      if (Object.keys(patch).length === 0) {
+        setTextDraft(null)
+        setTextError(null)
+        return
+      }
     }
     const request = ++reviewGeneration.current
     const sourceProject = projectId
-    const patch: KanbanUpdatePatch =
-      write.field === 'status' ? { stateRef: write.stateRef } : { priority: write.priority }
     reviewBusy.current = true
     setUpdatingReview(true)
     setStatusError(null)
     setPriorityError(null)
+    setTextError(null)
     if (write.field === 'status') {
       setStatusChoice(write.stateRef)
-    } else {
+    } else if (write.field === 'priority') {
       setPriorityChoice(write.priority)
     }
     try {
@@ -425,29 +445,29 @@ export function KanbanBoard({
       if (shownReviewRef.current === ref) {
         if (write.field === 'status') {
           setStatusChoice(null)
-        } else {
+        } else if (write.field === 'priority') {
           setPriorityChoice(undefined)
+        } else {
+          setTextDraft(null)
         }
         setStatusError(null)
         setPriorityError(null)
+        setTextError(null)
       }
     } catch (cause) {
       if (request !== reviewGeneration.current || sourceProject !== projectRef.current) return
       // A stale `local-file` revision changed nothing: refetch, never merge.
       if (parseAppErrorPayload(cause)?.code === 'conflict') void load()
       if (shownReviewRef.current !== ref) return
-      const message = writeFailureMessage(
-        cause,
-        write.field === 'status'
-          ? 'Could not update the status.'
-          : 'Could not update the priority.',
-      )
       if (write.field === 'status') {
         setStatusChoice(null)
-        setStatusError(message)
-      } else {
+        setStatusError(writeFailureMessage(cause, 'Could not update the status.'))
+      } else if (write.field === 'priority') {
         setPriorityChoice(undefined)
-        setPriorityError(message)
+        setPriorityError(writeFailureMessage(cause, 'Could not update the priority.'))
+      } else {
+        // The draft stays so the edit is not lost.
+        setTextError(writeFailureMessage(cause, 'Could not update the task.'))
       }
     } finally {
       if (request === reviewGeneration.current) {
@@ -463,6 +483,8 @@ export function KanbanBoard({
     setStatusError(null)
     setPriorityChoice(undefined)
     setPriorityError(null)
+    setTextDraft(null)
+    setTextError(null)
     setReviewCopy(null)
   }, [])
 
@@ -476,6 +498,8 @@ export function KanbanBoard({
     setStatusError(null)
     setPriorityChoice(undefined)
     setPriorityError(null)
+    setTextDraft(null)
+    setTextError(null)
     setReviewRef(ref)
   }
 
@@ -585,6 +609,21 @@ export function KanbanBoard({
           }}
           onPriorityChange={(nextPriority) => {
             void submitReviewWrite({ field: 'priority', priority: nextPriority })
+          }}
+          textDraft={textDraft}
+          textError={textError}
+          onEditText={() => {
+            if (reviewBusy.current) return
+            setTextError(null)
+            setTextDraft(reviewTextDraftOf(reviewItem))
+          }}
+          onTextDraftChange={setTextDraft}
+          onSaveText={() => {
+            if (textDraft !== null) void submitReviewWrite({ field: 'text', draft: textDraft })
+          }}
+          onCancelText={() => {
+            setTextDraft(null)
+            setTextError(null)
           }}
           onCopyText={(text, x, y) => {
             setReviewCopy({ text, x, y })

@@ -85,6 +85,7 @@ function makeService(
     hostError?: Error
     safeStorage?: SafeStorageLike
     adapters?: DiscoveredAdapter[]
+    projectPath?: string
   } = {},
 ) {
   const state = stateStore(options.store)
@@ -96,7 +97,8 @@ function makeService(
   })
   const service = new KanbanService({
     projects: {
-      get: (projectId: string) => (projectId === 'p1' ? { path: 'D:/code/demo' } : null),
+      get: (projectId: string) =>
+        projectId === 'p1' ? { path: options.projectPath ?? 'D:/code/demo' } : null,
     },
     state,
     adaptersDir: () => options.adaptersDir ?? 'unused-dir',
@@ -781,3 +783,47 @@ describe('KanbanService cleanup', () => {
 // Silence the unused-import guard: discoverAdapters is exercised through
 // real directories above; keep the reference for future direct assertions.
 void discoverAdapters
+
+describe('SSH projects and adapters that need the project directory (NEKODE-198)', () => {
+  const SSH_PATH = 'ssh://dev@example.com:22/home/dev/demo'
+  const DIRECTORY_ADAPTER: DiscoveredAdapter = {
+    ...DEMO_EMPTY_SCHEMA_ADAPTER,
+    info: { ...DEMO_EMPTY_SCHEMA_ADAPTER.info, name: 'Agent Harness' },
+    requiresProjectDirectory: true,
+  }
+  const BOUND = { 'project.kanbanAdapter:p1': 'demo' }
+
+  it('rejects every adapter action with unsupported before spawning the adapter', async () => {
+    const { service, invoke } = makeService({
+      adapters: [DIRECTORY_ADAPTER],
+      store: BOUND,
+      projectPath: SSH_PATH,
+    })
+    await expect(service.test('p1')).rejects.toMatchObject({
+      code: 'unsupported',
+      channel: 'kanban:test',
+      message: expect.stringContaining('"Agent Harness" task source needs the project directory'),
+    })
+    await expect(service.listBoard('p1')).rejects.toMatchObject({ code: 'unsupported' })
+    await expect(service.getItem('p1', 'DEMO-1')).rejects.toMatchObject({ code: 'unsupported' })
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('still invokes an adapter without the flag for an SSH project', async () => {
+    const { service, invoke } = makeService({
+      adapters: [DEMO_EMPTY_SCHEMA_ADAPTER],
+      store: BOUND,
+      projectPath: SSH_PATH,
+    })
+    await service.test('p1')
+    expect(invoke).toHaveBeenCalledTimes(1)
+    const request = invoke.mock.calls[0]?.[1] as AdapterRequest
+    expect(request.project).toEqual({ root: SSH_PATH })
+  })
+
+  it('invokes an adapter with the flag for a local project', async () => {
+    const { service, invoke } = makeService({ adapters: [DIRECTORY_ADAPTER], store: BOUND })
+    await service.test('p1')
+    expect(invoke).toHaveBeenCalledTimes(1)
+  })
+})

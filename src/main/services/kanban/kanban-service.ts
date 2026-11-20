@@ -18,6 +18,7 @@ import {
   type WorkItem,
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import { projectEnvironment } from '@shared/project-environment'
 import { AgentSkillFile, buildAgentSkill, readAdapterSkillBody } from '../agent-skill-file'
 import { AdapterHost, toAppError } from './adapter-host'
 import { type DiscoveredAdapter, type DiscoveryResult, discoverAdapters } from './adapter-manifest'
@@ -729,6 +730,18 @@ export class KanbanService {
   ): Promise<T> {
     const project = this.assertProject(projectId)
     const adapter = this.boundAdapter(projectId)
+    if (
+      adapter.requiresProjectDirectory === true &&
+      projectEnvironment(project.path).kind === 'ssh'
+    ) {
+      // NEKODE-198, spec ssh-projects Non-goals: the adapter runs locally and
+      // needs the project directory, which an SSH project does not have here.
+      throw new AppError(
+        'unsupported',
+        `The "${adapter.info.name}" task source needs the project directory, which is not available for SSH projects. Manage the board through the agent or the Kanban CLI in the SSH terminal.`,
+        `kanban:${action}`,
+      )
+    }
     const config = this.effectiveConfig(projectId, valuesOverride)
     try {
       return await this.#host.invoke<T>(adapter, {
