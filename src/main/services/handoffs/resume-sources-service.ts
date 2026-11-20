@@ -22,13 +22,20 @@ import {
   type ResumeSourcePreview,
   type ResumeSourcePut,
   type ResumeSourcesChanged,
+  type ResumeSourceTemplate,
   type ResumeSourceUsage,
 } from '@shared/contracts/resume-sources-contract'
 import {
   resumeSourcePutSchema,
   storedResumeSourceSchema,
 } from '@shared/contracts/resume-sources-schema'
+import { WORK_RECORD_SKILL_FILE_PATH, type WorkRecordSkillPreview } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import {
+  AgentSkillFile,
+  buildWorkRecordSkill,
+  type WorkRecordSkillSource,
+} from '../agent-skill-file'
 import { discoverResumeCommand, type runResumeCommand } from './resume-source-command'
 import { checkResumeCancelled, discoverResumeFiles } from './resume-source-files'
 
@@ -45,6 +52,30 @@ interface ResumeSourcesDeps {
   readLegacyTemplate?: () => Promise<string | null>
   /** Effective application-level Resume instruction (NEKODE-187), read per composition. */
   resumeInstruction?: () => string
+  /** Shared skill-file writer; defaults to the work record skill path. */
+  skillFile?: AgentSkillFile
+  /**
+   * Local-only boundary for the skill surfaces. The composition injects it so
+   * an SSH project rejects with `unsupported` before any path is derived.
+   */
+  requireLocalProject?: (projectId: string, channel: string) => void
+}
+
+function skillSourceFor(template: ResumeSourceTemplate): WorkRecordSkillSource {
+  if (isLocalProgressResumeSource(template.source)) return { kind: 'local-progress' }
+  if (template.source.kind === 'command') {
+    return template.source.protocol === 'agent-harness'
+      ? { kind: 'agent-harness' }
+      : { kind: 'command-source', name: template.name }
+  }
+  return {
+    kind: 'file-source',
+    name: template.name,
+    directory: template.source.directory,
+    pattern: template.source.pattern,
+    recursive: template.source.recursive,
+    identity: template.source.identity,
+  }
 }
 
 async function computeFileHash(path: string, signal: AbortSignal): Promise<string> {
@@ -95,6 +126,7 @@ async function abortableFiles(
 
 export class ResumeSourcesService {
   readonly #deps: ResumeSourcesDeps
+  readonly #skillFile: AgentSkillFile
   readonly #listeners = new Set<(event: ResumeSourcesChanged) => void>()
   #stopping = false
   readonly #requests = new Map<
@@ -124,6 +156,9 @@ export class ResumeSourcesService {
 
   constructor(deps: ResumeSourcesDeps) {
     this.#deps = deps
+    this.#skillFile =
+      deps.skillFile ??
+      new AgentSkillFile({ projects: deps.projects, path: WORK_RECORD_SKILL_FILE_PATH })
   }
 
   bind(projectId: string, templateId: string | null): ResumeSourceBinding {
@@ -146,6 +181,65 @@ export class ResumeSourcesService {
     const raw = this.#deps.state.get(projectResumeTemplateKey(projectId))
     const templateId = raw === null || raw.trim().length === 0 ? null : raw.trim()
     return { projectId, templateId }
+  }
+
+  /** The bound source and the skill text kind, or a typed error. */
+  #boundSkillSource(
+    projectId: string,
+    channel: string,
+  ): { template: ResumeSourceTemplate; source: WorkRecordSkillSource } {
+    const project = this.#deps.projects.get(projectId)
+    if (project === null) throw new AppError('not_found', 'Project not found.', channel)
+    const { templateId } = this.binding(projectId)
+    if (templateId === null) {
+      throw new AppError(
+        'validation_error',
+        'Bind a work record source before teaching agents.',
+        channel,
+      )
+    }
+    const template = this.list().templates.find((row) => row.id === templateId)
+    if (template === undefined) {
+      throw new AppError(
+        'validation_error',
+        'The bound work record source no longer exists. Bind another source before teaching agents.',
+        channel,
+      )
+    }
+    return { template, source: skillSourceFor(template) }
+  }
+
+  /**
+   * `Teach agents` preview in Project Settings, Work record (separation spec):
+   * the exact text for the bound work record source, the current
+   * `.agents/skills/nekode-work-record/SKILL.md`, and the write token.
+   */
+  async skillPreview(projectId: string): Promise<WorkRecordSkillPreview> {
+    const channel = 'resumeSources:skillPreview'
+    this.#deps.requireLocalProject?.(projectId, channel)
+    const { template, source } = this.#boundSkillSource(projectId, channel)
+    const text = buildWorkRecordSkill(source)
+    const disk = await this.#skillFile.preview(projectId, text, channel)
+    return {
+      path: WORK_RECORD_SKILL_FILE_PATH,
+      origin: source.kind,
+      sourceName: template.name,
+      exists: disk.exists,
+      current: disk.current,
+      text,
+      token: disk.token,
+    }
+  }
+
+  /**
+   * `Teach agents` confirm: rebuilds the text from the stored binding and the
+   * disk, and writes only when its token still equals the confirmed one.
+   */
+  async writeSkill(projectId: string, token: string): Promise<void> {
+    const channel = 'resumeSources:writeSkill'
+    this.#deps.requireLocalProject?.(projectId, channel)
+    const { source } = this.#boundSkillSource(projectId, channel)
+    await this.#skillFile.write(projectId, buildWorkRecordSkill(source), token, channel)
   }
 
   /**

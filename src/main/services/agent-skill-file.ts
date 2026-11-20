@@ -3,26 +3,22 @@ import { promises as nodeFs } from 'node:fs'
 import { join } from 'node:path'
 import { AGENT_SKILL_FILE_PATH } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
-import { joinProjectPath } from '../project-path'
-import { errnoCode, isInside } from './local-task-file'
+import { errnoCode, isInside } from './kanban/local-task-file'
+import { joinProjectPath } from './project-path'
 
-// `Teach agents` (project-home spec Behaviour 11-12, AC8, Business rules,
-// Errors). Main writes one skill file, `.agents/skills/nekode-tasks/SKILL.md`,
-// under the stored project root, the same root the file tree and the
-// `local-file` source use (a WSL project uses its stored UNC path). The text
-// is chosen by the bound source only (NEKODE-169): the built-in local text,
-// the bound adapter's declared `agentSkill` body under fixed front matter, or
-// a neutral default that forbids no tool. The renderer sends no content; a
-// write carries the preview token, a SHA-256 over the text and the current
-// file bytes, so Confirm writes exactly the previewed text over exactly the
-// previewed file. The text holds no task items, no adapter config, and no
-// secrets. Only the `.agents/skills/nekode-tasks` parents are created, never
-// the root, and no process or shell runs. Every existing segment must
-// resolve inside the project root. The file is replaced by a temp file in the same directory
-// followed by a rename, so a failed write leaves the previous file unchanged.
-
-const SKILL_DIR_SEGMENTS = ['.agents', 'skills', 'nekode-tasks'] as const
-const SKILL_FILE = 'SKILL.md'
+// `Teach agents`. Main writes one skill file under the stored project root,
+// the same root the file tree and the `local-file` source use (a WSL project
+// uses its stored UNC path). The work item skill is
+// `.agents/skills/nekode-tasks/SKILL.md`; the work record skill is
+// `.agents/skills/nekode-work-record/SKILL.md` (separation spec). The text is
+// chosen by the bound source only. The renderer sends no content; a write
+// carries the preview token, a SHA-256 over the text and the current file
+// bytes, so Confirm writes exactly the previewed text over exactly the
+// previewed file. The text holds no items, source config, or secrets. Only
+// the configured parents are created, never the root, and no process or shell
+// runs. Every existing segment must resolve inside the project root. The file
+// is replaced by a temp file in the same directory followed by a rename, so a
+// failed write leaves the previous file unchanged.
 
 const LOCAL_FILE_SKILL = `---
 name: nekode-tasks
@@ -31,7 +27,7 @@ description: Use when you read, add, or update this project's work items. The bo
 
 # NeKode work items
 
-This project's work item source is \`.nekode/tasks.json\`. NeKode reads and writes its work items on the board on the project's home tab. The board is the only backlog: do not create a second task list, a TODO file, or another tracker file. The work record described below holds execution context, never a second backlog or a source of board state.
+This project's work item source is \`.nekode/tasks.json\`. NeKode reads and writes its work items on the board on the project's home tab. The board is the only backlog: do not create a second task list, a TODO file, or another tracker file. If this project also has a work record, it holds execution context, never a second backlog or a source of board state; the separate \`nekode-work-record\` skill describes it.
 
 ## File shape
 
@@ -52,16 +48,28 @@ The file is JSON in UTF-8 without a byte order mark. NeKode writes the keys \`sc
 4. If the \`revision\` changed, someone else wrote the file. Never write with a stale revision: read the file again, apply your change to the new content, and repeat from step 2.
 
 Never reset, empty, or recreate the file. If it is missing or not valid, stop and tell the user.
+`
 
-## Work record
+const LOCAL_WORK_RECORD_SKILL = `---
+name: nekode-work-record
+description: Use when you start, update, hand off, resume, or complete work on a work item in this project. The work record lives at work/<ref>/progress.md.
+---
 
-Keep one active work record per work item. The agent writes and maintains it; NeKode never creates, writes, or repairs it.
+# NeKode work record
 
-- For a work item with ref \`T-1\`, create or update \`work/T-1/progress.md\` under the project root when you start working on it. Use the complete ref as the directory name and the literal file name \`progress.md\`.
-- Keep the file short and current. It must state: the ref and title; what is finished and what is in progress; decisions and their reasons; checks you ran with their command and result; blockers; one exact next action that names the file or command; and the UTC time of the last update.
-- Do not copy the task list, other cards, or a new TODO list into the file. Update it when one of those facts changes.
+This project's work record is a Markdown file at \`work/<ref>/progress.md\` under the project root. The agent writes and maintains it; NeKode never creates, writes, or repairs it. The board remains authoritative for work item state and status; the record is never a second backlog or a source of board state.
 
-The work record must contain exactly one fenced \`nekode-state\` block with strict JSON. Keep the block and the prose aligned on every update, including Handoff, Resume reconciliation, completion, and reopening. Replace the existing block rather than appending another. The rest of the record is human prose, never parsed for Step progress.
+## Location
+
+For a work item with ref \`T-1\`, create or update \`work/T-1/progress.md\` when you start working on it. Use the complete ref as the directory name and the literal file name \`progress.md\`. Keep one active record per work item.
+
+## Prose
+
+Keep the file short and current. It must state: the ref and title; what is finished and what is in progress; decisions and their reasons; checks you ran with their command and result; blockers; one exact next action that names the file or command; and the UTC time of the last update. Do not copy the task list, other cards, or a new TODO list into the file. Update it when one of those facts changes.
+
+## State block
+
+The record must contain exactly one fenced \`nekode-state\` block with strict JSON. Keep the block and the prose aligned on every update, including Handoff, Resume reconciliation, completion, and reopening. Replace the existing block rather than appending another. The rest of the record is human prose, never parsed for Step progress.
 
 Example for \`T-1\` (replace the example values with current facts):
 
@@ -101,6 +109,74 @@ Example for \`T-1\` (replace the example values with current facts):
 
 Only after the user confirms completion and the card is in Done, set \`status\` to \`completed\`, record the final checks and outcome in the prose, and move \`work/<ref>/progress.md\` to \`work-completed/<ref>/progress.md\`. This archived work record is outside the configured Work record source, so Resume no longer offers it. The progress adapter can still read its last step. Keep the record; delete it only when the user asks. If the work item reopens, move the record back to \`work/<ref>/progress.md\` and update its block and prose to the actual active or blocked state before continuing.
 `
+
+const HARNESS_WORK_RECORD_SKILL = `---
+name: nekode-work-record
+description: Use when you start, update, hand off, resume, or complete work on a work item in this project. The project keeps work records with the Agent Harness taskctl workflow.
+---
+
+# NeKode work record
+
+This project keeps work records in the Agent Harness format. Use the project's Agent Harness workflow to create and update them. NeKode discovers records with \`python .agents/scripts/taskctl list --json\` and never creates, repairs, or migrates them. Do not create \`work/<ref>/progress.md\` or any other parallel local record. The board remains authoritative for work item state and status; the record is never a second backlog.
+
+## Handoff, Stop, and Resume
+
+- Handoff: update the Harness record through its own workflow, leave the card In Progress, and stop. Handoff is an action; the record carries its context. Do not create another handoff file and do not claim the work is finished.
+- Stop is an interruption by the user, not a Handoff. It creates or changes no record by itself. When asked to continue, reconcile the existing record with the repository before acting.
+- Resume: read the record at the path NeKode gives you before changing files. Check its claims against the repository and continue from its next action. If the record is missing or stale, say so; do not invent prior state.
+- If the Harness workflow is unavailable, or you cannot tell how to update its records, say so and ask the user. Do not invent a command, a format, or a local file.
+- Completion: only after the user confirms completion and the card is in Done, complete the record through the Harness workflow. Do not create \`work-completed\` or move a local record.
+`
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function fileSourceSkill(source: {
+  name: string
+  directory: string
+  pattern: string
+  recursive: boolean
+  identity: 'stem' | 'parent'
+}): string {
+  const name = oneLine(source.name)
+  const identity =
+    source.identity === 'parent' ? 'the immediate parent directory name' : 'the file name stem'
+  const scope = source.recursive ? 'including subdirectories' : 'in that directory only'
+  return `---
+name: nekode-work-record
+description: Use when you keep the work record for a work item in this project. The project's Work record source finds records at ${oneLine(source.directory)}.
+---
+
+# NeKode work record
+
+This project's Work record source is the \`${name}\` file source. It discovers records at \`${oneLine(source.directory)}\` matching \`${oneLine(source.pattern)}\`, ${scope}, identified by ${identity}.
+
+Write the record where this source finds it. Keep it short and current: the ref and title; what is finished and what is in progress; decisions and their reasons; checks you ran with their command and result; blockers; one exact next action that names the file or command; and the UTC time of the last update. Do not copy the task list, other cards, or a new TODO list into the record. The board remains authoritative for work item state and status.
+
+If you add a \`nekode-state\` block, keep it valid; Step progress can read it. It is not required for Resume. Do not claim a record location outside the values above.
+`
+}
+
+function commandSourceSkill(nameValue: string): string {
+  const name = oneLine(nameValue)
+  return `---
+name: nekode-work-record
+description: Use when you keep the work record for a work item in this project. The project's Work record source is an external command.
+---
+
+# NeKode work record
+
+This project's Work record source is the \`${name}\` command source. It discovers records through an external command. NeKode does not create, repair, or migrate them.
+
+Follow the project's own workflow for creating and updating records. Do not create \`work/<ref>/progress.md\` or any other parallel local record. The board remains authoritative for work item state and status; the record is never a second backlog.
+
+- Handoff: update the external record through its own workflow, leave the card In Progress, and stop.
+- Stop is an interruption by the user, not a Handoff. It creates or changes no record by itself.
+- Resume: read the record at the path NeKode gives you before changing files and continue from its next action. If the record is missing or stale, say so; do not invent prior state.
+- If you cannot tell how to update the external record, ask the user. Do not invent a command, a format, or a local file.
+`
+}
 
 /** Fixed front matter above an adapter-declared body. */
 const ADAPTER_FRONT_MATTER = `---
@@ -146,6 +222,34 @@ export function buildAgentSkill(source: AgentSkillSource): string {
     case 'default':
       // A manifest name is one line in the text, whatever it contains.
       return defaultSkill(source.adapterName.replace(/\s+/g, ' ').trim())
+  }
+}
+
+/** Where the work record skill text comes from (separation spec). */
+export type WorkRecordSkillSource =
+  | { kind: 'local-progress' }
+  | { kind: 'agent-harness' }
+  | {
+      kind: 'file-source'
+      name: string
+      directory: string
+      pattern: string
+      recursive: boolean
+      identity: 'stem' | 'parent'
+    }
+  | { kind: 'command-source'; name: string }
+
+/** The work record skill text for the bound work record source. */
+export function buildWorkRecordSkill(source: WorkRecordSkillSource): string {
+  switch (source.kind) {
+    case 'local-progress':
+      return LOCAL_WORK_RECORD_SKILL
+    case 'agent-harness':
+      return HARNESS_WORK_RECORD_SKILL
+    case 'file-source':
+      return fileSourceSkill(source)
+    case 'command-source':
+      return commandSourceSkill(source.name)
   }
 }
 
@@ -237,6 +341,8 @@ export interface AgentSkillProjectLookup {
 
 export interface AgentSkillFileDeps {
   projects: AgentSkillProjectLookup
+  /** Project-relative skill file path; defaults to the work item skill. */
+  path?: string
   newId?: () => string
 }
 
@@ -271,19 +377,30 @@ function unresolvable(relative: string, channel: string): AppError {
 
 /** IO failure with the relative path (spec Errors); the original goes to the main log. */
 function ioFailure(action: string, relative: string, error: unknown, channel: string): AppError {
-  console.warn(`[kanban] Teach agents could not ${action} ${relative}:`, error)
+  console.warn(`[agent-skill] Teach agents could not ${action} ${relative}:`, error)
   return new AppError('unknown', `Could not ${action} ${relative}.`, channel)
 }
 
 export class AgentSkillFile {
   readonly #projects: AgentSkillProjectLookup
   readonly #newId: () => string
+  readonly #relative: string
+  readonly #dirSegments: readonly string[]
+  readonly #fileName: string
   /** Per-project write queue: one replace at a time in this process. */
   readonly #queues = new Map<string, Promise<void>>()
 
   constructor(deps: AgentSkillFileDeps) {
     this.#projects = deps.projects
     this.#newId = deps.newId ?? randomUUID
+    this.#relative = deps.path ?? AGENT_SKILL_FILE_PATH
+    const segments = this.#relative.split('/')
+    const file = segments.pop()
+    if (file === undefined || segments.length === 0 || segments.some((part) => part === '')) {
+      throw new Error(`Invalid agent skill file path: ${this.#relative}`)
+    }
+    this.#dirSegments = segments
+    this.#fileName = file
   }
 
   /** Current file state and the token for `text`; every existing segment must stay inside the root. */
@@ -325,17 +442,17 @@ export class AgentSkillFile {
           throw ioFailure('create', segment.relative, 'missing after mkdir', channel)
         }
       }
-      // An existing SKILL.md (or a link at its path) must resolve inside too.
+      // An existing skill file (or a link at its path) must resolve inside too.
       await this.#resolveInside(realRoot, located.file, channel)
       const dir = located.dirs[located.dirs.length - 1].path
-      const temp = joinProjectPath(dir, `${SKILL_FILE}.${this.#newId()}.tmp`)
+      const temp = joinProjectPath(dir, `${this.#fileName}.${this.#newId()}.tmp`)
       try {
         await nodeFs.writeFile(temp, text, { encoding: 'utf8', flag: 'wx' })
       } catch (error) {
         // With `wx`, EEXIST means the entry at the temp name is not ours, so
         // it stays. Any other failure may leave a partial temp file of ours.
         if (errnoCode(error) !== 'EEXIST') await this.#removeTemp(temp)
-        throw ioFailure('write', AGENT_SKILL_FILE_PATH, error, channel)
+        throw ioFailure('write', this.#relative, error, channel)
       }
       // A project removed while this write was in flight drops the write.
       if (this.#projects.get(projectId) === null) {
@@ -346,7 +463,7 @@ export class AgentSkillFile {
         await nodeFs.rename(temp, located.file.path)
       } catch (error) {
         await this.#removeTemp(temp)
-        throw ioFailure('write', AGENT_SKILL_FILE_PATH, error, channel)
+        throw ioFailure('write', this.#relative, error, channel)
       }
     })
   }
@@ -360,7 +477,7 @@ export class AgentSkillFile {
     try {
       return await nodeFs.readFile(located.file.path)
     } catch (error) {
-      throw ioFailure('read', AGENT_SKILL_FILE_PATH, error, channel)
+      throw ioFailure('read', this.#relative, error, channel)
     }
   }
 
@@ -368,7 +485,7 @@ export class AgentSkillFile {
     try {
       await nodeFs.rm(temp, { force: true })
     } catch (error) {
-      console.warn(`[kanban] Could not remove the temporary skill file ${temp}:`, error)
+      console.warn(`[agent-skill] Could not remove the temporary skill file ${temp}:`, error)
     }
   }
 
@@ -378,16 +495,16 @@ export class AgentSkillFile {
       throw new AppError('not_found', `Project "${projectId}" not found.`, channel)
     }
     const root = project.path.replace(/\\/g, '/')
-    const dirs = SKILL_DIR_SEGMENTS.map((_, index) => {
-      const parts = SKILL_DIR_SEGMENTS.slice(0, index + 1)
+    const dirs = this.#dirSegments.map((_, index) => {
+      const parts = this.#dirSegments.slice(0, index + 1)
       return { path: joinProjectPath(root, ...parts), relative: parts.join('/') }
     })
     return {
       root,
       dirs,
       file: {
-        path: joinProjectPath(root, ...SKILL_DIR_SEGMENTS, SKILL_FILE),
-        relative: AGENT_SKILL_FILE_PATH,
+        path: joinProjectPath(root, ...this.#dirSegments, this.#fileName),
+        relative: this.#relative,
       },
     }
   }
@@ -400,7 +517,7 @@ export class AgentSkillFile {
         throw ioFailure('read', 'the project folder', error, channel)
       }
       if (await this.#exists(located.root, 'the project folder', channel)) {
-        throw unresolvable(`the project folder for ${AGENT_SKILL_FILE_PATH}`, channel)
+        throw unresolvable(`the project folder for ${this.#relative}`, channel)
       }
       throw new AppError('not_found', 'The project folder was not found.', channel)
     }

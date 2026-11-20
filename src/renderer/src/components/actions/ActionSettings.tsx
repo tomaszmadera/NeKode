@@ -43,17 +43,6 @@ interface Props {
   projectId: string | null
   /** Project root (Browse fallback when no directory is set yet); null without a project. */
   projectPath: string | null
-  /** Application-global Handoff/Resume auto-send (spec Behaviour 6). */
-  autoSend: boolean
-  onAutoSendChange: (next: boolean) => void
-  /** Effective Handoff instruction inherited from Application settings (NEKODE-172). */
-  handoffInstruction: string
-  /** Effective Continue instruction inherited from Application settings (NEKODE-172). */
-  continueInstruction: string
-  /** Effective Start instruction inherited from Application settings (NEKODE-187). */
-  startInstruction: string
-  /** Effective Resume instruction inherited from Application settings (NEKODE-187). */
-  resumeInstruction: string
   onRefresh: () => Promise<void>
   /**
    * Tab selected when the dialog opens (default `shell`). Only a caller that
@@ -74,12 +63,19 @@ interface Props {
   suspended?: boolean
 }
 
-export type SettingsTabId = 'shell' | 'actions' | 'kanban' | 'taskProgress' | 'agents'
+export type SettingsTabId =
+  | 'shell'
+  | 'actions'
+  | 'kanban'
+  | 'workRecord'
+  | 'taskProgress'
+  | 'agents'
 
 const PROJECT_TABS: Array<{ id: SettingsTabId; label: string; icon: LucideIcon }> = [
   { id: 'shell', label: 'Shell', icon: Icon.terminal },
   { id: 'actions', label: 'Actions', icon: Icon.run },
   { id: 'kanban', label: 'Work items', icon: Icon.kanban },
+  { id: 'workRecord', label: 'Work record', icon: Icon.book },
   { id: 'taskProgress', label: 'Step progress', icon: Icon.activity },
   { id: 'agents', label: 'Agents', icon: Icon.agent },
 ]
@@ -88,6 +84,7 @@ const TAB_TEST_ID: Record<SettingsTabId, string> = {
   shell: TEST_ID.settingsShellTab,
   actions: TEST_ID.settingsActionsTab,
   kanban: TEST_ID.settingsKanbanTab,
+  workRecord: TEST_ID.settingsWorkRecordTab,
   taskProgress: TEST_ID.settingsTaskProgressTab,
   agents: TEST_ID.settingsAgentsTab,
 }
@@ -148,12 +145,6 @@ export function ActionSettings({
   actions,
   projectId,
   projectPath,
-  autoSend,
-  onAutoSendChange,
-  handoffInstruction,
-  continueInstruction,
-  startInstruction,
-  resumeInstruction,
   onRefresh,
   initialTab,
   onClose,
@@ -303,78 +294,14 @@ export function ActionSettings({
       ) : activeTab === 'kanban' ? (
         <div className="flex max-w-[660px] flex-col gap-7">
           <KanbanSettings app={app} projectId={projectId} onInvalidate={onKanbanInvalidate} />
+        </div>
+      ) : activeTab === 'workRecord' ? (
+        <div className="flex max-w-[660px] flex-col gap-7">
           <ProjectResumeSettings
             app={app}
             projectId={projectId}
             onManageTemplates={onManageResumeTemplates}
           />
-          <SettingsGroup label="Handoff and instructions">
-            <SectionLabel title="Handoff and instructions" />
-            <GroupBox>
-              <div data-testid={TEST_ID.settingsConfigSection}>
-                <SettingsSwitch
-                  id="settings-auto-send"
-                  label="Auto-send after Handoff and Resume"
-                  description="Sends the handoff prompt without waiting for Enter."
-                  checked={autoSend}
-                  testId={TEST_ID.settingsAutoSend}
-                  onChange={onAutoSendChange}
-                />
-              </div>
-              <div className="border-t border-edge px-4 py-3 text-xs">
-                <p className="font-medium text-ink">Handoff</p>
-                <p
-                  data-testid={TEST_ID.settingsEffectiveHandoff}
-                  className="mt-1 whitespace-pre-wrap break-words font-mono text-ink"
-                >
-                  {handoffInstruction}
-                </p>
-                <p className="mt-1 text-ink-muted">
-                  Application settings, shared by all projects. The agent updates the work record;
-                  the application does not claim the handoff.
-                </p>
-              </div>
-              <div className="border-t border-edge px-4 py-3 text-xs">
-                <p className="font-medium text-ink">Continue</p>
-                <p
-                  data-testid={TEST_ID.settingsEffectiveContinue}
-                  className="mt-1 whitespace-pre-wrap break-words font-mono text-ink"
-                >
-                  {continueInstruction}
-                </p>
-                <p className="mt-1 text-ink-muted">
-                  Application settings, shared by all projects. It addresses the current
-                  conversation and selects no work item or work record.
-                </p>
-              </div>
-              <div className="border-t border-edge px-4 py-3 text-xs">
-                <p className="font-medium text-ink">Resume</p>
-                <p
-                  data-testid={TEST_ID.settingsEffectiveResume}
-                  className="mt-1 whitespace-pre-wrap break-words font-mono text-ink"
-                >
-                  {resumeInstruction}
-                </p>
-                <p className="mt-1 text-ink-muted">
-                  Application settings, shared by all projects. It names the work record that the
-                  work record source selected above finds.
-                </p>
-              </div>
-              <div className="border-t border-edge px-4 py-3 text-xs">
-                <p className="font-medium text-ink">Start</p>
-                <p
-                  data-testid={TEST_ID.settingsEffectiveStart}
-                  className="mt-1 whitespace-pre-wrap break-words font-mono text-ink"
-                >
-                  {startInstruction}
-                </p>
-                <p className="mt-1 text-ink-muted">
-                  Application settings, shared by all projects. Sent when you start a card from this
-                  project's Kanban board.
-                </p>
-              </div>
-            </GroupBox>
-          </SettingsGroup>
         </div>
       ) : activeTab === 'taskProgress' ? (
         <TaskProgressSettings app={app} projectId={projectId} />

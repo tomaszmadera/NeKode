@@ -1,3 +1,4 @@
+import { WORK_RECORD_SKILL_FILE_PATH } from '@shared/ipc-contract'
 import { vi } from 'vitest'
 import type { AppServices } from './service-registry'
 
@@ -22,6 +23,16 @@ export function resumeSourcesTestStub(): AppServices['resumeSources'] {
     })),
     prepare: vi.fn(async () => 'prompt'),
     importLegacy: vi.fn(async () => null),
+    skillPreview: vi.fn(async () => ({
+      path: WORK_RECORD_SKILL_FILE_PATH,
+      origin: 'local-progress' as const,
+      sourceName: 'Local work record',
+      exists: false,
+      current: null,
+      text: '',
+      token: 'a'.repeat(64),
+    })),
+    writeSkill: vi.fn(async () => undefined),
     dropProject: vi.fn(),
     shutdown: vi.fn(async () => undefined),
   }

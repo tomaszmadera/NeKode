@@ -248,6 +248,22 @@ describe('ipc payload validation', () => {
       expect(() => parse(IPC_CHANNEL.resumeSourcesPrepare, bad)).toThrow()
     expect(parse(IPC_CHANNEL.resumeSourcesImportLegacy, [])).toEqual([])
     expect(() => parse(IPC_CHANNEL.resumeSourcesImportLegacy, ['extra'])).toThrow()
+    expect(parse(IPC_CHANNEL.resumeSourcesSkillPreview, ['p1'])).toEqual(['p1'])
+    for (const bad of [[], [''], ['p1', 'extra']])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesSkillPreview, bad)).toThrow()
+    expect(parse(IPC_CHANNEL.resumeSourcesWriteSkill, ['p1', 'a'.repeat(64)])).toEqual([
+      'p1',
+      'a'.repeat(64),
+    ])
+    for (const bad of [
+      [],
+      ['p1'],
+      ['', 'a'.repeat(64)],
+      ['p1', 'A'.repeat(64)],
+      ['p1', 'a'.repeat(63)],
+      ['p1', 'a'.repeat(64), 'extra'],
+    ])
+      expect(() => parse(IPC_CHANNEL.resumeSourcesWriteSkill, bad)).toThrow()
     for (const key of ['resume.sources', 'project.resumeTemplate:p1']) {
       expect(() => parse(IPC_CHANNEL.stateGet, [key])).toThrow(/protected/)
       expect(() => parse(IPC_CHANNEL.stateSet, [key, '{}'])).toThrow(/protected/)

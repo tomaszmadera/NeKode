@@ -18,6 +18,7 @@ import {
   type WorkItem,
 } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
+import { AgentSkillFile, buildAgentSkill, readAdapterSkillBody } from '../agent-skill-file'
 import { AdapterHost, toAppError } from './adapter-host'
 import { type DiscoveredAdapter, type DiscoveryResult, discoverAdapters } from './adapter-manifest'
 import {
@@ -26,7 +27,6 @@ import {
   normalizeItems,
   normalizeStates,
 } from './adapter-protocol'
-import { AgentSkillFile, buildAgentSkill, readAdapterSkillBody } from './agent-skill-file'
 import { LocalTaskFile } from './local-task-file'
 
 // KanbanService (spec kanban-adapter-interface Behaviour 4–11): the single

@@ -166,13 +166,7 @@ export const TEST_ID = {
   appUpdate: 'app-update',
   /** App Settings General: download and start the published Windows installer. */
   appUpdateButton: 'app-update-button',
-  settingsConfigSection: 'settings-config-section',
   settingsAutoSend: 'settings-auto-send',
-  /** Project Settings: effective instruction text with its origin (NEKODE-172). */
-  settingsEffectiveHandoff: 'settings-effective-handoff',
-  settingsEffectiveContinue: 'settings-effective-continue',
-  settingsEffectiveResume: 'settings-effective-resume',
-  settingsEffectiveStart: 'settings-effective-start',
   /** App Settings: quick theme switcher in status bar toggle. */
   settingsQuickThemeSwitch: 'settings-quick-theme-switch',
   /** App Settings: Ctrl+Tab chat switching on/off (NEKODE-2). */
@@ -226,6 +220,8 @@ export const TEST_ID = {
   settingsActionsTab: 'settings-actions-tab',
   /** Project Settings: Kanban tab button + panel (spec kanban-adapter-interface). */
   settingsKanbanTab: 'settings-kanban-tab',
+  /** `Work record` tab in Project Settings (separation spec). */
+  settingsWorkRecordTab: 'settings-work-record-tab',
   settingsKanbanPanel: 'settings-kanban-panel',
   settingsKanbanLoading: 'settings-kanban-loading',
   settingsKanbanSecretSessionOnly: 'settings-kanban-secret-session-only',
@@ -252,6 +248,22 @@ export const TEST_ID = {
   settingsKanbanTeachNoProfiles: 'settings-kanban-teach-no-profiles',
   settingsKanbanTeachError: 'settings-kanban-teach-error',
   settingsKanbanTeachDone: 'settings-kanban-teach-done',
+  /** `Teach agents` in the Work record tab and its confirm dialog (separation spec). */
+  settingsWorkRecordTeachAgents: 'settings-work-record-teach-agents',
+  settingsWorkRecordTeachFile: 'settings-work-record-teach-file',
+  settingsWorkRecordTeachReplace: 'settings-work-record-teach-replace',
+  settingsWorkRecordTeachNew: 'settings-work-record-teach-new',
+  settingsWorkRecordTeachOrigin: 'settings-work-record-teach-origin',
+  settingsWorkRecordTeachText: 'settings-work-record-teach-text',
+  settingsWorkRecordTeachDiff: 'settings-work-record-teach-diff',
+  settingsWorkRecordTeachNoChanges: 'settings-work-record-teach-no-changes',
+  settingsWorkRecordTeachCurrentHidden: 'settings-work-record-teach-current-hidden',
+  settingsWorkRecordTeachBoundary: 'settings-work-record-teach-boundary',
+  settingsWorkRecordTeachNotice: 'settings-work-record-teach-notice',
+  settingsWorkRecordTeachProfiles: 'settings-work-record-teach-profiles',
+  settingsWorkRecordTeachNoProfiles: 'settings-work-record-teach-no-profiles',
+  settingsWorkRecordTeachError: 'settings-work-record-teach-error',
+  settingsWorkRecordTeachDone: 'settings-work-record-teach-done',
   settingsKanbanSave: 'settings-kanban-save',
   settingsKanbanSaved: 'settings-kanban-saved',
   settingsKanbanTest: 'settings-kanban-test',

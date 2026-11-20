@@ -316,6 +316,7 @@ export function createServices(
   const resumeSources = new ResumeSourcesService({
     projects,
     state,
+    requireLocalProject,
     readLegacyTemplate: () => resumeTemplates.readLegacyTemplate(),
     resumeInstruction: () =>
       resolveInstruction(

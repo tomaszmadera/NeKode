@@ -18,6 +18,7 @@ import {
   quietClass,
   SectionLabel,
   SettingsGroup,
+  SettingsSwitch,
   secondaryClass,
   textClass,
 } from './settings-ui'
@@ -34,6 +35,7 @@ export interface InstructionSettingsProps {
   resumeInstructionError: string | null
   resumeMigrationNotice: ResumeMigrationNotice | null
   autoSend: boolean
+  onAutoSendChange: (next: boolean) => void
   onSaveHandoff: (value: string) => string | null
   onResetHandoff: () => void
   onSaveContinue: (value: string) => string | null
@@ -222,6 +224,7 @@ export function InstructionSettings({
   resumeInstructionError,
   resumeMigrationNotice,
   autoSend,
+  onAutoSendChange,
   onSaveHandoff,
   onResetHandoff,
   onSaveContinue,
@@ -306,6 +309,20 @@ export function InstructionSettings({
           {affectedProjects}
         </p>
       ) : null}
+
+      <SettingsGroup label="Delivery">
+        <SectionLabel title="Delivery" />
+        <GroupBox>
+          <SettingsSwitch
+            id="settings-auto-send"
+            label="Auto-send after Handoff and Resume"
+            description="Sends the handoff prompt without waiting for Enter."
+            checked={autoSend}
+            testId={TEST_ID.settingsAutoSend}
+            onChange={onAutoSendChange}
+          />
+        </GroupBox>
+      </SettingsGroup>
 
       <InstructionEditor
         action="start"

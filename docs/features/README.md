@@ -48,7 +48,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [openwhispr-dictation](openwhispr-dictation/spec.md) | OpenWhispr dictation integration | Delivered for desktop V1; the public Cloud API stays deferred (backlog item NEKODE-37) |
 | [project-environments](project-environments/spec.md) | Project environments: opening WSL projects | Delivered (WSL opening and the add-project UI extension) |
 | [project-files-view](project-files-view/spec.md) | Project Files: File Tree and Read-Only Preview | Delivered |
-| [project-home](project-home/spec.md) | Project home: Tasks tab, local file, and agent skill | Delivered (one skill file, no per-agent skill folders) |
+| [project-home](project-home/spec.md) | Project home: Tasks tab, local file, and agent skill | Delivered (work item skill file only; the separate work record tab and skill are owned by [work-items-work-record-separation](work-items-work-record-separation/spec.md); no per-agent skill folders) |
 | [project-shell-selection](project-shell-selection/spec.md) | Per-project terminal shell selection with system shell detection | Delivered |
 | [public-documentation-contract](public-documentation-contract/spec.md) | Public documentation contract independent of the local harness | Delivered |
 | [renderer-interaction-correctness](renderer-interaction-correctness/spec.md) | Renderer interaction correctness | Not delivered |
@@ -59,6 +59,7 @@ Keep the status line and the table row in sync: when a delivery state changes, u
 | [test-suite-simplification](test-suite-simplification/spec.md) | Test suite audit and simplification | Delivered |
 | [themes](themes/spec.md) | Themes | Delivered |
 | [usage-quota](usage-quota/spec.md) | Usage quota | Delivered (Stages 1-3 implemented, reviewed and fully verified; live provider reads not run) |
+| [work-items-work-record-separation](work-items-work-record-separation/spec.md) | Work items and work record: separate settings and agent skills | Delivered (separate `Work items` and `Work record` tabs and two independent skill files; existing projects re-teach explicitly) |
 | [work-record-progress](work-record-progress/spec.md) | Work record progress and bundled progress adapters | Delivered (NEKODE-192) |
 | [workspace-layout](workspace-layout/spec.md) | Workspace layout modes | Delivered |
 

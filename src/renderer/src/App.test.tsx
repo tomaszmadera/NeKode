@@ -1558,14 +1558,21 @@ describe('action row and settings', () => {
     expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
   })
 
-  it('project settings edits auto-send', async () => {
+  it('app settings, Instructions owns auto-send and project settings does not', async () => {
     await renderSelectedChat()
     fireEvent.click(screen.getByRole('button', { name: 'Project Settings' }))
     await screen.findByText('Project Settings')
-    // The modal opens on the Shell tab; the tasks/resume settings live on Tasks.
+    // Auto-send moved out of the work item tab and the project-level block is gone.
     fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanTab))
+    expect(screen.queryByTestId(TEST_ID.settingsAutoSend)).toBeNull()
+    expect(screen.queryByText('Handoff and instructions')).toBeNull()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Project Settings' })).toBeNull()
 
-    const autoSend = screen.getByTestId(TEST_ID.settingsAutoSend)
+    fireEvent.click(screen.getByTestId(TEST_ID.appSettingsButton))
+    const dialog = await screen.findByRole('dialog', { name: 'App Settings' })
+    fireEvent.click(within(dialog).getByTestId(TEST_ID.settingsInstructionsTab))
+    const autoSend = await within(dialog).findByTestId(TEST_ID.settingsAutoSend)
     expect(autoSend.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(autoSend)
     await waitFor(() =>

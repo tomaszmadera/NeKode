@@ -42,6 +42,7 @@ import type {
   TaskProgressTestResult,
   Unsubscribe,
   WorkItem,
+  WorkRecordSkillPreview,
 } from '@shared/ipc-contract'
 import { IPC_CHANNEL, isTaskProgressChangedEvent } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
@@ -282,6 +283,10 @@ export function createAppApi(ipc: IpcRendererLike, platform?: string, homeDir?: 
       prepare: (projectId, token, requestId) =>
         invoke<string>(IPC_CHANNEL.resumeSourcesPrepare, projectId, token, requestId),
       importLegacy: () => invoke<string | null>(IPC_CHANNEL.resumeSourcesImportLegacy),
+      skillPreview: (projectId) =>
+        invoke<WorkRecordSkillPreview>(IPC_CHANNEL.resumeSourcesSkillPreview, projectId),
+      writeSkill: (projectId, token) =>
+        invoke<void>(IPC_CHANNEL.resumeSourcesWriteSkill, projectId, token),
       onChanged: (callback) => {
         const listener = (_event: unknown, payload: unknown) => {
           if (isResumeSourcesChanged(payload)) callback(payload)

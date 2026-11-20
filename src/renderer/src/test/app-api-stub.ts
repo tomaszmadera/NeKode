@@ -8,6 +8,8 @@ import {
   type AppApi,
   emptyGitWorktree,
   type KanbanSkillPreview,
+  WORK_RECORD_SKILL_FILE_PATH,
+  type WorkRecordSkillPreview,
 } from '@shared/ipc-contract'
 import { vi } from 'vitest'
 import { createDictationApiStub } from './dictation-api-stub'
@@ -22,6 +24,22 @@ export function skillPreviewStub(overrides: Partial<KanbanSkillPreview> = {}): K
     current: null,
     text: '---\nname: nekode-tasks\n---\n\n# NeKode tasks\n',
     token: 'c'.repeat(64),
+    ...overrides,
+  }
+}
+
+/** A `resumeSources:skillPreview` result for a new file; tests override fields. */
+export function workRecordSkillPreviewStub(
+  overrides: Partial<WorkRecordSkillPreview> = {},
+): WorkRecordSkillPreview {
+  return {
+    path: WORK_RECORD_SKILL_FILE_PATH,
+    origin: 'local-progress',
+    sourceName: 'Local work record',
+    exists: false,
+    current: null,
+    text: '---\nname: nekode-work-record\n---\n\n# NeKode work record\n',
+    token: 'd'.repeat(64),
     ...overrides,
   }
 }
@@ -51,6 +69,8 @@ export function createAppApiStub(): AppApi {
       })),
       prepare: vi.fn(async () => 'Resume task demo'),
       importLegacy: vi.fn(async () => null),
+      skillPreview: vi.fn(async () => workRecordSkillPreviewStub()),
+      writeSkill: vi.fn().mockResolvedValue(undefined),
     },
     appUpdate: {
       latest: vi.fn().mockResolvedValue({ canInstall: false, version: null, error: null }),

@@ -8,7 +8,7 @@ Path: `docs/features/settings-dialog-restyle/spec.md`.
 
 Restyle the App Settings dialog and the Project Settings dialog so they share one shell and match the layout in `tmp/Main.dc.html`. People who already use these settings keep every current setting, command, and saved value.
 
-App Settings pages: General, Fonts, Shortcuts, Dictation, Agents, and Usage. Project Settings pages: Shell, Actions, Tasks, Task progress, and Agents.
+App Settings pages: General, Fonts, Shortcuts, Dictation, Agents, and Usage. Project Settings pages: Shell, Actions, Work items, Work record, Step progress, and Agents.
 
 ## Related requirements
 
@@ -71,11 +71,11 @@ The navigation label is "Actions", not "Actions & Configuration".
 
 Shell keeps detection, the shell select, the custom absolute-path add, and Save. Save stays disabled when the selected shell is the saved shell. The existing WSL fallback sentence stays. Project colour is its own radiogroup: Auto, then the palette swatches named Violet, Blue, Salmon, Green, Yellow, Pink, and Teal. Choosing a colour saves immediately. The selected swatch uses the dialog and ink tokens for its ring.
 
-Actions keeps handoff auto-send, the handoff directory, and the toolbar action list. Auto-send, "Run as a PowerShell script", and "Ask for confirmation" are switches for the same settings. The add control reads "Add action". The run-mode label reads "Run in". Add and Edit replace the list and the handoff section, so only one Save is available while editing. That button reads "Save action". The handoff save name stays "Save handoff directory".
+Actions keeps the toolbar action list. `Auto-send after Handoff and Resume` is in App Settings, Instructions (see [work-items-work-record-separation](work-items-work-record-separation/spec.md)). "Run as a PowerShell script" and "Ask for confirmation" are switches for the same settings. The add control reads "Add action". The run-mode label reads "Run in". Add and Edit replace the list, so only one Save is available while editing. That button reads "Save action".
 
-Tasks renders the selected adapter's schema. It does not hard-code tracker fields. A required field ends with muted " · required". A schema boolean stays a checkbox. A secret that is already stored shows "Stored" and Change, and hides the password field until Change. There is no Clear. While the secret is not stored, or after Change, the password field stays in the form so a value can be typed before the first save. Save still omits an empty secret and still sends an empty non-secret. Test stays disabled until the displayed adapter is the persisted binding. "Use a local task list" stays available only while no source is bound. Teach agents stays its own section. Its confirm dialog stays portaled to the document body.
+Work items renders the selected adapter's schema. It does not hard-code tracker fields. A required field ends with muted " · required". A schema boolean stays a checkbox. A secret that is already stored shows "Stored" and Change, and hides the password field until Change. There is no Clear. While the secret is not stored, or after Change, the password field stays in the form so a value can be typed before the first save. Save still omits an empty secret and still sends an empty non-secret. Test stays disabled until the displayed adapter is the persisted binding. "Use a local task list" stays available only while no source is bound. Work items and Work record each keep their own `Teach agents` section, and each writes only its own skill file. The confirm dialog stays portaled to the document body.
 
-Task progress keeps the adapter select, including None, the copy-from-project list, Test, and Save. Test stays disabled until an adapter is chosen, and also while the adapter is missing or a test is running. The empty-adapter explanation keeps the paths `task-progress-adapters` and `adapters/task-progress-example/README.md`. A schema boolean stays a checkbox. A required field ends with muted " · required". Copy from project sits on the left of the footer. Test and Save sit on the right. Last read stays its own section and keeps the current explanation and read-state text.
+Step progress keeps the adapter select, including None, the copy-from-project list, Test, and Save. Test stays disabled until an adapter is chosen, and also while the adapter is missing or a test is running. The empty-adapter explanation keeps the paths `task-progress-adapters` and `adapters/task-progress-example/README.md`. A schema boolean stays a checkbox. A required field ends with muted " · required". Copy from project sits on the left of the footer. Test and Save sit on the right. Last read stays its own section and keeps the current explanation and read-state text.
 
 Project Agents keeps the enable row as a native checkbox that is visually hidden and still focusable. Its accessible name stays `Enable ${name}: ${command}`, and its checked state stays the input's `checked`. The row shows the name, the command on one line, and a Default tag when that agent is the default. The default select lists only selected agents, by name only, plus "None (choose at launch)". The header count reads "Available · N of M". Manage agents opens App Settings on Agents. Empty states stay "No global agents. Use Manage agents to add one." and "No agents selected for this project. Select an agent to use it in New Chat or Tasks." Cancel restores the saved selection. Save writes the same selection payload.
 
@@ -113,7 +113,7 @@ Existing error alerts stay visible. A failed dictation connection shows one erro
 
 ## Acceptance criteria
 
-- All six App Settings pages and all five Project Settings pages follow the reference layout in every shipped theme, with no hard-coded prototype colours in components.
+- All six App Settings pages and all six Project Settings pages follow the reference layout in every shipped theme, with no hard-coded prototype colours in components.
 - Both dialogs use the one shell. App Settings keeps the dialog Tab trap and focus restore. Project Settings keeps the window Escape listener and skips it while suspended.
 - Every current setting still loads, toggles, saves, tests, adds, edits, and removes as it does now.
 - Escape, backdrop mouse down, and the close button close the dialog that owns them. A portaled confirm dialog can consume Escape without closing Project Settings.
@@ -129,7 +129,7 @@ Existing error alerts stay visible. A failed dictation connection shows one erro
 - Cover dictation Change, Clear, and the error border after a failed connection test.
 - Cover a stored Kanban secret: the password field is absent, the stored text is "Stored", and Change reveals the field. An untouched save still omits the secret.
 - Keep project Agent enable rows as checkboxes whose accessible name matches `Enable ${name}:` and whose `checked` state is readable.
-- Keep schema booleans on Tasks and Task progress as checkboxes. A required marker contains "required".
+- Keep schema booleans on Work items and Step progress as checkboxes. A required marker contains "required".
 - Escape inside the Teach agents dialog does not close Project Settings.
 
 ## Relevant SDD / ADR

@@ -40,6 +40,7 @@ import type {
   KanbanSkillPreview,
   KanbanUpdatePatch,
   WorkItem,
+  WorkRecordSkillPreview,
 } from './contracts/kanban-contract'
 import type { ProjectInfo, SshProjectInput } from './contracts/projects-contract'
 import type {
@@ -203,6 +204,8 @@ export const IPC_CHANNEL = {
   resumeSourcesDiscover: 'resumeSources:discover',
   resumeSourcesPrepare: 'resumeSources:prepare',
   resumeSourcesImportLegacy: 'resumeSources:importLegacy',
+  resumeSourcesSkillPreview: 'resumeSources:skillPreview',
+  resumeSourcesWriteSkill: 'resumeSources:writeSkill',
   dialogsPickDirectory: 'dialogs:pickDirectory',
   kanbanAdaptersList: 'kanban:adaptersList',
   kanbanGetConfig: 'kanban:getConfig',
@@ -450,6 +453,20 @@ export interface AppApi {
     discover(projectId: string, requestId: string): Promise<ResumeSourceDiscovery>
     prepare(projectId: string, token: string, requestId: string): Promise<string>
     importLegacy(): Promise<string | null>
+    /**
+     * `Teach agents` preview in Project Settings, Work record (separation
+     * spec): the exact work record skill text for the bound source, the
+     * current `.agents/skills/nekode-work-record/SKILL.md`, and the write
+     * token. Read-only, with the same containment checks as the write.
+     */
+    skillPreview(projectId: string): Promise<WorkRecordSkillPreview>
+    /**
+     * Writes the previewed work record skill after the confirm gesture.
+     * Main rebuilds the text from the bound source; the renderer sends only
+     * the preview token. A stale token rejects with `conflict`; rejects
+     * while no source is bound.
+     */
+    writeSkill(projectId: string, token: string): Promise<void>
   }
   kanban: {
     /** Adapters discovered in the configured adapters directory (fresh scan). */

@@ -1,4 +1,5 @@
 import type {
+  AgentSkillPreview,
   AppApi,
   KanbanAdapterInfo,
   KanbanConfigField,
@@ -12,12 +13,10 @@ import {
 } from '@shared/ipc-contract'
 import { parseAppErrorPayload } from '@shared/ipc-error'
 import type React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutationGuard } from '../../hooks/useMutationGuard'
-import { diffLines } from '../../lib/line-diff'
 import { TEST_ID, testIdFor } from '../../lib/test-ids'
-import { ConfirmDialog } from '../layout/ConfirmDialog'
+import { AgentSkillTeachDialog, type AgentSkillTeachTestIds } from './AgentSkillTeachDialog'
 import {
   FieldRow,
   GroupBox,
@@ -71,7 +70,7 @@ interface TeachDialogState {
 
 const TEACH_STALE_NOTICE = 'The skill file or its source changed. Review the new preview.'
 
-function teachOriginLabel(preview: KanbanSkillPreview): string {
+function teachOriginLabel(preview: AgentSkillPreview): string {
   switch (preview.origin) {
     case 'local-file':
       return 'Local file instructions'
@@ -79,54 +78,15 @@ function teachOriginLabel(preview: KanbanSkillPreview): string {
       return `Instructions from the ${preview.sourceName} adapter`
     case 'default':
       return `NeKode default instructions for ${preview.sourceName}`
+    case 'local-progress':
+      return 'Local work record instructions'
+    case 'agent-harness':
+      return 'Agent Harness instructions'
+    case 'file-source':
+      return `Instructions for the ${preview.sourceName} file source`
+    case 'command-source':
+      return `Instructions for the ${preview.sourceName} command source`
   }
-}
-
-/** Current file to new text: `No changes`, a hidden current file, or a line diff. */
-function TeachDiff({ preview }: { preview: KanbanSkillPreview }): React.JSX.Element | null {
-  // The diff only depends on the two texts; other dialog state must not redo it.
-  const lines = useMemo(
-    () =>
-      preview.current === null || preview.current === preview.text
-        ? []
-        : diffLines(preview.current, preview.text),
-    [preview.current, preview.text],
-  )
-  if (!preview.exists) return null
-  if (preview.current === null) {
-    return (
-      <p className="mt-2 text-ink-muted" data-testid={TEST_ID.settingsKanbanTeachCurrentHidden}>
-        The current file cannot be shown.
-      </p>
-    )
-  }
-  if (preview.current === preview.text) {
-    return (
-      <p className="mt-2 text-ink-muted" data-testid={TEST_ID.settingsKanbanTeachNoChanges}>
-        No changes
-      </p>
-    )
-  }
-  const mark = { same: ' ', remove: '-', add: '+' } as const
-  const tone = { same: 'text-ink-secondary', remove: 'text-error', add: 'text-success' } as const
-  return (
-    <>
-      <p className="mt-3">Changes to the current file:</p>
-      <pre
-        className="mt-1 max-h-56 overflow-auto rounded-md border border-edge bg-app p-2 font-mono text-[11px] leading-snug"
-        data-testid={TEST_ID.settingsKanbanTeachDiff}
-      >
-        {lines.map((line, index) => (
-          // Lines have no identity beyond their position in this diff.
-          // biome-ignore lint/suspicious/noArrayIndexKey: positional diff rows
-          <div key={index} className={tone[line.kind]} data-diff={line.kind}>
-            {mark[line.kind]}
-            {line.text}
-          </div>
-        ))}
-      </pre>
-    </>
-  )
 }
 
 /** Effective stored values as returned by getConfig (non-secret) or null. */
@@ -209,38 +169,20 @@ function requiredError(
   return null
 }
 
-/** Path, new or replace, origin, exact text, and diff of one preview (Behaviour 13). */
-function TeachPreview({ preview }: { preview: KanbanSkillPreview }): React.JSX.Element {
-  return (
-    <>
-      <p>
-        File:{' '}
-        <code className="text-ink" data-testid={TEST_ID.settingsKanbanTeachFile}>
-          {preview.path}
-        </code>
-      </p>
-      {preview.exists ? (
-        <p className="mt-2 text-warning" data-testid={TEST_ID.settingsKanbanTeachReplace}>
-          This replaces {preview.path}.
-        </p>
-      ) : (
-        <p className="mt-2" data-testid={TEST_ID.settingsKanbanTeachNew}>
-          This creates a new file.
-        </p>
-      )}
-      <p className="mt-2 text-ink" data-testid={TEST_ID.settingsKanbanTeachOrigin}>
-        {teachOriginLabel(preview)}
-      </p>
-      <p className="mt-3">Text to write:</p>
-      <pre
-        className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap rounded-md border border-edge bg-app p-2 font-mono text-[11px] leading-snug text-ink"
-        data-testid={TEST_ID.settingsKanbanTeachText}
-      >
-        {preview.text}
-      </pre>
-      <TeachDiff preview={preview} />
-    </>
-  )
+const KANBAN_TEACH_TEST_IDS: AgentSkillTeachTestIds = {
+  file: TEST_ID.settingsKanbanTeachFile,
+  replace: TEST_ID.settingsKanbanTeachReplace,
+  new: TEST_ID.settingsKanbanTeachNew,
+  origin: TEST_ID.settingsKanbanTeachOrigin,
+  text: TEST_ID.settingsKanbanTeachText,
+  diff: TEST_ID.settingsKanbanTeachDiff,
+  noChanges: TEST_ID.settingsKanbanTeachNoChanges,
+  currentHidden: TEST_ID.settingsKanbanTeachCurrentHidden,
+  notice: TEST_ID.settingsKanbanTeachNotice,
+  boundary: TEST_ID.settingsKanbanTeachBoundary,
+  profiles: TEST_ID.settingsKanbanTeachProfiles,
+  noProfiles: TEST_ID.settingsKanbanTeachNoProfiles,
+  error: TEST_ID.settingsKanbanTeachError,
 }
 
 export function KanbanSettings({
@@ -886,74 +828,24 @@ export function KanbanSettings({
                   </GroupBox>
                 </SettingsGroup>
               ) : null}
-              {/* Portaled to the body so the confirm sits above the Project
-                  Settings modal instead of inside its scrolling panel. */}
-              {teachDialog !== null
-                ? createPortal(
-                    <ConfirmDialog
-                      title="Teach agents"
-                      body="NeKode writes one agent skill file that tells agents where this project's work items live. It contains no work items or source settings."
-                      confirmLabel="Write skill file"
-                      confirmDisabled={teachWriting || teachDialog.preview === null}
-                      wide
-                      onConfirm={() => {
-                        void confirmTeachAgents()
-                      }}
-                      onCancel={() => {
-                        if (teachWriting) return
-                        setTeachDialog(null)
-                        setTeachError(null)
-                      }}
-                    >
-                      <div className="mt-3 text-xs text-ink-secondary">
-                        {teachDialog.notice !== null ? (
-                          <p
-                            role="status"
-                            className="mb-3 text-warning"
-                            data-testid={TEST_ID.settingsKanbanTeachNotice}
-                          >
-                            {teachDialog.notice}
-                          </p>
-                        ) : null}
-                        {teachDialog.preview === null ? null : (
-                          <TeachPreview preview={teachDialog.preview} />
-                        )}
-                        <p className="mt-3" data-testid={TEST_ID.settingsKanbanTeachBoundary}>
-                          Writing this file installs and configures nothing. Agents that do not read
-                          project skills ignore it.
-                        </p>
-                        <p className="mt-3">Agents that can read a project skill:</p>
-                        {teachDialog.profiles.length > 0 ? (
-                          <ul
-                            className="mt-1 list-disc pl-5 text-ink"
-                            data-testid={TEST_ID.settingsKanbanTeachProfiles}
-                          >
-                            {teachDialog.profiles.map((profile) => (
-                              <li key={profile.id}>{profile.name}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p
-                            className="mt-1 text-ink-muted"
-                            data-testid={TEST_ID.settingsKanbanTeachNoProfiles}
-                          >
-                            No agent profile is selected for this project.
-                          </p>
-                        )}
-                        {teachError !== null ? (
-                          <p
-                            role="alert"
-                            className="mt-3 text-error"
-                            data-testid={TEST_ID.settingsKanbanTeachError}
-                          >
-                            {teachError}
-                          </p>
-                        ) : null}
-                      </div>
-                    </ConfirmDialog>,
-                    document.body,
-                  )
-                : null}
+              <AgentSkillTeachDialog
+                open={teachDialog !== null}
+                body="NeKode writes one agent skill file that tells agents where this project's work items live. It contains no work items or source settings."
+                preview={teachDialog?.preview ?? null}
+                profiles={teachDialog?.profiles ?? []}
+                notice={teachDialog?.notice ?? null}
+                error={teachError}
+                writing={teachWriting}
+                originLabel={teachOriginLabel}
+                testIds={KANBAN_TEACH_TEST_IDS}
+                onConfirm={() => {
+                  void confirmTeachAgents()
+                }}
+                onCancel={() => {
+                  setTeachDialog(null)
+                  setTeachError(null)
+                }}
+              />
             </>
           )}
         </>

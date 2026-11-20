@@ -11,13 +11,18 @@ import {
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENT_SKILL_FILE_PATH } from '@shared/ipc-contract'
+import { AGENT_SKILL_FILE_PATH, WORK_RECORD_SKILL_FILE_PATH } from '@shared/ipc-contract'
 import { AppError } from '@shared/ipc-error'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AdapterInvocation, AdapterRequest } from './adapter-host'
-import { AgentSkillFile, agentSkillToken, buildAgentSkill } from './agent-skill-file'
-import { KanbanService } from './kanban-service'
-import { LocalTaskFile, parseLocalTaskDocument } from './local-task-file'
+import {
+  AgentSkillFile,
+  agentSkillToken,
+  buildAgentSkill,
+  buildWorkRecordSkill,
+} from './agent-skill-file'
+import type { AdapterInvocation, AdapterRequest } from './kanban/adapter-host'
+import { KanbanService } from './kanban/kanban-service'
+import { LocalTaskFile, parseLocalTaskDocument } from './kanban/local-task-file'
 
 // `Teach agents` (project-home spec Behaviour 11-13, AC8, AC10-12, Business
 // rules, Errors). Real temp directories stand in for a project root and the
@@ -37,6 +42,7 @@ function skillFile(): string {
 }
 
 const LOCAL_TEXT = buildAgentSkill({ kind: 'local-file' })
+const LOCAL_WORK_RECORD_TEXT = buildWorkRecordSkill({ kind: 'local-progress' })
 const PLANE_TEXT = buildAgentSkill({ kind: 'default', adapterName: 'Plane' })
 const TOKEN = 'a'.repeat(64)
 
@@ -141,24 +147,41 @@ describe('skill text (Behaviour 11, Business rules)', () => {
     expect(text).toContain('plus 1')
     expect(text).toMatch(/stale revision/i)
     expect(text).toMatch(/do not create a second task list/i)
-    expect(text).toContain('work/T-1/progress.md')
-    expect(text).toContain('work/<ref>/progress.md')
-    expect(text).toContain('work-completed/<ref>/progress.md')
-    expect(text).toContain('Work record')
-    expect(text).toMatch(/Handoff: update/)
-    expect(text).toMatch(/Stop is an interruption/)
-    expect(text).toMatch(/Resume: read the work record/)
+    expect(text).not.toContain('work/T-1/progress.md')
+    expect(text).not.toContain('nekode-state')
+    expect(text).not.toMatch(/Handoff: update/)
+    expect(text).not.toMatch(/Stop is an interruption/)
+    expect(text).not.toMatch(/Resume: read the work record/)
     expect(text).not.toMatch(/kanban CLI/i)
     expect(text.endsWith('\n')).toBe(true)
     expect(text).not.toContain(EM_DASH)
   })
 
-  it('local-file teaches one valid state block and keeps it aligned with the work record', () => {
-    const blocks = [...LOCAL_TEXT.matchAll(/^```nekode-state\n([\s\S]*?)^```$/gm)]
+  it('local work record names the record, its prose, one state block, and completion', () => {
+    const text = LOCAL_WORK_RECORD_TEXT
+    expect(frontmatter(text)).toEqual({
+      name: 'nekode-work-record',
+      description: expect.stringContaining('work/<ref>/progress.md'),
+    })
+    expect(text).toContain('work/T-1/progress.md')
+    expect(text).toContain('work/<ref>/progress.md')
+    expect(text).toContain('work-completed/<ref>/progress.md')
+    expect(text).toMatch(/Handoff: update/)
+    expect(text).toMatch(/Stop is an interruption/)
+    expect(text).toMatch(/Resume: read the work record/)
+    expect(text).not.toContain('.nekode/tasks.json')
+    expect(text).not.toContain('"nextRef"')
+    expect(text).not.toContain('## File shape')
+    expect(text).not.toMatch(/revision rule/i)
+    expect(text).not.toContain(EM_DASH)
+  })
+
+  it('local work record teaches one valid state block and keeps it aligned with the record', () => {
+    const blocks = [...LOCAL_WORK_RECORD_TEXT.matchAll(/^```nekode-state\n([\s\S]*?)^```$/gm)]
     expect(blocks).toHaveLength(1)
     const state = JSON.parse(blocks[0][1])
     const require = createRequire(import.meta.url)
-    const adapter = require('../../../../adapters/task-progress-nekode-work-record/adapter.cjs')
+    const adapter = require('../../../adapters/task-progress-nekode-work-record/adapter.cjs')
     expect(adapter.parseRecord(`\`\`\`nekode-state\n${blocks[0][1]}\`\`\`\n`)).toMatchObject({
       recordState: 'valid',
       state: state.status,
@@ -166,15 +189,66 @@ describe('skill text (Behaviour 11, Business rules)', () => {
       currentStepId: state.currentStepId,
       nextAction: state.nextAction,
     })
-    expect(LOCAL_TEXT).toContain('exactly one')
-    expect(LOCAL_TEXT).toContain('strict JSON')
-    expect(LOCAL_TEXT).toContain('unique across the record')
-    expect(LOCAL_TEXT).toContain('64 KiB')
-    expect(LOCAL_TEXT).toContain('1 MiB')
-    expect(LOCAL_TEXT).toContain('Keep the block and the prose aligned')
-    expect(LOCAL_TEXT).toContain('Only after the user confirms completion and the card is in Done')
-    expect(LOCAL_TEXT).toContain('set `status` to `completed`')
-    expect(LOCAL_TEXT).not.toMatch(/progress file|task record/i)
+    expect(LOCAL_WORK_RECORD_TEXT).toContain('exactly one')
+    expect(LOCAL_WORK_RECORD_TEXT).toContain('strict JSON')
+    expect(LOCAL_WORK_RECORD_TEXT).toContain('unique across the record')
+    expect(LOCAL_WORK_RECORD_TEXT).toContain('64 KiB')
+    expect(LOCAL_WORK_RECORD_TEXT).toContain('1 MiB')
+    expect(LOCAL_WORK_RECORD_TEXT).toContain('Keep the block and the prose aligned')
+    expect(LOCAL_WORK_RECORD_TEXT).toContain(
+      'Only after the user confirms completion and the card is in Done',
+    )
+    expect(LOCAL_WORK_RECORD_TEXT).toContain('set `status` to `completed`')
+    expect(LOCAL_WORK_RECORD_TEXT).not.toMatch(/progress file|task record/i)
+  })
+
+  it('Agent Harness teaches taskctl and forbids a parallel local record', () => {
+    const text = buildWorkRecordSkill({ kind: 'agent-harness' })
+    expect(frontmatter(text).name).toBe('nekode-work-record')
+    expect(text).toContain('python .agents/scripts/taskctl list --json')
+    expect(text).toContain('Do not create `work/<ref>/progress.md`')
+    expect(text).not.toContain('nekode-state')
+    expect(text).not.toContain('.nekode/tasks.json')
+    expect(text).not.toContain('work-completed/<ref>')
+  })
+
+  it('a custom file source names its discovery values without claiming work/<ref>', () => {
+    const text = buildWorkRecordSkill({
+      kind: 'file-source',
+      name: 'Team notes',
+      directory: 'notes',
+      pattern: '*.md',
+      recursive: false,
+      identity: 'stem',
+    })
+    expect(frontmatter(text).name).toBe('nekode-work-record')
+    expect(text).toContain('`Team notes` file source')
+    expect(text).toContain('`notes`')
+    expect(text).toContain('`*.md`')
+    expect(text).toContain('in that directory only')
+    expect(text).toContain('the file name stem')
+    expect(text).not.toContain('work/T-1/progress.md')
+    expect(text).not.toContain('.nekode/tasks.json')
+  })
+
+  it('a custom command source stays neutral and guesses no location', () => {
+    const text = buildWorkRecordSkill({ kind: 'command-source', name: 'Team tracker' })
+    expect(frontmatter(text).name).toBe('nekode-work-record')
+    expect(text).toContain('`Team tracker` command source')
+    expect(text).toContain('external command')
+    expect(text).not.toContain('create or update `work/')
+    expect(text).not.toContain('work-completed/<ref>')
+    expect(text).not.toContain('.nekode/tasks.json')
+    expect(text).not.toContain('taskctl')
+  })
+
+  it('the work item and work record texts do not copy each other', () => {
+    const workItems = buildAgentSkill({ kind: 'local-file' })
+    const workRecord = buildWorkRecordSkill({ kind: 'local-progress' })
+    expect(workItems).not.toContain('## State block')
+    expect(workRecord).not.toContain('## File shape')
+    expect(workItems).not.toContain('work-completed')
+    expect(workRecord).not.toContain('## Revision rule')
   })
 
   it('the default text names the adapter, forbids copies and a second list, and forbids no tool', () => {
@@ -326,6 +400,27 @@ describe('Teach agents write (Behaviour 11-12, AC8)', () => {
     expect(readFileSync(skillFile(), 'utf8')).toBe(PLANE_TEXT)
     expect(readdirSync(root)).toEqual(['.agents'])
     expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('a second configured path writes only the work record skill', async () => {
+    const projects = { get: (id: string) => (id === 'p1' ? { path: root } : null) }
+    const workItems = new AgentSkillFile({ projects })
+    const workRecord = new AgentSkillFile({ projects, path: WORK_RECORD_SKILL_FILE_PATH })
+    await workItems.write('p1', 'work items text', agentSkillToken('work items text', null), 'test')
+    const preview = await workRecord.preview('p1', 'record text', 'test')
+    await workRecord.write('p1', 'record text', preview.token, 'test')
+
+    expect(readFileSync(skillFile(), 'utf8')).toBe('work items text')
+    const recordFile = join(root, '.agents', 'skills', 'nekode-work-record', 'SKILL.md')
+    expect(readFileSync(recordFile, 'utf8')).toBe('record text')
+    expect(readdirSync(join(root, '.agents', 'skills')).sort()).toEqual([
+      'nekode-tasks',
+      'nekode-work-record',
+    ])
+
+    const conflict = await rejection(workRecord.write('p1', 'changed', preview.token, 'test'))
+    expect(conflict.code).toBe('conflict')
+    expect(readFileSync(recordFile, 'utf8')).toBe('record text')
   })
 
   it('replaces an existing skill file and keeps sibling files', async () => {
@@ -615,6 +710,28 @@ describe('Teach agents containment (Behaviour 12)', () => {
     expect(error.code).toBe('validation_error')
     expect(error.message).toBe('.agents/skills/nekode-tasks resolves outside the project folder.')
     expect((await rejection(service.skillPreview('p1'))).code).toBe('validation_error')
+    expect(readdirSync(outside)).toEqual([])
+  })
+
+  it('an .agents/skills/nekode-work-record junction leaving the root is rejected and writes nothing outside', async (context) => {
+    mkdirSync(join(root, '.agents', 'skills'), { recursive: true })
+    try {
+      symlinkSync(outside, join(root, '.agents', 'skills', 'nekode-work-record'), 'junction')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') context.skip()
+      throw error
+    }
+    const service = new AgentSkillFile({
+      projects: { get: (id: string) => (id === 'p1' ? { path: root } : null) },
+      path: WORK_RECORD_SKILL_FILE_PATH,
+    })
+    const text = 'work record text'
+    const error = await rejection(service.write('p1', text, agentSkillToken(text, null), 'test'))
+    expect(error.code).toBe('validation_error')
+    expect(error.message).toBe(
+      '.agents/skills/nekode-work-record resolves outside the project folder.',
+    )
+    expect((await rejection(service.preview('p1', text, 'test'))).code).toBe('validation_error')
     expect(readdirSync(outside)).toEqual([])
   })
 

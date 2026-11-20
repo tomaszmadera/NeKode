@@ -636,12 +636,6 @@ function AppContent({
                   projectColors[projectSettings.projectId],
                 )
           }
-          autoSend={settings.autoSendHandoff}
-          onAutoSendChange={settings.setAutoSendHandoff}
-          handoffInstruction={settings.handoffInstruction}
-          continueInstruction={settings.continueInstruction}
-          startInstruction={settings.startInstruction}
-          resumeInstruction={settings.resumeInstruction}
           onRefresh={refreshActions}
           initialTab={projectSettings.tab}
           onClose={projectSettings.closeProjectSettings}
@@ -658,7 +652,7 @@ function AppContent({
           onPick={terminals.handlePromptCommand}
           onConfigure={() => {
             setHandoffPickerOpen(false)
-            projectSettings.openProjectSettings(tabProjectId, 'kanban')
+            projectSettings.openProjectSettings(tabProjectId, 'workRecord')
           }}
           onClose={() => setHandoffPickerOpen(false)}
         />

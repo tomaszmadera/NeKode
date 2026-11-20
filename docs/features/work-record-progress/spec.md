@@ -1,6 +1,6 @@
 # Work record progress and bundled progress adapters
 
-Status: Approved by the user on 2026-11-17 for task `nekode-192`.
+Status: Approved by the user on 2026-11-17 for task `nekode-192`; the separate `Work record` tab and work record skill are amended by [work-items-work-record-separation](../work-items-work-record-separation/spec.md).
 Path: `docs/features/work-record-progress/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
@@ -17,6 +17,7 @@ Users: anyone who works a local board or an Agent Harness project and wants the 
 - [Task progress adapters](../task-progress-adapters/spec.md): owns the adapter protocol, discovery, observation, snapshot validation, and indicators.
 - [Handoff/Resume flow](../handoff-resume-flow/spec.md): owns Resume discovery, the application-level Resume instruction, and source bindings.
 - [Project home](../project-home/spec.md): owns `.nekode/tasks.json` and the built-in `local-file` work item source.
+- [Work items and work record separation](../work-items-work-record-separation/spec.md): owns the separate `Work record` tab and the two independent agent skill files.
 - User decisions recorded 2026-11-16 in `.agents/tasks/nekode-192/task.md`.
 
 This contract amends the following clauses:
@@ -64,12 +65,13 @@ Code identifiers, IPC channels, file names, and persisted keys named in "Compati
    - `Step progress`: the optional read-only view of phases and steps from a progress adapter.
    - `Start`, `Handoff`, `Resume`, `Continue`, `Stop`: action names. `Handoff` is an action, never a file.
    - `Resume instruction`: the application-level instruction containing `{taskPath}`.
-   - `Agent skill file`: the file written by `Teach agents`.
+   - `Agent skill file`: one of the two files written by `Teach agents`, the work item skill or the work record skill.
 2. `Progress file` and `Task record` are not product terms. They may appear only in technical documentation about a storage path or an external format.
 3. Exact settings labels:
    - `TRACKER` becomes `WORK ITEMS`.
    - The `Adapter` field label becomes `Source`.
    - The Project Settings `Tasks` tab becomes `Work items`.
+   - A separate Project Settings `Work record` tab owns `WORK RECORD` and its `Work record source`.
    - `RESUME SOURCE` becomes `WORK RECORD`.
    - `Resume source` becomes `Work record source`.
    - The App Settings tab `Resume sources` becomes `Work record sources`.
@@ -289,7 +291,7 @@ The Agent Harness adapter maps the `task-status --json` fields listed in Behavio
 6. Missing Python or `task-status`, malformed JSON, unsupported schema, and duplicate ids produce the typed errors and no fallback.
 7. A valid user adapter with id `nekode-work-record` or `agent-harness` replaces the bundled adapter; an invalid user adapter does not.
 8. The packaged app contains both bundled adapter directories and lists them at runtime.
-9. Settings labels are exactly `WORK ITEMS`, `Source`, `Work items`, `WORK RECORD`, `Work record source`, `Work record sources`, and `Step progress`; `Task file` and `Teach agents` stay unchanged.
+9. Settings labels are exactly `WORK ITEMS`, `Source`, `Work items`, `Work record`, `WORK RECORD`, `Work record source`, `Work record sources`, and `Step progress`; `Task file` and `Teach agents` stay unchanged.
 10. `Task file: .nekode/tasks.json`, `progress.md`, `work-completed`, `WorkItem`, `ResumeSource*`, and existing `taskProgress:*` channels are unchanged.
 11. Existing external progress adapters and Resume suites pass unchanged except for label assertions.
 12. A live record and an archived record with the same ref produce one task in the snapshot, and the Test summary reports the ignored duplicate.
@@ -301,8 +303,8 @@ The Agent Harness adapter maps the `task-status --json` fields listed in Behavio
 - Agent Harness adapter: real fixture `task-status --json`; live, archived, and completed tasks; phases and checked steps; current step and label; blockers; missing Python; missing script; non-zero exit; invalid JSON; unsupported schema; duplicate ids; `test` summary; `watch` path.
 - Discovery: bundled adapters; user adapter override; invalid user override; duplicate ids; packaged directory resolution; packaging manifest includes both directories.
 - Service: binding a bundled adapter; Test; snapshot; observation; stale and missing adapter behavior; no template channels.
-- Renderer: exact labels; bundled adapters listed; no template controls; indicators for valid records; hidden for invalid records; existing matching and staleness behavior.
-- Regression: external task-progress adapter host; Resume source discovery and launch; work item board and `local-file`; `Teach agents`; settings-dialog-restyle copy assertions.
+- Renderer: exact labels; the separate `Work record` tab and both `Teach agents` sections; bundled adapters listed; no template controls; indicators for valid records; hidden for invalid records; existing matching and staleness behavior.
+- Regression: external task-progress adapter host; Resume source discovery and launch; work item board and `local-file`; both `Teach agents` surfaces; settings-dialog-restyle copy assertions.
 - Documentation: the work record block is documented in the local task workflow and the skill; no product copy uses `Progress file` or `Task record` as a term.
 
 ## Relevant SDD / ADR

@@ -1037,18 +1037,23 @@ Clone Repository
 
 # 32. Project Settings
 
-The current settings vocabulary is owned by [work record progress](features/work-record-progress/spec.md). Use `Work item source` for the adapter that reads and writes board items; `Work item` for a card; `Ref` for its stable identifier; and `Board` for a source's board view. A `Work record` holds state, decisions, checks, blockers, and the next action. An `Archived work record` is withdrawn after completion. Handoff is an action. `Teach agents` writes the agent skill file.
+The current settings vocabulary is owned by [work record progress](features/work-record-progress/spec.md). Use `Work item source` for the adapter that reads and writes board items; `Work item` for a card; `Ref` for its stable identifier; and `Board` for a source's board view. A `Work record` holds state, decisions, checks, blockers, and the next action. An `Archived work record` is withdrawn after completion. Handoff is an action. `Teach agents` writes that surface's agent skill file; work items and work records have separate files.
 
-Project Settings uses these exact labels:
+Project Settings navigation order is `Shell`, `Actions`, `Work items`, `Work record`, `Step progress`, and `Agents`. The tabs use these exact labels:
 
 | Surface | Label and purpose |
 |---|---|
 | Board configuration tab | `Work items` |
 | Board source section | `WORK ITEMS`, field `Source`: reads and writes board items |
+| Work item agents section | `AGENTS`, `Teach agents how to use this work item source`: writes only `.agents/skills/nekode-tasks/SKILL.md` |
+| Work record tab | `Work record` |
 | Work record section | `WORK RECORD`, field `Work record source`: configures where Resume finds the record of work on a work item |
+| Work record agents section | `AGENTS`, `Teach agents how to keep this project's work record`: writes only `.agents/skills/nekode-work-record/SKILL.md` |
 | Optional step data tab | `Step progress`: reads optional step data from a progress adapter |
 
-App Settings uses `Work record sources` for the discovery library, with the `Local work record` preset. Start, Resume, Handoff, and Continue remain in Instructions. `Task file: .nekode/tasks.json` and `Teach agents` keep their labels. Saved code identifiers and keys keep their compatibility names. The optional `Agent Harness` adapter and preset are integrations, not core product categories.
+Each `AGENTS` section and its `Teach agents` button appear only while that tab's source is bound. The two actions are independent: teaching one writes only its own file, and clearing a binding deletes neither file. Existing projects keep their old combined `nekode-tasks` content until the user teaches again; nothing is rewritten automatically. The separation is owned by [work-items-work-record-separation](features/work-items-work-record-separation/spec.md).
+
+App Settings uses `Work record sources` for the discovery library, with the `Local work record` preset. Start, Resume, Handoff, and Continue remain in Instructions, and the `Auto-send after Handoff and Resume` switch is in App Settings, Instructions. Project Settings has no Handoff or instructions block. `Task file: .nekode/tasks.json` and `Teach agents` keep their labels. Saved code identifiers and keys keep their compatibility names. The optional `Agent Harness` adapter and preset are integrations, not core product categories.
 
 App Settings -> General includes "Uppercase project names in the tree"
 (NEKODE-10), enabled by default. It changes only project labels in the

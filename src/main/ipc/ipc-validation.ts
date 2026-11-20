@@ -919,6 +919,37 @@ export function buildValidatedChannels(services: AppServices): ValidatedChannel[
     serviceChannel(IPC_CHANNEL.resumeSourcesImportLegacy, [], () =>
       services.resumeSources.importLegacy(),
     ),
+    // Work record `Teach agents` (separation spec): one project id for the
+    // preview, one project id and a 64-character lowercase hex token for the
+    // write. Main builds the text and path; the renderer sends no content.
+    {
+      channel: IPC_CHANNEL.resumeSourcesSkillPreview,
+      parse: (args) => {
+        requireArgs(args, 1, IPC_CHANNEL.resumeSourcesSkillPreview)
+        assertString(args[0], `${IPC_CHANNEL.resumeSourcesSkillPreview} arg[0]`)
+        if ((args[0] as string).length === 0) {
+          fail(IPC_CHANNEL.resumeSourcesSkillPreview, 'requires a non-empty projectId')
+        }
+        return args
+      },
+      invoke: (args) => services.resumeSources.skillPreview(args[0] as string),
+    },
+    {
+      channel: IPC_CHANNEL.resumeSourcesWriteSkill,
+      parse: (args) => {
+        requireArgs(args, 2, IPC_CHANNEL.resumeSourcesWriteSkill)
+        assertString(args[0], `${IPC_CHANNEL.resumeSourcesWriteSkill} arg[0]`)
+        if ((args[0] as string).length === 0) {
+          fail(IPC_CHANNEL.resumeSourcesWriteSkill, 'requires a non-empty projectId')
+        }
+        assertString(args[1], `${IPC_CHANNEL.resumeSourcesWriteSkill} arg[1]`)
+        if (!/^[0-9a-f]{64}$/.test(args[1] as string)) {
+          fail(IPC_CHANNEL.resumeSourcesWriteSkill, 'requires a 64-character lowercase hex token')
+        }
+        return args
+      },
+      invoke: (args) => services.resumeSources.writeSkill(args[0] as string, args[1] as string),
+    },
     // Kanban adapter channels (spec kanban-adapter-interface Data/API).
     // adaptersList/getConfig/setConfig are synchronous app-side operations;
     // test/listBoard/create/update invoke adapter processes (async).

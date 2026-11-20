@@ -53,6 +53,8 @@ describe('preload app api', () => {
     await api.discover('project', 'req-disc')
     await api.prepare('project', 'tok-1', 'req-prep')
     await api.importLegacy()
+    await api.skillPreview('project')
+    await api.writeSkill('project', 'a'.repeat(64))
     expect(ipc.invocations).toEqual([
       { channel: IPC_CHANNEL.resumeSourcesList, args: [] },
       { channel: IPC_CHANNEL.resumeSourcesPut, args: [template] },
@@ -66,6 +68,8 @@ describe('preload app api', () => {
       { channel: IPC_CHANNEL.resumeSourcesDiscover, args: ['project', 'req-disc'] },
       { channel: IPC_CHANNEL.resumeSourcesPrepare, args: ['project', 'tok-1', 'req-prep'] },
       { channel: IPC_CHANNEL.resumeSourcesImportLegacy, args: [] },
+      { channel: IPC_CHANNEL.resumeSourcesSkillPreview, args: ['project'] },
+      { channel: IPC_CHANNEL.resumeSourcesWriteSkill, args: ['project', 'a'.repeat(64)] },
     ])
     const callback = vi.fn()
     const unsubscribe = api.onChanged(callback)

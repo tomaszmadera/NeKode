@@ -382,6 +382,31 @@ describe('SSH local-file surfaces', () => {
     services.closeDatabase?.()
   })
 
+  it('rejects resumeSources.skillPreview for an SSH project', async () => {
+    const services = setup()
+    const project = await register(services)
+    expect(await rejection(services.resumeSources.skillPreview(project.id))).toMatchObject(
+      unsupported,
+    )
+    services.terminals.terminateAll()
+    services.closeDatabase?.()
+  })
+
+  it('rejects resumeSources.writeSkill for an SSH project', async () => {
+    const services = setup()
+    const project = await register(services)
+    expect(
+      await rejection(
+        services.resumeSources.writeSkill(
+          project.id,
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ),
+      ),
+    ).toMatchObject(unsupported)
+    services.terminals.terminateAll()
+    services.closeDatabase?.()
+  })
+
   it('rejects kanban.bindLocalFile for an SSH project', async () => {
     const services = setup()
     const project = await register(services)

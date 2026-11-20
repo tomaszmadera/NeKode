@@ -1,14 +1,8 @@
-import {
-  DEFAULT_CONTINUE_INSTRUCTION,
-  DEFAULT_HANDOFF_INSTRUCTION,
-  DEFAULT_RESUME_INSTRUCTION,
-  DEFAULT_START_INSTRUCTION,
-} from '@shared/contracts/action-instructions-contract'
 import type { ActionControl, ActionInput, AppApi } from '@shared/ipc-contract'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEST_ID } from '../../lib/test-ids'
-import { skillPreviewStub } from '../../test/app-api-stub'
+import { createAppApiStub, skillPreviewStub } from '../../test/app-api-stub'
 import { ActionSettings } from './ActionSettings'
 
 afterEach(cleanup)
@@ -46,12 +40,6 @@ describe('PowerShell action option', () => {
       actions: [] as ActionControl[],
       projectId: null,
       projectPath: null,
-      autoSend: false,
-      onAutoSendChange: vi.fn(),
-      handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
-      continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
-      startInstruction: DEFAULT_START_INSTRUCTION,
-      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -109,12 +97,6 @@ describe('PowerShell action option', () => {
           actions={[] as ActionControl[]}
           projectId={null}
           projectPath={null}
-          autoSend={false}
-          onAutoSendChange={vi.fn()}
-          handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
-          continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
-          startInstruction={DEFAULT_START_INSTRUCTION}
-          resumeInstruction={DEFAULT_RESUME_INSTRUCTION}
           onRefresh={vi.fn().mockResolvedValue(undefined)}
           onClose={vi.fn()}
         />,
@@ -152,45 +134,34 @@ describe('Kanban tab shell', () => {
     } as unknown as AppApi
   }
 
-  it('places handoff settings in Work items and toolbar actions in Actions', async () => {
-    const props = {
-      app: kanbanAppMock(),
-      actions: [] as ActionControl[],
-      projectId: 'p1',
-      projectPath: 'D:/p',
-      autoSend: false,
-      onAutoSendChange: vi.fn(),
-      handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
-      continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
-      startInstruction: DEFAULT_START_INSTRUCTION,
-      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
-      onRefresh: vi.fn().mockResolvedValue(undefined),
-      onClose: vi.fn(),
-    }
-    render(<ActionSettings {...props} />)
+  it('separates Work items and Work record and keeps instructions out of Project Settings', async () => {
+    const app = { ...createAppApiStub(), ...kanbanAppMock() } as AppApi
+    render(
+      <ActionSettings
+        app={app}
+        actions={[] as ActionControl[]}
+        projectId="p1"
+        projectPath="D:/p"
+        onRefresh={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    )
     const kanbanTab = screen.getByTestId(TEST_ID.settingsKanbanTab)
-    // Visible section label follows the work-record-progress vocabulary.
+    const workRecordTab = screen.getByTestId(TEST_ID.settingsWorkRecordTab)
     expect(kanbanTab.textContent).toBe('Work items')
-    expect(kanbanTab.getAttribute('aria-selected')).toBe('false')
-    // Handoff settings appear only on the Work items tab.
-    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
+    expect(workRecordTab.textContent).toBe('Work record')
 
     fireEvent.click(kanbanTab)
     await screen.findByTestId(TEST_ID.settingsKanbanPanel)
-    expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.settingsEffectiveHandoff).textContent).toBe('Write a handoff')
-    expect(screen.getByTestId(TEST_ID.settingsEffectiveContinue).textContent).toBe('Continue')
-    expect(screen.getByTestId(TEST_ID.settingsEffectiveResume).textContent).toBe(
-      DEFAULT_RESUME_INSTRUCTION,
-    )
-    expect(screen.getByTestId(TEST_ID.settingsEffectiveStart).textContent).toBe(
-      DEFAULT_START_INSTRUCTION,
-    )
+    expect(screen.queryByText('Handoff and instructions')).toBeNull()
 
-    // Actions has its own toolbar controls.
+    fireEvent.click(workRecordTab)
+    await screen.findByTestId('project-resume-settings')
+    expect(screen.queryByText('Handoff and instructions')).toBeNull()
+
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
     expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
+    expect(screen.queryByTestId('project-resume-settings')).toBeNull()
   })
 
   it('Escape in the Teach agents dialog closes only that dialog, and not while the write runs', async () => {
@@ -224,12 +195,6 @@ describe('Kanban tab shell', () => {
         actions={[] as ActionControl[]}
         projectId="p1"
         projectPath="D:/p"
-        autoSend={false}
-        onAutoSendChange={vi.fn()}
-        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
-        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
-        startInstruction={DEFAULT_START_INSTRUCTION}
-        resumeInstruction={DEFAULT_RESUME_INSTRUCTION}
         onRefresh={vi.fn().mockResolvedValue(undefined)}
         initialTab="kanban"
         onClose={onClose}
@@ -273,12 +238,6 @@ describe('Kanban tab shell', () => {
       actions: [] as ActionControl[],
       projectId: 'p1',
       projectPath: 'D:/p',
-      autoSend: false,
-      onAutoSendChange: vi.fn(),
-      handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
-      continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
-      startInstruction: DEFAULT_START_INSTRUCTION,
-      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       initialTab: 'kanban' as const,
       onClose: vi.fn(),
@@ -287,7 +246,7 @@ describe('Kanban tab shell', () => {
     // No click: the dialog mounts directly on the Kanban tab.
     expect(screen.getByTestId(TEST_ID.settingsKanbanTab).getAttribute('aria-selected')).toBe('true')
     expect(await screen.findByTestId(TEST_ID.settingsKanbanPanel)).toBeTruthy()
-    expect(screen.getByTestId(TEST_ID.settingsConfigSection)).toBeTruthy()
+    expect(screen.queryByText('Handoff and instructions')).toBeNull()
   })
 
   it('adds an Agents tab beside Shell, Actions, and Work items', async () => {
@@ -305,12 +264,6 @@ describe('Kanban tab shell', () => {
       actions: [] as ActionControl[],
       projectId: 'p1',
       projectPath: 'D:/p',
-      autoSend: false,
-      onAutoSendChange: vi.fn(),
-      handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
-      continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
-      startInstruction: DEFAULT_START_INSTRUCTION,
-      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -326,15 +279,15 @@ describe('Kanban tab shell', () => {
     fireEvent.click(agentsTab)
     expect(await screen.findByTestId(TEST_ID.settingsAgentsEmpty)).toBeTruthy()
     expect(selectionGet).toHaveBeenCalledWith('p1')
-    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
+    expect(screen.queryByText('Handoff and instructions')).toBeNull()
     expect(screen.queryByTestId(TEST_ID.settingsKanbanPanel)).toBeNull()
 
     fireEvent.click(screen.getByTestId(TEST_ID.settingsActionsTab))
-    expect(screen.queryByTestId(TEST_ID.settingsConfigSection)).toBeNull()
+    expect(screen.queryByText('Handoff and instructions')).toBeNull()
     expect(screen.queryByTestId(TEST_ID.settingsAgentsPanel)).toBeNull()
   })
 
-  it('places the Step progress tab right after Work items and renders its panel', async () => {
+  it('places the Step progress tab after Work record and renders its panel', async () => {
     const app = {
       ...kanbanAppMock(),
       taskProgress: {
@@ -350,18 +303,19 @@ describe('Kanban tab shell', () => {
         actions={[]}
         projectId="p1"
         projectPath="D:/p"
-        autoSend={false}
-        onAutoSendChange={vi.fn()}
-        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
-        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
-        startInstruction={DEFAULT_START_INSTRUCTION}
-        resumeInstruction={DEFAULT_RESUME_INSTRUCTION}
         onRefresh={vi.fn().mockResolvedValue(undefined)}
         onClose={vi.fn()}
       />,
     )
     const labels = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(labels).toEqual(['Shell', 'Actions', 'Work items', 'Step progress', 'Agents'])
+    expect(labels).toEqual([
+      'Shell',
+      'Actions',
+      'Work items',
+      'Work record',
+      'Step progress',
+      'Agents',
+    ])
     fireEvent.click(screen.getByTestId(TEST_ID.settingsTaskProgressTab))
     expect(await screen.findByTestId(TEST_ID.settingsTaskProgressEmpty)).toBeTruthy()
     expect(app.taskProgress.getBinding).toHaveBeenCalledWith('p1')
@@ -378,12 +332,6 @@ describe('action save error handling and duplicate prevention', () => {
       actions: [] as ActionControl[],
       projectId: null,
       projectPath: null,
-      autoSend: false,
-      onAutoSendChange: vi.fn(),
-      handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
-      continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
-      startInstruction: DEFAULT_START_INSTRUCTION,
-      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh,
       onClose: vi.fn(),
     }
@@ -420,12 +368,6 @@ describe('custom emoji icon selection', () => {
       actions: [] as ActionControl[],
       projectId: null,
       projectPath: null,
-      autoSend: false,
-      onAutoSendChange: vi.fn(),
-      handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
-      continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
-      startInstruction: DEFAULT_START_INSTRUCTION,
-      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh,
       onClose: vi.fn(),
     }
@@ -497,12 +439,6 @@ describe('custom emoji icon selection', () => {
       actions: [] as ActionControl[],
       projectId: null,
       projectPath: null,
-      autoSend: false,
-      onAutoSendChange: vi.fn(),
-      handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
-      continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
-      startInstruction: DEFAULT_START_INSTRUCTION,
-      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -581,12 +517,6 @@ describe('mutation in-flight guards and duplicate prevention', () => {
       actions,
       projectId,
       projectPath,
-      autoSend: false,
-      onAutoSendChange: vi.fn(),
-      handoffInstruction: DEFAULT_HANDOFF_INSTRUCTION,
-      continueInstruction: DEFAULT_CONTINUE_INSTRUCTION,
-      startInstruction: DEFAULT_START_INSTRUCTION,
-      resumeInstruction: DEFAULT_RESUME_INSTRUCTION,
       onRefresh: vi.fn().mockResolvedValue(undefined),
       onClose: vi.fn(),
     }
@@ -783,12 +713,6 @@ describe('Action group field', () => {
         actions={actions}
         projectId={null}
         projectPath={null}
-        autoSend={false}
-        onAutoSendChange={vi.fn()}
-        handoffInstruction={DEFAULT_HANDOFF_INSTRUCTION}
-        continueInstruction={DEFAULT_CONTINUE_INSTRUCTION}
-        startInstruction={DEFAULT_START_INSTRUCTION}
-        resumeInstruction={DEFAULT_RESUME_INSTRUCTION}
         onRefresh={vi.fn().mockResolvedValue(undefined)}
         onClose={vi.fn()}
       />,

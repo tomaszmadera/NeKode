@@ -1118,6 +1118,18 @@ describe('kanban:* channels (adapter integration)', () => {
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     )
 
+    // Work record Teach agents: same one-project-id and token boundary.
+    await invoke(IPC_CHANNEL.resumeSourcesSkillPreview, ['p1'])
+    expect(services.resumeSources.skillPreview).toHaveBeenCalledWith('p1')
+    await invoke(IPC_CHANNEL.resumeSourcesWriteSkill, [
+      'p1',
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    ])
+    expect(services.resumeSources.writeSkill).toHaveBeenCalledWith(
+      'p1',
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    )
+
     await invoke(IPC_CHANNEL.kanbanGetItem, ['p1', 'DEMO-1'])
     expect(services.kanban.getItem).toHaveBeenCalledWith('p1', 'DEMO-1')
     const launchInput = {

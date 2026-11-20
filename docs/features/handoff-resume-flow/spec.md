@@ -13,7 +13,7 @@ This file is the behavioral contract for a feature. Agents implement from it. Do
 
 [Work record progress](../work-record-progress/spec.md) owns the current vocabulary and exact labels. This amendment changes copy only; discovery, matching, fingerprints, bindings, launch, instructions and delivery remain unchanged.
 
-A work record source configures where Resume finds the record of work on a work item. App Settings names its library `Work record sources`. Project Settings, `Work items`, has a `WORK RECORD` section and a `Work record source` selector. Sources own discovery only; the Resume instruction containing `{taskPath}` is application-level in Instructions. The `Local work record` preset discovers `work/<ref>/progress.md`; the library seeds that saved source once, and a later delete is durable. The optional `Agent Harness` preset remains available by that name. Selecting either preset creates no record and installs nothing.
+A work record source configures where Resume finds the record of work on a work item. App Settings names its library `Work record sources`. Project Settings has a separate `Work record` tab with a `WORK RECORD` section and a `Work record source` selector. The `Work items` tab keeps `WORK ITEMS` and its own `Teach agents`; it has no work record section. The `Work record` tab has its own `Teach agents` and writes `.agents/skills/nekode-work-record/SKILL.md` (see [work-items-work-record-separation](../work-items-work-record-separation/spec.md)). Sources own discovery only; the Resume instruction containing `{taskPath}` is application-level in Instructions, and Handoff and instructions stay in App Settings. The `Local work record` preset discovers `work/<ref>/progress.md`; the library seeds that saved source once, and a later delete is durable. The optional `Agent Harness` preset remains available by that name. Selecting either preset creates no record and installs nothing.
 
 A work record holds execution state, decisions, checks, blockers, and the next action. Handoff is the update-and-stop action, never a file. The agent owns record updates and archives a record only after confirmed completion. The [local workflow](../local-task-workflow/spec.md) owns prose and `nekode-state` instructions; [Step progress](../task-progress-adapters/spec.md) is a separate optional read-only adapter binding. Resume file discovery never parses that block; a record without it can still Resume.
 
@@ -43,7 +43,7 @@ Accepted user decisions 2026-10-01, owned by this public contract:
 
 - Main process: `projects:add` dialog `defaultPath` plus persistence of the confirmed directory; new typed IPC `handoffs:list(projectId)`; new typed IPC `dialogs:pickDirectory(defaultPath)`; cleanup of the per-project handoff-directory key on `projects:remove`.
 - Shared: IPC contract additions (`handoffs`, `dialogs` namespaces, `HandoffEntry`), new `APP_STATE_KEY` entries and the per-project key helper.
-- Renderer: ActionBar fixed-action behavior (English commands, console paste or direct send), a Resume handoff picker modal, PromptActions external-injection support threaded through ChatWorkspace/ChatTerminal, and a Configuration section in the existing Project Settings modal (auto-send toggle, per-project handoff directory with Browse; the directory control was removed by NEKODE-142).
+- Renderer: ActionBar fixed-action behavior (English commands, console paste or direct send), a Resume handoff picker modal, PromptActions external-injection support threaded through ChatWorkspace/ChatTerminal, and a Configuration section in the existing Project Settings modal (per-project handoff directory with Browse; the directory control was removed by NEKODE-142, and the auto-send toggle moved to App Settings, Instructions by [work-items-work-record-separation](../work-items-work-record-separation/spec.md)).
 
 ## Non-goals
 
@@ -60,7 +60,7 @@ Accepted user decisions 2026-10-01, owned by this public contract:
 3. Delivery (auto-send off, the default): the command text is pasted into the active chat console through xterm without an appended CR; the user reviews and submits with Enter or Send. Delivery (auto-send on): the command text plus CR is written directly to the active chat PTY (the pre-0.4.8 behavior, now English).
 4. Resume click opens a handoff picker modal. The list is loaded lazily at modal open via `handoffs:list` for the active project: regular files only, `README.md` (case-insensitive) excluded, sorted by modification time descending, showing file name, project-root-relative path, and modification time. Selecting an entry applies rule 2 and closes the modal.
 5. Picker empty states: no active project or chat keeps the Resume button disabled (existing rule). Unconfigured directory: the picker shows a "not configured" state with a Configure button that opens Project Settings for the active project, and a "Paste without path" fallback that applies rule 2 with the plain command. Configured but missing directory or read failure: the picker shows the typed error message.
-6. Project Settings modal gains a Configuration section above Actions: an "Auto-send after Handoff/Resume" checkbox (application-level) and, when the modal is bound to a project, a "Handoff directory" input (relative to the project root, or absolute for directories outside it) with a Browse button (`dialogs:pickDirectory`, defaultPath: current value or project root) and Save. Browse stores the confirmed directory project-root-relative when it lies inside the root, absolute otherwise. Empty input clears the setting. Superseded by NEKODE-142: the Handoff directory input, its Browse and Save are removed and Project Settings selects a Resume template instead; the auto-send checkbox and its storage stay. Auto-send is stored under `handoffResume.autoSend` as `'1'`/`'0'`; missing means off.
+6. Project Settings modal gains a Configuration section above Actions: an "Auto-send after Handoff/Resume" checkbox (application-level) and, when the modal is bound to a project, a "Handoff directory" input (relative to the project root, or absolute for directories outside it) with a Browse button (`dialogs:pickDirectory`, defaultPath: current value or project root) and Save. Browse stores the confirmed directory project-root-relative when it lies inside the root, absolute otherwise. Empty input clears the setting. Superseded by NEKODE-142: the Handoff directory input, its Browse and Save are removed and Project Settings selects a Resume template instead; the auto-send checkbox and its storage stay. Auto-send is stored under `handoffResume.autoSend` as `'1'`/`'0'`; missing means off. Superseded on 2026-11-20: auto-send moved to App Settings, Instructions with the stored key and its values unchanged (see [work-items-work-record-separation](../work-items-work-record-separation/spec.md)); it no longer appears in Project Settings.
 7. Console injection is per active chat: a pending injection reaches only the addressed chat's PromptActions, which pastes into its console once the terminal view is available and reports consumption. A new click pastes again even with identical text (nonce). Switching chats with a pending injection for a non-active chat drops it.
 8. `projects:remove` deletes the removed project's `project.handoffDir:<projectId>` key.
 
@@ -106,7 +106,7 @@ Renderer invokes stay behind the existing trusted-sender guard. `handoffs:list` 
 3. With auto-send on, Handoff writes `Write a handoff\r` straight to the PTY.
 4. Resume opens a picker that lists the configured directory's files newest-first (regular files except `README.md`), loaded only at open; selecting one pastes `Resume from handoff <project-relative path, or absolute when outside the root>` into the console (or sends it with CR when auto-send is on).
 5. Unconfigured project: picker shows the not-configured state with Configure (opens Project Settings) and the plain-paste fallback `Resume from handoff`.
-6. Project Settings exposes auto-send and, per project, the handoff directory with Browse; saving persists via app_state and the picker reflects it on next open. Superseded by NEKODE-142: the per-project control is a Resume template selector, and no handoff directory field remains.
+6. Project Settings exposes auto-send and, per project, the handoff directory with Browse; saving persists via app_state and the picker reflects it on next open. Superseded by NEKODE-142: the per-project control is a Resume template selector, and no handoff directory field remains. Superseded on 2026-11-20: auto-send moved to App Settings, Instructions and is absent from Project Settings ([work-items-work-record-separation](../work-items-work-record-separation/spec.md)).
 7. Default Handoff/Resume pasted command text is English. A user-authored Resume template retains its own language.
 8. Removing a project clears its `project.handoffDir` key.
 
@@ -323,7 +323,7 @@ Saving requires nonblank text after trimming, no NUL and at most 10,000 characte
 2. Multiline custom Handoff and Continue instructions persist across restart with exact text and reach only the chat active at the click.
 3. Handoff follows the displayed auto-send mode: paste without CR when off, direct send with CR when on. Continue always submits once and does not depend on auto-send.
 4. Application Settings names every registered project affected by a Handoff or Continue change; Project Settings shows each effective text and origin; no project override is created.
-5. The Resume instruction is editable only in its template; the Instructions tab and Project Settings show the effective saved text and route to it; the template editor lists the projects using it.
+5. The Resume instruction is editable only in its template; the Instructions tab and Project Settings show the effective saved text and route to it; the template editor lists the projects using it. Superseded on 2026-11-20: Project Settings no longer shows effective Handoff, Continue, or Resume text; those texts are in Application Settings, Instructions ([work-items-work-record-separation](../work-items-work-record-separation/spec.md)).
 6. A shared edit never silently replaces another saved prompt; Reset restores only the action being reset.
 7. The Handoff description says the agent records the context and the app does not claim the handoff; Continue describes the current conversation; no automatic lifecycle transition exists anywhere in the flow.
 8. Resume keeps `{taskPath}` as its required placeholder and `{handoffPath}` as its deprecated alias; Handoff and Continue require no selection and perform no substitution.
@@ -335,7 +335,7 @@ Saving requires nonblank text after trimming, no NUL and at most 10,000 characte
 - Shared: default resolution for missing and blank values, handling of invalid stored values, validation of blank/NUL/length, and exact literal preservation of multiline text, braces and dollar signs.
 - Renderer settings store: hydrate defaults and custom values, save exact text into the two keys, reset, keep the previous value on failure and report an error.
 - Instructions tab: three purpose descriptions plus the read-only Stop note, edit/save/reset, preview text and send mode, affected project list, Resume project selection with bound prompt and unconfigured state, and no second editable Resume prompt.
-- Project Settings: effective Handoff, Continue and Resume text with origins and the unconfigured Resume state.
+- Project Settings: no effective Handoff, Continue, or Resume text is shown after the 2026-11-20 separation; those texts are tested in Application Settings, Instructions.
 - Template editor: usage line with project names, empty usage, usage error, and the warning that saving affects those projects.
 - ActionBar/App: custom Handoff paste with auto-send off, custom Handoff CR send with auto-send on, custom Continue split write once, Stop `\x03` with no instruction delivery, pending Handoff dropped on chat or project switch, no double delivery, and defaults when unset.
 - Main: usage call keeps the trusted-sender guard, validates the payload and rejects an unknown template.
@@ -353,15 +353,17 @@ Saving requires nonblank text after trimming, no NUL and at most 10,000 characte
 
 User decisions 2026-11-14: the text an action sends to the agent is application-level, and only the continuation source is per project. Start and Resume instructions join Handoff and Continue in Application Settings, Instructions. A Resume template keeps its source and loses its prompt; the library stays shared by reference and is named Work record sources. Migration keeps one common prompt or falls back to the default with a visible list of the previous prompts. No per-project instruction override exists.
 
+User decision 2026-11-20: the work record source gets its own Project Settings tab and its own `Teach agents` skill file. The `Work items` tab no longer holds the record section or the application instruction block. The two skill files stay independent because a project can bind one source without the other.
+
 This amendment supersedes, for the Resume instruction only, the NEKODE-142 rule that the template editor exposes the instruction and that Project Settings shows the template instruction, and the NEKODE-172 rules that the Resume instruction stays in the template, that the Instructions tab shows it read-only, and "No migration". It also supersedes the fixed Start wording of [Kanban Start](../kanban-adapter-interface/spec.md#start) Behaviour 5 and the [local task workflow](../local-task-workflow/spec.md) preset prompt. Discovery, sources, bindings, Test, usage, fingerprints, selection tokens, Kanban matching and launch, Handoff, Continue, Stop, auto-send and console injection stay as specified.
 
 NeKode only sends text. The agent's instructions own what Start and Resume mean in a project.
 
 ### Levels
 
-- Application settings: Start, Resume, Handoff and Continue instructions, shared by every registered project, plus auto-send.
-- Work record source (stored as a `ResumeSourceTemplate`): name, source kind and its fields, reused by reference across projects. It owns discovery only.
-- Project: selects one work record source (or none) and inherits every instruction.
+- Application settings: Start, Resume, Handoff and Continue instructions, shared by every registered project, plus auto-send in the Instructions tab.
+- Work record source (stored as a `ResumeSourceTemplate`): name, source kind and its fields, reused by reference across projects. It owns discovery only and drives the work record skill text.
+- Project: selects one work record source (or none) in the `Work record` tab and inherits every instruction.
 
 ### Start instruction
 

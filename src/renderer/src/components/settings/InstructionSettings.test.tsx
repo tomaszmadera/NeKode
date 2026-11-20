@@ -59,6 +59,7 @@ function renderSettings(
     resumeInstructionError: null,
     resumeMigrationNotice: null,
     autoSend: false,
+    onAutoSendChange: vi.fn(),
     onSaveHandoff: vi.fn().mockReturnValue(null),
     onResetHandoff: vi.fn(),
     onSaveContinue: vi.fn().mockReturnValue(null),
@@ -271,5 +272,14 @@ describe('InstructionSettings', () => {
     renderSettings(makeApp(), { onManageTemplates })
     fireEvent.click(screen.getByRole('button', { name: 'Manage work record sources' }))
     expect(onManageTemplates).toHaveBeenCalledTimes(1)
+  })
+
+  it('owns the application-level auto-send switch', () => {
+    const onAutoSendChange = vi.fn()
+    renderSettings(makeApp(), { autoSend: true, onAutoSendChange })
+    const toggle = screen.getByTestId(TEST_ID.settingsAutoSend)
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(toggle)
+    expect(onAutoSendChange).toHaveBeenCalledWith(false)
   })
 })

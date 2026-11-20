@@ -107,9 +107,18 @@ export const LOCAL_TASK_FILE_MISSING = 'local_task_file_missing'
  * (project-home spec Behaviour 11-12). No per-agent destinations.
  */
 export const AGENT_SKILL_FILE_PATH = '.agents/skills/nekode-tasks/SKILL.md'
+/** Project-relative path of the work record skill file (separation spec). */
+export const WORK_RECORD_SKILL_FILE_PATH = '.agents/skills/nekode-work-record/SKILL.md'
 
 /** Where the `Teach agents` text comes from (project-home spec Behaviour 11). */
 export type KanbanSkillOrigin = 'local-file' | 'adapter' | 'default'
+
+/** Where the work record `Teach agents` text comes from (separation spec). */
+export type WorkRecordSkillOrigin =
+  | 'local-progress'
+  | 'agent-harness'
+  | 'file-source'
+  | 'command-source'
 
 /**
  * Result of `kanban:skillPreview` (project-home spec Behaviour 13, Data /
@@ -131,6 +140,26 @@ export interface KanbanSkillPreview {
   /** Hex SHA-256 over `text`, a NUL, and the current file bytes (or `absent`). */
   token: string
 }
+
+/** Result of `resumeSources:skillPreview` (separation spec Data / API). */
+export interface WorkRecordSkillPreview {
+  /** Project-relative skill file path (`WORK_RECORD_SKILL_FILE_PATH`). */
+  path: string
+  origin: WorkRecordSkillOrigin
+  /** Display name of the bound work record source. */
+  sourceName: string
+  /** Whether the skill file exists. */
+  exists: boolean
+  /** Current UTF-8 text, or null when absent, not valid UTF-8, or over 256 KiB. */
+  current: string | null
+  /** The exact text a write produces. */
+  text: string
+  /** Hex SHA-256 over `text`, a NUL, and the current file bytes (or `absent`). */
+  token: string
+}
+
+/** Common shape the shared `Teach agents` dialog renders. */
+export type AgentSkillPreview = KanbanSkillPreview | WorkRecordSkillPreview
 
 export type KanbanConfigFieldType = 'string' | 'secret' | 'select' | 'boolean'
 

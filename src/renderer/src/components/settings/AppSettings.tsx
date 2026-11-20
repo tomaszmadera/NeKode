@@ -125,6 +125,7 @@ export function AppSettings({
     terminalActionsVisible,
     onTerminalActionsVisibleChange,
     autoSendHandoff,
+    setAutoSendHandoff,
     handoffInstruction,
     continueInstruction,
     handoffInstructionError,
@@ -167,6 +168,7 @@ export function AppSettings({
       terminalActionsVisible: state.terminalActionsVisible,
       onTerminalActionsVisibleChange: state.setTerminalActionsVisible,
       autoSendHandoff: state.autoSendHandoff,
+      setAutoSendHandoff: state.setAutoSendHandoff,
       handoffInstruction: state.handoffInstruction,
       continueInstruction: state.continueInstruction,
       handoffInstructionError: state.handoffInstructionError,
@@ -376,6 +378,7 @@ export function AppSettings({
           onResetResume={onResetResumeInstruction}
           onDismissResumeMigration={onDismissResumeMigration}
           autoSend={autoSendHandoff}
+          onAutoSendChange={setAutoSendHandoff}
           onSaveHandoff={onSaveHandoffInstruction}
           onResetHandoff={onResetHandoffInstruction}
           onSaveContinue={onSaveContinueInstruction}

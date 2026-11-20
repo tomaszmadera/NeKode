@@ -55,6 +55,7 @@ import type {
   Unsubscribe,
   UpdateDictionaryEntryInput,
   WorkItem,
+  WorkRecordSkillPreview,
 } from '@shared/ipc-contract'
 
 // Real service registry (Stage 2: persistence; Stage 3: terminals + git;
@@ -263,6 +264,10 @@ export interface AppServices {
     discover(projectId: string, requestId: string): Promise<ResumeSourceDiscovery>
     prepare(projectId: string, token: string, requestId: string): Promise<string>
     importLegacy(): Promise<string | null>
+    /** Work record `Teach agents` preview: text, current file, and write token. */
+    skillPreview(projectId: string): Promise<WorkRecordSkillPreview>
+    /** Writes the previewed work record skill while the token still matches. */
+    writeSkill(projectId: string, token: string): Promise<void>
     dropProject(projectId: string): void
     shutdown(): Promise<void>
   }

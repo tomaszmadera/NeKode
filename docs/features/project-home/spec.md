@@ -1,15 +1,15 @@
 # Project home: Tasks
 
-Status: Delivered (home tab, Tasks wording, the built-in `local-file` source, and `Teach agents` writing the one file `.agents/skills/nekode-tasks/SKILL.md`; no per-agent skill folders in this version).
+Status: Delivered (home tab, Tasks wording, the built-in `local-file` source, and `Teach agents` writing the work item skill `.agents/skills/nekode-tasks/SKILL.md`; the work record skill and the separate settings tab are owned by [work-items-work-record-separation](../work-items-work-record-separation/spec.md)).
 Path: `docs/features/project-home/spec.md`.
 
 This file is the behavioral contract for a feature. Agents implement from it. Do not put execution progress, file checklists, or architecture history here.
 
-This contract describes the shipped behaviour, including `Teach agents` writing only the one skill file `.agents/skills/nekode-tasks/SKILL.md` and no per-agent skill folders.
+This contract describes the work item side of `Teach agents`: the skill file `.agents/skills/nekode-tasks/SKILL.md` and no per-agent skill folders. The separate work record tab, the work record skill, and the two-file decision are owned by [work-items-work-record-separation](../work-items-work-record-separation/spec.md).
 
 ## Goal
 
-A selected project always has a home tab named with the project. The tab shows the task list when a source exists, and a short setup welcome when it does not. A person can start a local task list in a file without Plane. An agent can be taught that same source through one explicit skill file.
+A selected project always has a home tab named with the project. The tab shows the task list when a source exists, and a short setup welcome when it does not. A person can start a local task list in a file without Plane. An agent can be taught that same source through its own explicit skill file.
 
 Users: anyone opening a project in NeKode, including a project with no tracker.
 
@@ -20,6 +20,7 @@ Users: anyone opening a project in NeKode, including a project with no tracker.
 - [Center layout](../center-layout-tabs-actions/spec.md) owns the tab strip. This contract adds the home tab's presence and what activates it.
 - [Task progress adapters](../task-progress-adapters/spec.md): `.nekode/task-progress.json` is a different file. Nothing in this contract reads or writes it.
 - [Local task workflow](../local-task-workflow/spec.md): owns the execution-context convention, the ready `Local progress files` Resume preset, and the Handoff/Resume instructions for a `local-file` project.
+- [Work items and work record separation](../work-items-work-record-separation/spec.md): owns the two project tabs, the work record skill, and the decision to keep the two skill files independent.
 - [Project environments](../project-environments/spec.md): a WSL project is addressed by its stored path. This contract adds no new WSL transport.
 - UI copy in this contract is English.
 
@@ -29,7 +30,7 @@ Users: anyone opening a project in NeKode, including a project with no tracker.
 - Project context-menu entry, launch selection, and the setup welcome.
 - Visible Tasks wording in the home tab, the board's setup copy, and Project Settings.
 - The built-in `local-file` source and `.nekode/tasks.json`.
-- `Teach agents`: one confirmed write of `.agents/skills/nekode-tasks/SKILL.md`.
+- `Teach agents`: one confirmed write of the work item skill `.agents/skills/nekode-tasks/SKILL.md`.
 
 ## Non-goals
 
@@ -56,7 +57,7 @@ Users: anyone opening a project in NeKode, including a project with no tracker.
 9. Local writes. `listBoard`, `createItem`, and `updateItem` for `local-file` run in the main process. They do not spawn a process and do not read adapter secrets. A write carries the `revision` last read. Success increments `revision` by 1 and replaces the file by a write in the same directory followed by a rename. A mismatched `revision` changes nothing and returns `conflict`. `New task` still defaults to the state named Todo. Removing a project deletes the binding keys only.
 10. Local test. The Tasks section for `local-file` shows the relative path and Test. Test parses the file. Success reports that the file is readable. Failure reports the typed error in the section.
 11. Teach agents. The Tasks section shows `Teach agents` only while a source is bound. The confirm dialog names every file it will write. This version writes only `.agents/skills/nekode-tasks/SKILL.md` under the project root. It lists the project's selected agent profiles as the agents that can read a project skill, and it does not offer per-agent destinations. Confirm writes the file. Cancel writes nothing. Replacing still requires confirm. The skill is English instructions, chosen by the bound source only (NEKODE-169):
-    - `local-file`: the built-in local text. It names `.nekode/tasks.json`, the file shape, the revision rule, the execution-context convention in `work/<ref>/progress.md`, the Handoff/Resume/Stop behavior, the completion move to `work-completed/<ref>/progress.md`, and forbids a second task list.
+    - `local-file`: the built-in local text. It names `.nekode/tasks.json`, the file shape, the revision rule, and forbids a second task list. It may state that a work record, when the project has one, holds execution context and is not a second backlog; it does not describe the record format or the `work/<ref>/progress.md` convention. The separate work record skill owns the record, Handoff, Resume, Stop, and completion instructions.
     - A process adapter whose manifest declares `agentSkill` (see the [adapter spec](../kanban-adapter-interface/spec.md)): NeKode's fixed front matter followed by the adapter's Markdown body, unchanged. The adapter owns these instructions, for example which tool an agent uses for its tracker.
     - Any other process adapter: the built-in default text. It says the tasks live in the tracker configured for this project in NeKode and names the adapter by its manifest `name`. It forbids copying tasks into the repository and creating a second task list. It forbids no tool. When other instructions in the repository describe a task tool that targets a different tracker or project, or the agent cannot tell, the agent asks the user instead of choosing.
     - A declared `agentSkill` that cannot be read or is invalid is an error in the dialog. NeKode does not fall back to the default text.
@@ -67,7 +68,7 @@ Users: anyone opening a project in NeKode, including a project with no tracker.
     - the exact full text that Confirm writes, in a scrollable monospace block;
     - when replacing, a line diff from the current file to the new text, and `No changes` when they are equal. A current file that is not valid UTF-8 or exceeds 256 KiB is not shown; the dialog says `The current file cannot be shown.` and still allows the replace;
     - the boundary note: `Writing this file installs and configures nothing. Agents that do not read project skills ignore it.`
-    Confirm writes exactly the text shown. If the binding, the adapter's declared text, or the current file changed since the preview, the write changes nothing, the dialog shows `The skill file or its source changed. Review the new preview.` and loads a new preview that needs its own confirm. Saving another source or clearing the binding while the dialog is open reloads the preview the same way, or closes the dialog when no source remains. Cancel and a failed write leave the previous file unchanged.
+    Confirm writes exactly the text shown. If the binding, the adapter's declared text, or the current file changed since the preview, the write changes nothing, the dialog shows `The skill file or its source changed. Review the new preview.` and loads a new preview that needs its own confirm. Saving another source or clearing the binding while the dialog is open reloads the preview the same way, or closes the dialog when no source remains. Cancel and a failed write leave the previous file unchanged. The work record skill has its own preview and write under the same rules; see [work-items-work-record-separation](../work-items-work-record-separation/spec.md).
 
 ## Business rules
 
@@ -133,10 +134,11 @@ Renderer calls stay behind the existing trusted-sender guard. Writes accept only
 - Settings section label `Tasks`. `Connect a tracker` opens that section.
 - `local-file` create, list, update, Todo default, revision conflict, invalid JSON, missing file, and no process spawn.
 - Project removal deletes the binding keys and does not delete the task file.
-- Teach agents confirm, cancel, replace copy, path escape rejected, and skill text for `local-file` versus an external id.
+- Teach agents confirm, cancel, replace copy, path escape rejected, and skill text for `local-file` versus an external id, including the absence of work record content in the work item skill.
 - Teach agents preview: new file, replacement with diff, hand-edited existing file, unreadable current file, adapter-declared text, default text, invalid declared text, stale token `conflict` after a binding change and after a file change, and IPC rejection of a bad token.
+- The separate work record preview and write are covered by [work-items-work-record-separation](../work-items-work-record-separation/spec.md).
 - A bound process-adapter project still renders the existing list.
 
 ## Relevant SDD / ADR
 
-[Project environment adapters](../../architecture/project-environment-adapters.md) for the WSL path boundary. No new ADR. The kanban adapter spec remains the contract for external process adapters.
+[Project environment adapters](../../architecture/project-environment-adapters.md) for the WSL path boundary. No new ADR. The kanban adapter spec remains the contract for external process adapters. The two-file split is owned by [work-items-work-record-separation](../work-items-work-record-separation/spec.md).

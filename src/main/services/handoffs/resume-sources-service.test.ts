@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -6,6 +6,7 @@ import {
   LOCAL_PROGRESS_RESUME_SOURCE_ID,
   type ResumeSource,
 } from '@shared/contracts/resume-sources-contract'
+import { WORK_RECORD_SKILL_FILE_PATH } from '@shared/ipc-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ResumeSourcesService } from './resume-sources-service'
 
@@ -64,6 +65,113 @@ describe('reusable Resume sources', () => {
     service.bind('one', null)
     service.bind('two', null)
     expect(service.delete(template.id, template.revision).templates).not.toContainEqual(template)
+  })
+
+  it('teaches the local work record through its own skill file', async () => {
+    service.bind('one', LOCAL_PROGRESS_RESUME_SOURCE_ID)
+    const preview = await service.skillPreview('one')
+    expect(preview).toMatchObject({
+      path: WORK_RECORD_SKILL_FILE_PATH,
+      origin: 'local-progress',
+      sourceName: 'Local work record',
+      exists: false,
+    })
+    expect(preview.text).toContain('work/<ref>/progress.md')
+    expect(preview.text).toContain('nekode-state')
+
+    await service.writeSkill('one', preview.token)
+    const written = await readFile(
+      join(root, 'one', '.agents', 'skills', 'nekode-work-record', 'SKILL.md'),
+      'utf8',
+    )
+    expect(written).toBe(preview.text)
+    expect(await readdir(join(root, 'one', '.agents', 'skills'))).toEqual(['nekode-work-record'])
+    await expect(service.writeSkill('one', preview.token)).rejects.toMatchObject({
+      code: 'conflict',
+    })
+  })
+
+  it('dropProject keeps the written work record skill on disk', async () => {
+    service.bind('one', LOCAL_PROGRESS_RESUME_SOURCE_ID)
+    const preview = await service.skillPreview('one')
+    await service.writeSkill('one', preview.token)
+    service.dropProject('one')
+    const written = await readFile(
+      join(root, 'one', '.agents', 'skills', 'nekode-work-record', 'SKILL.md'),
+      'utf8',
+    )
+    expect(written).toBe(preview.text)
+  })
+
+  it('rejects a missing or deleted work record source', async () => {
+    await expect(service.skillPreview('one')).rejects.toMatchObject({ code: 'validation_error' })
+    values.set('project.resumeTemplate:one', 'missing')
+    await expect(service.skillPreview('one')).rejects.toMatchObject({ code: 'validation_error' })
+  })
+
+  it('a source edit makes the old preview token a conflict and writes nothing', async () => {
+    const template = service.put(fileInput()).templates.at(-1)
+    if (template === undefined) throw new Error('missing file source')
+    service.bind('one', template.id)
+    const preview = await service.skillPreview('one')
+    service.put({
+      ...fileInput(),
+      id: template.id,
+      revision: template.revision,
+      name: 'Renamed progress files',
+    })
+    await expect(service.writeSkill('one', preview.token)).rejects.toMatchObject({
+      code: 'conflict',
+    })
+    expect(await readdir(join(root, 'one'))).toEqual([])
+  })
+
+  it('teaches Agent Harness without a local progress file', async () => {
+    service.bind('one', 'agent-harness')
+    const preview = await service.skillPreview('one')
+    expect(preview).toMatchObject({ origin: 'agent-harness', sourceName: 'Agent Harness' })
+    expect(preview.text).toContain('python .agents/scripts/taskctl list --json')
+    expect(preview.text).not.toContain('create or update `work/')
+  })
+
+  it('teaches custom file and command sources with their own text', async () => {
+    const file = service
+      .put({
+        ...fileInput(),
+        name: 'Team notes',
+        source: {
+          kind: 'files',
+          directory: 'notes',
+          pattern: '*.md',
+          recursive: false,
+          identity: 'stem',
+        },
+      })
+      .templates.at(-1)
+    if (file === undefined) throw new Error('missing file source')
+    service.bind('one', file.id)
+    const filePreview = await service.skillPreview('one')
+    expect(filePreview).toMatchObject({ origin: 'file-source', sourceName: 'Team notes' })
+    expect(filePreview.text).toContain('`notes`')
+    expect(filePreview.text).toContain('`*.md`')
+
+    const command = service
+      .put({
+        id: null,
+        revision: null,
+        name: 'Team tracker',
+        source: { kind: 'command', protocol: 'generic', executable: 'tool', args: [] },
+      })
+      .templates.at(-1)
+    if (command === undefined) throw new Error('missing command source')
+    service.bind('one', command.id)
+    const commandPreview = await service.skillPreview('one')
+    expect(commandPreview).toMatchObject({
+      origin: 'command-source',
+      sourceName: 'Team tracker',
+    })
+    expect(commandPreview.text).toContain('external command')
+    expect(commandPreview.text).not.toContain('taskctl')
   })
 
   it('reports the registered projects using a template without changing state', () => {
