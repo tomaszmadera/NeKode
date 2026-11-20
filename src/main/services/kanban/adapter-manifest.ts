@@ -150,6 +150,12 @@ export function parseAdapterManifest(content: string, manifestPath: string): Kan
   if (manifest.agentSkill !== undefined) {
     parseAgentSkillPath(manifest.agentSkill, manifestPath)
   }
+  if (
+    manifest.requiresProjectDirectory !== undefined &&
+    typeof manifest.requiresProjectDirectory !== 'boolean'
+  ) {
+    fail(manifestPath, 'field "requiresProjectDirectory" must be a boolean')
+  }
 
   return {
     id,
@@ -187,6 +193,12 @@ export interface DiscoveredAdapter {
   invocation: { command: string; args: string[] }
   /** Validated manifest `agentSkill` relative path, when declared (NEKODE-169). */
   agentSkill?: string
+  /**
+   * Manifest `requiresProjectDirectory` (NEKODE-198): the adapter reads the
+   * project directory from `project.root`, so it cannot serve an SSH project.
+   * Present only when the manifest declares `true`.
+   */
+  requiresProjectDirectory?: true
 }
 
 export interface DiscoveryResult {
@@ -219,6 +231,7 @@ export function discoverAdapters(dir: string): DiscoveryResult {
     let info: KanbanAdapterInfo
     let invocation: { command: string; args: string[] }
     let agentSkill: string | undefined
+    let requiresProjectDirectory: boolean
     try {
       const content = readFileSync(manifestPath, 'utf8')
       const parsed = parseAdapterManifest(content, manifestPath)
@@ -227,9 +240,11 @@ export function discoverAdapters(dir: string): DiscoveryResult {
       const raw = JSON.parse(content) as {
         invocation: { command: string; args?: string[] }
         agentSkill?: string
+        requiresProjectDirectory?: boolean
       }
       invocation = { command: raw.invocation.command, args: raw.invocation.args ?? [] }
       agentSkill = raw.agentSkill
+      requiresProjectDirectory = raw.requiresProjectDirectory === true
       info = parsed
     } catch (error) {
       if (error instanceof ManifestError) {
@@ -252,6 +267,7 @@ export function discoverAdapters(dir: string): DiscoveryResult {
       id: info.id,
       dir: adapterDir,
       invocation,
+      ...(requiresProjectDirectory ? { requiresProjectDirectory: true as const } : {}),
       ...(agentSkill === undefined ? {} : { agentSkill }),
     })
   }
