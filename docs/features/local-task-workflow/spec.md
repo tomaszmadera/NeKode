@@ -127,7 +127,7 @@ Existing trusted-sender, project root, task-file write, agent skill file confirm
 
 ## Edge cases and errors
 
-- Missing or unreadable `work/`: visible Files source error with Retry; board and Start remain available. The progress adapter instead treats missing scan directories as an empty snapshot.
+- Missing `work/` in an existing project using the `Local work record` source: successful discovery with no candidates. An unreadable `work/` or a file at that path shows a Files source error with Retry. Board and Start remain available. The progress adapter treats missing scan directories as an empty snapshot.
 - Invalid encoding or oversize discovery candidate: existing file-source rejection with path and reason; other candidates remain available.
 - Invalid or unsupported state block: no indicator; error visible in Step progress; no prose parsing or repair fallback.
 - No bound work record source: Resume offers configuration; the board still works.

@@ -61,6 +61,26 @@ async function createCards(count: number): Promise<Array<{ ref: string; revision
 }
 
 describe('local task workflow without Harness', () => {
+  it('has no Resume candidates before the first work record is written', async () => {
+    await file.ensure('p1', CHANNEL)
+
+    await expect(discoverResumeFiles(root, LOCAL_PROGRESS_RESUME_SOURCE, signal)).resolves.toEqual({
+      candidates: [],
+      rejections: [],
+    })
+  })
+
+  it('reports a missing project or a file in place of the work directory', async () => {
+    await expect(
+      discoverResumeFiles(join(root, 'missing-project'), LOCAL_PROGRESS_RESUME_SOURCE, signal),
+    ).rejects.toThrow(/Resume directory work/)
+
+    writeFileSync(join(root, 'work'), 'not a directory')
+    await expect(discoverResumeFiles(root, LOCAL_PROGRESS_RESUME_SOURCE, signal)).rejects.toThrow(
+      /Cannot list Resume directory work/,
+    )
+  })
+
   it('discovers the T-1 progress file through the ready preset without taskctl or Python', async () => {
     const [card] = await createCards(1)
     expect(card.ref).toBe('T-1')

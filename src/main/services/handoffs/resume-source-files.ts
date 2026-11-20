@@ -1,9 +1,10 @@
 import { constants } from 'node:fs'
 import { lstat, open, opendir, realpath } from 'node:fs/promises'
 import { basename, dirname, extname, join, posix, resolve, win32 } from 'node:path'
-import type {
-  ResumeSourceCandidate,
-  ResumeSourcePreview,
+import {
+  isLocalProgressResumeSource,
+  type ResumeSourceCandidate,
+  type ResumeSourcePreview,
 } from '@shared/contracts/resume-sources-contract'
 import { AppError } from '@shared/ipc-error'
 import { projectWslLocation } from '@shared/project-environment'
@@ -182,6 +183,19 @@ export async function discoverResumeFiles(
       throw new AppError('config', 'The Resume directory leaves the project.')
   } catch (error) {
     checkResumeCancelled(signal)
+    // The agent creates work/ when it writes the first local work record.
+    if (
+      isLocalProgressResumeSource(source) &&
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'ENOENT' &&
+      'syscall' in error &&
+      error.syscall === 'lstat' &&
+      'path' in error &&
+      error.path === root
+    )
+      return { candidates: [], rejections: [] }
     throw new AppError('config', `Resume directory ${source.directory}: ${resumeReadError(error)}`)
   }
   const candidates: ResumeSourceCandidate[] = []
