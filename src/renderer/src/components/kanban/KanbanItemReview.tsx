@@ -27,16 +27,128 @@ import {
   PRIORITY_OPTIONS,
   priorityFromSelect,
   prioritySelectValue,
+  type ReviewTextDraft,
   statesInAdapterOrder,
 } from './kanban-board-logic'
 
 // Item review (spec kanban-adapter-interface Behaviour 14). Two columns: the
 // left is three quarters of the width and holds the ref, full title,
-// description, and comments, read-only and selectable. The right is one
+// description, and comments, selectable. Edit (NEKODE-196 amendment) turns the
+// title and description into a plain-text form; the board owns the draft and
+// the write. The right is one
 // quarter and holds Start/Resume, Priority, and Status. Status lists the board
 // states in adapter order; its label and value are the state name. Priority
-// lists Urgent, High, Medium, Low, and None. The selects stay disabled while a
-// review write is in flight. The review's own menu copies the text selection.
+// lists Urgent, High, Medium, Low, and None. The selects, Edit, and Save stay
+// disabled while a review write is in flight. The review's own menu copies the
+// text selection.
+
+/** Shown under the description field: the tracker may hold rich text. */
+export const PLAIN_TEXT_NOTE =
+  'The description is saved as plain text. Formatting from the tracker, such as headings, lists, and links, is not kept.'
+
+const PRIMARY_BUTTON_CLASS =
+  'h-control rounded-md bg-button px-4 text-ink hover:bg-button-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
+const SECONDARY_BUTTON_CLASS =
+  'h-control rounded-md px-4 text-ink-secondary hover:bg-highlight hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
+
+/** Title and description form that replaces the read-only text during Edit. */
+function ReviewTextForm({
+  draft,
+  busy,
+  error,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  draft: ReviewTextDraft
+  busy: boolean
+  error: string | null
+  onChange: (next: ReviewTextDraft) => void
+  onSave: () => void
+  onCancel: () => void
+}): React.JSX.Element {
+  const canSave = draft.title.trim() !== '' && !busy
+  return (
+    <form
+      className="mt-2 flex flex-col gap-3"
+      aria-label="Edit task"
+      data-testid={TEST_ID.kanbanReviewEditForm}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (canSave) onSave()
+      }}
+      onKeyDown={(event) => {
+        if (busy || event.key !== 'Escape') return
+        event.preventDefault()
+        event.stopPropagation()
+        onCancel()
+      }}
+    >
+      <div className="flex flex-col gap-1">
+        <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanReviewEditTitle}>
+          Title
+        </label>
+        <input
+          id={TEST_ID.kanbanReviewEditTitle}
+          type="text"
+          className={`h-control ${KANBAN_FIELD_CLASS}`}
+          data-testid={TEST_ID.kanbanReviewEditTitle}
+          value={draft.title}
+          disabled={busy}
+          onChange={(event) => {
+            onChange({ ...draft, title: event.target.value })
+          }}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-ink-secondary" htmlFor={TEST_ID.kanbanReviewEditDescription}>
+          Description
+        </label>
+        <textarea
+          id={TEST_ID.kanbanReviewEditDescription}
+          className={`min-h-40 py-2 ${KANBAN_FIELD_CLASS}`}
+          data-testid={TEST_ID.kanbanReviewEditDescription}
+          value={draft.description}
+          disabled={busy}
+          onChange={(event) => {
+            onChange({ ...draft, description: event.target.value })
+          }}
+        />
+        <p className="text-[12px] text-ink-secondary" data-testid={TEST_ID.kanbanReviewEditNote}>
+          {PLAIN_TEXT_NOTE}
+        </p>
+      </div>
+      {error !== null ? (
+        <p
+          role="alert"
+          className="text-[12.6px] text-error"
+          data-testid={TEST_ID.kanbanReviewEditError}
+        >
+          {error}
+        </p>
+      ) : null}
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          className={PRIMARY_BUTTON_CLASS}
+          data-testid={TEST_ID.kanbanReviewEditSave}
+          disabled={!canSave}
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          className={SECONDARY_BUTTON_CLASS}
+          data-testid={TEST_ID.kanbanReviewEditCancel}
+          disabled={busy}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
 
 /** Review split. The Priority and Status column is one quarter of the free width. */
 const REVIEW_COLUMNS = 'minmax(0, 3fr) minmax(0, 1fr)'
@@ -224,6 +336,13 @@ export interface KanbanItemReviewProps {
   resumeMenuOpen?: boolean
   onStatusChange: (stateName: string) => void
   onPriorityChange: (priority: KanbanPriority | null) => void
+  /** Title and description being edited, or null when the text is read-only. */
+  textDraft: ReviewTextDraft | null
+  textError: string | null
+  onEditText: () => void
+  onTextDraftChange: (next: ReviewTextDraft) => void
+  onSaveText: () => void
+  onCancelText: () => void
   /** Context menu on review text: the current selection and the pointer position. */
   onCopyText: (text: string, x: number, y: number) => void
 }
@@ -244,6 +363,12 @@ export function KanbanItemReview({
   resumeMenuOpen = false,
   onStatusChange,
   onPriorityChange,
+  textDraft,
+  textError,
+  onEditText,
+  onTextDraftChange,
+  onSaveText,
+  onCancelText,
   onCopyText,
   comments,
   commentsLoading,
@@ -259,27 +384,53 @@ export function KanbanItemReview({
       data-testid={TEST_ID.kanbanReview}
       onContextMenu={(event) => {
         const target = event.target
-        if (target instanceof Element && target.closest('button, select')) return
+        if (target instanceof Element && target.closest('button, select, input, textarea')) return
         event.preventDefault()
         onCopyText(window.getSelection()?.toString() ?? '', event.clientX, event.clientY)
       }}
     >
       <div className="grid items-start gap-6" style={{ gridTemplateColumns: REVIEW_COLUMNS }}>
         <div className="min-w-0">
-          <p className="cursor-text font-medium text-ink">{item.ref}</p>
-          <h3
-            className="mt-2 cursor-text whitespace-pre-wrap break-words text-[14.7px] font-semibold text-ink"
-            data-testid={TEST_ID.kanbanReviewTitle}
-          >
-            {item.title}
-          </h3>
-          <h4 className="mt-4 cursor-text font-semibold text-ink">Description</h4>
-          <p
-            className="mt-1 cursor-text whitespace-pre-wrap break-words text-ink-secondary"
-            data-testid={TEST_ID.kanbanReviewDescription}
-          >
-            {descriptionText(item.description)}
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="cursor-text font-medium text-ink">{item.ref}</p>
+            {textDraft === null ? (
+              <button
+                type="button"
+                className={`${SECONDARY_BUTTON_CLASS} border border-edge`}
+                data-testid={TEST_ID.kanbanReviewEdit}
+                disabled={fieldsDisabled}
+                onClick={onEditText}
+              >
+                Edit
+              </button>
+            ) : null}
+          </div>
+          {textDraft !== null ? (
+            <ReviewTextForm
+              draft={textDraft}
+              busy={fieldsDisabled}
+              error={textError}
+              onChange={onTextDraftChange}
+              onSave={onSaveText}
+              onCancel={onCancelText}
+            />
+          ) : (
+            <>
+              <h3
+                className="mt-2 cursor-text whitespace-pre-wrap break-words text-[14.7px] font-semibold text-ink"
+                data-testid={TEST_ID.kanbanReviewTitle}
+              >
+                {item.title}
+              </h3>
+              <h4 className="mt-4 cursor-text font-semibold text-ink">Description</h4>
+              <p
+                className="mt-1 cursor-text whitespace-pre-wrap break-words text-ink-secondary"
+                data-testid={TEST_ID.kanbanReviewDescription}
+              >
+                {descriptionText(item.description)}
+              </p>
+            </>
+          )}
           <h4 className="mt-4 cursor-text font-semibold text-ink">Comments</h4>
           <ReviewComments comments={comments} loading={commentsLoading} error={commentsError} />
         </div>

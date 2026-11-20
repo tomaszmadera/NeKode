@@ -594,8 +594,8 @@ enabled Start, and shown Resume. Only those handle a click. Opening the
 slug or the title shows a two-column review: the full title and the
 description on the left, Priority and Status on the right. The right column
 is one quarter of the width. Status and Priority
-save, and the ref, title,
-and description stay read-only and can be selected and copied. When the board
+save, Edit changes the title and the description as plain text, and the ref,
+title, and description can be selected and copied. When the board
 is ready and the review is closed, the header shows `New task`. The refresh
 icon sits on the right of the same header; every icon control carries an
 accessible name (§63).
@@ -859,11 +859,11 @@ grouped list. Each item shows its slug and title in
 separate columns, plus its priority. Hover highlights the whole row, and underlines the slug, the title,
 enabled Start, and shown Resume. Only those handle a click. The review
 is two columns: the ref, the full title, and the description on the left, and
-Priority and Status on the right. The right column is one quarter of the width. Status and Priority save, and the ref, title, and
-description stay read-only and can be selected and copied. `New task` is in the header
+Priority and Status on the right. The right column is one quarter of the width. Status and Priority save, Edit changes the title and
+description as plain text, and the ref, title, and description can be selected and copied. `New task` is in the header
 when the review is closed. The refresh control is an icon on
 the right of the surface header. The editing rules are in the Kanban adapter
-spec, sections "Kanban item editing amendment (user decision 2026-10-11)" and "Kanban row and review amendment (user decision 2026-10-12)".
+spec, sections "Kanban item editing amendment (user decision 2026-10-11)" and "Kanban row and review amendment (user decision 2026-10-12)", plus "Kanban title and description edit amendment (NEKODE-196)".
 
 Future global navigation may also expose:
 
