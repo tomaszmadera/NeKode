@@ -11,19 +11,23 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   USAGE_REMOVED_ADAPTER_MESSAGE,
   USAGE_STATE_KEY,
-  type UsageDocument,
   type UsageRefreshResult,
   type UsageRefreshSourceResult,
   type UsageRefreshWindowResult,
+  type UsageReportDocument,
   type UsageSettings,
 } from '@shared/contracts/usage-contract'
 import { AppError } from '@shared/ipc-error'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { UsageAdapterHost, type UsageAdapterResult } from './adapter-host'
+import {
+  bundledUsageAdapterDirectories,
+  UsageAdapterHost,
+  type UsageAdapterResult,
+} from './adapter-host'
 import { UsageService } from './usage-service'
 
 const NOW = Date.parse('2026-10-20T12:00:00Z')
@@ -31,7 +35,7 @@ const adapterResult = (
   document: unknown,
   refresh: UsageRefreshResult | null = null,
 ): UsageAdapterResult => {
-  const value = document as UsageDocument
+  const value = document as UsageReportDocument
   Object.defineProperty(value, 'refresh', { value: refresh, enumerable: false, configurable: true })
   return value as UsageAdapterResult
 }
@@ -72,8 +76,8 @@ function fixture() {
     JSON.stringify({
       id: 'source',
       name: 'Source',
-      providerId: 'fixture',
-      protocolVersion: 2,
+      serviceId: 'fixture',
+      protocolVersion: 3,
       invocation: { command: 'node', args: ['fixture.cjs'] },
       sourceKind: 'api',
       capabilities: ['window'],
@@ -116,18 +120,20 @@ function fixture() {
     writeFileSync(
       input,
       JSON.stringify({
-        schemaVersion: 1,
-        subscriptions: [
+        schemaVersion: 2,
+        reports: [
           {
             id: 'account',
-            providerId: 'fixture',
+            serviceId: 'fixture',
             label: 'Producer label',
             sourceKind: 'file',
             status: 'available',
+            subscriptions: [{ id: 'fixture-plan', label: 'Fixture plan' }],
             metrics: [
               {
                 id: 'week',
-                label: '7d',
+                label: 'Fixture plan 7d',
+                subscriptionId: 'fixture-plan',
                 kind: 'window',
                 state: 'available',
                 observedAt,
@@ -145,7 +151,7 @@ function fixture() {
       {
         id: 'account',
         label: 'Fixture account',
-        providerId: 'fixture',
+        serviceId: 'fixture',
         adapterId: 'source',
         enabled: true,
         config: { path: input },
@@ -157,7 +163,7 @@ function fixture() {
   /** The input document with every observation at the current clock (a live provider read). */
   const live = (percent = 42) => {
     const document = JSON.parse(readFileSync(input, 'utf8'))
-    for (const metric of document.subscriptions[0].metrics) {
+    for (const metric of document.reports[0].metrics) {
       metric.observedAt = new Date(now).toISOString()
       metric.usedPercent = percent
     }
@@ -187,7 +193,7 @@ function plugin(f: ReturnType<typeof fixture>, minimumRefreshSeconds = 60) {
     JSON.stringify({
       id: 'fixture',
       name: 'Fixture',
-      protocolVersion: 2,
+      protocolVersion: 3,
       invocation: { command: 'node', args: ['fixture.cjs'] },
       sourceKind: 'api',
       capabilities: ['window'],
@@ -416,7 +422,7 @@ describe('global usage service', () => {
     })
     read.mockImplementation(async (_adapter, _config, id) => {
       const document = f.live()
-      document.subscriptions[0].id = id
+      document.reports[0].id = id
       return adapterResult(document)
     })
     expect((await service.refresh({ connectionId: 'second' })).refresh).toEqual({
@@ -528,7 +534,7 @@ describe('global usage service', () => {
         {
           id: 'replaced-account',
           label: 'Replaced account',
-          providerId: 'fixture',
+          serviceId: 'fixture',
           adapterId: 'source',
           enabled: true,
           config: { path: f.input },
@@ -704,9 +710,12 @@ describe('global usage service', () => {
     let refreshFails = true
     read.mockImplementation(async (_adapter, _config, id, _signal, action) => {
       if (id === 'account' && action === 'refresh' && refreshFails)
-        throw new AppError('config', 'Personal Data Hub has no quota source for agent "claude".')
+        throw new AppError(
+          'config',
+          'Personal Data Hub has no quota source for subscription "claude".',
+        )
       const document = f.live(action === 'refresh' ? 50 : 42 + read.mock.calls.length)
-      document.subscriptions[0].id = id
+      document.reports[0].id = id
       return adapterResult(document)
     })
     service.saveSettings({
@@ -786,7 +795,7 @@ describe('global usage service', () => {
           rejectRead = reject
         })
       const document = f.live()
-      document.subscriptions[0].id = 'healthy'
+      document.reports[0].id = 'healthy'
       return Promise.resolve(adapterResult(document))
     })
     const original = service.getSettings()
@@ -867,7 +876,7 @@ describe('global usage service', () => {
     f.service.saveSettings({ ...f.settings, pin: { connectionId: 'account', metricId: 'week' } })
     f.advance(60_000)
     const document = JSON.parse(readFileSync(f.input, 'utf8'))
-    document.subscriptions[0].metrics = []
+    document.reports[0].metrics = []
     writeFileSync(f.input, JSON.stringify(document))
     await f.service.refresh({ connectionId: 'account' })
     expect(f.service.read().pin).toBeNull()
@@ -971,7 +980,21 @@ describe('global usage service', () => {
     expect(first.observedAt).toBe('2026-10-20T12:00:00Z')
     expect(first.receivedAt).toBe('2026-10-20T13:05:00.000Z')
     const exported = JSON.parse(readFileSync(f.output, 'utf8'))
-    expect(exported.subscriptions[0].metrics[0]).toMatchObject(first)
+    // U9: the export writes schema 2 with reports, serviceId and subscription ids only.
+    expect(exported).toMatchObject({
+      schemaVersion: 2,
+      reports: [
+        {
+          serviceId: 'fixture',
+          subscriptions: [{ id: 'fixture-plan', label: 'Fixture plan' }],
+          metrics: [{ subscriptionId: 'fixture-plan' }],
+        },
+      ],
+    })
+    expect(JSON.stringify(exported)).not.toMatch(
+      /providerId|"agent|"subscriptions":\[\{"id":"account"/,
+    )
+    expect(exported.reports[0].metrics[0]).toMatchObject(first)
     expect(JSON.stringify(exported)).not.toContain('config')
     const restarted = new UsageService(f.deps)
     services.push(restarted)
@@ -1038,7 +1061,7 @@ describe('global usage service', () => {
       JSON.stringify({
         id: 'fixture',
         name: 'Fixture',
-        protocolVersion: 2,
+        protocolVersion: 3,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'cli',
         capabilities: ['window'],
@@ -1078,7 +1101,7 @@ describe('global usage service', () => {
       JSON.stringify({
         id: 'secret',
         name: 'Secret fixture',
-        protocolVersion: 2,
+        protocolVersion: 3,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'api',
         capabilities: ['balance'],
@@ -1135,17 +1158,19 @@ describe('global usage service', () => {
 })
 
 describe('accounts settings flow (spec rules 21-28)', () => {
-  function subscription(id: string, providerId: string, percent: number) {
+  function report(id: string, serviceId: string, percent: number) {
     return {
       id,
-      providerId,
+      serviceId,
       label: `Label ${id}`,
       sourceKind: 'file',
       status: 'available',
+      subscriptions: [{ id: 'fixture-plan', label: 'Fixture plan' }],
       metrics: [
         {
           id: 'week',
-          label: '7d',
+          label: 'Fixture plan 7d',
+          subscriptionId: 'fixture-plan',
           kind: 'window',
           state: 'available',
           observedAt: '2026-10-20T12:00:00Z',
@@ -1155,7 +1180,7 @@ describe('accounts settings flow (spec rules 21-28)', () => {
       ],
     }
   }
-  function adapter(f: ReturnType<typeof fixture>, providerId?: string) {
+  function adapter(f: ReturnType<typeof fixture>, serviceId?: string) {
     const directory = join(f.deps.userDataPath, 'usage-adapters', 'declared')
     mkdirSync(directory, { recursive: true })
     writeFileSync(
@@ -1163,9 +1188,9 @@ describe('accounts settings flow (spec rules 21-28)', () => {
       JSON.stringify({
         id: 'declared',
         name: 'Declared',
-        ...(providerId ? { providerId } : {}),
+        ...(serviceId ? { serviceId } : {}),
         summary: 'Fixture service.',
-        protocolVersion: 2,
+        protocolVersion: 3,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'api',
         capabilities: ['window'],
@@ -1179,57 +1204,48 @@ describe('accounts settings flow (spec rules 21-28)', () => {
     services.push(service)
     return { service, read, host }
   }
-  const account = (adapterId: string, providerId = '') => ({
+  const account = (adapterId: string, serviceId = '') => ({
     id: 'account',
     label: 'Fixture account',
-    providerId,
+    serviceId,
     adapterId,
     enabled: true,
     config: {} as Record<string, string | boolean>,
   })
 
-  it('assigns the declared provider id and ignores the one sent by the renderer', async () => {
+  it('assigns the declared service id and ignores the one sent by the renderer', async () => {
     const f = fixture()
-    const { service, read } = adapter(f, 'declared-provider')
+    const { service, read } = adapter(f, 'declared-service')
     service.saveSettings({ ...f.settings, connections: [account('declared', 'typed')] })
-    expect(service.getSettings().connections[0].providerId).toBe('declared-provider')
+    expect(service.getSettings().connections[0].serviceId).toBe('declared-service')
     read.mockResolvedValue(
-      adapterResult({
-        schemaVersion: 1,
-        subscriptions: [subscription('account', 'other-provider', 10)],
-      }),
+      adapterResult({ schemaVersion: 2, reports: [report('account', 'other-service', 10)] }),
     )
     service.setVisible(true)
     await service.refresh({ connectionId: 'account' })
-    expect(service.read().connections[0].error?.message).toContain('its provider')
+    expect(service.read().connections[0].error?.message).toContain('its service')
     read.mockResolvedValue(
-      adapterResult({
-        schemaVersion: 1,
-        subscriptions: [subscription('account', 'declared-provider', 10)],
-      }),
+      adapterResult({ schemaVersion: 2, reports: [report('account', 'declared-service', 10)] }),
     )
     await service.test(service.getSettings().connections[0])
   })
-  it('uses the adapter id without a declared provider and accepts any reported provider', async () => {
+  it('uses the adapter id without a declared service and accepts any reported service', async () => {
     const f = fixture()
     const { service, read } = adapter(f)
     service.saveSettings({ ...f.settings, connections: [account('declared')] })
-    expect(service.getSettings().connections[0].providerId).toBe('declared')
+    expect(service.getSettings().connections[0].serviceId).toBe('declared')
     read.mockResolvedValue(
-      adapterResult({
-        schemaVersion: 1,
-        subscriptions: [subscription('account', 'reported', 20)],
-      }),
+      adapterResult({ schemaVersion: 2, reports: [report('account', 'reported', 20)] }),
     )
     service.setVisible(true)
     await service.refresh({ connectionId: 'account' })
     const source = service.read().connections[0]
     expect(source.error).toBeNull()
-    expect(source.subscription?.providerId).toBe('declared')
+    expect(source.subscription?.serviceId).toBe('declared')
   })
-  it('replaces a saved provider id that differs from the declared one', () => {
+  it('replaces a saved service id that differs from the declared one', () => {
     const f = fixture()
-    const { host } = adapter(f, 'declared-provider')
+    const { host } = adapter(f, 'declared-service')
     f.state.set(
       USAGE_STATE_KEY,
       JSON.stringify({
@@ -1239,7 +1255,7 @@ describe('accounts settings flow (spec rules 21-28)', () => {
     )
     const legacy = new UsageService({ ...f.deps, host })
     services.push(legacy)
-    expect(legacy.getSettings().connections[0].providerId).toBe('legacy')
+    expect(legacy.getSettings().connections[0].serviceId).toBe('legacy')
     // Saving another account leaves the legacy one unchanged (criterion 15).
     const added = legacy.saveSettings({
       ...legacy.getSettings(),
@@ -1248,7 +1264,7 @@ describe('accounts settings flow (spec rules 21-28)', () => {
         { ...account('declared', 'typed'), id: 'other', label: 'Other account' },
       ],
     })
-    expect(added.connections.map((c) => c.providerId)).toEqual(['legacy', 'declared-provider'])
+    expect(added.connections.map((c) => c.serviceId)).toEqual(['legacy', 'declared-service'])
     // Editing the legacy account assigns the declared id.
     const edited = legacy.saveSettings({
       ...added,
@@ -1256,11 +1272,11 @@ describe('accounts settings flow (spec rules 21-28)', () => {
         c.id === 'account' ? { ...c, label: 'Renamed account' } : c,
       ),
     })
-    expect(edited.connections[0].providerId).toBe('declared-provider')
+    expect(edited.connections[0].serviceId).toBe('declared-service')
   })
   it('rejects changing the adapter of a saved source (rule 23)', async () => {
     const f = fixture()
-    const { service } = adapter(f, 'declared-provider')
+    const { service } = adapter(f, 'declared-service')
     plugin(f)
     service.saveSettings({ ...f.settings, connections: [account('declared')] })
     expect(service.getSettings().connections[0].adapterId).toBe('declared')
@@ -1299,22 +1315,28 @@ describe('accounts settings flow (spec rules 21-28)', () => {
 })
 
 describe('partial refresh merge and retry (PDH-13)', () => {
-  const doc = (metrics: Array<Record<string, unknown>>) => ({
-    schemaVersion: 1,
-    subscriptions: [
+  const plan = { id: 'fixture-plan', label: 'Fixture plan' }
+  const doc = (
+    metrics: Array<Record<string, unknown>>,
+    subscriptions: Array<{ id: string; label: string }> = [plan],
+  ) => ({
+    schemaVersion: 2,
+    reports: [
       {
         id: 'account',
-        providerId: 'fixture',
+        serviceId: 'fixture',
         label: 'Producer label',
         sourceKind: 'api',
         status: 'available',
+        subscriptions,
         metrics,
       },
     ],
   })
   const metric = (id: string, usedPercent: number, observedAt: string) => ({
     id,
-    label: id,
+    label: `Fixture plan ${id}`,
+    subscriptionId: 'fixture-plan',
     kind: 'window',
     state: 'available',
     observedAt,
@@ -1389,8 +1411,11 @@ describe('partial refresh merge and retry (PDH-13)', () => {
     expect(source.error).toBeNull()
     expect(source.refreshResult?.status).toBe('failed')
     const month = source.subscription?.metrics.find((m) => m.id === 'month')
+    // The only declared subscription owns the window; its label names it (U4).
     expect(month).toMatchObject({
       id: 'month',
+      label: 'Fixture plan month',
+      subscriptionId: 'fixture-plan',
       state: 'unavailable',
       observedAt: null,
       reason: 'rate_limited',
@@ -1399,12 +1424,18 @@ describe('partial refresh merge and retry (PDH-13)', () => {
     expect(source.subscription?.status).toBe('unavailable')
   })
 
-  it('labels an unavailable window without history from its agent and window id', async () => {
+  it('labels an unavailable window without history from its declared subscription (U4)', async () => {
     const f = fixture(),
       { service, read } = plugin(f)
     read.mockResolvedValueOnce(
       adapterResult(
-        doc([]),
+        doc(
+          [],
+          [
+            { id: 'claude', label: 'Claude' },
+            { id: 'command-code', label: 'Command Code' },
+          ],
+        ),
         refreshResult(
           [
             refreshSource('source', 'failed', [
@@ -1418,13 +1449,49 @@ describe('partial refresh merge and retry (PDH-13)', () => {
       ),
     )
     const result = await service.refresh({ connectionId: 'account' })
-    const metrics = result.connections[0].subscription?.metrics ?? []
-    expect(metrics.map((metric) => [metric.id, metric.label])).toEqual([
-      ['claude-weekly', 'Claude weekly'],
-      ['command-code-5h', 'Command Code 5h'],
-      ['month', 'month'],
+    const source = result.connections[0]
+    const metrics = source.subscription?.metrics ?? []
+    // A window of no declared subscription gets no row; its typed result still names it.
+    expect(metrics.map((metric) => [metric.id, metric.label, metric.subscriptionId])).toEqual([
+      ['claude-weekly', 'Claude weekly', 'claude'],
+      ['command-code-5h', 'Command Code 5h', 'command-code'],
     ])
     expect(metrics.every((metric) => metric.state === 'unavailable')).toBe(true)
+    expect(source.subscription?.subscriptions.map((declaration) => declaration.id)).toEqual([
+      'claude',
+      'command-code',
+    ])
+    expect(source.refreshResult?.sources[0].windows.map((window) => window.metricId)).toContain(
+      'month',
+    )
+  })
+
+  it('gives no row to a failed window naming an undeclared subscription (U3, U11)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    read.mockResolvedValueOnce(
+      adapterResult(
+        doc([]),
+        refreshResult(
+          [
+            refreshSource('source', 'failed', [
+              refreshWindow('opencode-go-5h', 'failed', { errorCode: 'network' }),
+              refreshWindow('month', 'unavailable'),
+            ]),
+          ],
+          { status: 'failed', measurementId: undefined, reportId: undefined },
+        ),
+      ),
+    )
+    const result = await service.refresh({ connectionId: 'account' })
+    const source = result.connections[0]
+    // Only an id without the `<subscription>-<window>` shape falls back to the one declaration.
+    expect(source.subscription?.metrics.map((m) => [m.id, m.label, m.subscriptionId])).toEqual([
+      ['month', 'Fixture plan month', 'fixture-plan'],
+    ])
+    expect(source.refreshResult?.sources[0].windows.map((w) => w.metricId)).toContain(
+      'opencode-go-5h',
+    )
   })
 
   it('refreshes only sources whose retry deadline passed and keeps the others', async () => {
@@ -1683,7 +1750,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
       const previous = service.read().connections[0].subscription?.metrics[0]
       f.advance(60_500)
       const stale = f.live(77)
-      stale.subscriptions[0].metrics[0].observedAt = observedAt
+      stale.reports[0].metrics[0].observedAt = observedAt
       read.mockResolvedValueOnce(adapterResult(stale))
       expect((await service.refresh({ connectionId: 'account' })).refresh?.read).toEqual([
         'account',
@@ -1701,10 +1768,11 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     await service.refresh({ connectionId: 'account' })
     f.advance(60_500)
     const document = f.live(77)
-    document.subscriptions[0].metrics[0].observedAt = '2026-10-20T12:01:00Z'
-    document.subscriptions[0].metrics.push({
+    document.reports[0].metrics[0].observedAt = '2026-10-20T12:01:00Z'
+    document.reports[0].metrics.push({
       id: 'credits',
-      label: 'Credits',
+      label: 'Fixture plan credits',
+      subscriptionId: 'fixture-plan',
       kind: 'credits',
       state: 'unavailable',
       observedAt: null,
@@ -1729,7 +1797,7 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
     stored.connections.push({
       id: 'claude',
       label: 'Claude account',
-      providerId: 'claude',
+      serviceId: 'claude',
       adapterId: 'claude-code-snapshots',
       enabled: true,
       config: { directory: join(f.dir, 'claude') },
@@ -1766,15 +1834,15 @@ describe('live refresh and removed passive sources (spec L1-L7)', () => {
       ...service.getSettings(),
       export: { enabled: true, path: f.output },
     })
-    expect(saved.connections.map((c) => [c.adapterId, c.providerId, c.config])).toEqual([
+    expect(saved.connections.map((c) => [c.adapterId, c.serviceId, c.config])).toEqual([
       ['usage-file', 'fixture', { path: f.input }],
       ['claude-code-snapshots', 'claude', { directory: join(f.dir, 'claude') }],
     ])
     expect(service.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
     expect(service.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
-    expect(JSON.parse(readFileSync(f.output, 'utf8')).subscriptions).toMatchObject([
+    expect(JSON.parse(readFileSync(f.output, 'utf8')).reports).toMatchObject([
       { id: 'account', status: 'error', metrics: [{ id: 'week', usedPercent: 42 }] },
-      { id: 'claude', status: 'error', sourceKind: 'file', metrics: [] },
+      { id: 'claude', status: 'error', sourceKind: 'file', subscriptions: [], metrics: [] },
     ])
     // Removing the account is the only way to drop its cache and pin.
     service.saveSettings({
@@ -1805,7 +1873,7 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
     decryptString: (v: Buffer) => v.toString(),
   }
   // Mirrors the Personal Data Hub manifest: the secret is declared between two text fields.
-  function hub(f: ReturnType<typeof fixture>, keys = ['hubUrl', 'token', 'agents']) {
+  function hub(f: ReturnType<typeof fixture>, keys = ['hubUrl', 'token', 'subscriptions']) {
     const directory = join(f.deps.userDataPath, 'usage-adapters', 'hub')
     mkdirSync(directory, { recursive: true })
     writeFileSync(
@@ -1813,8 +1881,8 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
       JSON.stringify({
         id: 'hub',
         name: 'Hub',
-        providerId: 'hub',
-        protocolVersion: 2,
+        serviceId: 'hub',
+        protocolVersion: 3,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'api',
         capabilities: ['window'],
@@ -1823,25 +1891,32 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
           key,
           label: key,
           type: key === 'token' ? 'secret' : 'text',
-          required: key !== 'agents',
+          required: key !== 'subscriptions',
         })),
       }),
     )
     const host = new UsageAdapterHost()
     vi.spyOn(host, 'read').mockResolvedValue(
       adapterResult({
-        schemaVersion: 1,
-        subscriptions: [
+        schemaVersion: 2,
+        reports: [
           {
             id: 'hub-account',
-            providerId: 'hub',
+            serviceId: 'hub',
             label: 'Hub',
             sourceKind: 'api',
             status: 'available',
-            metrics: ['claude-5h', 'codex-weekly'].map((id) => ({
+            subscriptions: [
+              { id: 'claude', label: 'Claude' },
+              { id: 'chatgpt', label: 'ChatGPT' },
+            ],
+            metrics: [
+              ['claude-5h', 'Claude 5h', 'claude'],
+              ['chatgpt-weekly', 'ChatGPT weekly', 'chatgpt'],
+            ].map(([id, label, subscriptionId]) => ({
               id,
-              label: id,
-              providerId: id.split('-')[0],
+              label,
+              subscriptionId,
               kind: 'window',
               state: 'available',
               observedAt: '2026-10-20T12:00:00Z',
@@ -1856,11 +1931,11 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
     services.push(service)
     return { service, host }
   }
-  const pin = { connectionId: 'hub-account', metricId: 'codex-weekly' }
+  const pin = { connectionId: 'hub-account', metricId: 'chatgpt-weekly' }
   const connection = (config: Record<string, string | boolean>) => ({
     id: 'hub-account',
     label: 'PDH',
-    providerId: '',
+    serviceId: '',
     adapterId: 'hub',
     enabled: true,
     config,
@@ -1871,7 +1946,7 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
     const { service, host } = hub(f)
     service.saveSettings({
       ...f.settings,
-      connections: [connection({ hubUrl: 'https://hub.test', token: 't', agents: '' })],
+      connections: [connection({ hubUrl: 'https://hub.test', token: 't', subscriptions: '' })],
     })
     await service.refresh({ connectionId: 'hub-account' })
     // UsageToolbar.pin(): getSettings, then saveSettings with the pin.
@@ -1888,10 +1963,11 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
   })
   it('pins an account saved under an older adapter manifest that declared other fields', async () => {
     const f = fixture()
-    const old = hub(f, ['token', 'hubUrl', 'agent'])
+    // The manifest before PDH-47 named its field `agents`; the stored value is dropped.
+    const old = hub(f, ['token', 'hubUrl', 'agents'])
     old.service.saveSettings({
       ...f.settings,
-      connections: [connection({ token: 't', hubUrl: 'https://hub.test', agent: 'agy' })],
+      connections: [connection({ token: 't', hubUrl: 'https://hub.test', agents: 'agy' })],
     })
     const { service } = hub(f)
     await service.refresh({ connectionId: 'hub-account' })
@@ -1921,22 +1997,22 @@ describe('pinning a metric of an external adapter (NEKODE-120)', () => {
   })
 })
 
-describe('account and agent refresh (NEKODE-148)', () => {
-  /** A hub adapter that aggregates two agents and declares agent refresh support (spec A7). */
-  function agentHub(
+describe('account and subscription refresh (NEKODE-148, NEKODE-191)', () => {
+  /** A hub adapter that reports two subscriptions and declares subscription refresh (A7, U6). */
+  function subscriptionHub(
     f: ReturnType<typeof fixture>,
-    refreshOptions: string[] | null = ['providers'],
-    refreshableProviders?: string[],
+    refreshOptions: string[] | null = ['subscriptions'],
+    refreshableSubscriptions?: string[],
   ) {
-    const directory = join(f.deps.userDataPath, 'usage-adapters', 'agents')
+    const directory = join(f.deps.userDataPath, 'usage-adapters', 'subscriptions')
     mkdirSync(directory, { recursive: true })
     writeFileSync(
       join(directory, 'usage-adapter.json'),
       JSON.stringify({
-        id: 'agents',
-        name: 'Agents',
-        providerId: 'hub',
-        protocolVersion: 2,
+        id: 'subscriptions',
+        name: 'Subscriptions',
+        serviceId: 'hub',
+        protocolVersion: 3,
         invocation: { command: 'node', args: ['fixture.cjs'] },
         sourceKind: 'api',
         capabilities: ['window'],
@@ -1946,28 +2022,31 @@ describe('account and agent refresh (NEKODE-148)', () => {
       }),
     )
     let now = NOW
-    let refreshable = refreshableProviders
-    const percent: Record<string, number> = { claude: 30, codex: 30 }
-    const metric = (agent: string) => ({
-      id: `${agent}-5h`,
-      label: `${agent} 5h`,
-      providerId: agent,
+    let refreshable = refreshableSubscriptions
+    const percent: Record<string, number> = { claude: 30, chatgpt: 30 }
+    const labels: Record<string, string> = { claude: 'Claude', chatgpt: 'ChatGPT' }
+    const label = (id: string) => labels[id] ?? id
+    const metric = (id: string) => ({
+      id: `${id}-5h`,
+      label: `${label(id)} 5h`,
+      subscriptionId: id,
       kind: 'window',
       state: 'available',
       observedAt: new Date(now).toISOString(),
-      usedPercent: percent[agent],
+      usedPercent: percent[id],
       resetsAt: '2026-10-25T00:00:00Z',
     })
-    const document = (agents: string[]) => ({
-      schemaVersion: 1,
-      subscriptions: [
+    const document = (ids: string[]) => ({
+      schemaVersion: 2,
+      reports: [
         {
           id: 'hub-account',
-          providerId: 'hub',
+          serviceId: 'hub',
           label: 'Hub',
           sourceKind: 'api',
           status: 'available',
-          metrics: agents.map(metric),
+          subscriptions: ids.map((id) => ({ id, label: label(id) })),
+          metrics: ids.map(metric),
         },
       ],
     })
@@ -1975,9 +2054,11 @@ describe('account and agent refresh (NEKODE-148)', () => {
     const read = vi
       .spyOn(host, 'read')
       .mockImplementation(async (_adapter, _config, _id, _signal, _action, options = {}) => {
-        const result = adapterResult(document(options.refreshProviders ?? ['claude', 'codex']))
+        const result = adapterResult(
+          document(options.refreshSubscriptions ?? ['claude', 'chatgpt']),
+        )
         if (refreshable !== undefined)
-          Object.defineProperty(result, 'refreshableProviders', { value: refreshable })
+          Object.defineProperty(result, 'refreshableSubscriptions', { value: refreshable })
         return result
       })
     const service = new UsageService({ ...f.deps, host, now: () => now })
@@ -1988,8 +2069,8 @@ describe('account and agent refresh (NEKODE-148)', () => {
         {
           id: 'hub-account',
           label: 'PDH',
-          providerId: '',
-          adapterId: 'agents',
+          serviceId: '',
+          adapterId: 'subscriptions',
           enabled: true,
           config: {},
         },
@@ -2000,6 +2081,7 @@ describe('account and agent refresh (NEKODE-148)', () => {
       read,
       document,
       percent,
+      labels,
       setRefreshable: (next: string[] | undefined) => {
         refreshable = next
       },
@@ -2010,8 +2092,8 @@ describe('account and agent refresh (NEKODE-148)', () => {
     }
   }
   const account = { connectionId: 'hub-account' }
-  const claude = { connectionId: 'hub-account', providerId: 'claude' }
-  const codex = { connectionId: 'hub-account', providerId: 'codex' }
+  const claude = { connectionId: 'hub-account', subscriptionId: 'claude' }
+  const chatgpt = { connectionId: 'hub-account', subscriptionId: 'chatgpt' }
   const values = (service: UsageService) =>
     Object.fromEntries(
       (service.read().connections[0].subscription?.metrics ?? []).map((m) => [
@@ -2020,35 +2102,98 @@ describe('account and agent refresh (NEKODE-148)', () => {
       ]),
     )
 
-  it('refreshes one agent and keeps the other agent, its dates and the pin (A7, A11)', async () => {
+  it('refreshes one subscription and keeps the other, its dates and the pin (A7, A11)', async () => {
     const f = fixture()
-    const h = agentHub(f)
+    const h = subscriptionHub(f)
     await h.service.refresh(account)
     expect(h.read.mock.calls[0][5]).toEqual({})
     h.service.saveSettings({
       ...h.service.getSettings(),
-      pin: { connectionId: 'hub-account', metricId: 'codex-5h' },
+      pin: { connectionId: 'hub-account', metricId: 'chatgpt-5h' },
     })
     h.advance(60_000)
     h.percent.claude = 50
-    h.percent.codex = 99
+    h.percent.chatgpt = 99
     const result = await h.service.refresh(claude)
     expect(h.read.mock.calls[1][4]).toBe('refresh')
-    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: ['claude'] })
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshSubscriptions: ['claude'] })
     expect(result.refresh).toEqual({ read: ['hub-account'], skipped: [] })
     expect(values(h.service)).toEqual({
       'claude-5h': [50, h.at(60_000)],
-      'codex-5h': [30, h.at(0)],
+      'chatgpt-5h': [30, h.at(0)],
     })
-    expect(h.service.read().pin).toEqual({ connectionId: 'hub-account', metricId: 'codex-5h' })
-    expect(h.service.read().connections[0].agents).toEqual([
-      { providerId: 'claude', nextRefreshAt: h.at(120_000) },
-      { providerId: 'codex', nextRefreshAt: null },
+    expect(h.service.read().pin).toEqual({ connectionId: 'hub-account', metricId: 'chatgpt-5h' })
+    expect(h.service.read().connections[0].subscriptions).toEqual([
+      { subscriptionId: 'claude', nextRefreshAt: h.at(120_000) },
+      { subscriptionId: 'chatgpt', nextRefreshAt: null },
     ])
   })
-  it('keeps the 60-second limit per account and agent (A9)', async () => {
+  it('writes cache and export when a retained metric keeps a label from before a rename (U4)', async () => {
     const f = fixture()
-    const h = agentHub(f)
+    const h = subscriptionHub(f)
+    h.service.saveSettings({
+      ...h.service.getSettings(),
+      export: { enabled: true, path: f.output },
+    })
+    h.labels['opencode-go'] = 'Opencode Go'
+    h.percent['opencode-go'] = 10
+    h.read.mockImplementationOnce(async () => adapterResult(h.document(['chatgpt', 'opencode-go'])))
+    await h.service.refresh(account)
+    // The Hub renames the subscription; a ChatGPT-only refresh re-declares it with the new label.
+    h.labels['opencode-go'] = 'OpenCode Go'
+    h.advance(60_000)
+    h.percent.chatgpt = 70
+    h.read.mockImplementationOnce(async () => {
+      const document = h.document(['chatgpt', 'opencode-go'])
+      document.reports[0].metrics = document.reports[0].metrics.filter(
+        (metric) => metric.subscriptionId === 'chatgpt',
+      )
+      return adapterResult(document)
+    })
+    await h.service.refresh(chatgpt)
+    const snapshot = h.service.read()
+    expect(snapshot.cacheError).toBeNull()
+    expect(snapshot.exportError).toBeNull()
+    const report = snapshot.connections[0].subscription
+    expect(report?.subscriptions).toEqual([
+      { id: 'chatgpt', label: 'ChatGPT' },
+      { id: 'opencode-go', label: 'OpenCode Go' },
+    ])
+    expect(report?.metrics.map((m) => [m.id, m.label, m.usedPercent])).toEqual([
+      ['chatgpt-5h', 'ChatGPT 5h', 70],
+      ['opencode-go-5h', 'Opencode Go 5h', 10],
+    ])
+    expect(readFileSync(f.output, 'utf8')).toContain('"usedPercent": 70')
+    const restarted = new UsageService(f.deps)
+    services.push(restarted)
+    expect(restarted.read().cacheError).toBeNull()
+    expect(restarted.read().connections[0].subscription?.metrics).toHaveLength(2)
+  })
+  it('orders declarations by the response on a refresh without a selection (U3)', async () => {
+    const f = fixture()
+    const h = subscriptionHub(f)
+    await h.service.refresh(account)
+    h.advance(60_000)
+    h.read.mockImplementationOnce(async () =>
+      adapterResult(
+        h.document(['chatgpt', 'claude']),
+        refreshResult([
+          refreshSource('hub', 'succeeded', [
+            refreshWindow('chatgpt-5h'),
+            refreshWindow('claude-5h'),
+          ]),
+        ]),
+      ),
+    )
+    await h.service.refresh(account)
+    expect(h.service.read().connections[0].subscription?.subscriptions.map((s) => s.id)).toEqual([
+      'chatgpt',
+      'claude',
+    ])
+  })
+  it('keeps the 60-second limit per account and subscription (A9)', async () => {
+    const f = fixture()
+    const h = subscriptionHub(f)
     await h.service.refresh(account)
     h.advance(59_999)
     expect((await h.service.refresh(claude)).refresh?.skipped).toEqual([
@@ -2056,14 +2201,14 @@ describe('account and agent refresh (NEKODE-148)', () => {
     ])
     h.advance(1)
     expect((await h.service.refresh(claude)).refresh?.read).toEqual(['hub-account'])
-    // Another agent of the same account reads 10 seconds later.
+    // Another subscription of the same account reads 10 seconds later.
     h.advance(10_000)
-    expect((await h.service.refresh(codex)).refresh?.read).toEqual(['hub-account'])
+    expect((await h.service.refresh(chatgpt)).refresh?.read).toEqual(['hub-account'])
     h.advance(10_000)
     expect((await h.service.refresh(claude)).refresh?.skipped).toEqual([
       { ...claude, until: h.at(120_000), reason: 'interval' },
     ])
-    // Both agents are inside their limit: the account waits for the earliest one.
+    // Both subscriptions are inside their limit: the account waits for the earliest one.
     expect((await h.service.refresh(account)).refresh?.skipped).toEqual([
       { ...account, until: h.at(120_000), reason: 'interval' },
     ])
@@ -2071,14 +2216,14 @@ describe('account and agent refresh (NEKODE-148)', () => {
     // Only claude's limit passed: the account refresh sends only claude.
     h.advance(45_000)
     expect((await h.service.refresh(account)).refresh?.read).toEqual(['hub-account'])
-    expect(h.read.mock.calls.at(-1)?.[5]).toEqual({ refreshProviders: ['claude'] })
+    expect(h.read.mock.calls.at(-1)?.[5]).toEqual({ refreshSubscriptions: ['claude'] })
     expect(h.read).toHaveBeenCalledTimes(4)
   })
-  it('keeps the per-account limit for an adapter without agent refresh support', async () => {
+  it('keeps the per-account limit for an adapter without subscription refresh support', async () => {
     const f = fixture()
-    const h = agentHub(f, null)
+    const h = subscriptionHub(f, null)
     await h.service.refresh(account)
-    expect(h.service.read().connections[0].agents).toBeNull()
+    expect(h.service.read().connections[0].subscriptions).toBeNull()
     await expect(h.service.refresh(claude)).rejects.toMatchObject({ code: 'validation_error' })
     h.advance(30_000)
     expect((await h.service.refresh(account)).refresh?.skipped).toEqual([
@@ -2090,11 +2235,11 @@ describe('account and agent refresh (NEKODE-148)', () => {
   })
   it('rejects unknown and disabled targets before collection (A6)', async () => {
     const f = fixture()
-    const h = agentHub(f)
+    const h = subscriptionHub(f)
     await expect(h.service.refresh(claude)).rejects.toMatchObject({ code: 'not_found' })
     await h.service.refresh(account)
     await expect(
-      h.service.refresh({ connectionId: 'hub-account', providerId: 'grok' }),
+      h.service.refresh({ connectionId: 'hub-account', subscriptionId: 'grok' }),
     ).rejects.toMatchObject({ code: 'not_found' })
     await expect(h.service.refresh({ connectionId: 'missing' })).rejects.toMatchObject({
       code: 'not_found',
@@ -2107,25 +2252,25 @@ describe('account and agent refresh (NEKODE-148)', () => {
   })
   it('fails a response with metrics outside the selection and keeps the values (A8)', async () => {
     const f = fixture()
-    const h = agentHub(f)
+    const h = subscriptionHub(f)
     await h.service.refresh(account)
     h.advance(60_000)
     h.percent.claude = 70
-    h.percent.codex = 70
-    h.read.mockImplementationOnce(async () => adapterResult(h.document(['claude', 'codex'])))
+    h.percent.chatgpt = 70
+    h.read.mockImplementationOnce(async () => adapterResult(h.document(['claude', 'chatgpt'])))
     await h.service.refresh(claude)
     expect(h.service.read().connections[0].error).toMatchObject({
       code: 'protocol',
-      message: 'Usage adapter returned metrics outside the selected agents.',
+      message: 'Usage adapter returned metrics outside the selected subscriptions.',
     })
     expect(values(h.service)).toEqual({
       'claude-5h': [30, h.at(0)],
-      'codex-5h': [30, h.at(0)],
+      'chatgpt-5h': [30, h.at(0)],
     })
   })
-  it('joins a refresh that covers the agent and waits for one that does not (A10)', async () => {
+  it('joins a refresh that covers the subscription and waits for one that does not (A10)', async () => {
     const f = fixture()
-    const h = agentHub(f)
+    const h = subscriptionHub(f)
     await h.service.refresh(account)
     h.advance(60_000)
     let release: () => void = () => {}
@@ -2133,11 +2278,11 @@ describe('account and agent refresh (NEKODE-148)', () => {
       await new Promise<void>((resolve) => {
         release = resolve
       })
-      return adapterResult(h.document(options.refreshProviders ?? []))
+      return adapterResult(h.document(options.refreshSubscriptions ?? []))
     })
     const first = h.service.refresh(claude)
     const joined = h.service.refresh(claude)
-    const other = h.service.refresh(codex)
+    const other = h.service.refresh(chatgpt)
     await new Promise((resolve) => setImmediate(resolve))
     expect(h.read).toHaveBeenCalledTimes(2)
     release()
@@ -2145,14 +2290,14 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect((await joined).refresh?.read).toEqual(['hub-account'])
     expect((await other).refresh?.read).toEqual(['hub-account'])
     expect(h.read).toHaveBeenCalledTimes(3)
-    expect(h.read.mock.calls[2][5]).toEqual({ refreshProviders: ['codex'] })
+    expect(h.read.mock.calls[2][5]).toEqual({ refreshSubscriptions: ['chatgpt'] })
   })
-  it('skips an agent whose sources wait for a provider deadline (A9 backoff)', async () => {
+  it('skips a subscription whose sources wait for a provider deadline (A9 backoff)', async () => {
     const f = fixture()
-    const h = agentHub(f)
+    const h = subscriptionHub(f)
     h.read.mockImplementationOnce(async () =>
       adapterResult(
-        h.document(['claude', 'codex']),
+        h.document(['claude', 'chatgpt']),
         refreshResult([
           refreshSource(
             'hub-claude',
@@ -2162,7 +2307,7 @@ describe('account and agent refresh (NEKODE-148)', () => {
               nextAllowedAt: h.at(600_000),
             },
           ),
-          refreshSource('hub-codex', 'succeeded', [refreshWindow('codex-5h')]),
+          refreshSource('hub-chatgpt', 'succeeded', [refreshWindow('chatgpt-5h')]),
         ]),
       ),
     )
@@ -2171,12 +2316,12 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect((await h.service.refresh(claude)).refresh?.skipped).toEqual([
       { ...claude, until: h.at(600_000), reason: 'backoff' },
     ])
-    expect((await h.service.refresh(codex)).refresh?.read).toEqual(['hub-account'])
-    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: ['codex'] })
+    expect((await h.service.refresh(chatgpt)).refresh?.read).toEqual(['hub-account'])
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshSubscriptions: ['chatgpt'] })
   })
-  it('uses the earliest combined agent interval and source deadline for an account (A9)', async () => {
+  it('uses the earliest combined subscription interval and source deadline for an account (A9)', async () => {
     const f = fixture()
-    const h = agentHub(f)
+    const h = subscriptionHub(f)
     await h.service.refresh(account)
     h.advance(60_000)
     h.read.mockImplementationOnce(async () =>
@@ -2185,9 +2330,9 @@ describe('account and agent refresh (NEKODE-148)', () => {
         refreshResult(
           [
             refreshSource(
-              'hub-codex',
+              'hub-chatgpt',
               'rate_limited',
-              [refreshWindow('codex-5h', 'rate_limited')],
+              [refreshWindow('chatgpt-5h', 'rate_limited')],
               {
                 nextAllowedAt: h.at(600_000),
               },
@@ -2197,7 +2342,7 @@ describe('account and agent refresh (NEKODE-148)', () => {
         ),
       ),
     )
-    await h.service.refresh(codex)
+    await h.service.refresh(chatgpt)
     h.advance(10_000)
     h.read.mockImplementationOnce(async () =>
       adapterResult(
@@ -2213,7 +2358,7 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect((await h.service.refresh(account)).refresh?.skipped).toEqual([
       { ...account, until: h.at(130_000), reason: 'interval' },
     ])
-    // Codex's interval passes first, but its provider remains blocked longer than Claude.
+    // ChatGPT's interval passes first, but its provider remains blocked longer than Claude.
     h.advance(40_000)
     expect(h.service.read().connections[0].nextRefreshAt).toBe(h.at(130_000))
     expect((await h.service.refresh(account)).refresh?.skipped).toEqual([
@@ -2224,9 +2369,9 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect((await h.service.refresh(account)).refresh?.read).toEqual(['hub-account'])
     expect(h.read.mock.calls[3][5]).toEqual({ refreshSources: ['hub-claude'] })
   })
-  it('returns the current attempt separately from retained results of other agents (A5)', async () => {
+  it('returns the current attempt separately from retained results of other subscriptions (A5)', async () => {
     const f = fixture()
-    const h = agentHub(f)
+    const h = subscriptionHub(f)
     await h.service.refresh(account)
     h.advance(60_000)
     const failed = refreshResult([refreshSource('hub-claude', 'failed', [])], { status: 'failed' })
@@ -2243,11 +2388,11 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect((await first).refresh?.result).toEqual(failed)
     expect((await joined).refresh?.result).toEqual(failed)
     const succeeded = refreshResult(
-      [refreshSource('hub-codex', 'succeeded', [refreshWindow('codex-5h')])],
+      [refreshSource('hub-chatgpt', 'succeeded', [refreshWindow('chatgpt-5h')])],
       { status: 'success', requestId: 'request-2' },
     )
-    h.read.mockImplementationOnce(async () => adapterResult(h.document(['codex']), succeeded))
-    const result = await h.service.refresh(codex)
+    h.read.mockImplementationOnce(async () => adapterResult(h.document(['chatgpt']), succeeded))
+    const result = await h.service.refresh(chatgpt)
     expect(result.refresh?.result).toEqual(succeeded)
     expect(result.connections[0].refreshResult?.sources).toEqual([
       ...failed.sources,
@@ -2256,23 +2401,23 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect(h.service.read().refresh).toBeUndefined()
     expect(h.read).toHaveBeenCalledTimes(3)
   })
-  it('drops a retained unsupported source of the agent a manual refresh covers (E1)', async () => {
+  it('drops a retained unsupported source of the subscription a manual refresh covers (E1)', async () => {
     const f = fixture()
-    const h = agentHub(f)
-    const unsupported = (agent: string, metricId: string) =>
+    const h = subscriptionHub(f)
+    const unsupported = (subscriptionId: string, metricId: string) =>
       refreshSource(
-        `unsupported:${agent}`,
+        `unsupported:${subscriptionId}`,
         'unsupported',
         [refreshWindow(metricId, 'unsupported', { errorCode: 'unsupported' })],
         { errorCode: 'unsupported' },
       )
     h.read.mockImplementationOnce(async () =>
       adapterResult(
-        h.document(['claude', 'codex']),
+        h.document(['claude', 'chatgpt']),
         refreshResult([
           unsupported('claude', 'claude-5h'),
           unsupported('grok', 'grok-weekly'),
-          refreshSource('hub-codex', 'succeeded', [refreshWindow('codex-5h')]),
+          refreshSource('hub-chatgpt', 'succeeded', [refreshWindow('chatgpt-5h')]),
         ]),
       ),
     )
@@ -2280,7 +2425,7 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect(h.service.read().connections[0].refreshResult?.sources.map((s) => s.sourceId)).toEqual([
       'unsupported:claude',
       'unsupported:grok',
-      'hub-codex',
+      'hub-chatgpt',
     ])
     h.advance(60_000)
     h.read.mockImplementationOnce(async () =>
@@ -2292,33 +2437,33 @@ describe('account and agent refresh (NEKODE-148)', () => {
     await h.service.refresh(claude)
     expect(h.service.read().connections[0].refreshResult?.sources.map((s) => s.sourceId)).toEqual([
       'unsupported:grok',
-      'hub-codex',
+      'hub-chatgpt',
       'hub-claude',
     ])
   })
-  it('limits account and agent actions to the adapter refreshable list (R3, R4)', async () => {
+  it('limits account and subscription actions to the adapter refreshable list (R3, R4)', async () => {
     const f = fixture()
-    const h = agentHub(f, ['providers'], ['claude'])
+    const h = subscriptionHub(f, ['subscriptions'], ['claude'])
     await h.service.refresh(account)
     h.advance(60_000)
     expect((await h.service.refresh(account)).refresh?.read).toEqual(['hub-account'])
-    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: ['claude'] })
-    expect(h.service.read().connections[0].agents).toEqual([
-      { providerId: 'claude', nextRefreshAt: h.at(120_000) },
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshSubscriptions: ['claude'] })
+    expect(h.service.read().connections[0].subscriptions).toEqual([
+      { subscriptionId: 'claude', nextRefreshAt: h.at(120_000) },
     ])
-    await expect(h.service.refresh(codex)).rejects.toMatchObject({ code: 'not_found' })
+    await expect(h.service.refresh(chatgpt)).rejects.toMatchObject({ code: 'not_found' })
     expect(h.read).toHaveBeenCalledTimes(2)
   })
   it('keeps the last known list when a response omits it and clears it on a configuration change (R2)', async () => {
     const f = fixture()
-    const h = agentHub(f, ['providers'], ['claude'])
+    const h = subscriptionHub(f, ['subscriptions'], ['claude'])
     await h.service.refresh(account)
     h.setRefreshable(undefined)
     h.advance(60_000)
     await h.service.refresh(account)
-    expect(h.service.read().connections[0].agents?.map((agent) => agent.providerId)).toEqual([
-      'claude',
-    ])
+    expect(
+      h.service.read().connections[0].subscriptions?.map((item) => item.subscriptionId),
+    ).toEqual(['claude'])
     const settings = h.service.getSettings()
     h.service.saveSettings({
       ...settings,
@@ -2331,73 +2476,383 @@ describe('account and agent refresh (NEKODE-148)', () => {
     expect(
       h.service
         .read()
-        .connections[0].agents?.map((agent) => agent.providerId)
+        .connections[0].subscriptions?.map((item) => item.subscriptionId)
         .sort(),
-    ).toEqual(['claude', 'codex'])
+    ).toEqual(['chatgpt', 'claude'])
   })
   it('shows no refresh action for a known empty list and rejects an account refresh (R3, R5)', async () => {
     const f = fixture()
-    const h = agentHub(f, ['providers'], [])
+    const h = subscriptionHub(f, ['subscriptions'], [])
     // The first read learns the list; the next manual account refresh must not start a process.
     await h.service.refresh(account)
     h.advance(60_000)
     await expect(h.service.refresh(account)).rejects.toMatchObject({ code: 'unsupported' })
-    expect(h.service.read().connections[0]).toMatchObject({ nextRefreshAt: null, agents: [] })
+    expect(h.service.read().connections[0]).toMatchObject({
+      nextRefreshAt: null,
+      subscriptions: [],
+    })
     expect(h.read).toHaveBeenCalledTimes(1)
   })
-  it('refreshes a listed agent before it has any retained metric (R4)', async () => {
+  it('refreshes a listed subscription before it has any retained metric (R4)', async () => {
     const f = fixture()
-    const h = agentHub(f, ['providers'], ['grok'])
+    const h = subscriptionHub(f, ['subscriptions'], ['grok'])
     await h.service.refresh(account)
     h.advance(60_000)
-    const result = await h.service.refresh({ connectionId: 'hub-account', providerId: 'grok' })
+    const result = await h.service.refresh({ connectionId: 'hub-account', subscriptionId: 'grok' })
     expect(result.refresh?.read).toEqual(['hub-account'])
-    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: ['grok'] })
-    expect(h.service.read().connections[0].agents).toEqual([
-      { providerId: 'grok', nextRefreshAt: h.at(120_000) },
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshSubscriptions: ['grok'] })
+    expect(h.service.read().connections[0].subscriptions).toEqual([
+      { subscriptionId: 'grok', nextRefreshAt: h.at(120_000) },
     ])
   })
-  it('caps an account selection at 20 listed agents (A7, R4)', async () => {
+  it('caps an account selection at 20 listed subscriptions (A7, R4)', async () => {
     const f = fixture()
-    const list = Array.from({ length: 21 }, (_, index) => `agent-${index}`)
-    const h = agentHub(f, ['providers'], list)
+    const list = Array.from({ length: 21 }, (_, index) => `subscription-${index}`)
+    const h = subscriptionHub(f, ['subscriptions'], list)
     await h.service.refresh(account)
     h.advance(60_000)
     await h.service.refresh(account)
-    expect(h.read.mock.calls[1][5]).toEqual({ refreshProviders: list.slice(0, 20) })
-    // The excluded agent keeps its deadline and is the only eligible agent on the next click.
+    expect(h.read.mock.calls[1][5]).toEqual({ refreshSubscriptions: list.slice(0, 20) })
+    // The excluded subscription keeps its deadline and is the only eligible one next time.
     expect(
-      h.service.read().connections[0].agents?.find((a) => a.providerId === 'agent-20'),
-    ).toEqual({ providerId: 'agent-20', nextRefreshAt: null })
+      h.service
+        .read()
+        .connections[0].subscriptions?.find((item) => item.subscriptionId === 'subscription-20'),
+    ).toEqual({ subscriptionId: 'subscription-20', nextRefreshAt: null })
     await h.service.refresh(account)
-    expect(h.read.mock.calls[2][5]).toEqual({ refreshProviders: ['agent-20'] })
+    expect(h.read.mock.calls[2][5]).toEqual({ refreshSubscriptions: ['subscription-20'] })
   })
   it('loads a legacy refresh-results file without a refreshable list as unknown (R2)', async () => {
     const f = fixture()
-    const h = agentHub(f, ['providers'], ['claude'])
+    const h = subscriptionHub(f, ['subscriptions'], ['claude'])
     await h.service.refresh(account)
     const revisions = JSON.parse(f.deps.state.get('usage.connection-revisions') ?? '{}')
     writeFileSync(
       join(f.deps.userDataPath, 'usage', 'refresh-results.json'),
-      JSON.stringify({ connectionRevisions: revisions, results: {} }),
+      // Written before NEKODE-191: agent ids under the removed key are not read.
+      JSON.stringify({
+        connectionRevisions: revisions,
+        results: {},
+        refreshableProviders: { 'hub-account': ['codex'] },
+      }),
     )
     const restarted = new UsageService({ ...f.deps, startTimer: false })
     services.push(restarted)
     const snapshot = restarted.read()
     expect(snapshot.cacheError).toBeNull()
-    expect(snapshot.connections[0].agents?.map((agent) => agent.providerId).sort()).toEqual([
-      'claude',
-      'codex',
-    ])
+    expect(
+      snapshot.connections[0].subscriptions?.map((item) => item.subscriptionId).sort(),
+    ).toEqual(['chatgpt', 'claude'])
   })
   it('restores the refreshable list from the persisted attempt metadata (R2)', async () => {
     const f = fixture()
-    const h = agentHub(f, ['providers'], ['claude'])
+    const h = subscriptionHub(f, ['subscriptions'], ['claude'])
     await h.service.refresh(account)
     const restarted = new UsageService({ ...f.deps, startTimer: false })
     services.push(restarted)
-    expect(restarted.read().connections[0].agents).toEqual([
-      { providerId: 'claude', nextRefreshAt: null },
+    expect(restarted.read().connections[0].subscriptions).toEqual([
+      { subscriptionId: 'claude', nextRefreshAt: null },
     ])
+  })
+})
+
+describe('stored data from 0.40 and invalid v2 adapters (NEKODE-191 U8, U9, U14)', () => {
+  const repo = resolve(__dirname, '../../../..')
+  /** A Personal Data Hub style user adapter with a secret field (protocol 3). */
+  function hubManifest(f: ReturnType<typeof fixture>) {
+    const directory = join(f.deps.userDataPath, 'usage-adapters', 'hub')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(
+      join(directory, 'usage-adapter.json'),
+      JSON.stringify({
+        id: 'personal-data-hub',
+        name: 'Personal Data Hub',
+        serviceId: 'personal-data-hub',
+        protocolVersion: 3,
+        invocation: { command: 'node', args: ['index.cjs'] },
+        sourceKind: 'api',
+        capabilities: ['window'],
+        minimumRefreshSeconds: 60,
+        configSchema: [
+          { key: 'hubUrl', label: 'Hub URL', type: 'text', required: true },
+          { key: 'token', label: 'Token', type: 'secret', required: true },
+          { key: 'subscriptions', label: 'Subscriptions', type: 'text' },
+        ],
+      }),
+    )
+  }
+  /** Settings exactly as 0.40 stored them: every connection names its service `providerId`. */
+  const legacySettings = (f: ReturnType<typeof fixture>) => ({
+    connections: [
+      {
+        id: 'account',
+        label: 'Fixture account',
+        providerId: 'fixture',
+        adapterId: 'source',
+        enabled: true,
+        config: { path: f.input },
+      },
+      {
+        id: 'codex-account',
+        label: 'Codex',
+        providerId: 'codex',
+        adapterId: 'codex-app-server',
+        enabled: true,
+        config: {},
+      },
+      {
+        id: 'hub-account',
+        label: 'PDH',
+        providerId: 'personal-data-hub',
+        adapterId: 'personal-data-hub',
+        enabled: false,
+        config: { hubUrl: 'https://hub.test', token: 'encrypted:c2VjcmV0', agents: 'claude' },
+      },
+      {
+        id: 'snapshots',
+        label: 'Old Claude',
+        providerId: 'claude',
+        adapterId: 'claude-code-snapshots',
+        enabled: true,
+        config: {},
+      },
+    ],
+    pin: { connectionId: 'account', metricId: 'week' },
+    export: { enabled: false, path: null },
+  })
+
+  it('migrates providerId to serviceId once and keeps connections, secrets and the pin', () => {
+    const f = fixture()
+    hubManifest(f)
+    const stored = legacySettings(f)
+    f.state.set(USAGE_STATE_KEY, JSON.stringify(stored))
+    const deps = {
+      ...f.deps,
+      bundledAdapterDirectories: bundledUsageAdapterDirectories(false, repo, ''),
+    }
+    const service = new UsageService(deps)
+    services.push(service)
+    expect(service.read().cacheError).toBeNull()
+    const settings = service.getSettings()
+    // A bundled service renamed with protocol 3 takes its declared id; others keep theirs.
+    expect(settings.connections.map((c) => [c.id, c.adapterId, c.serviceId, c.enabled])).toEqual([
+      ['account', 'source', 'fixture', true],
+      ['codex-account', 'codex-app-server', 'codex-cli', true],
+      ['hub-account', 'personal-data-hub', 'personal-data-hub', false],
+      ['snapshots', 'claude-code-snapshots', 'claude', true],
+    ])
+    expect(settings.connections[2].secretKeys).toEqual(['token'])
+    expect(settings.pin).toEqual(stored.pin)
+    // Written back at once with serviceId; the encrypted secret is copied unchanged.
+    const written = f.state.get(USAGE_STATE_KEY) ?? ''
+    expect(written).not.toContain('providerId')
+    const document = JSON.parse(written)
+    expect(document.connections[2].config).toEqual(stored.connections[2].config)
+    expect(document.connections.map((c: { serviceId: string }) => c.serviceId)).toEqual([
+      'fixture',
+      'codex-cli',
+      'personal-data-hub',
+      'claude',
+    ])
+    expect(document.pin).toEqual(stored.pin)
+    // No snapshot exposes the removed field.
+    expect(JSON.stringify(service.read())).not.toContain('providerId')
+    // A restart reads the migrated document as is.
+    const restarted = new UsageService(deps)
+    services.push(restarted)
+    expect(restarted.getSettings()).toEqual(settings)
+    expect(f.state.get(USAGE_STATE_KEY)).toBe(written)
+  })
+
+  it('keeps the legacy read pending while the adapter is unresolved, then saves its declared id (U8)', () => {
+    const f = fixture()
+    const stored = {
+      connections: [
+        {
+          id: 'hub-account',
+          label: 'PDH',
+          providerId: 'old-hub',
+          adapterId: 'personal-data-hub',
+          enabled: true,
+          config: { hubUrl: 'https://hub.test', token: 'encrypted:c2VjcmV0' },
+        },
+      ],
+      pin: null,
+      export: { enabled: false, path: null },
+    }
+    const legacy = JSON.stringify(stored)
+    f.state.set(USAGE_STATE_KEY, legacy)
+    const service = new UsageService(f.deps)
+    services.push(service)
+    expect(service.read().cacheError).toBeNull()
+    expect(service.getSettings().connections[0].serviceId).toBe('old-hub')
+    // The provisional id is not written back; a restart repeats the legacy read.
+    expect(f.state.get(USAGE_STATE_KEY)).toBe(legacy)
+    hubManifest(f)
+    service.saveSettings(service.getSettings())
+    const written = f.state.get(USAGE_STATE_KEY) ?? ''
+    expect(written).not.toContain('providerId')
+    expect(JSON.parse(written).connections[0]).toMatchObject({
+      serviceId: 'personal-data-hub',
+      config: stored.connections[0].config,
+    })
+  })
+
+  it('reports a failed migration write-back without dropping the loaded settings (U8)', () => {
+    const f = fixture()
+    const stored = legacySettings(f)
+    f.state.set(
+      USAGE_STATE_KEY,
+      JSON.stringify({ ...stored, connections: [stored.connections[0]] }),
+    )
+    const service = new UsageService({
+      ...f.deps,
+      state: {
+        ...f.deps.state,
+        transaction: () => {
+          throw new Error('disk full')
+        },
+      },
+    })
+    services.push(service)
+    expect(service.read().cacheError).toBe(
+      'Cannot save migrated usage settings. They are migrated again at the next start.',
+    )
+    expect(service.getSettings().connections.map((c) => [c.id, c.serviceId])).toEqual([
+      ['account', 'fixture'],
+    ])
+    expect(service.getSettings().pin).toEqual(stored.pin)
+  })
+
+  it('keeps a pin through a save before the first read after a cache discard (U9)', async () => {
+    const f = fixture()
+    f.service.saveSettings(f.settings)
+    await f.service.refresh({ connectionId: 'account' })
+    f.service.saveSettings({
+      ...f.service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'week' },
+    })
+    rmSync(join(f.deps.userDataPath, 'usage', 'observations.json'))
+    const restarted = new UsageService(f.deps)
+    services.push(restarted)
+    expect(restarted.read().connections[0].subscription).toBeNull()
+    restarted.saveSettings(restarted.getSettings())
+    expect(restarted.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    // The next read that lacks the metric clears it (rule 9).
+    const document = f.live()
+    document.reports[0].metrics[0].id = 'month'
+    writeFileSync(f.input, JSON.stringify(document))
+    await restarted.refresh({ connectionId: 'account' })
+    expect(restarted.read().connections[0].subscription?.metrics[0].id).toBe('month')
+    expect(restarted.read().pin).toBeNull()
+  })
+
+  it('rejects a document that mixes providerId and serviceId instead of guessing', () => {
+    const f = fixture()
+    const stored = legacySettings(f)
+    f.state.set(
+      USAGE_STATE_KEY,
+      JSON.stringify({
+        ...stored,
+        connections: [{ ...stored.connections[0], serviceId: 'fixture' }],
+      }),
+    )
+    const service = new UsageService(f.deps)
+    services.push(service)
+    expect(service.read().cacheError).toBe('Cannot load usage settings. Configure usage again.')
+    expect(service.getSettings().connections).toEqual([])
+  })
+
+  it.each([
+    [
+      'schema 1',
+      (cache: Record<string, unknown>) => ({
+        schemaVersion: 1,
+        connectionRevisions: cache.connectionRevisions,
+        subscriptions: [
+          {
+            id: 'account',
+            providerId: 'fixture',
+            label: 'Fixture account',
+            sourceKind: 'api',
+            status: 'available',
+            metrics: [
+              {
+                id: 'week',
+                label: '7d',
+                kind: 'window',
+                state: 'available',
+                observedAt: '2026-10-20T12:00:00Z',
+                usedPercent: 99,
+              },
+            ],
+          },
+        ],
+      }),
+    ],
+    [
+      'a metric providerId',
+      (cache: Record<string, unknown>) => {
+        const next = structuredClone(cache) as {
+          reports: Array<{ metrics: Array<Record<string, unknown>> }>
+        }
+        next.reports[0].metrics[0].providerId = 'opencode'
+        return next
+      },
+    ],
+  ])('discards a cache with %s instead of relabelling it (U9)', async (_name, legacy) => {
+    const f = fixture()
+    f.service.saveSettings({ ...f.settings, pin: null })
+    await f.service.refresh({ connectionId: 'account' })
+    f.service.saveSettings({
+      ...f.service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'week' },
+    })
+    const cachePath = join(f.deps.userDataPath, 'usage', 'observations.json')
+    const cache = JSON.parse(readFileSync(cachePath, 'utf8'))
+    writeFileSync(cachePath, JSON.stringify(legacy(cache)))
+    const restarted = new UsageService(f.deps)
+    services.push(restarted)
+    // Proves the cache was read: a valid copy of the same file restores the report.
+    expect(restarted.read().cacheError).toBeNull()
+    expect(restarted.read().connections[0].subscription).toBeNull()
+    expect(restarted.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    await restarted.refresh({ connectionId: 'account' })
+    const report = restarted.read().connections[0].subscription
+    expect(report?.subscriptions).toEqual([{ id: 'fixture-plan', label: 'Fixture plan' }])
+    expect(report?.metrics[0]).toMatchObject({ id: 'week', usedPercent: 42 })
+    expect(restarted.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    expect(readFileSync(cachePath, 'utf8')).not.toContain('providerId')
+    writeFileSync(cachePath, JSON.stringify(cache))
+    const valid = new UsageService(f.deps)
+    services.push(valid)
+    expect(valid.read().connections[0].subscription?.metrics[0].usedPercent).toBe(42)
+  })
+
+  it('lists a connection whose adapter became protocol 2 with its error, cache and pin, and starts no process (U14)', async () => {
+    const f = fixture(),
+      { service, read } = plugin(f)
+    await service.refresh({ connectionId: 'account' })
+    service.saveSettings({
+      ...service.getSettings(),
+      pin: { connectionId: 'account', metricId: 'week' },
+    })
+    const manifest = join(f.deps.userDataPath, 'usage-adapters', 'fixture', 'usage-adapter.json')
+    writeFileSync(
+      manifest,
+      JSON.stringify({ ...JSON.parse(readFileSync(manifest, 'utf8')), protocolVersion: 2 }),
+    )
+    expect(service.listAdapters().find((a) => a.id === 'invalid:fixture')?.error).toBe(
+      'This adapter uses protocol version 2. Update it to protocol version 3, which reports subscriptions.',
+    )
+    read.mockClear()
+    f.advance(60_000)
+    await service.refresh({ connectionId: 'account' })
+    const source = service.read().connections[0]
+    expect(source.connection.id).toBe('account')
+    expect(source.error).toMatchObject({ code: 'config' })
+    expect(source.subscription?.metrics[0]).toMatchObject({ id: 'week', usedPercent: 42 })
+    expect(service.read().pin).toEqual({ connectionId: 'account', metricId: 'week' })
+    expect(read).not.toHaveBeenCalled()
   })
 })

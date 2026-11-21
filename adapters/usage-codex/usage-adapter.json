@@ -1,10 +1,10 @@
 {
   "id": "codex-app-server",
   "name": "Codex CLI",
-  "providerId": "codex",
-  "summary": "Codex plan limits read through the Codex CLI you are signed in to.",
+  "serviceId": "codex-cli",
+  "summary": "ChatGPT plan limits read through the Codex CLI you are signed in to.",
   "experimental": true,
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "invocation": { "command": "node", "args": ["index.cjs"] },
   "sourceKind": "cli",
   "capabilities": ["window"],

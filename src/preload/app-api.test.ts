@@ -121,7 +121,7 @@ describe('preload app api', () => {
     const connection = {
       id: 'fixture',
       label: 'Fixture',
-      providerId: 'test',
+      serviceId: 'test',
       adapterId: 'fixture',
       enabled: false,
       config: {},

@@ -1,4 +1,5 @@
-// NeKode usage adapter for Claude Code plan limits (protocol version 2, usage-quota spec L10-L14).
+// NeKode usage adapter for Claude Code plan limits (protocol version 3, usage-quota spec L10-L14).
+// The service is Claude Code (`claude-code`); the subscription it reports is Claude (`claude`).
 //
 // One read, for both `read` and `refresh`: read `<configDirectory>/.credentials.json`, take
 // `claudeAiOauth.accessToken` and `claudeAiOauth.expiresAt`, and send exactly one
@@ -12,7 +13,8 @@ const { readFileSync, statSync } = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const PROVIDER_ID = 'claude'
+const SERVICE_ID = 'claude-code'
+const SUBSCRIPTION = { id: 'claude', label: 'Claude' }
 const BASE_URL = 'https://api.anthropic.com'
 const PATH = '/api/oauth/usage'
 const BETA = 'oauth-2025-04-20'
@@ -21,9 +23,10 @@ const MAX_CREDENTIALS_BYTES = 64 * 1024
 const MAX_RESPONSE_BYTES = 1024 * 1024
 const DEFAULT_RETRY_SECONDS = 300
 const MAX_RETRY_SECONDS = 86_400
+// NEKODE-191 U4/U12: every label names the subscription, so a pinned row stays unambiguous.
 const WINDOWS = [
-  { id: 'five_hour', label: '5-hour window', seconds: 18_000 },
-  { id: 'seven_day', label: '7-day window', seconds: 604_800 },
+  { id: 'five_hour', label: 'Claude 5-hour window', seconds: 18_000 },
+  { id: 'seven_day', label: 'Claude 7-day window', seconds: 604_800 },
 ]
 const SIGN_IN = 'Claude Code is not signed in on this computer. Open Claude Code and sign in.'
 
@@ -190,7 +193,14 @@ function mapUsage(body, observedAt) {
     throw new Failure('protocol', 'Claude usage returned an unexpected shape.')
   return WINDOWS.map(({ id, label, seconds }) => {
     const window = body[id]
-    const base = { id, label, kind: 'window', observedAt, collectedAt: observedAt }
+    const base = {
+      id,
+      label,
+      subscriptionId: SUBSCRIPTION.id,
+      kind: 'window',
+      observedAt,
+      collectedAt: observedAt,
+    }
     if (
       window === null ||
       window === undefined ||
@@ -244,14 +254,15 @@ async function collect({
   // L4: the response carries no observation time, so its arrival time is the observation time.
   const metrics = mapUsage(body, now().toISOString())
   return {
-    schemaVersion: 1,
-    subscriptions: [
+    schemaVersion: 2,
+    reports: [
       {
         id: connectionId,
-        providerId: PROVIDER_ID,
+        serviceId: SERVICE_ID,
         label: 'Claude Code',
         sourceKind: 'api',
         status: metrics.some((m) => m.state === 'available') ? 'available' : 'unavailable',
+        subscriptions: [SUBSCRIPTION],
         metrics,
       },
     ],
@@ -278,20 +289,20 @@ function main() {
       } catch {
         throw new Failure('protocol', 'Invalid usage adapter request.')
       }
-      // Protocol 2 (L2): every read asks the provider during this request, so the scheduled
+      // Protocol 3 (L2, U1): every read asks the provider during this request, so the scheduled
       // `read` and the manual live `refresh` share one path.
-      if (request.protocolVersion !== 2 || !['read', 'refresh'].includes(request.action))
+      if (request.protocolVersion !== 3 || !['read', 'refresh'].includes(request.action))
         throw new Failure('protocol', 'Unsupported usage adapter request.')
       const data = await collect({
         connectionId: request.params?.connectionId,
         config: request.config,
       })
-      respond({ protocolVersion: 2, ok: true, data }, 0)
+      respond({ protocolVersion: 3, ok: true, data }, 0)
     } catch (error) {
       const known = error instanceof Failure
       respond(
         {
-          protocolVersion: 2,
+          protocolVersion: 3,
           ok: false,
           error: {
             code: known ? error.code : 'protocol',

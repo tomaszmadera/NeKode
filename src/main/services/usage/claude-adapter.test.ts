@@ -101,18 +101,21 @@ describe('Claude Code usage adapter', () => {
       'anthropic-beta': 'oauth-2025-04-20',
     })
     const parsed = parseUsageDocument(document, NOW.getTime())
-    expect(parsed.subscriptions).toHaveLength(1)
-    expect(parsed.subscriptions[0]).toMatchObject({
+    expect(parsed.reports).toHaveLength(1)
+    // U12: the service is Claude Code; the subscription is Claude.
+    expect(parsed.reports[0]).toMatchObject({
       id: 'claude-account',
-      providerId: 'claude',
+      serviceId: 'claude-code',
       sourceKind: 'api',
       status: 'available',
+      subscriptions: [{ id: 'claude', label: 'Claude' }],
     })
-    const [five, seven] = parsed.subscriptions[0].metrics
-    expect(parsed.subscriptions[0].metrics).toHaveLength(2)
+    const [five, seven] = parsed.reports[0].metrics
+    expect(parsed.reports[0].metrics).toHaveLength(2)
     expect(five).toMatchObject({
       id: 'five_hour',
-      label: '5-hour window',
+      label: 'Claude 5-hour window',
+      subscriptionId: 'claude',
       kind: 'window',
       state: 'available',
       usedPercent: 37,
@@ -123,7 +126,8 @@ describe('Claude Code usage adapter', () => {
     })
     expect(seven).toMatchObject({
       id: 'seven_day',
-      label: '7-day window',
+      label: 'Claude 7-day window',
+      subscriptionId: 'claude',
       usedPercent: 12.5,
       windowDurationSeconds: 604_800,
       resetsAt: '2026-10-27T09:00:00.123Z',
@@ -140,7 +144,7 @@ describe('Claude Code usage adapter', () => {
       fetch: fakeFetch(200, { five_hour: null, seven_day: { utilization: 40, resets_at: null } }),
     })
     const parsed = parseUsageDocument(document, NOW.getTime())
-    const [five, seven] = parsed.subscriptions[0].metrics
+    const [five, seven] = parsed.reports[0].metrics
     expect(five).toMatchObject({ id: 'five_hour', state: 'unavailable', reason: 'not_reported' })
     expect(seven).toMatchObject({ id: 'seven_day', state: 'available', usedPercent: 40 })
     expect(seven.resetsAt ?? null).toBeNull()
@@ -148,12 +152,12 @@ describe('Claude Code usage adapter', () => {
     const nullUse = await run({
       fetch: fakeFetch(200, { seven_day: { utilization: null, resets_at: null } }),
     })
-    const metrics = parseUsageDocument(nullUse, NOW.getTime()).subscriptions[0].metrics
+    const metrics = parseUsageDocument(nullUse, NOW.getTime()).reports[0].metrics
     expect(metrics.map((m) => [m.id, m.state, m.reason])).toEqual([
       ['five_hour', 'unavailable', 'not_reported'],
       ['seven_day', 'unavailable', 'not_reported'],
     ])
-    expect(parseUsageDocument(nullUse, NOW.getTime()).subscriptions[0].status).toBe('unavailable')
+    expect(parseUsageDocument(nullUse, NOW.getTime()).reports[0].status).toBe('unavailable')
   })
 
   it('resolves the config directory from the field, CLAUDE_CONFIG_DIR, then the home directory (L11)', async () => {
@@ -347,7 +351,7 @@ describe('Claude Code usage adapter through the process host', () => {
     const a = manifest()
     expect(a).toMatchObject({
       name: 'Claude Code',
-      providerId: 'claude',
+      serviceId: 'claude-code',
       sourceKind: 'api',
       capabilities: ['window'],
       minimumRefreshSeconds: 300,
@@ -412,7 +416,7 @@ describe('Claude Code usage adapter through the process host', () => {
         child.on('close', (status) => done({ status, stdout, stderr }))
         child.stdin.end(
           JSON.stringify({
-            protocolVersion: 2,
+            protocolVersion: 3,
             action: 'refresh',
             config: { configDirectory: dir },
             params: { connectionId: 'claude-account' },
@@ -421,7 +425,7 @@ describe('Claude Code usage adapter through the process host', () => {
       })
     const ok = await spawnAdapter()
     expect(ok.status).toBe(0)
-    expect(JSON.parse(ok.stdout)).toMatchObject({ protocolVersion: 2, ok: true })
+    expect(JSON.parse(ok.stdout)).toMatchObject({ protocolVersion: 3, ok: true })
     status = 401
     const denied = await spawnAdapter()
     expect(denied.status).toBe(1)
@@ -461,7 +465,7 @@ describe('Claude Code usage adapter through the process host', () => {
         {
           id: 'claude-account',
           label: 'Claude',
-          providerId: 'claude',
+          serviceId: 'claude-code',
           adapterId: 'claude-code-usage',
           enabled: true,
           config: { configDirectory: configDir() },

@@ -142,13 +142,19 @@ describe('experimental Codex app-server usage adapter', () => {
     const { version, document } = await f.run()
     expect(version).toBe('0.163.0')
     const parsed = parseUsageDocument(document, Date.parse('2026-10-20T12:00:00Z'))
-    const metrics = parsed.subscriptions[0].metrics
-    expect(parsed.subscriptions[0]).toMatchObject({ id: 'codex-account', providerId: 'codex' })
+    const metrics = parsed.reports[0].metrics
+    // U12: the service is the Codex CLI; the subscription is ChatGPT.
+    expect(parsed.reports[0]).toMatchObject({
+      id: 'codex-account',
+      serviceId: 'codex-cli',
+      subscriptions: [{ id: 'chatgpt', label: 'ChatGPT' }],
+    })
+    expect(metrics.every((m) => m.subscriptionId === 'chatgpt')).toBe(true)
     expect(metrics.map((m) => [m.id, m.label, m.state, m.windowDurationSeconds ?? null])).toEqual([
-      ['codex.primary', '5h', 'available', 18_000],
-      ['codex.secondary', '7d', 'available', 604_800],
-      ['codex_spark.primary', 'Spark 15m', 'available', 900],
-      ['codex_spark.secondary', 'Spark secondary window', 'unavailable', null],
+      ['codex.primary', 'ChatGPT 5h', 'available', 18_000],
+      ['codex.secondary', 'ChatGPT 7d', 'available', 604_800],
+      ['codex_spark.primary', 'ChatGPT Spark 15m', 'available', 900],
+      ['codex_spark.secondary', 'ChatGPT Spark secondary window', 'unavailable', null],
     ])
     expect(metrics[1]).toMatchObject({
       usedPercent: 40,
@@ -172,7 +178,7 @@ describe('experimental Codex app-server usage adapter', () => {
     const startedAt = Date.now()
     const { document } = await f.run({ now: () => new Date() })
     const parsed = parseUsageDocument(document)
-    expect(parsed.subscriptions[0].metrics.some((m) => m.state === 'available')).toBe(true)
+    expect(parsed.reports[0].metrics.some((m) => m.state === 'available')).toBe(true)
     expect(() => assertLiveRefresh(parsed, startedAt)).not.toThrow()
     expect(f.transcript().filter((m) => m.method === 'account/rateLimits/read')).toHaveLength(1)
     // The same values dated before the request fail the live check.
@@ -203,7 +209,7 @@ describe('experimental Codex app-server usage adapter', () => {
   it('falls back to the single-bucket view when no bucket map is returned', async () => {
     const f = scenario('ok', { limits: { ...MULTI, rateLimitsByLimitId: null } })
     const { document } = await f.run()
-    const metrics = parseUsageDocument(document).subscriptions[0].metrics
+    const metrics = parseUsageDocument(document).reports[0].metrics
     expect(metrics.map((m) => [m.id, m.state])).toEqual([
       ['codex.primary', 'available'],
       ['codex.secondary', 'unavailable'],

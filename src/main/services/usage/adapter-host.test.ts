@@ -2,7 +2,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import type { UsageAdapter, UsageDocument, UsageMetric } from '@shared/contracts/usage-contract'
+import type {
+  UsageAdapter,
+  UsageMetric,
+  UsageReportDocument,
+} from '@shared/contracts/usage-contract'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertLiveRefresh,
@@ -20,7 +24,7 @@ function adapter(script: string): UsageAdapter & { directory: string } {
   return {
     id: 'fixture',
     name: 'Fixture',
-    protocolVersion: 2,
+    protocolVersion: 3,
     invocation: { command: process.execPath, args: ['fixture.cjs'] },
     sourceKind: 'cli',
     capabilities: ['window'],
@@ -36,6 +40,13 @@ afterEach(async () => {
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
 })
 const signal = () => new AbortController().signal
+/**
+ * Child-side helper: `doc(id, metrics)` builds a schema 2 document with one report of service
+ * `fixture` and one subscription `fixture-plan` labelled `Fixture`. Every metric label is prefixed
+ * with the subscription label, as U4 requires; `value` strips the prefix again.
+ */
+const DOC = `const doc=(id,metrics)=>({schemaVersion:2,reports:[{id,serviceId:'fixture',label:'Fixture',sourceKind:'api',status:'available',subscriptions:[{id:'fixture-plan',label:'Fixture'}],metrics:metrics.map(m=>({kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1,subscriptionId:'fixture-plan',...m,label:'Fixture '+m.label}))}]});`
+const value = (metric: { label: string }) => metric.label.replace(/^Fixture /, '')
 /** A Linux zombie still answers kill(pid, 0) but has already exited. */
 function isZombie(pid: number): boolean {
   if (process.platform !== 'linux') return false
@@ -63,7 +74,7 @@ async function waitForProcessExit(pid: number, timeoutMs = 2000): Promise<boolea
 describe('usage adapter process boundary', () => {
   it('preserves a declared validation error with sanitized text', async () => {
     const a = adapter(
-      `console.log(JSON.stringify({protocolVersion:2,ok:false,error:{code:'validation_error',message:'fixture-secret'}}));process.exitCode=1`,
+      `console.log(JSON.stringify({protocolVersion:3,ok:false,error:{code:'validation_error',message:'fixture-secret'}}));process.exitCode=1`,
     )
     await expect(new UsageAdapterHost().read(a, {}, 'account', signal())).rejects.toMatchObject({
       code: 'validation_error',
@@ -72,16 +83,16 @@ describe('usage adapter process boundary', () => {
   })
   it('sends configuration only in the versioned stdin request', async () => {
     const a = adapter(
-      `let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);const m=(id,label)=>({id,label:String(label),kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1});console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:r.params.connectionId,providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[m('protocol',r.protocolVersion),m('action',r.action),m('id',r.params.connectionId),m('secret',r.config.secret),m('params',JSON.stringify(r.params)),m('argv',process.argv.join(' ').includes(r.config.secret))]}]}}))})`,
+      `${DOC}let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);const m=(id,label)=>({id,label:String(label)});console.log(JSON.stringify({protocolVersion:3,ok:true,data:doc(r.params.connectionId,[m('protocol',r.protocolVersion),m('action',r.action),m('id',r.params.connectionId),m('secret',r.config.secret),m('params',JSON.stringify(r.params)),m('argv',process.argv.join(' ').includes(r.config.secret))])}))})`,
     )
     const labels = async (host: UsageAdapterHost, action: 'read' | 'refresh' = 'read') => {
       const result = await host.read(a, { secret: 'fixture-secret' }, 'account', signal(), action)
       return Object.fromEntries(
-        result.subscriptions[0].metrics.map((metric) => [metric.id, metric.label]),
+        result.reports[0].metrics.map((metric) => [metric.id, value(metric)]),
       )
     }
     const read = await labels(new UsageAdapterHost())
-    expect(read).toMatchObject({ protocol: '2', action: 'read', id: 'account', argv: 'false' })
+    expect(read).toMatchObject({ protocol: '3', action: 'read', id: 'account', argv: 'false' })
     expect(read.secret).toBe('fixture-secret')
     expect(JSON.parse(read.params)).not.toHaveProperty('capabilities')
     const manual = await labels(new UsageAdapterHost(), 'refresh')
@@ -98,62 +109,102 @@ describe('usage adapter process boundary', () => {
       'refresh',
       { refreshSources: ['claude'] },
     )
-    const sourcedParams = JSON.parse(
-      sourced.subscriptions[0].metrics.find((metric) => metric.id === 'params')?.label ?? '{}',
-    )
+    const params = sourced.reports[0].metrics.find((metric) => metric.id === 'params')
+    const sourcedParams = JSON.parse(params ? value(params) : '{}')
     expect(sourcedParams).toEqual({
       connectionId: 'account',
       capabilities: ['partial-refresh-v1'],
       refreshSources: ['claude'],
     })
   })
-  it('sends refreshProviders only on refresh and only to adapters declaring the option (A7)', async () => {
-    const script = `let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:r.params.connectionId,providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'params',label:JSON.stringify(r.params),kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1}]}]}}))})`
+  it('sends refreshSubscriptions only on refresh and only to adapters declaring the option (A7, U6)', async () => {
+    const script = `${DOC}let input=''; process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);console.log(JSON.stringify({protocolVersion:3,ok:true,data:doc(r.params.connectionId,[{id:'params',label:JSON.stringify(r.params)}])}))})`
     const plain = adapter(script)
-    const selecting = { ...adapter(script), refreshOptions: ['providers' as const] }
-    const params = async (result: Promise<UsageDocument>) =>
-      JSON.parse((await result).subscriptions[0].metrics[0].label)
+    const selecting = { ...adapter(script), refreshOptions: ['subscriptions' as const] }
+    const params = async (result: Promise<UsageReportDocument>) =>
+      JSON.parse(value((await result).reports[0].metrics[0]))
     expect(
       await params(
         new UsageAdapterHost().read(selecting, {}, 'account', signal(), 'refresh', {
           refreshSources: ['hub-claude'],
-          refreshProviders: ['claude'],
+          refreshSubscriptions: ['claude'],
         }),
       ),
     ).toEqual({
       connectionId: 'account',
       capabilities: ['partial-refresh-v1'],
       refreshSources: ['hub-claude'],
-      refreshProviders: ['claude'],
+      refreshSubscriptions: ['claude'],
     })
     expect(
       await params(new UsageAdapterHost().read(selecting, {}, 'account', signal(), 'refresh')),
-    ).not.toHaveProperty('refreshProviders')
-    for (const [a, action, providers] of [
+    ).not.toHaveProperty('refreshSubscriptions')
+    for (const [a, action, subscriptions] of [
       [plain, 'refresh', ['claude']],
       [selecting, 'read', ['claude']],
       [selecting, 'refresh', []],
       [selecting, 'refresh', ['claude', 'claude']],
       [selecting, 'refresh', ['Not Valid']],
+      [selecting, 'refresh', Array.from({ length: 21 }, (_, i) => `s-${i}`)],
     ] as const)
       await expect(
         new UsageAdapterHost().read(a, {}, 'account', signal(), action, {
-          refreshProviders: [...providers],
+          refreshSubscriptions: [...subscriptions],
         }),
       ).rejects.toMatchObject({
         code: 'validation_error',
-        message: 'Invalid usage refresh agent selection.',
+        message: 'Invalid usage refresh subscription selection.',
       })
+    // The 20-id upper bound itself is accepted.
+    const twenty = Array.from({ length: 20 }, (_, i) => `s-${i}`)
+    expect(
+      await params(
+        new UsageAdapterHost().read(selecting, {}, 'account', signal(), 'refresh', {
+          refreshSubscriptions: twenty,
+        }),
+      ),
+    ).toMatchObject({ refreshSubscriptions: twenty })
+  })
+  it.each([
+    ['protocol 2', `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{}}))`],
+    [
+      'a schema 1 document',
+      `console.log(JSON.stringify({protocolVersion:3,ok:true,data:{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[]}]}}))`,
+    ],
+    [
+      'a metric providerId',
+      `${DOC}const d=doc('account',[{id:'m',label:'weekly'}]);d.reports[0].metrics[0].providerId='claude';console.log(JSON.stringify({protocolVersion:3,ok:true,data:d}))`,
+    ],
+    [
+      'an undeclared metric subscription',
+      `${DOC}const d=doc('account',[{id:'m',label:'weekly',subscriptionId:'claude'}]);console.log(JSON.stringify({protocolVersion:3,ok:true,data:d}))`,
+    ],
+    [
+      'a report without serviceId',
+      `${DOC}const d=doc('account',[{id:'m',label:'weekly'}]);delete d.reports[0].serviceId;console.log(JSON.stringify({protocolVersion:3,ok:true,data:d}))`,
+    ],
+    [
+      'a metric label without its subscription',
+      `${DOC}const d=doc('account',[{id:'m',label:'weekly'}]);d.reports[0].metrics[0].label='weekly';console.log(JSON.stringify({protocolVersion:3,ok:true,data:d}))`,
+    ],
+    [
+      'an agent field',
+      `${DOC}const d=doc('account',[{id:'m',label:'weekly'}]);d.reports[0].metrics[0].agent='opencode';console.log(JSON.stringify({protocolVersion:3,ok:true,data:d}))`,
+    ],
+  ])('fails a response with %s as protocol (U1-U5, U14)', async (_name, script) => {
+    await expect(
+      new UsageAdapterHost().read(adapter(script), {}, 'account', signal()),
+    ).rejects.toMatchObject({ code: 'protocol' })
   })
   it.each([
     [`console.log(JSON.stringify({protocolVersion:1,ok:true,data:{}}))`, 'Unsupported'],
     [`console.log('{} {}')`, 'one valid JSON'],
     [
-      `console.log(JSON.stringify({protocolVersion:2,ok:true,data:{}}));process.exitCode=1`,
+      `console.log(JSON.stringify({protocolVersion:3,ok:true,data:{}}));process.exitCode=1`,
       'exit code',
     ],
     [
-      `process.stderr.write('fixture-secret');console.log(JSON.stringify({protocolVersion:2,ok:false,error:{code:'auth',message:'fixture-secret'}}));process.exitCode=1`,
+      `process.stderr.write('fixture-secret');console.log(JSON.stringify({protocolVersion:3,ok:false,error:{code:'auth',message:'fixture-secret'}}));process.exitCode=1`,
       'source auth',
     ],
     [`process.stdout.write('x'.repeat(1048577))`, 'exceeds'],
@@ -205,11 +256,11 @@ describe('usage adapter process boundary', () => {
   })
   it('passes the test base URL seam only to adapters of an unpackaged app', async () => {
     const a = adapter(
-      `const label=JSON.stringify({seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,path:Boolean(process.env.PATH??process.env.Path)});console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'m',label,kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1}]}]}}))`,
+      `${DOC}const label=JSON.stringify({seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,path:Boolean(process.env.PATH??process.env.Path)});console.log(JSON.stringify({protocolVersion:3,ok:true,data:doc('account',[{id:'m',label}])}))`,
     )
     const label = async (host: UsageAdapterHost) => {
       const result = await host.read(a, {}, 'account', signal())
-      return JSON.parse(result.subscriptions[0].metrics[0].label)
+      return JSON.parse(value(result.reports[0].metrics[0]))
     }
     const previous = process.env.NEKODE_USAGE_TEST_BASE_URL
     process.env.NEKODE_USAGE_TEST_BASE_URL = 'http://127.0.0.1:9'
@@ -232,7 +283,7 @@ describe('usage adapter process boundary', () => {
     async () => {
       // Windows variable names are case-insensitive: a child reads a variant under the exact name.
       const a = adapter(
-        `const label=JSON.stringify({seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,node:process.env.ELECTRON_RUN_AS_NODE??null});console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'m',label,kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1}]}]}}))`,
+        `${DOC}const label=JSON.stringify({seam:process.env.NEKODE_USAGE_TEST_BASE_URL??null,node:process.env.ELECTRON_RUN_AS_NODE??null});console.log(JSON.stringify({protocolVersion:3,ok:true,data:doc('account',[{id:'m',label}])}))`,
       )
       const names = ['NEKODE_USAGE_TEST_BASE_URL', 'ELECTRON_RUN_AS_NODE']
       const previous = names.map((name) => process.env[name])
@@ -246,7 +297,7 @@ describe('usage adapter process boundary', () => {
           'account',
           signal(),
         )
-        expect(JSON.parse(result.subscriptions[0].metrics[0].label)).toEqual({
+        expect(JSON.parse(value(result.reports[0].metrics[0]))).toEqual({
           seam: null,
           node: null,
         })
@@ -261,7 +312,7 @@ describe('usage adapter process boundary', () => {
   it('uses a manifest next action for a declared failure instead of adapter text', async () => {
     const a = {
       ...adapter(
-        `console.log(JSON.stringify({protocolVersion:2,ok:false,error:{code:'config',message:'fixture-secret'}}));process.exitCode=1`,
+        `console.log(JSON.stringify({protocolVersion:3,ok:false,error:{code:'config',message:'fixture-secret'}}));process.exitCode=1`,
       ),
       errorActions: { config: 'Use a fixture management key.' },
     }
@@ -278,7 +329,7 @@ describe('usage adapter process boundary', () => {
   ])('selects only a declared reason for the same code (%s, %s)', async (reason, code, action) => {
     const a = {
       ...adapter(
-        `console.log(JSON.stringify({protocolVersion:2,ok:false,error:{code:${JSON.stringify(code)},reason:${JSON.stringify(reason)},message:'fixture-secret'}}));process.exitCode=1`,
+        `console.log(JSON.stringify({protocolVersion:3,ok:false,error:{code:${JSON.stringify(code)},reason:${JSON.stringify(reason)},message:'fixture-secret'}}));process.exitCode=1`,
       ),
       errorActions: { config: 'Check the account settings.' },
       errorReasons: {
@@ -342,19 +393,21 @@ describe('usage adapter process boundary', () => {
     write('bad-field', {
       configSchema: [{ key: 'k', label: 'K', type: 'text', description: 'x'.repeat(513) }],
     })
-    write('service', { providerId: 'service-provider', summary: 'One line.', experimental: true })
-    write('bad-provider', { providerId: 'Not Valid' })
+    write('service', { serviceId: 'service-id', summary: 'One line.', experimental: true })
+    write('bad-service', { serviceId: 'Not Valid' })
+    write('provider', { providerId: 'service-id' })
     write('long-summary', { summary: 'x'.repeat(161) })
     write('bad-experimental', { experimental: 'yes' })
-    write('agents', { refreshOptions: ['providers'] })
+    write('selecting', { refreshOptions: ['subscriptions'] })
     write('bad-option', { refreshOptions: ['sources'] })
-    write('duplicate-option', { refreshOptions: ['providers', 'providers'] })
-    write('option-shape', { refreshOptions: 'providers' })
+    write('providers-option', { refreshOptions: ['providers'] })
+    write('duplicate-option', { refreshOptions: ['subscriptions', 'subscriptions'] })
+    write('option-shape', { refreshOptions: 'subscriptions' })
     const result = discoverUsageAdapters(root)
-    expect(result.find((r) => r.id === 'agents')?.refreshOptions).toEqual(['providers'])
+    expect(result.find((r) => r.id === 'selecting')?.refreshOptions).toEqual(['subscriptions'])
     expect(result.find((r) => r.id === 'service')).not.toHaveProperty('refreshOptions')
     expect(result.find((r) => r.id === 'service')).toMatchObject({
-      providerId: 'service-provider',
+      serviceId: 'service-id',
       summary: 'One line.',
       experimental: true,
     })
@@ -369,10 +422,12 @@ describe('usage adapter process boundary', () => {
       'long-action',
       'long-description',
       'bad-field',
-      'bad-provider',
+      'bad-service',
+      'provider',
       'long-summary',
       'bad-experimental',
       'bad-option',
+      'providers-option',
       'duplicate-option',
       'option-shape',
     ])
@@ -382,18 +437,20 @@ describe('usage adapter process boundary', () => {
 
 describe('live refresh validation (spec L3)', () => {
   const start = Date.parse('2026-10-23T12:00:00.500Z')
-  const document = (...metrics: Partial<UsageMetric>[]): UsageDocument => ({
-    schemaVersion: 1,
-    subscriptions: [
+  const document = (...metrics: Partial<UsageMetric>[]): UsageReportDocument => ({
+    schemaVersion: 2,
+    reports: [
       {
         id: 'account',
-        providerId: 'fixture',
+        serviceId: 'fixture',
         label: 'Fixture',
         sourceKind: 'api',
         status: 'available',
+        subscriptions: [{ id: 'fixture-plan', label: 'Fixture' }],
         metrics: metrics.map((m, i) => ({
           id: `m${i}`,
-          label: `M${i}`,
+          label: `Fixture M${i}`,
+          subscriptionId: 'fixture-plan',
           kind: 'window',
           state: 'available',
           observedAt: null,
@@ -431,9 +488,13 @@ describe('live refresh validation (spec L3)', () => {
 })
 
 describe('partial refresh result parsing (PDH-13)', () => {
-  const document = `{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'m1',label:'M1',kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:10}]}]}`
+  const report = (subscriptions: string) =>
+    `{schemaVersion:2,reports:[{id:'account',serviceId:'fixture',label:'Fixture',sourceKind:'api',status:'available',subscriptions:${subscriptions},metrics:[{id:'m1',label:'Fixture M1',subscriptionId:'fixture-plan',kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:10}]}]}`
+  const document = report(
+    `[{id:'fixture-plan',label:'Fixture'},{id:'claude',label:'Claude'},{id:'chatgpt',label:'ChatGPT'}]`,
+  )
   const script = (refresh: string) =>
-    `console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document},refresh:${refresh}}))`
+    `console.log(JSON.stringify({protocolVersion:3,ok:true,data:${document},refresh:${refresh}}))`
 
   it('accepts the typed result and passes it beside the document', async () => {
     const result = await new UsageAdapterHost().read(
@@ -446,7 +507,7 @@ describe('partial refresh result parsing (PDH-13)', () => {
       'account',
       signal(),
     )
-    expect(result.subscriptions[0].metrics[0].id).toBe('m1')
+    expect(result.reports[0].metrics[0].id).toBe('m1')
     expect(result.refresh).toMatchObject({
       status: 'success',
       requestId: 'request-1',
@@ -457,7 +518,7 @@ describe('partial refresh result parsing (PDH-13)', () => {
 
   it('keeps a missing refresh field valid for older adapters', async () => {
     const result = await new UsageAdapterHost().read(
-      adapter(`console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document}}))`),
+      adapter(`console.log(JSON.stringify({protocolVersion:3,ok:true,data:${document}}))`),
       {},
       'account',
       signal(),
@@ -476,50 +537,63 @@ describe('partial refresh result parsing (PDH-13)', () => {
     ).rejects.toMatchObject({ code: 'validation_error' })
   })
 
-  it('accepts a known refreshable agent list beside the document', async () => {
+  it('accepts a known refreshable subscription list beside the document', async () => {
     const result = await new UsageAdapterHost().read(
       adapter(
-        `console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document},refreshableProviders:['claude','codex']}))`,
+        `console.log(JSON.stringify({protocolVersion:3,ok:true,data:${document},refreshableSubscriptions:['claude','chatgpt']}))`,
       ),
       {},
       'account',
       signal(),
     )
-    expect(result.refreshableProviders).toEqual(['claude', 'codex'])
-    expect(JSON.stringify(result)).not.toContain('refreshableProviders')
+    expect(result.refreshableSubscriptions).toEqual(['claude', 'chatgpt'])
+    expect(JSON.stringify(result)).not.toContain('refreshableSubscriptions')
   })
 
-  it('keeps a missing refreshable agent list distinct from an empty known list', async () => {
+  it('fails a refreshable subscription the report does not declare as protocol (U3)', async () => {
+    await expect(
+      new UsageAdapterHost().read(
+        adapter(
+          `console.log(JSON.stringify({protocolVersion:3,ok:true,data:${document},refreshableSubscriptions:['google-ai']}))`,
+        ),
+        {},
+        'account',
+        signal(),
+      ),
+    ).rejects.toMatchObject({ code: 'protocol' })
+  })
+
+  it('keeps a missing refreshable subscription list distinct from an empty known list', async () => {
     const missing = await new UsageAdapterHost().read(
-      adapter(`console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document}}))`),
+      adapter(`console.log(JSON.stringify({protocolVersion:3,ok:true,data:${document}}))`),
       {},
       'account',
       signal(),
     )
-    expect(missing.refreshableProviders).toBeNull()
+    expect(missing.refreshableSubscriptions).toBeNull()
     const empty = await new UsageAdapterHost().read(
       adapter(
-        `console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document},refreshableProviders:[]}))`,
+        `console.log(JSON.stringify({protocolVersion:3,ok:true,data:${document},refreshableSubscriptions:[]}))`,
       ),
       {},
       'account',
       signal(),
     )
-    expect(empty.refreshableProviders).toEqual([])
+    expect(empty.refreshableSubscriptions).toEqual([])
   })
 
   it.each([
     ['duplicate', `['claude','claude']`],
     ['malformed', `['Claude']`],
-    ['too many', `Array.from({length:51},(_,i)=>'agent-'+i)`],
+    ['too many', `Array.from({length:51},(_,i)=>'subscription-'+i)`],
     ['not an array', `'claude'`],
   ])(
-    'rejects a %s refreshable agent list as a protocol validation failure',
-    async (_name, value) => {
+    'rejects a %s refreshable subscription list as a protocol validation failure',
+    async (_name, list) => {
       await expect(
         new UsageAdapterHost().read(
           adapter(
-            `console.log(JSON.stringify({protocolVersion:2,ok:true,data:${document},refreshableProviders:${value}}))`,
+            `console.log(JSON.stringify({protocolVersion:3,ok:true,data:${document},refreshableSubscriptions:${list}}))`,
           ),
           {},
           'account',
@@ -545,7 +619,7 @@ describe('bundled and user usage adapters', () => {
         JSON.stringify({
           id,
           name: id,
-          protocolVersion: 2,
+          protocolVersion: 3,
           invocation: { command: 'node', args: ['index.cjs'] },
           sourceKind: 'api',
           capabilities: ['balance'],
@@ -611,18 +685,27 @@ describe('bundled and user usage adapters', () => {
       expect(result.find((a) => a.id === id)?.error).toContain('removed NeKode service')
   })
 
-  it('lists only version 2 API or CLI manifests and names the unsupported version (L1)', () => {
+  it('lists only version 3 API or CLI manifests and names the unsupported version (L1, U1)', () => {
     const { user, manifest } = tree()
     manifest(join(user, 'old'), 'old-protocol', { protocolVersion: 1 })
+    manifest(join(user, 'v2'), 'v2-protocol', { protocolVersion: 2 })
     manifest(join(user, 'file'), 'file-source', { sourceKind: 'file' })
     manifest(join(user, 'cli'), 'cli-source', { sourceKind: 'cli' })
     const result = discoverUsageAdapters(user)
-    expect(result.map((a) => a.id).sort()).toEqual(['cli-source', 'invalid:file', 'invalid:old'])
-    expect(result.find((a) => a.id === 'invalid:old')?.error).toBe(
-      'This adapter uses an unsupported protocol version. Update it to protocol version 2, which requires live refresh.',
+    expect(result.map((a) => a.id).sort()).toEqual([
+      'cli-source',
+      'invalid:file',
+      'invalid:old',
+      'invalid:v2',
+    ])
+    expect(result.find((a) => a.id === 'invalid:v2')?.error).toBe(
+      'This adapter uses protocol version 2. Update it to protocol version 3, which reports subscriptions.',
     )
-    expect(result.find((a) => a.id === 'invalid:file')?.error).toContain('protocol version 2')
-    expect(result.find((a) => a.id === 'cli-source')).toMatchObject({ protocolVersion: 2 })
+    expect(result.find((a) => a.id === 'invalid:old')?.error).toBe(
+      'This adapter uses an unsupported protocol version. Update it to protocol version 3, which reports subscriptions.',
+    )
+    expect(result.find((a) => a.id === 'invalid:file')?.error).toContain('protocol version 3')
+    expect(result.find((a) => a.id === 'cli-source')).toMatchObject({ protocolVersion: 3 })
     expect(result.find((a) => a.id === 'cli-source')?.error).toBeUndefined()
   })
 
@@ -634,10 +717,10 @@ describe('bundled and user usage adapters', () => {
     ).filter((a) => a.directory)
     expect(listed.map((a) => a.id).sort()).toEqual(['claude-code-usage', 'codex-app-server'])
     expect(listed.every((a) => a.bundled && !a.error)).toBe(true)
-    // Spec rules 22-23: every shipped service declares its provider and a picker summary.
-    expect(listed.map((a) => [a.id, a.providerId, a.experimental ?? false]).sort()).toEqual([
-      ['claude-code-usage', 'claude', true],
-      ['codex-app-server', 'codex', true],
+    // Spec rules 22-23 and U12: every shipped service declares its service id and a summary.
+    expect(listed.map((a) => [a.id, a.serviceId, a.experimental ?? false]).sort()).toEqual([
+      ['claude-code-usage', 'claude-code', true],
+      ['codex-app-server', 'codex-cli', true],
     ])
     expect(listed.every((a) => a.summary)).toBe(true)
     const packaged = [
@@ -650,13 +733,13 @@ describe('bundled and user usage adapters', () => {
 
   it('starts a bundled adapter in Node mode and a user adapter without it', async () => {
     const a = adapter(
-      `const label=JSON.stringify({runAsNode:process.env.ELECTRON_RUN_AS_NODE??null});console.log(JSON.stringify({protocolVersion:2,ok:true,data:{schemaVersion:1,subscriptions:[{id:'account',providerId:'fixture',label:'Fixture',sourceKind:'api',status:'available',metrics:[{id:'m',label,kind:'window',observedAt:'2026-01-01T00:00:00Z',state:'available',usedPercent:1}]}]}}))`,
+      `${DOC}const label=JSON.stringify({runAsNode:process.env.ELECTRON_RUN_AS_NODE??null});console.log(JSON.stringify({protocolVersion:3,ok:true,data:doc('account',[{id:'m',label}])}))`,
     )
     const previous = process.env.ELECTRON_RUN_AS_NODE
     delete process.env.ELECTRON_RUN_AS_NODE
     const runAsNode = async (host: UsageAdapterHost, target: UsageAdapter) => {
       const result = await host.read(target, {}, 'account', signal())
-      return JSON.parse(result.subscriptions[0].metrics[0].label)
+      return JSON.parse(value(result.reports[0].metrics[0]))
     }
     try {
       expect(await runAsNode(new UsageAdapterHost(), { ...a, bundled: true })).toEqual({

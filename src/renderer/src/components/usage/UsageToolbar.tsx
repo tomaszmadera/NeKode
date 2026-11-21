@@ -27,9 +27,9 @@ function badge(source: UsageConnectionSnapshot, metric: UsageMetric, now: number
           ? ''
           : 'usage-stale'
 }
-/** Row avatar: the metric's own provider for an aggregating account, else the account's. */
-function avatar(source: UsageConnectionSnapshot, metric: UsageMetric): string {
-  return (metric.providerId ?? source.connection.providerId).slice(0, 2).toUpperCase()
+/** Row avatar: the subscription that owns the metric (NEKODE-191 U4). */
+function avatar(_source: UsageConnectionSnapshot, metric: UsageMetric): string {
+  return metric.subscriptionId.slice(0, 2).toUpperCase()
 }
 function value(metric: UsageMetric): string {
   if (metric.state === 'unavailable') return 'Unavailable'
@@ -91,12 +91,12 @@ export function UsageGraphic({
   )
 }
 function tooltip(source: UsageConnectionSnapshot, metric: UsageMetric, now: number): string {
-  return `${source.connection.label}; ${metric.label}; ${value(metric)}; ${source.error?.message ?? usageFreshness(metric, now)}; observation ${metric.observedAt ?? 'unknown'}; collected ${metric.collectedAt ?? source.subscription?.collectedAt ?? 'unknown'}; source ${source.connection.adapterId}; reset ${metric.resetsAt ?? 'unknown'}. Pace compares elapsed allowance slices, not a provider restriction or prediction.`
+  return `${source.connection.label}; ${metricName(source, metric)}; ${value(metric)}; ${source.error?.message ?? usageFreshness(metric, now)}; observation ${metric.observedAt ?? 'unknown'}; collected ${metric.collectedAt ?? source.subscription?.collectedAt ?? 'unknown'}; source ${source.connection.adapterId}; reset ${metric.resetsAt ?? 'unknown'}. Pace compares elapsed allowance slices, not a provider restriction or prediction.`
 }
-/** One manual refresh target (spec A6): an account, or one agent of it. */
+/** One manual refresh target (spec A6, U7): an account, or one subscription of it. */
 interface RefreshTarget {
   connectionId: string
-  providerId?: string
+  subscriptionId?: string
 }
 /** A group menu opened from its trigger or a right-click on the group heading (spec M2). */
 interface MenuState extends RefreshTarget {
@@ -104,42 +104,76 @@ interface MenuState extends RefreshTarget {
   y: number
 }
 const targetKey = (target: RefreshTarget) =>
-  JSON.stringify([target.connectionId, target.providerId ?? null])
-/** Agent name for headings and labels (spec A2): the provider id with a capital first letter. */
-function agentName(providerId: string): string {
-  return providerId.charAt(0).toUpperCase() + providerId.slice(1)
+  JSON.stringify([target.connectionId, target.subscriptionId ?? null])
+/**
+ * Subscription label for headings, menus and messages (U4): the label the report declares, never a
+ * capitalised id. A retained metric without a declaration keeps its id unchanged.
+ */
+function subscriptionLabel(source: UsageConnectionSnapshot, subscriptionId: string): string {
+  return (
+    source.subscription?.subscriptions.find((item) => item.id === subscriptionId)?.label ??
+    subscriptionId
+  )
 }
-function targetLabel(source: UsageConnectionSnapshot, providerId?: string): string {
+/**
+ * Metric name for a pinned meter and row labels (U4): the metric label, prefixed with the declared
+ * subscription label when a retained label does not already name it.
+ */
+function metricName(source: UsageConnectionSnapshot, metric: UsageMetric): string {
+  const label = subscriptionLabel(source, metric.subscriptionId)
+  return metric.label.includes(label) ? metric.label : `${label} ${metric.label}`
+}
+function targetLabel(source: UsageConnectionSnapshot, subscriptionId?: string): string {
   const label = source.connection.label
-  return providerId === undefined ? label : `${agentName(providerId)} in ${label}`
+  return subscriptionId === undefined
+    ? label
+    : `${subscriptionLabel(source, subscriptionId)} in ${label}`
 }
-function agentOf(source: UsageConnectionSnapshot, metric: UsageMetric): string {
-  return metric.providerId ?? source.connection.providerId
+/**
+ * Rows grouped by subscription (U11): declared subscriptions in report order, then any undeclared
+ * retained subscription in first-appearance order. An account whose report declares subscriptions
+ * always shows its subscription headings; a subscription without metrics gets no group (R3).
+ * Null when the report declares none or has no metric.
+ */
+function subscriptionGroups(source: UsageConnectionSnapshot): [string, UsageMetric[]][] | null {
+  const report = source.subscription
+  if (!report || report.subscriptions.length === 0) return null
+  const groups = new Map<string, UsageMetric[]>(report.subscriptions.map((item) => [item.id, []]))
+  for (const metric of report.metrics)
+    groups.set(metric.subscriptionId, [...(groups.get(metric.subscriptionId) ?? []), metric])
+  const filled = [...groups].filter(([, metrics]) => metrics.length > 0)
+  // Without any metric the account shows its empty message instead of headings (rule 11).
+  return filled.length > 0 ? filled : null
 }
-/** Rows grouped by agent in first-appearance order, or null when the account has no agents. */
-function agentGroups(source: UsageConnectionSnapshot): [string, UsageMetric[]][] | null {
-  const metrics = source.subscription?.metrics ?? []
-  if (!metrics.some((metric) => metric.providerId)) return null
-  const groups = new Map<string, UsageMetric[]>()
-  for (const metric of metrics) {
-    const agent = agentOf(source, metric)
-    groups.set(agent, [...(groups.get(agent) ?? []), metric])
-  }
-  return [...groups]
+/** Subscription of the metrics a refresh source covers, when they all belong to one. */
+function sourceSubscription(
+  source: UsageConnectionSnapshot,
+  result: UsageRefreshSourceResult,
+): string | undefined {
+  const ids = new Set(
+    result.windows.map(
+      (window) =>
+        source.subscription?.metrics.find((metric) => metric.id === window.metricId)
+          ?.subscriptionId,
+    ),
+  )
+  const [only] = ids
+  return ids.size === 1 ? only : undefined
 }
 /** Spec A4: refreshing, countdown from the absolute deadline, or ready, for one group. */
 function refreshState(
   source: UsageConnectionSnapshot,
   now: number,
-  providerId?: string,
+  subscriptionId?: string,
   pending = false,
 ): string {
-  const label = targetLabel(source, providerId)
-  if (pending || (providerId === undefined && source.refreshing)) return `${label} is refreshing`
+  const label = targetLabel(source, subscriptionId)
+  if (pending || (subscriptionId === undefined && source.refreshing))
+    return `${label} is refreshing`
   const until =
-    providerId === undefined
+    subscriptionId === undefined
       ? source.nextRefreshAt
-      : source.agents?.find((agent) => agent.providerId === providerId)?.nextRefreshAt
+      : source.subscriptions?.find((item) => item.subscriptionId === subscriptionId)?.nextRefreshAt
   const seconds = until ? Math.ceil((Date.parse(until) - now) / 1000) : 0
   return seconds > 0 ? `${label} can refresh again in ${seconds} s` : `${label} is ready to refresh`
 }
@@ -147,14 +181,14 @@ function refreshState(
 function refreshShortState(
   source: UsageConnectionSnapshot,
   now: number,
-  providerId?: string,
+  subscriptionId?: string,
   pending = false,
 ): string {
-  if (pending || (providerId === undefined && source.refreshing)) return 'Refreshing...'
+  if (pending || (subscriptionId === undefined && source.refreshing)) return 'Refreshing...'
   const until =
-    providerId === undefined
+    subscriptionId === undefined
       ? source.nextRefreshAt
-      : source.agents?.find((agent) => agent.providerId === providerId)?.nextRefreshAt
+      : source.subscriptions?.find((item) => item.subscriptionId === subscriptionId)?.nextRefreshAt
   const seconds = until ? Math.ceil((Date.parse(until) - now) / 1000) : 0
   return seconds > 0 ? `in ${seconds} s` : 'Ready'
 }
@@ -205,10 +239,16 @@ function retainedValue(source: UsageConnectionSnapshot, metricId: string, now: n
   if (!metric || metric.state === 'unavailable') return 'No earlier value.'
   return `Earlier value ${usageFreshness(metric, now)}.`
 }
-function refreshSourceLine(result: UsageRefreshSourceResult, now: number): string {
+/** U11: a console line names its account and, when known, the subscription; a source id is a source. */
+function refreshSourceLine(
+  result: UsageRefreshSourceResult,
+  source: UsageConnectionSnapshot,
+  now: number,
+): string {
   const status = refreshStatusText(result.status, result.errorCode)
   const retry = retryMessage(result.nextAllowedAt, now)
-  return `${result.sourceId}: ${status}.${retry ? ` ${retry}` : ''}`
+  const label = targetLabel(source, sourceSubscription(source, result))
+  return `${label}: source ${result.sourceId}: ${status}.${retry ? ` ${retry}` : ''}`
 }
 function refreshWindowLine(
   window: UsageRefreshWindowResult,
@@ -219,9 +259,13 @@ function refreshWindowLine(
   const retry = retryMessage(window.nextAllowedAt, now)
   const retained =
     window.status === 'succeeded' ? '' : ` ${retainedValue(source, window.metricId, now)}`
-  return `${window.metricId}: ${status}.${retry ? ` ${retry}` : ''}${retained}`.trim()
+  const label = targetLabel(
+    source,
+    source.subscription?.metrics.find((metric) => metric.id === window.metricId)?.subscriptionId,
+  )
+  return `${label}: ${window.metricId}: ${status}.${retry ? ` ${retry}` : ''}${retained}`.trim()
 }
-/** Spec A5: the outcome of the last manual request, naming its account or agent. */
+/** Spec A5: the outcome of the last manual request, naming its account or subscription. */
 function refreshOutcome(
   target: RefreshTarget,
   snapshot: UsageSnapshot,
@@ -232,12 +276,12 @@ function refreshOutcome(
   const source =
     current.connections.find((c) => c.connection.id === target.connectionId) ??
     snapshot.connections.find((c) => c.connection.id === target.connectionId)
-  const label = source ? targetLabel(source, target.providerId) : target.connectionId
+  const label = source ? targetLabel(source, target.subscriptionId) : target.connectionId
   const skip = result?.skipped.find((s) => s.connectionId === target.connectionId)
   if (skip) {
     const reason = skip.reason === 'backoff' ? 'provider backoff' : '60-second limit'
     const skipped = `${label} was skipped (${reason}).`
-    return source ? `${skipped} ${refreshState(source, now, target.providerId)}.` : skipped
+    return source ? `${skipped} ${refreshState(source, now, target.subscriptionId)}.` : skipped
   }
   const read = snapshot.connections.find(
     (c) => c.connection.id === target.connectionId && result?.read.includes(c.connection.id),
@@ -245,17 +289,17 @@ function refreshOutcome(
   if (!read) return `${label} was not refreshed.`
   if (read.error) return `${label} refresh failed.`
   // The operation result excludes earlier attempts retained in per-source detail. A joined
-  // account refresh may also contain other agents, so filter its known windows by the target.
-  const agents = new Map(
-    (read.subscription?.metrics ?? []).map((metric) => [metric.id, agentOf(read, metric)]),
+  // account refresh may also contain other subscriptions, so filter its known windows by the target.
+  const owners = new Map(
+    (read.subscription?.metrics ?? []).map((metric) => [metric.id, metric.subscriptionId]),
   )
   const sources = (result?.result?.sources ?? read.refreshResult?.sources ?? []).filter(
     (s) =>
-      target.providerId === undefined ||
-      // A source may fail before it reports any windows, so it cannot be assigned to an agent.
+      target.subscriptionId === undefined ||
+      // A source may fail before it reports any windows, so it cannot be assigned to a subscription.
       // Keep that failure visible instead of treating the missing windows as a successful read.
       s.windows.length === 0 ||
-      s.windows.some((w) => agents.get(w.metricId) === target.providerId),
+      s.windows.some((w) => owners.get(w.metricId) === target.subscriptionId),
   )
   const failedSources = sources.filter((s) => s.status !== 'succeeded').length
   const failedWindows = sources
@@ -318,7 +362,7 @@ export function UsageToolbar({
       if (result.status !== 'succeeded')
         addError(
           `refresh:${source.connection.id}:${result.sourceId}`,
-          refreshSourceLine(result, now),
+          refreshSourceLine(result, source, now),
           `${source.connection.id}\u0000${result.sourceId}\u0000${result.status}\u0000${result.errorCode ?? ''}\u0000${result.nextAllowedAt ?? ''}`,
         )
       for (const window of result.windows)
@@ -464,18 +508,19 @@ export function UsageToolbar({
   const menuTarget: RefreshTarget | null = menu
     ? {
         connectionId: menu.connectionId,
-        ...(menu.providerId === undefined ? {} : { providerId: menu.providerId }),
+        ...(menu.subscriptionId === undefined ? {} : { subscriptionId: menu.subscriptionId }),
       }
     : null
   const menuEnabled =
     menuSource && menu
-      ? menu.providerId === undefined
-        ? menuSource.agents == null || menuSource.agents.length > 0
-        : (menuSource.agents?.some((agent) => agent.providerId === menu.providerId) ?? false)
+      ? menu.subscriptionId === undefined
+        ? menuSource.subscriptions == null || menuSource.subscriptions.length > 0
+        : (menuSource.subscriptions?.some((item) => item.subscriptionId === menu.subscriptionId) ??
+          false)
       : false
   const isPending = (target: RefreshTarget) =>
     pending.includes(targetKey({ connectionId: target.connectionId })) ||
-    (target.providerId !== undefined && pending.includes(targetKey(target)))
+    (target.subscriptionId !== undefined && pending.includes(targetKey(target)))
   async function refresh(target: RefreshTarget): Promise<void> {
     const key = targetKey(target)
     if (manualFlights.current.has(key)) return
@@ -507,7 +552,7 @@ export function UsageToolbar({
   }
   function openMenuAt(
     source: UsageConnectionSnapshot,
-    providerId: string | undefined,
+    subscriptionId: string | undefined,
     x: number,
     y: number,
     returnFocus: HTMLElement | null,
@@ -515,7 +560,7 @@ export function UsageToolbar({
     menuReturnFocus.current = returnFocus
     setMenu({
       connectionId: source.connection.id,
-      ...(providerId === undefined ? {} : { providerId }),
+      ...(subscriptionId === undefined ? {} : { subscriptionId }),
       x: Math.max(8, Math.min(x, window.innerWidth - 228)),
       y: Math.max(8, Math.min(y, window.innerHeight - 128)),
     })
@@ -523,19 +568,19 @@ export function UsageToolbar({
   function openMenuFromButton(
     event: React.MouseEvent<HTMLButtonElement>,
     source: UsageConnectionSnapshot,
-    providerId?: string,
+    subscriptionId?: string,
   ): void {
     const rect = event.currentTarget.getBoundingClientRect()
-    openMenuAt(source, providerId, rect.left, rect.bottom + 4, event.currentTarget)
+    openMenuAt(source, subscriptionId, rect.left, rect.bottom + 4, event.currentTarget)
   }
   function openMenuFromHeading(
     event: React.MouseEvent<HTMLDivElement>,
     source: UsageConnectionSnapshot,
-    providerId?: string,
+    subscriptionId?: string,
   ): void {
     event.preventDefault()
     const trigger = event.currentTarget.querySelector<HTMLElement>('.usage-group-menu')
-    openMenuAt(source, providerId, event.clientX, event.clientY, trigger)
+    openMenuAt(source, subscriptionId, event.clientX, event.clientY, trigger)
   }
   function menuKeydown(event: React.KeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape' || event.key === 'Tab') {
@@ -577,44 +622,47 @@ export function UsageToolbar({
         </button>
       )
     const busy = isPending(target)
-    const state = `${refreshState(source, now, target.providerId, busy)}.`
+    const state = `${refreshState(source, now, target.subscriptionId, busy)}.`
     return (
       <button
         type="button"
         role="menuitem"
         className="usage-menu-item"
-        aria-label={`Refresh ${targetLabel(source, target.providerId)}`}
+        aria-label={`Refresh ${targetLabel(source, target.subscriptionId)}`}
         aria-description={state}
         title={state}
         disabled={busy}
         onClick={() => runMenu(target)}
       >
-        <span>Refresh {targetLabel(source, target.providerId)}</span>
+        <span>Refresh {targetLabel(source, target.subscriptionId)}</span>
         <span className="usage-menu-state">
-          {refreshShortState(source, now, target.providerId, busy)}
+          {refreshShortState(source, now, target.subscriptionId, busy)}
         </span>
       </button>
     )
   }
   /** Spec M2: a visible menu trigger on every group, plus the same menu from a heading right-click. */
-  function groupHead(source: UsageConnectionSnapshot, providerId?: string): React.JSX.Element {
-    const label = targetLabel(source, providerId)
-    const hasMenu = providerId === undefined || source.agents != null
-    const expanded = menu?.connectionId === source.connection.id && menu.providerId === providerId
-    const Heading = providerId === undefined ? 'h3' : 'h4'
+  function groupHead(source: UsageConnectionSnapshot, subscriptionId?: string): React.JSX.Element {
+    const label = targetLabel(source, subscriptionId)
+    const hasMenu = subscriptionId === undefined || source.subscriptions != null
+    const expanded =
+      menu?.connectionId === source.connection.id && menu.subscriptionId === subscriptionId
+    const Heading = subscriptionId === undefined ? 'h3' : 'h4'
     return (
       <div
         className="usage-group-head"
         role="group"
         aria-label={label}
         onContextMenu={
-          hasMenu ? (event) => openMenuFromHeading(event, source, providerId) : undefined
+          hasMenu ? (event) => openMenuFromHeading(event, source, subscriptionId) : undefined
         }
       >
         <Heading>
-          {providerId === undefined ? source.connection.label : agentName(providerId)}
+          {subscriptionId === undefined
+            ? source.connection.label
+            : subscriptionLabel(source, subscriptionId)}
         </Heading>
-        {providerId === undefined && source.error ? (
+        {subscriptionId === undefined && source.error ? (
           <span className="usage-group-error" aria-hidden="true">
             Error
           </span>
@@ -626,12 +674,12 @@ export function UsageToolbar({
             aria-label={`Refresh options for ${label}`}
             aria-haspopup="menu"
             aria-expanded={expanded}
-            onClick={(event) => openMenuFromButton(event, source, providerId)}
+            onClick={(event) => openMenuFromButton(event, source, subscriptionId)}
             onKeyDown={(event) => {
               if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
               event.preventDefault()
               const rect = event.currentTarget.getBoundingClientRect()
-              openMenuAt(source, providerId, rect.left, rect.bottom + 4, event.currentTarget)
+              openMenuAt(source, subscriptionId, rect.left, rect.bottom + 4, event.currentTarget)
             }}
           >
             ⋯
@@ -686,7 +734,7 @@ export function UsageToolbar({
             <span className={`usage-avatar ${badge(pinnedSource, pinned, now)}`}>
               {avatar(pinnedSource, pinned)}
             </span>
-            <span className="usage-trigger-period">{pinned.label}</span>
+            <span className="usage-trigger-period">{metricName(pinnedSource, pinned)}</span>
             <UsageGraphic metric={pinned} now={now} />
             <strong>{value(pinned)}</strong>
             <span className="usage-trigger-age">
@@ -755,7 +803,7 @@ export function UsageToolbar({
                             (c) => c.connection.id === manual.target.connectionId,
                           )
                           return source
-                            ? targetLabel(source, manual.target.providerId)
+                            ? targetLabel(source, manual.target.subscriptionId)
                             : manual.target.connectionId
                         })()}...`}
                   </p>
@@ -775,7 +823,7 @@ export function UsageToolbar({
                   </div>
                 ) : (
                   snapshot.connections.map((source) => {
-                    const groups = agentGroups(source)
+                    const groups = subscriptionGroups(source)
                     const row = (metric: UsageMetric) => {
                       const selected =
                         snapshot.pin?.connectionId === source.connection.id &&
@@ -789,7 +837,7 @@ export function UsageToolbar({
                           key={metric.id}
                           aria-pressed={selected}
                           disabled={metric.state === 'unavailable'}
-                          aria-label={`${source.connection.label}, ${metric.label}, ${value(metric)}, ${source.error ? `Error: ${source.error.message}, ` : ''}${freshness}${slices?.pace ? `, ${slices.pace}` : ''}`}
+                          aria-label={`${source.connection.label}, ${metricName(source, metric)}, ${value(metric)}, ${source.error ? `Error: ${source.error.message}, ` : ''}${freshness}${slices?.pace ? `, ${slices.pace}` : ''}`}
                           title={tooltip(source, metric, now)}
                           onClick={() => {
                             setOpen(false)
@@ -823,9 +871,9 @@ export function UsageToolbar({
                       <div key={source.connection.id} className="usage-source">
                         {groupHead(source)}
                         {groups ? (
-                          groups.map(([agent, metrics]) => (
-                            <div key={agent} className="usage-agent">
-                              {groupHead(source, agent)}
+                          groups.map(([subscriptionId, metrics]) => (
+                            <div key={subscriptionId} className="usage-subscription">
+                              {groupHead(source, subscriptionId)}
                               {metrics.map(row)}
                             </div>
                           ))
@@ -867,7 +915,7 @@ export function UsageToolbar({
                   <div
                     ref={menuRef}
                     role="menu"
-                    aria-label={`Actions for ${targetLabel(menuSource, menu.providerId)}`}
+                    aria-label={`Actions for ${targetLabel(menuSource, menu.subscriptionId)}`}
                     className="usage-menu"
                     style={{ left: menu.x, top: menu.y }}
                     tabIndex={-1}
@@ -876,9 +924,9 @@ export function UsageToolbar({
                     {menuItem(
                       menuTarget,
                       menuEnabled,
-                      menu.providerId === undefined
+                      menu.subscriptionId === undefined
                         ? 'No refresh source in the Hub'
-                        : 'No refresh source for this agent in the Hub',
+                        : 'No refresh source for this subscription in the Hub',
                     )}
                   </div>
                 ) : null}

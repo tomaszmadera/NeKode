@@ -39,24 +39,31 @@ export interface UsageMetric {
   periodStart?: string | null
   resetsAt?: string | null
   windowDurationSeconds?: number | null
-  /**
-   * Provider of this one metric when an adapter aggregates several providers in one subscription
-   * (spec rule 6); the row avatar uses it instead of the account's provider id.
-   */
-  providerId?: string
+  /** Subscription that owns this allowance (NEKODE-191 U4); declared by the report. */
+  subscriptionId: string
 }
-export interface UsageSubscription {
+/** Label metadata of one subscription a report's metrics reference (NEKODE-191 U3). */
+export interface UsageReportSubscription {
   id: string
-  providerId: string
+  label: string
+}
+/** One adapter result bound to one configured connection (NEKODE-191 U3). */
+export interface UsageReport {
+  /** Connection id. */
+  id: string
+  /** Service (adapter or reporting endpoint) that produced the report; never a subscription. */
+  serviceId: string
   label: string
   sourceKind: 'api' | 'cli' | 'file'
   status: 'available' | 'unavailable' | 'error'
+  /** Every subscription the metrics reference, in display order. */
+  subscriptions: UsageReportSubscription[]
   metrics: UsageMetric[]
   collectedAt?: string | null
 }
-export interface UsageDocument {
-  schemaVersion: 1
-  subscriptions: UsageSubscription[]
+export interface UsageReportDocument {
+  schemaVersion: 2
+  reports: UsageReport[]
 }
 export interface UsageConfigField {
   key: string
@@ -75,7 +82,7 @@ export type UsageAdapterAction = 'read' | 'refresh'
 export interface UsageAdapter {
   id: string
   name: string
-  protocolVersion: 2
+  protocolVersion: 3
   invocation: { command: string; args: string[] }
   sourceKind: 'api' | 'cli'
   capabilities: string[]
@@ -87,13 +94,13 @@ export interface UsageAdapter {
   errorActions?: Partial<Record<UsageErrorCode, string>>
   /** Fixed messages selected by an adapter's reason id, never by its raw error text. */
   errorReasons?: Record<string, { code: UsageErrorCode; message: string }>
-  /** Provider id the service reports; main assigns it to accounts (spec rule 23). */
-  providerId?: string
+  /** Service id the adapter reports; main assigns it to accounts (spec rule 23, U5). */
+  serviceId?: string
   /** One sentence for the service picker (spec rule 22, at most 160 characters). */
   summary?: string
   /** Shown as `Experimental` in the service picker. */
   experimental?: boolean
-  /** Manual refresh options; `providers` enables agent refresh (spec A7, NEKODE-148). */
+  /** Manual refresh options; `subscriptions` enables subscription refresh (spec A7, U6). */
   refreshOptions?: UsageRefreshOption[]
   directory?: string
   /** Shipped with NeKode (spec rule 17); absent for user-added adapters. */
@@ -110,7 +117,7 @@ export const USAGE_REMOVED_ADAPTER_MESSAGE =
 export interface UsageConnection {
   id: string
   label: string
-  providerId: string
+  serviceId: string
   adapterId: string
   enabled: boolean
   config: Record<string, string | boolean>
@@ -125,28 +132,30 @@ export interface UsageSettings {
   pin: UsagePin | null
   export: { enabled: boolean; path: string | null; replaceExisting?: boolean }
 }
-/** Provider id format, shared by manifests, metrics and refresh requests. */
-export const USAGE_PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
-/** Maximum number of agent ids in an adapter's `refreshableProviders` envelope field. */
-export const USAGE_MAX_REFRESHABLE_PROVIDERS = 50
-export const USAGE_REFRESH_OPTIONS = ['providers'] as const
+/** Id format of services and subscriptions, shared by manifests, metrics and refresh requests. */
+export const USAGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
+/** Maximum number of ids in an adapter's `refreshableSubscriptions` envelope field. */
+export const USAGE_MAX_REFRESHABLE_SUBSCRIPTIONS = 50
+/** Maximum number of subscriptions one report declares. */
+export const USAGE_MAX_REPORT_SUBSCRIPTIONS = 50
+export const USAGE_REFRESH_OPTIONS = ['subscriptions'] as const
 export type UsageRefreshOption = (typeof USAGE_REFRESH_OPTIONS)[number]
-/** Target of one manual refresh: an account, or one agent of it (spec A6). */
+/** Target of one manual refresh: an account, or one subscription of it (spec A6, U7). */
 export interface UsageRefreshRequest {
   connectionId: string
-  providerId?: string
+  subscriptionId?: string
 }
 export interface UsageRefreshSkip {
   connectionId: string
-  /** The requested agent, when the skipped request named one. */
-  providerId?: string
+  /** The requested subscription, when the skipped request named one. */
+  subscriptionId?: string
   until: string
   reason: 'interval' | 'backoff'
 }
-/** Manual refresh state of one agent of an account with agent refresh support (spec A9). */
-export interface UsageAgentRefreshState {
-  providerId: string
-  /** Earliest time a manual refresh of this agent may start, or null when it may start now. */
+/** Manual refresh state of one subscription of an account with subscription refresh (A9, U7). */
+export interface UsageSubscriptionRefreshState {
+  subscriptionId: string
+  /** Earliest time a manual refresh of this subscription may start, or null when it may now. */
   nextRefreshAt: string | null
 }
 /** Terminal result of one operation source, window or the whole refresh. */
@@ -185,13 +194,14 @@ export interface UsageRefreshResult {
 }
 export interface UsageConnectionSnapshot {
   connection: Omit<UsageConnection, 'config'>
-  subscription: UsageSubscription | null
+  /** The account's last accepted report. */
+  subscription: UsageReport | null
   refreshing: boolean
   error: UsageFailure | null
   /** Earliest time a manual refresh may start (spec L5), or null when it may start now. */
   nextRefreshAt: string | null
-  /** Known agents and their manual deadlines; null without agent refresh support (spec A9). */
-  agents?: UsageAgentRefreshState[] | null
+  /** Known subscriptions and their manual deadlines; null without subscription refresh (U7). */
+  subscriptions?: UsageSubscriptionRefreshState[] | null
   /** Last manual refresh outcome, kept across automatic polls and restarts. */
   refreshResult?: UsageRefreshResult | null
 }
@@ -237,16 +247,16 @@ function text(value: unknown): string {
     invalid('Usage text must contain 1 to 256 characters.')
   return value
 }
-/** Spec A6: `{connectionId, providerId?}` with no other keys. */
+/** Spec A6 and U7: `{connectionId, subscriptionId?}` with no other keys. */
 export function parseUsageRefreshRequest(value: unknown): UsageRefreshRequest {
   const raw = usageObject(value)
-  if (Object.keys(raw).some((key) => key !== 'connectionId' && key !== 'providerId'))
+  if (Object.keys(raw).some((key) => key !== 'connectionId' && key !== 'subscriptionId'))
     invalid('Usage refresh request has unknown fields.')
   const connectionId = text(raw.connectionId)
-  if (raw.providerId === undefined) return { connectionId }
-  if (typeof raw.providerId !== 'string' || !USAGE_PROVIDER_ID.test(raw.providerId))
-    invalid('Invalid usage agent id.')
-  return { connectionId, providerId: raw.providerId }
+  if (raw.subscriptionId === undefined) return { connectionId }
+  if (typeof raw.subscriptionId !== 'string' || !USAGE_ID_PATTERN.test(raw.subscriptionId))
+    invalid('Invalid usage subscription id.')
+  return { connectionId, subscriptionId: raw.subscriptionId }
 }
 function timestamp(value: unknown, future: boolean, now: number): string | null {
   if (value === null || value === undefined) return null
@@ -269,31 +279,74 @@ function number(value: unknown, nonnegative = false): number | null {
 function only(object: Record<string, unknown>, keys: string[]): void {
   if (Object.keys(object).some((key) => !keys.includes(key))) invalid('Unexpected usage field.')
 }
-export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocument {
+/** Bounded `{id, label}` declarations of one report, unique by id, in display order (U3). */
+function reportSubscriptions(value: unknown): UsageReportSubscription[] {
+  if (!Array.isArray(value) || value.length > USAGE_MAX_REPORT_SUBSCRIPTIONS)
+    invalid('Invalid usage report subscriptions.')
+  const ids = new Set<string>()
+  return value.map((raw) => {
+    const declaration = usageObject(raw)
+    only(declaration, ['id', 'label'])
+    if (typeof declaration.id !== 'string' || !USAGE_ID_PATTERN.test(declaration.id))
+      invalid('Invalid usage subscription id.')
+    if (ids.has(declaration.id)) invalid('Duplicate usage subscription id.')
+    ids.add(declaration.id)
+    const label = declaration.label
+    if (typeof label !== 'string' || !label.trim() || label.length > 256 || label.includes('\0'))
+      invalid('Usage subscription requires a label of 1 to 256 characters.')
+    return { id: declaration.id, label }
+  })
+}
+/**
+ * `strict` (the default) also enforces the adapter declaration rules (U3, U4): every metric names a
+ * declared subscription whose label its own label contains. NeKode's merged cache and export pass
+ * `strict: false`, because retained metrics may keep a label from before the service renamed its
+ * subscription; their structure is still validated.
+ */
+export function parseUsageDocument(
+  value: unknown,
+  now = Date.now(),
+  { strict = true }: { strict?: boolean } = {},
+): UsageReportDocument {
   if (JSON.stringify(value).length > USAGE_MAX_BYTES) invalid('Usage document exceeds 1 MiB.')
   const doc = usageObject(value)
-  only(doc, ['schemaVersion', 'subscriptions'])
-  if (doc.schemaVersion !== 1) invalid('Unsupported usage schema version.')
-  if (!Array.isArray(doc.subscriptions) || doc.subscriptions.length > 100)
-    invalid('Invalid usage subscriptions.')
+  only(doc, ['schemaVersion', 'reports'])
+  if (doc.schemaVersion !== 2) invalid('Unsupported usage schema version.')
+  if (!Array.isArray(doc.reports) || doc.reports.length > 100) invalid('Invalid usage reports.')
   const ids = new Set<string>()
-  const subscriptions = doc.subscriptions.map((raw) => {
-    const sub = usageObject(raw)
-    only(sub, ['id', 'providerId', 'label', 'sourceKind', 'status', 'metrics', 'collectedAt'])
-    const id = text(sub.id)
-    if (ids.has(id)) invalid('Duplicate usage subscription id.')
+  const reports = doc.reports.map((raw): UsageReport => {
+    const report = usageObject(raw)
+    only(report, [
+      'id',
+      'serviceId',
+      'label',
+      'sourceKind',
+      'status',
+      'subscriptions',
+      'metrics',
+      'collectedAt',
+    ])
+    const id = text(report.id)
+    if (ids.has(id)) invalid('Duplicate usage report id.')
     ids.add(id)
+    if (typeof report.serviceId !== 'string' || !USAGE_ID_PATTERN.test(report.serviceId))
+      invalid('Invalid usage report service id.')
     if (
-      !['api', 'cli', 'file'].includes(sub.sourceKind as string) ||
-      !['available', 'unavailable', 'error'].includes(sub.status as string) ||
-      !Array.isArray(sub.metrics) ||
-      sub.metrics.length > 50
+      !['api', 'cli', 'file'].includes(report.sourceKind as string) ||
+      !['available', 'unavailable', 'error'].includes(report.status as string) ||
+      !Array.isArray(report.metrics) ||
+      report.metrics.length > 50
     )
-      invalid('Invalid usage subscription.')
+      invalid('Invalid usage report.')
+    const subscriptions = reportSubscriptions(report.subscriptions)
+    const labels = new Map(subscriptions.map((declaration) => [declaration.id, declaration.label]))
     const metricIds = new Set<string>()
-    const metrics = sub.metrics.map((rawMetric) => {
+    const metrics = report.metrics.map((rawMetric) => {
       const m = usageObject(rawMetric)
       if (!Object.hasOwn(m, 'observedAt')) invalid('Usage metric requires observedAt or null.')
+      // U4/U15: the removed per-metric provider field gets its own message; U8 keeps its name out.
+      if (Object.hasOwn(m, 'providerId'))
+        invalid('Usage metric has a removed field. Name its subscription with subscriptionId.')
       only(m, [
         'id',
         'label',
@@ -313,15 +366,24 @@ export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocum
         'periodStart',
         'resetsAt',
         'windowDurationSeconds',
-        'providerId',
+        'subscriptionId',
       ])
+      if (typeof m.subscriptionId !== 'string' || !USAGE_ID_PATTERN.test(m.subscriptionId))
+        invalid('Usage metric requires a valid subscription id.')
+      const subscriptionLabel = labels.get(m.subscriptionId)
+      if (strict && subscriptionLabel === undefined)
+        invalid('Usage metric subscription is not declared.')
       const metric: UsageMetric = {
         id: text(m.id),
         label: text(m.label),
         kind: m.kind as UsageMetric['kind'],
         observedAt: timestamp(m.observedAt, true, now),
         state: m.state as UsageMetric['state'],
+        subscriptionId: m.subscriptionId,
       }
+      // U4: a pinned row stays unambiguous without its heading.
+      if (strict && !metric.label.includes(subscriptionLabel as string))
+        invalid('Usage metric label must name its subscription.')
       if (metricIds.has(metric.id)) invalid('Duplicate usage metric id.')
       metricIds.add(metric.id)
       if (
@@ -346,11 +408,6 @@ export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocum
         metric[key] = number(m[key], key === 'usedPercent' || key === 'used')
       for (const key of ['unit', 'currency', 'bucketId', 'reason'] as const)
         metric[key] = m[key] == null ? undefined : text(m[key])
-      if (m.providerId != null) {
-        if (typeof m.providerId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(m.providerId))
-          invalid('Invalid usage metric provider id.')
-        metric.providerId = m.providerId
-      }
       if (metric.state === 'unavailable') {
         if (
           !metric.reason ||
@@ -369,15 +426,16 @@ export function parseUsageDocument(value: unknown, now = Date.now()): UsageDocum
     })
     return {
       id,
-      providerId: text(sub.providerId),
-      label: text(sub.label),
-      sourceKind: sub.sourceKind as UsageSubscription['sourceKind'],
-      status: sub.status as UsageSubscription['status'],
+      serviceId: report.serviceId,
+      label: text(report.label),
+      sourceKind: report.sourceKind as UsageReport['sourceKind'],
+      status: report.status as UsageReport['status'],
+      subscriptions,
       metrics,
-      collectedAt: timestamp(sub.collectedAt, true, now),
+      collectedAt: timestamp(report.collectedAt, true, now),
     }
   })
-  return { schemaVersion: 1, subscriptions }
+  return { schemaVersion: 2, reports }
 }
 
 /**
@@ -425,7 +483,7 @@ function refreshStatus(value: unknown): UsageRefreshSourceStatus {
  */
 export function parseUsageRefreshResult(
   value: unknown,
-  document?: UsageDocument,
+  document?: UsageReportDocument,
   now = Date.now(),
 ): UsageRefreshResult {
   const result = usageObject(value)
@@ -441,7 +499,7 @@ export function parseUsageRefreshResult(
     document === undefined
       ? null
       : new Map(
-          document.subscriptions.flatMap((sub) => sub.metrics.map((metric) => [metric.id, metric])),
+          document.reports.flatMap((report) => report.metrics.map((metric) => [metric.id, metric])),
         )
   const sourceIds = new Set<string>()
   const metricIds = new Set<string>()
@@ -529,21 +587,22 @@ export function parseUsageRefreshResult(
 }
 
 /**
- * Parse the optional `refreshableProviders` envelope field (spec R1). The caller distinguishes a
- * missing field (`null`) from an empty known list (`[]`). The list stays outside `data`.
+ * Parse the optional `refreshableSubscriptions` envelope field (spec R1, U2). The caller
+ * distinguishes a missing field (`null`) from an empty known list (`[]`). The list stays outside
+ * `data`.
  */
-export function parseUsageRefreshableProviders(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length > USAGE_MAX_REFRESHABLE_PROVIDERS)
-    invalid('Invalid usage refreshable agents.')
+export function parseUsageRefreshableSubscriptions(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > USAGE_MAX_REFRESHABLE_SUBSCRIPTIONS)
+    invalid('Invalid usage refreshable subscriptions.')
   const seen = new Set<string>()
-  for (const providerId of value) {
+  for (const subscriptionId of value) {
     if (
-      typeof providerId !== 'string' ||
-      !USAGE_PROVIDER_ID.test(providerId) ||
-      seen.has(providerId)
+      typeof subscriptionId !== 'string' ||
+      !USAGE_ID_PATTERN.test(subscriptionId) ||
+      seen.has(subscriptionId)
     )
-      invalid('Invalid usage refreshable agents.')
-    seen.add(providerId)
+      invalid('Invalid usage refreshable subscriptions.')
+    seen.add(subscriptionId)
   }
   return [...value]
 }
@@ -555,7 +614,7 @@ export function parseUsageSettings(value: unknown): UsageSettings {
   const ids = new Set<string>()
   const connections = s.connections.map((raw) => {
     const c = usageObject(raw)
-    only(c, ['id', 'label', 'providerId', 'adapterId', 'enabled', 'config', 'secretKeys'])
+    only(c, ['id', 'label', 'serviceId', 'adapterId', 'enabled', 'config', 'secretKeys'])
     const id = text(c.id)
     if (ids.has(id)) invalid('Duplicate usage source.')
     ids.add(id)
@@ -574,8 +633,8 @@ export function parseUsageSettings(value: unknown): UsageSettings {
     return {
       id,
       label: text(c.label),
-      // Main assigns the provider id on save (spec rule 23); a new account may send none.
-      providerId: c.providerId === undefined || c.providerId === '' ? '' : text(c.providerId),
+      // Main assigns the service id on save (spec rule 23); a new account may send none.
+      serviceId: c.serviceId === undefined || c.serviceId === '' ? '' : text(c.serviceId),
       adapterId: text(c.adapterId),
       enabled: c.enabled,
       config: config as UsageConnection['config'],

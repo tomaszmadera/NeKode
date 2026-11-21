@@ -15,20 +15,22 @@ const snapshot = (): UsageSnapshot => ({
       connection: {
         id: 'account',
         label: 'Fixture account',
-        providerId: 'test',
+        serviceId: 'test',
         adapterId: 'source',
         enabled: true,
       },
       subscription: {
         id: 'account',
-        providerId: 'test',
+        serviceId: 'test',
         label: 'Fixture account',
         sourceKind: 'api',
         status: 'available',
+        subscriptions: [{ id: 'test', label: 'Test' }],
         metrics: [
           {
             id: 'week',
             label: '7d',
+            subscriptionId: 'test',
             kind: 'window',
             state: 'available',
             usedPercent: 47,
@@ -209,7 +211,7 @@ describe('Usage panel', () => {
     await openGroupMenu('Fixture account')
     expect(refreshMenuItem('Fixture account').hasAttribute('disabled')).toBe(false)
     closeOpenMenu()
-    expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /Fixture account, Test 7d, 47%/ })).toBeDefined()
   })
   it('refreshes one account and leaves the other account menu with its own state (A4)', async () => {
     const api = createAppApiStub().usage,
@@ -296,7 +298,7 @@ describe('Usage panel', () => {
     expect(api.read).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     expect(
-      screen.getByRole('button', { name: /Fixture account, 7d, 47%, Age unknown/ }),
+      screen.getByRole('button', { name: /Fixture account, Test 7d, 47%, Age unknown/ }),
     ).toBeDefined()
   })
   it('opens an accessible empty state, contains focus, closes with Escape and restores trigger focus', async () => {
@@ -339,7 +341,9 @@ describe('Usage panel', () => {
     await waitFor(() => expect(api.read).toHaveBeenCalled())
     const trigger = screen.getByRole('button', { name: 'Usage quota' })
     fireEvent.click(trigger)
-    const row = await screen.findByRole('button', { name: /Fixture account, 7d, 47%, Age unknown/ })
+    const row = await screen.findByRole('button', {
+      name: /Fixture account, Test 7d, 47%, Age unknown/,
+    })
     row.focus()
     fireEvent.click(row)
     await waitFor(() =>
@@ -362,7 +366,7 @@ describe('Usage panel', () => {
     vi.mocked(api.refresh).mockResolvedValue(failed)
     fireEvent.click(trigger)
     const refreshedRow = await screen.findByRole('button', {
-      name: /Fixture account, 7d, 47%/,
+      name: /Fixture account, Test 7d, 47%/,
     })
     refreshedRow.focus()
     const menuButton = screen.getByRole('button', {
@@ -371,7 +375,7 @@ describe('Usage panel', () => {
     await act(async () => {
       await clickRefresh('Fixture account')
     })
-    expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%, Error/ })).toBe(
+    expect(screen.getByRole('button', { name: /Fixture account, Test 7d, 47%, Error/ })).toBe(
       refreshedRow,
     )
     expect(document.activeElement).toBe(menuButton)
@@ -410,17 +414,22 @@ describe('Usage panel', () => {
         ...sub.metrics[0],
         id: 'claude-5h',
         label: 'Claude 5h',
-        providerId: 'claude',
+        subscriptionId: 'claude',
         observedAt: new Date(now - 60_000).toISOString(),
       },
       {
         ...sub.metrics[0],
-        id: 'codex-weekly',
-        label: 'Codex weekly',
-        providerId: 'codex',
+        id: 'chatgpt-weekly',
+        label: 'ChatGPT weekly',
+        subscriptionId: 'chatgpt',
         observedAt: new Date(now - 3 * 3_600_000).toISOString(),
       },
-      { ...sub.metrics[0], id: 'other', label: 'Other' },
+      { ...sub.metrics[0], id: 'other', label: 'Test other' },
+    ]
+    sub.subscriptions = [
+      { id: 'claude', label: 'Claude' },
+      { id: 'chatgpt', label: 'ChatGPT' },
+      { id: 'test', label: 'Test' },
     ]
     vi.mocked(api.read).mockResolvedValue(s)
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
@@ -428,7 +437,7 @@ describe('Usage panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     const rows = await screen.findAllByRole('button', { name: /^Fixture account, / })
     const avatars = rows.map((row) => row.querySelector('.usage-avatar'))
-    expect(avatars.map((a) => a?.textContent)).toEqual(['CL', 'CO', 'TE'])
+    expect(avatars.map((a) => a?.textContent)).toEqual(['CL', 'CH', 'TE'])
     expect(avatars[0]?.classList.contains('usage-fresh')).toBe(true)
     expect(avatars[1]?.classList.contains('usage-stale')).toBe(true)
     expect(document.querySelector('.usage-source-note')).toBeNull()
@@ -493,13 +502,13 @@ describe('Usage panel', () => {
           ],
         },
         {
-          sourceId: 'codex',
+          sourceId: 'hub-chatgpt',
           status: 'rate_limited',
           errorCode: 'rate_limited',
           nextAllowedAt: deadline,
           windows: [
             {
-              metricId: 'codex-weekly',
+              metricId: 'chatgpt-weekly',
               status: 'rate_limited',
               errorCode: 'rate_limited',
               nextAllowedAt: deadline,
@@ -523,11 +532,15 @@ describe('Usage panel', () => {
     expect(screen.queryByText('claude: updated.')).toBeNull()
     expect(screen.queryByText('claude-5h: updated.')).toBeNull()
     const retained = screen.getByText(
-      'claude-weekly: failed (network error). Earlier value Stale - 2h 0m old.',
+      'Test in Fixture account: claude-weekly: failed (network error). Earlier value Stale - 2h 0m old.',
     )
     expect(retained).toBeDefined()
-    expect(screen.getByText('codex: rate limited. Retry in 5m.')).toBeDefined()
-    const missing = screen.getByText('codex-weekly: rate limited. Retry in 5m. No earlier value.')
+    expect(
+      screen.getByText('Fixture account: source hub-chatgpt: rate limited. Retry in 5m.'),
+    ).toBeDefined()
+    const missing = screen.getByText(
+      'Fixture account: chatgpt-weekly: rate limited. Retry in 5m. No earlier value.',
+    )
     expect(missing).toBeDefined()
     // The fixed text contains no provider payload and the rows keep their earlier values.
     expect(document.body.textContent).not.toContain('raw provider')
@@ -540,7 +553,9 @@ describe('Usage panel', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000)
     })
-    expect(screen.getByText(/claude-weekly: failed \(network error\)/)).toBeDefined()
+    expect(
+      screen.getByText(/Test in Fixture account: claude-weekly: failed \(network error\)/),
+    ).toBeDefined()
     expect(screen.getByRole('status').textContent).toContain(
       'Fixture account refresh partially completed',
     )
@@ -580,7 +595,7 @@ describe('Usage panel', () => {
       'Fixture account refresh partially completed',
     )
     expect(
-      screen.getByText('claude-weekly: failed (network error). No earlier value.'),
+      screen.getByText('Fixture account: claude-weekly: failed (network error). No earlier value.'),
     ).toBeDefined()
     // A second click inside the 60-second minimum reads no source and must not claim a partial one.
     await act(async () => {
@@ -593,23 +608,28 @@ describe('Usage panel', () => {
     )
     // The stored per-source detail from the first attempt remains visible.
     expect(
-      screen.getByText('claude-weekly: failed (network error). No earlier value.'),
+      screen.getByText('Fixture account: claude-weekly: failed (network error). No earlier value.'),
     ).toBeDefined()
   })
-  it('groups an aggregating account by agent with one refresh menu per agent (A2-A5)', async () => {
+  it('groups an account by declared subscription labels in report order with one menu each (A2-A5, U11)', async () => {
     const api = createAppApiStub().usage,
       s = snapshot(),
       sub = s.connections[0].subscription
     if (!sub) throw new Error('Fixture subscription is missing')
     sub.metrics = [
-      { ...sub.metrics[0], id: 'claude-5h', label: 'Claude 5h', providerId: 'claude' },
-      { ...sub.metrics[0], id: 'codex-5h', label: 'Codex 5h', providerId: 'codex' },
-      { ...sub.metrics[0], id: 'claude-weekly', label: 'Claude weekly', providerId: 'claude' },
+      { ...sub.metrics[0], id: 'claude-5h', label: 'Claude 5h', subscriptionId: 'claude' },
+      { ...sub.metrics[0], id: 'chatgpt-5h', label: 'ChatGPT 5h', subscriptionId: 'chatgpt' },
+      { ...sub.metrics[0], id: 'claude-weekly', label: 'Claude weekly', subscriptionId: 'claude' },
+    ]
+    // Report order comes from the declarations, not from the first metric.
+    sub.subscriptions = [
+      { id: 'chatgpt', label: 'ChatGPT' },
+      { id: 'claude', label: 'Claude' },
     ]
     const until = new Date(Date.now() + 30_000).toISOString()
-    s.connections[0].agents = [
-      { providerId: 'claude', nextRefreshAt: null },
-      { providerId: 'codex', nextRefreshAt: until },
+    s.connections[0].subscriptions = [
+      { subscriptionId: 'claude', nextRefreshAt: null },
+      { subscriptionId: 'chatgpt', nextRefreshAt: until },
     ]
     vi.mocked(api.read).mockResolvedValue(s)
     let finish: (s: UsageSnapshot) => void = () => {}
@@ -623,17 +643,17 @@ describe('Usage panel', () => {
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
     expect(screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual([
+      'ChatGPT',
       'Claude',
-      'Codex',
     ])
     await openGroupMenu('Claude in Fixture account')
     expect(refreshMenuItem('Claude in Fixture account').getAttribute('aria-description')).toBe(
       'Claude in Fixture account is ready to refresh.',
     )
     closeOpenMenu()
-    await openGroupMenu('Codex in Fixture account')
-    expect(refreshMenuItem('Codex in Fixture account').getAttribute('title')).toContain(
-      'Codex in Fixture account can refresh again in',
+    await openGroupMenu('ChatGPT in Fixture account')
+    expect(refreshMenuItem('ChatGPT in Fixture account').getAttribute('title')).toContain(
+      'ChatGPT in Fixture account can refresh again in',
     )
     closeOpenMenu()
     fireEvent.click(
@@ -642,7 +662,7 @@ describe('Usage panel', () => {
       }),
     )
     fireEvent.click(refreshMenuItem('Claude in Fixture account'))
-    expect(api.refresh).toHaveBeenCalledWith({ connectionId: 'account', providerId: 'claude' })
+    expect(api.refresh).toHaveBeenCalledWith({ connectionId: 'account', subscriptionId: 'claude' })
     expect(screen.getByRole('status').textContent).toBe('Refreshing Claude in Fixture account...')
     await openGroupMenu('Claude in Fixture account')
     expect(refreshMenuItem('Claude in Fixture account').hasAttribute('disabled')).toBe(true)
@@ -650,8 +670,8 @@ describe('Usage panel', () => {
       'Claude in Fixture account is refreshing.',
     )
     closeOpenMenu()
-    await openGroupMenu('Codex in Fixture account')
-    expect(refreshMenuItem('Codex in Fixture account').hasAttribute('disabled')).toBe(false)
+    await openGroupMenu('ChatGPT in Fixture account')
+    expect(refreshMenuItem('ChatGPT in Fixture account').hasAttribute('disabled')).toBe(false)
     closeOpenMenu()
     await openGroupMenu('Fixture account')
     expect(refreshMenuItem('Fixture account').hasAttribute('disabled')).toBe(false)
@@ -664,19 +684,30 @@ describe('Usage panel', () => {
     expect(refreshMenuItem('Claude in Fixture account').hasAttribute('disabled')).toBe(false)
     closeOpenMenu()
   })
-  it('shows agent headings without buttons when the adapter cannot refresh one agent', async () => {
+  it('shows the declared subscription heading without a menu when the adapter cannot refresh one subscription', async () => {
     const api = createAppApiStub().usage,
       s = snapshot(),
       sub = s.connections[0].subscription
     if (!sub) throw new Error('Fixture subscription is missing')
-    sub.metrics = [{ ...sub.metrics[0], id: 'claude-5h', label: 'Claude 5h', providerId: 'claude' }]
-    s.connections[0].agents = null
+    // An account whose report declares a subscription always shows its heading (U11).
+    sub.subscriptions = [{ id: 'opencode-go', label: 'OpenCode Go' }]
+    sub.metrics = [
+      {
+        ...sub.metrics[0],
+        id: 'opencode-go-5h',
+        label: 'OpenCode Go 5h',
+        subscriptionId: 'opencode-go',
+      },
+    ]
+    s.connections[0].subscriptions = null
     vi.mocked(api.read).mockResolvedValue(s)
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
-    expect(screen.getByRole('heading', { level: 4, name: 'Claude' })).toBeDefined()
-    expect(screen.queryByRole('button', { name: /Refresh options for Claude/ })).toBeNull()
+    expect(screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual([
+      'OpenCode Go',
+    ])
+    expect(screen.queryByRole('button', { name: /Refresh options for OpenCode Go/ })).toBeNull()
     expect(
       screen.getByRole('button', { name: 'Refresh options for Fixture account' }),
     ).toBeDefined()
@@ -707,22 +738,25 @@ describe('Usage panel', () => {
     expect(screen.getByRole('status').textContent).toContain(
       'Fixture account refresh failed; earlier values were kept.',
     )
-    expect(screen.getByText('claude: failed (network error).')).toBeDefined()
     expect(
-      screen.getByText('claude-weekly: failed (network error). No earlier value.'),
+      screen.getByText('Fixture account: source claude: failed (network error).'),
+    ).toBeDefined()
+    expect(
+      screen.getByText('Fixture account: claude-weekly: failed (network error). No earlier value.'),
     ).toBeDefined()
     // The existing row remains visible rather than becoming zero.
-    expect(screen.getByRole('button', { name: /Fixture account, 7d, 47%/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /Fixture account, Test 7d, 47%/ })).toBeDefined()
   })
-  it.each(['account', 'agent'] as const)(
+  it.each(['account', 'subscription'] as const)(
     'reports a failed %s refresh when its source has no windows',
     async (target) => {
       const api = createAppApiStub().usage,
         s = snapshot(),
         source = s.connections[0]
       if (!source.subscription) throw new Error('Fixture subscription is missing')
-      source.subscription.metrics[0].providerId = 'claude'
-      source.agents = [{ providerId: 'claude', nextRefreshAt: null }]
+      source.subscription.metrics[0].subscriptionId = 'claude'
+      source.subscription.subscriptions = [{ id: 'claude', label: 'Claude' }]
+      source.subscriptions = [{ subscriptionId: 'claude', nextRefreshAt: null }]
       source.refreshResult = {
         status: 'failed',
         requestId: 'empty-windows',
@@ -738,33 +772,39 @@ describe('Usage panel', () => {
       render(<UsageToolbar api={api} onConfigure={() => {}} />)
       await act(async () => {})
       fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
-      const label = target === 'agent' ? 'Claude in Fixture account' : 'Fixture account'
+      const label = target === 'subscription' ? 'Claude in Fixture account' : 'Fixture account'
       await act(async () => {
         await openGroupMenu(label)
         fireEvent.click(refreshMenuItem(label))
       })
       expect(api.refresh).toHaveBeenCalledWith({
         connectionId: 'account',
-        ...(target === 'agent' ? { providerId: 'claude' } : {}),
+        ...(target === 'subscription' ? { subscriptionId: 'claude' } : {}),
       })
       expect(screen.getByRole('status').textContent).toBe(
         `${label} refresh failed; earlier values were kept.`,
       )
-      expect(screen.getByText('opaque-source: failed (network error).')).toBeDefined()
+      expect(
+        screen.getByText('Fixture account: source opaque-source: failed (network error).'),
+      ).toBeDefined()
     },
   )
-  it('keeps an earlier agent failure in detail without attributing it to the next successful agent', async () => {
+  it('keeps an earlier subscription failure in detail without attributing it to the next successful subscription', async () => {
     const api = createAppApiStub().usage,
       s = snapshot(),
       source = s.connections[0]
     if (!source.subscription) throw new Error('Fixture subscription is missing')
     source.subscription.metrics = [
-      { ...source.subscription.metrics[0], id: 'claude-5h', providerId: 'claude' },
-      { ...source.subscription.metrics[0], id: 'codex-5h', providerId: 'codex' },
+      { ...source.subscription.metrics[0], id: 'claude-5h', subscriptionId: 'claude' },
+      { ...source.subscription.metrics[0], id: 'chatgpt-5h', subscriptionId: 'chatgpt' },
     ]
-    source.agents = [
-      { providerId: 'claude', nextRefreshAt: null },
-      { providerId: 'codex', nextRefreshAt: null },
+    source.subscription.subscriptions = [
+      { id: 'claude', label: 'Claude' },
+      { id: 'chatgpt', label: 'ChatGPT' },
+    ]
+    source.subscriptions = [
+      { subscriptionId: 'claude', nextRefreshAt: null },
+      { subscriptionId: 'chatgpt', nextRefreshAt: null },
     ]
     const failed: UsageRefreshResult = {
       status: 'failed',
@@ -778,9 +818,9 @@ describe('Usage panel', () => {
       reportId: 'report-2',
       sources: [
         {
-          sourceId: 'hub-codex',
+          sourceId: 'hub-chatgpt',
           status: 'succeeded',
-          windows: [{ metricId: 'codex-5h', status: 'succeeded' }],
+          windows: [{ metricId: 'chatgpt-5h', status: 'succeeded' }],
         },
       ],
     }
@@ -812,11 +852,14 @@ describe('Usage panel', () => {
       'Claude in Fixture account refresh failed; earlier values were kept.',
     )
     await act(async () => {
-      await clickRefresh('Codex in Fixture account')
+      await clickRefresh('ChatGPT in Fixture account')
     })
-    expect(api.refresh).toHaveBeenLastCalledWith({ connectionId: 'account', providerId: 'codex' })
-    expect(screen.getByRole('status').textContent).toBe('Codex in Fixture account refreshed.')
-    expect(screen.getByText('hub-claude: failed.')).toBeDefined()
+    expect(api.refresh).toHaveBeenLastCalledWith({
+      connectionId: 'account',
+      subscriptionId: 'chatgpt',
+    })
+    expect(screen.getByRole('status').textContent).toBe('ChatGPT in Fixture account refreshed.')
+    expect(screen.getByText('Fixture account: source hub-claude: failed.')).toBeDefined()
   })
   it('opens the group menu by right-click and keyboard, then restores focus on Escape', async () => {
     const api = createAppApiStub().usage,
@@ -873,11 +916,11 @@ describe('Usage panel', () => {
     expect(body?.textContent).toContain('Export failed.')
     expect(body?.textContent).toContain('Request failed')
   })
-  it('shows a disabled reason for a known empty or unlisted refresh agent', async () => {
+  it('shows a disabled reason for a known empty or unlisted refresh subscription', async () => {
     vi.useFakeTimers()
     const api = createAppApiStub().usage,
       s = snapshot()
-    s.connections[0].agents = []
+    s.connections[0].subscriptions = []
     vi.mocked(api.read).mockResolvedValue(s)
     render(<UsageToolbar api={api} onConfigure={() => {}} />)
     await act(async () => {})
@@ -887,17 +930,18 @@ describe('Usage panel', () => {
     expect(screen.getByRole('menuitem').hasAttribute('disabled')).toBe(true)
     closeOpenMenu()
 
-    s.connections[0].agents = [{ providerId: 'codex', nextRefreshAt: null }]
-    s.connections[0].subscription?.metrics.forEach((metric) => {
-      metric.providerId = 'claude'
-    })
+    s.connections[0].subscriptions = [{ subscriptionId: 'chatgpt', nextRefreshAt: null }]
+    const report = s.connections[0].subscription
+    if (!report) throw new Error('Fixture subscription is missing')
+    report.subscriptions = [{ id: 'claude', label: 'Claude' }]
+    for (const metric of report.metrics) metric.subscriptionId = 'claude'
     vi.mocked(api.read).mockResolvedValue(structuredClone(s))
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000)
     })
     await openGroupMenu('Claude in Fixture account')
     expect(screen.getByRole('menuitem').textContent).toBe(
-      'No refresh source for this agent in the Hub',
+      'No refresh source for this subscription in the Hub',
     )
     expect(screen.getByRole('menuitem').hasAttribute('disabled')).toBe(true)
   })
@@ -964,5 +1008,181 @@ describe('Usage panel', () => {
       await vi.advanceTimersByTimeAsync(5_000)
     })
     expect(screen.getByRole('region', { name: 'Usage errors' })).toBeDefined()
+  })
+  it('shows four declared hub subscriptions, refreshes one and pins its row (U4, U11, acceptance 1)', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot(),
+      source = s.connections[0]
+    source.connection = { ...source.connection, label: 'PDH', serviceId: 'personal-data-hub' }
+    const declared = [
+      { id: 'chatgpt', label: 'ChatGPT' },
+      { id: 'claude', label: 'Claude' },
+      { id: 'google-ai', label: 'Google AI' },
+      { id: 'opencode-go', label: 'OpenCode Go' },
+    ]
+    const base = {
+      kind: 'window' as const,
+      state: 'available' as const,
+      usedPercent: 20,
+      observedAt: null,
+    }
+    source.subscription = {
+      id: 'account',
+      serviceId: 'personal-data-hub',
+      label: 'PDH',
+      sourceKind: 'api',
+      status: 'available',
+      subscriptions: declared,
+      // Metrics arrive in another order; headings follow the declarations.
+      metrics: [...declared].reverse().map((item) => ({
+        ...base,
+        id: `${item.id}-5h`,
+        label: `${item.label} 5h`,
+        subscriptionId: item.id,
+      })),
+    }
+    // Google AI has no refresh source in the Hub.
+    source.subscriptions = [
+      { subscriptionId: 'chatgpt', nextRefreshAt: null },
+      { subscriptionId: 'claude', nextRefreshAt: null },
+      { subscriptionId: 'opencode-go', nextRefreshAt: null },
+    ]
+    vi.mocked(api.read).mockResolvedValue(s)
+    vi.mocked(api.refresh).mockResolvedValue({ ...s, refresh: { read: ['account'], skipped: [] } })
+    vi.mocked(api.getSettings).mockResolvedValue({
+      connections: [],
+      pin: null,
+      export: { enabled: false, path: null },
+    })
+    vi.mocked(api.saveSettings).mockImplementation(async (settings) => settings)
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    expect(screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual([
+      'ChatGPT',
+      'Claude',
+      'Google AI',
+      'OpenCode Go',
+    ])
+    expect(screen.queryByRole('heading', { name: 'OpenCode' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Opencode-go' })).toBeNull()
+    await openGroupMenu('Google AI in PDH')
+    expect(screen.getByRole('menuitem').textContent).toBe(
+      'No refresh source for this subscription in the Hub',
+    )
+    closeOpenMenu()
+    await act(async () => {
+      await clickRefresh('OpenCode Go in PDH')
+    })
+    expect(api.refresh).toHaveBeenCalledWith({
+      connectionId: 'account',
+      subscriptionId: 'opencode-go',
+    })
+    expect(screen.getByRole('status').textContent).toBe('OpenCode Go in PDH refreshed.')
+    expect(document.body.textContent).not.toMatch(/agent/i)
+    // After the pin is saved, the next read reports it.
+    vi.mocked(api.read).mockResolvedValue({
+      ...s,
+      pin: { connectionId: 'account', metricId: 'opencode-go-5h' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^PDH, OpenCode Go 5h, 20%/ }))
+    await waitFor(() =>
+      expect(api.saveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ pin: { connectionId: 'account', metricId: 'opencode-go-5h' } }),
+      ),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^Usage quota: PDH; OpenCode Go 5h; 20%/ }),
+      ).toBeDefined(),
+    )
+    const pinned = screen.getByRole('button', { name: /^Usage quota: PDH; OpenCode Go 5h/ })
+    expect(pinned.querySelector('.usage-avatar')?.textContent).toBe('OP')
+    expect(pinned.textContent).toContain('OpenCode Go 5h')
+  })
+  it('names the subscription and account of a failed window in the error console (U11)', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot(),
+      source = s.connections[0]
+    if (!source.subscription) throw new Error('Fixture subscription is missing')
+    source.subscription.subscriptions = [{ id: 'opencode-go', label: 'OpenCode Go' }]
+    source.subscription.metrics = [
+      {
+        ...source.subscription.metrics[0],
+        id: 'opencode-go-5h',
+        label: 'OpenCode Go 5h',
+        subscriptionId: 'opencode-go',
+      },
+    ]
+    source.refreshResult = {
+      status: 'failed',
+      requestId: 'request-1',
+      sources: [
+        {
+          sourceId: 'opencode',
+          status: 'failed',
+          errorCode: 'network',
+          windows: [{ metricId: 'opencode-go-5h', status: 'failed', errorCode: 'network' }],
+        },
+      ],
+    }
+    vi.mocked(api.read).mockResolvedValue(s)
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    const body = document.querySelector('.usage-errors-body')
+    expect(body?.textContent).toContain(
+      'OpenCode Go in Fixture account: source opencode: failed (network error).',
+    )
+    expect(body?.textContent).toContain(
+      'OpenCode Go in Fixture account: opencode-go-5h: failed (network error).',
+    )
+  })
+  it.each([
+    ['available', 'No usage data yet'],
+    ['unavailable', 'Unavailable'],
+  ] as const)(
+    'shows the %s empty message when declared subscriptions have no metrics (rule 11)',
+    async (status, message) => {
+      const api = createAppApiStub().usage,
+        s = snapshot(),
+        sub = s.connections[0].subscription
+      if (!sub) throw new Error('Fixture subscription is missing')
+      sub.status = status
+      sub.subscriptions = [{ id: 'chatgpt', label: 'ChatGPT' }]
+      sub.metrics = []
+      vi.mocked(api.read).mockResolvedValue(s)
+      render(<UsageToolbar api={api} onConfigure={() => {}} />)
+      await act(async () => {})
+      fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+      expect(screen.getByText(message)).toBeDefined()
+      expect(screen.queryAllByRole('heading', { level: 4 })).toEqual([])
+    },
+  )
+  it('places an undeclared retained subscription after the declared ones under its raw id (U4, U11)', async () => {
+    const api = createAppApiStub().usage,
+      s = snapshot(),
+      sub = s.connections[0].subscription
+    if (!sub) throw new Error('Fixture subscription is missing')
+    sub.subscriptions = [{ id: 'chatgpt', label: 'ChatGPT' }]
+    // The undeclared metric appears first, yet its group follows the declared subscriptions.
+    sub.metrics = [
+      { ...sub.metrics[0], id: 'legacy-5h', label: '5h', subscriptionId: 'legacy-plan' },
+      { ...sub.metrics[0], id: 'chatgpt-5h', label: 'ChatGPT 5h', subscriptionId: 'chatgpt' },
+    ]
+    vi.mocked(api.read).mockResolvedValue(s)
+    render(<UsageToolbar api={api} onConfigure={() => {}} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Usage quota' }))
+    expect(screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual([
+      'ChatGPT',
+      'legacy-plan',
+    ])
+    expect(
+      screen.getByRole('button', { name: /^Fixture account, legacy-plan 5h, 47%, / }),
+    ).toBeDefined()
+    expect(
+      screen.getByRole('button', { name: /^Fixture account, ChatGPT 5h, 47%, / }),
+    ).toBeDefined()
   })
 })

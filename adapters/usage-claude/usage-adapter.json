@@ -1,10 +1,10 @@
 {
   "id": "claude-code-usage",
   "name": "Claude Code",
-  "providerId": "claude",
+  "serviceId": "claude-code",
   "summary": "Claude plan limits (5-hour and 7-day windows) read with the Claude Code sign-in.",
   "experimental": true,
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "invocation": { "command": "node", "args": ["index.cjs"] },
   "sourceKind": "api",
   "capabilities": ["window"],

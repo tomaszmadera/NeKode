@@ -1,17 +1,19 @@
 {
-  "schemaVersion": 1,
-  "subscriptions": [
+  "schemaVersion": 2,
+  "reports": [
     {
       "id": "example-account",
-      "providerId": "example",
-      "label": "Example subscription (fixture)",
+      "serviceId": "example-service",
+      "label": "Example account (fixture)",
       "sourceKind": "file",
       "status": "available",
       "collectedAt": "2026-10-20T12:00:00Z",
+      "subscriptions": [{ "id": "example-plan", "label": "Example plan" }],
       "metrics": [
         {
           "id": "weekly",
-          "label": "7d",
+          "label": "Example plan 7d",
+          "subscriptionId": "example-plan",
           "kind": "window",
           "observedAt": null,
           "state": "available",

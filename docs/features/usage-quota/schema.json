@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "NeKode usage observations version 1",
+  "title": "NeKode usage reports version 2",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "subscriptions"],
+  "required": ["schemaVersion", "reports"],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "subscriptions": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/subscription" } }
+    "schemaVersion": { "const": 2 },
+    "reports": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/report" } }
   },
   "$defs": {
     "text": { "type": "string", "minLength": 1, "maxLength": 256 },
@@ -14,19 +14,28 @@
     "number": { "type": ["number", "null"] },
     "nonnegative": { "type": ["number", "null"], "minimum": 0 },
     "optionalText": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-    "subscription": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+    "report": {
+      "description": "One adapter result bound to one configured connection. Every metric subscriptionId must be declared in subscriptions, and every metric label must contain its subscription label.",
       "type": "object", "additionalProperties": false,
-      "required": ["id", "providerId", "label", "sourceKind", "status", "metrics"],
+      "required": ["id", "serviceId", "label", "sourceKind", "status", "subscriptions", "metrics"],
       "properties": {
-        "id": { "$ref": "#/$defs/text" }, "providerId": { "$ref": "#/$defs/text" }, "label": { "$ref": "#/$defs/text" },
+        "id": { "$ref": "#/$defs/text" }, "serviceId": { "$ref": "#/$defs/id" }, "label": { "$ref": "#/$defs/text" },
         "sourceKind": { "enum": ["api", "cli", "file"] }, "status": { "enum": ["available", "unavailable", "error"] },
         "collectedAt": { "$ref": "#/$defs/time" },
+        "subscriptions": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/subscription" } },
         "metrics": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/metric" } }
       }
     },
+    "subscription": {
+      "description": "Label metadata of one subscription, unique by id within its report, in display order.",
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "label": { "$ref": "#/$defs/text" } }
+    },
     "metric": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "label", "kind", "observedAt", "state"],
+      "required": ["id", "label", "kind", "observedAt", "state", "subscriptionId"],
       "properties": {
         "id": { "$ref": "#/$defs/text" }, "label": { "$ref": "#/$defs/text" },
         "kind": { "enum": ["window", "credits", "balance"] },
@@ -38,7 +47,7 @@
         "limit": { "$ref": "#/$defs/number" }, "amount": { "$ref": "#/$defs/number" },
         "unit": { "$ref": "#/$defs/optionalText" }, "bucketId": { "$ref": "#/$defs/optionalText" },
         "reason": { "$ref": "#/$defs/optionalText" }, "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
-        "providerId": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" }
+        "subscriptionId": { "$ref": "#/$defs/id" }
       },
       "allOf": [
         {

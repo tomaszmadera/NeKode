@@ -1,9 +1,14 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   parseUsageDocument,
+  parseUsageRefreshableSubscriptions,
+  parseUsageRefreshRequest,
   parseUsageRefreshResult,
-  type UsageDocument,
+  parseUsageSettings,
   type UsageMetric,
+  type UsageReportDocument,
   usageFreshness,
   usagePercent,
   usageSlices,
@@ -12,7 +17,8 @@ import {
 const NOW = Date.parse('2026-10-20T12:00:00Z')
 const windowMetric = (patch: Partial<UsageMetric> = {}): UsageMetric => ({
   id: 'week',
-  label: '7d',
+  label: 'Fixture plan 7d',
+  subscriptionId: 'fixture-plan',
   kind: 'window',
   observedAt: '2026-10-20T12:00:00Z',
   state: 'available',
@@ -21,16 +27,17 @@ const windowMetric = (patch: Partial<UsageMetric> = {}): UsageMetric => ({
   resetsAt: '2026-10-25T12:00:00Z',
   ...patch,
 })
-function document(metric = windowMetric()): unknown {
+function document(metric: unknown = windowMetric()): unknown {
   return {
-    schemaVersion: 1,
-    subscriptions: [
+    schemaVersion: 2,
+    reports: [
       {
         id: 'account',
-        providerId: 'test',
+        serviceId: 'test',
         label: 'Fixture account',
         sourceKind: 'file',
         status: 'available',
+        subscriptions: [{ id: 'fixture-plan', label: 'Fixture plan' }],
         metrics: [metric],
       },
     ],
@@ -52,8 +59,8 @@ describe('normalized usage observations', () => {
       document(windowMetric({ observedAt: null, collectedAt: '2026-10-20T12:00:00Z' })),
       NOW,
     )
-    expect(usagePercent(doc.subscriptions[0].metrics[0])).toBe(125)
-    expect(usageFreshness(doc.subscriptions[0].metrics[0], NOW)).toBe('Age unknown')
+    expect(usagePercent(doc.reports[0].metrics[0])).toBe(125)
+    expect(usageFreshness(doc.reports[0].metrics[0], NOW)).toBe('Age unknown')
   })
   it.each([NaN, Infinity, -1])('rejects invalid percentages %s', (percent) => {
     expect(() =>
@@ -63,29 +70,17 @@ describe('normalized usage observations', () => {
   it('rejects duplicates, unsupported versions, future observations and reversed periods atomically', () => {
     const d = document() as {
       schemaVersion: number
-      subscriptions: Array<{ metrics: UsageMetric[] }>
+      reports: Array<{ metrics: UsageMetric[] }>
     }
-    d.subscriptions[0].metrics.push(windowMetric())
+    d.reports[0].metrics.push(windowMetric())
     expect(() => parseUsageDocument(d, NOW)).toThrow('Duplicate')
-    expect(() => parseUsageDocument({ schemaVersion: 2, subscriptions: [] }, NOW)).toThrow(
-      'version',
-    )
+    expect(() => parseUsageDocument({ schemaVersion: 3, reports: [] }, NOW)).toThrow('version')
     expect(() =>
       parseUsageDocument(document(windowMetric({ observedAt: '2026-10-20T12:01:01Z' })), NOW),
     ).toThrow('future')
     expect(() =>
       parseUsageDocument(document(windowMetric({ resetsAt: '2026-10-17T00:00:00Z' })), NOW),
     ).toThrow('end')
-  })
-  it('keeps an optional per-metric provider id and rejects a malformed one', () => {
-    const doc = parseUsageDocument(document(windowMetric({ providerId: 'claude' })), NOW)
-    expect(doc.subscriptions[0].metrics[0].providerId).toBe('claude')
-    expect(
-      parseUsageDocument(document(windowMetric()), NOW).subscriptions[0].metrics[0],
-    ).not.toHaveProperty('providerId')
-    expect(() =>
-      parseUsageDocument(document(windowMetric({ providerId: 'Claude!' })), NOW),
-    ).toThrow('provider id')
   })
   it('expires a window without advancing or resetting the value', () => {
     const m = windowMetric()
@@ -134,17 +129,18 @@ describe('partial refresh result contract', () => {
   const metric = (id: string): UsageMetric => ({
     ...windowMetric({ observedAt: '2026-10-20T12:00:00Z' }),
     id,
-    label: id,
+    label: `Fixture plan ${id}`,
   })
-  const document = (metrics: UsageMetric[]): UsageDocument => ({
-    schemaVersion: 1,
-    subscriptions: [
+  const document = (metrics: UsageMetric[]): UsageReportDocument => ({
+    schemaVersion: 2,
+    reports: [
       {
         id: 'account',
-        providerId: 'test',
+        serviceId: 'test',
         label: 'Fixture account',
         sourceKind: 'api',
         status: 'available',
+        subscriptions: [{ id: 'fixture-plan', label: 'Fixture plan' }],
         metrics,
       },
     ],
@@ -330,5 +326,229 @@ describe('partial refresh result contract', () => {
         NOW,
       ),
     ).toThrow('1 to 256')
+  })
+})
+
+describe('usage document schema 2 (NEKODE-191 U2-U5)', () => {
+  const report = (patch: Record<string, unknown> = {}) => ({
+    id: 'hub',
+    serviceId: 'personal-data-hub',
+    label: 'Hub',
+    sourceKind: 'api',
+    status: 'available',
+    subscriptions: [
+      { id: 'chatgpt', label: 'ChatGPT' },
+      { id: 'opencode-go', label: 'OpenCode Go' },
+    ],
+    metrics: [
+      windowMetric({ id: 'chatgpt-weekly', label: 'ChatGPT weekly', subscriptionId: 'chatgpt' }),
+      windowMetric({
+        id: 'opencode-go-5h',
+        label: 'OpenCode Go 5h',
+        subscriptionId: 'opencode-go',
+      }),
+    ],
+    ...patch,
+  })
+  const parse = (patch: Record<string, unknown> = {}) =>
+    parseUsageDocument({ schemaVersion: 2, reports: [report(patch)] }, NOW)
+
+  it('parses the documented example', () => {
+    const example = JSON.parse(
+      readFileSync(resolve(__dirname, '../../../docs/features/usage-quota/example.json'), 'utf8'),
+    )
+    expect(parseUsageDocument(example, NOW).reports[0].subscriptions).toEqual([
+      { id: 'example-plan', label: 'Example plan' },
+    ])
+  })
+
+  it('parses reports with their declared subscriptions in order', () => {
+    const doc = parse()
+    expect(doc.schemaVersion).toBe(2)
+    expect(doc.reports[0]).toMatchObject({
+      id: 'hub',
+      serviceId: 'personal-data-hub',
+      subscriptions: [
+        { id: 'chatgpt', label: 'ChatGPT' },
+        { id: 'opencode-go', label: 'OpenCode Go' },
+      ],
+    })
+    expect(doc.reports[0].metrics.map((m) => m.subscriptionId)).toEqual(['chatgpt', 'opencode-go'])
+  })
+
+  it('rejects the schema 1 shape with subscriptions and providerId', () => {
+    expect(() =>
+      parseUsageDocument(
+        {
+          schemaVersion: 1,
+          subscriptions: [
+            {
+              id: 'account',
+              providerId: 'test',
+              label: 'Fixture account',
+              sourceKind: 'api',
+              status: 'available',
+              metrics: [],
+            },
+          ],
+        },
+        NOW,
+      ),
+    ).toThrow()
+    expect(() => parseUsageDocument({ schemaVersion: 2, subscriptions: [] }, NOW)).toThrow()
+  })
+
+  it('requires a service id and rejects a report providerId', () => {
+    const { serviceId: _serviceId, ...withoutService } = report()
+    expect(() => parseUsageDocument({ schemaVersion: 2, reports: [withoutService] }, NOW)).toThrow(
+      'service id',
+    )
+    expect(() => parse({ serviceId: 'Not Valid' })).toThrow('service id')
+    expect(() => parse({ providerId: 'personal-data-hub' })).toThrow('Unexpected')
+  })
+
+  it('requires every metric subscription to be declared', () => {
+    expect(() =>
+      parse({
+        metrics: [windowMetric({ id: 'claude-5h', label: 'Claude 5h', subscriptionId: 'claude' })],
+      }),
+    ).toThrow('not declared')
+    const { subscriptionId: _id, ...withoutSubscription } = windowMetric({ label: 'ChatGPT 7d' })
+    expect(() => parse({ metrics: [withoutSubscription] })).toThrow('subscription')
+  })
+
+  it('checks only structure for NeKode merged data with strict: false (U4)', () => {
+    const merged = {
+      schemaVersion: 2,
+      reports: [
+        report({
+          metrics: [
+            windowMetric({
+              id: 'opencode-go-5h',
+              label: 'Opencode Go 5h',
+              subscriptionId: 'opencode-go',
+            }),
+          ],
+        }),
+      ],
+    }
+    expect(() => parseUsageDocument(merged, NOW)).toThrow('name its subscription')
+    expect(parseUsageDocument(merged, NOW, { strict: false }).reports[0].metrics[0].label).toBe(
+      'Opencode Go 5h',
+    )
+    const broken = structuredClone(merged)
+    broken.reports[0].metrics[0].subscriptionId = 'Not Valid'
+    expect(() => parseUsageDocument(broken, NOW, { strict: false })).toThrow('subscription id')
+  })
+
+  it('rejects a metric providerId or an agent field', () => {
+    expect(() =>
+      parse({
+        metrics: [
+          {
+            ...windowMetric({ label: 'ChatGPT 7d', subscriptionId: 'chatgpt' }),
+            providerId: 'chatgpt',
+          },
+        ],
+      }),
+    ).toThrow('removed field')
+    expect(() =>
+      parse({
+        metrics: [
+          { ...windowMetric({ label: 'ChatGPT 7d', subscriptionId: 'chatgpt' }), agent: 'codex' },
+        ],
+      }),
+    ).toThrow('Unexpected')
+  })
+
+  it('rejects duplicate, malformed, unlabelled and overlong subscription declarations', () => {
+    expect(() =>
+      parse({
+        subscriptions: [
+          { id: 'chatgpt', label: 'ChatGPT' },
+          { id: 'chatgpt', label: 'ChatGPT again' },
+          { id: 'opencode-go', label: 'OpenCode Go' },
+        ],
+      }),
+    ).toThrow('Duplicate usage subscription id')
+    expect(() =>
+      parse({ subscriptions: [{ id: 'ChatGPT', label: 'ChatGPT' }], metrics: [] }),
+    ).toThrow('subscription id')
+    expect(() => parse({ subscriptions: [{ id: 'chatgpt' }], metrics: [] })).toThrow('label')
+    expect(() =>
+      parse({ subscriptions: [{ id: 'chatgpt', label: 'x'.repeat(257) }], metrics: [] }),
+    ).toThrow('label')
+    expect(() =>
+      parse({ subscriptions: [{ id: 'chatgpt', label: 'ChatGPT', extra: 1 }], metrics: [] }),
+    ).toThrow('Unexpected')
+    expect(() =>
+      parse({
+        subscriptions: Array.from({ length: 51 }, (_, i) => ({ id: `s-${i}`, label: `S ${i}` })),
+        metrics: [],
+      }),
+    ).toThrow('subscriptions')
+  })
+
+  it('rejects a metric label that does not name its subscription', () => {
+    expect(() =>
+      parse({
+        metrics: [windowMetric({ id: 'weekly', label: 'Weekly', subscriptionId: 'chatgpt' })],
+      }),
+    ).toThrow('name its subscription')
+  })
+})
+
+describe('usage refresh subscriptions (NEKODE-191 U6-U7)', () => {
+  it('parses a refresh request with one subscription and rejects providerId', () => {
+    expect(
+      parseUsageRefreshRequest({ connectionId: 'hub', subscriptionId: 'opencode-go' }),
+    ).toEqual({ connectionId: 'hub', subscriptionId: 'opencode-go' })
+    expect(parseUsageRefreshRequest({ connectionId: 'hub' })).toEqual({ connectionId: 'hub' })
+    for (const bad of [
+      { connectionId: 'hub', providerId: 'claude' },
+      { connectionId: 'hub', subscriptionId: 'Not Valid' },
+      { connectionId: 'hub', subscriptionId: 7 },
+    ])
+      expect(() => parseUsageRefreshRequest(bad)).toThrow()
+  })
+
+  it('bounds refreshable subscription lists to 50 unique ids', () => {
+    expect(parseUsageRefreshableSubscriptions(['chatgpt', 'opencode-go'])).toEqual([
+      'chatgpt',
+      'opencode-go',
+    ])
+    expect(parseUsageRefreshableSubscriptions([])).toEqual([])
+    for (const bad of [
+      ['chatgpt', 'chatgpt'],
+      ['ChatGPT'],
+      Array.from({ length: 51 }, (_, i) => `s-${i}`),
+      'chatgpt',
+    ])
+      expect(() => parseUsageRefreshableSubscriptions(bad)).toThrow('refreshable subscriptions')
+  })
+
+  it('stores connections with serviceId and rejects providerId at the settings boundary', () => {
+    const settings = {
+      connections: [
+        {
+          id: 'hub',
+          label: 'Hub',
+          serviceId: 'personal-data-hub',
+          adapterId: 'personal-data-hub',
+          enabled: true,
+          config: {},
+        },
+      ],
+      pin: null,
+      export: { enabled: false, path: null },
+    }
+    expect(parseUsageSettings(settings).connections[0].serviceId).toBe('personal-data-hub')
+    const { serviceId: _s, ...legacy } = settings.connections[0]
+    expect(() =>
+      parseUsageSettings({
+        ...settings,
+        connections: [{ ...legacy, providerId: 'personal-data-hub' }],
+      }),
+    ).toThrow('Unexpected')
   })
 })

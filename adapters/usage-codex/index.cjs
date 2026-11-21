@@ -1,4 +1,5 @@
-// Experimental NeKode usage adapter for the Codex CLI app-server (protocol version 2).
+// Experimental NeKode usage adapter for the Codex CLI app-server (protocol version 3).
+// The service is the Codex CLI (`codex-cli`); the subscription it reports is ChatGPT (`chatgpt`).
 //
 // One read: check `codex --version`, start `codex app-server` over stdio JSONL, send
 // `initialize`, `initialized`, `account/read` (refreshToken false) and
@@ -19,7 +20,8 @@ const ALLOWED_METHODS = new Set([
   'account/read',
   'account/rateLimits/read',
 ])
-const PROVIDER_ID = 'codex'
+const SERVICE_ID = 'codex-cli'
+const SUBSCRIPTION = { id: 'chatgpt', label: 'ChatGPT' }
 const MAX_LINE_BYTES = 1024 * 1024
 const MAX_BUCKETS = 25
 /**
@@ -189,7 +191,9 @@ function mapRateLimits(result, observedAt) {
     if (!text(limitId, 64) || !/^[A-Za-z0-9._:-]+$/.test(limitId))
       throw new Failure('protocol', 'Codex returned an invalid rate-limit bucket id.')
     const name = text(snapshot.limitName, 100) ? snapshot.limitName.trim() : null
-    const prefix = name ? `${name} ` : limitId === 'codex' ? '' : `${limitId} `
+    // NEKODE-191 U4/U12: every label names the subscription, so a pinned row stays unambiguous.
+    const bucket = name ? `${name} ` : limitId === 'codex' ? '' : `${limitId} `
+    const prefix = `${SUBSCRIPTION.label} ${bucket}`
     for (const slot of ['primary', 'secondary']) {
       const window = snapshot[slot]
       const id = `${limitId}.${slot}`
@@ -197,6 +201,7 @@ function mapRateLimits(result, observedAt) {
         metrics.push({
           id,
           label: `${prefix}${slot} window`,
+          subscriptionId: SUBSCRIPTION.id,
           kind: 'window',
           observedAt,
           collectedAt: observedAt,
@@ -221,6 +226,7 @@ function mapRateLimits(result, observedAt) {
       metrics.push({
         id,
         label: `${prefix}${seconds === null ? `${slot} window` : duration(minutes)}`,
+        subscriptionId: SUBSCRIPTION.id,
         kind: 'window',
         observedAt,
         collectedAt: observedAt,
@@ -353,14 +359,15 @@ async function collect({
     return {
       version,
       document: {
-        schemaVersion: 1,
-        subscriptions: [
+        schemaVersion: 2,
+        reports: [
           {
             id: connectionId,
-            providerId: PROVIDER_ID,
-            label: 'Codex',
+            serviceId: SERVICE_ID,
+            label: 'Codex CLI',
             sourceKind: 'cli',
             status: metrics.some((m) => m.state === 'available') ? 'available' : 'unavailable',
+            subscriptions: [SUBSCRIPTION],
             metrics,
           },
         ],
@@ -395,20 +402,20 @@ function main() {
       } catch {
         throw new Failure('protocol', 'Invalid usage adapter request.')
       }
-      // Protocol 2 (usage-quota spec L2): every read already asks the provider during this
+      // Protocol 3 (usage-quota spec L2, U1): every read already asks the provider during this
       // request, so the scheduled `read` and the manual live `refresh` share one path.
-      if (request.protocolVersion !== 2 || !['read', 'refresh'].includes(request.action))
+      if (request.protocolVersion !== 3 || !['read', 'refresh'].includes(request.action))
         throw new Failure('protocol', 'Unsupported usage adapter request.')
       const { document } = await collect({
         connectionId: request.params?.connectionId,
         config: request.config,
       })
-      respond({ protocolVersion: 2, ok: true, data: document }, 0)
+      respond({ protocolVersion: 3, ok: true, data: document }, 0)
     } catch (error) {
       const known = error instanceof Failure
       respond(
         {
-          protocolVersion: 2,
+          protocolVersion: 3,
           ok: false,
           error: {
             code: known ? error.code : 'protocol',

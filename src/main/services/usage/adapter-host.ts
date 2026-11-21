@@ -3,44 +3,52 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
   parseUsageDocument,
-  parseUsageRefreshableProviders,
+  parseUsageRefreshableSubscriptions,
   parseUsageRefreshResult,
+  USAGE_ID_PATTERN,
   USAGE_MAX_BYTES,
-  USAGE_PROVIDER_ID,
   USAGE_REFRESH_OPTIONS,
   USAGE_REMOVED_ADAPTER_IDS,
   type UsageAdapter,
   type UsageAdapterAction,
-  type UsageDocument,
   type UsageErrorCode,
   type UsageRefreshResult,
+  type UsageReportDocument,
   usageObject,
 } from '@shared/contracts/usage-contract'
 import { AppError, isAppErrorCode } from '@shared/ipc-error'
 
-/** Adapter protocol version (spec L1): version 2 requires the live `refresh` action. */
-export const USAGE_PROTOCOL_VERSION = 2
+/**
+ * Adapter protocol version (spec L1, NEKODE-191 U1): version 3 reports subscriptions in document
+ * schema 2 and keeps the live `refresh` action of version 2. No earlier version is accepted.
+ */
+export const USAGE_PROTOCOL_VERSION = 3
 /** Manual-refresh capability exchanged in `params.capabilities` (PDH-13 partial contract). */
 export const USAGE_PARTIAL_CAPABILITY = 'partial-refresh-v1'
+const PROTOCOL_2 =
+  'This adapter uses protocol version 2. Update it to protocol version 3, which reports subscriptions.'
 const UNSUPPORTED_PROTOCOL =
-  'This adapter uses an unsupported protocol version. Update it to protocol version 2, which requires live refresh.'
+  'This adapter uses an unsupported protocol version. Update it to protocol version 3, which reports subscriptions.'
 const INVALID_MANIFEST =
-  'Invalid usage-adapter.json. Check protocol version 2 and required manifest fields.'
-export type UsageAdapterResult = UsageDocument & {
+  'Invalid usage-adapter.json. Check protocol version 3 and required manifest fields.'
+export type UsageAdapterResult = UsageReportDocument & {
   /** Non-enumerable so the parsed document keeps its strict schema shape. */
   readonly refresh: UsageRefreshResult | null
-  /** Known agents with a real refresh source (spec R1); null when the adapter omitted the field. */
-  readonly refreshableProviders: string[] | null
+  /**
+   * Known subscriptions with a real refresh source (spec R1, U2); null when the adapter omitted
+   * the field.
+   */
+  readonly refreshableSubscriptions: string[] | null
 }
 
 /**
  * Spec L3: every available metric of a `refresh` response must be observed no earlier than the
  * start of the request, compared at whole-second precision. `unavailable` metrics are exempt.
  */
-export function assertLiveRefresh(document: UsageDocument, startedAt: number): void {
+export function assertLiveRefresh(document: UsageReportDocument, startedAt: number): void {
   const start = Math.floor(startedAt / 1000)
-  for (const subscription of document.subscriptions)
-    for (const metric of subscription.metrics) {
+  for (const report of document.reports)
+    for (const metric of report.metrics) {
       if (metric.state !== 'available') continue
       if (!metric.observedAt || Math.floor(Date.parse(metric.observedAt) / 1000) < start)
         throw new AppError('protocol', 'Usage adapter did not return a live refresh.')
@@ -158,8 +166,10 @@ function readManifest(dir: string, name: string): UsageAdapter {
     if (file.length > 64 * 1024) throw new Error('manifest size')
     const m = usageObject(JSON.parse(file.toString('utf8')))
     if (m.protocolVersion !== USAGE_PROTOCOL_VERSION) {
-      // A declared other version gets the L1 message; a missing or malformed one stays invalid.
-      if (typeof m.protocolVersion === 'number') error = UNSUPPORTED_PROTOCOL
+      // U1: version 2 gets its own update message and no alias; another declared version gets the
+      // L1 message; a missing or malformed one stays invalid.
+      if (m.protocolVersion === 2) error = PROTOCOL_2
+      else if (typeof m.protocolVersion === 'number') error = UNSUPPORTED_PROTOCOL
       throw new Error('manifest protocol version')
     }
     const i = usageObject(m.invocation)
@@ -185,8 +195,10 @@ function readManifest(dir: string, name: string): UsageAdapter {
       !Array.isArray(m.configSchema) ||
       m.configSchema.length > 50 ||
       !bounded(m.description, 1024) ||
-      (m.providerId !== undefined &&
-        (typeof m.providerId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(m.providerId))) ||
+      // U5: the manifest names its service with `serviceId`; a `providerId` invalidates it.
+      Object.hasOwn(m, 'providerId') ||
+      (m.serviceId !== undefined &&
+        (typeof m.serviceId !== 'string' || !USAGE_ID_PATTERN.test(m.serviceId))) ||
       !bounded(m.summary, 160) ||
       (m.experimental !== undefined && typeof m.experimental !== 'boolean') ||
       // Spec A7: an unknown refresh option invalidates the manifest, like an unknown capability.
@@ -221,7 +233,7 @@ function readManifest(dir: string, name: string): UsageAdapter {
     return {
       id: m.id,
       name: m.name,
-      protocolVersion: 2,
+      protocolVersion: USAGE_PROTOCOL_VERSION,
       invocation: { command: i.command, args: i.args as string[] },
       sourceKind: m.sourceKind as UsageAdapter['sourceKind'],
       capabilities: m.capabilities as string[],
@@ -230,7 +242,7 @@ function readManifest(dir: string, name: string): UsageAdapter {
       ...(m.description === undefined ? {} : { description: m.description as string }),
       ...(actions ? { errorActions: actions } : {}),
       ...(reasons ? { errorReasons: reasons } : {}),
-      ...(m.providerId === undefined ? {} : { providerId: m.providerId as string }),
+      ...(m.serviceId === undefined ? {} : { serviceId: m.serviceId as string }),
       ...(m.summary === undefined ? {} : { summary: m.summary as string }),
       ...(m.experimental === undefined ? {} : { experimental: m.experimental }),
       ...(m.refreshOptions === undefined
@@ -242,7 +254,7 @@ function readManifest(dir: string, name: string): UsageAdapter {
     return {
       id: `invalid:${name}`,
       name,
-      protocolVersion: 2,
+      protocolVersion: USAGE_PROTOCOL_VERSION,
       invocation: { command: '', args: [] },
       sourceKind: 'api',
       capabilities: [],
@@ -309,7 +321,7 @@ export class UsageAdapterHost {
     connectionId: string,
     signal: AbortSignal,
     action: UsageAdapterAction = 'read',
-    options: { refreshSources?: string[]; refreshProviders?: string[] } = {},
+    options: { refreshSources?: string[]; refreshSubscriptions?: string[] } = {},
   ): Promise<UsageAdapterResult> {
     if (signal.aborted) throw new AppError('config', 'Usage request was cancelled.')
     if (
@@ -322,20 +334,20 @@ export class UsageAdapterHost {
         ))
     )
       throw new AppError('validation_error', 'Invalid usage refresh source selection.')
-    // Spec A7: agent selection goes only to an adapter that declares it, and only on refresh.
+    // Spec A7 and U6: subscription selection goes only to an adapter that declares it, and only
+    // on refresh.
+    const selection = options.refreshSubscriptions
     if (
-      options.refreshProviders !== undefined &&
+      selection !== undefined &&
       (action !== 'refresh' ||
-        !adapter.refreshOptions?.includes('providers') ||
-        !Array.isArray(options.refreshProviders) ||
-        options.refreshProviders.length === 0 ||
-        options.refreshProviders.length > 20 ||
-        new Set(options.refreshProviders).size !== options.refreshProviders.length ||
-        options.refreshProviders.some(
-          (id) => typeof id !== 'string' || !USAGE_PROVIDER_ID.test(id),
-        ))
+        !adapter.refreshOptions?.includes('subscriptions') ||
+        !Array.isArray(selection) ||
+        selection.length === 0 ||
+        selection.length > 20 ||
+        new Set(selection).size !== selection.length ||
+        selection.some((id) => typeof id !== 'string' || !USAGE_ID_PATTERN.test(id)))
     )
-      throw new AppError('validation_error', 'Invalid usage refresh agent selection.')
+      throw new AppError('validation_error', 'Invalid usage refresh subscription selection.')
     const child = spawn(adapter.invocation.command, adapter.invocation.args, {
       cwd: adapter.directory,
       env: this.childEnv(adapter),
@@ -390,9 +402,7 @@ export class UsageAdapterHost {
           ...(action === 'refresh' && options.refreshSources
             ? { refreshSources: options.refreshSources }
             : {}),
-          ...(action === 'refresh' && options.refreshProviders
-            ? { refreshProviders: options.refreshProviders }
-            : {}),
+          ...(action === 'refresh' && selection ? { refreshSubscriptions: selection } : {}),
         },
       }),
     )
@@ -408,19 +418,38 @@ export class UsageAdapterHost {
       if (response.protocolVersion !== USAGE_PROTOCOL_VERSION)
         throw new AppError('protocol', 'Unsupported usage adapter version.')
       if (response.ok === true && code === 0) {
-        const document = parseUsageDocument(response.data, Date.now())
+        let document: UsageReportDocument
+        try {
+          document = parseUsageDocument(response.data, Date.now())
+        } catch (error) {
+          // U3-U5: an invalid adapter document (schema 1, missing declarations, providerId) is a
+          // protocol failure; the contract message names the broken rule.
+          if (error instanceof AppError) throw new AppError('protocol', error.message)
+          throw error
+        }
         // A missing field is valid: adapters without `partial-refresh-v1` keep the old transport.
         const refresh =
           response.refresh === undefined
             ? null
             : parseUsageRefreshResult(response.refresh, document, Date.now())
-        let refreshableProviders: string[] | null = null
-        if (response.refreshableProviders !== undefined) {
+        let refreshableSubscriptions: string[] | null = null
+        if (response.refreshableSubscriptions !== undefined) {
           try {
-            refreshableProviders = parseUsageRefreshableProviders(response.refreshableProviders)
+            refreshableSubscriptions = parseUsageRefreshableSubscriptions(
+              response.refreshableSubscriptions,
+            )
           } catch {
-            throw new AppError('protocol', 'Invalid usage refreshable agents.')
+            throw new AppError('protocol', 'Invalid usage refreshable subscriptions.')
           }
+          // U3: every listed subscription is declared by the report it belongs to.
+          const declared = new Set(
+            document.reports.flatMap((report) => report.subscriptions.map((s) => s.id)),
+          )
+          if (refreshableSubscriptions.some((id) => !declared.has(id)))
+            throw new AppError(
+              'protocol',
+              'Usage adapter listed a refreshable subscription its report does not declare.',
+            )
         }
         // Non-enumerable: `parseUsageDocument` still accepts the object and JSON export of the
         // document never carries attempt metadata.
@@ -429,8 +458,8 @@ export class UsageAdapterHost {
           enumerable: false,
           configurable: true,
         })
-        Object.defineProperty(document, 'refreshableProviders', {
-          value: refreshableProviders,
+        Object.defineProperty(document, 'refreshableSubscriptions', {
+          value: refreshableSubscriptions,
           enumerable: false,
           configurable: true,
         })

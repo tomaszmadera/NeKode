@@ -297,11 +297,11 @@ describe('ipc payload validation', () => {
     expect(channel(IPC_CHANNEL.usageSetEnabled).parse([false])).toEqual([false])
     for (const bad of [[], ['true'], [1], [null], [true, false]])
       expect(() => channel(IPC_CHANNEL.usageSetEnabled).parse(bad)).toThrow()
-    // Spec A6: one account, optionally one agent of it, and no other keys.
+    // Spec A6 and U7: one account, optionally one subscription of it, and no other keys.
     const refresh = channel(IPC_CHANNEL.usageRefresh)
     expect(refresh.parse([{ connectionId: 'account' }])).toEqual([{ connectionId: 'account' }])
-    expect(refresh.parse([{ connectionId: 'account', providerId: 'claude' }])).toEqual([
-      { connectionId: 'account', providerId: 'claude' },
+    expect(refresh.parse([{ connectionId: 'account', subscriptionId: 'opencode-go' }])).toEqual([
+      { connectionId: 'account', subscriptionId: 'opencode-go' },
     ])
     for (const bad of [
       [],
@@ -310,9 +310,11 @@ describe('ipc payload validation', () => {
       [{}],
       [{ connectionId: '' }],
       [{ connectionId: 'a'.repeat(257) }],
-      [{ connectionId: 'account', providerId: 'Not Valid' }],
-      [{ connectionId: 'account', providerId: 7 }],
-      [{ connectionId: 'account', providers: ['claude'] }],
+      [{ connectionId: 'account', subscriptionId: 'Not Valid' }],
+      [{ connectionId: 'account', subscriptionId: 7 }],
+      // U15: the removed agent field is an unknown key.
+      [{ connectionId: 'account', providerId: 'claude' }],
+      [{ connectionId: 'account', subscriptions: ['claude'] }],
       [{ connectionId: 'account' }, 'extra'],
     ])
       expect(() => refresh.parse(bad)).toThrow()

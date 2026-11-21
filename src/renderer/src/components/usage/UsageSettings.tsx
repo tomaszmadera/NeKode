@@ -172,7 +172,7 @@ export function UsageSettings({
                 connection: {
                   id: crypto.randomUUID(),
                   label: '',
-                  providerId: '',
+                  serviceId: '',
                   adapterId: a.id,
                   enabled: true,
                   config: {},
@@ -334,7 +334,7 @@ export function UsageSettings({
         </div>
         <p className="text-[13px] text-ink-muted">
           Each source reads quota limits through an adapter and shows them in the title bar. One
-          source can report one account or, like a hub, several agents.
+          source can report one account or, like a hub, several subscriptions.
         </p>
         {sources}
       </section>

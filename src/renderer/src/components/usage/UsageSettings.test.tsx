@@ -12,14 +12,14 @@ import { UsageSettings } from './UsageSettings'
 afterEach(cleanup)
 
 const base = {
-  protocolVersion: 2 as const,
+  protocolVersion: 3 as const,
   minimumRefreshSeconds: 60,
 }
 const OPENROUTER: UsageAdapter = {
   ...base,
   id: 'openrouter-credits',
   name: 'OpenRouter account balance',
-  providerId: 'openrouter',
+  serviceId: 'openrouter',
   summary: 'Account balance in USD.',
   invocation: { command: 'C:/NeKode/nekode.exe', args: ['index.cjs'] },
   sourceKind: 'api',
@@ -73,7 +73,7 @@ const STORED: Settings = {
     {
       id: 'kept',
       label: 'Kept account',
-      providerId: 'openrouter',
+      serviceId: 'openrouter',
       adapterId: 'openrouter-credits',
       enabled: true,
       config: {},
@@ -123,12 +123,57 @@ describe('Usage settings', () => {
     expect(within(list).getByText('No limits yet')).toBeTruthy()
     expect(
       screen.getByText(
-        'Each source reads quota limits through an adapter and shows them in the title bar. One source can report one account or, like a hub, several agents.',
+        'Each source reads quota limits through an adapter and shows them in the title bar. One source can report one account or, like a hub, several subscriptions.',
       ),
     ).toBeTruthy()
     const text = document.body.textContent ?? ''
     expect(text).not.toMatch(/connection/i)
     expect(text).not.toContain('Agent Harness')
+    // U10: the usage settings never say agent.
+    expect(text).not.toMatch(/\bagents?\b/i)
+  })
+  it('shows a hub Subscriptions field and saves subscription ids without agent wording (U10)', async () => {
+    const app = createAppApiStub()
+    const hub: UsageAdapter = {
+      ...MINE,
+      id: 'personal-data-hub',
+      name: 'Personal Data Hub',
+      serviceId: 'personal-data-hub',
+      refreshOptions: ['subscriptions'],
+      configSchema: [
+        {
+          key: 'subscriptions',
+          label: 'Subscriptions',
+          type: 'text',
+          description: 'Comma-separated subscription ids such as chatgpt, claude, opencode-go.',
+        },
+      ],
+      directory: 'C:/profile/usage-adapters/personal-data-hub',
+    }
+    vi.mocked(app.usage.listAdapters).mockResolvedValue([hub])
+    vi.mocked(app.usage.getSettings).mockResolvedValue({
+      ...structuredClone(STORED),
+      connections: [],
+    })
+    vi.mocked(app.usage.getEnabled).mockResolvedValue(true)
+    vi.mocked(app.usage.saveSettings).mockImplementation(async (s) => s)
+    render(<UsageSettings app={app} />)
+    await pick(/Personal Data Hub/)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'PDH' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Subscriptions' }), {
+      target: { value: 'chatgpt, claude, opencode-go' },
+    })
+    expect(document.body.textContent).not.toMatch(/\bagents?\b/i)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    })
+    const saved = vi.mocked(app.usage.saveSettings).mock.calls[0][0].connections[0]
+    expect(saved).toMatchObject({
+      label: 'PDH',
+      adapterId: 'personal-data-hub',
+      config: { subscriptions: 'chatgpt, claude, opencode-go' },
+    })
+    expect(JSON.stringify(saved)).not.toMatch(/providerId|agents/)
   })
   it('offers usable services with summary and tags, and hides invalid adapters', async () => {
     setup()
@@ -255,7 +300,7 @@ describe('Usage settings', () => {
         {
           id: 'old-claude',
           label: 'Old Claude',
-          providerId: 'claude',
+          serviceId: 'claude',
           adapterId: 'claude-code-snapshots',
           enabled: true,
           config: { directory: 'C:/data/claude' },
@@ -360,12 +405,14 @@ describe('Usage settings', () => {
             subscription: {
               id: connection.id,
               label: 'PDH',
-              providerId: 'hub',
+              serviceId: 'hub',
               sourceKind: 'api',
               status: 'available',
+              subscriptions: [{ id: 'hub', label: 'Hub' }],
               metrics: Array.from({ length: count }, (_, i) => ({
                 id: `limit-${i}`,
-                label: `Agent ${i}`,
+                label: `Hub ${i}`,
+                subscriptionId: 'hub',
                 kind: 'window',
                 state: i === 0 ? 'unavailable' : 'expired',
                 observedAt,

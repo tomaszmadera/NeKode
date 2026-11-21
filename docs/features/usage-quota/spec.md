@@ -627,7 +627,7 @@ changed command plus the Electron smoke.
 
 ## Amendment: subscription ownership and hard rename (NEKODE-191)
 
-Status: proposed on 2026-11-16 for task `nekode-191`. The user decided on 2026-11-16 that the change
+Status: approved on 2026-11-16 for task `nekode-191`. The user decided on 2026-11-16 that the change
 is a hard rename without compatibility aliases, and that `OpenCode Go` is the subscription currently
 reported by the `opencode` source. This amendment supersedes every earlier use of `agent`,
 `providerId`, `refreshProviders`, `refreshableProviders` and `agents` in the usage domain. It does
