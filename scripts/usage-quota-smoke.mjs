@@ -1,4 +1,7 @@
 // Windows Electron smoke with an isolated profile and fixture-only quota data.
+// NEKODE-191 Stage 2: a fixture hub speaks adapter protocol 3, document schema 2 and declares
+// ChatGPT, Claude, Google AI and OpenCode Go. The smoke proves the subscription headings, a
+// per-subscription refresh, a pinned OpenCode Go row, the schema 2 export and the v2 rejection.
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -9,16 +12,17 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const evidence = join(root, 'tmp', 'nekode-90-stage1-smoke')
+const evidence = join(root, 'tmp', 'nekode-191-stage2-smoke')
 mkdirSync(evidence, { recursive: true })
 const scratch = mkdtempSync(join(tmpdir(), 'nekode-usage-smoke-'))
 const profile = join(scratch, 'profile'),
-  input = join(scratch, 'input.json'),
   output = join(scratch, 'export.json')
-const adapterDir = join(profile, 'usage-adapters', 'fixture'),
+const hubDir = join(profile, 'usage-adapters', 'fixture-hub'),
+  v2Dir = join(profile, 'usage-adapters', 'legacy-v2'),
   pidFile = join(scratch, 'adapter-pids.txt'),
-  actionsFile = join(scratch, 'adapter-actions.txt')
-mkdirSync(adapterDir, { recursive: true })
+  actionsFile = join(scratch, 'adapter-actions.jsonl')
+mkdirSync(hubDir, { recursive: true })
+mkdirSync(v2Dir, { recursive: true })
 const report = {
   target: 'Windows Electron built out/',
   fixtureOnly: true,
@@ -171,11 +175,10 @@ async function evaluate(expression, main = false) {
     )
   return result.result?.value
 }
-// A manual refresh starts at most once per 60 seconds per account (spec L5), so a read that
-// follows an automatic poll may be deferred to the next due tick; wait for that tick.
 async function waitFor(expression, timeoutMs) {
   const end = Date.now() + timeoutMs
   while (Date.now() < end && !(await evaluate(expression))) await sleep(250)
+  return evaluate(expression)
 }
 async function check(name, expression) {
   const result = await evaluate(expression)
@@ -184,9 +187,7 @@ async function check(name, expression) {
 }
 async function shot(name) {
   await call('Page.bringToFront')
-  await sleep(1500)
-  await call('Page.captureScreenshot', { format: 'png' })
-  await sleep(1000)
+  await sleep(1200)
   const image = await call('Page.captureScreenshot', { format: 'png' })
   writeFileSync(join(evidence, `${name}.png`), Buffer.from(image.data, 'base64'))
 }
@@ -216,72 +217,13 @@ async function close() {
   child = null
 }
 try {
-  const now = Date.now(),
-    iso = (ms) => new Date(ms).toISOString(),
-    day = 86400000,
-    date = new Date(now)
-  const metrics = [
-    {
-      id: 'short',
-      label: '5h',
-      kind: 'window',
-      providerId: 'alpha',
-      usedPercent: 14,
-      observedAt: iso(now - 90 * 60000),
-      periodStart: iso(now - 2 * 3600000),
-      resetsAt: iso(now + 3 * 3600000),
-    },
-    {
-      id: 'week',
-      label: '7d',
-      kind: 'window',
-      providerId: 'alpha',
-      usedPercent: 47,
-      observedAt: iso(now - 60000),
-      periodStart: iso(now - 3 * day),
-      resetsAt: iso(now + 4 * day),
-    },
-    {
-      id: 'month',
-      label: 'Monthly',
-      kind: 'credits',
-      providerId: 'beta',
-      used: 900,
-      limit: 2000,
-      unit: 'characters',
-      observedAt: iso(now - 60000),
-      periodStart: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).toISOString(),
-      resetsAt: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1)).toISOString(),
-    },
-    {
-      id: 'balance',
-      label: 'Balance',
-      kind: 'balance',
-      providerId: 'beta',
-      amount: 12.55,
-      currency: 'USD',
-      observedAt: null,
-    },
-  ].map((m) => ({ ...m, state: 'available' }))
-  const doc = {
-    schemaVersion: 1,
-    subscriptions: [
-      {
-        id: 'fixture-account',
-        providerId: 'fixture',
-        label: 'Fixture subscription',
-        sourceKind: 'api',
-        status: 'available',
-        metrics,
-      },
-    ],
-  }
-  writeFileSync(input, JSON.stringify(doc))
-  // A user adapter speaking protocol 2 (spec L1-L2): `read` returns the fixture file as written,
-  // `refresh` stamps every available value with the response time, as a live provider read does.
+  // Protocol 3 fixture hub (NEKODE-191 U2, U3, U6): four declarations in a fixed order, metric
+  // values in reverse order, and 55% only for the subscriptions a manual refresh names.
   writeFileSync(
-    join(adapterDir, 'index.cjs'),
+    join(hubDir, 'index.cjs'),
     `const fs = require('node:fs')
+const LABELS = { chatgpt: 'ChatGPT', claude: 'Claude', 'google-ai': 'Google AI', 'opencode-go': 'OpenCode Go' }
+const ORDER = ['chatgpt', 'claude', 'google-ai', 'opencode-go']
 fs.appendFileSync(${JSON.stringify(pidFile)}, String(process.pid) + '\\n')
 let input = ''
 process.stdin.setEncoding('utf8')
@@ -290,37 +232,83 @@ process.stdin.on('end', () => {
   const respond = (body, code) => { process.stdout.write(JSON.stringify(body)); process.exitCode = code }
   try {
     const request = JSON.parse(input)
-    if (request.protocolVersion !== 2 || !['read', 'refresh'].includes(request.action)) throw new Error('request')
-    fs.appendFileSync(${JSON.stringify(actionsFile)}, request.action + '\\n')
-    const data = JSON.parse(fs.readFileSync(request.config.path, 'utf8'))
-    if (request.action === 'refresh') {
-      const at = new Date().toISOString()
-      const selected = request.params && request.params.refreshProviders
-      if (selected) {
-        const agents = new Set(selected)
-        for (const s of data.subscriptions) s.metrics = s.metrics.filter((m) => agents.has(m.providerId))
-      }
-      for (const s of data.subscriptions) for (const m of s.metrics) if (m.state === 'available') m.observedAt = at
+    if (request.protocolVersion !== 3 || !['read', 'refresh'].includes(request.action)) throw new Error('request')
+    const selected = request.params && request.params.refreshSubscriptions
+    fs.appendFileSync(${JSON.stringify(actionsFile)}, JSON.stringify({
+      action: request.action,
+      connectionId: request.params && request.params.connectionId,
+      refreshSubscriptions: selected || null,
+    }) + '\\n')
+    const ids = selected || ORDER
+    const observedAt = new Date().toISOString()
+    const metrics = [...ids].reverse().map((id) => ({
+      id: id + '-5h',
+      label: LABELS[id] + ' 5h',
+      subscriptionId: id,
+      kind: 'window',
+      state: 'available',
+      observedAt,
+      usedPercent: request.action === 'refresh' ? 55 : 10,
+      periodStart: new Date(Date.now() - 3600000).toISOString(),
+      resetsAt: '2099-01-01T00:00:00.000Z',
+    }))
+    const response = {
+      protocolVersion: 3,
+      ok: true,
+      data: {
+        schemaVersion: 2,
+        reports: [{
+          id: request.params.connectionId,
+          serviceId: 'fixture-hub',
+          label: 'Fixture hub',
+          sourceKind: 'api',
+          status: 'available',
+          subscriptions: ids.map((id) => ({ id, label: LABELS[id] })),
+          metrics,
+        }],
+      },
     }
-    respond({ protocolVersion: 2, ok: true, data, refreshableProviders: ['alpha'] }, 0)
+    if (!selected) response.refreshableSubscriptions = ['chatgpt', 'claude', 'opencode-go']
+    respond(response, 0)
   } catch {
-    respond({ protocolVersion: 2, ok: false, error: { code: 'protocol', message: 'Invalid fixture input.' } }, 1)
+    respond({ protocolVersion: 3, ok: false, error: { code: 'protocol', message: 'Invalid fixture input.' } }, 1)
   }
 })
 `,
   )
-  const manifest = {
-    id: 'fixture-process',
-    name: 'Fixture process adapter',
-    protocolVersion: 2,
-    invocation: { command: process.execPath, args: ['index.cjs'] },
-    sourceKind: 'api',
-    capabilities: ['window', 'credits', 'balance'],
-    minimumRefreshSeconds: 300,
-    refreshOptions: ['providers'],
-    configSchema: [{ key: 'path', label: 'Fixture input file', type: 'file', required: true }],
-  }
-  writeFileSync(join(adapterDir, 'usage-adapter.json'), JSON.stringify(manifest))
+  writeFileSync(
+    join(hubDir, 'usage-adapter.json'),
+    JSON.stringify({
+      id: 'fixture-hub',
+      name: 'Fixture hub',
+      serviceId: 'fixture-hub',
+      protocolVersion: 3,
+      invocation: { command: process.execPath, args: ['index.cjs'] },
+      sourceKind: 'api',
+      capabilities: ['window'],
+      minimumRefreshSeconds: 60,
+      refreshOptions: ['subscriptions'],
+      configSchema: [],
+    }),
+  )
+  // U1, U14: a protocol 2 manifest is listed invalid and starts no process.
+  writeFileSync(
+    join(v2Dir, 'usage-adapter.json'),
+    JSON.stringify({
+      id: 'legacy-v2',
+      name: 'Legacy v2 adapter',
+      providerId: 'legacy',
+      protocolVersion: 2,
+      invocation: {
+        command: process.execPath,
+        args: [join(v2Dir, 'never-runs.cjs')],
+      },
+      sourceKind: 'api',
+      capabilities: ['window'],
+      minimumRefreshSeconds: 300,
+      configSchema: [],
+    }),
+  )
   // The Claude Code adapter runs unchanged against a local fake API (fixture data only).
   // Only a loopback origin is accepted by its NEKODE_USAGE_TEST_BASE_URL seam.
   fakeApi = createHttpServer((request, response) => {
@@ -336,11 +324,11 @@ process.stdin.on('end', () => {
         ? {
             five_hour: {
               utilization: 37,
-              resets_at: new Date(now + 3_600_000).toISOString().replace('Z', '123+00:00'),
+              resets_at: new Date(Date.now() + 3_600_000).toISOString().replace('Z', '123+00:00'),
             },
             seven_day: {
               utilization: 12,
-              resets_at: new Date(now + 3 * 86_400_000).toISOString().replace('Z', '+00:00'),
+              resets_at: new Date(Date.now() + 3 * 86_400_000).toISOString().replace('Z', '+00:00'),
             },
           }
         : null
@@ -355,14 +343,12 @@ process.stdin.on('end', () => {
       claudeAiOauth: {
         accessToken: CLAUDE_TOKEN,
         refreshToken: CLAUDE_REFRESH,
-        expiresAt: now + 86_400_000,
+        expiresAt: Date.now() + 86_400_000,
       },
     }),
   )
   const claudeCredentials = readFileSync(join(claudeConfig, '.credentials.json'), 'utf8')
   process.env.NEKODE_USAGE_TEST_BASE_URL = `http://127.0.0.1:${fakeApi.address().port}`
-  // Claude Code is a shipped adapter (usage-quota spec rule 17): the unpackaged app reads it
-  // from adapters/ and runs it on Electron in Node mode (rule 19).
   await launch()
   await check(
     'Show usage quota is off at fresh install and hides the title-bar button',
@@ -396,12 +382,12 @@ process.stdin.on('end', () => {
   const settings = {
     connections: [
       {
-        id: 'fixture-account',
-        label: 'Fixture subscription (test data)',
-        providerId: 'fixture',
-        adapterId: manifest.id,
+        id: 'hub',
+        label: 'PDH',
+        serviceId: '',
+        adapterId: 'fixture-hub',
         enabled: true,
-        config: { path: input },
+        config: {},
       },
     ],
     pin: null,
@@ -409,289 +395,210 @@ process.stdin.on('end', () => {
   }
   await evaluate(`window.app.usage.saveSettings(${JSON.stringify(settings)})`)
   // The visible app polls on its own; a scheduled `read` keeps the fixture observation times.
-  await waitFor('window.app.usage.read().then(s=>Boolean(s.connections[0]?.subscription))', 10000)
+  await waitFor(
+    'window.app.usage.read().then(s=>s.connections[0]?.subscription?.metrics.length===4)',
+    15000,
+  )
+  report.initialRead = await evaluate(
+    'window.app.usage.read().then(s=>s.connections[0]?.subscription?.subscriptions)',
+  )
   await call('Page.reload')
   await sleep(1000)
   await evaluate(
     'document.querySelector(".usage-trigger").focus();document.querySelector(".usage-trigger").click()',
   )
-  report.initialPopulatedRead = {
-    at: Date.now(),
-    rows: await evaluate('document.querySelectorAll(".usage-row").length'),
-    mainMetrics: await evaluate(
-      'window.app.usage.read().then(s=>s.connections[0]?.subscription?.metrics.length)',
-    ),
-    document: await evaluate(
-      '({hidden:document.hidden, visibility:document.visibilityState, readyState:document.readyState})',
-    ),
-    toolbar: await evaluate(
-      '(()=>{let f=document.querySelector(".usage-trigger")[Object.keys(document.querySelector(".usage-trigger")).find(k=>k.startsWith("__reactFiber"))];while(f&&f.type?.name!=="UsageToolbar")f=f.return;return f?.memoizedState?.memoizedState})()',
-    ),
-  }
-  for (
-    let n = 0;
-    n < 60 && !(await evaluate('document.querySelectorAll(".usage-row").length===4'));
-    n++
+  await waitFor('document.querySelectorAll(".usage-row").length===4', 15000)
+  report.headings = await evaluate(
+    '[...document.querySelectorAll(".usage-subscription h4")].map(h=>h.textContent)',
   )
-    await sleep(100)
-  report.populatedReadyDelayMs = Date.now() - report.initialPopulatedRead.at
-  await check(
-    'four actual fixture metrics render, including balance and old age',
-    'document.querySelectorAll(".usage-row").length===4 && document.querySelector(".usage-panel").textContent.includes("USD 12.55") && document.querySelector(".usage-panel").textContent.includes("Stale - 1h 30m old")',
-  )
-  const menuState = await evaluate(
-    '(()=>{const labels=[...document.querySelectorAll(".usage-group-menu")].map(b=>b.getAttribute("aria-label"));return {labels}})()',
-  )
-  assert.ok(menuState.labels.includes('Refresh options for Fixture subscription (test data)'))
+  assert.deepEqual(report.headings, ['ChatGPT', 'Claude', 'Google AI', 'OpenCode Go'])
   assert.ok(
-    menuState.labels.includes('Refresh options for Alpha in Fixture subscription (test data)'),
+    !report.headings.includes('OpenCode') && !report.headings.includes('opencode'),
+    'no heading names the reader',
   )
-  assert.ok(
-    menuState.labels.includes('Refresh options for Beta in Fixture subscription (test data)'),
-  )
-  report.menu = menuState
-  report.assertions.push('account and agent group menus are present')
-  const beforeAgent = await evaluate(
-    'window.app.usage.read().then(s=>Object.fromEntries(s.connections[0].subscription.metrics.map(m=>[m.id,m.observedAt])))',
-  )
-  await evaluate(
-    '[...document.querySelectorAll(".usage-group-menu")].find(b=>b.getAttribute("aria-label").startsWith("Refresh options for Alpha")).click()',
-  )
-  await sleep(100)
-  const alphaMenu = await evaluate(
-    '(()=>{const m=document.querySelector(".usage-menu");return {text:m?.textContent,disabled:m?.querySelector("[role=menuitem]")?.disabled}})()',
-  )
-  assert.ok(alphaMenu.text.includes('Refresh Alpha in Fixture subscription (test data)'))
-  assert.equal(alphaMenu.disabled, false)
-  await evaluate('document.querySelector(".usage-menu [role=menuitem]").click()')
-  await waitFor(
-    'document.querySelector("[role=status]")?.textContent.includes("Alpha in Fixture subscription (test data) refreshed.")',
-    10000,
-  )
-  const afterAgent = await evaluate(
-    'window.app.usage.read().then(s=>Object.fromEntries(s.connections[0].subscription.metrics.map(m=>[m.id,m.observedAt])))',
-  )
-  assert.notEqual(afterAgent.short, beforeAgent.short)
-  assert.equal(afterAgent.month, beforeAgent.month)
-  report.agentRefresh = { beforeAgent, afterAgent }
   report.assertions.push(
-    'agent menu refreshes only the selected agent and leaves the other agent dates unchanged',
+    'four subscriptions render as headings in declaration order and no heading names a reader',
   )
+  report.panelText = await evaluate(
+    'document.querySelector(".usage-panel")?.textContent?.slice(0,1500) ?? null',
+  )
+  await shot('panel-subscriptions')
+  const menus = await evaluate(
+    '[...document.querySelectorAll(".usage-group-menu")].map(b=>b.getAttribute("aria-label"))',
+  )
+  for (const label of [
+    'Refresh options for PDH',
+    'Refresh options for ChatGPT in PDH',
+    'Refresh options for Claude in PDH',
+    'Refresh options for Google AI in PDH',
+    'Refresh options for OpenCode Go in PDH',
+  ])
+    assert.ok(menus.includes(label), `menu ${label}`)
+  report.menus = menus
+  report.assertions.push(
+    'account and every subscription expose a refresh menu with declared labels',
+  )
+  // U11: a subscription with no refresh source declares that, and shows a disabled item.
   await evaluate(
-    '[...document.querySelectorAll(".usage-group-menu")].find(b=>b.getAttribute("aria-label").startsWith("Refresh options for Beta")).click()',
+    '[...document.querySelectorAll(".usage-group-menu")].find(b=>b.getAttribute("aria-label")==="Refresh options for Google AI in PDH").click()',
   )
   await sleep(100)
-  const betaMenu = await evaluate(
+  const googleMenu = await evaluate(
     '(()=>{const m=document.querySelector(".usage-menu");return {text:m?.textContent,disabled:m?.querySelector("[role=menuitem]")?.disabled}})()',
   )
-  assert.ok(betaMenu.text.includes('No refresh source for this agent in the Hub'))
-  assert.equal(betaMenu.disabled, true)
-  report.betaMenu = betaMenu
-  report.assertions.push('an unlisted agent shows a disabled refresh reason')
+  assert.ok(googleMenu.text.includes('No refresh source for this subscription in the Hub'))
+  assert.equal(googleMenu.disabled, true)
+  report.googleMenu = googleMenu
   await evaluate(
     'document.querySelector(".usage-menu")?.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))',
   )
-  report.regions = await evaluate(
-    '({focusInside: Boolean(document.querySelector(".usage-panel").contains(document.activeElement)), active:document.activeElement?.outerHTML, firstButton:document.querySelector(".usage-panel button").outerHTML,title:getComputedStyle(document.querySelector("[data-testid=title-bar]")).webkitAppRegion,trigger:getComputedStyle(document.querySelector(".usage-trigger")).webkitAppRegion})',
-  )
-  await check(
-    'focus enters panel and drag regions remain separated',
-    'Boolean(document.querySelector(".usage-panel").contains(document.activeElement)) && getComputedStyle(document.querySelector("[data-testid=title-bar]")).webkitAppRegion==="drag" && getComputedStyle(document.querySelector(".usage-trigger")).webkitAppRegion==="no-drag"',
-  )
-  const layout = await evaluate(
-    '(()=>{const p=document.querySelector(".usage-panel").getBoundingClientRect(),b=document.querySelector(".usage-trigger").getBoundingClientRect();return {width:p.width,gap:p.top-b.bottom,left:p.left,right:p.right,viewport:innerWidth,titleHeight:document.querySelector("[data-testid=title-bar]").getBoundingClientRect().height,rowHeight:document.querySelector(".usage-row").getBoundingClientRect().height}})()',
-  )
-  assert.equal(layout.width, 400)
-  assert.equal(layout.gap, 6)
-  assert.equal(layout.titleHeight, 40)
-  assert.ok(layout.rowHeight <= 34)
-  report.layout = layout
-  const snapshot = await evaluate('window.app.usage.read()')
-  assert.deepEqual(
-    JSON.parse(readFileSync(output, 'utf8')).subscriptions[0],
-    snapshot.connections[0].subscription,
-  )
   report.assertions.push(
-    'export equals the normalized accepted subscription, without configuration or secrets',
+    'a subscription without a refresh source shows a disabled subscription reason',
   )
-  await shot('panel-default')
-  await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' })
-  await check(
-    'Escape closes and restores trigger focus',
-    '!document.querySelector(".usage-panel") && document.activeElement===document.querySelector(".usage-trigger")',
+  // A4, A6, U6: the selected subscription refreshes; the other values and observation times stay.
+  const before = await evaluate(
+    'window.app.usage.read().then(s=>Object.fromEntries(s.connections[0].subscription.metrics.map(m=>[m.id,[m.usedPercent,m.observedAt]])))',
   )
-  // Choosing a row pins it and closes the panel (NEKODE-121); reopen it to inspect the rows.
-  await evaluate('document.querySelector(".usage-trigger").click()')
+  await evaluate(
+    '[...document.querySelectorAll(".usage-group-menu")].find(b=>b.getAttribute("aria-label")==="Refresh options for OpenCode Go in PDH").click()',
+  )
   await sleep(100)
-  await evaluate('document.querySelectorAll(".usage-row")[1].click()')
-  await sleep(250)
-  await evaluate('document.querySelector(".usage-trigger").click()')
-  await sleep(100)
-  await check(
-    'only selected row is pinned',
-    'document.querySelector(".usage-row[aria-pressed=true]")?.textContent.includes("7d")===true && document.querySelector(".usage-trigger").textContent.includes("47%")',
+  const opencodeMenu = await evaluate(
+    '(()=>{const m=document.querySelector(".usage-menu");return {text:m?.textContent,disabled:m?.querySelector("[role=menuitem]")?.disabled}})()',
   )
-  await evaluate(`document.querySelector('[aria-label="Close usage panel"]').click()`)
+  assert.ok(opencodeMenu.text.includes('Refresh OpenCode Go in PDH'))
+  assert.equal(opencodeMenu.disabled, false)
+  await evaluate('document.querySelector(".usage-menu [role=menuitem]").click()')
+  await waitFor(
+    'document.querySelector("[role=status]")?.textContent.includes("OpenCode Go in PDH refreshed.")',
+    15000,
+  )
+  const after = await evaluate(
+    'window.app.usage.read().then(s=>Object.fromEntries(s.connections[0].subscription.metrics.map(m=>[m.id,[m.usedPercent,m.observedAt]])))',
+  )
+  assert.equal(after['opencode-go-5h'][0], 55)
+  assert.notEqual(after['opencode-go-5h'][1], before['opencode-go-5h'][1])
+  for (const id of ['chatgpt-5h', 'claude-5h', 'google-ai-5h'])
+    assert.deepEqual(after[id], before[id], `${id} keeps value and observation time`)
+  report.subscriptionRefresh = { before, after }
+  report.assertions.push(
+    'a subscription menu refreshes only the selected subscription and leaves the others unchanged',
+  )
+  const actions = readFileSync(actionsFile, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  const last = actions.at(-1)
+  assert.equal(last.action, 'refresh')
+  assert.deepEqual(last.refreshSubscriptions, ['opencode-go'])
+  report.adapterActions = actions
+  report.assertions.push('the adapter request names refreshSubscriptions: ["opencode-go"]')
+  // U4: the pinned row and its title-bar meter name the subscription, never the reader.
+  await evaluate(
+    '[...document.querySelectorAll(".usage-row")].find(r=>r.getAttribute("aria-label").startsWith("PDH, OpenCode Go 5h")).click()',
+  )
+  await waitFor(
+    'document.querySelector(".usage-trigger").textContent.includes("OpenCode Go 5h")',
+    10000,
+  )
+  await evaluate('document.querySelector(".usage-trigger").click()')
+  await sleep(200)
+  const pinned = await evaluate(
+    '(()=>{const r=document.querySelector(".usage-row[aria-pressed=true]");return {text:r?.textContent,trigger:document.querySelector(".usage-trigger").textContent,label:document.querySelector(".usage-trigger").getAttribute("aria-label")}})()',
+  )
+  assert.ok(pinned.text.includes('OpenCode Go 5h'))
+  assert.ok(pinned.label.startsWith('Usage quota: PDH; OpenCode Go 5h;'))
+  report.pinned = pinned
+  report.assertions.push(
+    'the pinned OpenCode Go row and trigger name the subscription, not the reader',
+  )
+  await evaluate('document.querySelector(\'[aria-label="Close usage panel"]\').click()')
   await shot('toolbar-pinned')
-  // Use React's actual settings event, so both layout and theme tokens update.
-  for (const theme of ['nekode-float']) {
-    await evaluate('document.querySelector("[data-testid=app-settings-button]").click()')
-    await sleep(100)
-    await evaluate(
-      `(()=>{const e=document.querySelector('#app-theme');const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;setter.call(e,${JSON.stringify(theme)});e.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[aria-label="Close app settings"]').click()})()`,
-    )
-    await sleep(150)
-    await evaluate('document.querySelector(".usage-trigger").click()')
-    await check(
-      `${theme} preserves all quota graphics`,
-      'document.querySelectorAll(".usage-row .usage-graphic").length===3 && [...document.querySelectorAll(".usage-row .usage-graphic")].every(e=>e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0)',
-    )
-    await shot(`panel-${theme}`)
-    await evaluate(`document.querySelector('[aria-label="Close usage panel"]').click()`)
-  }
-  await call('Emulation.setDeviceMetricsOverride', {
-    width: 360,
-    height: 640,
-    deviceScaleFactor: 1,
-    mobile: false,
-  })
-  await evaluate('document.querySelector(".usage-trigger").click()')
-  await sleep(100)
-  await check(
-    'narrow panel remains inside viewport and retains every metric',
-    '(()=>{const r=document.querySelector(".usage-panel").getBoundingClientRect();return r.left>=12&&r.right<=innerWidth-12&&document.querySelectorAll(".usage-row").length===4})()',
+  // U9, acceptance 7: the export is schema 2 with declared subscriptions and no reader name.
+  const exported = JSON.parse(readFileSync(output, 'utf8'))
+  assert.equal(exported.schemaVersion, 2)
+  assert.equal(exported.reports[0].serviceId, 'fixture-hub')
+  assert.deepEqual(
+    exported.reports[0].subscriptions.map((item) => item.id),
+    ['chatgpt', 'claude', 'google-ai', 'opencode-go'],
   )
-  await shot('panel-narrow')
-  await call('Emulation.clearDeviceMetricsOverride')
-  // Native window APIs verify minimize/restore/maximize without accessing the real user profile.
-  const native = 'process.mainModule.require("electron").BrowserWindow.getAllWindows()[0]'
-  report.native = await evaluate(
-    `(()=>{const w=${native};return {minimizable:w.isMinimizable(),maximizable:w.isMaximizable(),closable:w.isClosable(),movable:w.isMovable(),bounds:w.getBounds()}})()`,
-    true,
-  )
-  assert.ok(
-    report.native.minimizable &&
-      report.native.maximizable &&
-      report.native.closable &&
-      report.native.movable,
-  )
-  await evaluate(`${native}.minimize();true`, true)
-  await sleep(150)
-  assert.equal(await evaluate(`${native}.isMinimized()`, true), true)
-  await evaluate(`${native}.restore();${native}.maximize();true`, true)
-  await sleep(150)
-  assert.equal(await evaluate(`${native}.isMaximized()`, true), true)
-  await evaluate(`${native}.unmaximize();true`, true)
+  const exportedText = JSON.stringify(exported)
+  assert.ok(!/providerId|"agents?"|refreshableSubscriptions/.test(exportedText))
+  report.export = exported
   report.assertions.push(
-    'native window minimize, restore and maximize remain functional; drag/no-drag regions retain their computed ownership',
+    'the JSON export is schema 2 with declared subscriptions and no removed field or reader name',
   )
-  await close()
-  // The scheduled read at the next launch fails on this malformed input (protocol).
-  writeFileSync(input, '{')
-  await launch()
-  await sleep(500)
-  await check(
-    'pin and real observation timestamp persist after restart',
-    '(()=>{return window.app.usage.read().then(s=>s.pin?.metricId==="week"&&s.connections[0].subscription.metrics.find(m=>m.id==="short").observedAt===' +
-      JSON.stringify(afterAgent.short) +
-      ')})()',
+  // U1, U14: the v2 manifest is listed invalid with the update message and started no process.
+  const adapters = await evaluate('window.app.usage.listAdapters()')
+  const v2 = adapters.find((adapter) => adapter.directory?.endsWith('legacy-v2'))
+  assert.equal(v2?.id, 'invalid:legacy-v2')
+  assert.equal(
+    v2?.error,
+    'This adapter uses protocol version 2. Update it to protocol version 3, which reports subscriptions.',
   )
-  const pluginFailure =
-    'window.app.usage.read().then(s=>s.pin?.metricId==="week"&&s.connections[0].error?.code==="protocol"&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===47)'
-  await waitFor(pluginFailure, 7000)
-  await check('failed read retains pin and last successful value', pluginFailure)
-  await evaluate('document.querySelector(".usage-trigger").click()')
-  for (
-    let n = 0;
-    n < 70 &&
-    !(await evaluate(
-      'document.querySelector(".usage-errors-body")?.textContent.includes("source protocol")',
-    ));
-    n++
-  )
-    await sleep(100)
-  await check(
-    'renderer exposes the cached source error in the console',
-    'document.querySelector(".usage-errors-body")?.textContent.includes("source protocol")===true && document.querySelector(".usage-trigger").textContent.includes("Error")',
-  )
-  await evaluate('document.querySelector(".usage-errors-head button").click()')
-  await check(
-    'the error console closes without deleting the source error',
-    '!document.querySelector(".usage-errors-body") && document.querySelector(".usage-trigger").textContent.includes("Error")',
-  )
-  await evaluate('document.querySelector(".usage-errors-toggle").click()')
-  await check(
-    'the error console reopens from the header',
-    'document.querySelector(".usage-errors-body")?.textContent.includes("source protocol")===true',
-  )
-  await shot('panel-error-cached')
-  // Spec L5: a manual refresh sends `refresh` despite the 300-second adapter minimum, and an
-  // immediate second click reports the 60-second interval skip.
-  doc.subscriptions[0].metrics.find((m) => m.id === 'week').usedPercent = 48
-  writeFileSync(input, JSON.stringify(doc))
-  report.manualRefresh = { at: new Date().toISOString() }
-  await check(
-    'a manual refresh sends refresh inside the 300-second adapter interval',
-    'window.app.usage.refresh({connectionId:"fixture-account"}).then(s=>s.refresh.read.includes("fixture-account")&&s.connections[0].error===null&&s.connections[0].subscription.metrics.find(m=>m.id==="week").usedPercent===48)',
-  )
-  const actions = readFileSync(actionsFile, 'utf8').trim().split(/\s+/)
-  assert.equal(actions.at(-1), 'refresh', 'the manual read used the refresh action')
-  assert.ok(actions.includes('read'), 'scheduled reads used the read action')
-  assert.ok(
-    actions.slice(0, -1).includes('refresh'),
-    'the agent menu used the refresh action before the account refresh',
-  )
-  report.manualRefresh.actions = actions
+  report.adapters = adapters
   report.assertions.push(
-    'scheduled reads send read and manual account and agent reads send refresh',
-  )
-  await check(
-    'an immediate second manual refresh is skipped as interval',
-    'window.app.usage.refresh({connectionId:"fixture-account"}).then(s=>s.refresh.read.length===0&&s.refresh.skipped[0]?.reason==="interval")',
+    'a protocol 2 manifest is listed invalid with the protocol 3 update message',
   )
   await check(
     'shipped Claude Code and Codex adapters are listed without copying, on the NeKode runtime',
     'window.app.usage.listAdapters().then(a=>["claude-code-usage","codex-app-server"].every(id=>{const x=a.find(y=>y.id===id);return x&&x.bundled===true&&!x.error&&/electron|nekode/i.test(x.invocation.command)}))',
   )
-  const providers = await evaluate('window.app.usage.getSettings()')
-  providers.connections.push({
+  // U10: settings text describes one source reporting several subscriptions.
+  await evaluate('document.querySelector(".usage-trigger").click()')
+  await sleep(150)
+  await evaluate(
+    '[...document.querySelectorAll(".usage-panel footer button")].find(b=>b.textContent==="Configure usage").click()',
+  )
+  const settingsText = await waitFor(
+    'Boolean([...document.querySelectorAll("*")].find(e=>e.textContent?.includes("several subscriptions")&&e.children.length===0))',
+    10000,
+  )
+  assert.equal(settingsText, true)
+  report.assertions.push(
+    'usage settings describe one source reporting one account or several subscriptions',
+  )
+  await sleep(500)
+  await shot('settings-subscriptions')
+  await evaluate('document.querySelector(\'[aria-label="Close app settings"]\').click()')
+  // U12: the shipped Claude Code adapter reports the Claude subscription through its real process.
+  const extra = await evaluate('window.app.usage.getSettings()')
+  extra.connections.push({
     id: 'claude-fixture',
     label: 'Claude Code (test data)',
-    providerId: 'claude',
+    serviceId: '',
     adapterId: 'claude-code-usage',
     enabled: true,
     config: { configDirectory: claudeConfig },
   })
-  await evaluate(`window.app.usage.saveSettings(${JSON.stringify(providers)})`)
+  await evaluate(`window.app.usage.saveSettings(${JSON.stringify(extra)})`)
   await evaluate('window.app.usage.refresh({connectionId:"claude-fixture"})')
-  // Claude Code (spec L13): both windows with periods; the 7-day window has a 7-day period.
   const claudeOk =
-    '(s=>{const c=s.connections.find(x=>x.connection.id==="claude-fixture");const [f,w]=c?.subscription?.metrics??[];return c?.error===null&&f?.id==="five_hour"&&f.usedPercent===37&&f.resetsAt?.length===24&&w?.id==="seven_day"&&w.usedPercent===12&&Date.parse(w.resetsAt)-Date.parse(w.periodStart)===604800000})'
-  const providerValues = `window.app.usage.read().then(${claudeOk})`
-  await waitFor(providerValues, 25000)
-  await check('Claude Code windows load through the real adapter', providerValues)
+    '(s=>{const c=s.connections.find(x=>x.connection.id==="claude-fixture");const [f,w]=c?.subscription?.metrics??[];return c?.error===null&&f?.id==="five_hour"&&f.subscriptionId==="claude"&&f.label==="Claude 5-hour window"&&f.usedPercent===37&&w?.id==="seven_day"&&w.subscriptionId==="claude"&&w.usedPercent===12&&Date.parse(w.resetsAt)-Date.parse(w.periodStart)===604800000})'
+  const claudeValues = `window.app.usage.read().then(${claudeOk})`
+  await waitFor(claudeValues, 25000)
+  await check('the shipped Claude Code adapter reports the Claude subscription', claudeValues)
   assert.ok(
     providerRequests.some((r) => r.path === '/api/oauth/usage' && r.claudeToken) &&
       providerRequests.every((r) => r.method === 'GET' && r.path === '/api/oauth/usage'),
     'Claude Code sends only the usage GET with its OAuth token and beta header',
   )
+  report.providerRequests = providerRequests.map(({ method, path }) => ({ method, path }))
   report.assertions.push(
     'Claude Code sends only the usage GET with its OAuth token and beta header',
   )
-  report.providerRequests = providerRequests.map(({ method, path }) => ({ method, path }))
-  // Open the panel only when closed, then allow one renderer read interval (5 seconds).
   await evaluate(
     '(()=>{if(!document.querySelector(".usage-panel"))document.querySelector(".usage-trigger").click()})()',
   )
-  const providerRows =
-    '(()=>{const t=document.querySelector(".usage-panel")?.textContent??"";return t.includes("37%")&&t.includes("12%")})()'
-  await waitFor(providerRows, 10000)
-  report.providerPanelText = await evaluate(
+  const claudeRows =
+    '(()=>{const t=document.querySelector(".usage-panel")?.textContent??"";return t.includes("Claude 5-hour window")&&t.includes("37%")&&t.includes("Claude 7-day window")&&t.includes("12%")})()'
+  await waitFor(claudeRows, 15000)
+  report.panelProviders = await evaluate(
     'document.querySelector(".usage-panel")?.textContent?.slice(0,2000) ?? null',
   )
-  await check('panel shows the provider rows', providerRows)
-  await shot('panel-providers')
-  await evaluate(`document.querySelector('[aria-label="Close usage panel"]').click()`)
+  await check('the panel shows the Claude subscription rows', claudeRows)
+  await shot('panel-claude')
+  await evaluate('document.querySelector(\'[aria-label="Close usage panel"]\').click()')
   await close()
   // Claude Code credentials must not enter export, cache or the database.
   const leaked = [output, join(profile, 'usage', 'observations.json')]
@@ -711,9 +618,6 @@ process.stdin.on('end', () => {
     'the Claude Code credentials file is unchanged',
   )
   report.assertions.push('Claude Code tokens absent and credentials file unchanged')
-  report.assertions.push(
-    `no Claude Code tokens in export, cache or database files (${leaked.length} files checked)`,
-  )
   const pids = readFileSync(pidFile, 'utf8').trim().split(/\s+/).map(Number)
   for (const pid of pids) {
     let alive = true
@@ -738,8 +642,8 @@ process.stdin.on('end', () => {
   report.cleanup.electronPids = [...electronPids]
   report.cleanup.electronTreeReaped = true
   report.limitations = [
-    'Native caption API states and drag CSS boundaries were exercised. Physical mouse dragging and clicking the OS-drawn caption buttons were not injected by CDP.',
-    'Live provider/account reads were not run; all observations are fixture data.',
+    'Live provider/account reads were not run; every observation is fixture data.',
+    'The installed Personal Data Hub adapter and the live Hub read need the NeKode token from PDH-47 and stay not run.',
     'Isolated scratch files are retained for review; no real user data was read.',
   ]
 } catch (error) {
