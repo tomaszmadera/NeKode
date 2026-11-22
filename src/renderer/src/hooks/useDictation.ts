@@ -40,6 +40,8 @@ export interface UseDictationReturn {
   setTargetMounted: (mounted: boolean) => void
   dismissOrphaned: (sessionId: string) => void
   consumeOrphaned: (chatId: string) => DictationResult | null
+  /** Live 0..1 microphone level while recording, delivered without a render. */
+  subscribeLevel: (listener: (level: number) => void) => () => void
   /** Shared across every prompt using this control, so a remounted prompt
       never inserts the same take twice. */
   markInserted: (sessionId: string) => void
@@ -51,6 +53,11 @@ export function useDictation(options?: UseDictationOptions): UseDictationReturn 
   const [reverted, setReverted] = useState(false)
   const controller = useRef<DictationController | null>(null)
   const insertedSessionIds = useRef(new Set<string>())
+  // Stable per hook instance: the prompt's subscription effect must not
+  // resubscribe on every render.
+  const subscribeLevel = useRef((listener: (level: number) => void) => {
+    return controller.current?.subscribeLevel(listener) ?? (() => undefined)
+  }).current
   const optionsRef = useRef(options)
   optionsRef.current = options
 
@@ -162,6 +169,7 @@ export function useDictation(options?: UseDictationOptions): UseDictationReturn 
     consumeOrphaned: (chatId: string) => {
       return controller.current?.consumeOrphaned(chatId) ?? null
     },
+    subscribeLevel,
     markInserted: (sessionId: string) => {
       insertedSessionIds.current.add(sessionId)
     },

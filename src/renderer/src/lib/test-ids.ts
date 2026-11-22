@@ -145,6 +145,7 @@ export const TEST_ID = {
   confirmDialogConfirm: 'confirm-dialog-confirm',
   terminalPromptSend: 'terminal-prompt-send',
   terminalPromptDictation: 'terminal-prompt-dictation',
+  terminalPromptDictationLevel: 'terminal-prompt-dictation-level',
   handoffPicker: 'handoff-picker',
   handoffPickerLoading: 'handoff-picker-loading',
   handoffPickerUnconfigured: 'handoff-picker-unconfigured',

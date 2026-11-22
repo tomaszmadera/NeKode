@@ -1,6 +1,7 @@
 import type { DictationResult } from '@shared/contracts/dictation-contract'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { TEST_ID } from '../../lib/test-ids'
 import { PromptActions, type UnifiedDictationControl } from './PromptActions'
 
 afterEach(cleanup)
@@ -164,6 +165,41 @@ describe('terminal actions', () => {
     fireEvent.keyDown(form as HTMLFormElement, { key: 'Escape' })
     expect(unified.cancel).toHaveBeenCalledOnce()
     expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('shows a live microphone meter on the recording button without re-rendering', () => {
+    let listener: ((level: number) => void) | null = null
+    const unsubscribe = vi.fn()
+    const subscribeLevel = vi.fn((next: (level: number) => void) => {
+      listener = next
+      return unsubscribe
+    })
+    const unified = control({
+      state: 'recording',
+      isRecording: true,
+      isBusy: true,
+      subscribeLevel,
+    })
+    const view = render(
+      <PromptActions onSend={vi.fn()} chatId="chat-1" dictationControl={unified} />,
+    )
+    const meter = screen.getByTestId(TEST_ID.terminalPromptDictationLevel)
+    expect(subscribeLevel).toHaveBeenCalledOnce()
+
+    act(() => listener?.(0.42))
+    expect(meter.style.getPropertyValue('--dictation-level')).toBe('0.420')
+    act(() => listener?.(4))
+    expect(meter.style.getPropertyValue('--dictation-level')).toBe('1.000')
+    act(() => listener?.(Number.NaN))
+    expect(meter.style.getPropertyValue('--dictation-level')).toBe('0.000')
+
+    view.unmount()
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+
+  it('hides the microphone meter when not recording', () => {
+    render(<PromptActions onSend={vi.fn()} dictationControl={control()} />)
+    expect(screen.queryByTestId(TEST_ID.terminalPromptDictationLevel)).toBeNull()
   })
 
   it('pastes a successful take only into its addressed console, once, without submitting', () => {

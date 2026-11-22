@@ -1,4 +1,5 @@
 import { MAX_DICTATION_AUDIO_BYTES } from '@shared/contracts/dictation-contract'
+import { DICTATION_LEVEL_WINDOW_SECONDS, dictationLevelFromRms } from './level'
 import { encodeWav } from './wav'
 
 declare const sampleRate: number
@@ -11,6 +12,8 @@ class DictationPcmProcessor extends AudioWorkletProcessor {
   private chunks: Float32Array[] = []
   private samples = 0
   private recording = true
+  private levelSamples = 0
+  private levelSumSquares = 0
 
   constructor() {
     super()
@@ -42,7 +45,18 @@ class DictationPcmProcessor extends AudioWorkletProcessor {
       return false
     }
     this.chunks.push(mono)
+    this.reportLevel(mono)
     return true
+  }
+
+  private reportLevel(mono: Float32Array): void {
+    for (let i = 0; i < mono.length; i++) this.levelSumSquares += mono[i] * mono[i]
+    this.levelSamples += mono.length
+    if (this.levelSamples < sampleRate * DICTATION_LEVEL_WINDOW_SECONDS) return
+    const level = dictationLevelFromRms(Math.sqrt(this.levelSumSquares / this.levelSamples))
+    this.levelSumSquares = 0
+    this.levelSamples = 0
+    this.port.postMessage({ level })
   }
 }
 

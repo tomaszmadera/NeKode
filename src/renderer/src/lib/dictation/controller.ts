@@ -45,6 +45,7 @@ export class DictationController {
   private activeChatId: string | null = null
   private targetMounted = true
   private orphanedTranscripts: DictationResult[] = []
+  private readonly levelListeners = new Set<(level: number) => void>()
   private timer: ReturnType<typeof setInterval> | null = null
   private recordingStartTime = 0
   private view: DictationView = { state: 'idle', chatId: null, result: null }
@@ -97,9 +98,16 @@ export class DictationController {
         this.update({ state: 'transcribing', result: null })
         return
       }
-      active.recorder = await this.recorder.start(active.abort.signal, () => {
-        if (this.active === active) void this.fail(active, 'recording-failure')
-      })
+      active.recorder = await this.recorder.start(
+        active.abort.signal,
+        () => {
+          if (this.active === active) void this.fail(active, 'recording-failure')
+        },
+        (level) => {
+          if (this.active !== active || this.view.state !== 'recording') return
+          for (const listener of this.levelListeners) listener(level)
+        },
+      )
       if (this.active !== active) {
         active.recorder.discard()
         return
@@ -183,6 +191,15 @@ export class DictationController {
     this.activeChatId = chatId
   }
 
+  /** Live microphone level (0..1) while recording, kept out of the React view
+      so the meter never re-renders the terminal workspace. */
+  subscribeLevel(listener: (level: number) => void): () => void {
+    this.levelListeners.add(listener)
+    return () => {
+      this.levelListeners.delete(listener)
+    }
+  }
+
   setTargetMounted(mounted: boolean): void {
     this.targetMounted = mounted
   }
@@ -208,6 +225,7 @@ export class DictationController {
   dispose(): void {
     this.disposed = true
     this.stopTimer()
+    this.levelListeners.clear()
     this.unsubscribe()
     void this.cancel()
   }

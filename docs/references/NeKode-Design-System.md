@@ -848,6 +848,15 @@ States:
 - accent blue or subtle red recording indicator,
 - optional soft pulse around microphone.
 
+Implemented (2026-11-22, NEKODE-200): the recording button replaces the
+microphone icon with a four-bar level meter in `--color-error`, driven by the
+live microphone RMS from the dictation audio worklet (roughly ten updates per
+second, -60 dBFS to -10 dBFS). The bars default to a thin baseline, so silence
+stays visible. The meter is decorative (`aria-hidden`); the visible
+`Recording (Ns)...` label keeps the countdown and the accessible name. The
+level travels through a subscription and writes one CSS custom property, so
+the meter never re-renders the terminal workspace.
+
 Animation must remain restrained.
 
 ---

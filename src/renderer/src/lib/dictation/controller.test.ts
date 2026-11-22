@@ -22,7 +22,12 @@ function harness(noSpeech = false) {
       noSpeech,
     })),
   }
-  const recorder = { start: vi.fn(async () => recording) }
+  const recorder = {
+    start: vi.fn(
+      async (_signal: AbortSignal, _onFailure: () => void, _onLevel?: (level: number) => void) =>
+        recording,
+    ),
+  }
   const states: DictationView[] = []
   const controller = new DictationController(api, recorder, (view) => states.push(view))
   const emit = (patch: Partial<DictationResult> = {}) =>
@@ -217,6 +222,26 @@ describe('renderer dictation controller', () => {
     await Promise.all([s1, s2])
     expect(h.api.audio).toHaveBeenCalledTimes(1)
     h.controller.dispose()
+  })
+  it('forwards live microphone levels to subscribers only while that take records', async () => {
+    const h = harness()
+    const levels: number[] = []
+    const unsubscribe = h.controller.subscribeLevel((level) => levels.push(level))
+    await h.controller.start('chat')
+    const onLevel = h.recorder.start.mock.calls[0]?.[2]
+    expect(typeof onLevel).toBe('function')
+    onLevel?.(0.25)
+    expect(levels).toEqual([0.25])
+    unsubscribe()
+    onLevel?.(0.4)
+    expect(levels).toEqual([0.25])
+
+    const second = h.controller.subscribeLevel((level) => levels.push(level))
+    await h.controller.stop()
+    onLevel?.(0.9)
+    expect(levels).toEqual([0.25])
+    h.controller.dispose()
+    second()
   })
   it('stores transcript in orphaned drawer state when active chat is switched during transcription (AC-013)', async () => {
     const h = harness()

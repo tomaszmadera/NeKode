@@ -272,6 +272,43 @@ button {
     background-color: var(--color-row-hover);
     color: var(--color-ink);
   }
+
+  /* Dictation listening meter (design doc 21, NEKODE-200): four bars scaled by
+     the live microphone level. PromptActions writes the 0..1 level into
+     --dictation-level from the audio worklet, so the meter updates without a
+     React render. At rest the bars stay visible as a thin baseline, which
+     shows silence instead of hiding the control. */
+  .nk-dictation-level {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 14px;
+  }
+
+  .nk-dictation-level > span {
+    width: 2px;
+    height: 100%;
+    border-radius: var(--radius-pill);
+    background-color: var(--color-error);
+    transform: scaleY(calc(0.12 + var(--dictation-level, 0) * 0.88 * var(--dictation-bar, 1)));
+    transition: transform 90ms linear;
+  }
+
+  .nk-dictation-level > span:nth-child(1) {
+    --dictation-bar: 0.3;
+  }
+
+  .nk-dictation-level > span:nth-child(2) {
+    --dictation-bar: 0.55;
+  }
+
+  .nk-dictation-level > span:nth-child(3) {
+    --dictation-bar: 0.8;
+  }
+
+  .nk-dictation-level > span:nth-child(4) {
+    --dictation-bar: 1;
+  }
 }
 
 /* Active session (user decision 2026-10-27): no row fill. The accent bar

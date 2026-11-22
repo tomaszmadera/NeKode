@@ -8,11 +8,15 @@ export interface Recording {
   discard(): void
 }
 export interface DictationRecorder {
-  start(signal: AbortSignal, onFailure: () => void): Promise<Recording>
+  start(
+    signal: AbortSignal,
+    onFailure: () => void,
+    onLevel?: (level: number) => void,
+  ): Promise<Recording>
 }
 
 export const microphoneRecorder: DictationRecorder = {
-  async start(signal, onFailure) {
+  async start(signal, onFailure, onLevel) {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, sampleRate: 16000 },
       video: false,
@@ -65,6 +69,10 @@ export const microphoneRecorder: DictationRecorder = {
       node.connect(context.destination)
       node.onprocessorerror = fail
       node.port.onmessage = ({ data }) => {
+        if (typeof data?.level === 'number') {
+          onLevel?.(data.level)
+          return
+        }
         if (data?.error) fail()
       }
       for (const track of stream.getAudioTracks()) track.onended = fail
@@ -81,6 +89,9 @@ export const microphoneRecorder: DictationRecorder = {
             rejectStop = reject
             stopTimeout = setTimeout(fail, 5000)
             node.port.onmessage = ({ data }) => {
+              // A level message can still be in flight when stop replaces the
+              // recording handler; it is not part of the take.
+              if (typeof data?.level === 'number') return
               if (data?.error) {
                 fail()
                 return

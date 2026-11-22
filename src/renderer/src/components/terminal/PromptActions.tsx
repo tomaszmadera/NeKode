@@ -40,6 +40,8 @@ export interface UnifiedDictationControl {
   markInserted?: (sessionId: string) => void
   isInserted?: (sessionId: string) => boolean
   disabledReason?: string | null
+  /** Live 0..1 microphone level while recording, delivered without a render. */
+  subscribeLevel?: (listener: (level: number) => void) => () => void
 }
 
 export interface PromptActionsProps {
@@ -78,6 +80,7 @@ export function PromptActions({
 }: PromptActionsProps): React.JSX.Element | null {
   const [focusError, setFocusError] = useState<string | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
+  const levelMeterRef = useRef<HTMLSpanElement | null>(null)
   const onInjectedRef = useRef(onInjected)
   onInjectedRef.current = onInjected
   const lastAppliedNonceRef = useRef<number | null>(null)
@@ -118,6 +121,18 @@ export function PromptActions({
     control?.markInserted?.(res.sessionId)
     onPasteToTerminal(res.text)
   }, [dictationControl?.result, chatId, onPasteToTerminal])
+
+  // The live microphone meter updates one CSS variable per worklet message, so
+  // a ten-hertz level never re-renders the terminal workspace (NEKODE-200).
+  const isRecording = dictationControl?.isRecording ?? false
+  const subscribeLevel = dictationControl?.subscribeLevel
+  useEffect(() => {
+    if (!isRecording || !subscribeLevel) return
+    return subscribeLevel((next) => {
+      const level = Number.isFinite(next) ? Math.min(1, Math.max(0, next)) : 0
+      levelMeterRef.current?.style.setProperty('--dictation-level', level.toFixed(3))
+    })
+  }, [isRecording, subscribeLevel])
 
   function activateDesktopDictation(): void {
     if (!dictation || dictation.disabledReason !== null || dictation.busy) return
@@ -178,7 +193,19 @@ export function PromptActions({
         (dictationControl.durationSeconds ?? 0) > 0
           ? `Recording (${dictationControl.durationSeconds}s)...`
           : 'Recording...'
-      buttonIcon = <span className="mr-0.5 h-2 w-2 rounded-full bg-error animate-pulse" />
+      buttonIcon = (
+        <span
+          ref={levelMeterRef}
+          className="nk-dictation-level"
+          data-testid={TEST_ID.terminalPromptDictationLevel}
+          aria-hidden="true"
+        >
+          <span />
+          <span />
+          <span />
+          <span />
+        </span>
+      )
     } else if (dictationControl.state === 'post_processing') {
       buttonLabel = 'Processing...'
       buttonIcon = <Icon.running size={14} className="animate-spin" aria-hidden />
