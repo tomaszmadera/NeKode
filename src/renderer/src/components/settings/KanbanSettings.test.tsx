@@ -672,6 +672,30 @@ describe('KanbanSettings - Local file (project-home spec Behaviour 6-7, 10)', ()
     expect(screen.queryByTestId(TEST_ID.settingsKanbanUseLocal)).toBeNull()
   })
 
+  it('saving Local file creates and binds it, the same as Use a local task list', async () => {
+    const getConfig = vi.fn().mockResolvedValueOnce(emptyConfig()).mockResolvedValue(localConfig())
+    const bindLocalFile = vi.fn().mockResolvedValue(undefined)
+    const setConfig = vi.fn().mockResolvedValue(undefined)
+    const onInvalidate = vi.fn()
+    const app = appMock({
+      adaptersList: vi.fn().mockResolvedValue([LOCAL, PLANE]),
+      getConfig,
+      bindLocalFile,
+      setConfig,
+    })
+    render(<KanbanSettings app={app} projectId="p1" onInvalidate={onInvalidate} />)
+    await waitFor(() => expect(screen.queryByTestId(TEST_ID.settingsKanbanLoading)).toBeNull())
+    fireEvent.change(screen.getByTestId(TEST_ID.settingsKanbanAdapterSelect), {
+      target: { value: 'local-file' },
+    })
+    fireEvent.click(screen.getByTestId(TEST_ID.settingsKanbanSave))
+    await waitFor(() => expect(bindLocalFile).toHaveBeenCalledWith('p1'))
+    expect(setConfig).not.toHaveBeenCalled()
+    expect(onInvalidate).toHaveBeenCalledWith('p1')
+    await waitFor(() => expect(screen.getByTestId(TEST_ID.settingsKanbanSaved)).toBeTruthy())
+    expect(screen.queryByTestId(TEST_ID.settingsKanbanUseLocal)).toBeNull()
+  })
+
   it('does not offer Use a local task list while a source is bound', async () => {
     const app = appMock({
       adaptersList: vi.fn().mockResolvedValue([LOCAL, PLANE]),

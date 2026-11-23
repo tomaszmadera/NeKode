@@ -506,8 +506,9 @@ export interface AppApi {
     /** Comments for one work item via the adapter `listComments` action (`{ ref }`). */
     getComments(projectId: string, ref: string): Promise<KanbanComment[]>
     /**
-     * `Use a local task list` (project-home spec Behaviour 7): creates
-     * `.nekode/tasks.json` only when it is absent, then binds `local-file`.
+     * `Use a local task list` (project-home spec Behaviour 7) and the Tasks
+     * section's Save with `Local file` selected: creates `.nekode/tasks.json`
+     * only when it is absent, then binds `local-file`.
      * An existing file is left unchanged.
      */
     bindLocalFile(projectId: string): Promise<void>

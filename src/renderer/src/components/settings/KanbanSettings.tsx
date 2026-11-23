@@ -45,12 +45,13 @@ import {
 // The built-in `Local file` source (project-home spec Behaviour 7, 10) is the
 // first adapter entry: it has no fields, shows its relative path and Test
 // (which parses the file), and while no source is bound the section offers
-// `Use a local task list`. While a source is bound, `Teach agents` opens a
-// confirm dialog that previews the one skill file main writes (project-home
-// spec Behaviour 11, 13): path, new or replace, origin, the exact text, and a
-// line diff when replacing, plus the project's selected agent profiles. Main
-// builds the text; Confirm sends only the preview token, so a stale preview
-// gets `conflict` and a new preview instead of a write.
+// `Use a local task list`. Saving `Local file` runs the same create-and-bind
+// action; a process adapter's Save stores its config. While a source is bound,
+// `Teach agents` opens a confirm dialog that previews the one skill file main
+// writes (project-home spec Behaviour 11, 13): path, new or replace, origin,
+// the exact text, and a line diff when replacing, plus the project's selected
+// agent profiles. Main builds the text; Confirm sends only the preview token,
+// so a stale preview gets `conflict` and a new preview instead of a write.
 
 interface KanbanSettingsProps {
   app: AppApi
@@ -352,12 +353,18 @@ export function KanbanSettings({
         return
       }
       try {
-        await app.kanban.setConfig(projectId, {
-          adapterId,
-          values: valuesPayload(schema, values),
-        })
+        if (adapterId === LOCAL_FILE_ADAPTER_ID) {
+          // Saving Local file is the same action as Use a local task list:
+          // main creates the file when absent, then binds it.
+          await app.kanban.bindLocalFile(projectId)
+        } else {
+          await app.kanban.setConfig(projectId, {
+            adapterId,
+            values: valuesPayload(schema, values),
+          })
+        }
       } catch (cause) {
-        // A failed setConfig leaves the binding unsaved (Test stays gated).
+        // A failed save leaves the binding unsaved (Test stays gated).
         setFormError(
           parseAppErrorPayload(cause)?.message ?? 'Failed to save the work item source settings.',
         )

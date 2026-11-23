@@ -292,9 +292,10 @@ export class KanbanService {
   }
 
   /**
-   * `Use a local task list` (project-home spec Behaviour 7): creates the task
-   * file only when it is absent, then binds `local-file`. A failed create
-   * leaves the binding unchanged.
+   * `Use a local task list` and the Tasks section's Save with `Local file`
+   * (project-home spec Behaviour 7): creates the task file only when it is
+   * absent, then binds `local-file`. A failed create leaves the binding
+   * unchanged.
    */
   async bindLocalFile(projectId: string): Promise<void> {
     this.assertProject(projectId)
